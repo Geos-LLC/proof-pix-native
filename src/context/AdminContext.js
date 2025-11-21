@@ -1040,6 +1040,15 @@ export function AdminProvider({ children }) {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.TEAM_NAME, name);
       setTeamName(name);
+
+      // Also update the active connected account to persist teamName
+      const activeAccount = getActiveAccount();
+      if (activeAccount) {
+        await upsertConnectedAccount(activeAccount.userInfo, {
+          teamName: name
+        });
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };

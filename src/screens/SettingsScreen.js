@@ -894,22 +894,38 @@ export default function SettingsScreen({ navigation, route }) {
     setHexModalError(null);
   };
 
-  // Update teamNameInput when teamName changes or modal opens
-  useEffect(() => {
-    if (showManageTeamModal && teamName) {
-      console.log('[MANAGE_TEAM] Setting teamNameInput from teamName:', teamName);
-      setTeamNameInput(teamName);
-    }
-  }, [showManageTeamModal, teamName]);
-
   // Fetch team members for Manage Team modal
   const fetchTeamMembersForModal = async () => {
     if (proxySessionId) {
       setLoadingTeamMembers(true);
       try {
         const result = await proxyService.getTeamMembers(proxySessionId);
+        console.log('[SETTINGS] Team members result:', result);
         if (result.success && result.teamMembers) {
           setTeamMembersList(result.teamMembers);
+
+          // Try to get team name from various sources
+          if (result.teamName) {
+            console.log('[SETTINGS] Setting team name from proxy response:', result.teamName);
+            setTeamNameInput(result.teamName);
+          } else {
+            // Try to load from AsyncStorage directly
+            try {
+              const storedTeamName = await AsyncStorage.getItem('@team_name');
+              console.log('[SETTINGS] Team name from AsyncStorage:', storedTeamName);
+              if (storedTeamName) {
+                setTeamNameInput(storedTeamName);
+              } else if (teamName) {
+                console.log('[SETTINGS] Using teamName from AdminContext:', teamName);
+                setTeamNameInput(teamName);
+              }
+            } catch (err) {
+              console.error('[SETTINGS] Failed to load team name from storage:', err);
+              if (teamName) {
+                setTeamNameInput(teamName);
+              }
+            }
+          }
         } else {
           setTeamMembersList([]);
         }
@@ -923,6 +939,14 @@ export default function SettingsScreen({ navigation, route }) {
       setTeamMembersList([]);
     }
   };
+
+  // Fetch team members when modal opens
+  useEffect(() => {
+    if (showManageTeamModal) {
+      console.log('[MANAGE_TEAM] Modal opened, fetching team members');
+      fetchTeamMembersForModal();
+    }
+  }, [showManageTeamModal]);
 
   // Handler functions for Manage Team modal
   const handleGenerateInvite = async () => {
@@ -1310,6 +1334,8 @@ export default function SettingsScreen({ navigation, route }) {
       // Step 3: Set default team name if not already set
       if (!teamName && userName) {
         await updateTeamName(userName);
+        // Also save to AsyncStorage for persistence
+        await AsyncStorage.setItem('@team_name', userName);
         console.log('[SETUP] Default team name set to:', userName);
       }
 
@@ -5232,13 +5258,12 @@ export default function SettingsScreen({ navigation, route }) {
                     ) : (
                       <>
                         {teamMembersList && teamMembersList.length > 0 ? (
-                          <FlatList
-                            data={teamMembersList}
-                            renderItem={({ item }) => {
+                          <ScrollView style={styles.teamMembersScrollContainer} nestedScrollEnabled={true}>
+                            {teamMembersList.map((item, index) => {
                               const memberToken = item.token;
                               const hasActiveInvite = memberToken && inviteTokens?.includes(memberToken);
                               return (
-                                <View style={styles.memberCard}>
+                                <View key={`member-${index}-${memberToken || index}`} style={styles.memberCard}>
                                   {/* First row: Name and Revoke button */}
                                   <View style={styles.memberCardRow}>
                                     <Text style={styles.memberName}>{item.name || 'Unknown'}</Text>
@@ -5285,10 +5310,8 @@ export default function SettingsScreen({ navigation, route }) {
                                   )}
                                 </View>
                               );
-                            }}
-                            keyExtractor={(item, index) => `member-${index}-${item.token || index}`}
-                            scrollEnabled={false}
-                          />
+                            })}
+                          </ScrollView>
                         ) : (
                           <Text style={styles.emptyText}>{t('settings.noTeamMembers', { defaultValue: 'No team members yet.' })}</Text>
                         )}
@@ -5314,9 +5337,17 @@ export default function SettingsScreen({ navigation, route }) {
                       onPress={async () => {
                         try {
                           // Update team name if changed
-                          const finalTeamName = teamNameInput !== '' ? teamNameInput : teamName;
-                          if (finalTeamName && finalTeamName !== teamName) {
-                            await updateTeamName(finalTeamName);
+                          const trimmedInput = teamNameInput.trim();
+                          console.log('[SETTINGS] Confirm pressed - teamNameInput:', trimmedInput, 'current teamName:', teamName);
+
+                          if (trimmedInput && trimmedInput !== (teamName || '')) {
+                            console.log('[SETTINGS] Saving team name:', trimmedInput);
+                            await updateTeamName(trimmedInput);
+                            // Also save to AsyncStorage directly for persistence
+                            await AsyncStorage.setItem('@team_name', trimmedInput);
+                            console.log('[SETTINGS] Team name saved to AsyncStorage');
+                          } else {
+                            console.log('[SETTINGS] No team name change detected, skipping save');
                           }
                           setShowManageTeamModal(false);
                           setTeamNameInput('');
@@ -7399,6 +7430,9 @@ const sliderStyles = StyleSheet.create({
     },
     teamManagementSection: {
       marginBottom: 24,
+    },
+    teamMembersScrollContainer: {
+      maxHeight: 250,
     },
     teamManagementLabel: {
       fontSize: 16,
