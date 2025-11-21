@@ -5344,29 +5344,13 @@ export default function SettingsScreen({ navigation, route }) {
         {/* Test Team Member Name Input Modal */}
         <Modal
           isVisible={showTestNameInput}
-          onModalWillShow={() => {
-            console.log('[TEST_MODAL] ====== Modal WILL SHOW ======', {
-              showTestNameInput,
-              testMemberName: testMemberName?.substring(0, 20),
-              currentTestToken: currentTestToken?.substring(0, 10),
-            });
-          }}
-          onModalShow={() => {
-            console.log('[TEST_MODAL] ====== Modal SHOWN ======', {
-              showTestNameInput,
-              testMemberName: testMemberName?.substring(0, 20),
-              currentTestToken: currentTestToken?.substring(0, 10),
-            });
-          }}
           onBackdropPress={() => {
-            console.log('[TEST_MODAL] Backdrop pressed');
             setShowTestNameInput(false);
             setTestMemberName('');
             setCurrentTestToken(null);
             setIsTestingInvite(false);
           }}
           onBackButtonPress={() => {
-            console.log('[TEST_MODAL] Back button pressed');
             setShowTestNameInput(false);
             setTestMemberName('');
             setCurrentTestToken(null);
@@ -5387,20 +5371,12 @@ export default function SettingsScreen({ navigation, route }) {
                 placeholderTextColor={COLORS.GRAY}
                 value={testMemberName}
                 onChangeText={setTestMemberName}
-                autoFocus={true}
                 onSubmitEditing={handleTestJoinWithName}
               />
               <View style={styles.testModalButtons}>
-                {console.log('[TEST_MODAL] Rendering buttons:', {
-                  testMemberName: testMemberName?.substring(0, 20),
-                  testMemberNameTrimmed: testMemberName?.trim(),
-                  isTestingInvite,
-                  joinButtonDisabled: !testMemberName.trim() || isTestingInvite,
-                })}
                 <TouchableOpacity
                   style={[styles.testModalButton, styles.testModalButtonCancel]}
                   onPress={() => {
-                    console.log('[TEST_MODAL] Cancel button clicked');
                     setShowTestNameInput(false);
                     setTestMemberName('');
                     setCurrentTestToken(null);
@@ -5412,18 +5388,7 @@ export default function SettingsScreen({ navigation, route }) {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.testModalButton, styles.testModalButtonJoin]}
-                  onPress={() => {
-                    console.log('[TEST_JOIN_BUTTON] ====== Join button CLICKED ======');
-                    console.log('[TEST_JOIN_BUTTON] Button state:', {
-                      testMemberName: testMemberName?.substring(0, 20),
-                      testMemberNameTrimmed: testMemberName?.trim(),
-                      isTestingInvite,
-                      currentTestToken: currentTestToken?.substring(0, 10),
-                      proxySessionId: proxySessionId?.substring(0, 10),
-                    });
-                    console.log('[TEST_JOIN_BUTTON] Calling handleTestJoinWithName...');
-                    handleTestJoinWithName();
-                  }}
+                  onPress={handleTestJoinWithName}
                   disabled={!testMemberName.trim() || isTestingInvite}
                 >
                   {isTestingInvite ? (
