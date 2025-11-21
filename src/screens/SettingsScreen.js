@@ -5238,48 +5238,50 @@ export default function SettingsScreen({ navigation, route }) {
                               const memberToken = item.token;
                               const hasActiveInvite = memberToken && inviteTokens?.includes(memberToken);
                               return (
-                                <View style={styles.memberItemFull}>
-                                  <View style={styles.memberInfo}>
+                                <View style={styles.memberCard}>
+                                  {/* First row: Name and Revoke button */}
+                                  <View style={styles.memberCardRow}>
                                     <Text style={styles.memberName}>{item.name || 'Unknown'}</Text>
-                                    {memberToken && (
-                                      <View style={styles.tokenContainer}>
-                                        <Text style={styles.tokenLabel}>Invite Code:</Text>
-                                        <Text style={styles.inviteToken} selectable>{memberToken}</Text>
-                                      </View>
-                                    )}
-                                  </View>
-                                  {memberToken && hasActiveInvite && (
-                                    <TouchableOpacity 
-                                      onPress={async () => {
-                                        Alert.alert(
-                                          'Revoke Invite',
-                                          'This will revoke the invite token for this team member. They will no longer be able to upload using this code.',
-                                          [
-                                            { text: 'Cancel', style: 'cancel' },
-                                            {
-                                              text: 'Revoke',
-                                              style: 'destructive',
-                                              onPress: async () => {
-                                                try {
-                                                  if (proxySessionId) {
-                                                    await proxyService.removeInviteToken(proxySessionId, memberToken);
+                                    {memberToken && hasActiveInvite && (
+                                      <TouchableOpacity
+                                        onPress={async () => {
+                                          Alert.alert(
+                                            'Revoke Invite',
+                                            'This will revoke the invite token for this team member. They will no longer be able to upload using this code.',
+                                            [
+                                              { text: 'Cancel', style: 'cancel' },
+                                              {
+                                                text: 'Revoke',
+                                                style: 'destructive',
+                                                onPress: async () => {
+                                                  try {
+                                                    if (proxySessionId) {
+                                                      await proxyService.removeInviteToken(proxySessionId, memberToken);
+                                                    }
+                                                    await removeInviteToken(memberToken);
+                                                    await fetchTeamMembersForModal();
+                                                    Alert.alert('Invite Revoked', 'The invite has been revoked successfully.');
+                                                  } catch (error) {
+                                                    console.error('[SETTINGS] Failed to revoke invite token:', error);
+                                                    Alert.alert('Error', 'Failed to revoke invite token. Please try again.');
                                                   }
-                                                  await removeInviteToken(memberToken);
-                                                  await fetchTeamMembersForModal();
-                                                  Alert.alert('Invite Revoked', 'The invite has been revoked successfully.');
-                                                } catch (error) {
-                                                  console.error('[SETTINGS] Failed to revoke invite token:', error);
-                                                  Alert.alert('Error', 'Failed to revoke invite token. Please try again.');
                                                 }
                                               }
-                                            }
-                                          ]
-                                        );
-                                      }} 
-                                      style={[styles.actionButton, styles.revokeButtonContainer]}
-                                    >
-                                      <Text style={styles.revokeButton}>Revoke</Text>
-                                    </TouchableOpacity>
+                                            ]
+                                          );
+                                        }}
+                                        style={styles.revokeButtonSmall}
+                                      >
+                                        <Text style={styles.revokeButtonText}>Revoke</Text>
+                                      </TouchableOpacity>
+                                    )}
+                                  </View>
+                                  {/* Second row: Invite Code */}
+                                  {memberToken && (
+                                    <View style={styles.memberCardTokenRow}>
+                                      <Text style={styles.tokenLabelSmall}>Invite Code: </Text>
+                                      <Text style={styles.tokenValueSmall} selectable>{memberToken}</Text>
+                                    </View>
                                   )}
                                 </View>
                               );
@@ -7499,6 +7501,45 @@ const sliderStyles = StyleSheet.create({
       borderColor: '#ddd',
       alignItems: 'center',
       justifyContent: 'space-between',
+    },
+    memberCard: {
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      marginBottom: 10,
+      backgroundColor: '#fff',
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: '#ddd',
+    },
+    memberCardRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    memberCardTokenRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    tokenLabelSmall: {
+      fontSize: 12,
+      color: '#666',
+    },
+    tokenValueSmall: {
+      fontSize: 12,
+      color: '#333',
+      fontFamily: 'monospace',
+    },
+    revokeButtonSmall: {
+      backgroundColor: '#ff4444',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 6,
+    },
+    revokeButtonText: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '600',
     },
     tokenContainer: {
       flexDirection: 'row',
