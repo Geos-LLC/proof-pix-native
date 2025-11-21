@@ -954,10 +954,11 @@ export function AdminProvider({ children }) {
 
   /**
    * Initialize or retrieve proxy session ID
-   * @param {string} folderId - Google Drive folder ID
-   * @returns {Promise<string|null>} - Proxy session ID or null if failed
+   * @param {string} folderId - Google Drive folder ID or Dropbox folder path
+   * @param {string} accountType - Account type: 'google' or 'dropbox' (default: 'google')
+   * @returns {Promise<{sessionId: string, success: boolean}|{success: false, error: string}>} - Proxy session result
    */
-  const initializeProxySession = async (folderId) => {
+  const initializeProxySession = async (folderId, accountType = 'google') => {
     // Prevent concurrent initialization calls
       if (isInitializingProxy) {
         console.log('[ADMIN] Proxy session initialization already in progress, waiting...');
@@ -990,8 +991,8 @@ export function AdminProvider({ children }) {
       setIsInitializingProxy(true);
       
       // Initialize new session via proxy service
-      console.log('[ADMIN] Initializing new proxy session');
-      const result = await proxyService.initializeAdminSession(folderId);
+      console.log('[ADMIN] Initializing new proxy session for account type:', accountType);
+      const result = await proxyService.initializeAdminSession(folderId, accountType);
       
       if (result && result.sessionId) {
         await AsyncStorage.setItem(STORAGE_KEYS.PROXY_SESSION_ID, result.sessionId);
@@ -1045,6 +1046,10 @@ export function AdminProvider({ children }) {
     }
   };
 
+  // Get active account and account type
+  const activeAccount = getActiveAccount();
+  const accountType = activeAccount?.accountType || 'google';
+
   const value = {
     // State
     isAuthenticated,
@@ -1058,6 +1063,8 @@ export function AdminProvider({ children }) {
     proxySessionId,
     teamName,
     connectedAccounts,
+    activeAccount, // Expose active account
+    accountType, // Expose account type ('google' or 'dropbox')
     isGoogleSignInAvailable: googleAuthService.isAvailable(),
 
     // Actions
@@ -1083,6 +1090,7 @@ export function AdminProvider({ children }) {
     canAddMoreInvites,
     getRemainingInvites,
     updateTeamName,
+    getActiveAccount, // Expose function to get active account
 
     // Direct access to auth service for API calls
     googleAuthService,

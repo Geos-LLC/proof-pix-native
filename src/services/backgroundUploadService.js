@@ -97,6 +97,7 @@ class BackgroundUploadService {
         flat: upload.flat,
         useDirectDrive: upload.config?.useDirectDrive || upload.useDirectDrive || false, // Pass flag for proxy server upload
         sessionId: upload.config?.sessionId || upload.sessionId || null, // Pass proxy session ID
+        accountType: upload.config?.accountType || upload.accountType || 'google', // Pass account type
         onProgress: (current, total) => {
           upload.progress = { current, total };
           this.notifyListeners();
@@ -154,9 +155,10 @@ class BackgroundUploadService {
         cleanerName: upload.userName,
         batchSize: upload.items.length, // Upload all photos in parallel
         flat: upload.flat,
-        useDirectDrive: true, // Always use proxy server
+        useDirectDrive: true, // Always use proxy server (for Google)
         sessionId: teamInfo.sessionId,
         token: teamInfo.token, // Required for team member uploads
+        accountType: upload.config?.accountType || teamInfo.accountType || 'google', // Pass account type
         onProgress: (current, total) => {
           upload.progress = { current, total };
           this.notifyListeners();
