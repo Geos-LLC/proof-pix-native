@@ -499,6 +499,19 @@ export default function SettingsScreen({ navigation, route }) {
         }
       };
       loadDropboxTokens();
+
+      // Load local referral stats
+      const loadLocalReferralStats = async () => {
+        try {
+          const stored = await AsyncStorage.getItem('@local_referral_stats');
+          if (stored) {
+            setLocalReferralStats(JSON.parse(stored));
+          }
+        } catch (error) {
+          console.error('[SETTINGS] Error loading local referral stats:', error);
+        }
+      };
+      loadLocalReferralStats();
     }, [])
   );
 
@@ -578,6 +591,10 @@ export default function SettingsScreen({ navigation, route }) {
     invitesSent: [],
     rewardsEarned: 0,
     totalMonthsEarned: 0,
+  });
+  const [localReferralStats, setLocalReferralStats] = useState({
+    completedInvites: 0,
+    monthsEarned: 0,
   });
   const [isSigningInDropbox, setIsSigningInDropbox] = useState(false);
   const [isDropboxAuthenticated, setIsDropboxAuthenticated] = useState(false);
@@ -2735,13 +2752,13 @@ export default function SettingsScreen({ navigation, route }) {
             <View style={styles.referralStatItem}>
               <Text style={styles.referralStatLabel}>Friends Joined</Text>
               <Text style={styles.referralStatValue}>
-                {referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0} of 3
+                {localReferralStats.completedInvites || 0} of 3
               </Text>
             </View>
             <View style={[styles.referralStatItem, styles.referralStatItemRight]}>
-              <Text style={[styles.referralStatLabel, styles.referralStatLabelRight]}>Months Earned</Text>
+              <Text style={[styles.referralStatLabel, styles.referralStatLabelRight]}>Days Earned</Text>
               <Text style={[styles.referralStatValue, styles.referralStatValueRight]}>
-                {referralInfo.totalMonthsEarned || 0} months
+                {(localReferralStats.monthsEarned || 0) * 15} days
               </Text>
             </View>
           </View>
@@ -3350,9 +3367,36 @@ export default function SettingsScreen({ navigation, route }) {
                 style={[styles.testButton, { backgroundColor: '#FF9800' }]}
                 onPress={async () => {
                   const { clearReferralDataForTesting } = await import('../services/referralService');
+                  const { getTrialInfo, getTrialDaysRemaining } = await import('../services/trialService');
                   const success = await clearReferralDataForTesting();
+                  // Also clear local dev stats
+                  await AsyncStorage.removeItem('@local_referral_stats');
+                  // Update UI state
+                  setLocalReferralStats({ completedInvites: 0, monthsEarned: 0 });
+
+                  // Recalculate trial end date by removing friend bonus days
+                  const trialInfo = await getTrialInfo();
+                  if (trialInfo) {
+                    // Reset trial to base duration (30 or 45 days from start)
+                    const startDate = new Date(trialInfo.startDate);
+                    const baseDays = trialInfo.hasReferral ? 45 : 30;
+                    const newEndDate = new Date(startDate);
+                    newEndDate.setDate(newEndDate.getDate() + baseDays);
+
+                    const updatedTrialInfo = {
+                      ...trialInfo,
+                      endDate: newEndDate.toISOString(),
+                      durationDays: baseDays,
+                    };
+                    await AsyncStorage.setItem('@user_trial_info', JSON.stringify(updatedTrialInfo));
+
+                    // Refresh trial days display
+                    const updatedDays = await getTrialDaysRemaining();
+                    setTrialDaysRemaining(updatedDays);
+                  }
+
                   if (success) {
-                    Alert.alert('Reset Complete', 'Referral data cleared. You can now test referral codes again.');
+                    Alert.alert('Reset Complete', 'Referral data, stats, and bonus days cleared.');
                   } else {
                     Alert.alert('Error', 'Failed to reset referral data.');
                   }
@@ -3364,36 +3408,51 @@ export default function SettingsScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[styles.testButton, { backgroundColor: '#4CAF50' }]}
                 onPress={async () => {
-                  const { simulateFriendSignup } = await import('../services/referralService');
-                  const success = await simulateFriendSignup();
-                  if (success) {
-                    Alert.alert('Success', 'Friend signup simulated! Check Settings > Referral to see your reward stats.');
-                  } else {
-                    Alert.alert('Error', 'Failed to simulate friend signup. Check console for details.');
-                  }
-                }}
-              >
-                <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Simulate Friend Signup</Text>
-              </TouchableOpacity>
+                  const { extendTrial, getTrialDaysRemaining } = await import('../services/trialService');
 
-              <TouchableOpacity
-                style={[styles.testButton, { backgroundColor: '#2196F3' }]}
-                onPress={async () => {
-                  const { checkAndApplyReferralRewards } = await import('../services/referralService');
-                  const rewardsApplied = await checkAndApplyReferralRewards();
-                  if (rewardsApplied > 0) {
-                    const { getTrialDaysRemaining } = await import('../services/trialService');
-                    const daysRemaining = await getTrialDaysRemaining();
-                    Alert.alert(
-                      'Rewards Applied!',
-                      `Applied ${rewardsApplied} reward(s) (+${rewardsApplied * 30} days).\n\nYour trial now has ${daysRemaining} days remaining.`
-                    );
-                  } else {
-                    Alert.alert('No Rewards', 'No pending rewards to apply.');
+                  // Get current local stats
+                  let localStats = { completedInvites: 0, monthsEarned: 0 };
+                  try {
+                    const stored = await AsyncStorage.getItem('@local_referral_stats');
+                    if (stored) {
+                      localStats = JSON.parse(stored);
+                    }
+                  } catch (e) {}
+
+                  // Check if already at max (3 friends)
+                  if (localStats.completedInvites >= 3) {
+                    Alert.alert('Max Reached', 'You have already invited the maximum of 3 friends.');
+                    return;
                   }
+
+                  // Increment local stats (max 3)
+                  localStats.completedInvites = Math.min((localStats.completedInvites || 0) + 1, 3);
+                  localStats.monthsEarned = Math.min((localStats.monthsEarned || 0) + 1, 3);
+
+                  // Save updated local stats
+                  await AsyncStorage.setItem('@local_referral_stats', JSON.stringify(localStats));
+
+                  // Update UI state immediately
+                  setLocalReferralStats(localStats);
+
+                  // Extend trial by 15 days per friend
+                  await extendTrial(15);
+
+                  // Refresh trial days in settings
+                  const updatedDays = await getTrialDaysRemaining();
+                  setTrialDaysRemaining(updatedDays);
+
+                  Alert.alert(
+                    '✅ Friend Signup Simulated!',
+                    `Reward applied: +15 days\n\n` +
+                    `📊 Your Stats:\n` +
+                    `• Friends Joined: ${localStats.completedInvites} of 3\n` +
+                    `• Days Earned: ${localStats.monthsEarned * 15}\n` +
+                    `• Trial Days Remaining: ${updatedDays}`
+                  );
                 }}
               >
-                <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Apply Referral Rewards</Text>
+                <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Simulate Friend Signup (+15 days)</Text>
               </TouchableOpacity>
             </View>
           </View>
