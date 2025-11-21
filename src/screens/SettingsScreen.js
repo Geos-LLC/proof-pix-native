@@ -18,6 +18,9 @@ import {
   Dimensions,
   PanResponder,
   Animated,
+  FlatList,
+  Share,
+  InteractionManager,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -47,6 +50,7 @@ import { FEATURES } from '../constants/featurePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import { isTrialActive, getTrialDaysRemaining, getTrialPlan } from '../services/trialService';
 import * as TrialTestUtils from '../utils/trialTestUtils';
+import { generateInviteToken } from '../utils/tokens';
 
 const getFontOptions = (t) => [
   {
@@ -303,6 +307,28 @@ export default function SettingsScreen({ navigation, route }) {
   const [showPlanSelection, setShowPlanSelection] = useState(false);
   const [showMultipleAccountsModal, setShowMultipleAccountsModal] = useState(false);
   const [showTestToolsModal, setShowTestToolsModal] = useState(false);
+  const [showManageTeamModal, setShowManageTeamModal] = useState(false);
+  const [teamMembersList, setTeamMembersList] = useState([]);
+  const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);
+  const [teamNameInput, setTeamNameInput] = useState('');
+  const [isTestingInvite, setIsTestingInvite] = useState(false);
+  const [showTestNameInput, setShowTestNameInput] = useState(false);
+  const [testMemberName, setTestMemberName] = useState('');
+  
+  // Log when test modal visibility changes
+  useEffect(() => {
+    console.log('[TEST_MODAL_STATE] showTestNameInput changed:', showTestNameInput);
+    if (showTestNameInput) {
+      console.log('[TEST_MODAL_STATE] Modal should be visible now');
+      console.log('[TEST_MODAL_STATE] Current state:', {
+        testMemberName: testMemberName?.substring(0, 20),
+        currentTestToken: currentTestToken?.substring(0, 10),
+        proxySessionId: proxySessionId?.substring(0, 10),
+        showManageTeamModal,
+      });
+    }
+  }, [showTestNameInput, testMemberName, currentTestToken, proxySessionId, showManageTeamModal]);
+  const [currentTestToken, setCurrentTestToken] = useState(null);
   const [trialActive, setTrialActive] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
   const [trialPlan, setTrialPlan] = useState(null);
@@ -569,6 +595,9 @@ export default function SettingsScreen({ navigation, route }) {
     removeConnectedAccount,
     upsertConnectedAccount,
     activateConnectedAccount,
+    canAddMoreInvites,
+    getRemainingInvites,
+    joinTeam,
   } = useAdmin();
   const isEnterprisePlan = userPlan === 'enterprise';
   // For enterprise, always use the active account from connectedAccounts
@@ -734,7 +763,6 @@ export default function SettingsScreen({ navigation, route }) {
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [editingTeamName, setEditingTeamName] = useState(false);
-  const [teamNameInput, setTeamNameInput] = useState('');
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [labelLanguageModalVisible, setLabelLanguageModalVisible] = useState(false);
   const [sectionLanguageModalVisible, setSectionLanguageModalVisible] = useState(false);
@@ -870,6 +898,373 @@ export default function SettingsScreen({ navigation, route }) {
     setColorInput(normalized);
     setHexModalValue(normalized);
     setHexModalError(null);
+  };
+
+  // Fetch team members for Manage Team modal
+  const fetchTeamMembersForModal = async () => {
+    if (proxySessionId) {
+      setLoadingTeamMembers(true);
+      try {
+        const result = await proxyService.getTeamMembers(proxySessionId);
+        if (result.success && result.teamMembers) {
+          setTeamMembersList(result.teamMembers);
+        } else {
+          setTeamMembersList([]);
+        }
+      } catch (error) {
+        console.error('[SETTINGS] Failed to fetch team members:', error);
+        setTeamMembersList([]);
+      } finally {
+        setLoadingTeamMembers(false);
+      }
+    } else {
+      setTeamMembersList([]);
+    }
+  };
+
+  // Handler functions for Manage Team modal
+  const handleGenerateInvite = async () => {
+    if (!canAddMoreInvites()) {
+      Alert.alert('Cannot add more invites', 'You have reached your plan limit.');
+      return;
+    }
+
+    if (!proxySessionId) {
+      Alert.alert('Error', 'Proxy session not initialized. Please connect your team first.');
+      return;
+    }
+
+    const newToken = generateInviteToken();
+
+    try {
+      console.log('[SETTINGS] Generating invite token...', { proxySessionId, newToken });
+
+      // Add token to proxy server
+      await proxyService.addInviteToken(proxySessionId, newToken);
+      console.log('[SETTINGS] Token added to proxy server');
+
+      // Save token locally
+      await addInviteToken(newToken);
+      console.log('[SETTINGS] Invite token generated and saved successfully');
+
+      // Refresh team members list
+      await fetchTeamMembersForModal();
+
+      Alert.alert(
+        'Invite Generated',
+        `A new invite has been created. You can now share it with your team member.`
+      );
+    } catch (error) {
+      console.error('[SETTINGS] Failed to generate invite token:', error);
+      Alert.alert('Error', `Failed to generate invite token: ${error.message}`);
+    }
+  };
+
+  const handleTestInvite = async (token) => {
+    console.log('[TEST_INVITE] handleTestInvite called with token:', token);
+    console.log('[TEST_INVITE] Current state:', { isTestingInvite, showManageTeamModal, proxySessionId });
+    
+    // Prevent double-click
+    if (isTestingInvite) {
+      console.log('[TEST_INVITE] Already testing invite, ignoring');
+      return;
+    }
+    
+    if (!proxySessionId) {
+      Alert.alert('Error', 'Proxy session not initialized.');
+      return;
+    }
+
+    // Close Manage Team modal first
+    console.log('[TEST_INVITE] Closing Manage Team modal first');
+    setShowManageTeamModal(false);
+    
+    // Set loading state
+    setIsTestingInvite(true);
+    
+    // Wait a bit for modal to close, then directly join team with default test name
+    setTimeout(async () => {
+      try {
+        console.log('[TEST_INVITE] Starting direct team join with test name');
+        
+        // Use a default test member name
+        const testMemberName = 'Test Member';
+        
+        // Update settings with the test member name
+        const settingsKey = 'app-settings';
+        const storedSettings = await AsyncStorage.getItem(settingsKey);
+        const settings = storedSettings ? JSON.parse(storedSettings) : {};
+        const originalName = settings.userName || '';
+        
+        // Set the test member name
+        await AsyncStorage.setItem(settingsKey, JSON.stringify({
+          ...settings,
+          userName: testMemberName
+        }));
+
+        console.log('[TEST_INVITE] Stored test member name in AsyncStorage');
+
+        // Update SettingsContext with the team member name before joining
+        await updateUserInfo(testMemberName);
+        console.log('[TEST_INVITE] Updated SettingsContext with team member name:', testMemberName);
+
+        const result = await joinTeam(token, proxySessionId);
+        console.log('[TEST_INVITE] Join team result:', result);
+        
+        if (result.success) {
+          console.log('[TEST_INVITE] Successfully joined team, navigating to Home');
+          
+          // Wait a bit for state to fully update
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Reset loading state before navigation
+          setIsTestingInvite(false);
+          
+          // Navigate to Home screen to show team member mode
+          if (navigation) {
+            // Use goBack first to close Settings, then navigate to Home
+            navigation.goBack();
+            setTimeout(() => {
+              console.log('[TEST_INVITE] Navigating to Home after goBack');
+              navigation.navigate('Home');
+            }, 200);
+          }
+        } else {
+          console.log('[TEST_INVITE] Join team failed. Error:', result.error);
+          // Restore original name if join failed
+          await AsyncStorage.setItem(settingsKey, JSON.stringify({
+            ...settings,
+            userName: originalName
+          }));
+          if (originalName) {
+            await updateUserInfo(originalName);
+          }
+          Alert.alert('Error', result.error || 'Failed to join team.');
+          setIsTestingInvite(false);
+        }
+      } catch (error) {
+        console.error('[TEST_INVITE] Failed to test invite (catch block):', error);
+        Alert.alert('Error', 'Failed to join team. Please try again.');
+        setIsTestingInvite(false);
+      }
+    }, 300);
+  };
+
+  const handleTestJoinWithName = async () => {
+    console.log('[TEST_JOIN] ====== handleTestJoinWithName CALLED ======');
+    console.log('[TEST_JOIN] Initial state:', {
+      isTestingInvite,
+      testMemberName: testMemberName?.substring(0, 20),
+      currentTestToken: currentTestToken?.substring(0, 10),
+      proxySessionId: proxySessionId?.substring(0, 10),
+      showTestNameInput,
+      showManageTeamModal,
+    });
+    
+    // Prevent double-click
+    if (isTestingInvite) {
+      console.log('[TEST_JOIN] Already processing test join, ignoring');
+      return;
+    }
+    
+    if (!testMemberName.trim()) {
+      console.log('[TEST_JOIN] No name provided, showing alert');
+      Alert.alert('Name Required', 'Please enter a name to test the team member setup.');
+      return;
+    }
+
+    if (!currentTestToken || !proxySessionId) {
+      console.log('[TEST_JOIN] Missing token or session ID:', { currentTestToken: !!currentTestToken, proxySessionId: !!proxySessionId });
+      Alert.alert('Error', 'Missing invite token or session ID.');
+      setShowTestNameInput(false);
+      setIsTestingInvite(false);
+      return;
+    }
+
+    console.log('[TEST_JOIN] Setting loading state and storing values');
+    // Set loading state
+    setIsTestingInvite(true);
+    
+    // Store values before closing modals
+    const tokenToUse = currentTestToken;
+    const memberName = testMemberName.trim();
+    
+    console.log('[TEST_JOIN] Stored values:', {
+      tokenToUse: tokenToUse?.substring(0, 10),
+      memberName,
+      proxySessionId: proxySessionId?.substring(0, 10),
+    });
+    
+    // Close both modals first
+    console.log('[TEST_JOIN] Closing modals');
+    setShowTestNameInput(false);
+    setShowManageTeamModal(false);
+    setTestMemberName('');
+    setCurrentTestToken(null);
+    console.log('[TEST_JOIN] Modals closed, waiting for interactions...');
+    
+    // Wait for all interactions and animations to complete before processing
+    InteractionManager.runAfterInteractions(async () => {
+      console.log('[TEST_JOIN] ====== InteractionManager callback STARTED ======');
+      try {
+        console.log('[TEST_JOIN] Starting team join process after interactions complete');
+        
+        // Update settings with the test member name
+        console.log('[TEST_JOIN] Step 1: Reading settings from AsyncStorage');
+        const settingsKey = 'app-settings';
+        const storedSettings = await AsyncStorage.getItem(settingsKey);
+        console.log('[TEST_JOIN] Step 1 complete: Settings read');
+        
+        const settings = storedSettings ? JSON.parse(storedSettings) : {};
+        const originalName = settings.userName || '';
+        console.log('[TEST_JOIN] Step 2: Parsed settings, originalName:', originalName);
+        
+        // Set the test member name
+        console.log('[TEST_JOIN] Step 3: Writing member name to AsyncStorage');
+        await AsyncStorage.setItem(settingsKey, JSON.stringify({
+          ...settings,
+          userName: memberName
+        }));
+        console.log('[TEST_JOIN] Step 3 complete: Member name written to AsyncStorage');
+
+        console.log('[TEST_JOIN] Step 4: Calling updateUserInfo');
+        // Update SettingsContext with the team member name before joining
+        await updateUserInfo(memberName);
+        console.log('[TEST_JOIN] Step 4 complete: SettingsContext updated with team member name:', memberName);
+
+        console.log('[TEST_JOIN] Step 5: Calling joinTeam');
+        console.log('[TEST_JOIN] Join team params:', { 
+          token: tokenToUse?.substring(0, 10), 
+          proxySessionId: proxySessionId?.substring(0, 10),
+          memberName: memberName
+        });
+        const result = await joinTeam(tokenToUse, proxySessionId);
+        console.log('[TEST_JOIN] Step 5 complete: Join team result:', result);
+        
+        if (result.success) {
+          console.log('[TEST_JOIN] Step 6: Join successful, waiting for state update...');
+          
+          // Wait a bit for state to fully update
+          await new Promise(resolve => setTimeout(resolve, 300));
+          console.log('[TEST_JOIN] Step 6 complete: State update wait finished');
+          
+          console.log('[TEST_JOIN] Step 7: Resetting loading state');
+          // Reset loading state before navigation
+          setIsTestingInvite(false);
+          console.log('[TEST_JOIN] Step 7 complete: Loading state reset');
+          
+          console.log('[TEST_JOIN] Step 8: Starting navigation');
+          // Navigate to Home screen to show team member mode
+          if (navigation) {
+            console.log('[TEST_JOIN] Navigation object exists, calling goBack()');
+            // Use goBack first to close Settings, then navigate to Home
+            // This ensures we're not navigating from a modal context
+            navigation.goBack();
+            console.log('[TEST_JOIN] goBack() called, waiting 200ms before navigate');
+            setTimeout(() => {
+              console.log('[TEST_JOIN] Step 9: Calling navigate("Home")');
+              navigation.navigate('Home');
+              console.log('[TEST_JOIN] Step 9 complete: navigate("Home") called');
+            }, 200);
+          } else {
+            console.log('[TEST_JOIN] ERROR: Navigation object is null!');
+          }
+        } else {
+          console.log('[TEST_JOIN] Join failed, restoring original name');
+          // Restore original name if join failed
+          await AsyncStorage.setItem(settingsKey, JSON.stringify({
+            ...settings,
+            userName: originalName
+          }));
+          if (originalName) {
+            await updateUserInfo(originalName);
+          }
+          setIsTestingInvite(false);
+          Alert.alert('Error', result.error || 'Failed to join team.');
+        }
+      } catch (error) {
+        console.error('[TEST_JOIN] ====== ERROR IN INTERACTION MANAGER CALLBACK ======');
+        console.error('[TEST_JOIN] Error details:', error);
+        console.error('[TEST_JOIN] Error message:', error.message);
+        console.error('[TEST_JOIN] Error stack:', error.stack);
+        setIsTestingInvite(false);
+        Alert.alert('Error', 'Failed to join team. Please try again.');
+      }
+      console.log('[TEST_JOIN] ====== InteractionManager callback COMPLETED ======');
+    });
+    console.log('[TEST_JOIN] ====== handleTestJoinWithName EXITING (InteractionManager scheduled) ======');
+  };
+
+  const handleCopyToken = (token) => {
+    // Copy token with sessionId for proxy server
+    const inviteData = `${token}|${proxySessionId}`;
+    Clipboard.setString(inviteData);
+    Alert.alert('Copied!', 'Invite code copied to clipboard. Share this code with your team member.');
+  };
+
+  const handleShareInvite = async (token) => {
+    try {
+      // Create invite code with token and sessionId for proxy server
+      const inviteData = `${token}|${proxySessionId}`;
+
+      // Get App Store links from environment variables
+      const iosAppStoreLink = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/proofpix';
+      const androidPlayStoreLink = process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.proofpix';
+
+      // Share the instructions message first
+      await Share.share({
+        message: `Join my ProofPix team!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\nAfter installing, open the app, go to "Join Team" and paste the invite code I'll send you next.`,
+        title: 'ProofPix Team Invite'
+      });
+
+      // After first share completes, ask user if they want to share the code
+      Alert.alert(
+        'Share Invite Code?',
+        'Now share the invite code as a separate message so your team member can easily copy it.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Share Code',
+            onPress: async () => {
+              await Share.share({
+                message: inviteData,
+                title: 'ProofPix Invite Code'
+              });
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Could not share the invite.');
+    }
+  };
+
+  const handleDeleteInvite = (token) => {
+    Alert.alert(
+      'Delete Invite',
+      'This will permanently delete this unused invite code. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (proxySessionId) {
+                await proxyService.removeInviteToken(proxySessionId, token);
+                console.log('[SETTINGS] Token removed from proxy server');
+              }
+              await removeInviteToken(token);
+              await fetchTeamMembersForModal();
+              Alert.alert('Deleted', 'The invite code has been deleted successfully.');
+            } catch (error) {
+              console.error('[SETTINGS] Failed to delete invite token:', error);
+              Alert.alert('Error', 'Failed to delete invite code. Please try again.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleSetupTeam = async () => {
@@ -2909,20 +3304,32 @@ export default function SettingsScreen({ navigation, route }) {
                   const accountType = displayedActiveAccount?.accountType || 'google';
                   const isDropboxAccount = accountType === 'dropbox';
                   
+                  // Check if team is connected (proxySessionId exists and userMode === 'admin')
+                  const isTeamConnected = proxySessionId && userMode === 'admin';
+                  
                   return (
-                    <View style={[styles.accountItem, isDropboxAccount && styles.accountItemDropbox]}>
-                      {/* First line: Account name with scrolling + checkbox + icon */}
-                      <ScrollingAccountName
-                        text={activeAccountEmail}
-                        isActive={true}
-                        accountType={accountType}
-                        onToggle={() => {
-                          // Active account checkbox - no action needed, just show as active
-                        }}
-                      />
-                      {/* Second line: Buttons */}
-                      <View style={styles.accountActionsRow}>
-                        {/* Yellow button (left) - Set Up Team */}
+                    <>
+                      {/* Team Connected Banner - Show above account card when team is connected */}
+                      {isTeamConnected && (
+                        <View style={styles.teamConnectedBanner}>
+                          <Text style={styles.teamConnectedBannerText}>
+                            {t('settings.teamConnected', { defaultValue: 'Team Connected' })}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={[styles.accountItem, isDropboxAccount && styles.accountItemDropbox]}>
+                        {/* First line: Account name with scrolling + checkbox + icon */}
+                        <ScrollingAccountName
+                          text={activeAccountEmail}
+                          isActive={true}
+                          accountType={accountType}
+                          onToggle={() => {
+                            // Active account checkbox - no action needed, just show as active
+                          }}
+                        />
+                        {/* Second line: Buttons */}
+                        <View style={styles.accountActionsRow}>
+                          {/* Yellow button (left) - Set Up Team or Manage Team */}
                         {(() => {
                           const setupTeamDisabled = isSigningIn || ((!userPlan || userPlan === 'starter') || userPlan === 'pro');
                           const setupTeamStyleDisabled = ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn);
@@ -2950,9 +3357,33 @@ export default function SettingsScreen({ navigation, route }) {
                               isAuthenticated,
                               accountType,
                               isDropboxAccount,
+                              isTeamConnected,
                               timestamp: Date.now()
                             });
                             
+                            // If team is connected, open Manage Team modal
+                            if (isTeamConnected) {
+                              // Fetch team members before opening modal
+                              setTeamNameInput(teamName || ''); // Initialize with current team name
+                              setLoadingTeamMembers(true);
+                              try {
+                                const result = await proxyService.getTeamMembers(proxySessionId);
+                                if (result.success && result.teamMembers) {
+                                  setTeamMembersList(result.teamMembers);
+                                } else {
+                                  setTeamMembersList([]);
+                                }
+                              } catch (error) {
+                                console.error('[SETTINGS] Failed to fetch team members:', error);
+                                setTeamMembersList([]);
+                              } finally {
+                                setLoadingTeamMembers(false);
+                                setShowManageTeamModal(true);
+                              }
+                              return;
+                            }
+                            
+                            // If team is not connected, proceed with setup
                             const isPro = userPlan === 'pro';
                             const isBusiness = userPlan === 'business';
                             const isEnterprise = userPlan === 'enterprise';
@@ -3023,7 +3454,10 @@ export default function SettingsScreen({ navigation, route }) {
                             styles.accountActionButtonTextYellow,
                             ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.buttonTextDisabled
                           ]}>
-                            {t('settings.setUpTeam', { defaultValue: 'Set Up Team' })}
+                            {isTeamConnected 
+                              ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
+                              : t('settings.setUpTeam', { defaultValue: 'Set Up Team' })
+                            }
                           </Text>
                         </TouchableOpacity>
                         {/* Light red button (right) - Disconnect or Reconnect */}
@@ -3118,6 +3552,7 @@ export default function SettingsScreen({ navigation, route }) {
                         </TouchableOpacity>
                       </View>
                     </View>
+                    </>
                   );
                 })()}
 
@@ -3499,7 +3934,7 @@ export default function SettingsScreen({ navigation, route }) {
                 )}
               </>
 
-              {userMode === 'admin' && isSetupComplete() && (
+              {userMode === 'admin' && isSetupComplete() && false && (
                 <>
                   <View style={styles.connectedStatus}>
                     <Text style={styles.connectedText}>✓ {t('settings.teamConnected')}</Text>
@@ -4403,10 +4838,11 @@ export default function SettingsScreen({ navigation, route }) {
                     </View>
                   )}
 
-                  {/* Add Account Buttons - Hide if account type is already connected */}
+                  {/* Add Account Buttons - For Enterprise: Always show both buttons. For others: Hide if account type is already connected */}
                   <View style={styles.addAccountButtons}>
                     {/* Check if Google account is already connected in connectedAccounts */}
-                    {isGoogleSignInAvailable && !connectedAccounts?.some(acc => acc.accountType === 'google' || (!acc.accountType && acc.id)) && (
+                    {/* For Enterprise: Always show (can have multiple accounts). For others: Only show if not connected */}
+                    {isGoogleSignInAvailable && (userPlan === 'enterprise' || !connectedAccounts?.some(acc => acc.accountType === 'google' || (!acc.accountType && acc.id))) && (
                       <TouchableOpacity
                         style={[styles.featureButton, styles.connectGoogleButton]}
                         onPress={async () => {
@@ -4437,7 +4873,8 @@ export default function SettingsScreen({ navigation, route }) {
                     )}
 
                     {/* Check if Dropbox account is already connected in connectedAccounts */}
-                    {dropboxAuthService.isConfigured() && !connectedAccounts?.some(acc => acc.accountType === 'dropbox') && (
+                    {/* For Enterprise: Always show (can have multiple accounts). For others: Only show if not connected */}
+                    {dropboxAuthService.isConfigured() && (userPlan === 'enterprise' || !connectedAccounts?.some(acc => acc.accountType === 'dropbox')) && (
                       <TouchableOpacity
                         style={[styles.featureButton, styles.connectDropboxButton]}
                         onPress={async () => {
@@ -4667,6 +5104,340 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
           </Modal>
         )}
+
+        {/* Manage Team Modal */}
+        <Modal
+          isVisible={showManageTeamModal}
+          onBackdropPress={() => {
+            // Don't reset teamNameInput - preserve it for next time
+            setShowManageTeamModal(false);
+          }}
+          onBackButtonPress={() => {
+            // Don't reset teamNameInput - preserve it for next time
+            setShowManageTeamModal(false);
+          }}
+          style={styles.bottomModal}
+          useNativeDriver
+          onModalWillShow={() => {
+            // Initialize team name when modal is about to show (before animation)
+            // This ensures it's set even if teamName changed
+            setTeamNameInput(teamName || '');
+          }}
+        >
+          <View style={styles.bottomSheetContainer}>
+            <View style={styles.customModalSheet}>
+              <View style={styles.customModalHeader}>
+                <Text style={styles.customModalTitle}>{t('settings.manageTeam', { defaultValue: 'Manage Team' })}</Text>
+                <TouchableOpacity
+                  onPress={() => setShowManageTeamModal(false)}
+                  style={styles.customModalCloseButton}
+                >
+                  <Text style={styles.customModalCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.customModalScroll}
+              >
+                <View style={styles.customModalContent}>
+                  {/* Team Name */}
+                  <View style={styles.teamManagementSection}>
+                    <Text style={styles.teamManagementLabel}>{t('settings.teamName', { defaultValue: 'Team Name' })}</Text>
+                    <TextInput
+                      style={styles.teamNameInput}
+                      value={teamNameInput}
+                      onChangeText={(text) => {
+                        setTeamNameInput(text);
+                      }}
+                      placeholder={t('settings.enterTeamName', { defaultValue: 'Enter team name' })}
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+
+                  {/* Team Invites */}
+                  <View style={styles.teamManagementSection}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={styles.teamManagementLabel}>{t('settings.teamInvites', { defaultValue: 'Team Invites' })}</Text>
+                      {(() => {
+                        const unusedInvites = (inviteTokens || []).filter(token => {
+                          const isUsedByMember = teamMembersList.some(member => member.token === token);
+                          return !isUsedByMember;
+                        });
+                        return (
+                          <Text style={styles.inviteCountText}>
+                            {unusedInvites.length} unused
+                          </Text>
+                        );
+                      })()}
+                    </View>
+                    {loadingTeamMembers ? (
+                      <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginVertical: 10 }} />
+                    ) : (
+                      <>
+                        {(() => {
+                          const unusedInvites = (inviteTokens || []).filter(token => {
+                            const isUsedByMember = teamMembersList.some(member => member.token === token);
+                            return !isUsedByMember;
+                          });
+                          return unusedInvites.length > 0 ? (
+                            <FlatList
+                              data={unusedInvites}
+                              renderItem={({ item }) => (
+                                <View style={styles.inviteItemFull}>
+                                  <View style={styles.tokenContainer}>
+                                    <Text style={styles.tokenLabel}>Code:</Text>
+                                    <Text style={styles.inviteToken} selectable>{item}</Text>
+                                  </View>
+                                  <View style={styles.buttonGroup}>
+                                    <TouchableOpacity onPress={() => handleCopyToken(item)} style={styles.actionButton}>
+                                      <Text style={styles.copyButton}>Copy</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => handleShareInvite(item)} style={styles.actionButton}>
+                                      <Text style={styles.shareButton}>Share</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity 
+                                      onPress={() => handleTestInvite(item)} 
+                                      style={[styles.actionButton, (isTestingInvite || showTestNameInput) && styles.buttonDisabled]}
+                                      disabled={isTestingInvite || showTestNameInput}
+                                    >
+                                      <Text style={[styles.testButton, (isTestingInvite || showTestNameInput) && styles.buttonTextDisabled]}>
+                                        Test
+                                      </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      onPress={() => handleDeleteInvite(item)}
+                                      style={[styles.actionButton, styles.deleteButtonContainer]}
+                                    >
+                                      <Text style={styles.deleteButton}>✕</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                </View>
+                              )}
+                              keyExtractor={(item) => item}
+                              scrollEnabled={false}
+                            />
+                          ) : (
+                            <Text style={styles.emptyText}>{t('settings.noInvites', { defaultValue: 'No invites yet.' })}</Text>
+                          );
+                        })()}
+                      </>
+                    )}
+                    {canAddMoreInvites() && (
+                      <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
+                        <Text style={styles.generateButtonText}>Generate New Invite</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Team Members */}
+                  <View style={styles.teamManagementSection}>
+                    <Text style={styles.teamManagementLabel}>{t('settings.teamMembers', { defaultValue: 'Team Members' })}</Text>
+                    {loadingTeamMembers ? (
+                      <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginVertical: 10 }} />
+                    ) : (
+                      <>
+                        {teamMembersList && teamMembersList.length > 0 ? (
+                          <FlatList
+                            data={teamMembersList}
+                            renderItem={({ item }) => {
+                              const memberToken = item.token;
+                              const hasActiveInvite = memberToken && inviteTokens?.includes(memberToken);
+                              return (
+                                <View style={styles.memberItemFull}>
+                                  <View style={styles.memberInfo}>
+                                    <Text style={styles.memberName}>{item.name || 'Unknown'}</Text>
+                                    {memberToken && (
+                                      <View style={styles.tokenContainer}>
+                                        <Text style={styles.tokenLabel}>Invite Code:</Text>
+                                        <Text style={styles.inviteToken} selectable>{memberToken}</Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                  {memberToken && hasActiveInvite && (
+                                    <TouchableOpacity 
+                                      onPress={async () => {
+                                        Alert.alert(
+                                          'Revoke Invite',
+                                          'This will revoke the invite token for this team member. They will no longer be able to upload using this code.',
+                                          [
+                                            { text: 'Cancel', style: 'cancel' },
+                                            {
+                                              text: 'Revoke',
+                                              style: 'destructive',
+                                              onPress: async () => {
+                                                try {
+                                                  if (proxySessionId) {
+                                                    await proxyService.removeInviteToken(proxySessionId, memberToken);
+                                                  }
+                                                  await removeInviteToken(memberToken);
+                                                  await fetchTeamMembersForModal();
+                                                  Alert.alert('Invite Revoked', 'The invite has been revoked successfully.');
+                                                } catch (error) {
+                                                  console.error('[SETTINGS] Failed to revoke invite token:', error);
+                                                  Alert.alert('Error', 'Failed to revoke invite token. Please try again.');
+                                                }
+                                              }
+                                            }
+                                          ]
+                                        );
+                                      }} 
+                                      style={[styles.actionButton, styles.revokeButtonContainer]}
+                                    >
+                                      <Text style={styles.revokeButton}>Revoke</Text>
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
+                              );
+                            }}
+                            keyExtractor={(item, index) => `member-${index}-${item.token || index}`}
+                            scrollEnabled={false}
+                          />
+                        ) : (
+                          <Text style={styles.emptyText}>{t('settings.noTeamMembers', { defaultValue: 'No team members yet.' })}</Text>
+                        )}
+                      </>
+                    )}
+                  </View>
+
+                  {/* Action Buttons */}
+                  <View style={styles.teamManagementButtons}>
+                    <TouchableOpacity
+                      style={[styles.teamManagementButton, styles.teamManagementButtonCancel]}
+                      onPress={() => {
+                        setTeamNameInput(''); // Reset input
+                        setShowManageTeamModal(false);
+                      }}
+                    >
+                      <Text style={styles.teamManagementButtonTextCancel}>
+                        {t('common.cancel', { defaultValue: 'Cancel' })}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.teamManagementButton, styles.teamManagementButtonConfirm]}
+                      onPress={async () => {
+                        try {
+                          // Update team name if changed
+                          const finalTeamName = teamNameInput !== '' ? teamNameInput : teamName;
+                          if (finalTeamName && finalTeamName !== teamName) {
+                            await updateTeamName(finalTeamName);
+                          }
+                          setShowManageTeamModal(false);
+                          setTeamNameInput('');
+                        } catch (error) {
+                          console.error('[SETTINGS] Error updating team name:', error);
+                          Alert.alert(t('common.error'), t('settings.teamUpdateError', { defaultValue: 'Failed to update team. Please try again.' }));
+                        }
+                      }}
+                    >
+                      <Text style={styles.teamManagementButtonTextConfirm}>
+                        {t('common.confirm', { defaultValue: 'Confirm' })}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Test Team Member Name Input Modal */}
+        <Modal
+          isVisible={showTestNameInput}
+          onModalWillShow={() => {
+            console.log('[TEST_MODAL] ====== Modal WILL SHOW ======', {
+              showTestNameInput,
+              testMemberName: testMemberName?.substring(0, 20),
+              currentTestToken: currentTestToken?.substring(0, 10),
+            });
+          }}
+          onModalShow={() => {
+            console.log('[TEST_MODAL] ====== Modal SHOWN ======', {
+              showTestNameInput,
+              testMemberName: testMemberName?.substring(0, 20),
+              currentTestToken: currentTestToken?.substring(0, 10),
+            });
+          }}
+          onBackdropPress={() => {
+            console.log('[TEST_MODAL] Backdrop pressed');
+            setShowTestNameInput(false);
+            setTestMemberName('');
+            setCurrentTestToken(null);
+            setIsTestingInvite(false);
+          }}
+          onBackButtonPress={() => {
+            console.log('[TEST_MODAL] Back button pressed');
+            setShowTestNameInput(false);
+            setTestMemberName('');
+            setCurrentTestToken(null);
+            setIsTestingInvite(false);
+          }}
+          style={styles.bottomModal}
+          useNativeDriver
+        >
+          <View style={styles.bottomSheetContainer}>
+            <View style={styles.testModalContent}>
+              <Text style={styles.testModalTitle}>Test Team Member Setup</Text>
+              <Text style={styles.testModalSubtitle}>
+                Enter a name to simulate the complete team member setup process.
+              </Text>
+              <TextInput
+                style={styles.testNameInput}
+                placeholder="Enter team member name"
+                placeholderTextColor={COLORS.GRAY}
+                value={testMemberName}
+                onChangeText={setTestMemberName}
+                autoFocus={true}
+                onSubmitEditing={handleTestJoinWithName}
+              />
+              <View style={styles.testModalButtons}>
+                {console.log('[TEST_MODAL] Rendering buttons:', {
+                  testMemberName: testMemberName?.substring(0, 20),
+                  testMemberNameTrimmed: testMemberName?.trim(),
+                  isTestingInvite,
+                  joinButtonDisabled: !testMemberName.trim() || isTestingInvite,
+                })}
+                <TouchableOpacity
+                  style={[styles.testModalButton, styles.testModalButtonCancel]}
+                  onPress={() => {
+                    console.log('[TEST_MODAL] Cancel button clicked');
+                    setShowTestNameInput(false);
+                    setTestMemberName('');
+                    setCurrentTestToken(null);
+                    setIsTestingInvite(false);
+                  }}
+                  disabled={isTestingInvite}
+                >
+                  <Text style={styles.testModalButtonTextCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.testModalButton, styles.testModalButtonJoin]}
+                  onPress={() => {
+                    console.log('[TEST_JOIN_BUTTON] ====== Join button CLICKED ======');
+                    console.log('[TEST_JOIN_BUTTON] Button state:', {
+                      testMemberName: testMemberName?.substring(0, 20),
+                      testMemberNameTrimmed: testMemberName?.trim(),
+                      isTestingInvite,
+                      currentTestToken: currentTestToken?.substring(0, 10),
+                      proxySessionId: proxySessionId?.substring(0, 10),
+                    });
+                    console.log('[TEST_JOIN_BUTTON] Calling handleTestJoinWithName...');
+                    handleTestJoinWithName();
+                  }}
+                  disabled={!testMemberName.trim() || isTestingInvite}
+                >
+                  {isTestingInvite ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={[styles.testModalButtonTextJoin, (!testMemberName.trim() || isTestingInvite) && styles.testModalButtonTextDisabled]}>
+                      Join
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -6710,5 +7481,284 @@ const sliderStyles = StyleSheet.create({
     },
     addAccountButtonText: {
       color: '#FFFFFF',
+    },
+    teamConnectedBanner: {
+      backgroundColor: '#E8F5E9',
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: '#4CAF50',
+    },
+    teamConnectedBannerText: {
+      color: '#2E7D32',
+      fontSize: 14,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    teamManagementSection: {
+      marginBottom: 24,
+    },
+    teamManagementLabel: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+      marginBottom: 8,
+    },
+    teamNameInput: {
+      borderWidth: 1,
+      borderColor: COLORS.BORDER,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 16,
+      color: COLORS.TEXT,
+      backgroundColor: '#fff',
+    },
+    inviteItemSimple: {
+      backgroundColor: '#f5f5f5',
+      padding: 12,
+      borderRadius: 8,
+      marginBottom: 8,
+    },
+    inviteTokenText: {
+      fontSize: 14,
+      color: COLORS.TEXT,
+      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    },
+    teamMemberItemSimple: {
+      backgroundColor: '#f5f5f5',
+      padding: 12,
+      borderRadius: 8,
+      marginBottom: 8,
+    },
+    teamMemberNameText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+      marginBottom: 4,
+    },
+    teamMemberTokenText: {
+      fontSize: 12,
+      color: COLORS.GRAY,
+      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    },
+    emptyText: {
+      fontSize: 14,
+      color: COLORS.GRAY,
+      fontStyle: 'italic',
+      textAlign: 'center',
+      paddingVertical: 16,
+    },
+    teamManagementButtons: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 24,
+    },
+    teamManagementButton: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    teamManagementButtonCancel: {
+      backgroundColor: '#f5f5f5',
+      borderWidth: 1,
+      borderColor: COLORS.BORDER,
+    },
+    teamManagementButtonConfirm: {
+      backgroundColor: COLORS.PRIMARY,
+    },
+    teamManagementButtonTextCancel: {
+      color: COLORS.TEXT,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    teamManagementButtonTextConfirm: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    inviteItemFull: {
+      flexDirection: 'column',
+      paddingVertical: 12,
+      paddingHorizontal: 10,
+      marginBottom: 10,
+      backgroundColor: '#fff',
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: '#ddd',
+    },
+    memberItemFull: {
+      flexDirection: 'row',
+      paddingVertical: 12,
+      paddingHorizontal: 10,
+      marginBottom: 10,
+      backgroundColor: '#fff',
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: '#ddd',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    tokenContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    tokenLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: '#666',
+      marginRight: 8,
+    },
+    inviteToken: {
+      fontSize: 13,
+      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+      color: '#007bff',
+      fontWeight: '600',
+      flex: 1,
+    },
+    buttonGroup: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      gap: 8,
+    },
+    actionButton: {
+      flex: 1,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+      backgroundColor: '#f0f0f0',
+      alignItems: 'center',
+    },
+    copyButton: {
+      color: '#28a745',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    shareButton: {
+      color: '#007bff',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    testButton: {
+      color: '#28a745',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    revokeButton: {
+      color: '#dc3545',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    revokeButtonContainer: {
+      backgroundColor: '#fff',
+      borderWidth: 1,
+      borderColor: '#dc3545',
+    },
+    deleteButton: {
+      color: '#dc3545',
+      fontSize: 18,
+      fontWeight: 'bold',
+    },
+    deleteButtonContainer: {
+      backgroundColor: '#fff',
+      borderWidth: 1,
+      borderColor: '#dc3545',
+      paddingHorizontal: 8,
+      maxWidth: 40,
+    },
+    generateButton: {
+      backgroundColor: '#007bff',
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginTop: 15,
+    },
+    generateButtonText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    memberInfo: {
+      flex: 1,
+    },
+    memberName: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#333',
+      marginBottom: 8,
+    },
+    inviteCountText: {
+      fontSize: 14,
+      color: '#666',
+      fontWeight: '600',
+    },
+    testModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    testModalContent: {
+      backgroundColor: 'white',
+      borderRadius: 12,
+      padding: 20,
+      width: '80%',
+      maxWidth: 400,
+    },
+    testModalTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      marginBottom: 8,
+      color: '#333',
+    },
+    testModalSubtitle: {
+      fontSize: 14,
+      color: '#666',
+      marginBottom: 16,
+    },
+    testNameInput: {
+      borderWidth: 1,
+      borderColor: COLORS.BORDER,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 16,
+      marginBottom: 20,
+      backgroundColor: '#f9f9f9',
+    },
+    testModalButtons: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 12,
+    },
+    testModalButton: {
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      borderRadius: 8,
+      minWidth: 80,
+      alignItems: 'center',
+    },
+    testModalButtonCancel: {
+      backgroundColor: '#f0f0f0',
+    },
+    testModalButtonJoin: {
+      backgroundColor: COLORS.PRIMARY,
+    },
+    testModalButtonTextCancel: {
+      color: '#666',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    testModalButtonTextJoin: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    testModalButtonTextDisabled: {
+      color: '#999',
     },
   });
