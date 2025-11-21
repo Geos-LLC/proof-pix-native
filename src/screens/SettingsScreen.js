@@ -594,6 +594,7 @@ export default function SettingsScreen({ navigation, route }) {
     canAddMoreInvites,
     getRemainingInvites,
     joinTeam,
+    planLimit,
   } = useAdmin();
   const isEnterprisePlan = userPlan === 'enterprise';
   // For enterprise, always use the active account from connectedAccounts
@@ -1224,10 +1225,11 @@ export default function SettingsScreen({ navigation, route }) {
     );
   };
 
-  // Helper function to check if all team slots are filled
+  // Helper function to check if all team slots are filled with actual team members
   const areAllSlotsFilledWithMembers = () => {
-    const remaining = getRemainingInvites();
-    return remaining === 0 && teamMembersList.length > 0;
+    // Check if the number of actual team members equals the plan limit
+    const actualMembersCount = teamMembersList?.length || 0;
+    return actualMembersCount >= planLimit && actualMembersCount > 0;
   };
 
   // Helper function to get price per member based on plan
@@ -1279,22 +1281,29 @@ export default function SettingsScreen({ navigation, route }) {
       // Get current plan limit from AdminContext
       const activeAccount = getActiveAccount();
       const planLimit = activeAccount?.planLimit || 5;
-      const currentInvitesCount = inviteTokens?.length || 0;
-      const slotsToFill = planLimit - currentInvitesCount;
 
-      if (slotsToFill <= 0) {
-        Alert.alert('Info', `Already at max capacity (${planLimit} invites).`);
-        return;
+      console.log(`[TEST] Filling team to max capacity: ${planLimit} members`);
+
+      // First, clear all existing invites and team members
+      const inviteTokensSet = new Set([...(inviteTokens || [])]);
+      const memberTokensSet = new Set(teamMembersList.map(member => member.token).filter(Boolean));
+      const allTokens = Array.from(new Set([...inviteTokensSet, ...memberTokensSet]));
+
+      if (allTokens.length > 0) {
+        console.log(`[TEST] Clearing ${allTokens.length} existing tokens first...`);
+        for (const token of allTokens) {
+          await proxyService.removeInviteToken(proxySessionId, token);
+          await removeInviteToken(token);
+        }
+        console.log(`[TEST] All existing tokens cleared`);
       }
 
-      console.log(`[TEST] Filling ${slotsToFill} slots to reach limit of ${planLimit}`);
-
-      // Generate the required number of invites
-      for (let i = 0; i < slotsToFill; i++) {
+      // Now fill all slots from 1 to planLimit
+      for (let i = 0; i < planLimit; i++) {
         const token = generateInviteToken();
-        const testMemberName = `Test Member ${currentInvitesCount + i + 1}`;
+        const testMemberName = `Test Member ${i + 1}`;
 
-        console.log(`[TEST] Creating member ${i + 1}/${slotsToFill}: ${testMemberName}`);
+        console.log(`[TEST] Creating member ${i + 1}/${planLimit}: ${testMemberName}`);
 
         // Add to proxy server first
         await proxyService.addInviteToken(proxySessionId, token);
@@ -1309,7 +1318,7 @@ export default function SettingsScreen({ navigation, route }) {
         console.log(`[TEST] Team member registered: ${testMemberName} with token ${token}`);
       }
 
-      console.log(`[TEST] All members created. Current inviteTokens count:`, inviteTokens?.length);
+      console.log(`[TEST] All ${planLimit} members created successfully`);
 
       // Show simple alert without blocking
       Alert.alert(
@@ -2695,6 +2704,17 @@ export default function SettingsScreen({ navigation, route }) {
                     <TouchableOpacity
                       style={[styles.planButton, userPlan === 'starter' && styles.planButtonSelected]}
                       onPress={async () => {
+                        // When switching to Starter, clear team data if coming from Business/Enterprise
+                        if (userPlan === 'business' || userPlan === 'enterprise') {
+                          try {
+                            // Clear team setup by updating plan limit to 0
+                            await updatePlanLimit(0);
+                            // Clear proxy session
+                            await initializeProxySession(null);
+                          } catch (error) {
+                            console.error('[SETTINGS] Error clearing team data:', error);
+                          }
+                        }
                         await updateUserPlan('starter');
                         setShowPlanSelection(false);
                       }}
@@ -2708,6 +2728,17 @@ export default function SettingsScreen({ navigation, route }) {
                     <TouchableOpacity
                       style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                       onPress={async () => {
+                        // When switching to Pro, clear team data if coming from Business/Enterprise
+                        if (userPlan === 'business' || userPlan === 'enterprise') {
+                          try {
+                            // Clear team setup by updating plan limit to 0
+                            await updatePlanLimit(0);
+                            // Clear proxy session
+                            await initializeProxySession(null);
+                          } catch (error) {
+                            console.error('[SETTINGS] Error clearing team data:', error);
+                          }
+                        }
                         await updateUserPlan('pro');
                         setShowPlanSelection(false);
                         navigation.navigate('GoogleSignUp', { plan: 'pro' });
@@ -3412,9 +3443,9 @@ export default function SettingsScreen({ navigation, route }) {
 
                   const accountType = displayedActiveAccount?.accountType || 'google';
                   const isDropboxAccount = accountType === 'dropbox';
-                  
-                  // Check if team is connected (proxySessionId exists and userMode === 'admin')
-                  const isTeamConnected = proxySessionId && userMode === 'admin';
+
+                  // Check if team is connected (proxySessionId exists, userMode === 'admin', AND plan supports teams)
+                  const isTeamConnected = proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise');
                   
                   return (
                     <>
@@ -3440,8 +3471,8 @@ export default function SettingsScreen({ navigation, route }) {
                         <View style={styles.accountActionsRow}>
                           {/* Yellow button (left) - Set Up Team or Manage Team */}
                         {(() => {
-                          const setupTeamDisabled = isSigningIn || ((!userPlan || userPlan === 'starter') || userPlan === 'pro');
-                          const setupTeamStyleDisabled = ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn);
+                          const setupTeamDisabled = isSigningIn;
+                          const setupTeamStyleDisabled = isSigningIn;
                           console.log('[SETUP_TEAM_BUTTON] Render check:', {
                             userPlan,
                             isSigningIn,
@@ -3456,9 +3487,9 @@ export default function SettingsScreen({ navigation, route }) {
                         })()}
                         <TouchableOpacity
                           style={[
-                            styles.accountActionButton, 
+                            styles.accountActionButton,
                             styles.accountActionButtonYellow,
-                            ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.buttonDisabled
+                            isSigningIn && styles.buttonDisabled
                           ]}
                           onPress={async () => {
                             console.log('[SETUP_TEAM_BUTTON] ====== onPress FIRED ======', {
@@ -3469,7 +3500,13 @@ export default function SettingsScreen({ navigation, route }) {
                               isTeamConnected,
                               timestamp: Date.now()
                             });
-                            
+
+                            // Show tier selection modal for Starter/Pro users
+                            if (userPlan === 'starter' || userPlan === 'pro') {
+                              setShowPlanModal(true);
+                              return;
+                            }
+
                             // If team is connected, open Manage Team modal
                             if (isTeamConnected) {
                               // Fetch team members before opening modal
@@ -3545,7 +3582,7 @@ export default function SettingsScreen({ navigation, route }) {
                             }
                           }}
                           disabled={(() => {
-                            const isDisabled = isSigningIn || ((!userPlan || userPlan === 'starter') || userPlan === 'pro');
+                            const isDisabled = isSigningIn;
                             console.log('[SETUP_TEAM_BUTTON] Disabled state:', {
                               isDisabled,
                               isSigningIn,
@@ -3559,9 +3596,8 @@ export default function SettingsScreen({ navigation, route }) {
                           })()}
                         >
                           <Text style={[
-                            styles.accountActionButtonText, 
-                            styles.accountActionButtonTextYellow,
-                            ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.buttonTextDisabled
+                            styles.accountActionButtonText,
+                            styles.accountActionButtonTextYellow
                           ]}>
                             {isTeamConnected 
                               ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
@@ -4424,6 +4460,15 @@ export default function SettingsScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[styles.planButton, userPlan === 'starter' && styles.planButtonSelected]}
                     onPress={async () => {
+                      // Clear team data when switching to Starter
+                      if (userPlan === 'business' || userPlan === 'enterprise') {
+                        try {
+                          await updatePlanLimit(0);
+                          await initializeProxySession(null);
+                        } catch (error) {
+                          console.error('[SETTINGS] Error clearing team data:', error);
+                        }
+                      }
                       await updateUserPlan('starter');
                       setShowPlanModal(false);
                     }}
@@ -4440,6 +4485,15 @@ export default function SettingsScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                     onPress={async () => {
+                      // Clear team data when switching to Pro
+                      if (userPlan === 'business' || userPlan === 'enterprise') {
+                        try {
+                          await updatePlanLimit(0);
+                          await initializeProxySession(null);
+                        } catch (error) {
+                          console.error('[SETTINGS] Error clearing team data:', error);
+                        }
+                      }
                       await updateUserPlan('pro');
                       setShowPlanModal(false);
                     }}
@@ -4456,8 +4510,18 @@ export default function SettingsScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                     onPress={async () => {
-                      await updateUserPlan('business');
-                      setShowPlanModal(false);
+                      try {
+                        // Set up business tier with 5 team member limit
+                        await updatePlanLimit(5);
+                        await updateUserPlan('business');
+                        setShowPlanModal(false);
+                      } catch (error) {
+                        console.error('[SETTINGS] Error setting up business plan:', error);
+                        Alert.alert(
+                          t('common.error'),
+                          t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                        );
+                      }
                     }}
                   >
                     <View style={styles.planButtonRow}>
@@ -5409,7 +5473,10 @@ export default function SettingsScreen({ navigation, route }) {
                     {areAllSlotsFilledWithMembers() && (userPlan === 'business' || userPlan === 'enterprise') ? (
                       <TouchableOpacity style={styles.addMemberButton} onPress={handleOpenAddMemberModal}>
                         <Text style={styles.addMemberButtonText}>
-                          Add Team Member ${getPricePerMember()}/member
+                          Add Team Member
+                        </Text>
+                        <Text style={styles.addMemberButtonPrice}>
+                          ${getPricePerMember()}/member
                         </Text>
                       </TouchableOpacity>
                     ) : canAddMoreInvites() ? (
@@ -7909,16 +7976,32 @@ const sliderStyles = StyleSheet.create({
       fontWeight: 'bold',
     },
     addMemberButton: {
-      backgroundColor: '#28a745',
-      padding: 15,
-      borderRadius: 8,
+      backgroundColor: '#fff',
+      borderWidth: 2,
+      borderColor: '#ddd',
+      borderRadius: 12,
+      paddingVertical: 16,
+      paddingHorizontal: 32,
       alignItems: 'center',
       marginTop: 15,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
     },
     addMemberButtonText: {
-      color: 'white',
-      fontSize: 16,
+      fontSize: 18,
       fontWeight: 'bold',
+      color: '#333',
+      fontFamily: FONTS.QUICKSAND_BOLD,
+    },
+    addMemberButtonPrice: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#4CAF50',
+      marginTop: 4,
+      fontFamily: FONTS.QUICKSAND_BOLD,
     },
     addMemberModalContent: {
       backgroundColor: 'white',
