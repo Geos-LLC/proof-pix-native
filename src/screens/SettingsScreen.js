@@ -5201,10 +5201,9 @@ export default function SettingsScreen({ navigation, route }) {
                             return !isUsedByMember;
                           });
                           return unusedInvites.length > 0 ? (
-                            <FlatList
-                              data={unusedInvites}
-                              renderItem={({ item }) => (
-                                <View style={styles.inviteItemFull}>
+                            <ScrollView style={styles.invitesScrollContainer} nestedScrollEnabled={true}>
+                              {unusedInvites.map((item) => (
+                                <View key={item} style={styles.inviteItemFull}>
                                   <View style={styles.tokenContainer}>
                                     <Text style={styles.tokenLabel}>Code:</Text>
                                     <Text style={styles.inviteToken} selectable>{item}</Text>
@@ -5216,8 +5215,8 @@ export default function SettingsScreen({ navigation, route }) {
                                     <TouchableOpacity onPress={() => handleShareInvite(item)} style={styles.actionButton}>
                                       <Text style={styles.shareButton}>Share</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity 
-                                      onPress={() => handleTestInvite(item)} 
+                                    <TouchableOpacity
+                                      onPress={() => handleTestInvite(item)}
                                       style={[styles.actionButton, (isTestingInvite || showTestNameInput) && styles.buttonDisabled]}
                                       disabled={isTestingInvite || showTestNameInput}
                                     >
@@ -5233,10 +5232,8 @@ export default function SettingsScreen({ navigation, route }) {
                                     </TouchableOpacity>
                                   </View>
                                 </View>
-                              )}
-                              keyExtractor={(item) => item}
-                              scrollEnabled={false}
-                            />
+                              ))}
+                            </ScrollView>
                           ) : (
                             <Text style={styles.emptyText}>{t('settings.noInvites', { defaultValue: 'No invites yet.' })}</Text>
                           );
@@ -7432,6 +7429,9 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 24,
     },
     teamMembersScrollContainer: {
+      maxHeight: 250,
+    },
+    invitesScrollContainer: {
       maxHeight: 250,
     },
     teamManagementLabel: {
