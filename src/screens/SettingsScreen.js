@@ -320,14 +320,8 @@ export default function SettingsScreen({ navigation, route }) {
     console.log('[TEST_MODAL_STATE] showTestNameInput changed:', showTestNameInput);
     if (showTestNameInput) {
       console.log('[TEST_MODAL_STATE] Modal should be visible now');
-      console.log('[TEST_MODAL_STATE] Current state:', {
-        testMemberName: testMemberName?.substring(0, 20),
-        currentTestToken: currentTestToken?.substring(0, 10),
-        proxySessionId: proxySessionId?.substring(0, 10),
-        showManageTeamModal,
-      });
     }
-  }, [showTestNameInput, testMemberName, currentTestToken, proxySessionId, showManageTeamModal]);
+  }, [showTestNameInput]);
   const [currentTestToken, setCurrentTestToken] = useState(null);
   const [trialActive, setTrialActive] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
@@ -962,92 +956,21 @@ export default function SettingsScreen({ navigation, route }) {
 
   const handleTestInvite = async (token) => {
     console.log('[TEST_INVITE] handleTestInvite called with token:', token);
-    console.log('[TEST_INVITE] Current state:', { isTestingInvite, showManageTeamModal, proxySessionId });
-    
-    // Prevent double-click
-    if (isTestingInvite) {
-      console.log('[TEST_INVITE] Already testing invite, ignoring');
+
+    // Prevent double-click - check if modal is already showing
+    if (showTestNameInput) {
+      console.log('[TEST_INVITE] Modal already showing, ignoring');
       return;
     }
-    
+
     if (!proxySessionId) {
       Alert.alert('Error', 'Proxy session not initialized.');
       return;
     }
 
-    // Close Manage Team modal first
-    console.log('[TEST_INVITE] Closing Manage Team modal first');
-    setShowManageTeamModal(false);
-    
-    // Set loading state
-    setIsTestingInvite(true);
-    
-    // Wait a bit for modal to close, then directly join team with default test name
-    setTimeout(async () => {
-      try {
-        console.log('[TEST_INVITE] Starting direct team join with test name');
-        
-        // Use a default test member name
-        const testMemberName = 'Test Member';
-        
-        // Update settings with the test member name
-        const settingsKey = 'app-settings';
-        const storedSettings = await AsyncStorage.getItem(settingsKey);
-        const settings = storedSettings ? JSON.parse(storedSettings) : {};
-        const originalName = settings.userName || '';
-        
-        // Set the test member name
-        await AsyncStorage.setItem(settingsKey, JSON.stringify({
-          ...settings,
-          userName: testMemberName
-        }));
-
-        console.log('[TEST_INVITE] Stored test member name in AsyncStorage');
-
-        // Update SettingsContext with the team member name before joining
-        await updateUserInfo(testMemberName);
-        console.log('[TEST_INVITE] Updated SettingsContext with team member name:', testMemberName);
-
-        const result = await joinTeam(token, proxySessionId);
-        console.log('[TEST_INVITE] Join team result:', result);
-        
-        if (result.success) {
-          console.log('[TEST_INVITE] Successfully joined team, navigating to Home');
-          
-          // Wait a bit for state to fully update
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-          // Reset loading state before navigation
-          setIsTestingInvite(false);
-          
-          // Navigate to Home screen to show team member mode
-          if (navigation) {
-            // Use goBack first to close Settings, then navigate to Home
-            navigation.goBack();
-            setTimeout(() => {
-              console.log('[TEST_INVITE] Navigating to Home after goBack');
-              navigation.navigate('Home');
-            }, 200);
-          }
-        } else {
-          console.log('[TEST_INVITE] Join team failed. Error:', result.error);
-          // Restore original name if join failed
-          await AsyncStorage.setItem(settingsKey, JSON.stringify({
-            ...settings,
-            userName: originalName
-          }));
-          if (originalName) {
-            await updateUserInfo(originalName);
-          }
-          Alert.alert('Error', result.error || 'Failed to join team.');
-          setIsTestingInvite(false);
-        }
-      } catch (error) {
-        console.error('[TEST_INVITE] Failed to test invite (catch block):', error);
-        Alert.alert('Error', 'Failed to join team. Please try again.');
-        setIsTestingInvite(false);
-      }
-    }, 300);
+    // Store the token and keep manage team modal open but show name input view
+    setCurrentTestToken(token);
+    setShowTestNameInput(true);
   };
 
   const handleTestJoinWithName = async () => {
@@ -5118,23 +5041,85 @@ export default function SettingsScreen({ navigation, route }) {
           }}
           style={styles.bottomModal}
           useNativeDriver
+          avoidKeyboard={true}
           onModalWillShow={() => {
             // Initialize team name when modal is about to show (before animation)
             // This ensures it's set even if teamName changed
             setTeamNameInput(teamName || '');
           }}
         >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
           <View style={styles.bottomSheetContainer}>
             <View style={styles.customModalSheet}>
               <View style={styles.customModalHeader}>
-                <Text style={styles.customModalTitle}>{t('settings.manageTeam', { defaultValue: 'Manage Team' })}</Text>
+                <Text style={styles.customModalTitle}>
+                  {showTestNameInput
+                    ? t('settings.testTeamMember', { defaultValue: 'Test Team Member' })
+                    : t('settings.manageTeam', { defaultValue: 'Manage Team' })
+                  }
+                </Text>
                 <TouchableOpacity
-                  onPress={() => setShowManageTeamModal(false)}
+                  onPress={() => {
+                    if (showTestNameInput) {
+                      setShowTestNameInput(false);
+                      setTestMemberName('');
+                      setCurrentTestToken(null);
+                    } else {
+                      setShowManageTeamModal(false);
+                    }
+                  }}
                   style={styles.customModalCloseButton}
                 >
                   <Text style={styles.customModalCloseText}>✕</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Test Name Input View */}
+              {showTestNameInput ? (
+                <View style={styles.customModalContent}>
+                  <Text style={styles.testModalSubtitle}>
+                    Enter a name to simulate the complete team member setup process.
+                  </Text>
+                  <TextInput
+                    style={styles.testNameInput}
+                    placeholder="Enter team member name"
+                    placeholderTextColor={COLORS.GRAY}
+                    value={testMemberName}
+                    onChangeText={setTestMemberName}
+                    autoFocus={true}
+                    onSubmitEditing={handleTestJoinWithName}
+                  />
+                  <View style={styles.testModalButtons}>
+                    <TouchableOpacity
+                      style={[styles.testModalButton, styles.testModalButtonCancel]}
+                      onPress={() => {
+                        setShowTestNameInput(false);
+                        setTestMemberName('');
+                        setCurrentTestToken(null);
+                      }}
+                      disabled={isTestingInvite}
+                    >
+                      <Text style={styles.testModalButtonTextCancel}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.testModalButton, styles.testModalButtonJoin]}
+                      onPress={handleTestJoinWithName}
+                      disabled={!testMemberName.trim() || isTestingInvite}
+                    >
+                      {isTestingInvite ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={[styles.testModalButtonTextJoin, (!testMemberName.trim() || isTestingInvite) && styles.testModalButtonTextDisabled]}>
+                          Join
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
               <ScrollView
                 bounces={false}
                 keyboardShouldPersistTaps="handled"
@@ -5337,71 +5322,10 @@ export default function SettingsScreen({ navigation, route }) {
                   </View>
                 </View>
               </ScrollView>
+              )}
             </View>
           </View>
-        </Modal>
-
-        {/* Test Team Member Name Input Modal */}
-        <Modal
-          isVisible={showTestNameInput}
-          onBackdropPress={() => {
-            setShowTestNameInput(false);
-            setTestMemberName('');
-            setCurrentTestToken(null);
-            setIsTestingInvite(false);
-          }}
-          onBackButtonPress={() => {
-            setShowTestNameInput(false);
-            setTestMemberName('');
-            setCurrentTestToken(null);
-            setIsTestingInvite(false);
-          }}
-          style={styles.bottomModal}
-          useNativeDriver
-        >
-          <View style={styles.bottomSheetContainer}>
-            <View style={styles.testModalContent}>
-              <Text style={styles.testModalTitle}>Test Team Member Setup</Text>
-              <Text style={styles.testModalSubtitle}>
-                Enter a name to simulate the complete team member setup process.
-              </Text>
-              <TextInput
-                style={styles.testNameInput}
-                placeholder="Enter team member name"
-                placeholderTextColor={COLORS.GRAY}
-                value={testMemberName}
-                onChangeText={setTestMemberName}
-                onSubmitEditing={handleTestJoinWithName}
-              />
-              <View style={styles.testModalButtons}>
-                <TouchableOpacity
-                  style={[styles.testModalButton, styles.testModalButtonCancel]}
-                  onPress={() => {
-                    setShowTestNameInput(false);
-                    setTestMemberName('');
-                    setCurrentTestToken(null);
-                    setIsTestingInvite(false);
-                  }}
-                  disabled={isTestingInvite}
-                >
-                  <Text style={styles.testModalButtonTextCancel}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.testModalButton, styles.testModalButtonJoin]}
-                  onPress={handleTestJoinWithName}
-                  disabled={!testMemberName.trim() || isTestingInvite}
-                >
-                  {isTestingInvite ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={[styles.testModalButtonTextJoin, (!testMemberName.trim() || isTestingInvite) && styles.testModalButtonTextDisabled]}>
-                      Join
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       </SafeAreaView>
     );
@@ -7669,10 +7593,27 @@ const sliderStyles = StyleSheet.create({
     },
     testModalContent: {
       backgroundColor: 'white',
-      borderRadius: 12,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
       padding: 20,
-      width: '80%',
+      width: '100%',
+    },
+    centeredModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 9999,
+      elevation: 9999,
+    },
+    centeredModalContent: {
+      backgroundColor: 'white',
+      borderRadius: 12,
+      padding: 24,
+      width: '85%',
       maxWidth: 400,
+      zIndex: 10000,
+      elevation: 10000,
     },
     testModalTitle: {
       fontSize: 18,
