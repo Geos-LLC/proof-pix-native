@@ -17,6 +17,7 @@ import {
   TouchableWithoutFeedback,
   Dimensions,
   PanResponder,
+  Animated,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -300,6 +301,8 @@ export default function SettingsScreen({ navigation, route }) {
   const LABEL_CORNER_OPTIONS = useMemo(() => getLabelCornerOptions(t), [t]);
 
   const [showPlanSelection, setShowPlanSelection] = useState(false);
+  const [showMultipleAccountsModal, setShowMultipleAccountsModal] = useState(false);
+  const [showTestToolsModal, setShowTestToolsModal] = useState(false);
   const [trialActive, setTrialActive] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
   const [trialPlan, setTrialPlan] = useState(null);
@@ -493,13 +496,42 @@ export default function SettingsScreen({ navigation, route }) {
           setDropboxUserInfo(userInfo);
           if (isAuth && userInfo) {
             console.log('[SETTINGS] Dropbox is authenticated:', userInfo.email);
+            
+            // Add Dropbox account to connected accounts for enterprise users if not already added
+            if (userPlan === 'enterprise' && upsertConnectedAccount) {
+              try {
+                const dropboxAccount = {
+                  id: userInfo.account_id || userInfo.email || `dropbox_${Date.now()}`,
+                  email: userInfo.email,
+                  name: userInfo.name?.display_name || userInfo.name?.given_name || userInfo.email,
+                  givenName: userInfo.name?.given_name || userInfo.name?.display_name,
+                  photo: null,
+                };
+                
+                // Check if account already exists
+                const existingAccount = connectedAccounts?.find(
+                  (account) => account.id === dropboxAccount.id && account.accountType === 'dropbox'
+                );
+                
+                if (!existingAccount) {
+                  await upsertConnectedAccount(dropboxAccount, {
+                    accountType: 'dropbox',
+                    userMode: userMode || 'admin',
+                    isActive: false, // Don't auto-activate on load
+                  });
+                  console.log('[SETTINGS] Dropbox account added to connected accounts on load');
+                }
+              } catch (accountError) {
+                console.error('[SETTINGS] Error adding Dropbox account to connected accounts:', accountError);
+              }
+            }
           }
         } catch (error) {
           console.error('[SETTINGS] Error loading Dropbox tokens:', error);
         }
       };
       loadDropboxTokens();
-    }, [])
+    }, [userPlan, connectedAccounts, userMode, upsertConnectedAccount])
   );
 
   const {
@@ -523,19 +555,27 @@ export default function SettingsScreen({ navigation, route }) {
     initializeProxySession,
     teamName,
     updateTeamName,
+    updatePlanLimit,
     switchToIndividualMode,
     disconnectAllAccounts,
     connectedAccounts,
     removeConnectedAccount,
+    upsertConnectedAccount,
+    activateConnectedAccount,
   } = useAdmin();
   const isEnterprisePlan = userPlan === 'enterprise';
+  // For enterprise, always use the active account from connectedAccounts
+  // For non-enterprise, use adminUserInfo (the currently authenticated account)
   const activeEnterpriseAccount = isEnterprisePlan
     ? connectedAccounts?.find((account) => account.isActive)
     : null;
   const otherEnterpriseAccounts = isEnterprisePlan
     ? (connectedAccounts || []).filter((account) => !account.isActive)
     : [];
-  const displayedActiveAccount = activeEnterpriseAccount || adminUserInfo;
+  // Only show the active account - for enterprise use activeEnterpriseAccount, for others use adminUserInfo
+  const displayedActiveAccount = isEnterprisePlan 
+    ? (activeEnterpriseAccount || null) 
+    : adminUserInfo;
 
   const [name, setName] = useState(userName);
   
@@ -584,6 +624,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [dropboxUserInfo, setDropboxUserInfo] = useState(null);
   const [adminInfo, setAdminInfo] = useState(null);
   const [loadingAdminInfo, setLoadingAdminInfo] = useState(false);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
@@ -942,33 +983,64 @@ export default function SettingsScreen({ navigation, route }) {
     }
   };
 
-  const handleActivateConnectedAccount = (account) => {
+  const handleActivateConnectedAccount = async (account) => {
     if (!account || account.isActive) {
       return;
     }
 
-    if (!isGoogleSignInAvailable) {
-      Alert.alert(
-        t('settings.unavailable'),
-        t('settings.googleSignInUnavailable')
-      );
+    try {
+      setIsSigningIn(true);
+      // Check if account already exists in connectedAccounts
+      const existingAccount = connectedAccounts.find(acc => acc.id === account.id);
+      if (existingAccount) {
+        // Account exists, just activate it by signing in with that account
+        // The upsertConnectedAccount in adminSignIn will handle setting it as active
+        await adminSignIn();
+      } else {
+        // Account doesn't exist yet, need to sign in to add it
+        await adminSignIn();
+      }
+    } catch (error) {
+      console.error('[SETTINGS] Error activating account:', error);
+      Alert.alert(t('common.error'), t('settings.switchAccountError'));
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleDisconnectActiveAccount = async (account) => {
+    if (!account || !account.isActive) {
       return;
     }
 
     Alert.alert(
-      t('settings.switchGoogleAccount'),
-      t('settings.switchGoogleAccountMessage', { email: account.email }),
+      t('settings.disconnectAccount', { defaultValue: 'Disconnect Account' }),
+      t('settings.disconnectAccountMessage', { 
+        defaultValue: 'Are you sure you want to disconnect this account?',
+        email: account.email 
+      }),
       [
         { text: t('common.cancel'), style: 'cancel' },
         {
-          text: t('settings.switch'),
+          text: t('settings.disconnect', { defaultValue: 'Disconnect' }),
+          style: 'destructive',
           onPress: async () => {
-            setIsSigningIn(true);
             try {
-              await adminSignIn();
+              setIsSigningIn(true);
+              // Remove the account from connected accounts
+              await removeConnectedAccount(account.id);
+              // Sign out if this was the only account, or switch to another account
+              const remainingAccounts = connectedAccounts.filter(acc => acc.id !== account.id);
+              if (remainingAccounts.length === 0) {
+                await signOut();
+              } else {
+                // Switch to the first remaining account
+                const nextAccount = remainingAccounts[0];
+                await handleActivateConnectedAccount(nextAccount);
+              }
             } catch (error) {
-              console.error('[SETTINGS] Error switching connected account:', error);
-              Alert.alert(t('common.error'), t('settings.switchAccountError'));
+              console.error('[SETTINGS] Failed to disconnect account:', error);
+              Alert.alert(t('common.error'), t('settings.disconnectAccountError', { defaultValue: 'Failed to disconnect account. Please try again.' }));
             } finally {
               setIsSigningIn(false);
             }
@@ -980,14 +1052,6 @@ export default function SettingsScreen({ navigation, route }) {
 
   const handleRemoveConnectedAccount = (account) => {
     if (!account) {
-      return;
-    }
-
-    if (account.isActive) {
-      Alert.alert(
-        t('settings.accountActive'),
-        t('settings.accountActiveMessage')
-      );
       return;
     }
 
@@ -1146,6 +1210,25 @@ export default function SettingsScreen({ navigation, route }) {
       await signOut();
     }
   };
+
+  // Check if Google account needs reconnection (missing serverAuthCode)
+  useEffect(() => {
+    const checkReconnectionNeeded = async () => {
+      if (isAuthenticated && userMode === 'admin') {
+        try {
+          const googleAuthService = await import('../services/googleAuthService');
+          const serverAuthCode = await googleAuthService.default.getServerAuthCode();
+          setNeedsReconnect(!serverAuthCode);
+        } catch (error) {
+          console.error('[SETTINGS] Error checking serverAuthCode:', error);
+          setNeedsReconnect(false);
+        }
+      } else {
+        setNeedsReconnect(false);
+      }
+    };
+    checkReconnectionNeeded();
+  }, [isAuthenticated, userMode]);
 
   // Fetch admin info for team members
   useEffect(() => {
@@ -1995,9 +2078,24 @@ export default function SettingsScreen({ navigation, route }) {
                   <View style={styles.planContainer}>
                     <TouchableOpacity
                       style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
-                      onPress={() => {
-                        setShowPlanSelection(false);
-                        setShowEnterpriseModal(true);
+                      onPress={async () => {
+                        try {
+                          // Set up enterprise tier with 15 team member limit
+                          await updatePlanLimit(15);
+                          // Update user plan to enterprise
+                          await updateUserPlan('enterprise');
+                          setShowPlanSelection(false);
+                          Alert.alert(
+                            t('common.success', { defaultValue: 'Success' }),
+                            t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
+                          );
+                        } catch (error) {
+                          console.error('[SETTINGS] Error setting up enterprise plan:', error);
+                          Alert.alert(
+                            t('common.error'),
+                            t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                          );
+                        }
                       }}
                     >
                       <Text style={[styles.planButtonText, userPlan === 'enterprise' && styles.planButtonTextSelected]}>{t('settings.plans.enterprise')}</Text>
@@ -2242,12 +2340,9 @@ export default function SettingsScreen({ navigation, route }) {
                         ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business' || isSigningIn) && styles.multipleProfilesButtonDisabled
                       ]}
                       onPress={() => {
-                        // Show popup with developer email
+                        // For enterprise, show accounts management modal; for others, show plan modal
                         if (userPlan === 'enterprise') {
-                          Alert.alert(
-                            t('settings.multipleProfiles'),
-                            t('settings.contactDeveloper', { email: 'developer@proofpix.com' })
-                          );
+                          setShowMultipleAccountsModal(true);
                         } else {
                           setShowPlanModal(true);
                         }
@@ -2259,7 +2354,7 @@ export default function SettingsScreen({ navigation, route }) {
                         styles.multipleProfilesButtonText,
                         ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business') && styles.multipleProfilesButtonTextDisabled
                       ]}>
-                        {t('settings.multiprofile')}
+                        {t('settings.manageProfiles', { defaultValue: 'Manage Profiles' })}
                       </Text>
                     </TouchableOpacity>
                     
@@ -2277,90 +2372,211 @@ export default function SettingsScreen({ navigation, route }) {
                 </>
               )}
             </>
-          ) : (
+          ) : (isAuthenticated || (isEnterprisePlan && activeEnterpriseAccount)) ? (
             <>
-              <View style={styles.adminInfoBox}>
-                <View style={styles.adminInfoHeader}>
-                  <View style={styles.activeAccountContainer}>
-                    <View style={styles.accountLabelRow}>
-                      <Text style={styles.activeAccountLabel}>{t('settings.activeGoogleAccount')}</Text>
-                      <View style={styles.connectedIndicatorGoogle}>
-                        <Text style={styles.connectedCheckmarkGoogle}>✓</Text>
+              {(() => {
+                  const ScrollingAccountName = ({ text, isActive, onToggle }) => {
+                    const scrollX = useRef(new Animated.Value(0)).current;
+                    const [needsScrolling, setNeedsScrolling] = useState(false);
+                    const textRef = useRef(null);
+                    const containerWidth = useRef(null);
+
+                    useEffect(() => {
+                      if (textRef.current && containerWidth.current !== null) {
+                        const timeout = setTimeout(() => {
+                          textRef.current.measure((x, y, width, height, pageX, pageY) => {
+                            if (width > containerWidth.current - 40) {
+                              setNeedsScrolling(true);
+                              // Start scrolling animation
+                              const animation = Animated.loop(
+                                Animated.sequence([
+                                  Animated.delay(1000),
+                                  Animated.timing(scrollX, {
+                                    toValue: -(width - containerWidth.current + 40),
+                                    duration: 3000,
+                                    useNativeDriver: true,
+                                  }),
+                                  Animated.delay(500),
+                                  Animated.timing(scrollX, {
+                                    toValue: 0,
+                                    duration: 3000,
+                                    useNativeDriver: true,
+                                  }),
+                                ])
+                              );
+                              animation.start();
+                              return () => {
+                                animation.stop();
+                              };
+                            }
+                          });
+                        }, 100);
+                        return () => {
+                          clearTimeout(timeout);
+                          scrollX.stopAnimation();
+                        };
+                      }
+                    }, [text, scrollX]);
+
+                    return (
+                      <View 
+                        style={styles.accountNameContainer}
+                        onLayout={(e) => {
+                          if (e.nativeEvent.layout.width > 0) {
+                            // Account for checkbox width in container width calculation
+                            const checkboxWidth = 32; // 24px checkbox + 8px padding
+                            containerWidth.current = e.nativeEvent.layout.width - checkboxWidth;
+                          }
+                        }}
+                      >
+                        <TouchableOpacity
+                          style={styles.accountCheckbox}
+                          onPress={onToggle}
+                        >
+                          <View style={[styles.checkbox, isActive ? styles.checkboxActive : styles.checkboxInactive]}>
+                            {isActive && <Text style={styles.accountCheckmark}>✓</Text>}
+                          </View>
+                        </TouchableOpacity>
+                        <View style={styles.accountNameWrapperOuter}>
+                          <Animated.View
+                            style={[
+                              styles.accountNameWrapper,
+                              needsScrolling && {
+                                transform: [{ translateX: scrollX }],
+                              },
+                            ]}
+                          >
+                            <Text 
+                              ref={textRef}
+                              style={styles.accountEmail}
+                              numberOfLines={1}
+                            >
+                              {text}
+                            </Text>
+                          </Animated.View>
+                        </View>
+                      </View>
+                    );
+                  };
+
+                  const activeAccountEmail = displayedActiveAccount?.email || displayedActiveAccount?.name || t('settings.unknownEmail');
+
+                  return (
+                    <View style={styles.accountItem}>
+                      {/* First line: Account name with scrolling + checkbox */}
+                      <ScrollingAccountName
+                        text={activeAccountEmail}
+                        isActive={true}
+                        onToggle={() => {
+                          // Active account checkbox - no action needed, just show as active
+                        }}
+                      />
+                      {/* Second line: Buttons */}
+                      <View style={styles.accountActionsRow}>
+                        {/* Yellow button (left) - Set Up Team */}
+                        <TouchableOpacity
+                          style={[
+                            styles.accountActionButton, 
+                            styles.accountActionButtonYellow,
+                            ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.buttonDisabled
+                          ]}
+                          onPress={async () => {
+                            const isPro = userPlan === 'pro';
+                            const isBusiness = userPlan === 'business';
+                            const isEnterprise = userPlan === 'enterprise';
+
+                            // Pro - show popup saying not available
+                            if (isPro) {
+                              Alert.alert(
+                                t('settings.featureUnavailable'),
+                                t('settings.teamSetupFeature')
+                              );
+                              return;
+                            }
+
+                            // Business - check team member limit
+                            if (isBusiness) {
+                              try {
+                                const maxTeamMembers = getLimit('maxTeamMembers', userPlan);
+                                const currentTeamMembers = inviteTokens?.length || 0;
+
+                                if (exceedsLimit('maxTeamMembers', userPlan, currentTeamMembers)) {
+                                  Alert.alert(
+                                    t('settings.teamLimitReached'),
+                                    t('settings.teamLimitMessage', { limit: maxTeamMembers })
+                                  );
+                                  return;
+                                }
+
+                                if (!isAuthenticated) {
+                                  Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                                  return;
+                                }
+
+                                await handleSetupTeam();
+                                return;
+                              } catch (error) {
+                                console.error('[SETTINGS] Error in Business handler:', error);
+                                Alert.alert('Error', error.message || 'Failed to setup team');
+                                return;
+                              }
+                            }
+
+                            // Enterprise - allow unlimited team members
+                            if (isEnterprise) {
+                              if (!isAuthenticated) {
+                                Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                                return;
+                              }
+                              await handleSetupTeam();
+                              return;
+                            }
+                          }}
+                          disabled={isSigningIn || ((!userPlan || userPlan === 'starter') || userPlan === 'pro')}
+                        >
+                          <Text style={[
+                            styles.accountActionButtonText, 
+                            styles.accountActionButtonTextYellow,
+                            ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.buttonTextDisabled
+                          ]}>
+                            {t('settings.setUpTeam', { defaultValue: 'Set Up Team' })}
+                          </Text>
+                        </TouchableOpacity>
+                        {/* Light red button (right) - Disconnect or Reconnect */}
+                        <TouchableOpacity
+                          style={[styles.accountActionButton, styles.accountActionButtonDisconnect]}
+                          onPress={async () => {
+                            if (needsReconnect) {
+                              // Reconnect: sign out then prompt to sign in again
+                              try {
+                                await signOut();
+                                setTimeout(() => {
+                                  Alert.alert(
+                                    t('settings.reconnectRequired', { defaultValue: 'Reconnect Required' }),
+                                    t('settings.reconnectMessage', { defaultValue: 'Please tap "Connect with Google Drive" below to sign in again and refresh your authorization.' })
+                                  );
+                                }, 500);
+                              } catch (error) {
+                                console.error('[SETTINGS] Error signing out for reconnect:', error);
+                                Alert.alert(t('common.error'), t('settings.reconnectError', { defaultValue: 'Failed to disconnect. Please try manually disconnecting from Settings.' }));
+                              }
+                            } else {
+                              // Normal disconnect
+                              await handleSignOut();
+                            }
+                          }}
+                          disabled={isSigningIn}
+                        >
+                          <Text style={[styles.accountActionButtonText, styles.accountActionButtonTextDisconnect]}>
+                            {needsReconnect 
+                              ? t('settings.reconnect', { defaultValue: 'Reconnect' })
+                              : t('settings.disconnect', { defaultValue: 'Disconnect' })}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                     </View>
-                    <Text style={styles.activeAccountName}>
-                      {displayedActiveAccount?.name || t('settings.unknownName')}
-                    </Text>
-                    <Text style={styles.activeAccountEmail}>
-                      {displayedActiveAccount?.email || t('settings.unknownEmail')}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.disconnectButton}
-                    onPress={handleSignOut}
-                  >
-                    <Text style={styles.disconnectButtonText}>{t('settings.disconnect')}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {isEnterprisePlan && otherEnterpriseAccounts.length > 0 && (
-                  <View style={styles.connectedAccountsList}>
-                    <Text style={styles.connectedAccountsTitle}>{t('settings.otherConnectedAccounts')}</Text>
-                    {otherEnterpriseAccounts.map((account, index) => (
-                      <View
-                        key={account.id}
-                        style={[
-                          styles.connectedAccountRow,
-                          index === otherEnterpriseAccounts.length - 1 && styles.connectedAccountRowLast,
-                        ]}
-                      >
-                        <View style={styles.connectedAccountHeader}>
-                          <View style={styles.connectedAccountInfo}>
-                            <Text style={styles.connectedAccountName}>
-                              {account.name || account.email}
-                            </Text>
-                            <Text style={styles.connectedAccountEmail}>
-                              {account.email}
-                            </Text>
-                          </View>
-                          <View style={[styles.accountStatusBadge, styles.accountStatusInactive]}>
-                            <Text style={[styles.accountStatusText, styles.accountStatusTextInactive]}>
-                              {t('settings.inactive')}
-                            </Text>
-                          </View>
-                        </View>
-                        <View style={styles.connectedAccountActions}>
-                          <TouchableOpacity
-                            style={[
-                              styles.accountActionButton,
-                              isSigningIn && styles.accountActionButtonDisabled,
-                            ]}
-                            onPress={() => handleActivateConnectedAccount(account)}
-                            disabled={isSigningIn}
-                          >
-                            <Text style={styles.accountActionButtonText}>
-                              {isSigningIn ? t('settings.switching') : t('settings.makeActive')}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.accountActionButton, styles.accountRemoveButton]}
-                            onPress={() => handleRemoveConnectedAccount(account)}
-                          >
-                            <Text
-                              style={[
-                                styles.accountActionButtonText,
-                                styles.accountRemoveButtonText,
-                              ]}
-                            >
-                              {t('settings.remove')}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
+                  );
+                })()}
 
               {/* Dropbox Account Info */}
               {isDropboxAuthenticated && dropboxUserInfo && (
@@ -2414,252 +2630,190 @@ export default function SettingsScreen({ navigation, route }) {
 
               {/* Show all buttons when authenticated, with enable/disable based on plan */}
               <>
-                {/* Keep Connect to Google button visible even after authentication */}
-                <TouchableOpacity
-                  style={[
-                    styles.featureButton,
-                    styles.googleSignInButton,
-                    (!canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS) || !isGoogleSignInAvailable || isSigningIn) && styles.googleButtonDisabled
-                  ]}
-                  onPress={async () => {
-                    // Only Enterprise can connect multiple accounts
-                    if (!canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS)) {
-                      if (userPlan === 'enterprise') {
-                        // Show developer contact popup
-                        Alert.alert(
-                          t('settings.multipleProfiles'),
-                          t('settings.contactDeveloper', { email: 'developer@proofpix.com' })
-                        );
-                      } else {
-                        setShowPlanModal(true);
-                      }
-                      return;
-                    }
-                    
-                    setIsSigningIn(true);
-                    try {
-                      if (userMode === 'admin') {
-                        await adminSignIn();
-                      } else {
-                        await individualSignIn();
-                      }
-                    } catch (error) {
-                      console.error('Error reconnecting Google account:', error);
-                    } finally {
-                      setIsSigningIn(false);
-                    }
-                  }}
-                  disabled={!isGoogleSignInAvailable || isSigningIn}
-                >
-                  {isSigningIn && canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS) ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={[
-                      styles.googleSignInButtonText,
-                      (!canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS) || !isGoogleSignInAvailable) && styles.googleButtonTextDisabled
-                    ]}>
-                      {t('settings.connectToGoogleAccount')}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-                
-                {/* Connect to Dropbox Button - always shown when authenticated but not connected */}
-                {!isDropboxAuthenticated && (
+                {/* Connect to Google button - Only show if not connected or enterprise can add multiple */}
+                {(!isAuthenticated || (isAuthenticated && canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS))) && (
                   <TouchableOpacity
                     style={[
                       styles.featureButton,
-                      styles.dropboxButton,
-                      (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox) && styles.dropboxButtonDisabled
+                      styles.googleSignInButton,
+                      (!canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS) || !isGoogleSignInAvailable || isSigningIn) && styles.googleButtonDisabled
                     ]}
                     onPress={async () => {
-                      // Check feature access
-                      if (!canUse(FEATURES.DROPBOX_SYNC)) {
-                        setShowPlanModal(true);
+                      // Only Enterprise can connect multiple accounts
+                      if (!canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS)) {
+                        if (userPlan === 'enterprise') {
+                          // For enterprise, show Manage Profiles modal
+                          setShowMultipleAccountsModal(true);
+                        } else {
+                          setShowPlanModal(true);
+                        }
                         return;
                       }
                       
-                      if (!dropboxAuthService.isConfigured()) {
-                        Alert.alert(
-                          t('settings.featureUnavailable'),
-                          t('settings.dropboxNotConfigured')
-                        );
-                        return;
-                      }
-
-                      setIsSigningInDropbox(true);
+                      setIsSigningIn(true);
                       try {
-                        const result = await dropboxAuthService.signIn();
-                        
-                        // Find or create ProofPix folder
-                        try {
-                          const folderPath = await dropboxService.findOrCreateProofPixFolder();
-                          console.log('[DROPBOX] Folder ready:', folderPath);
-                        } catch (folderError) {
-                          console.error('[DROPBOX] Folder creation error:', folderError);
-                          // Don't fail the sign-in if folder creation fails
+                        if (userMode === 'admin') {
+                          await adminSignIn();
+                        } else {
+                          await individualSignIn();
                         }
-
-                        // Update state - reload tokens to ensure state is accurate
-                        await dropboxAuthService.loadStoredTokens();
-                        const isAuth = dropboxAuthService.isAuthenticated();
-                        const userInfo = dropboxAuthService.getUserInfo();
-                        
-                        setIsDropboxAuthenticated(isAuth);
-                        setDropboxUserInfo(userInfo);
-                        
-                        console.log('[DROPBOX] Sign-in successful!');
-                        console.log('[DROPBOX] User info:', userInfo);
-                        console.log('[DROPBOX] Is authenticated:', isAuth);
-                        
-                        // Show success alert
-                        Alert.alert(
-                          t('settings.dropboxConnected'),
-                          t('settings.dropboxConnectedMessage', { email: userInfo?.email || '' }),
-                          [{ text: t('common.ok') }]
-                        );
                       } catch (error) {
-                        console.error('[DROPBOX] Sign-in error:', error);
-                        Alert.alert(
-                          t('common.error'),
-                          error.message || t('settings.dropboxSignInError')
-                        );
+                        console.error('Error reconnecting Google account:', error);
                       } finally {
-                        setIsSigningInDropbox(false);
+                        setIsSigningIn(false);
                       }
                     }}
-                    disabled={isSigningInDropbox}
+                    disabled={!isGoogleSignInAvailable || isSigningIn}
                   >
-                    {isSigningInDropbox ? (
+                    {isSigningIn && canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS) ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
                       <Text style={[
-                        styles.featureButtonText,
-                        styles.dropboxButtonText,
-                        !canUse(FEATURES.DROPBOX_SYNC) && styles.dropboxButtonTextDisabled
+                        styles.googleSignInButtonText,
+                        (!canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS) || !isGoogleSignInAvailable) && styles.googleButtonTextDisabled
                       ]}>
-                        {t('settings.connectToDropbox')}
+                        {t('settings.connectToGoogleAccount')}
                       </Text>
                     )}
                   </TouchableOpacity>
                 )}
                 
-                {/* Connect Team Button - Always visible when authenticated */}
+                {/* Connect to Dropbox Button - show as disabled if already connected */}
                 <TouchableOpacity
                   style={[
                     styles.featureButton,
-                    ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.buttonDisabled
+                    styles.dropboxButton,
+                    (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox || isDropboxAuthenticated) && styles.dropboxButtonDisabled
                   ]}
                   onPress={async () => {
-                    console.log('[TEAM_BUTTON_2] Button 2 pressed');
-                    console.log('[TEAM_BUTTON_2] userPlan:', userPlan);
-                    console.log('[TEAM_BUTTON_2] isAuthenticated:', isAuthenticated);
+                    // Check if Dropbox is already connected
+                    if (isDropboxAuthenticated) {
+                      // Already connected - button disabled
+                      return;
+                    }
 
-                    const isPro = userPlan === 'pro';
-                    const isBusiness = userPlan === 'business';
-                    const isEnterprise = userPlan === 'enterprise';
-
-                    console.log('[TEAM_BUTTON_2] isPro:', isPro, 'isBusiness:', isBusiness, 'isEnterprise:', isEnterprise);
-
-                    // Pro - show popup saying not available
-                    if (isPro) {
-                      console.log('[TEAM_BUTTON_2] Showing unavailable for Pro');
+                    // Check feature access
+                    if (!canUse(FEATURES.DROPBOX_SYNC)) {
+                      setShowPlanModal(true);
+                      return;
+                    }
+                      
+                    if (!dropboxAuthService.isConfigured()) {
                       Alert.alert(
                         t('settings.featureUnavailable'),
-                        t('settings.teamSetupFeature')
+                        t('settings.dropboxNotConfigured')
                       );
                       return;
                     }
 
-                    // Business - check team member limit
-                    if (isBusiness) {
+                    setIsSigningInDropbox(true);
+                    try {
+                      const result = await dropboxAuthService.signIn();
+                      
+                      // Find or create ProofPix folder
                       try {
-                        console.log('[TEAM_BUTTON_2] Business plan - checking limits');
-                        console.log('[TEAM_BUTTON_2] getLimit function:', typeof getLimit);
-                        console.log('[TEAM_BUTTON_2] exceedsLimit function:', typeof exceedsLimit);
-
-                        const maxTeamMembers = getLimit('maxTeamMembers', userPlan);
-                        const currentTeamMembers = inviteTokens?.length || 0;
-                        console.log('[TEAM_BUTTON_2] maxTeamMembers:', maxTeamMembers, 'currentTeamMembers:', currentTeamMembers);
-
-                        if (exceedsLimit('maxTeamMembers', userPlan, currentTeamMembers)) {
-                          console.log('[TEAM_BUTTON_2] Team limit exceeded');
-                          Alert.alert(
-                            t('settings.teamLimitReached'),
-                            t('settings.teamLimitMessage', { limit: maxTeamMembers })
-                          );
-                          return;
-                        }
-
-                        if (!isAuthenticated) {
-                          console.log('[TEAM_BUTTON_2] Not authenticated');
-                          Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
-                          return;
-                        }
-
-                        console.log('[TEAM_BUTTON_2] Calling handleSetupTeam for Business');
-                        await handleSetupTeam();
-                        return;
-                      } catch (error) {
-                        console.error('[TEAM_BUTTON_2] Error in Business handler:', error);
-                        console.error('[TEAM_BUTTON_2] Error stack:', error.stack);
-                        Alert.alert('Error', error.message || 'Failed to setup team');
-                        return;
+                        const folderPath = await dropboxService.findOrCreateProofPixFolder();
+                        console.log('[DROPBOX] Folder ready:', folderPath);
+                      } catch (folderError) {
+                        console.error('[DROPBOX] Folder creation error:', folderError);
+                        // Don't fail the sign-in if folder creation fails
                       }
-                    }
 
-                    // Enterprise - allow unlimited team members
-                    if (isEnterprise) {
-                      console.log('[TEAM_BUTTON_2] Enterprise plan detected');
-                      if (!isAuthenticated) {
-                        console.log('[TEAM_BUTTON_2] Not authenticated');
-                        Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
-                        return;
+                      // Update state - reload tokens to ensure state is accurate
+                      await dropboxAuthService.loadStoredTokens();
+                      const isAuth = dropboxAuthService.isAuthenticated();
+                      const userInfo = dropboxAuthService.getUserInfo();
+                      
+                      setIsDropboxAuthenticated(isAuth);
+                      setDropboxUserInfo(userInfo);
+                      
+                      console.log('[DROPBOX] Sign-in successful!');
+                      console.log('[DROPBOX] User info:', userInfo);
+                      console.log('[DROPBOX] Is authenticated:', isAuth);
+                      
+                      // Add Dropbox account to connected accounts for enterprise users
+                      if (isAuth && userInfo && userPlan === 'enterprise') {
+                        try {
+                          // Format Dropbox user info to match Google account format
+                          const dropboxAccount = {
+                            id: userInfo.account_id || userInfo.email || `dropbox_${Date.now()}`,
+                            email: userInfo.email,
+                            name: userInfo.name?.display_name || userInfo.name?.given_name || userInfo.email,
+                            givenName: userInfo.name?.given_name || userInfo.name?.display_name,
+                            photo: null, // Dropbox doesn't provide photo in userInfo
+                          };
+                          
+                          await upsertConnectedAccount(dropboxAccount, {
+                            accountType: 'dropbox',
+                            userMode: userMode || 'admin',
+                          });
+                          console.log('[DROPBOX] Account added to connected accounts');
+                        } catch (accountError) {
+                          console.error('[DROPBOX] Error adding account to connected accounts:', accountError);
+                          // Don't fail the sign-in if adding to connected accounts fails
+                        }
                       }
-                      console.log('[TEAM_BUTTON_2] Calling handleSetupTeam for Enterprise');
-                      await handleSetupTeam();
-                      return;
+                      
+                      // Show success alert
+                      Alert.alert(
+                        t('settings.dropboxConnected'),
+                        t('settings.dropboxConnectedMessage', { email: userInfo?.email || '' }),
+                        [{ text: t('common.ok') }]
+                      );
+                    } catch (error) {
+                      console.error('[DROPBOX] Sign-in error:', error);
+                      Alert.alert(
+                        t('common.error'),
+                        error.message || t('settings.dropboxSignInError')
+                      );
+                    } finally {
+                      setIsSigningInDropbox(false);
                     }
-
-                    console.log('[TEAM_BUTTON_2] No plan matched - doing nothing');
                   }}
-                  disabled={isSigningIn}
+                  disabled={isSigningInDropbox || isDropboxAuthenticated}
                 >
-                  <Text style={[
-                    styles.featureButtonText,
-                    ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.buttonTextDisabled
-                  ]}>
-                    {t('settings.setUpTeam')}
-                  </Text>
+                  {isSigningInDropbox ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={[
+                      styles.featureButtonText,
+                      styles.dropboxButtonText,
+                      (!canUse(FEATURES.DROPBOX_SYNC) || isDropboxAuthenticated) && styles.dropboxButtonTextDisabled
+                    ]}>
+                      {isDropboxAuthenticated 
+                        ? t('settings.connected', { defaultValue: 'Connected' })
+                        : t('settings.connectToDropbox')}
+                    </Text>
+                  )}
                 </TouchableOpacity>
                 
-                {/* Multiple Profiles Button - Always visible */}
-                <TouchableOpacity
-                  style={[
-                    styles.featureButton,
-                    styles.multipleProfilesButton,
-                    ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business' || isSigningIn) && styles.multipleProfilesButtonDisabled
-                  ]}
-                  onPress={() => {
-                    // Show popup with developer email for Enterprise, plan modal for others
-                    if (userPlan === 'enterprise') {
-                      Alert.alert(
-                        t('settings.multipleProfiles'),
-                        t('settings.contactDeveloper', { email: 'developer@proofpix.com' })
-                      );
-                    } else {
-                      setShowPlanModal(true);
-                    }
-                  }}
-                  disabled={isSigningIn}
-                >
-                  <Text style={[
-                    styles.featureButtonText,
-                    styles.multipleProfilesButtonText,
-                    ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business') && styles.multipleProfilesButtonTextDisabled
-                  ]}>
-                    {t('settings.multiprofile')}
-                  </Text>
-                </TouchableOpacity>
+                {/* Manage Profiles Button - Always visible for enterprise, shows plan modal for others */}
+                {(userPlan === 'enterprise' || !isAuthenticated) && (
+                  <TouchableOpacity
+                    style={[
+                      styles.featureButton,
+                      styles.multipleProfilesButton,
+                      ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business' || isSigningIn) && styles.multipleProfilesButtonDisabled
+                    ]}
+                    onPress={() => {
+                      // For enterprise, show accounts management modal; for others, show plan modal
+                      if (userPlan === 'enterprise') {
+                        setShowMultipleAccountsModal(true);
+                      } else {
+                        setShowPlanModal(true);
+                      }
+                    }}
+                    disabled={isSigningIn}
+                  >
+                    <Text style={[
+                      styles.featureButtonText,
+                      styles.multipleProfilesButtonText,
+                      ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business') && styles.multipleProfilesButtonTextDisabled
+                    ]}>
+                      {t('settings.manageProfiles', { defaultValue: 'Manage Profiles' })}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </>
 
               {userMode === 'admin' && isSetupComplete() && (
@@ -2725,7 +2879,7 @@ export default function SettingsScreen({ navigation, route }) {
                 </>
               )}
             </>
-          )}
+          ) : null}
         </View>
 
         {/* Referral Program */}
@@ -2800,6 +2954,19 @@ export default function SettingsScreen({ navigation, route }) {
           >
             <Text style={styles.resetButtonText}>{t('settings.resetUserData')}</Text>
           </TouchableOpacity>
+
+          {/* Test Tools Button - Only in Development */}
+          {__DEV__ && (
+            <>
+              <View style={styles.divider} />
+              <TouchableOpacity
+                style={styles.testToolsButton}
+                onPress={() => setShowTestToolsModal(true)}
+              >
+                <Text style={styles.testToolsButtonText}>🧪 Test Tools</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         </ScrollView>
@@ -3079,9 +3246,24 @@ export default function SettingsScreen({ navigation, route }) {
                 <View style={styles.planContainer}>
                   <TouchableOpacity
                     style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
-                    onPress={() => {
-                      setShowPlanModal(false);
-                      setShowEnterpriseModal(true);
+                    onPress={async () => {
+                      try {
+                        // Set up enterprise tier with 15 team member limit
+                        await updatePlanLimit(15);
+                        // Update user plan to enterprise
+                        await updateUserPlan('enterprise');
+                        setShowPlanModal(false);
+                        Alert.alert(
+                          t('common.success', { defaultValue: 'Success' }),
+                          t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
+                        );
+                      } catch (error) {
+                        console.error('[SETTINGS] Error setting up enterprise plan:', error);
+                        Alert.alert(
+                          t('common.error'),
+                          t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                        );
+                      }
                     }}
                   >
                     <View style={styles.planButtonRow}>
@@ -3278,125 +3460,481 @@ export default function SettingsScreen({ navigation, route }) {
           subtitle={t('settings.contactUsSubtitle')}
         />
 
-        {/* Trial Testing Section - Only in Development */}
-        {__DEV__ && (
-          <View style={styles.testSection}>
-            <Text style={styles.testSectionTitle}>🧪 Trial Test Tools</Text>
-            <View style={styles.testButtons}>
-              <TouchableOpacity
-                style={styles.testButton}
-                onPress={async () => {
-                  await TrialTestUtils.testDay0();
-                  Alert.alert('Test Set', 'Trial set to Day 0. Restart app or go to foreground to see welcome message.');
-                }}
+        {/* Multiple Accounts Management Modal */}
+        <Modal
+          isVisible={showMultipleAccountsModal}
+          onBackdropPress={() => setShowMultipleAccountsModal(false)}
+          onBackButtonPress={() => setShowMultipleAccountsModal(false)}
+          style={styles.bottomModal}
+          useNativeDriver
+        >
+          <View style={styles.bottomSheetContainer}>
+            <View style={styles.customModalSheet}>
+              <View style={styles.customModalHeader}>
+                <Text style={styles.customModalTitle}>{t('settings.manageProfiles', { defaultValue: 'Manage Profiles' })}</Text>
+                <TouchableOpacity
+                  onPress={() => setShowMultipleAccountsModal(false)}
+                  style={styles.customModalCloseButton}
+                >
+                  <Text style={styles.customModalCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.customModalScroll}
               >
-                <Text style={styles.testButtonText}>Day 0 (Welcome)</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.testButton}
-                onPress={async () => {
-                  await TrialTestUtils.testDay7_10();
-                  Alert.alert('Test Set', 'Trial set to Day 7-10. Restart app to see engagement message.');
-                }}
-              >
-                <Text style={styles.testButtonText}>Day 7-10</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.testButton}
-                onPress={async () => {
-                  await TrialTestUtils.testDay15();
-                  Alert.alert('Test Set', 'Trial set to Day 15. Restart app to see check-in message.');
-                }}
-              >
-                <Text style={styles.testButtonText}>Day 15</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.testButton}
-                onPress={async () => {
-                  await TrialTestUtils.testDay22_24();
-                  Alert.alert('Test Set', 'Trial set to Day 22-24. Restart app to see early reminder.');
-                }}
-              >
-                <Text style={styles.testButtonText}>Day 22-24</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.testButton}
-                onPress={async () => {
-                  await TrialTestUtils.testDay27_28();
-                  Alert.alert('Test Set', 'Trial set to Day 27-28. Restart app to see last chance message.');
-                }}
-              >
-                <Text style={styles.testButtonText}>Day 27-28</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.testButton}
-                onPress={async () => {
-                  await TrialTestUtils.testDay30();
-                  Alert.alert('Test Set', 'Trial set to expired. Restart app to see expiration message.');
-                }}
-              >
-                <Text style={styles.testButtonText}>Day 30 (Expired)</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.testButton, { backgroundColor: '#FF0000' }]}
-                onPress={async () => {
-                  await TrialTestUtils.testDay30();
-                  Alert.alert('Test Set', 'Trial set to expired. Restart app to see Day 30 expiration message with discount and referral.');
-                }}
-              >
-                <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Test Day 30</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.testButton, { backgroundColor: '#FF9800' }]}
-                onPress={async () => {
-                  const { clearReferralDataForTesting } = await import('../services/referralService');
-                  const success = await clearReferralDataForTesting();
-                  if (success) {
-                    Alert.alert('Reset Complete', 'Referral data cleared. You can now test referral codes again.');
-                  } else {
-                    Alert.alert('Error', 'Failed to reset referral data.');
-                  }
-                }}
-              >
-                <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Reset Referral Data</Text>
-              </TouchableOpacity>
+                <View style={styles.customModalContent}>
+                  <Text style={styles.sectionDescription}>
+                    {t('settings.multipleAccountsDescription', { defaultValue: 'Connect multiple Google or Dropbox accounts. Each account can have its own team setup.' })}
+                  </Text>
 
-              <TouchableOpacity
-                style={[styles.testButton, { backgroundColor: '#4CAF50' }]}
-                onPress={async () => {
-                  const { simulateFriendSignup } = await import('../services/referralService');
-                  const success = await simulateFriendSignup();
-                  if (success) {
-                    Alert.alert('Success', 'Friend signup simulated! Check Settings > Referral to see your reward stats.');
-                  } else {
-                    Alert.alert('Error', 'Failed to simulate friend signup. Check console for details.');
-                  }
-                }}
-              >
-                <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Simulate Friend Signup</Text>
-              </TouchableOpacity>
+                  {/* Connected Accounts List */}
+                  {connectedAccounts && connectedAccounts.length > 0 && (
+                    <View style={styles.accountsList}>
+                      <Text style={styles.accountsListTitle}>
+                        {t('settings.connectedAccounts', { defaultValue: 'Connected Accounts' })}
+                      </Text>
+                      {connectedAccounts.map((account) => {
+                        // Use unique key combining id and accountType to avoid duplicate key errors
+                        const accountKey = `${account.id}_${account.accountType || 'google'}`;
+                        
+                        // Scrolling Account Name Component
+                        const ScrollingAccountName = ({ text, isActive, onToggle }) => {
+                          const scrollX = useRef(new Animated.Value(0)).current;
+                          const [needsScrolling, setNeedsScrolling] = useState(false);
+                          const textRef = useRef(null);
+                          const containerWidth = useRef(null);
 
-              <TouchableOpacity
-                style={[styles.testButton, { backgroundColor: '#2196F3' }]}
-                onPress={async () => {
-                  const { checkAndApplyReferralRewards } = await import('../services/referralService');
-                  const rewardsApplied = await checkAndApplyReferralRewards();
-                  if (rewardsApplied > 0) {
-                    const { getTrialDaysRemaining } = await import('../services/trialService');
-                    const daysRemaining = await getTrialDaysRemaining();
-                    Alert.alert(
-                      'Rewards Applied!',
-                      `Applied ${rewardsApplied} reward(s) (+${rewardsApplied * 30} days).\n\nYour trial now has ${daysRemaining} days remaining.`
-                    );
-                  } else {
-                    Alert.alert('No Rewards', 'No pending rewards to apply.');
-                  }
-                }}
-              >
-                <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Apply Referral Rewards</Text>
-              </TouchableOpacity>
+                          useEffect(() => {
+                            if (textRef.current && containerWidth.current !== null) {
+                              const timeout = setTimeout(() => {
+                                textRef.current.measure((x, y, width, height, pageX, pageY) => {
+                                  if (width > containerWidth.current - 40) {
+                                    setNeedsScrolling(true);
+                                    // Start scrolling animation
+                                    const animation = Animated.loop(
+                                      Animated.sequence([
+                                        Animated.delay(1000),
+                                        Animated.timing(scrollX, {
+                                          toValue: -(width - containerWidth.current + 40),
+                                          duration: 3000,
+                                          useNativeDriver: true,
+                                        }),
+                                        Animated.delay(500),
+                                        Animated.timing(scrollX, {
+                                          toValue: 0,
+                                          duration: 3000,
+                                          useNativeDriver: true,
+                                        }),
+                                      ])
+                                    );
+                                    animation.start();
+                                    return () => {
+                                      animation.stop();
+                                    };
+                                  }
+                                });
+                              }, 100);
+                              return () => {
+                                clearTimeout(timeout);
+                                scrollX.stopAnimation();
+                              };
+                            }
+                          }, [text, scrollX]);
+
+                          return (
+                            <View 
+                              style={styles.accountNameContainer}
+                              onLayout={(e) => {
+                                if (e.nativeEvent.layout.width > 0) {
+                                  // Account for checkbox width in container width calculation
+                                  const checkboxWidth = 32; // 24px checkbox + 8px padding
+                                  containerWidth.current = e.nativeEvent.layout.width - checkboxWidth;
+                                }
+                              }}
+                            >
+                              <TouchableOpacity
+                                style={styles.accountCheckbox}
+                                onPress={onToggle}
+                              >
+                                <View style={[styles.checkbox, isActive ? styles.checkboxActive : styles.checkboxInactive]}>
+                                  {isActive && <Text style={styles.accountCheckmark}>✓</Text>}
+                                </View>
+                              </TouchableOpacity>
+                              <View style={styles.accountNameWrapperOuter}>
+                                <Animated.View
+                                  style={[
+                                    styles.accountNameWrapper,
+                                    needsScrolling && {
+                                      transform: [{ translateX: scrollX }],
+                                    },
+                                  ]}
+                                >
+                                  <Text 
+                                    ref={textRef}
+                                    style={styles.accountEmail}
+                                    numberOfLines={1}
+                                  >
+                                    {text}
+                                  </Text>
+                                </Animated.View>
+                              </View>
+                            </View>
+                          );
+                        };
+
+                        return (
+                          <View 
+                            key={accountKey} 
+                            style={[
+                              styles.accountItem,
+                              account.accountType === 'dropbox' && styles.accountItemDropbox
+                            ]}
+                          >
+                            {/* First line: Account name with scrolling + checkbox */}
+                            <ScrollingAccountName
+                              text={account.email || account.name}
+                              isActive={account.isActive}
+                              onToggle={async () => {
+                                // Toggle account activation
+                                if (!account.isActive) {
+                                  // Activate this account - will automatically deactivate the previous one
+                                  await handleActivateConnectedAccount(account);
+                                }
+                              }}
+                            />
+                            {/* Second line: Buttons - Only show for active account */}
+                            {account.isActive && (
+                              <View style={styles.accountActionsRow}>
+                                {/* Yellow button (left) - Set Up Team */}
+                                <TouchableOpacity
+                                  style={[
+                                    styles.accountActionButton, 
+                                    styles.accountActionButtonYellow,
+                                    ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.buttonDisabled
+                                  ]}
+                                  onPress={async () => {
+                                    setShowMultipleAccountsModal(false);
+                                    
+                                    const isPro = userPlan === 'pro';
+                                    const isBusiness = userPlan === 'business';
+                                    const isEnterprise = userPlan === 'enterprise';
+
+                                    // Pro - show popup saying not available
+                                    if (isPro) {
+                                      Alert.alert(
+                                        t('settings.featureUnavailable'),
+                                        t('settings.teamSetupFeature')
+                                      );
+                                      return;
+                                    }
+
+                                    // Business - check team member limit
+                                    if (isBusiness) {
+                                      try {
+                                        const maxTeamMembers = getLimit('maxTeamMembers', userPlan);
+                                        const currentTeamMembers = inviteTokens?.length || 0;
+
+                                        if (exceedsLimit('maxTeamMembers', userPlan, currentTeamMembers)) {
+                                          Alert.alert(
+                                            t('settings.teamLimitReached'),
+                                            t('settings.teamLimitMessage', { limit: maxTeamMembers })
+                                          );
+                                          return;
+                                        }
+
+                                        if (!isAuthenticated) {
+                                          Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                                          return;
+                                        }
+
+                                        await handleSetupTeam();
+                                        return;
+                                      } catch (error) {
+                                        console.error('[SETTINGS] Error in Business handler:', error);
+                                        Alert.alert('Error', error.message || 'Failed to setup team');
+                                        return;
+                                      }
+                                    }
+
+                                    // Enterprise - allow unlimited team members
+                                    if (isEnterprise) {
+                                      if (!isAuthenticated) {
+                                        Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                                        return;
+                                      }
+                                      await handleSetupTeam();
+                                      return;
+                                    }
+                                  }}
+                                  disabled={isSigningIn || ((!userPlan || userPlan === 'starter') || userPlan === 'pro')}
+                                >
+                                  <Text style={[
+                                    styles.accountActionButtonText, 
+                                    styles.accountActionButtonTextYellow,
+                                    ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.buttonTextDisabled
+                                  ]}>
+                                    {t('settings.setUpTeam', { defaultValue: 'Set Up Team' })}
+                                  </Text>
+                                </TouchableOpacity>
+                                {/* Light red button (right) - Disconnect */}
+                                <TouchableOpacity
+                                  style={[styles.accountActionButton, styles.accountActionButtonDisconnect]}
+                                  onPress={() => handleDisconnectActiveAccount(account)}
+                                  disabled={isSigningIn}
+                                >
+                                  <Text style={[styles.accountActionButtonText, styles.accountActionButtonTextDisconnect]}>
+                                    {t('settings.disconnect', { defaultValue: 'Disconnect' })}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {/* Add Account Buttons */}
+                  <View style={styles.addAccountButtons}>
+                    {isGoogleSignInAvailable && (
+                      <TouchableOpacity
+                        style={[styles.featureButton, styles.connectGoogleButton]}
+                        onPress={async () => {
+                          try {
+                            setIsSigningIn(true);
+                            await adminSignIn();
+                            // The account will be automatically added via AdminContext
+                          } catch (error) {
+                            console.error('[SETTINGS] Error adding Google account:', error);
+                            Alert.alert(
+                              t('common.error'),
+                              t('settings.addAccountError', { defaultValue: 'Failed to add account. Please try again.' })
+                            );
+                          } finally {
+                            setIsSigningIn(false);
+                          }
+                        }}
+                        disabled={isSigningIn}
+                      >
+                        {isSigningIn ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={[styles.featureButtonText, styles.connectGoogleButtonText]}>
+                            {t('settings.connectGoogle', { defaultValue: 'Connect Google Account' })}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Dropbox connection button */}
+                    {dropboxAuthService.isConfigured() && (
+                      <TouchableOpacity
+                        style={[styles.featureButton, styles.connectDropboxButton]}
+                        onPress={async () => {
+                          try {
+                            setIsSigningInDropbox(true);
+                            const result = await dropboxAuthService.signIn();
+                            
+                            // Find or create ProofPix folder
+                            try {
+                              const folderPath = await dropboxService.findOrCreateProofPixFolder();
+                              console.log('[DROPBOX] Folder ready:', folderPath);
+                            } catch (folderError) {
+                              console.error('[DROPBOX] Folder creation error:', folderError);
+                              // Don't fail the sign-in if folder creation fails
+                            }
+
+                            // Update state - reload tokens to ensure state is accurate
+                            await dropboxAuthService.loadStoredTokens();
+                            const isAuth = dropboxAuthService.isAuthenticated();
+                            const userInfo = dropboxAuthService.getUserInfo();
+                            
+                            setIsDropboxAuthenticated(isAuth);
+                            setDropboxUserInfo(userInfo);
+                            
+                            if (isAuth && userInfo) {
+                              // For enterprise tier, we might want to add Dropbox account to connected accounts
+                              // For now, we'll just update the state
+                              Alert.alert(
+                                t('common.success'),
+                                t('settings.dropboxConnected', { defaultValue: 'Dropbox account connected successfully!' })
+                              );
+                            }
+                          } catch (error) {
+                            console.error('[SETTINGS] Error connecting Dropbox:', error);
+                            Alert.alert(
+                              t('common.error'),
+                              t('settings.dropboxConnectionError', { defaultValue: 'Failed to connect Dropbox account. Please try again.' })
+                            );
+                          } finally {
+                            setIsSigningInDropbox(false);
+                          }
+                        }}
+                        disabled={isSigningInDropbox}
+                      >
+                        {isSigningInDropbox ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={[styles.featureButtonText, styles.connectDropboxButtonText]}>
+                            {t('settings.connectDropbox', { defaultValue: 'Connect Dropbox Account' })}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </ScrollView>
             </View>
           </View>
+        </Modal>
+
+        {/* Test Tools Modal - Only in Development */}
+        {__DEV__ && (
+          <Modal
+            isVisible={showTestToolsModal}
+            onBackdropPress={() => setShowTestToolsModal(false)}
+            onBackButtonPress={() => setShowTestToolsModal(false)}
+            style={styles.bottomModal}
+            useNativeDriver
+          >
+            <View style={styles.bottomSheetContainer}>
+              <View style={styles.customModalSheet}>
+                <View style={styles.customModalHeader}>
+                  <Text style={styles.customModalTitle}>🧪 Trial Test Tools</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowTestToolsModal(false)}
+                    style={styles.customModalCloseButton}
+                  >
+                    <Text style={styles.customModalCloseText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <ScrollView
+                  bounces={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.customModalScroll}
+                >
+                  <View style={styles.customModalContent}>
+                    <View style={styles.testButtons}>
+                      <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={async () => {
+                          await TrialTestUtils.testDay0();
+                          Alert.alert('Test Set', 'Trial set to Day 0. Restart app or go to foreground to see welcome message.');
+                        }}
+                      >
+                        <Text style={styles.testButtonText}>Day 0 (Welcome)</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={async () => {
+                          await TrialTestUtils.testDay7_10();
+                          Alert.alert('Test Set', 'Trial set to Day 7-10. Restart app to see engagement message.');
+                        }}
+                      >
+                        <Text style={styles.testButtonText}>Day 7-10</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={async () => {
+                          await TrialTestUtils.testDay15();
+                          Alert.alert('Test Set', 'Trial set to Day 15. Restart app to see check-in message.');
+                        }}
+                      >
+                        <Text style={styles.testButtonText}>Day 15</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={async () => {
+                          await TrialTestUtils.testDay22_24();
+                          Alert.alert('Test Set', 'Trial set to Day 22-24. Restart app to see early reminder.');
+                        }}
+                      >
+                        <Text style={styles.testButtonText}>Day 22-24</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={async () => {
+                          await TrialTestUtils.testDay27_28();
+                          Alert.alert('Test Set', 'Trial set to Day 27-28. Restart app to see last chance message.');
+                        }}
+                      >
+                        <Text style={styles.testButtonText}>Day 27-28</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={async () => {
+                          await TrialTestUtils.testDay30();
+                          Alert.alert('Test Set', 'Trial set to expired. Restart app to see expiration message.');
+                        }}
+                      >
+                        <Text style={styles.testButtonText}>Day 30 (Expired)</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#FF0000' }]}
+                        onPress={async () => {
+                          await TrialTestUtils.testDay30();
+                          Alert.alert('Test Set', 'Trial set to expired. Restart app to see Day 30 expiration message with discount and referral.');
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Test Day 30</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#FF9800' }]}
+                        onPress={async () => {
+                          const { clearReferralDataForTesting } = await import('../services/referralService');
+                          const success = await clearReferralDataForTesting();
+                          if (success) {
+                            Alert.alert('Reset Complete', 'Referral data cleared. You can now test referral codes again.');
+                          } else {
+                            Alert.alert('Error', 'Failed to reset referral data.');
+                          }
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Reset Referral Data</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#4CAF50' }]}
+                        onPress={async () => {
+                          const { simulateFriendSignup } = await import('../services/referralService');
+                          const success = await simulateFriendSignup();
+                          if (success) {
+                            Alert.alert('Success', 'Friend signup simulated! Check Settings > Referral to see your reward stats.');
+                          } else {
+                            Alert.alert('Error', 'Failed to simulate friend signup. Check console for details.');
+                          }
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Simulate Friend Signup</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#2196F3' }]}
+                        onPress={async () => {
+                          const { checkAndApplyReferralRewards } = await import('../services/referralService');
+                          const rewardsApplied = await checkAndApplyReferralRewards();
+                          if (rewardsApplied > 0) {
+                            const { getTrialDaysRemaining } = await import('../services/trialService');
+                            const daysRemaining = await getTrialDaysRemaining();
+                            Alert.alert(
+                              'Rewards Applied!',
+                              `Applied ${rewardsApplied} reward(s) (+${rewardsApplied * 30} days).\n\nYour trial now has ${daysRemaining} days remaining.`
+                            );
+                          } else {
+                            Alert.alert('No Rewards', 'No pending rewards to apply.');
+                          }
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Apply Referral Rewards</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
         )}
       </SafeAreaView>
     );
@@ -5157,6 +5695,23 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.TEXT,
       fontWeight: '600',
     },
+    testToolsButton: {
+      backgroundColor: '#FFF3CD',
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: '#FFC107',
+      marginTop: 8,
+    },
+    testToolsButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#856404',
+      fontFamily: FONTS.QUICKSAND_BOLD,
+    },
     testSection: {
       marginTop: 20,
       marginBottom: 20,
@@ -5229,6 +5784,174 @@ const sliderStyles = StyleSheet.create({
       backgroundColor: '#28a745',
     },
     referralButtonText: {
+      color: '#FFFFFF',
+    },
+    // Account Management Styles
+    accountsList: {
+      marginTop: 16,
+    },
+    accountsListTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+      marginBottom: 12,
+    },
+    accountItem: {
+      backgroundColor: '#f9f9f9',
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: '#e0e0e0',
+    },
+    accountItemActive: {
+      backgroundColor: '#f0f8ff',
+      borderColor: COLORS.PRIMARY,
+      borderWidth: 2,
+    },
+    accountItemDropbox: {
+      backgroundColor: '#E6F3FF', // Light blue background for Dropbox accounts
+      borderColor: '#0061FF', // Dropbox blue border
+    },
+    accountNameContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+      justifyContent: 'flex-start',
+    },
+    accountNameWrapperOuter: {
+      flex: 1,
+      overflow: 'hidden',
+      marginLeft: 12,
+    },
+    accountNameWrapper: {
+      flexDirection: 'row',
+    },
+    accountEmail: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+    },
+    accountCheckbox: {
+      padding: 4,
+    },
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    checkboxActive: {
+      backgroundColor: '#4CAF50',
+      borderColor: '#4CAF50',
+    },
+    checkboxInactive: {
+      backgroundColor: '#fff',
+      borderColor: '#F44336',
+    },
+    accountCheckmark: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    accountInfo: {
+      marginBottom: 12,
+    },
+    accountTeamName: {
+      fontSize: 14,
+      color: COLORS.GRAY,
+      marginTop: 4,
+    },
+    accountTeamLimit: {
+      fontSize: 14,
+      color: COLORS.GRAY,
+      marginTop: 4,
+    },
+    accountActiveLabel: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: COLORS.PRIMARY,
+      marginTop: 8,
+      textTransform: 'uppercase',
+    },
+    accountActions: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    accountActionsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 8,
+    },
+    accountActionButton: {
+      flex: 1,
+      backgroundColor: COLORS.PRIMARY,
+      borderRadius: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    accountActionButtonRemove: {
+      backgroundColor: '#f5f5f5',
+      borderWidth: 1,
+      borderColor: '#e0e0e0',
+    },
+    accountActionButtonYellow: {
+      backgroundColor: '#FFC107',
+    },
+    accountActionButtonGreen: {
+      backgroundColor: '#4CAF50',
+    },
+    accountActionButtonRed: {
+      backgroundColor: '#F44336',
+    },
+    accountActionButtonDisconnect: {
+      backgroundColor: '#FFE6E6',
+    },
+    accountActionButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#FFFFFF',
+    },
+    accountActionButtonTextRemove: {
+      color: '#666',
+    },
+    accountActionButtonTextYellow: {
+      color: '#000',
+    },
+    accountActionButtonTextGreen: {
+      color: '#FFFFFF',
+    },
+    accountActionButtonTextRed: {
+      color: '#FFFFFF',
+    },
+    accountActionButtonTextDisconnect: {
+      color: '#CC0000',
+    },
+    connectGoogleButton: {
+      backgroundColor: '#000000',
+    },
+    connectGoogleButtonText: {
+      color: '#FFFFFF',
+    },
+    connectDropboxButton: {
+      backgroundColor: '#0061FF',
+    },
+    connectDropboxButtonText: {
+      color: '#FFFFFF',
+    },
+    addAccountButtons: {
+      marginTop: 16,
+      gap: 12,
+    },
+    addAccountButton: {
+      backgroundColor: '#28a745',
+      marginTop: 8,
+    },
+    addAccountButtonText: {
       color: '#FFFFFF',
     },
   });

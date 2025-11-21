@@ -181,7 +181,20 @@ export function AdminProvider({ children }) {
     const prevAccounts = connectedAccountsRef.current || [];
     // Use feature permissions system instead of hardcoded check
     const allowMultipleAccounts = hasFeature(FEATURES.MULTIPLE_CLOUD_ACCOUNTS, currentUserPlan);
-    const existing = prevAccounts.find((account) => account.id === user.id);
+    const accountType = overrides.accountType || 'google'; // 'google' or 'dropbox'
+    
+    // Normalize accountType for old accounts that might not have it set
+    const normalizedPrevAccounts = prevAccounts.map(account => ({
+      ...account,
+      accountType: account.accountType || 'google', // Default old accounts to 'google'
+    }));
+    
+    // Use both id and type to uniquely identify accounts (same email can be Google and Dropbox)
+    // Also handle case where old accounts don't have accountType - treat them as 'google'
+    const existing = normalizedPrevAccounts.find((account) => {
+      const accType = account.accountType || 'google';
+      return account.id === user.id && accType === accountType;
+    });
     const rawPlanLimit = overrides.planLimit ?? existing?.planLimit ?? 5;
     const normalizedPlanLimit = Number.isFinite(rawPlanLimit)
       ? rawPlanLimit
@@ -196,6 +209,7 @@ export function AdminProvider({ children }) {
       email: user.email,
       name: user.name || user.givenName || existing?.name || '',
       photo: user.photo || existing?.photo || null,
+      accountType: accountType, // 'google' or 'dropbox'
       userInfo: {
         ...(existing?.userInfo || {}),
         ...user,
@@ -213,12 +227,20 @@ export function AdminProvider({ children }) {
 
     let updatedList;
     if (allowMultipleAccounts) {
-      updatedList = [
-        updatedAccount,
-        ...prevAccounts
-          .filter((account) => account.id !== user.id)
-          .map((account) => ({ ...account, isActive: false })),
-      ];
+      // Remove duplicates: filter out accounts with same id AND accountType
+      // Also ensure all accounts have accountType set
+      const deduplicatedAccounts = normalizedPrevAccounts
+        .filter((account) => {
+          const accType = account.accountType || 'google';
+          return !(account.id === user.id && accType === accountType);
+        })
+        .map((account) => ({
+          ...account,
+          accountType: account.accountType || 'google', // Ensure accountType is set
+          isActive: false,
+        }));
+      
+      updatedList = [updatedAccount, ...deduplicatedAccounts];
     } else {
       updatedList = [updatedAccount];
     }
@@ -272,13 +294,39 @@ export function AdminProvider({ children }) {
     return updatedAccount;
   };
 
-  const removeConnectedAccount = async (accountId) => {
+  const activateConnectedAccount = async (accountId, accountType = 'google') => {
+    const prevAccounts = connectedAccountsRef.current || [];
+    const accountToActivate = prevAccounts.find(
+      (account) => account.id === accountId && account.accountType === accountType
+    );
+
+    if (!accountToActivate) {
+      console.warn('[ADMIN] Account not found for activation:', accountId, accountType);
+      return null;
+    }
+
+    const updatedList = prevAccounts.map((account) => ({
+      ...account,
+      isActive: account.id === accountId && account.accountType === accountType,
+    }));
+
+    await setConnectedAccountsState(updatedList);
+    const activatedAccount = updatedList.find((account) => account.isActive);
+    
+    if (activatedAccount) {
+      await applyAccountState(activatedAccount, { syncStorage: true });
+    }
+
+    return activatedAccount;
+  };
+
+  const removeConnectedAccount = async (accountId, accountType = 'google') => {
     const prevAccounts = connectedAccountsRef.current || [];
     const allowMultipleAccounts = hasFeature(FEATURES.MULTIPLE_CLOUD_ACCOUNTS, currentUserPlan);
     let removedAccount = null;
 
     const filteredAccounts = prevAccounts.filter((account) => {
-      if (account.id === accountId) {
+      if (account.id === accountId && account.accountType === accountType) {
         removedAccount = account;
         return false;
       }
@@ -367,6 +415,41 @@ export function AdminProvider({ children }) {
       }
 
       if (storedAccounts.length > 0) {
+        // Deduplicate accounts: remove duplicates based on id + accountType
+        // Also ensure all accounts have accountType set (default to 'google' for old accounts)
+        const seen = new Map();
+        const deduplicatedAccounts = [];
+        
+        for (const account of storedAccounts) {
+          const accountType = account.accountType || 'google';
+          const key = `${account.id}_${accountType}`;
+          
+          if (!seen.has(key)) {
+            seen.set(key, true);
+            deduplicatedAccounts.push({
+              ...account,
+              accountType: accountType, // Ensure accountType is set
+            });
+          } else {
+            // If duplicate found, keep the one with isActive=true or the most recent
+            const existingIndex = deduplicatedAccounts.findIndex(
+              (acc) => acc.id === account.id && (acc.accountType || 'google') === accountType
+            );
+            if (existingIndex >= 0) {
+              const existing = deduplicatedAccounts[existingIndex];
+              // Keep the active one, or the one with later lastConnectedAt
+              if (account.isActive || (!existing.isActive && (account.lastConnectedAt || 0) > (existing.lastConnectedAt || 0))) {
+                deduplicatedAccounts[existingIndex] = {
+                  ...account,
+                  accountType: accountType,
+                };
+              }
+            }
+          }
+        }
+        
+        storedAccounts = deduplicatedAccounts;
+        
         let activeAccount = storedAccounts.find((account) => account.isActive);
         if (!activeAccount) {
           activeAccount = { ...storedAccounts[0], isActive: true };
@@ -992,6 +1075,8 @@ export function AdminProvider({ children }) {
     initializeProxySession,
     disconnectAllAccounts,
     removeConnectedAccount,
+    upsertConnectedAccount,
+    activateConnectedAccount,
 
     // Helpers
     isSetupComplete,

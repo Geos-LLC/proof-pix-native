@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
+import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
@@ -22,6 +23,7 @@ import { clearTrial } from '../utils/trialTestUtils';
 export default function PlanSelectionScreen({ navigation }) {
   const { t } = useTranslation();
   const { updateUserPlan } = useSettings();
+  const { updatePlanLimit } = useAdmin();
   const insets = useSafeAreaInsets();
 
   // Enterprise modal state
@@ -79,8 +81,19 @@ export default function PlanSelectionScreen({ navigation }) {
 
   const handleSelectPlan = async (plan) => {
     if (plan === 'enterprise') {
-      // Show enterprise contact form modal
-      setShowEnterpriseModal(true);
+      // Set up enterprise tier with 15 team member limit
+      try {
+        // Set the plan limit to 15 for team members
+        await updatePlanLimit(15);
+        // Update user plan to enterprise
+        await updateUserPlan('enterprise');
+        // Navigate to next screen (GoogleSignUp) - multiple accounts functionality is already enabled for enterprise tier
+        navigation.navigate('GoogleSignUp', { plan: 'enterprise', trialJustStarted: false });
+      } catch (error) {
+        console.error('[PlanSelection] Error setting up enterprise plan:', error);
+        // Fallback to regular plan selection if there's an error
+        await proceedWithPlanSelection(plan, false);
+      }
       return;
     }
 
