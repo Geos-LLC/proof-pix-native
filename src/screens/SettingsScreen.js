@@ -894,6 +894,14 @@ export default function SettingsScreen({ navigation, route }) {
     setHexModalError(null);
   };
 
+  // Update teamNameInput when teamName changes or modal opens
+  useEffect(() => {
+    if (showManageTeamModal && teamName) {
+      console.log('[MANAGE_TEAM] Setting teamNameInput from teamName:', teamName);
+      setTeamNameInput(teamName);
+    }
+  }, [showManageTeamModal, teamName]);
+
   // Fetch team members for Manage Team modal
   const fetchTeamMembersForModal = async () => {
     if (proxySessionId) {
@@ -5045,6 +5053,7 @@ export default function SettingsScreen({ navigation, route }) {
           onModalWillShow={() => {
             // Initialize team name when modal is about to show (before animation)
             // This ensures it's set even if teamName changed
+            console.log('[MANAGE_TEAM_MODAL] onModalWillShow - teamName:', teamName);
             setTeamNameInput(teamName || '');
           }}
         >
