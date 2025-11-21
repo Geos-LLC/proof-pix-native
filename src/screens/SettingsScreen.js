@@ -1292,35 +1292,87 @@ export default function SettingsScreen({ navigation, route }) {
       // Generate the required number of invites
       for (let i = 0; i < slotsToFill; i++) {
         const token = generateInviteToken();
+        const testMemberName = `Test Member ${currentInvitesCount + i + 1}`;
 
-        // Add to proxy server
+        console.log(`[TEST] Creating member ${i + 1}/${slotsToFill}: ${testMemberName}`);
+
+        // Add to proxy server first
         await proxyService.addInviteToken(proxySessionId, token);
+        console.log(`[TEST] Token added to proxy server: ${token}`);
 
         // Add to local state
         await addInviteToken(token);
+        console.log(`[TEST] Token added to local state: ${token}`);
 
         // Simulate team member joining with this token
-        const testMemberName = `Test Member ${currentInvitesCount + i + 1}`;
-        await proxyService.joinTeam({
-          token,
-          sessionId: proxySessionId,
-          name: testMemberName
-        });
-
-        console.log(`[TEST] Created and joined member: ${testMemberName}`);
+        await proxyService.registerTeamMemberJoin(proxySessionId, token, testMemberName);
+        console.log(`[TEST] Team member registered: ${testMemberName} with token ${token}`);
       }
 
-      // Refresh team members list
-      await fetchTeamMembersForModal();
+      console.log(`[TEST] All members created. Current inviteTokens count:`, inviteTokens?.length);
 
       Alert.alert(
         'Test Complete',
-        `Successfully filled team to max capacity (${planLimit} members).`
+        `Successfully filled ${planLimit} team members. Please close and reopen the "Manage Team" modal to see all revoke buttons.`,
+        [
+          {
+            text: 'OK'
+          }
+        ]
       );
     } catch (error) {
       console.error('[TEST] Failed to fill team members:', error);
       Alert.alert('Error', 'Failed to fill team members. Check console for details.');
     }
+  };
+
+  // Test function to clear all team members and tokens
+  const handleClearAllTeamMembers = async () => {
+    Alert.alert(
+      'Clear All Team Members',
+      'This will remove all team members and invite tokens. This action cannot be undone. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (!proxySessionId) {
+                Alert.alert('Error', 'Proxy session not initialized.');
+                return;
+              }
+
+              // Get all unique tokens from both inviteTokens and teamMembersList
+              const inviteTokensSet = new Set([...(inviteTokens || [])]);
+              const memberTokensSet = new Set(teamMembersList.map(member => member.token).filter(Boolean));
+              const allTokens = Array.from(new Set([...inviteTokensSet, ...memberTokensSet]));
+
+              console.log(`[TEST] Clearing ${allTokens.length} team members and tokens (inviteTokens: ${inviteTokensSet.size}, memberTokens: ${memberTokensSet.size})`);
+
+              // Remove all tokens (which should also remove team members with updated proxy server)
+              for (const token of allTokens) {
+                try {
+                  await proxyService.removeInviteToken(proxySessionId, token);
+                  await removeInviteToken(token);
+                  console.log(`[TEST] Removed token: ${token}`);
+                } catch (error) {
+                  console.error(`[TEST] Failed to remove token ${token}:`, error);
+                }
+              }
+
+              // Refresh team members list
+              await fetchTeamMembersForModal();
+
+              Alert.alert('Success', 'All team members and tokens have been cleared.');
+            } catch (error) {
+              console.error('[TEST] Failed to clear team members:', error);
+              Alert.alert('Error', 'Failed to clear all team members. Check console for details.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleSetupTeam = async () => {
@@ -5162,6 +5214,13 @@ export default function SettingsScreen({ navigation, route }) {
                       >
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Fill Team to Max</Text>
                       </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#E91E63' }]}
+                        onPress={handleClearAllTeamMembers}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Clear All Team Members</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </ScrollView>
@@ -5348,18 +5407,17 @@ export default function SettingsScreen({ navigation, route }) {
                         })()}
                       </>
                     )}
-                    {canAddMoreInvites() && (
-                      <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
-                        <Text style={styles.generateButtonText}>Generate New Invite</Text>
-                      </TouchableOpacity>
-                    )}
-                    {areAllSlotsFilledWithMembers() && (userPlan === 'business' || userPlan === 'enterprise') && (
+                    {areAllSlotsFilledWithMembers() && (userPlan === 'business' || userPlan === 'enterprise') ? (
                       <TouchableOpacity style={styles.addMemberButton} onPress={handleOpenAddMemberModal}>
                         <Text style={styles.addMemberButtonText}>
                           Add Team Member ${getPricePerMember()}/member
                         </Text>
                       </TouchableOpacity>
-                    )}
+                    ) : canAddMoreInvites() ? (
+                      <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
+                        <Text style={styles.generateButtonText}>Generate New Invite</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
 
                   {/* Team Members */}
@@ -6794,6 +6852,7 @@ const sliderStyles = StyleSheet.create({
       borderTopRightRadius: 20,
       paddingBottom: 24,
       paddingTop: 4,
+      maxHeight: '90%',
     },
     customModalHeader: {
       flexDirection: 'row',
