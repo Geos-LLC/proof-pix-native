@@ -376,6 +376,38 @@ class ProxyService {
   }
 
   /**
+   * Remove a team member by their token
+   * @param {string} sessionId - Proxy session ID
+   * @param {string} token - The invite token used by the team member
+   * @returns {Promise<{success: boolean}>}
+   */
+  async removeTeamMember(sessionId, token) {
+    try {
+      console.log('[PROXY] Removing team member with token:', token);
+
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-members/${encodeURIComponent(token)}`, {
+        method: 'DELETE',
+      });
+
+      console.log('[PROXY] Remove team member response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PROXY] Remove team member error:', errorText);
+        throw new Error(`Failed to remove team member: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[PROXY] Team member removed successfully');
+
+      return data;
+    } catch (error) {
+      console.error('[PROXY] Error removing team member:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get session info including admin user info
    * @param {string} sessionId - Proxy session ID
    * @returns {Promise<{adminUserInfo: {name, email, picture}, folderId: string}>}

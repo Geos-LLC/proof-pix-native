@@ -289,12 +289,19 @@ app.delete('/api/admin/:sessionId/tokens/:token', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
+    // Remove the invite token
     const inviteTokens = new Set(session.inviteTokens);
     inviteTokens.delete(token);
     session.inviteTokens = Array.from(inviteTokens);
 
+    // Also remove the team member associated with this token
+    if (session.teamMembers) {
+      session.teamMembers = session.teamMembers.filter(member => member.token !== token);
+      console.log(`Team member with token ${token} removed from session ${sessionId}`);
+    }
+
     await kv.set(`session:${sessionId}`, session, { ex: SESSION_TTL });
-    
+
     console.log(`Token removed from session ${sessionId}`);
 
     res.json({ success: true });

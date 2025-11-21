@@ -314,6 +314,8 @@ export default function SettingsScreen({ navigation, route }) {
   const [isTestingInvite, setIsTestingInvite] = useState(false);
   const [showTestNameInput, setShowTestNameInput] = useState(false);
   const [testMemberName, setTestMemberName] = useState('');
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [additionalMembersCount, setAdditionalMembersCount] = useState(1);
   
   // Log when test modal visibility changes
   useEffect(() => {
@@ -1220,6 +1222,105 @@ export default function SettingsScreen({ navigation, route }) {
         }
       ]
     );
+  };
+
+  // Helper function to check if all team slots are filled
+  const areAllSlotsFilledWithMembers = () => {
+    const remaining = getRemainingInvites();
+    return remaining === 0 && teamMembersList.length > 0;
+  };
+
+  // Helper function to get price per member based on plan
+  const getPricePerMember = () => {
+    if (userPlan === 'business') {
+      return 5.99;
+    } else if (userPlan === 'enterprise') {
+      return 4.99;
+    }
+    return 0;
+  };
+
+  // Handler for opening add member modal
+  const handleOpenAddMemberModal = () => {
+    setAdditionalMembersCount(1);
+    setShowAddMemberModal(true);
+  };
+
+  // Handler for purchasing additional members
+  const handlePurchaseAdditionalMembers = async () => {
+    const pricePerMember = getPricePerMember();
+    const totalPrice = (pricePerMember * additionalMembersCount).toFixed(2);
+
+    Alert.alert(
+      'Purchase Additional Members',
+      `You are about to purchase ${additionalMembersCount} additional team member slot${additionalMembersCount > 1 ? 's' : ''} for $${totalPrice}. This feature will be available soon.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: () => {
+            // TODO: Implement payment flow
+            setShowAddMemberModal(false);
+            Alert.alert('Coming Soon', 'Additional team member purchases will be available in an upcoming update.');
+          }
+        }
+      ]
+    );
+  };
+
+  // Test function to fill team members to max
+  const handleFillTeamMembersToMax = async () => {
+    if (!proxySessionId) {
+      Alert.alert('Error', 'Proxy session not initialized. Please set up team first.');
+      return;
+    }
+
+    try {
+      // Get current plan limit from AdminContext
+      const activeAccount = getActiveAccount();
+      const planLimit = activeAccount?.planLimit || 5;
+      const currentInvitesCount = inviteTokens?.length || 0;
+      const slotsToFill = planLimit - currentInvitesCount;
+
+      if (slotsToFill <= 0) {
+        Alert.alert('Info', `Already at max capacity (${planLimit} invites).`);
+        return;
+      }
+
+      console.log(`[TEST] Filling ${slotsToFill} slots to reach limit of ${planLimit}`);
+
+      // Generate the required number of invites
+      for (let i = 0; i < slotsToFill; i++) {
+        const token = generateInviteToken();
+
+        // Add to proxy server
+        await proxyService.addInviteToken(proxySessionId, token);
+
+        // Add to local state
+        await addInviteToken(token);
+
+        // Simulate team member joining with this token
+        const testMemberName = `Test Member ${currentInvitesCount + i + 1}`;
+        await proxyService.joinTeam({
+          token,
+          sessionId: proxySessionId,
+          name: testMemberName
+        });
+
+        console.log(`[TEST] Created and joined member: ${testMemberName}`);
+      }
+
+      // Refresh team members list
+      await fetchTeamMembersForModal();
+
+      Alert.alert(
+        'Test Complete',
+        `Successfully filled team to max capacity (${planLimit} members).`
+      );
+    } catch (error) {
+      console.error('[TEST] Failed to fill team members:', error);
+      Alert.alert('Error', 'Failed to fill team members. Check console for details.');
+    }
   };
 
   const handleSetupTeam = async () => {
@@ -5054,6 +5155,13 @@ export default function SettingsScreen({ navigation, route }) {
                       >
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Apply Referral Rewards</Text>
                       </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#9C27B0' }]}
+                        onPress={handleFillTeamMembersToMax}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Fill Team to Max</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </ScrollView>
@@ -5245,6 +5353,13 @@ export default function SettingsScreen({ navigation, route }) {
                         <Text style={styles.generateButtonText}>Generate New Invite</Text>
                       </TouchableOpacity>
                     )}
+                    {areAllSlotsFilledWithMembers() && (userPlan === 'business' || userPlan === 'enterprise') && (
+                      <TouchableOpacity style={styles.addMemberButton} onPress={handleOpenAddMemberModal}>
+                        <Text style={styles.addMemberButtonText}>
+                          Add Team Member ${getPricePerMember()}/member
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   {/* Team Members */}
@@ -5268,8 +5383,8 @@ export default function SettingsScreen({ navigation, route }) {
                                       <TouchableOpacity
                                         onPress={async () => {
                                           Alert.alert(
-                                            'Revoke Invite',
-                                            'This will revoke the invite token for this team member. They will no longer be able to upload using this code.',
+                                            'Revoke Access',
+                                            'This will remove this team member and revoke their access. They will no longer be able to upload using this code.',
                                             [
                                               { text: 'Cancel', style: 'cancel' },
                                               {
@@ -5278,14 +5393,23 @@ export default function SettingsScreen({ navigation, route }) {
                                                 onPress: async () => {
                                                   try {
                                                     if (proxySessionId) {
+                                                      // Try to remove the team member from proxy server (if endpoint exists)
+                                                      try {
+                                                        await proxyService.removeTeamMember(proxySessionId, memberToken);
+                                                      } catch (memberError) {
+                                                        console.log('[SETTINGS] Team member removal not supported by server, will remove via token only');
+                                                      }
+                                                      // Remove the invite token from proxy server (this should also remove the member)
                                                       await proxyService.removeInviteToken(proxySessionId, memberToken);
                                                     }
+                                                    // Remove from local state
                                                     await removeInviteToken(memberToken);
+                                                    // Refresh the team members list
                                                     await fetchTeamMembersForModal();
-                                                    Alert.alert('Invite Revoked', 'The invite has been revoked successfully.');
+                                                    Alert.alert('Access Revoked', 'The team member has been removed successfully.');
                                                   } catch (error) {
-                                                    console.error('[SETTINGS] Failed to revoke invite token:', error);
-                                                    Alert.alert('Error', 'Failed to revoke invite token. Please try again.');
+                                                    console.error('[SETTINGS] Failed to revoke access:', error);
+                                                    Alert.alert('Error', 'Failed to revoke access. Please try again.');
                                                   }
                                                 }
                                               }
@@ -5365,6 +5489,75 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
           </View>
           </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Add Team Member Purchase Modal */}
+        <Modal
+          isVisible={showAddMemberModal}
+          onBackdropPress={() => setShowAddMemberModal(false)}
+          onSwipeComplete={() => setShowAddMemberModal(false)}
+          swipeDirection={['down']}
+          style={styles.bottomModal}
+          propagateSwipe={true}
+          avoidKeyboard={true}
+        >
+          <View style={styles.addMemberModalContent}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.addMemberModalTitle}>Add Team Members</Text>
+            <Text style={styles.addMemberModalSubtitle}>
+              Purchase additional team member slots for your {userPlan === 'business' ? 'Business' : 'Enterprise'} plan
+            </Text>
+
+            <View style={styles.memberCountSelector}>
+              <Text style={styles.memberCountLabel}>Number of Members:</Text>
+              <View style={styles.counterContainer}>
+                <TouchableOpacity
+                  style={[styles.counterButton, additionalMembersCount <= 1 && styles.counterButtonDisabled]}
+                  onPress={() => setAdditionalMembersCount(Math.max(1, additionalMembersCount - 1))}
+                  disabled={additionalMembersCount <= 1}
+                >
+                  <Text style={[styles.counterButtonText, additionalMembersCount <= 1 && styles.counterButtonTextDisabled]}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.memberCountValue}>{additionalMembersCount}</Text>
+                <TouchableOpacity
+                  style={styles.counterButton}
+                  onPress={() => setAdditionalMembersCount(additionalMembersCount + 1)}
+                >
+                  <Text style={styles.counterButtonText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.priceBreakdown}>
+              <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>Price per member:</Text>
+                <Text style={styles.priceValue}>${getPricePerMember().toFixed(2)}</Text>
+              </View>
+              <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>Number of members:</Text>
+                <Text style={styles.priceValue}>×{additionalMembersCount}</Text>
+              </View>
+              <View style={[styles.priceRow, styles.totalPriceRow]}>
+                <Text style={styles.totalPriceLabel}>Total:</Text>
+                <Text style={styles.totalPriceValue}>${(getPricePerMember() * additionalMembersCount).toFixed(2)}</Text>
+              </View>
+            </View>
+
+            <View style={styles.addMemberModalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowAddMemberModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.purchaseButton]}
+                onPress={handlePurchaseAdditionalMembers}
+              >
+                <Text style={styles.purchaseButtonText}>Purchase</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
       </SafeAreaView>
     );
@@ -7165,16 +7358,16 @@ const sliderStyles = StyleSheet.create({
     },
     testButton: {
       backgroundColor: COLORS.PRIMARY,
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderRadius: 6,
-      marginBottom: 8,
+      paddingVertical: 16,
+      paddingHorizontal: 20,
+      borderRadius: 8,
+      marginBottom: 12,
     },
     clearButton: {
       backgroundColor: '#DC3545',
     },
     testButtonText: {
-      fontSize: 12,
+      fontSize: 16,
       fontWeight: '600',
       color: '#000000',
       fontFamily: FONTS.QUICKSAND_BOLD,
@@ -7651,6 +7844,145 @@ const sliderStyles = StyleSheet.create({
       marginTop: 15,
     },
     generateButtonText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    addMemberButton: {
+      backgroundColor: '#28a745',
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginTop: 15,
+    },
+    addMemberButtonText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    addMemberModalContent: {
+      backgroundColor: 'white',
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 24,
+      maxHeight: '80%',
+    },
+    addMemberModalTitle: {
+      fontSize: 22,
+      fontWeight: 'bold',
+      color: COLORS.TEXT,
+      marginBottom: 8,
+      textAlign: 'center',
+    },
+    addMemberModalSubtitle: {
+      fontSize: 14,
+      color: '#666',
+      marginBottom: 24,
+      textAlign: 'center',
+      lineHeight: 20,
+    },
+    memberCountSelector: {
+      marginBottom: 24,
+    },
+    memberCountLabel: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+      marginBottom: 12,
+    },
+    counterContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 20,
+    },
+    counterButton: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      backgroundColor: '#007bff',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    counterButtonDisabled: {
+      backgroundColor: '#ccc',
+    },
+    counterButtonText: {
+      color: 'white',
+      fontSize: 28,
+      fontWeight: 'bold',
+    },
+    counterButtonTextDisabled: {
+      color: '#888',
+    },
+    memberCountValue: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      color: COLORS.TEXT,
+      minWidth: 60,
+      textAlign: 'center',
+    },
+    priceBreakdown: {
+      backgroundColor: '#f8f9fa',
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 24,
+    },
+    priceRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    priceLabel: {
+      fontSize: 15,
+      color: '#666',
+    },
+    priceValue: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+    },
+    totalPriceRow: {
+      borderTopWidth: 1,
+      borderTopColor: '#ddd',
+      paddingTop: 12,
+      marginTop: 8,
+      marginBottom: 0,
+    },
+    totalPriceLabel: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: COLORS.TEXT,
+    },
+    totalPriceValue: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#28a745',
+    },
+    addMemberModalButtons: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    modalButton: {
+      flex: 1,
+      padding: 16,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    cancelButton: {
+      backgroundColor: '#f8f9fa',
+      borderWidth: 1,
+      borderColor: '#ddd',
+    },
+    cancelButtonText: {
+      color: '#666',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    purchaseButton: {
+      backgroundColor: '#28a745',
+    },
+    purchaseButtonText: {
       color: 'white',
       fontSize: 16,
       fontWeight: 'bold',
