@@ -1311,14 +1311,10 @@ export default function SettingsScreen({ navigation, route }) {
 
       console.log(`[TEST] All members created. Current inviteTokens count:`, inviteTokens?.length);
 
+      // Show simple alert without blocking
       Alert.alert(
         'Test Complete',
-        `Successfully filled ${planLimit} team members. Please close and reopen the "Manage Team" modal to see all revoke buttons.`,
-        [
-          {
-            text: 'OK'
-          }
-        ]
+        `Successfully filled ${planLimit} team members. Close and reopen the "Manage Team" modal to see all revoke buttons.`
       );
     } catch (error) {
       console.error('[TEST] Failed to fill team members:', error);
@@ -1361,10 +1357,13 @@ export default function SettingsScreen({ navigation, route }) {
                 }
               }
 
-              // Refresh team members list
-              await fetchTeamMembersForModal();
+              console.log('[TEST] All tokens removed');
 
-              Alert.alert('Success', 'All team members and tokens have been cleared.');
+              // Show simple alert without blocking
+              Alert.alert(
+                'Success',
+                'All team members and tokens have been cleared. Close and reopen the "Manage Team" modal to refresh.'
+              );
             } catch (error) {
               console.error('[TEST] Failed to clear team members:', error);
               Alert.alert('Error', 'Failed to clear all team members. Check console for details.');
@@ -5431,13 +5430,15 @@ export default function SettingsScreen({ navigation, route }) {
                           <ScrollView style={styles.teamMembersScrollContainer} nestedScrollEnabled={true}>
                             {teamMembersList.map((item, index) => {
                               const memberToken = item.token;
-                              const hasActiveInvite = memberToken && inviteTokens?.includes(memberToken);
+                              // If the team member has a token, they should have a revoke button
+                              // Don't rely on inviteTokens which can be stale due to React state batching
+                              const showRevokeButton = memberToken && memberToken.length > 0;
                               return (
                                 <View key={`member-${index}-${memberToken || index}`} style={styles.memberCard}>
                                   {/* First row: Name and Revoke button */}
                                   <View style={styles.memberCardRow}>
                                     <Text style={styles.memberName}>{item.name || 'Unknown'}</Text>
-                                    {memberToken && hasActiveInvite && (
+                                    {showRevokeButton && (
                                       <TouchableOpacity
                                         onPress={async () => {
                                           Alert.alert(
