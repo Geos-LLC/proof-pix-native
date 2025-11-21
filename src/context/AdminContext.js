@@ -403,6 +403,7 @@ export function AdminProvider({ children }) {
    * Load saved admin data from storage
    */
   const loadAdminData = async () => {
+    console.log('[ADMIN] ========== LOADING ADMIN DATA ON APP START ==========');
     try {
       setIsLoading(true);
 
@@ -462,6 +463,23 @@ export function AdminProvider({ children }) {
 
         await setConnectedAccountsState(storedAccounts, { persist: false });
         await applyAccountState(activeAccount, { syncStorage: true });
+
+        // Restore Google Sign-In SDK session silently for Google accounts
+        // This is needed to get access tokens after app restart
+        if (activeAccount && activeAccount.accountType === 'google') {
+          try {
+            if (googleAuthService.isAvailable()) {
+              console.log('[ADMIN] Attempting to restore Google Sign-In session silently for connected account...');
+              await googleAuthService.signInSilently();
+              console.log('[ADMIN] ✅ Google Sign-In session restored successfully');
+            }
+          } catch (silentSignInError) {
+            console.warn('[ADMIN] Could not restore Google Sign-In session silently:', silentSignInError.message);
+            console.warn('[ADMIN] User will need to reconnect to use team features');
+            // Don't fail here - user can still see their data and reconnect if needed
+          }
+        }
+
         return;
       }
 
@@ -482,6 +500,20 @@ export function AdminProvider({ children }) {
       if (storedUser) {
         setUserInfo(storedUser);
         setIsAuthenticated(true);
+
+        // Restore Google Sign-In SDK session silently
+        // This is needed to get access tokens after app restart
+        try {
+          if (googleAuthService.isAvailable()) {
+            console.log('[ADMIN] Attempting to restore Google Sign-In session silently...');
+            await googleAuthService.signInSilently();
+            console.log('[ADMIN] ✅ Google Sign-In session restored successfully');
+          }
+        } catch (silentSignInError) {
+          console.warn('[ADMIN] Could not restore Google Sign-In session silently:', silentSignInError.message);
+          console.warn('[ADMIN] User will need to reconnect to use team features');
+          // Don't fail here - user can still see their data and reconnect if needed
+        }
       } else {
         setIsAuthenticated(false);
       }

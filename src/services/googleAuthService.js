@@ -241,6 +241,24 @@ class GoogleAuthService {
   }
 
   /**
+   * Silently restore Google Sign-In session
+   * This should be called on app startup to restore the SDK session
+   * @returns {Promise<void>}
+   */
+  async signInSilently() {
+    this.checkAvailability();
+    try {
+      console.log('[AUTH] Calling signInSilently() to restore SDK session...');
+      const userInfo = await GoogleSignin.signInSilently();
+      console.log('[AUTH] signInSilently() succeeded, user:', userInfo?.user?.email);
+      return userInfo;
+    } catch (error) {
+      console.error('[AUTH] signInSilently() failed:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Get user info from Google
    * @private
    */
@@ -486,32 +504,39 @@ class GoogleAuthService {
    * @returns {Promise<string|null>}
    */
   async getServerAuthCode() {
+    console.log('[AUTH] getServerAuthCode() called');
     if (!this.isAvailable()) {
       console.log('[AUTH] Google Sign-in not available, checking stored serverAuthCode');
     }
     try {
       // First try to get from current user (most recent)
       const currentUser = await GoogleSignin.getCurrentUser();
+      console.log('[AUTH] getCurrentUser() result:', currentUser ? 'User found' : 'No user');
       const code = currentUser?.serverAuthCode || currentUser?.data?.serverAuthCode;
       if (code) {
-        console.log('[AUTH] Found serverAuthCode from current user');
+        console.log('[AUTH] ✅ Found serverAuthCode from current user, length:', code.length);
         return code;
+      } else {
+        console.log('[AUTH] No serverAuthCode in current user, checking storage...');
       }
     } catch (e) {
       console.log('[AUTH] Could not get serverAuthCode from current user:', e.message);
     }
     try {
       // Fallback to stored value
+      console.log('[AUTH] Checking AsyncStorage for serverAuthCode...');
       const stored = await AsyncStorage.getItem(STORAGE_KEYS.SERVER_AUTH_CODE);
       if (stored) {
-        console.log('[AUTH] Found serverAuthCode from storage');
+        console.log('[AUTH] ✅ Found serverAuthCode from storage, length:', stored.length);
         return stored;
       } else {
-        console.warn('[AUTH] No serverAuthCode found in storage');
+        console.warn('[AUTH] ❌ No serverAuthCode found in storage');
+        console.warn('[AUTH] This means you need to reconnect to get a new serverAuthCode');
       }
     } catch (e) {
       console.error('[AUTH] Error reading serverAuthCode from storage:', e);
     }
+    console.log('[AUTH] ❌ No serverAuthCode available - reconnection required');
     return null;
   }
 
