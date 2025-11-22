@@ -408,6 +408,7 @@ class ProxyService {
 
   /**
    * Remove a team member by their token
+   * This uses the same endpoint as removeInviteToken since removing a token also removes the team member
    * @param {string} sessionId - Proxy session ID
    * @param {string} token - The invite token used by the team member
    * @returns {Promise<{success: boolean}>}
@@ -416,7 +417,8 @@ class ProxyService {
     try {
       console.log('[PROXY] Removing team member with token:', token);
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-members/${encodeURIComponent(token)}`, {
+      // Use the tokens endpoint - it removes both the token and the associated team member
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens/${encodeURIComponent(token)}`, {
         method: 'DELETE',
       });
 
