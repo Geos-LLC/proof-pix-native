@@ -269,7 +269,26 @@ app.post('/api/admin/:sessionId/tokens', async (req, res) => {
     session.inviteTokens = Array.from(inviteTokens);
 
     await kv.set(`session:${sessionId}`, session, { ex: SESSION_TTL });
-    
+
+    // Add to global team member registry immediately when invite is created
+    if (session.userId) {
+      const globalTeamKey = `team:${session.userId}:members`;
+      let globalTeamMembers = await kv.get(globalTeamKey) || [];
+
+      // Ensure it's an array
+      if (!Array.isArray(globalTeamMembers)) {
+        globalTeamMembers = [];
+      }
+
+      // Convert to Set for deduplication, add token, convert back to array
+      const memberSet = new Set(globalTeamMembers);
+      memberSet.add(token);
+
+      // Save global team members as array
+      await kv.set(globalTeamKey, Array.from(memberSet), { ex: SESSION_TTL });
+      console.log(`[TOKEN_ADD] Added invite token to global registry for userId ${session.userId}. Total count: ${memberSet.size}`);
+    }
+
     console.log(`Token added to session ${sessionId}`);
 
     res.json({ success: true });
