@@ -41,10 +41,13 @@
   "firstLoad": {
     "title": "Willkommen bei ProofPix",
     "subtitle": "Professionelle Fotodokumentation leicht gemacht",
+    "appSubtitle": "Vorher- & Nachher-Fotoverwaltung",
     "selectLanguage": "Sprache Wählen",
     "getStarted": "Loslegen",
     "yourName": "Ihr Name",
     "enterYourName": "Geben Sie Ihren Namen ein",
+    "nameRequired": "Name Erforderlich",
+    "nameRequiredMessage": "Bitte geben Sie Ihren Namen ein, um fortzufahren.",
     "joinTeam": "Team Beitreten",
     "useIndividual": "Als Einzelperson Nutzen",
     "individualSubtext": "Verwalten Sie Ihre eigenen Projekte mit kostenlosen und kostenpflichtigen Plänen.",
