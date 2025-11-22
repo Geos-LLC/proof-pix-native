@@ -938,7 +938,9 @@ export default function SettingsScreen({ navigation, route }) {
         try {
           const globalCountResult = await proxyService.getGlobalTeamMemberCount(proxySessionId);
           if (globalCountResult.success) {
-            console.log('[SETTINGS] Global team member count:', globalCountResult.globalCount);
+            console.log('[SETTINGS] Global team member count:', globalCountResult.globalCount, 'for folder:', globalCountResult.folderId);
+            console.log('[SETTINGS] Local team member count:', result.teamMembers?.length || 0);
+            console.log('[SETTINGS] Session ID:', proxySessionId);
             setGlobalTeamMemberCount(globalCountResult.globalCount);
           }
         } catch (globalCountError) {
