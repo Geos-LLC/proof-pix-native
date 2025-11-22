@@ -1082,6 +1082,61 @@ app.get('/api/admin/:sessionId/global-team-count', async (req, res) => {
 });
 
 /**
+ * Reset global team member registry for this user (by userId).
+ * This is used when the admin explicitly clears all team members in the app,
+ * so both local state and server-side global tracking are reset together.
+ *
+ * DELETE /api/admin/:sessionId/global-team-count
+ */
+app.delete('/api/admin/:sessionId/global-team-count', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await kv.get(`session:${sessionId}`);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (!session.userId) {
+      console.warn(`[GLOBAL_COUNT_RESET] Session ${sessionId} does not have userId, nothing to reset`);
+      return res.json({
+        success: true,
+        userId: null,
+        previousCount: (session.teamMembers || []).length || 0,
+        remainingCount: (session.teamMembers || []).length || 0,
+        fallback: true
+      });
+    }
+
+    const globalTeamKey = `team:${session.userId}:members`;
+    let globalTeamMembers = await kv.get(globalTeamKey) || [];
+
+    if (!Array.isArray(globalTeamMembers)) {
+      globalTeamMembers = [];
+    }
+
+    const previousCount = globalTeamMembers.length;
+
+    // Clear the global registry for this user
+    await kv.del(globalTeamKey);
+
+    console.log(`[GLOBAL_COUNT_RESET] Cleared global team registry for user ${session.userId}. Count: ${previousCount} -> 0`);
+
+    res.json({
+      success: true,
+      userId: session.userId,
+      previousCount,
+      remainingCount: 0
+    });
+  } catch (error) {
+    console.error('Error resetting global team count:', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
  * Validate session endpoint: Check if a session exists and is valid
  * GET /api/admin/:sessionId/validate
  */

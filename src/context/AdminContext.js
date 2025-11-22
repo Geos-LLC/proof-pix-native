@@ -33,7 +33,8 @@ export function AdminProvider({ children }) {
   const [userInfo, setUserInfo] = useState(null);
   const [folderId, setFolderId] = useState(null);
   const [inviteTokens, setInviteTokens] = useState([]);
-  const [planLimit, setPlanLimit] = useState(5); // Default plan limit
+  // Initialize planLimit based on current user plan: Enterprise = 15, Business/Others = 5
+  const [planLimit, setPlanLimit] = useState(() => currentUserPlan === 'enterprise' ? 15 : 5);
   const [isLoading, setIsLoading] = useState(true);
   const [userMode, setUserMode] = useState(null); // 'individual', 'admin', or 'team_member'
   const [teamInfo, setTeamInfo] = useState(null);
@@ -398,6 +399,19 @@ export function AdminProvider({ children }) {
   useEffect(() => {
     loadAdminData();
   }, []);
+
+  // Sync planLimit with current user plan
+  useEffect(() => {
+    const correctPlanLimit = currentUserPlan === 'enterprise' ? 15 : 5;
+    if (planLimit !== correctPlanLimit) {
+      console.log(`[ADMIN] Updating planLimit from ${planLimit} to ${correctPlanLimit} for plan: ${currentUserPlan}`);
+      // Use updatePlanLimit to ensure it persists to storage and updates activeAccount
+      updatePlanLimit(correctPlanLimit).catch(error => {
+        console.warn('[ADMIN] Failed to update planLimit:', error);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserPlan, planLimit]);
 
   /**
    * Load saved admin data from storage
@@ -1134,6 +1148,7 @@ export function AdminProvider({ children }) {
     disconnectAllAccounts,
     removeConnectedAccount,
     upsertConnectedAccount,
+    updateActiveAccount,
     activateConnectedAccount,
 
     // Helpers

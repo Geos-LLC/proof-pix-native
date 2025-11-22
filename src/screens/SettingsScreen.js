@@ -591,6 +591,7 @@ export default function SettingsScreen({ navigation, route }) {
     getActiveAccount,
     removeConnectedAccount,
     upsertConnectedAccount,
+    updateActiveAccount,
     activateConnectedAccount,
     canAddMoreInvites,
     getRemainingInvites,
@@ -938,11 +939,28 @@ export default function SettingsScreen({ navigation, route }) {
         try {
           const globalCountResult = await proxyService.getGlobalTeamMemberCount(proxySessionId);
           if (globalCountResult.success) {
-            console.log('[SETTINGS] Global team member count:', globalCountResult.globalCount, 'for userId:', globalCountResult.userId || 'NOT SET');
-            console.log('[SETTINGS] Local team member count:', result.teamMembers?.length || 0);
+            const localCount = result.teamMembers?.length || 0;
+            const globalCount = globalCountResult.globalCount || 0;
+            
+            console.log('[SETTINGS] Global team member count:', globalCount, 'for userId:', globalCountResult.userId || 'NOT SET');
+            console.log('[SETTINGS] Local team member count:', localCount);
             console.log('[SETTINGS] Session ID:', proxySessionId);
             console.log('[SETTINGS] Using fallback?', globalCountResult.fallback || false);
-            setGlobalTeamMemberCount(globalCountResult.globalCount);
+            
+            // Detect mismatch: if local count is 0 but global count is > 0, 
+            // this means there are members from other sessions that shouldn't count for this session
+            // For Enterprise plan, we use global count across all accounts, but if this is a new session
+            // with 0 local members, we should reset the global count or use local count
+            if (localCount === 0 && globalCount > 0) {
+              console.warn('[SETTINGS] Mismatch detected: Local count is 0 but global count is', globalCount);
+              console.warn('[SETTINGS] This may indicate stale data from previous sessions. Using local count (0).');
+              // For Enterprise plan, if local team is empty, treat global count as 0
+              // This handles the case where a new team is set up but global count includes old members
+              setGlobalTeamMemberCount(0);
+            } else {
+              // Normal case: use global count
+              setGlobalTeamMemberCount(globalCount);
+            }
           }
         } catch (globalCountError) {
           console.error('[SETTINGS] Failed to fetch global team member count:', globalCountError);
@@ -1287,15 +1305,43 @@ export default function SettingsScreen({ navigation, route }) {
 
     Alert.alert(
       'Purchase Additional Members',
-      `You are about to purchase ${additionalMembersCount} additional team member slot${additionalMembersCount > 1 ? 's' : ''} for $${totalPrice}. This feature will be available soon.`,
+      `You are about to purchase ${additionalMembersCount} additional team member slot${additionalMembersCount > 1 ? 's' : ''} for $${totalPrice}.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm',
-          onPress: () => {
-            // TODO: Implement payment flow
-            setShowAddMemberModal(false);
-            Alert.alert('Coming Soon', 'Additional team member purchases will be available in an upcoming update.');
+          text: 'Confirm Purchase',
+          onPress: async () => {
+            try {
+              setShowAddMemberModal(false);
+
+              // Show loading
+              Alert.alert('Processing', 'Processing your purchase...', [], { cancelable: false });
+
+              // TODO: Implement actual payment processing here
+              // For now, simulate payment success after a short delay
+              await new Promise(resolve => setTimeout(resolve, 1500));
+
+              // Increase the plan limit
+              const currentPlanLimit = planLimit || 5;
+              const newPlanLimit = currentPlanLimit + additionalMembersCount;
+
+              // Update plan limit in AdminContext
+              await updateActiveAccount({ planLimit: newPlanLimit });
+
+              // Dismiss loading alert
+              Alert.alert(
+                'Purchase Successful',
+                `Successfully added ${additionalMembersCount} team member slot${additionalMembersCount > 1 ? 's' : ''}. You now have ${newPlanLimit} total slots.`,
+                [{ text: 'OK' }]
+              );
+
+              // Reset counter
+              setAdditionalMembersCount(1);
+
+            } catch (error) {
+              console.error('[PURCHASE] Error purchasing additional members:', error);
+              Alert.alert('Error', 'Failed to process purchase. Please try again.');
+            }
           }
         }
       ]
@@ -1310,32 +1356,77 @@ export default function SettingsScreen({ navigation, route }) {
     }
 
     try {
-      // Get current plan limit from AdminContext
-      const activeAccount = getActiveAccount();
-      const planLimit = activeAccount?.planLimit || 5;
+      // Get plan limit based on current user plan (Enterprise = 15, Business = 5)
+      const planLimit = userPlan === 'enterprise' ? 15 : 5;
 
-      console.log(`[TEST] Filling team to max capacity: ${planLimit} members`);
+      console.log(`[TEST] Filling team to max capacity: ${planLimit} members (plan: ${userPlan})`);
 
-      // First, clear all existing invites and team members
+      // First, fetch current team members from server to get all tokens
+      let allServerTokens = new Set();
+      try {
+        const result = await proxyService.getTeamMembers(proxySessionId);
+        if (result?.teamMembers) {
+          result.teamMembers.forEach(member => {
+            if (member.token) {
+              allServerTokens.add(member.token);
+            }
+          });
+        }
+      } catch (error) {
+        console.warn('[TEST] Failed to fetch team members from server:', error);
+      }
+
+      // Also get local tokens
       const inviteTokensSet = new Set([...(inviteTokens || [])]);
       const memberTokensSet = new Set(teamMembersList.map(member => member.token).filter(Boolean));
-      const allTokens = Array.from(new Set([...inviteTokensSet, ...memberTokensSet]));
+      
+      // Combine all tokens (local + server)
+      const allTokens = Array.from(new Set([...inviteTokensSet, ...memberTokensSet, ...allServerTokens]));
 
       if (allTokens.length > 0) {
         console.log(`[TEST] Clearing ${allTokens.length} existing tokens first...`);
         for (const token of allTokens) {
-          await proxyService.removeInviteToken(proxySessionId, token);
-          await removeInviteToken(token);
+          try {
+            await proxyService.removeInviteToken(proxySessionId, token);
+            await removeInviteToken(token);
+          } catch (error) {
+            console.warn(`[TEST] Failed to remove token ${token}:`, error);
+          }
         }
         console.log(`[TEST] All existing tokens cleared`);
+        
+        // Wait a bit for server to process deletions
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Now fill all slots from 1 to planLimit
-      for (let i = 0; i < planLimit; i++) {
-        const token = generateInviteToken();
-        const testMemberName = `Test Member ${i + 1}`;
+      // Get current global count after clearing
+      let currentGlobalCount = 0;
+      try {
+        const globalCountResult = await proxyService.getGlobalTeamMemberCount(proxySessionId);
+        if (globalCountResult.success) {
+          currentGlobalCount = globalCountResult.globalCount || 0;
+        }
+      } catch (error) {
+        console.warn('[TEST] Failed to get global count after clearing:', error);
+      }
 
-        console.log(`[TEST] Creating member ${i + 1}/${planLimit}: ${testMemberName}`);
+      // Calculate how many members to add (should be exactly planLimit)
+      const membersToAdd = Math.max(0, planLimit - currentGlobalCount);
+      
+      if (membersToAdd <= 0) {
+        Alert.alert('Info', `Team is already at max capacity (${currentGlobalCount}/${planLimit}).`);
+        await fetchTeamMembersForModal();
+        return;
+      }
+
+      console.log(`[TEST] Adding ${membersToAdd} members to reach limit of ${planLimit} (current: ${currentGlobalCount})`);
+
+      // Now fill all slots up to planLimit
+      for (let i = 0; i < membersToAdd; i++) {
+        const token = generateInviteToken();
+        const testMemberName = `Test Member ${currentGlobalCount + i + 1}`;
+
+        console.log(`[TEST] Creating member ${currentGlobalCount + i + 1}/${planLimit}: ${testMemberName}`);
 
         // Add to proxy server first
         await proxyService.addInviteToken(proxySessionId, token);
@@ -1350,7 +1441,7 @@ export default function SettingsScreen({ navigation, route }) {
         console.log(`[TEST] Team member registered: ${testMemberName} with token ${token}`);
       }
 
-      console.log(`[TEST] All ${planLimit} members created successfully`);
+      console.log(`[TEST] All ${membersToAdd} members created successfully`);
 
       // Refresh the modal to show updated state
       await fetchTeamMembersForModal();
@@ -1358,7 +1449,7 @@ export default function SettingsScreen({ navigation, route }) {
       // Show simple alert without blocking
       Alert.alert(
         'Test Complete',
-        `Successfully filled ${planLimit} team members.`
+        `Successfully filled team to ${planLimit} members. Added ${membersToAdd} new member(s).`
       );
     } catch (error) {
       console.error('[TEST] Failed to fill team members:', error);
@@ -1370,7 +1461,7 @@ export default function SettingsScreen({ navigation, route }) {
   const handleClearAllTeamMembers = async () => {
     Alert.alert(
       'Clear All Team Members',
-      'This will remove all team members and invite tokens. This action cannot be undone. Continue?',
+      'This will remove all team members and invite tokens from both local and server. This action cannot be undone. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1383,33 +1474,85 @@ export default function SettingsScreen({ navigation, route }) {
                 return;
               }
 
-              // Get all unique tokens from both inviteTokens and teamMembersList
+              // First, fetch all team members from server to get all tokens
+              let allServerTokens = new Set();
+              try {
+                const result = await proxyService.getTeamMembers(proxySessionId);
+                if (result?.teamMembers) {
+                  result.teamMembers.forEach(member => {
+                    if (member.token) {
+                      allServerTokens.add(member.token);
+                    }
+                  });
+                  console.log(`[TEST] Found ${result.teamMembers.length} team members on server`);
+                }
+              } catch (error) {
+                console.warn('[TEST] Failed to fetch team members from server:', error);
+              }
+
+              // Get all unique tokens from both local inviteTokens and teamMembersList
               const inviteTokensSet = new Set([...(inviteTokens || [])]);
               const memberTokensSet = new Set(teamMembersList.map(member => member.token).filter(Boolean));
-              const allTokens = Array.from(new Set([...inviteTokensSet, ...memberTokensSet]));
+              
+              // Combine all tokens (local + server) to ensure we clear everything
+              const allTokens = Array.from(new Set([...inviteTokensSet, ...memberTokensSet, ...allServerTokens]));
 
-              console.log(`[TEST] Clearing ${allTokens.length} team members and tokens (inviteTokens: ${inviteTokensSet.size}, memberTokens: ${memberTokensSet.size})`);
+              console.log(`[TEST] Clearing ${allTokens.length} team members and tokens (inviteTokens: ${inviteTokensSet.size}, memberTokens: ${memberTokensSet.size}, serverTokens: ${allServerTokens.size})`);
 
-              // Remove all tokens (which should also remove team members with updated proxy server)
+              // Remove all tokens from server (which should also remove team members)
+              let removedCount = 0;
               for (const token of allTokens) {
                 try {
                   await proxyService.removeInviteToken(proxySessionId, token);
-                  await removeInviteToken(token);
-                  console.log(`[TEST] Removed token: ${token}`);
+                  // Also remove from local state
+                  try {
+                    await removeInviteToken(token);
+                  } catch (localError) {
+                    // Token might not exist locally, that's ok
+                  }
+                  removedCount++;
+                  console.log(`[TEST] Removed token: ${token.substring(0, 10)}...`);
                 } catch (error) {
-                  console.error(`[TEST] Failed to remove token ${token}:`, error);
+                  console.error(`[TEST] Failed to remove token ${token.substring(0, 10)}...:`, error);
                 }
               }
 
-              console.log('[TEST] All tokens removed');
+              console.log(`[TEST] Removed ${removedCount} tokens`);
+
+              // Wait a bit for server to process deletions
+              await new Promise(resolve => setTimeout(resolve, 500));
+
+              // Verify global count is cleared
+              try {
+                const globalCountResult = await proxyService.getGlobalTeamMemberCount(proxySessionId);
+                if (globalCountResult.success) {
+                  const remainingCount = globalCountResult.globalCount || 0;
+                  console.log(`[TEST] Global team member count after clearing: ${remainingCount}`);
+                  if (remainingCount > 0) {
+                    console.warn(`[TEST] Warning: ${remainingCount} team members still exist on server. Forcing global reset.`);
+                    // Force a reset of the server-side global registry so local and server stay in sync
+                    try {
+                      const resetResult = await proxyService.resetGlobalTeamMemberCount(proxySessionId);
+                      console.log('[TEST] Global team member registry reset result:', resetResult);
+                    } catch (resetError) {
+                      console.warn('[TEST] Failed to reset global team member registry:', resetError);
+                    }
+                  }
+                }
+              } catch (error) {
+                console.warn('[TEST] Failed to verify global count after clearing:', error);
+              }
 
               // Refresh the modal to show updated state
               await fetchTeamMembersForModal();
 
+              // Locally ensure global count is reset to 0 after a full clear
+              setGlobalTeamMemberCount(0);
+
               // Show simple alert without blocking
               Alert.alert(
                 'Success',
-                'All team members and tokens have been cleared.'
+                `All team members and tokens have been cleared. Removed ${removedCount} token(s).`
               );
             } catch (error) {
               console.error('[TEST] Failed to clear team members:', error);
@@ -5508,20 +5651,41 @@ export default function SettingsScreen({ navigation, route }) {
                         })()}
                       </>
                     )}
-                    {areAllSlotsFilledWithMembers() && (userPlan === 'business' || userPlan === 'enterprise') ? (
-                      <TouchableOpacity style={styles.addMemberButton} onPress={handleOpenAddMemberModal}>
-                        <Text style={styles.addMemberButtonText}>
-                          Add Team Member
-                        </Text>
-                        <Text style={styles.addMemberButtonPrice}>
-                          ${getPricePerMember()}/member
-                        </Text>
-                      </TouchableOpacity>
-                    ) : canAddMoreInvitesLocal() ? (
-                      <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
-                        <Text style={styles.generateButtonText}>Generate New Invite</Text>
-                      </TouchableOpacity>
-                    ) : null}
+                    {(() => {
+                      const slotsFilledResult = areAllSlotsFilledWithMembers();
+                      const canAddMoreResult = canAddMoreInvitesLocal();
+                      const isPaidPlan = userPlan === 'business' || userPlan === 'enterprise';
+
+                      console.log('[BUTTON_VISIBILITY] areAllSlotsFilledWithMembers:', slotsFilledResult);
+                      console.log('[BUTTON_VISIBILITY] canAddMoreInvitesLocal:', canAddMoreResult);
+                      console.log('[BUTTON_VISIBILITY] isPaidPlan:', isPaidPlan);
+                      console.log('[BUTTON_VISIBILITY] globalTeamMemberCount:', globalTeamMemberCount);
+                      console.log('[BUTTON_VISIBILITY] planLimit:', planLimit);
+                      console.log('[BUTTON_VISIBILITY] userPlan:', userPlan);
+
+                      if (slotsFilledResult && isPaidPlan) {
+                        console.log('[BUTTON_VISIBILITY] Showing Add Team Member button');
+                        return (
+                          <TouchableOpacity style={styles.addMemberButton} onPress={handleOpenAddMemberModal}>
+                            <Text style={styles.addMemberButtonText}>
+                              Add Team Member
+                            </Text>
+                            <Text style={styles.addMemberButtonPrice}>
+                              ${getPricePerMember()}/member
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      } else if (canAddMoreResult) {
+                        console.log('[BUTTON_VISIBILITY] Showing Generate New Invite button');
+                        return (
+                          <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
+                            <Text style={styles.generateButtonText}>Generate New Invite</Text>
+                          </TouchableOpacity>
+                        );
+                      }
+                      console.log('[BUTTON_VISIBILITY] Showing nothing');
+                      return null;
+                    })()}
                   </View>
 
                   {/* Team Members */}

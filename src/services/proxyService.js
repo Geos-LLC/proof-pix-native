@@ -413,6 +413,38 @@ class ProxyService {
   }
 
   /**
+   * Reset global team member count for the current user (by userId).
+   * This clears the server-side global registry used for Enterprise limits.
+   * @param {string} sessionId - Proxy session ID
+   * @returns {Promise<{success: boolean, previousCount: number, remainingCount: number}>}
+   */
+  async resetGlobalTeamMemberCount(sessionId) {
+    try {
+      console.log('[PROXY] Resetting global team member count for session:', sessionId);
+
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
+        method: 'DELETE',
+      });
+
+      console.log('[PROXY] Global team count reset response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PROXY] Reset global team count error:', errorText);
+        throw new Error(`Failed to reset global team count: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[PROXY] Global team member count reset:', data);
+
+      return data;
+    } catch (error) {
+      console.error('[PROXY] Error resetting global team count:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Remove a team member by their token
    * This uses the same endpoint as removeInviteToken since removing a token also removes the team member
    * @param {string} sessionId - Proxy session ID
