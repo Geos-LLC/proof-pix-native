@@ -586,18 +586,20 @@ app.post('/api/upload/:sessionId', async (req, res) => {
       // Update global team member registry (for cross-account tracking)
       if (session.folderId) {
         const globalTeamKey = `team:${session.folderId}:members`;
-        let globalTeamMembers = await kv.get(globalTeamKey) || new Set();
+        let globalTeamMembers = await kv.get(globalTeamKey) || [];
 
-        // Convert to Set if it's an array (for backward compatibility)
-        if (Array.isArray(globalTeamMembers)) {
-          globalTeamMembers = new Set(globalTeamMembers);
+        // Ensure it's an array
+        if (!Array.isArray(globalTeamMembers)) {
+          globalTeamMembers = [];
         }
 
-        // Add this token to global registry
-        globalTeamMembers.add(token);
+        // Convert to Set for deduplication, add token, convert back to array
+        const memberSet = new Set(globalTeamMembers);
+        memberSet.add(token);
 
-        // Save global team members (convert Set to Array for JSON storage)
-        await kv.set(globalTeamKey, Array.from(globalTeamMembers), { ex: SESSION_TTL });
+        // Save global team members as array
+        await kv.set(globalTeamKey, Array.from(memberSet), { ex: SESSION_TTL });
+        console.log(`[UPLOAD] Added token to global registry for folder ${session.folderId}. Total count: ${memberSet.size}`);
       }
     }
     
@@ -884,18 +886,20 @@ app.post('/api/team/:sessionId/join', async (req, res) => {
     // Update global team member registry (for cross-account tracking)
     if (session.folderId) {
       const globalTeamKey = `team:${session.folderId}:members`;
-      let globalTeamMembers = await kv.get(globalTeamKey) || new Set();
+      let globalTeamMembers = await kv.get(globalTeamKey) || [];
 
-      // Convert to Set if it's an array (for backward compatibility)
-      if (Array.isArray(globalTeamMembers)) {
-        globalTeamMembers = new Set(globalTeamMembers);
+      // Ensure it's an array
+      if (!Array.isArray(globalTeamMembers)) {
+        globalTeamMembers = [];
       }
 
-      // Add this token to global registry
-      globalTeamMembers.add(token);
+      // Convert to Set for deduplication, add token, convert back to array
+      const memberSet = new Set(globalTeamMembers);
+      memberSet.add(token);
 
-      // Save global team members (convert Set to Array for JSON storage)
-      await kv.set(globalTeamKey, Array.from(globalTeamMembers), { ex: SESSION_TTL });
+      // Save global team members as array
+      await kv.set(globalTeamKey, Array.from(memberSet), { ex: SESSION_TTL });
+      console.log(`[TEAM_JOIN] Added token to global registry for folder ${session.folderId}. Total count: ${memberSet.size}`);
     }
 
     res.json({
