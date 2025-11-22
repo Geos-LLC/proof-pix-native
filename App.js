@@ -424,7 +424,6 @@ export default function App() {
                         screen_name: currentRouteName,
                         screen_class: currentRouteName,
                       });
-                      console.log('[Analytics] Screen view logged:', currentRouteName);
                     } catch (error) {
                       console.error('[Analytics] Error logging screen view:', error);
                     }
@@ -447,19 +446,15 @@ export default function App() {
                           // Fallback: Check if trial was just started (within last 5 minutes)
                           const { getTrialInfo, isTrialActive } = await import('./src/services/trialService');
                           const trialActive = await isTrialActive();
-                          console.log('[App] Trial active check:', trialActive);
                           if (trialActive) {
                             const trialInfo = await getTrialInfo();
-                            console.log('[App] Trial info:', trialInfo);
                             if (trialInfo) {
                               const startDate = new Date(trialInfo.startDate).getTime();
                               const now = new Date().getTime();
                               const minutesSinceStart = (now - startDate) / (1000 * 60);
-                              console.log('[App] Minutes since trial start:', minutesSinceStart);
                               
                               // If trial started within last 5 minutes, show welcome notification
                               if (minutesSinceStart < 5) {
-                                console.log('[App] Triggering welcome notification check');
                                 checkTrialNotifications(false); // Don't skip Day 0
                               }
                             }

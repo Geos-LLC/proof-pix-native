@@ -67,9 +67,6 @@ export default function ReferralScreen({ navigation }) {
           pendingInvites: stats.pendingInvites || 0,
           monthsEarned: stats.monthsEarned || 0,
         });
-        console.log('[ReferralScreen] Loaded stats from server:', stats);
-      } else {
-        console.log('[ReferralScreen] Failed to load server stats, using defaults');
       }
 
       // Still load local info for backward compatibility

@@ -58,12 +58,6 @@ class GoogleAuthService {
         offlineAccess: true, // Required to get serverAuthCode
         forceCodeForRefreshToken: true, // Force showing consent screen to get refresh token
       });
-
-      console.log('[AUTH] GoogleSignin configured with:');
-      console.log('- webClientId:', process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.substring(0, 20) + '...');
-      console.log('- iosClientId:', process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.substring(0, 20) + '...');
-      console.log('- offlineAccess: true');
-      console.log('- forceCodeForRefreshToken: true');
     }
   }
 
@@ -74,14 +68,14 @@ class GoogleAuthService {
   async signInAsAdmin() {
     this.checkAvailability();
     const scopes = [
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile',
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/script.projects',
-        'https://www.googleapis.com/auth/script.deployments',
-        'https://www.googleapis.com/auth/script.external_request',
-      ];
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/script.projects',
+      'https://www.googleapis.com/auth/script.deployments',
+      'https://www.googleapis.com/auth/script.external_request',
+    ];
     return this.signIn(scopes);
   }
 
@@ -94,23 +88,11 @@ class GoogleAuthService {
     // Use full 'drive' scope instead of 'drive.file' to ensure we can search and create folders
     // 'drive.file' only works for files created by the app, which might not work for folder operations
     const scopes = [
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile',
-        'https://www.googleapis.com/auth/drive', // Full Drive scope for folder operations
-      ];
-    console.log('Requesting scopes for individual sign-in:', scopes);
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/drive', // Full Drive scope for folder operations
+    ];
     const result = await this.signIn(scopes);
-    
-    // After sign-in, verify we have access token
-    if (result && result.userInfo) {
-      try {
-        const tokens = await GoogleSignin.getTokens();
-        console.log('Access token obtained after sign-in');
-        console.log('Token scopes should include Drive - verify in Google Cloud Console OAuth consent screen');
-      } catch (tokenError) {
-        console.error('Failed to get tokens after sign-in:', tokenError);
-      }
-    }
     
     return result;
   }
@@ -129,26 +111,19 @@ class GoogleAuthService {
       // 2. Google will still show consent screen if new scopes are requested
       try {
         await GoogleSignin.signOut();
-        console.log('Signed out to prepare for fresh sign-in');
         // Wait a moment to ensure sign out completes
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (signOutError) {
         // Ignore if sign out fails - user might not be signed in
-        console.log('Sign out not needed or failed:', signOutError.message);
       }
       
       // Sign in with all required scopes
       // After revokeAccess and signOut, this should show the consent screen with all requested permissions including Drive
-      console.log('=== SIGNING IN WITH SCOPES ===');
-      console.log('Scopes requested:', JSON.stringify(scopes, null, 2));
-      console.log('Make sure these scopes are configured in Google Cloud Console OAuth consent screen!');
-      
+
       const response = await GoogleSignin.signIn({ scopes });
-      console.log('Raw userInfo from Google Sign-In:', JSON.stringify(response, null, 2));
 
       // If the user cancelled, Google Sign-In SDK returns an object with type "cancelled"
       if (response?.type === 'cancelled') {
-        console.log('Google Sign-In was cancelled by the user.');
         return { error: 'Sign in was cancelled.' };
       }
 
@@ -161,11 +136,7 @@ class GoogleAuthService {
         try {
           const serverAuthCode = response?.serverAuthCode || response?.data?.serverAuthCode;
           if (serverAuthCode) {
-            console.log('[AUTH] ✅ serverAuthCode obtained from Google Sign-In');
-            console.log('[AUTH] serverAuthCode length:', serverAuthCode.length);
-            console.log('[AUTH] Storing serverAuthCode for proxy session');
             await AsyncStorage.setItem(STORAGE_KEYS.SERVER_AUTH_CODE, serverAuthCode);
-            console.log('[AUTH] serverAuthCode stored successfully');
           } else {
             console.error('[AUTH] ⚠️ CRITICAL: No serverAuthCode found in sign-in response!');
             console.error('[AUTH] Response structure:', Object.keys(response));
@@ -179,9 +150,6 @@ class GoogleAuthService {
         // Verify we got the tokens and check scopes
         try {
           const tokens = await GoogleSignin.getTokens();
-          console.log('=== TOKEN VERIFICATION ===');
-          console.log('Access token obtained:', tokens.accessToken ? 'YES' : 'NO');
-          console.log('Token length:', tokens.accessToken?.length || 0);
           
           // Try to decode token to check scopes (JWT format)
           if (tokens.accessToken) {
@@ -191,13 +159,10 @@ class GoogleAuthService {
               if (parts.length === 3) {
                 // Decode the payload (second part)
                 const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-                console.log('Token scopes from JWT:', payload.scope || 'Not found in token');
                 if (!payload.scope || !payload.scope.includes('drive')) {
                   console.error('⚠️ WARNING: Drive scope NOT found in token!');
                   console.error('Token scopes:', payload.scope);
                   console.error('You need to add Drive scope to Google Cloud Console OAuth consent screen');
-                } else {
-                  console.log('✅ Drive scope found in token!');
                 }
               }
             } catch (decodeError) {

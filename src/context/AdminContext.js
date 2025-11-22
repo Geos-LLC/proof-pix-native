@@ -613,17 +613,13 @@ export function AdminProvider({ children }) {
    */
   const adminSignIn = async () => {
     try {
-      console.log("Admin sign-in process started...");
       const result = await googleAuthService.signInAsAdmin();
-      console.log("Received response from Google Sign-In service:", JSON.stringify(result, null, 2));
 
       if (result && result.error) {
-        console.log('Sign-in failed with error:', result.error);
         return { success: false, error: result.error };
       }
 
       if (result && result.userInfo) {
-        console.log("Sign-in successful, user info found.");
         setIsAuthenticated(true);
         setUserInfo(result.userInfo);
         setUserMode('admin');
@@ -650,17 +646,13 @@ export function AdminProvider({ children }) {
    */
   const individualSignIn = async () => {
     try {
-      console.log("Individual sign-in process started...");
       const result = await googleAuthService.signInAsIndividual();
-      console.log("Received response from Google Sign-In service:", JSON.stringify(result, null, 2));
 
       if (result && result.error) {
-        console.log('Sign-in failed with error:', result.error);
         return { success: false, error: result.error };
       }
 
       if (result && result.userInfo) {
-        console.log("Sign-in successful, user info found.");
         setIsAuthenticated(true);
         setUserInfo(result.userInfo);
         setUserMode('individual');
@@ -676,7 +668,6 @@ export function AdminProvider({ children }) {
 
       throw new Error("Invalid or unexpected response from googleAuthService");
     } catch (error) {
-      console.log("Unexpected error in individual sign-in flow:", error.message);
       setIsAuthenticated(false);
       return { success: false, error: error.message };
     }
@@ -708,7 +699,6 @@ export function AdminProvider({ children }) {
         if (currentUserName) {
           await AsyncStorage.setItem('@stored_individual_name', currentUserName);
         }
-        console.log('[ADMIN] Stored individual plan, mode, and name:', { plan: currentPlan, mode: currentMode, userName: currentUserName });
       }
 
       // Get team member's name from settings (this should be the name entered in the test modal or join flow)
@@ -720,7 +710,6 @@ export function AdminProvider({ children }) {
       // Register team member join with proxy server
       try {
         await proxyService.registerTeamMemberJoin(sessionId, token, memberName);
-        console.log('[ADMIN] Team member registered with proxy server');
       } catch (registerError) {
         console.warn('[ADMIN] Failed to register team member (non-critical):', registerError.message);
         // Continue anyway - the join can still work
@@ -760,13 +749,6 @@ export function AdminProvider({ children }) {
    */
   const switchToIndividualMode = async () => {
     try {
-      console.log('[ADMIN] switchToIndividualMode called - starting switch');
-      console.log('[ADMIN] Current state:', {
-        userMode,
-        proxySessionId,
-        inviteTokens: inviteTokens?.length || 0,
-        folderId
-      });
 
       // Get stored individual plan, mode, and name
       const [storedPlan, storedMode, storedName] = await AsyncStorage.multiGet([
@@ -778,9 +760,6 @@ export function AdminProvider({ children }) {
       const individualPlan = storedPlan[1] || 'starter';
       const individualMode = storedMode[1] || 'individual';
       const individualName = storedName[1] || '';
-
-      console.log('[ADMIN] Switching back to individual mode:', { plan: individualPlan, mode: individualMode, userName: individualName });
-      console.log('[ADMIN] Stored values from AsyncStorage:', { storedPlan: storedPlan[1], storedMode: storedMode[1], storedName: storedName[1] });
 
       // Clear team member info
       await AsyncStorage.removeItem(STORAGE_KEYS.TEAM_MEMBER_INFO);
@@ -798,7 +777,6 @@ export function AdminProvider({ children }) {
         // Use the SettingsContext method to properly update the name and trigger re-renders
         if (settingsContext && settingsContext.updateUserInfo) {
           await settingsContext.updateUserInfo(individualName);
-          console.log('[ADMIN] Restored individual user name via SettingsContext:', individualName);
         } else {
           // Fallback: directly update AsyncStorage if SettingsContext is not available
           const settingsKey = 'app-settings';
@@ -808,7 +786,6 @@ export function AdminProvider({ children }) {
             ...settings,
             userName: individualName
           }));
-          console.log('[ADMIN] Restored individual user name directly:', individualName);
         }
       }
 

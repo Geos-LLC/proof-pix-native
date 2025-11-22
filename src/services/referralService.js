@@ -420,8 +420,6 @@ export const initializeReferralCode = async () => {
     // Get user ID (this will generate and persist if not exists)
     const userId = await getUserId();
 
-    console.log(`[ReferralService] Initializing referral - userId: ${userId}, code: ${code}`);
-
     if (userId) {
       // Register on server (idempotent - safe to call multiple times)
       await registerReferralCodeOnServer(userId, code);
