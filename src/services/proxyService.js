@@ -376,6 +376,37 @@ class ProxyService {
   }
 
   /**
+   * Get global team member count across all accounts sharing the same team
+   * @param {string} sessionId - Proxy session ID
+   * @returns {Promise<{success: boolean, globalCount: number, folderId: string}>}
+   */
+  async getGlobalTeamMemberCount(sessionId) {
+    try {
+      console.log('[PROXY] Getting global team member count:', sessionId);
+
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
+        method: 'GET',
+      });
+
+      console.log('[PROXY] Global team count response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PROXY] Get global team count error:', errorText);
+        throw new Error(`Failed to get global team count: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[PROXY] Global team member count:', data.globalCount);
+
+      return data;
+    } catch (error) {
+      console.error('[PROXY] Error getting global team count:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Remove a team member by their token
    * @param {string} sessionId - Proxy session ID
    * @param {string} token - The invite token used by the team member

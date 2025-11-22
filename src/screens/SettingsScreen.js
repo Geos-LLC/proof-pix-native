@@ -316,6 +316,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [testMemberName, setTestMemberName] = useState('');
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [additionalMembersCount, setAdditionalMembersCount] = useState(1);
+  const [globalTeamMemberCount, setGlobalTeamMemberCount] = useState(0);
   
   // Log when test modal visibility changes
   useEffect(() => {
@@ -932,6 +933,19 @@ export default function SettingsScreen({ navigation, route }) {
         } else {
           setTeamMembersList([]);
         }
+
+        // Fetch global team member count (for Enterprise plan limit enforcement)
+        try {
+          const globalCountResult = await proxyService.getGlobalTeamMemberCount(proxySessionId);
+          if (globalCountResult.success) {
+            console.log('[SETTINGS] Global team member count:', globalCountResult.globalCount);
+            setGlobalTeamMemberCount(globalCountResult.globalCount);
+          }
+        } catch (globalCountError) {
+          console.error('[SETTINGS] Failed to fetch global team member count:', globalCountError);
+          // Fall back to local count if global count fails
+          setGlobalTeamMemberCount(result.teamMembers?.length || 0);
+        }
       } catch (error) {
         console.error('[SETTINGS] Failed to fetch team members:', error);
         setTeamMembersList([]);
@@ -940,6 +954,7 @@ export default function SettingsScreen({ navigation, route }) {
       }
     } else {
       setTeamMembersList([]);
+      setGlobalTeamMemberCount(0);
     }
   };
 
@@ -953,7 +968,7 @@ export default function SettingsScreen({ navigation, route }) {
 
   // Handler functions for Manage Team modal
   const handleGenerateInvite = async () => {
-    if (!canAddMoreInvites()) {
+    if (!canAddMoreInvitesLocal()) {
       Alert.alert('Cannot add more invites', 'You have reached your plan limit.');
       return;
     }
@@ -1227,9 +1242,23 @@ export default function SettingsScreen({ navigation, route }) {
 
   // Helper function to check if all team slots are filled with actual team members
   const areAllSlotsFilledWithMembers = () => {
-    // Check if the number of actual team members equals the plan limit
-    const actualMembersCount = teamMembersList?.length || 0;
+    // For Enterprise plan, use global count across all accounts
+    // For Business plan, use local count per account
+    const actualMembersCount = userPlan === 'enterprise'
+      ? globalTeamMemberCount
+      : (teamMembersList?.length || 0);
     return actualMembersCount >= planLimit && actualMembersCount > 0;
+  };
+
+  // Helper function to check if we can add more invites (considering global count for Enterprise)
+  const canAddMoreInvitesLocal = () => {
+    if (userPlan === 'enterprise') {
+      // For Enterprise, check global count across all accounts
+      return globalTeamMemberCount < planLimit;
+    } else {
+      // For Business and other plans, use the AdminContext function
+      return canAddMoreInvites();
+    }
   };
 
   // Helper function to get price per member based on plan
@@ -5479,7 +5508,7 @@ export default function SettingsScreen({ navigation, route }) {
                           ${getPricePerMember()}/member
                         </Text>
                       </TouchableOpacity>
-                    ) : canAddMoreInvites() ? (
+                    ) : canAddMoreInvitesLocal() ? (
                       <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
                         <Text style={styles.generateButtonText}>Generate New Invite</Text>
                       </TouchableOpacity>
@@ -5680,7 +5709,7 @@ export default function SettingsScreen({ navigation, route }) {
                 style={[styles.modalButton, styles.purchaseButton]}
                 onPress={handlePurchaseAdditionalMembers}
               >
-                <Text style={styles.purchaseButtonText}>Purchase</Text>
+                <Text style={styles.purchaseButtonText}>Add</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -6913,6 +6942,14 @@ const sliderStyles = StyleSheet.create({
     bottomModal: {
       justifyContent: 'flex-end',
       margin: 0,
+    },
+    modalHandle: {
+      width: 40,
+      height: 5,
+      backgroundColor: '#ddd',
+      borderRadius: 3,
+      alignSelf: 'center',
+      marginBottom: 16,
     },
     customModalSheet: {
       backgroundColor: 'white',
