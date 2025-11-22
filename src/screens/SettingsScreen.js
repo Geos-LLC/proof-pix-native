@@ -1349,10 +1349,13 @@ export default function SettingsScreen({ navigation, route }) {
 
       console.log(`[TEST] All ${planLimit} members created successfully`);
 
+      // Refresh the modal to show updated state
+      await fetchTeamMembersForModal();
+
       // Show simple alert without blocking
       Alert.alert(
         'Test Complete',
-        `Successfully filled ${planLimit} team members. Close and reopen the "Manage Team" modal to see all revoke buttons.`
+        `Successfully filled ${planLimit} team members.`
       );
     } catch (error) {
       console.error('[TEST] Failed to fill team members:', error);
@@ -1397,10 +1400,13 @@ export default function SettingsScreen({ navigation, route }) {
 
               console.log('[TEST] All tokens removed');
 
+              // Refresh the modal to show updated state
+              await fetchTeamMembersForModal();
+
               // Show simple alert without blocking
               Alert.alert(
                 'Success',
-                'All team members and tokens have been cleared. Close and reopen the "Manage Team" modal to refresh.'
+                'All team members and tokens have been cleared.'
               );
             } catch (error) {
               console.error('[TEST] Failed to clear team members:', error);
