@@ -240,10 +240,6 @@ export default function App() {
         // (__DEV__ is true in React Native debug/dev builds)
         const enableAnalytics = !__DEV__;
         await analytics().setAnalyticsCollectionEnabled(enableAnalytics);
-        console.log(
-          '[Firebase] Analytics collection',
-          enableAnalytics ? 'ENABLED (release)' : 'DISABLED for debug builds'
-        );
         setFirebaseInitialized(true);
       } catch (error) {
         console.error('[Firebase] Initialization error:', error);

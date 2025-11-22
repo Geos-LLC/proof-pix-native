@@ -248,9 +248,7 @@ class GoogleAuthService {
   async signInSilently() {
     this.checkAvailability();
     try {
-      console.log('[AUTH] Calling signInSilently() to restore SDK session...');
       const userInfo = await GoogleSignin.signInSilently();
-      console.log('[AUTH] signInSilently() succeeded, user:', userInfo?.user?.email);
       return userInfo;
     } catch (error) {
       console.error('[AUTH] signInSilently() failed:', error.message);

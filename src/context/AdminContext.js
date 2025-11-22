@@ -431,7 +431,6 @@ export function AdminProvider({ children }) {
    * Load saved admin data from storage
    */
   const loadAdminData = async () => {
-    console.log('[ADMIN] ========== LOADING ADMIN DATA ON APP START ==========');
     try {
       setIsLoading(true);
 
@@ -497,9 +496,7 @@ export function AdminProvider({ children }) {
         if (activeAccount && activeAccount.accountType === 'google') {
           try {
             if (googleAuthService.isAvailable()) {
-              console.log('[ADMIN] Attempting to restore Google Sign-In session silently for connected account...');
               await googleAuthService.signInSilently();
-              console.log('[ADMIN] ✅ Google Sign-In session restored successfully');
             }
           } catch (silentSignInError) {
             console.warn('[ADMIN] Could not restore Google Sign-In session silently:', silentSignInError.message);

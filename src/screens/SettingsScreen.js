@@ -325,13 +325,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [additionalMembersCount, setAdditionalMembersCount] = useState(1);
   const [globalTeamMemberCount, setGlobalTeamMemberCount] = useState(0);
   
-  // Log when test modal visibility changes
-  useEffect(() => {
-    console.log('[TEST_MODAL_STATE] showTestNameInput changed:', showTestNameInput);
-    if (showTestNameInput) {
-      console.log('[TEST_MODAL_STATE] Modal should be visible now');
-    }
-  }, [showTestNameInput]);
+  // Removed verbose test modal logging used during debugging
   const [currentTestToken, setCurrentTestToken] = useState(null);
   const [trialActive, setTrialActive] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
@@ -352,10 +346,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [rooms, setRooms] = useState(() => getRooms());
   const [currentRoom, setCurrentRoom] = useState(rooms.length > 0 ? rooms[0].id : null);
 
-  // Debug: track Add Team Member modal visibility
-  useEffect(() => {
-    console.log('[ADD_MEMBER_MODAL] visibility changed:', showAddMemberModal);
-  }, [showAddMemberModal]);
+  // Removed Add Member modal visibility debug logging
 
   useEffect(() => {
     const newRooms = getRooms();
@@ -628,37 +619,6 @@ export default function SettingsScreen({ navigation, route }) {
   
   // Note: We no longer automatically disconnect accounts
   // Users must explicitly disconnect via the modal when trying to connect another account
-
-  // Debug logging
-  useEffect(() => {
-    console.log('[SETTINGS] Account display check:', {
-      isEnterprisePlan,
-      isAuthenticated,
-      isDropboxAuthenticated,
-      isDropboxAuthenticatedForDisplay,
-      hasAdminUserInfo: !!adminUserInfo,
-      hasDropboxUserInfo: !!dropboxUserInfoChecked,
-      activeEnterpriseAccount: activeEnterpriseAccount?.email,
-      displayedActiveAccount: displayedActiveAccount?.email || displayedActiveAccount?.name
-    });
-  }, [isEnterprisePlan, isAuthenticated, isDropboxAuthenticated, isDropboxAuthenticatedForDisplay, adminUserInfo, dropboxUserInfoChecked, activeEnterpriseAccount, displayedActiveAccount]);
-
-  // Log when Google button should re-render
-  useEffect(() => {
-    const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? (!isAuthenticated || isDropboxAuthenticatedForDisplay) : true;
-    const isDisabled = (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn);
-    console.log('[GOOGLE_BUTTON] useEffect triggered - state changed:', {
-      userPlan,
-      shouldShow,
-      isDisabled,
-      isAuthenticated,
-      isDropboxAuthenticatedForDisplay,
-      isGoogleSignInAvailable,
-      isSigningIn,
-      canUseFeature: canUse(FEATURES.GOOGLE_DRIVE_SYNC),
-      timestamp: Date.now()
-    });
-  }, [userPlan, isAuthenticated, isDropboxAuthenticatedForDisplay, isGoogleSignInAvailable, isSigningIn]);
   
   // For non-enterprise: create a virtual Dropbox account if authenticated but not in connectedAccounts
   // For enterprise: use the active account from connectedAccounts
@@ -3066,64 +3026,24 @@ export default function SettingsScreen({ navigation, route }) {
                   {/* Buttons - Show opposite account's connect button to allow switching (for Pro/Business) */}
                   <>
                     {/* Connect to Google Account Button - Hide if Google is connected (for Pro/Business), show if Dropbox is connected or neither */}
-                    {(() => {
-                      const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? (!isAuthenticated || isDropboxAuthenticatedForDisplay) : true;
-                      const isDisabled = (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn);
-                      const canUseFeature = canUse(FEATURES.GOOGLE_DRIVE_SYNC);
-                      
-                      // Always log render state - this will help us see when button state changes
-                      console.log('[GOOGLE_BUTTON] Render check:', {
-                        userPlan,
-                        shouldShow,
-                        isDisabled,
-                        isAuthenticated,
-                        isDropboxAuthenticatedForDisplay,
-                        isGoogleSignInAvailable,
-                        isSigningIn,
-                        canUseFeature,
-                        isEnterprisePlan: userPlan === 'enterprise',
-                        timestamp: Date.now()
-                      });
-                      
-                      if (!shouldShow) {
-                        console.log('[GOOGLE_BUTTON] Button hidden - not rendering');
-                      }
-                      
-                      return shouldShow;
-                    })() && (
+                        {(() => {
+                          const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? (!isAuthenticated || isDropboxAuthenticatedForDisplay) : true;
+                          const isDisabled = (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn);
+                          const canUseFeature = canUse(FEATURES.GOOGLE_DRIVE_SYNC);
+                          return shouldShow;
+                        })() && (
                       <TouchableOpacity
                         style={[
                           styles.featureButton,
                           styles.googleSignInButton,
-                          (() => {
-                            const styleDisabled = ((userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn));
-                            console.log('[GOOGLE_BUTTON] Style check on every render:', {
-                              styleDisabled,
-                              willApplyDisabledStyle: styleDisabled,
-                              userPlan,
-                              isGoogleSignInAvailable,
-                              isSigningIn,
-                              canUseFeature: canUse(FEATURES.GOOGLE_DRIVE_SYNC),
-                              isDropboxConnected: isDropboxAuthenticatedForDisplay,
-                              timestamp: Date.now()
-                            });
-                            return styleDisabled && styles.googleButtonDisabled;
-                          })()
+                            (() => {
+                              const styleDisabled = ((userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn));
+                              return styleDisabled && styles.googleButtonDisabled;
+                            })()
                         ]}
                         onPress={async () => {
-                          console.log('[GOOGLE_BUTTON] ====== onPress FIRED ======', {
-                            userPlan,
-                            isDropboxAuthenticatedForDisplay,
-                            isAuthenticated,
-                            canUseFeature: canUse(FEATURES.GOOGLE_DRIVE_SYNC),
-                            isGoogleSignInAvailable,
-                            isSigningIn,
-                            timestamp: Date.now()
-                          });
-                          
                           // For Pro/Business/Enterprise: Check if Dropbox is connected first
                           if (isDropboxAuthenticatedForDisplay) {
-                            console.log('[GOOGLE_BUTTON] Dropbox connected - showing disconnect modal');
                             Alert.alert(
                               t('settings.disconnectActiveAccount', { defaultValue: 'Disconnect Active Account' }),
                               t('settings.disconnectActiveAccountMessage', { 
@@ -3168,20 +3088,11 @@ export default function SettingsScreen({ navigation, route }) {
                           const shouldCheckTier = userPlan !== 'pro' && userPlan !== 'business' && userPlan !== 'enterprise';
                           const canUseGoogle = canUse(FEATURES.GOOGLE_DRIVE_SYNC);
                           
-                          console.log('[GOOGLE_BUTTON] Tier check:', {
-                            shouldCheckTier,
-                            canUseGoogle,
-                            userPlan,
-                            willShowTierModal: shouldCheckTier && !canUseGoogle
-                          });
-                          
                           if (shouldCheckTier && !canUseGoogle) {
-                            console.log('[GOOGLE_BUTTON] Showing tiers popup');
                             setShowPlanModal(true);
                             return;
                           }
                           
-                          console.log('[GOOGLE_BUTTON] Starting Google sign-in');
                           setIsSigningIn(true);
                           try {
                             // For Pro, use individual sign-in; for Business/Enterprise, use admin sign-in
@@ -3198,18 +3109,6 @@ export default function SettingsScreen({ navigation, route }) {
                         }}
                         disabled={(() => {
                           const isDisabled = (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn);
-                          console.log('[GOOGLE_BUTTON] Disabled state check:', {
-                            userPlan,
-                            isGoogleSignInAvailable,
-                            isSigningIn,
-                            canUseFeature: canUse(FEATURES.GOOGLE_DRIVE_SYNC),
-                            isDisabled,
-                            isDropboxConnected: isDropboxAuthenticatedForDisplay,
-                            timestamp: Date.now()
-                          });
-                          if (isDisabled) {
-                            console.log('[GOOGLE_BUTTON] ====== BUTTON IS DISABLED - onPress WILL NOT FIRE ======');
-                          }
                           return isDisabled;
                         })()}
                       >
@@ -3765,16 +3664,6 @@ export default function SettingsScreen({ navigation, route }) {
                         {(() => {
                           const setupTeamDisabled = isSigningIn;
                           const setupTeamStyleDisabled = isSigningIn;
-                          console.log('[SETUP_TEAM_BUTTON] Render check:', {
-                            userPlan,
-                            isSigningIn,
-                            setupTeamDisabled,
-                            setupTeamStyleDisabled,
-                            isAuthenticated,
-                            accountType,
-                            isDropboxAccount,
-                            timestamp: Date.now()
-                          });
                           return null;
                         })()}
                         <TouchableOpacity
@@ -3784,15 +3673,6 @@ export default function SettingsScreen({ navigation, route }) {
                             isSigningIn && styles.buttonDisabled
                           ]}
                           onPress={async () => {
-                            console.log('[SETUP_TEAM_BUTTON] ====== onPress FIRED ======', {
-                              userPlan,
-                              isAuthenticated,
-                              accountType,
-                              isDropboxAccount,
-                              isTeamConnected,
-                              timestamp: Date.now()
-                            });
-
                             // Show tier selection modal for Starter/Pro users
                             if (userPlan === 'starter' || userPlan === 'pro') {
                               setShowPlanModal(true);
@@ -3875,15 +3755,6 @@ export default function SettingsScreen({ navigation, route }) {
                           }}
                           disabled={(() => {
                             const isDisabled = isSigningIn;
-                            console.log('[SETUP_TEAM_BUTTON] Disabled state:', {
-                              isDisabled,
-                              isSigningIn,
-                              userPlan,
-                              timestamp: Date.now()
-                            });
-                            if (isDisabled) {
-                              console.log('[SETUP_TEAM_BUTTON] ====== BUTTON IS DISABLED - onPress WILL NOT FIRE ======');
-                            }
                             return isDisabled;
                           })()}
                         >
@@ -3898,34 +3769,11 @@ export default function SettingsScreen({ navigation, route }) {
                           </Text>
                         </TouchableOpacity>
                         {/* Light red button (right) - Disconnect or Reconnect */}
-                        {(() => {
-                          console.log('[DISCONNECT_BUTTON] Render check:', {
-                            userPlan,
-                            isDropboxAccount,
-                            accountType,
-                            needsReconnect,
-                            isAuthenticated,
-                            isDropboxAuthenticatedForDisplay,
-                            timestamp: Date.now()
-                          });
-                          return null;
-                        })()}
                         <TouchableOpacity
                           style={[styles.accountActionButton, styles.accountActionButtonDisconnect]}
                           onPress={async () => {
-                            console.log('[DISCONNECT_BUTTON] ====== onPress FIRED ======', {
-                              userPlan,
-                              isDropboxAccount,
-                              accountType,
-                              needsReconnect,
-                              isAuthenticated,
-                              isDropboxAuthenticatedForDisplay,
-                              timestamp: Date.now()
-                            });
-                            
                             // Handle disconnect for both Google and Dropbox accounts
                             if (isDropboxAccount) {
-                              console.log('[DISCONNECT_BUTTON] Handling Dropbox disconnect');
                               // Disconnect Dropbox account
                               try {
                                 await dropboxAuthService.signOut();
@@ -3944,9 +3792,7 @@ export default function SettingsScreen({ navigation, route }) {
                               }
                             } else {
                               // Disconnect Google account
-                              console.log('[DISCONNECT_BUTTON] Handling Google disconnect, needsReconnect:', needsReconnect);
                               if (needsReconnect) {
-                                console.log('[DISCONNECT_BUTTON] Reconnect flow - signing out');
                                 // Reconnect: sign out then prompt to sign in again
                                 try {
                                   await signOut();
@@ -3961,7 +3807,6 @@ export default function SettingsScreen({ navigation, route }) {
                                   Alert.alert(t('common.error'), t('settings.reconnectError', { defaultValue: 'Failed to disconnect. Please try manually disconnecting from Settings.' }));
                                 }
                               } else {
-                                console.log('[DISCONNECT_BUTTON] Normal disconnect flow');
                                 // Normal disconnect
                                 await handleSignOut();
                               }
@@ -3969,15 +3814,6 @@ export default function SettingsScreen({ navigation, route }) {
                           }}
                           disabled={(() => {
                             const isDisabled = isSigningIn;
-                            console.log('[DISCONNECT_BUTTON] Disabled state:', {
-                              isDisabled,
-                              isSigningIn,
-                              needsReconnect,
-                              timestamp: Date.now()
-                            });
-                            if (isDisabled) {
-                              console.log('[DISCONNECT_BUTTON] ====== BUTTON IS DISABLED - onPress WILL NOT FIRE ======');
-                            }
                             return isDisabled;
                           })()}
                         >
@@ -4001,15 +3837,6 @@ export default function SettingsScreen({ navigation, route }) {
                 {/* Connect to Google button - Only show if not connected or enterprise can add multiple */}
                 {(() => {
                   const shouldShow = !isAuthenticated || (isAuthenticated && canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS));
-                  console.log('[GOOGLE_BUTTON_AFTER_CARD] Render check:', {
-                    userPlan,
-                    shouldShow,
-                    isAuthenticated,
-                    canUseMultiple: canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS),
-                    isDropboxAuthenticatedForDisplay,
-                    displayedActiveAccount: displayedActiveAccount?.email || displayedActiveAccount?.name,
-                    timestamp: Date.now()
-                  });
                   return shouldShow;
                 })() && (
                   <TouchableOpacity
@@ -4031,30 +3858,12 @@ export default function SettingsScreen({ navigation, route }) {
                           // For other plans, disable if feature is not available
                           styleDisabled = (!canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS) || !isGoogleSignInAvailable || isSigningIn);
                         }
-                        console.log('[GOOGLE_BUTTON_AFTER_CARD] Style check:', {
-                          styleDisabled,
-                          canUseMultiple: canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS),
-                          isGoogleSignInAvailable,
-                          isSigningIn,
-                          userPlan,
-                          isDropboxConnected: isDropboxAuthenticatedForDisplay,
-                          timestamp: Date.now()
-                        });
                         return styleDisabled && styles.googleButtonDisabled;
                       })()
                     ]}
                     onPress={async () => {
-                      console.log('[GOOGLE_BUTTON_AFTER_CARD] ====== onPress FIRED ======', {
-                        userPlan,
-                        canUseMultiple: canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS),
-                        isAuthenticated,
-                        isDropboxAuthenticatedForDisplay,
-                        timestamp: Date.now()
-                      });
-                      
                       // For Pro/Business: Check if Dropbox is connected first
                       if ((userPlan === 'pro' || userPlan === 'business') && isDropboxAuthenticatedForDisplay) {
-                        console.log('[GOOGLE_BUTTON_AFTER_CARD] Dropbox connected - showing disconnect modal');
                         Alert.alert(
                           t('settings.disconnectActiveAccount', { defaultValue: 'Disconnect Active Account' }),
                           t('settings.disconnectActiveAccountMessage', { 
@@ -4071,9 +3880,8 @@ export default function SettingsScreen({ navigation, route }) {
                                   await dropboxAuthService.signOut();
                                   setIsDropboxAuthenticated(false);
                                   setDropboxUserInfo(null);
-                                  console.log('[GOOGLE_BUTTON_AFTER_CARD] Dropbox disconnected');
                                 } catch (error) {
-                                  console.error('[GOOGLE_BUTTON_AFTER_CARD] Error disconnecting Dropbox:', error);
+                                  console.error('[SETTINGS] Error disconnecting Dropbox:', error);
                                 }
                                 // Continue with Google sign-in
                                 setIsSigningIn(true);
@@ -4084,7 +3892,7 @@ export default function SettingsScreen({ navigation, route }) {
                                     await adminSignIn();
                                   }
                                 } catch (error) {
-                                  console.error('[GOOGLE_BUTTON_AFTER_CARD] Error during sign in:', error);
+                                  console.error('[SETTINGS] Error during sign in:', error);
                                 } finally {
                                   setIsSigningIn(false);
                                 }
@@ -4122,15 +3930,6 @@ export default function SettingsScreen({ navigation, route }) {
                     }}
                     disabled={(() => {
                       const isDisabled = !isGoogleSignInAvailable || isSigningIn;
-                      console.log('[GOOGLE_BUTTON_AFTER_CARD] Disabled state:', {
-                        isDisabled,
-                        isGoogleSignInAvailable,
-                        isSigningIn,
-                        timestamp: Date.now()
-                      });
-                      if (isDisabled) {
-                        console.log('[GOOGLE_BUTTON_AFTER_CARD] ====== BUTTON IS DISABLED - onPress WILL NOT FIRE ======');
-                      }
                       return isDisabled;
                     })()}
                   >
@@ -5724,16 +5523,6 @@ export default function SettingsScreen({ navigation, route }) {
 
                         const remainingSlots = Math.max(0, limit - usedCount);
 
-                        console.log('[INVITES] Remaining slots calc:', {
-                          userPlan,
-                          planLimit,
-                          effectiveLimit: limit,
-                          usedCount,
-                          globalTeamMemberCount,
-                          localTeamMemberCount: teamMembersList?.length || 0,
-                          remainingSlots,
-                        });
-
                         return (
                           <Text style={styles.inviteCountText}>
                             {remainingSlots} remaining
@@ -5795,15 +5584,7 @@ export default function SettingsScreen({ navigation, route }) {
                       const canAddMoreResult = canAddMoreInvitesLocal();
                       const isPaidPlan = userPlan === 'business' || userPlan === 'enterprise';
 
-                      console.log('[BUTTON_VISIBILITY] areAllSlotsFilledWithMembers:', slotsFilledResult);
-                      console.log('[BUTTON_VISIBILITY] canAddMoreInvitesLocal:', canAddMoreResult);
-                      console.log('[BUTTON_VISIBILITY] isPaidPlan:', isPaidPlan);
-                      console.log('[BUTTON_VISIBILITY] globalTeamMemberCount:', globalTeamMemberCount);
-                      console.log('[BUTTON_VISIBILITY] planLimit:', planLimit);
-                      console.log('[BUTTON_VISIBILITY] userPlan:', userPlan);
-
                       if (slotsFilledResult && isPaidPlan) {
-                        console.log('[BUTTON_VISIBILITY] Showing Add Team Member button');
                         return (
                           <TouchableOpacity style={styles.addMemberButton} onPress={handleOpenAddMemberModal}>
                             <Text style={styles.addMemberButtonText}>
@@ -5815,14 +5596,12 @@ export default function SettingsScreen({ navigation, route }) {
                           </TouchableOpacity>
                         );
                       } else if (canAddMoreResult) {
-                        console.log('[BUTTON_VISIBILITY] Showing Generate New Invite button');
                         return (
                           <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
                             <Text style={styles.generateButtonText}>Generate New Invite</Text>
                           </TouchableOpacity>
                         );
                       }
-                      console.log('[BUTTON_VISIBILITY] Showing nothing');
                       return null;
                     })()}
                   </View>
