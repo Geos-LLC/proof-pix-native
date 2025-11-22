@@ -342,6 +342,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [watermarkOpacityPreview, setWatermarkOpacityPreview] = useState(
     typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5
   );
+  const [devToolsUnlocked, setDevToolsUnlocked] = useState(false);
 
   const [rooms, setRooms] = useState(() => getRooms());
   const [currentRoom, setCurrentRoom] = useState(rooms.length > 0 ? rooms[0].id : null);
@@ -381,6 +382,32 @@ export default function SettingsScreen({ navigation, route }) {
   useEffect(() => {
     currentRoomRef.current = currentRoom;
   }, [currentRoom]);
+
+  const devTapCountRef = useRef(0);
+
+  const handleTitleTap = useCallback(() => {
+    // Only enable secret tap gesture in development builds
+    if (!__DEV__) {
+      return;
+    }
+
+    // If already unlocked, no need to count further taps
+    if (devToolsUnlocked) {
+      return;
+    }
+
+    devTapCountRef.current += 1;
+
+    if (devTapCountRef.current >= 7) {
+      devTapCountRef.current = 0;
+      setDevToolsUnlocked(true);
+      try {
+        Alert.alert('Developer Tools', 'Test tools have been unlocked.');
+      } catch (e) {
+        // Alert may fail in some edge cases; not critical
+      }
+    }
+  }, [devToolsUnlocked]);
 
   // Horizontal swipe between rooms, similar to HomeScreen
   const roomPanResponder = useMemo(
@@ -2281,7 +2308,9 @@ export default function SettingsScreen({ navigation, route }) {
         >
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>{t('settings.title')}</Text>
+        <TouchableOpacity onPress={handleTitleTap} activeOpacity={0.7}>
+          <Text style={styles.title}>{t('settings.title')}</Text>
+        </TouchableOpacity>
         <View style={{ width: 60 }} />
       </View>
 
@@ -4321,8 +4350,8 @@ export default function SettingsScreen({ navigation, route }) {
             <Text style={styles.resetButtonText}>{t('settings.resetUserData')}</Text>
           </TouchableOpacity>
 
-          {/* Test Tools Button - Only in Development */}
-          {__DEV__ && (
+          {/* Test Tools Button - Only in Development and after secret tap unlock */}
+          {__DEV__ && devToolsUnlocked && (
             <>
               <View style={styles.divider} />
               <TouchableOpacity
