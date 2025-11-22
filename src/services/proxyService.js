@@ -13,14 +13,18 @@ class ProxyService {
    * Initialize an admin session on the proxy server
    * @param {string} folderId - Google Drive folder ID or Dropbox folder path
    * @param {string} accountType - Account type: 'google' or 'dropbox' (default: 'google')
+   * @param {string} userId - User ID for global team tracking across accounts
    * @returns {Promise<{sessionId: string}>}
    */
-  async initializeAdminSession(folderId, accountType = 'google') {
+  async initializeAdminSession(folderId, accountType = 'google', userId = null) {
     try {
       console.log('[PROXY] Initializing admin session with folder ID:', folderId);
+      console.log('[PROXY] User ID for global tracking:', userId);
       console.log('[PROXY] Using proxy server URL:', PROXY_SERVER_URL);
 
-      let authData = {};
+      let authData = {
+        userId, // Include userId for global team tracking
+      };
       
       if (accountType === 'dropbox') {
         // For Dropbox, get access token
@@ -31,6 +35,7 @@ class ProxyService {
         }
         console.log('[PROXY] Got Dropbox access token, length:', accessToken.length);
         authData = {
+          ...authData,
           accountType: 'dropbox',
           accessToken,
           folderPath: folderId, // For Dropbox, folderId is actually a folder path
@@ -45,13 +50,14 @@ class ProxyService {
 
         // IMPORTANT: Always use Web Client ID for server-side token exchange
         const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-        
+
         if (!clientId) {
           throw new Error('Missing Web Client ID. Please check EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in environment variables.');
         }
-        
+
         console.log(`[PROXY] Platform: ${Platform.OS}, Using Web Client ID for server-side token exchange: ${clientId.substring(0, 20)}...`);
         authData = {
+          ...authData,
           accountType: 'google',
           serverAuthCode,
           clientId,

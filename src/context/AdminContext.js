@@ -1021,10 +1021,20 @@ export function AdminProvider({ children }) {
 
       // Set guard to prevent concurrent calls
       setIsInitializingProxy(true);
-      
+
+      // Get or create userId for global team tracking
+      let userId = await AsyncStorage.getItem('@user_id');
+      if (!userId) {
+        userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        await AsyncStorage.setItem('@user_id', userId);
+        console.log('[ADMIN] Created new userId:', userId);
+      } else {
+        console.log('[ADMIN] Using existing userId:', userId);
+      }
+
       // Initialize new session via proxy service
       console.log('[ADMIN] Initializing new proxy session for account type:', accountType);
-      const result = await proxyService.initializeAdminSession(folderId, accountType);
+      const result = await proxyService.initializeAdminSession(folderId, accountType, userId);
       
       if (result && result.sessionId) {
         await AsyncStorage.setItem(STORAGE_KEYS.PROXY_SESSION_ID, result.sessionId);

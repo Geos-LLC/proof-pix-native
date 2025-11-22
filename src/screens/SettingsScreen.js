@@ -938,9 +938,10 @@ export default function SettingsScreen({ navigation, route }) {
         try {
           const globalCountResult = await proxyService.getGlobalTeamMemberCount(proxySessionId);
           if (globalCountResult.success) {
-            console.log('[SETTINGS] Global team member count:', globalCountResult.globalCount, 'for folder:', globalCountResult.folderId);
+            console.log('[SETTINGS] Global team member count:', globalCountResult.globalCount, 'for userId:', globalCountResult.userId || 'NOT SET');
             console.log('[SETTINGS] Local team member count:', result.teamMembers?.length || 0);
             console.log('[SETTINGS] Session ID:', proxySessionId);
+            console.log('[SETTINGS] Using fallback?', globalCountResult.fallback || false);
             setGlobalTeamMemberCount(globalCountResult.globalCount);
           }
         } catch (globalCountError) {
