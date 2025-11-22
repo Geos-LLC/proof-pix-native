@@ -400,14 +400,23 @@ export function AdminProvider({ children }) {
     loadAdminData();
   }, []);
 
-  // Sync planLimit with current user plan
+  // Ensure planLimit is at least the minimum for the current plan,
+  // but DO NOT downscale if user has purchased additional slots.
   useEffect(() => {
-    const correctPlanLimit = currentUserPlan === 'enterprise' ? 15 : 5;
-    if (planLimit !== correctPlanLimit) {
-      console.log(`[ADMIN] Updating planLimit from ${planLimit} to ${correctPlanLimit} for plan: ${currentUserPlan}`);
+    let minLimit = 0;
+    if (currentUserPlan === 'enterprise') {
+      minLimit = 15;
+    } else if (currentUserPlan === 'business') {
+      minLimit = 5;
+    }
+
+    if (planLimit < minLimit) {
+      console.log(
+        `[ADMIN] Enforcing minimum planLimit from ${planLimit} to ${minLimit} for plan: ${currentUserPlan}`
+      );
       // Use updatePlanLimit to ensure it persists to storage and updates activeAccount
-      updatePlanLimit(correctPlanLimit).catch(error => {
-        console.warn('[ADMIN] Failed to update planLimit:', error);
+      updatePlanLimit(minLimit).catch((error) => {
+        console.warn('[ADMIN] Failed to enforce minimum planLimit:', error);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1270,17 +1270,26 @@ export default function SettingsScreen({ navigation, route }) {
   const areAllSlotsFilledWithMembers = () => {
     // For Enterprise plan, use global count across all accounts
     // For Business plan, use local count per account
-    const actualMembersCount = userPlan === 'enterprise'
-      ? globalTeamMemberCount
-      : (teamMembersList?.length || 0);
+    let actualMembersCount;
+    if (userPlan === 'enterprise') {
+      // Prefer global count when available; fall back to local if global has not been fetched yet
+      const localCount = teamMembersList?.length || 0;
+      const globalCount = globalTeamMemberCount || 0;
+      actualMembersCount = globalCount > 0 ? globalCount : localCount;
+    } else {
+      actualMembersCount = teamMembersList?.length || 0;
+    }
     return actualMembersCount >= planLimit && actualMembersCount > 0;
   };
 
   // Helper function to check if we can add more invites (considering global count for Enterprise)
   const canAddMoreInvitesLocal = () => {
     if (userPlan === 'enterprise') {
-      // For Enterprise, check global count across all accounts
-      return globalTeamMemberCount < planLimit;
+      // For Enterprise, check global count across all accounts (with local fallback)
+      const localCount = teamMembersList?.length || 0;
+      const globalCount = globalTeamMemberCount || 0;
+      const used = globalCount > 0 ? globalCount : localCount;
+      return used < planLimit;
     } else {
       // For Business and other plans, use the AdminContext function
       return canAddMoreInvites();
@@ -1334,8 +1343,10 @@ export default function SettingsScreen({ navigation, route }) {
               const currentPlanLimit = planLimit || 5;
               const newPlanLimit = currentPlanLimit + additionalMembersCount;
 
-              // Update plan limit in AdminContext
-              await updateActiveAccount({ planLimit: newPlanLimit });
+              console.log('[PURCHASE] Increasing planLimit from', currentPlanLimit, 'to', newPlanLimit, 'for plan:', userPlan);
+
+              // Update plan limit via AdminContext helper so state, storage, and activeAccount stay in sync
+              await updatePlanLimit(newPlanLimit);
 
               // Dismiss loading alert
               Alert.alert(
@@ -1365,10 +1376,17 @@ export default function SettingsScreen({ navigation, route }) {
     }
 
     try {
-      // Get plan limit based on current user plan (Enterprise = 15, Business = 5)
-      const planLimit = userPlan === 'enterprise' ? 15 : 5;
+      // Use current planLimit from AdminContext, with sensible fallbacks
+      let effectiveLimit = planLimit || 0;
+      if (!effectiveLimit) {
+        if (userPlan === 'enterprise') {
+          effectiveLimit = 15;
+        } else if (userPlan === 'business') {
+          effectiveLimit = 5;
+        }
+      }
 
-      console.log(`[TEST] Filling team to max capacity: ${planLimit} members (plan: ${userPlan})`);
+      console.log(`[TEST] Filling team to max capacity: ${effectiveLimit} members (plan: ${userPlan})`);
 
       // First, fetch current team members from server to get all tokens
       let allServerTokens = new Set();
@@ -1419,23 +1437,23 @@ export default function SettingsScreen({ navigation, route }) {
         console.warn('[TEST] Failed to get global count after clearing:', error);
       }
 
-      // Calculate how many members to add (should be exactly planLimit)
-      const membersToAdd = Math.max(0, planLimit - currentGlobalCount);
+      // Calculate how many members to add (should be exactly effectiveLimit)
+      const membersToAdd = Math.max(0, effectiveLimit - currentGlobalCount);
       
       if (membersToAdd <= 0) {
-        Alert.alert('Info', `Team is already at max capacity (${currentGlobalCount}/${planLimit}).`);
+        Alert.alert('Info', `Team is already at max capacity (${currentGlobalCount}/${effectiveLimit}).`);
         await fetchTeamMembersForModal();
         return;
       }
 
-      console.log(`[TEST] Adding ${membersToAdd} members to reach limit of ${planLimit} (current: ${currentGlobalCount})`);
+      console.log(`[TEST] Adding ${membersToAdd} members to reach limit of ${effectiveLimit} (current: ${currentGlobalCount})`);
 
-      // Now fill all slots up to planLimit
+      // Now fill all slots up to effectiveLimit
       for (let i = 0; i < membersToAdd; i++) {
         const token = generateInviteToken();
         const testMemberName = `Test Member ${currentGlobalCount + i + 1}`;
 
-        console.log(`[TEST] Creating member ${currentGlobalCount + i + 1}/${planLimit}: ${testMemberName}`);
+        console.log(`[TEST] Creating member ${currentGlobalCount + i + 1}/${effectiveLimit}: ${testMemberName}`);
 
         // Add to proxy server first
         await proxyService.addInviteToken(proxySessionId, token);
@@ -1458,7 +1476,7 @@ export default function SettingsScreen({ navigation, route }) {
       // Show simple alert without blocking
       Alert.alert(
         'Test Complete',
-        `Successfully filled team to ${planLimit} members. Added ${membersToAdd} new member(s).`
+        `Successfully filled team to ${effectiveLimit} members. Added ${membersToAdd} new member(s).`
       );
     } catch (error) {
       console.error('[TEST] Failed to fill team members:', error);
@@ -3639,14 +3657,44 @@ export default function SettingsScreen({ navigation, route }) {
                   
                   return (
                     <>
-                      {/* Team Connected Banner - Show above account card when team is connected */}
-                      {isTeamConnected && (
-                        <View style={styles.teamConnectedBanner}>
-                          <Text style={styles.teamConnectedBannerText}>
-                            {t('settings.teamConnected', { defaultValue: 'Team Connected' })}
-                          </Text>
-                        </View>
-                      )}
+              {/* Team Connected Banner - Show above account card when team is connected */}
+              {isTeamConnected && (
+                <View style={styles.teamConnectedBanner}>
+                  <Text style={styles.teamConnectedBannerText}>
+                    {t('settings.teamConnected', { defaultValue: 'Team Connected' })}
+                    {(() => {
+                      // Show used/total members: Enterprise uses global count (with local fallback), others use local
+                      let used = 0;
+                      let total = planLimit || 0;
+
+                      if (userPlan === 'enterprise') {
+                        const localCount = teamMembersList?.length || 0;
+                        const globalCount = globalTeamMemberCount || 0;
+                        used = globalCount > 0 ? globalCount : localCount;
+                      } else {
+                        used = teamMembersList?.length || 0;
+                        if (!total) {
+                          if (userPlan === 'business') {
+                            total = 5;
+                          } else {
+                            total = 0;
+                          }
+                        }
+                      }
+
+                      if (!total) return null;
+
+                      return (
+                        <Text style={styles.teamConnectedBannerText}>
+                          {' '}
+                          • {used} / {total}{' '}
+                          {t('settings.teamMembersShort', { defaultValue: 'members' })}
+                        </Text>
+                      );
+                    })()}
+                  </Text>
+                </View>
+              )}
                       <View style={[styles.accountItem, isDropboxAccount && styles.accountItemDropbox]}>
                         {/* First line: Account name with scrolling + checkbox + icon */}
                         <ScrollingAccountName
@@ -5595,18 +5643,46 @@ export default function SettingsScreen({ navigation, route }) {
                     />
                   </View>
 
-                  {/* Team Invites */}
+              {/* Team Invites */}
                   <View style={styles.teamManagementSection}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <Text style={styles.teamManagementLabel}>{t('settings.teamInvites', { defaultValue: 'Team Invites' })}</Text>
                       {(() => {
-                        const unusedInvites = (inviteTokens || []).filter(token => {
-                          const isUsedByMember = teamMembersList.some(member => member.token === token);
-                          return !isUsedByMember;
+                        // Remaining slots = plan limit - existing members (global for Enterprise, local for others)
+                        let usedCount = 0;
+                        let limit = planLimit || 0;
+
+                        if (userPlan === 'enterprise') {
+                          const localCount = teamMembersList?.length || 0;
+                          const globalCount = globalTeamMemberCount || 0;
+                          usedCount = globalCount > 0 ? globalCount : localCount;
+                        } else {
+                          usedCount = teamMembersList?.length || 0;
+                          // Fallback limits if planLimit is not set
+                          if (!limit) {
+                            if (userPlan === 'business') {
+                              limit = 5;
+                            } else {
+                              limit = 0;
+                            }
+                          }
+                        }
+
+                        const remainingSlots = Math.max(0, limit - usedCount);
+
+                        console.log('[INVITES] Remaining slots calc:', {
+                          userPlan,
+                          planLimit,
+                          effectiveLimit: limit,
+                          usedCount,
+                          globalTeamMemberCount,
+                          localTeamMemberCount: teamMembersList?.length || 0,
+                          remainingSlots,
                         });
+
                         return (
                           <Text style={styles.inviteCountText}>
-                            {unusedInvites.length} unused
+                            {remainingSlots} remaining
                           </Text>
                         );
                       })()}
