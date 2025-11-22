@@ -18,7 +18,6 @@ import TrialNotificationModal from '../components/TrialNotificationModal';
 import TrialConfirmationModal from '../components/TrialConfirmationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
-import { clearTrial } from '../utils/trialTestUtils';
 
 export default function PlanSelectionScreen({ navigation }) {
   const { t } = useTranslation();
@@ -201,19 +200,6 @@ export default function PlanSelectionScreen({ navigation }) {
     navigation.navigate('Referral');
   };
 
-  // Dev-only: Reset trial for testing
-  const handleResetTrial = async () => {
-    try {
-      await clearTrial();
-      // Recheck trial availability
-      const available = await canStartTrial();
-      setTrialAvailable(available);
-      console.log('[PlanSelection] Trial reset, available:', available);
-    } catch (error) {
-      console.error('[PlanSelection] Error resetting trial:', error);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <TouchableOpacity
@@ -238,17 +224,6 @@ export default function PlanSelectionScreen({ navigation }) {
             >
               <Text style={styles.trialBannerText}>
                 🎉 {trialDays}-Day Free Trial Available!
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {__DEV__ && (
-            <TouchableOpacity
-              style={styles.devResetButton}
-              onPress={handleResetTrial}
-            >
-              <Text style={styles.devResetButtonText}>
-                🧪 Dev: Reset Trial (for testing)
               </Text>
             </TouchableOpacity>
           )}
@@ -458,20 +433,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4CAF50',
     fontWeight: '600',
-  },
-  devResetButton: {
-    backgroundColor: '#FF6B6B',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    marginTop: 10,
-    marginBottom: 10,
-    alignSelf: 'center',
-  },
-  devResetButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
   },
 });

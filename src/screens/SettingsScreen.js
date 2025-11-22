@@ -2476,12 +2476,10 @@ export default function SettingsScreen({ navigation, route }) {
                       mainScrollViewRef.current,
                       (x, absoluteY) => {
                         watermarkSectionAbsoluteY.current = absoluteY;
-                        console.log('[SETTINGS] Watermark section absolute position:', absoluteY);
                         // If scroll param is set, scroll immediately
                         const params = route?.params;
                         if (params?.scrollToWatermark === true) {
                           setTimeout(() => {
-                            console.log('[SETTINGS] Auto-scrolling to watermark from onLayout, y:', absoluteY);
                             mainScrollViewRef.current?.scrollTo({ y: Math.max(0, absoluteY - 20), animated: true });
                             setTimeout(() => {
                               navigation.setParams({ scrollToWatermark: undefined });
@@ -2492,7 +2490,6 @@ export default function SettingsScreen({ navigation, route }) {
                       () => {}
                     );
                   }
-                  console.log('[SETTINGS] Watermark section layout:', y);
                 }}
               >
                 <View style={styles.settingInfo}>
@@ -3156,21 +3153,9 @@ export default function SettingsScreen({ navigation, route }) {
                     
                     {/* Connect to Dropbox Button - Hide if Dropbox is connected (for Pro/Business), show if Google is connected or neither */}
                     {(() => {
-                      const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? (!isDropboxAuthenticatedForDisplay || isAuthenticated) : true;
-                      const isDisabled = (userPlan === 'pro' || userPlan === 'business') ? isSigningInDropbox : (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox);
-                      const canUseFeature = canUse(FEATURES.DROPBOX_SYNC);
-                      
-                      console.log('[DROPBOX_BUTTON] Render check:', {
-                        userPlan,
-                        shouldShow,
-                        isDisabled,
-                        isAuthenticated,
-                        isDropboxAuthenticatedForDisplay,
-                        isSigningInDropbox,
-                        canUseFeature,
-                        isEnterprisePlan: userPlan === 'enterprise'
-                      });
-                      
+                      const shouldShow = (userPlan === 'pro' || userPlan === 'business')
+                        ? (!isDropboxAuthenticatedForDisplay || isAuthenticated)
+                        : true;
                       return shouldShow;
                     })() && (
                       <TouchableOpacity
@@ -3180,17 +3165,8 @@ export default function SettingsScreen({ navigation, route }) {
                           ((userPlan === 'pro' || userPlan === 'business') ? isSigningInDropbox : (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox)) && styles.dropboxButtonDisabled
                         ]}
                         onPress={async () => {
-                          console.log('[DROPBOX_BUTTON] onPress triggered:', {
-                            userPlan,
-                            isAuthenticated,
-                            isDropboxAuthenticatedForDisplay,
-                            canUseFeature: canUse(FEATURES.DROPBOX_SYNC),
-                            isSigningInDropbox
-                          });
-                          
                           // For Pro/Business: Check if another account is connected first
                           if ((userPlan === 'pro' || userPlan === 'business') && isAuthenticated) {
-                            console.log('[DROPBOX_BUTTON] Google connected - showing disconnect modal');
                             Alert.alert(
                               t('settings.disconnectActiveAccount', { defaultValue: 'Disconnect Active Account' }),
                               t('settings.disconnectActiveAccountMessage', { 
@@ -3255,22 +3231,12 @@ export default function SettingsScreen({ navigation, route }) {
                           const shouldCheckTier = userPlan !== 'pro' && userPlan !== 'business' && userPlan !== 'enterprise';
                           const canUseDropbox = canUse(FEATURES.DROPBOX_SYNC);
                           
-                          console.log('[DROPBOX_BUTTON] Tier check:', {
-                            shouldCheckTier,
-                            canUseDropbox,
-                            userPlan,
-                            willShowTierModal: shouldCheckTier && !canUseDropbox
-                          });
-                          
                           if (shouldCheckTier && !canUseDropbox) {
-                            console.log('[DROPBOX_BUTTON] Showing tiers popup');
                             setShowPlanModal(true);
                             return;
                           }
                           
                           const isConfigured = dropboxAuthService.isConfigured();
-                          console.log('[DROPBOX_BUTTON] Dropbox configured:', isConfigured);
-                          
                           if (!isConfigured) {
                             Alert.alert(
                               t('settings.featureUnavailable'),
@@ -3278,8 +3244,6 @@ export default function SettingsScreen({ navigation, route }) {
                             );
                             return;
                           }
-
-                          console.log('[DROPBOX_BUTTON] Starting Dropbox sign-in');
                           setIsSigningInDropbox(true);
                           try {
                             const result = await dropboxAuthService.signIn();
@@ -3346,16 +3310,11 @@ export default function SettingsScreen({ navigation, route }) {
                             setIsSigningInDropbox(false);
                           }
                         }}
-                        disabled={(() => {
-                          const isDisabled = (userPlan === 'pro' || userPlan === 'business') ? isSigningInDropbox : (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox);
-                          console.log('[DROPBOX_BUTTON] Disabled state:', {
-                            userPlan,
-                            isSigningInDropbox,
-                            canUseFeature: canUse(FEATURES.DROPBOX_SYNC),
-                            isDisabled
-                          });
-                          return isDisabled;
-                        })()}
+                        disabled={
+                          (userPlan === 'pro' || userPlan === 'business')
+                            ? isSigningInDropbox
+                            : (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox)
+                        }
                       >
                         {isSigningInDropbox ? (
                           <ActivityIndicator size="small" color="#fff" />
@@ -3372,12 +3331,6 @@ export default function SettingsScreen({ navigation, route }) {
                     )}
                     
                     {/* Connect Team Button - Always visible */}
-                    {(() => {
-                      const buttonDisabled = isSigningIn;
-                      const isStyleDisabled = (!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn;
-                      console.log('[TEAM_BUTTON_RENDER] Rendering button - userPlan:', userPlan, 'disabled:', buttonDisabled, 'styledAsDisabled:', isStyleDisabled);
-                      return null;
-                    })()}
                     <TouchableOpacity
                       style={[
                         styles.featureButton,
@@ -3458,18 +3411,7 @@ export default function SettingsScreen({ navigation, route }) {
 
                         console.log('[TEAM_BUTTON] No matching plan condition - this should not happen!');
                       }}
-                      disabled={(() => {
-                        const isDisabled = isSigningIn;
-                        console.log('[SETUP_TEAM_STANDALONE_BUTTON] Disabled state:', {
-                          isDisabled,
-                          isSigningIn,
-                          timestamp: Date.now()
-                        });
-                        if (isDisabled) {
-                          console.log('[SETUP_TEAM_STANDALONE_BUTTON] ====== BUTTON IS DISABLED - onPress WILL NOT FIRE ======');
-                        }
-                        return isDisabled;
-                      })()}
+                      disabled={isSigningIn}
                     >
                       <Text style={[
                         styles.featureButtonText,
