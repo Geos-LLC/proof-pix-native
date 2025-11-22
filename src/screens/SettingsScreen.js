@@ -345,6 +345,11 @@ export default function SettingsScreen({ navigation, route }) {
   const [rooms, setRooms] = useState(() => getRooms());
   const [currentRoom, setCurrentRoom] = useState(rooms.length > 0 ? rooms[0].id : null);
 
+  // Debug: track Add Team Member modal visibility
+  useEffect(() => {
+    console.log('[ADD_MEMBER_MODAL] visibility changed:', showAddMemberModal);
+  }, [showAddMemberModal]);
+
   useEffect(() => {
     const newRooms = getRooms();
     setRooms(newRooms);
@@ -1294,6 +1299,10 @@ export default function SettingsScreen({ navigation, route }) {
 
   // Handler for opening add member modal
   const handleOpenAddMemberModal = () => {
+    console.log('[ADD_MEMBER_MODAL] handleOpenAddMemberModal called');
+    // Optional debug notification to confirm button press
+    // Alert.alert('Add Team Member', 'Add Team Member button pressed');
+    // Do NOT close the Manage Team modal - we want to overlay on top of it
     setAdditionalMembersCount(1);
     setShowAddMemberModal(true);
   };
@@ -5811,6 +5820,73 @@ export default function SettingsScreen({ navigation, route }) {
                       </Text>
                     </TouchableOpacity>
                   </View>
+
+                  {/* Simple Add Team Member overlay positioned relative to Manage Team modal */}
+                  {showAddMemberModal && (
+                    <View style={styles.addMemberOverlay}>
+                      <TouchableWithoutFeedback onPress={() => setShowAddMemberModal(false)}>
+                        <View style={styles.addMemberBackdrop} />
+                      </TouchableWithoutFeedback>
+                      <View style={styles.addMemberModalContent}>
+                        <View style={styles.modalHandle} />
+                        <Text style={styles.addMemberModalTitle}>Add Team Members</Text>
+                        <Text style={styles.addMemberModalSubtitle}>
+                          Purchase additional team member slots for your {userPlan === 'business' ? 'Business' : 'Enterprise'} plan
+                        </Text>
+
+                        <View style={styles.memberCountSelector}>
+                          <Text style={styles.memberCountLabel}>Number of Members:</Text>
+                          <View style={styles.counterContainer}>
+                            <TouchableOpacity
+                              style={[styles.counterButton, additionalMembersCount <= 1 && styles.counterButtonDisabled]}
+                              onPress={() => setAdditionalMembersCount(Math.max(1, additionalMembersCount - 1))}
+                              disabled={additionalMembersCount <= 1}
+                            >
+                              <Text style={[styles.counterButtonText, additionalMembersCount <= 1 && styles.counterButtonTextDisabled]}>−</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.memberCountValue}>{additionalMembersCount}</Text>
+                            <TouchableOpacity
+                              style={styles.counterButton}
+                              onPress={() => setAdditionalMembersCount(additionalMembersCount + 1)}
+                            >
+                              <Text style={styles.counterButtonText}>+</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+
+                        <View style={styles.priceBreakdown}>
+                          <View style={styles.priceRow}>
+                            <Text style={styles.priceLabel}>Price per member:</Text>
+                            <Text style={styles.priceValue}>${getPricePerMember().toFixed(2)}</Text>
+                          </View>
+                          <View style={styles.priceRow}>
+                            <Text style={styles.priceLabel}>Number of members:</Text>
+                            <Text style={styles.priceValue}>×{additionalMembersCount}</Text>
+                          </View>
+                          <View style={[styles.priceRow, styles.totalPriceRow]}>
+                            <Text style={styles.totalPriceLabel}>Total:</Text>
+                            <Text style={styles.totalPriceValue}>${(getPricePerMember() * additionalMembersCount).toFixed(2)}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.addMemberModalButtons}>
+                          <TouchableOpacity
+                            style={[styles.modalButton, styles.cancelButton]}
+                            onPress={() => setShowAddMemberModal(false)}
+                          >
+                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.modalButton, styles.purchaseButton]}
+                            onPress={handlePurchaseAdditionalMembers}
+                          >
+                            <Text style={styles.purchaseButtonText}>Add</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
                 </View>
               </ScrollView>
               )}
@@ -5819,74 +5895,6 @@ export default function SettingsScreen({ navigation, route }) {
           </KeyboardAvoidingView>
         </Modal>
 
-        {/* Add Team Member Purchase Modal */}
-        <Modal
-          isVisible={showAddMemberModal}
-          onBackdropPress={() => setShowAddMemberModal(false)}
-          onSwipeComplete={() => setShowAddMemberModal(false)}
-          swipeDirection={['down']}
-          style={styles.bottomModal}
-          propagateSwipe={true}
-          avoidKeyboard={true}
-        >
-          <View style={styles.addMemberModalContent}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.addMemberModalTitle}>Add Team Members</Text>
-            <Text style={styles.addMemberModalSubtitle}>
-              Purchase additional team member slots for your {userPlan === 'business' ? 'Business' : 'Enterprise'} plan
-            </Text>
-
-            <View style={styles.memberCountSelector}>
-              <Text style={styles.memberCountLabel}>Number of Members:</Text>
-              <View style={styles.counterContainer}>
-                <TouchableOpacity
-                  style={[styles.counterButton, additionalMembersCount <= 1 && styles.counterButtonDisabled]}
-                  onPress={() => setAdditionalMembersCount(Math.max(1, additionalMembersCount - 1))}
-                  disabled={additionalMembersCount <= 1}
-                >
-                  <Text style={[styles.counterButtonText, additionalMembersCount <= 1 && styles.counterButtonTextDisabled]}>−</Text>
-                </TouchableOpacity>
-                <Text style={styles.memberCountValue}>{additionalMembersCount}</Text>
-                <TouchableOpacity
-                  style={styles.counterButton}
-                  onPress={() => setAdditionalMembersCount(additionalMembersCount + 1)}
-                >
-                  <Text style={styles.counterButtonText}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.priceBreakdown}>
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Price per member:</Text>
-                <Text style={styles.priceValue}>${getPricePerMember().toFixed(2)}</Text>
-              </View>
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Number of members:</Text>
-                <Text style={styles.priceValue}>×{additionalMembersCount}</Text>
-              </View>
-              <View style={[styles.priceRow, styles.totalPriceRow]}>
-                <Text style={styles.totalPriceLabel}>Total:</Text>
-                <Text style={styles.totalPriceValue}>${(getPricePerMember() * additionalMembersCount).toFixed(2)}</Text>
-              </View>
-            </View>
-
-            <View style={styles.addMemberModalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setShowAddMemberModal(false)}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.purchaseButton]}
-                onPress={handlePurchaseAdditionalMembers}
-              >
-                <Text style={styles.purchaseButtonText}>Add</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
       </SafeAreaView>
     );
   }
@@ -8213,12 +8221,23 @@ const sliderStyles = StyleSheet.create({
       marginTop: 4,
       fontFamily: FONTS.QUICKSAND_BOLD,
     },
+    addMemberOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+    },
+    addMemberBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+    },
     addMemberModalContent: {
       backgroundColor: 'white',
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
       padding: 24,
-      maxHeight: '80%',
+      maxHeight: '70%',
+      width: '100%',
+      marginBottom: 40, // lift the sheet higher on the screen
     },
     addMemberModalTitle: {
       fontSize: 22,
