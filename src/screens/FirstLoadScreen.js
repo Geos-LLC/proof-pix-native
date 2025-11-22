@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { COLORS } from '../constants/rooms';
+import { logLanguageChange } from '../utils/analytics';
 import { FONTS } from '../constants/fonts';
 
 const { width, height } = Dimensions.get('window');
@@ -84,6 +85,12 @@ export default function FirstLoadScreen({ navigation, route }) {
 
   const changeLanguage = (languageCode) => {
     i18n.changeLanguage(languageCode);
+    // Analytics: track app language change on first load
+    try {
+      logLanguageChange(languageCode);
+    } catch (e) {
+      // non‑critical
+    }
     setLanguageModalVisible(false);
   };
 

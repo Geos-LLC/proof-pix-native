@@ -236,9 +236,14 @@ export default function App() {
           console.log('[Firebase] App already initialized:', firebase.app().name);
         }
 
-        // Enable analytics collection
-        await analytics().setAnalyticsCollectionEnabled(true);
-        console.log('[Firebase] Analytics enabled');
+        // Enable analytics collection ONLY for non-debug builds
+        // (__DEV__ is true in React Native debug/dev builds)
+        const enableAnalytics = !__DEV__;
+        await analytics().setAnalyticsCollectionEnabled(enableAnalytics);
+        console.log(
+          '[Firebase] Analytics collection',
+          enableAnalytics ? 'ENABLED (release)' : 'DISABLED for debug builds'
+        );
         setFirebaseInitialized(true);
       } catch (error) {
         console.error('[Firebase] Initialization error:', error);

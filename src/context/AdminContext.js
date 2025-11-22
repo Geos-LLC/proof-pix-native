@@ -4,6 +4,11 @@ import googleAuthService from '../services/googleAuthService';
 import proxyService from '../services/proxyService';
 import { useSettings } from './SettingsContext';
 import { hasFeature, FEATURES } from '../constants/featurePermissions';
+import {
+  logSignIn,
+  logSignOut,
+  logTeamMemberJoined,
+} from '../utils/analytics';
 
 const STORAGE_KEYS = {
   ADMIN_FOLDER_ID: '@admin_folder_id',
@@ -626,6 +631,12 @@ export function AdminProvider({ children }) {
         setUserInfo(result.userInfo);
         setUserMode('admin');
         await upsertConnectedAccount(result.userInfo, { userMode: 'admin' });
+        // Analytics: admin sign-in
+        try {
+          logSignIn('google_admin');
+        } catch (e) {
+          // non‑critical
+        }
         return { success: true };
       }
 
@@ -657,6 +668,12 @@ export function AdminProvider({ children }) {
         setUserInfo(result.userInfo);
         setUserMode('individual');
         await upsertConnectedAccount(result.userInfo, { userMode: 'individual' });
+        // Analytics: individual sign-in
+        try {
+          logSignIn('google_individual');
+        } catch (e) {
+          // non‑critical
+        }
         return { success: true };
       }
 
@@ -723,6 +740,15 @@ export function AdminProvider({ children }) {
         userMode: 'team_member',
         teamInfo: newTeamInfo,
       });
+      // Analytics: team member joined using invite
+      try {
+        logTeamMemberJoined({
+          plan: 'Team Member',
+          team_size_after: null,
+        });
+      } catch (e) {
+        // non‑critical
+      }
       // No Google Sign-In for team members, so auth status is not changed
       return { success: true };
     } catch (error) {
@@ -855,6 +881,11 @@ export function AdminProvider({ children }) {
         await removeConnectedAccount(activeAccount.id);
       } else {
         await applyAccountState(null, { syncStorage: true });
+      }
+      try {
+        logSignOut();
+      } catch (e) {
+        // non‑critical
       }
       return { success: true };
     } catch (error) {

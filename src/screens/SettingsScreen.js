@@ -51,6 +51,13 @@ import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import { isTrialActive, getTrialDaysRemaining, getTrialPlan } from '../services/trialService';
 import * as TrialTestUtils from '../utils/trialTestUtils';
 import { generateInviteToken } from '../utils/tokens';
+import {
+  logLanguageChange,
+  logTeamInvitesCreated,
+  logCloudAccountConnection,
+  logFeatureGateShown,
+  logFeatureGateAction,
+} from '../utils/analytics';
 
 const getFontOptions = (t) => [
   {
@@ -1012,6 +1019,17 @@ export default function SettingsScreen({ navigation, route }) {
       // Add token to proxy server
       await proxyService.addInviteToken(proxySessionId, newToken);
       console.log('[SETTINGS] Token added to proxy server');
+
+      // Analytics: track invite creation (per-invite)
+      try {
+        logTeamInvitesCreated(1, {
+          plan: userPlan,
+          team_size_before: teamMembersList?.length || 0,
+          team_size_after: teamMembersList?.length || 0, // size doesn't change until member joins
+        });
+      } catch (e) {
+        // non‑critical
+      }
 
       // Save token locally
       await addInviteToken(newToken);
@@ -2049,6 +2067,12 @@ export default function SettingsScreen({ navigation, route }) {
 
   const changeLanguage = (languageCode) => {
     i18n.changeLanguage(languageCode);
+    // Analytics: track app language change
+    try {
+      logLanguageChange(languageCode);
+    } catch (e) {
+      // non‑critical
+    }
     setLanguageModalVisible(false);
   };
 
@@ -2517,6 +2541,12 @@ export default function SettingsScreen({ navigation, route }) {
                         if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
                           // Starter users cannot turn off watermark - show tier popup
                           if (value === false) {
+                            try {
+                              logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                              logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'toggle_blocked');
+                            } catch (e) {
+                              // non‑critical
+                            }
                             setShowPlanModal(true);
                             return;
                           }
@@ -2533,6 +2563,12 @@ export default function SettingsScreen({ navigation, route }) {
                     <Pressable
                       onPress={() => {
                         if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                          try {
+                            logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                            logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'edit_text_blocked');
+                          } catch (e) {
+                            // non‑critical
+                          }
                           setShowPlanModal(true);
                         } else {
                           // Focus the input if user has access
@@ -2550,6 +2586,12 @@ export default function SettingsScreen({ navigation, route }) {
                         onFocus={() => {
                           // Check if user has access to customize watermark
                           if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                            try {
+                              logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                              logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'focus_text_blocked');
+                            } catch (e) {
+                              // non‑critical
+                            }
                             setShowPlanModal(true);
                             // Blur the input to prevent typing
                             if (watermarkTextInputRef.current) {
@@ -2569,6 +2611,12 @@ export default function SettingsScreen({ navigation, route }) {
                     <Pressable
                       onPress={() => {
                         if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                          try {
+                            logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                            logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'edit_link_blocked');
+                          } catch (e) {
+                            // non‑critical
+                          }
                           setShowPlanModal(true);
                         } else {
                           // Focus the input if user has access
@@ -2586,6 +2634,12 @@ export default function SettingsScreen({ navigation, route }) {
                         onFocus={() => {
                           // Check if user has access to customize watermark
                           if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                            try {
+                              logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                              logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'focus_link_blocked');
+                            } catch (e) {
+                              // non‑critical
+                            }
                             setShowPlanModal(true);
                             // Blur the input to prevent typing
                             if (watermarkLinkInputRef.current) {

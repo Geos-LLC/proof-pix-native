@@ -14,6 +14,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { logReferralEvent } from '../utils/analytics';
 import {
   getOrCreateReferralCode,
   getReferralInfo,
@@ -87,6 +88,15 @@ export default function ReferralScreen({ navigation }) {
       const androidPlayStoreLink = process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.proofpix';
 
       await addReferralInvite(method);
+
+      // Analytics: referral invite sent
+      try {
+        logReferralEvent('sent', {
+          code: referralCode,
+        });
+      } catch (e) {
+        // non‑critical
+      }
 
       // Share the instructions message first
       await Share.share({
