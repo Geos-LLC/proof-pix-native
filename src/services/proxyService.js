@@ -18,10 +18,6 @@ class ProxyService {
    */
   async initializeAdminSession(folderId, accountType = 'google', userId = null) {
     try {
-      console.log('[PROXY] Initializing admin session with folder ID:', folderId);
-      console.log('[PROXY] User ID for global tracking:', userId);
-      console.log('[PROXY] Using proxy server URL:', PROXY_SERVER_URL);
-
       let authData = {
         userId, // Include userId for global team tracking
       };
@@ -33,7 +29,6 @@ class ProxyService {
         if (!accessToken) {
           throw new Error('Failed to get Dropbox access token. Please sign in to Dropbox.');
         }
-        console.log('[PROXY] Got Dropbox access token, length:', accessToken.length);
         authData = {
           ...authData,
           accountType: 'dropbox',
@@ -46,7 +41,6 @@ class ProxyService {
         if (!serverAuthCode) {
           throw new Error('Failed to get serverAuthCode from Google Sign-In.');
         }
-        console.log('[PROXY] Got serverAuthCode, length:', serverAuthCode.length);
 
         // IMPORTANT: Always use Web Client ID for server-side token exchange
         const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -55,7 +49,6 @@ class ProxyService {
           throw new Error('Missing Web Client ID. Please check EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in environment variables.');
         }
 
-        console.log(`[PROXY] Platform: ${Platform.OS}, Using Web Client ID for server-side token exchange: ${clientId.substring(0, 20)}...`);
         authData = {
           ...authData,
           accountType: 'google',
@@ -67,7 +60,6 @@ class ProxyService {
 
       // Add cache-busting parameter to ensure we hit the latest deployment
       const url = `${PROXY_SERVER_URL}/api/admin/init?v=${Date.now()}`;
-      console.log('[PROXY] Making request to:', url);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -79,16 +71,12 @@ class ProxyService {
         body: JSON.stringify(authData),
       });
 
-      console.log('[PROXY] Init response status:', response.status);
-      console.log('[PROXY] Init response ok:', response.ok);
-
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[PROXY] Init error response:', errorText);
 
         // If it's an auth code error, clear the stored code so it won't be reused (Google only)
         if (accountType === 'google' && (errorText.includes('authorization code has expired') || errorText.includes('already been used'))) {
-          console.log('[PROXY] Clearing expired/used serverAuthCode');
           try {
             await googleAuthService.clearServerAuthCode();
           } catch (clearError) {
@@ -100,14 +88,12 @@ class ProxyService {
       }
 
       const data = await response.json();
-      console.log('[PROXY] Session initialized successfully:', data.sessionId);
 
       // Clear the serverAuthCode after successful use (it's a one-time code) - Google only
       // This prevents it from being reused if initializeAdminSession is called again
       if (accountType === 'google') {
         try {
           await googleAuthService.clearServerAuthCode();
-          console.log('[PROXY] Cleared serverAuthCode after successful session initialization');
         } catch (clearError) {
           console.warn('[PROXY] Failed to clear serverAuthCode (non-critical):', clearError.message);
         }
@@ -357,13 +343,9 @@ class ProxyService {
    */
   async getTeamMembers(sessionId) {
     try {
-      console.log('[PROXY] Getting team members:', sessionId);
-
       const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-members`, {
         method: 'GET',
       });
-
-      console.log('[PROXY] Team members response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -372,8 +354,6 @@ class ProxyService {
       }
 
       const data = await response.json();
-      console.log('[PROXY] Team members retrieved:', data.teamMembers?.length || 0);
-
       return data;
     } catch (error) {
       console.error('[PROXY] Error getting team members:', error);
@@ -388,13 +368,9 @@ class ProxyService {
    */
   async getGlobalTeamMemberCount(sessionId) {
     try {
-      console.log('[PROXY] Getting global team member count:', sessionId);
-
       const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
         method: 'GET',
       });
-
-      console.log('[PROXY] Global team count response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -403,8 +379,6 @@ class ProxyService {
       }
 
       const data = await response.json();
-      console.log('[PROXY] Global team member count:', data.globalCount);
-
       return data;
     } catch (error) {
       console.error('[PROXY] Error getting global team count:', error);

@@ -467,30 +467,23 @@ class GoogleAuthService {
    * @returns {Promise<string|null>}
    */
   async getServerAuthCode() {
-    console.log('[AUTH] getServerAuthCode() called');
     if (!this.isAvailable()) {
-      console.log('[AUTH] Google Sign-in not available, checking stored serverAuthCode');
+      // Still allow reading any stored code even if SDK is not currently available
     }
     try {
       // First try to get from current user (most recent)
       const currentUser = await GoogleSignin.getCurrentUser();
-      console.log('[AUTH] getCurrentUser() result:', currentUser ? 'User found' : 'No user');
       const code = currentUser?.serverAuthCode || currentUser?.data?.serverAuthCode;
       if (code) {
-        console.log('[AUTH] ✅ Found serverAuthCode from current user, length:', code.length);
         return code;
-      } else {
-        console.log('[AUTH] No serverAuthCode in current user, checking storage...');
       }
     } catch (e) {
-      console.log('[AUTH] Could not get serverAuthCode from current user:', e.message);
+      // Non‑critical: fall back to stored value
     }
     try {
       // Fallback to stored value
-      console.log('[AUTH] Checking AsyncStorage for serverAuthCode...');
       const stored = await AsyncStorage.getItem(STORAGE_KEYS.SERVER_AUTH_CODE);
       if (stored) {
-        console.log('[AUTH] ✅ Found serverAuthCode from storage, length:', stored.length);
         return stored;
       } else {
         console.warn('[AUTH] ❌ No serverAuthCode found in storage');
@@ -499,7 +492,6 @@ class GoogleAuthService {
     } catch (e) {
       console.error('[AUTH] Error reading serverAuthCode from storage:', e);
     }
-    console.log('[AUTH] ❌ No serverAuthCode available - reconnection required');
     return null;
   }
 
@@ -510,7 +502,6 @@ class GoogleAuthService {
   async clearServerAuthCode() {
     try {
       await AsyncStorage.removeItem(STORAGE_KEYS.SERVER_AUTH_CODE);
-      console.log('[AUTH] Cleared serverAuthCode from storage');
     } catch (e) {
       console.error('[AUTH] Error clearing serverAuthCode:', e);
       throw e;

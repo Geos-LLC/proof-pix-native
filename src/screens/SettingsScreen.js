@@ -904,23 +904,19 @@ export default function SettingsScreen({ navigation, route }) {
       setLoadingTeamMembers(true);
       try {
         const result = await proxyService.getTeamMembers(proxySessionId);
-        console.log('[SETTINGS] Team members result:', result);
         if (result.success && result.teamMembers) {
           setTeamMembersList(result.teamMembers);
 
           // Try to get team name from various sources
           if (result.teamName) {
-            console.log('[SETTINGS] Setting team name from proxy response:', result.teamName);
             setTeamNameInput(result.teamName);
           } else {
             // Try to load from AsyncStorage directly
             try {
               const storedTeamName = await AsyncStorage.getItem('@team_name');
-              console.log('[SETTINGS] Team name from AsyncStorage:', storedTeamName);
               if (storedTeamName) {
                 setTeamNameInput(storedTeamName);
               } else if (teamName) {
-                console.log('[SETTINGS] Using teamName from AdminContext:', teamName);
                 setTeamNameInput(teamName);
               }
             } catch (err) {
@@ -940,11 +936,6 @@ export default function SettingsScreen({ navigation, route }) {
           if (globalCountResult.success) {
             const localCount = result.teamMembers?.length || 0;
             const globalCount = globalCountResult.globalCount || 0;
-            
-            console.log('[SETTINGS] Global team member count:', globalCount, 'for userId:', globalCountResult.userId || 'NOT SET');
-            console.log('[SETTINGS] Local team member count:', localCount);
-            console.log('[SETTINGS] Session ID:', proxySessionId);
-            console.log('[SETTINGS] Using fallback?', globalCountResult.fallback || false);
             
             // Detect mismatch: if local count is 0 but global count is > 0, 
             // this means there are members from other sessions that shouldn't count for this session
@@ -981,7 +972,6 @@ export default function SettingsScreen({ navigation, route }) {
   // Fetch team members when modal opens
   useEffect(() => {
     if (showManageTeamModal) {
-      console.log('[MANAGE_TEAM] Modal opened, fetching team members');
       fetchTeamMembersForModal();
     }
   }, [showManageTeamModal]);
@@ -1391,8 +1381,6 @@ export default function SettingsScreen({ navigation, route }) {
         }
       }
 
-      console.log(`[TEST] Filling team to max capacity: ${effectiveLimit} members (plan: ${userPlan})`);
-
       // First, fetch current team members from server to get all tokens
       let allServerTokens = new Set();
       try {
@@ -1612,7 +1600,6 @@ export default function SettingsScreen({ navigation, route }) {
     }
 
     try {
-      console.log('[SETUP] Running team setup with proxy server for account type:', currentAccountType);
       setIsSigningIn(true); // Show a loading indicator
 
       let folderIdOrPath = null;
@@ -1653,7 +1640,6 @@ export default function SettingsScreen({ navigation, route }) {
         // Step 1: Find or create the Dropbox folder
         folderIdOrPath = await dropboxService.findOrCreateProofPixFolder();
         await saveFolderId(folderIdOrPath); // Store folder path (for Dropbox, this is a path like "/proofpix-uploads")
-        console.log('[SETUP] Admin folder path saved:', folderIdOrPath);
         
         const dropboxUserInfo = dropboxAuthService.getUserInfo();
         userName = dropboxUserInfo?.name || adminUserInfo?.name;
@@ -1662,7 +1648,6 @@ export default function SettingsScreen({ navigation, route }) {
         const googleAuthService = await import('../services/googleAuthService');
         const serverAuthCode = await googleAuthService.default.getServerAuthCode();
         if (!serverAuthCode) {
-          console.log('[SETUP] No serverAuthCode available - prompting user to reconnect');
           setIsSigningIn(false);
           Alert.alert(
             'Reconnect Required',
@@ -1694,7 +1679,6 @@ export default function SettingsScreen({ navigation, route }) {
         // Step 1: Find or create the Google Drive folder
         folderIdOrPath = await googleDriveService.findOrCreateProofPixFolder();
         await saveFolderId(folderIdOrPath);
-        console.log('[SETUP] Admin folder ID saved:', folderIdOrPath);
         userName = adminUserInfo?.name;
       }
 
@@ -1703,14 +1687,12 @@ export default function SettingsScreen({ navigation, route }) {
       if (!sessionResult || !sessionResult.sessionId) {
         throw new Error('Failed to initialize proxy session');
       }
-      console.log('[SETUP] Proxy session initialized:', sessionResult.sessionId);
 
       // Step 3: Set default team name if not already set
       if (!teamName && userName) {
         await updateTeamName(userName);
         // Also save to AsyncStorage for persistence
         await AsyncStorage.setItem('@team_name', userName);
-        console.log('[SETUP] Default team name set to:', userName);
       }
 
       Alert.alert(
@@ -5383,7 +5365,6 @@ export default function SettingsScreen({ navigation, route }) {
           onModalWillShow={() => {
             // Initialize team name when modal is about to show (before animation)
             // This ensures it's set even if teamName changed
-            console.log('[MANAGE_TEAM_MODAL] onModalWillShow - teamName:', teamName);
             setTeamNameInput(teamName || '');
           }}
         >
