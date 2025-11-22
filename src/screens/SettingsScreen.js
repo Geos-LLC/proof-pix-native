@@ -8226,6 +8226,8 @@ const sliderStyles = StyleSheet.create({
       justifyContent: 'flex-start',
       alignItems: 'center',
       paddingTop: 80, // position just below the Manage Team modal header
+      zIndex: 1000,
+      elevation: 10,
     },
     addMemberBackdrop: {
       ...StyleSheet.absoluteFillObject,
@@ -8273,7 +8275,7 @@ const sliderStyles = StyleSheet.create({
       width: 50,
       height: 50,
       borderRadius: 25,
-      backgroundColor: '#007bff',
+      backgroundColor: '#F2C31B', // yellow to match primary accent
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -8353,10 +8355,10 @@ const sliderStyles = StyleSheet.create({
       fontWeight: '600',
     },
     purchaseButton: {
-      backgroundColor: '#28a745',
+      backgroundColor: '#F2C31B', // yellow primary for Add button
     },
     purchaseButtonText: {
-      color: 'white',
+      color: '#000',
       fontSize: 16,
       fontWeight: 'bold',
     },
