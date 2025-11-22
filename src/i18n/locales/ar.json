@@ -442,5 +442,110 @@
     "title": "اسم المستخدم مطلوب",
     "message": "يرجى تعيين اسمك في الإعدادات قبل إنشاء مشروع جديد.",
     "goToSettings": "اذهب إلى الإعدادات"
+  },
+  "trial": {
+    "extendedTitle": "تهانينا!",
+    "extendedLine1": "لديك {{days}} يوم تجريبي مجاني",
+    "extendedLine2": "يحصل صديقك على {{friendDays}} يوم إضافي مجاناً!",
+    "extendedSubtext": "مرحباً بك في فترتك التجريبية المجانية الموسعة",
+    "extendedButton": "حسناً",
+
+    "bannerAvailable": "🎉 فترة تجريبية مجانية لمدة {{days}} يوم متاحة!",
+
+    "confirmationTitle": "بدء الفترة التجريبية المجانية؟ 🎉",
+    "confirmationMessage": "أنت مؤهل للحصول على فترة تجريبية مجانية لمدة {{days}} يوم من ميزات {{planName}}. هل تريد بدء الفترة التجريبية المجانية الآن؟",
+    "startTrialButton": "بدء الفترة التجريبية المجانية",
+    "continueWithoutTrialButton": "المتابعة بدون فترة تجريبية",
+
+    "welcomeTitle": "مرحباً بك في فترتك التجريبية المجانية! 🎉",
+    "welcomeMessage": "أنت الآن في فترة تجريبية مجانية لمدة {{days}} يوم من ميزات {{planName}}. ابدأ بالتقاط الصور بالجملة، والعلامات المائية المخصصة، وأدوات الأتمتة.",
+
+    "engagementTitle": "خصص علامتك المائية",
+    "engagementMessage": "اجعل صور قبل وبعد مميزة بعلامتك المائية الخاصة.",
+    "engagementCTA": "👉 انتقل إلى الإعدادات للتحديث الآن.",
+
+    "checkinTitle": "اربط التخزين السحابي",
+    "checkinMessage": "حافظ على صورك آمنة ومنظمة. اربط Google Drive أو Dropbox في الإعدادات.",
+    "checkinCTA": "👉 انتقل إلى الإعدادات للربط.",
+
+    "reminderTitle": "حرر المساحة بسهولة",
+    "reminderMessage": "حرر المساحة على جهازك وفي التطبيق عن طريق حذف مشاريع كاملة دفعة واحدة.",
+    "reminderCTA": "👉 انتقل إلى الإعدادات لحذف المشاريع وتحرير المساحة.",
+
+    "lastChanceTitle": "انتهاء الفترة التجريبية قريباً!",
+    "lastChanceMessage": "فقط {{days}} أيام متبقية للاستمتاع بالميزات الكاملة. قم بالترقية الآن للمتابعة.",
+    "lastChanceReferralIncentive": "🎁 ادع الأصدقاء واكسب أشهر إضافية:\\n\\n1 صديق ← +1 شهر\\n2 أصدقاء ← +2 شهر\\n3+ أصدقاء ← +3 أشهر\\n\\nيجب على صديقك إعداد التطبيق ليتم احتسابه.",
+    "lastChanceCTA": "👉 الترقية / إحالة الآن",
+
+    "expiredTitle": "انتهت فترتك التجريبية – قم بالترقية لفتح كل شيء",
+    "expiredMessage": "أنت عدت! للمتابعة في استخدام:",
+    "expiredFeaturesList": "• إنشاء صور قبل وبعد بالجملة\\n• علامة مائية مخصصة وتخزين سحابي\\n• إدارة الفريق وتنظيف الصور",
+    "expiredReferralIncentive": "أحل صديق واحصل على 1-3 أشهر مجاناً",
+    "expiredCTA": "👉 الترقية الآن",
+
+    "upgradeNowButton": "الترقية الآن",
+    "referFriendButton": "إحالة صديق",
+    "maybeButton": "ربما لاحقاً",
+    "goodButton": "أنا بخير",
+    "gotItButton": "حسناً"
+  },
+  "referral": {
+    "settingsSectionTitle": "ادع الأصدقاء",
+    "settingsFriendsJoinedLabel": "الأصدقاء المنضمون",
+    "settingsFriendsJoinedSummary": "{{completed}} من 3",
+    "settingsMonthsEarnedLabel": "الأشهر المكتسبة",
+    "settingsMonthsEarnedSummary": "{{months}} شهر",
+    "settingsInviteButton": "ادع الأصدقاء",
+
+    "screenTitle": "ادع الأصدقاء",
+    "loading": "جاري التحميل...",
+
+    "earnFreeMonthsTitle": "اكسب أشهر مجانية!",
+    "rewardLine1": "1 صديق ← +1 شهر مجاناً",
+    "rewardLine2": "2 أصدقاء ← +2 شهر مجاناً",
+    "rewardLine3": "3+ أصدقاء ← +3 أشهر مجاناً",
+
+    "codeLabel": "رمز الإحالة الخاص بك",
+    "copyLinkButton": "نسخ الرابط",
+    "shareCodeButton": "مشاركة الرمز",
+
+    "progressTitle": "تقدمك",
+    "progressText": "{{completed}} من 3 أصدقاء مدعوين",
+    "statFriendsJoined": "الأصدقاء المنضمون",
+    "statMonthsEarned": "الأشهر المكتسبة",
+
+    "shareIntroTitle": "إحالة ProofPix",
+    "shareIntroMessage": "انضم إلى ProofPix ونظم عملك!\\n\\n📱 تحميل ProofPix:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\nبعد التثبيت، استخدم رمز الإحالة الخاص بي للبدء!",
+    "shareCodePromptTitle": "مشاركة رمز الإحالة؟",
+    "shareCodePromptMessage": "الآن شارك رمز الإحالة الخاص بك كرسالة منفصلة حتى يتمكنوا من نسخها بسهولة.",
+    "shareErrorMessage": "فشل في مشاركة رابط الإحالة. يرجى المحاولة مرة أخرى.",
+
+    "copiedTitle": "تم النسخ!",
+    "copiedMessage": "تم نسخ رمز الإحالة إلى الحافظة.",
+    "copyErrorMessage": "فشل في نسخ الرمز.",
+
+    "haveCodeTitle": "هل لديك رمز إحالة؟",
+    "haveCodeSubtitle": "أدخل رمز إحالة صديقك للحصول على 45 يوم تجريبي مجاني! يحصل صديقك أيضاً على شهر مجاني.",
+    "codePlaceholder": "أدخل الرمز (مثال: ABC123)",
+    "applyAndContinue": "تطبيق ومتابعة",
+    "continue": "متابعة",
+    "skip": "تخطي",
+
+    "codeAppliedTitle": "🎉 تم تطبيق رمز الإحالة!",
+    "codeAppliedMessage": "رائع! لديك 45 يوم تجريبي مجاني ويحصل صديقك على شهر مجاني!",
+    "alreadyUsedTitle": "تم الاستخدام بالفعل",
+    "alreadyUsedMessage": "هذا الجهاز استخدم رمز إحالة بالفعل. كل جهاز يمكنه استخدام رمز إحالة واحد فقط.",
+    "unableToApplyTitle": "غير قادر على تطبيق الرمز",
+    "invalidCodeMessage": "رمز إحالة غير صالح. يرجى التحقق والمحاولة مرة أخرى.",
+    "codeDoesNotExistMessage": "رمز الإحالة هذا غير موجود. يرجى التحقق مع صديقك والمحاولة مرة أخرى.",
+
+    "infoModalTitle": "كيف يعمل",
+    "infoModalDescription": "شارك التطبيق مع الأصدقاء واحصل على مكافآت! عندما يثبت صديقك التطبيق ويقوم بإعداده، ستكسب من 1 إلى 3 أشهر من الوصول المجاني. كلما دعوت المزيد من الأصدقاء، كلما حصلت على المزيد من الأشهر المجانية.",
+    "infoModalRequirement": "⚠️ مهم: يجب على صديقك إكمال إعداد التطبيق (الاسم، اختيار الخطة، وربط الحساب) لكي يتم احتساب الإحالة ولكي تحصل على المكافآت.",
+    "infoModalBenefitsTitle": "الفوائد",
+    "infoModalBenefit1": "✓ سهل المشاركة: أرسل رابط إحالة فريد عبر WhatsApp أو البريد الإلكتروني أو الرسائل القصيرة أو وسائل التواصل الاجتماعي.",
+    "infoModalBenefit2": "✓ التتبع التلقائي: يتم تتبع دعوتك تلقائياً، لذلك يتم تطبيق المكافآت فوراً.",
+    "infoModalBenefit3": "✓ بدون تكلفة إضافية: المكافآت مجانية وتتطلب فقط من أصدقائك إعداد التطبيق.",
+    "infoModalButton": "حسناً"
   }
 }

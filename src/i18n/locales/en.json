@@ -592,7 +592,46 @@
     "extendedLine1": "You get {{days}} days free trial",
     "extendedLine2": "Your friend gets additional {{friendDays}} days free!",
     "extendedSubtext": "Welcome to your extended free trial",
-    "extendedButton": "Got it"
+    "extendedButton": "Got it",
+
+    "bannerAvailable": "🎉 {{days}}-Day Free Trial Available!",
+
+    "confirmationTitle": "Start Free Trial? 🎉",
+    "confirmationMessage": "You're eligible for a {{days}}-day free trial of {{planName}} features. Would you like to start your free trial now?",
+    "startTrialButton": "Start Free Trial",
+    "continueWithoutTrialButton": "Continue Without Trial",
+
+    "welcomeTitle": "Welcome to Your Free Trial! 🎉",
+    "welcomeMessage": "You're now on a {{days}}-day free trial of {{planName}} features. Get started with bulk photo capture, custom watermarks, and automation tools.",
+
+    "engagementTitle": "Customize Your Watermark",
+    "engagementMessage": "Make your before & after photos stand out with your own watermark.",
+    "engagementCTA": "👉 Go to Settings to update now.",
+
+    "checkinTitle": "Connect Cloud Storage",
+    "checkinMessage": "Keep your photos safe and organized. Connect Google Drive or Dropbox in Settings.",
+    "checkinCTA": "👉 Go to Settings to connect.",
+
+    "reminderTitle": "Free up space Easily",
+    "reminderMessage": "Free up space on your device and in the app by deleting entire projects at once.",
+    "reminderCTA": "👉 Go to Settings to delete projects and free up storage.",
+
+    "lastChanceTitle": "Trial Ending Soon!",
+    "lastChanceMessage": "Only {{days}} days left to enjoy full features. Upgrade now to continue.",
+    "lastChanceReferralIncentive": "🎁 Invite friends and earn extra months:\\n\\n1 friend → +1 month\\n2 friends → +2 months\\n3+ friends → +3 months\\n\\nYour friend must set up the app to count.",
+    "lastChanceCTA": "👉 Upgrade / Refer Now",
+
+    "expiredTitle": "Your Trial Ended – Upgrade to Unlock Everything",
+    "expiredMessage": "You're back! To continue using:",
+    "expiredFeaturesList": "• Bulk before & after photo creation\\n• Custom watermark & cloud storage\\n• Team management & photo cleanup",
+    "expiredReferralIncentive": "Refer a friend and get 1-3 months free",
+    "expiredCTA": "👉 Upgrade Now",
+
+    "upgradeNowButton": "Upgrade Now",
+    "referFriendButton": "Refer a Friend",
+    "maybeButton": "Maybe Later",
+    "goodButton": "I'm Good",
+    "gotItButton": "Got It"
   },
   "referral": {
     "settingsSectionTitle": "Invite Friends",
@@ -642,6 +681,15 @@
     "alreadyUsedMessage": "This device has already used a referral code. Each device can only use one referral code.",
     "unableToApplyTitle": "Unable to Apply Code",
     "invalidCodeMessage": "Invalid referral code. Please check and try again.",
-    "codeDoesNotExistMessage": "This referral code does not exist. Please check with your friend and try again."
+    "codeDoesNotExistMessage": "This referral code does not exist. Please check with your friend and try again.",
+
+    "infoModalTitle": "How It Works",
+    "infoModalDescription": "Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 1–3 months of free access. The more friends you invite, the more free months you get.",
+    "infoModalRequirement": "⚠️ Important: Your friend must complete the app setup (name, plan selection, and account connection) for the referral to count and for you to earn rewards.",
+    "infoModalBenefitsTitle": "Benefits",
+    "infoModalBenefit1": "✓ Easy to Share: Send a unique referral link via WhatsApp, email, SMS, or social media.",
+    "infoModalBenefit2": "✓ Automatic Tracking: Your invite is tracked automatically, so rewards are applied instantly.",
+    "infoModalBenefit3": "✓ No Extra Cost: Rewards are free and only require your friends to set up the app.",
+    "infoModalButton": "Got it"
   }
 }

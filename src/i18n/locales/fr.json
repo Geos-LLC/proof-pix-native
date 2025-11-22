@@ -444,5 +444,110 @@
     "watermarkColor": "Couleur du filigrane",
     "backgroundColor": "Couleur de Fond",
     "default": "Par Défaut"
+  },
+  "trial": {
+    "extendedTitle": "Félicitations !",
+    "extendedLine1": "Vous obtenez {{days}} jours d'essai gratuit",
+    "extendedLine2": "Votre ami obtient {{friendDays}} jours supplémentaires gratuits !",
+    "extendedSubtext": "Bienvenue dans votre essai gratuit prolongé",
+    "extendedButton": "Compris",
+
+    "bannerAvailable": "🎉 Essai Gratuit de {{days}} Jours Disponible !",
+
+    "confirmationTitle": "Commencer l'Essai Gratuit ? 🎉",
+    "confirmationMessage": "Vous êtes éligible pour un essai gratuit de {{days}} jours des fonctionnalités {{planName}}. Souhaitez-vous commencer votre essai gratuit maintenant ?",
+    "startTrialButton": "Commencer l'Essai Gratuit",
+    "continueWithoutTrialButton": "Continuer Sans Essai",
+
+    "welcomeTitle": "Bienvenue à Votre Essai Gratuit ! 🎉",
+    "welcomeMessage": "Vous êtes maintenant en essai gratuit de {{days}} jours des fonctionnalités {{planName}}. Commencez avec la capture de photos en masse, les filigranes personnalisés et les outils d'automatisation.",
+
+    "engagementTitle": "Personnalisez Votre Filigrane",
+    "engagementMessage": "Faites ressortir vos photos avant/après avec votre propre filigrane.",
+    "engagementCTA": "👉 Accédez aux Paramètres pour mettre à jour maintenant.",
+
+    "checkinTitle": "Connectez le Stockage Cloud",
+    "checkinMessage": "Gardez vos photos en sécurité et organisées. Connectez Google Drive ou Dropbox dans les Paramètres.",
+    "checkinCTA": "👉 Accédez aux Paramètres pour connecter.",
+
+    "reminderTitle": "Libérez de l'Espace Facilement",
+    "reminderMessage": "Libérez de l'espace sur votre appareil et dans l'application en supprimant des projets entiers en une seule fois.",
+    "reminderCTA": "👉 Accédez aux Paramètres pour supprimer des projets et libérer du stockage.",
+
+    "lastChanceTitle": "Essai Bientôt Terminé !",
+    "lastChanceMessage": "Plus que {{days}} jours pour profiter des fonctionnalités complètes. Mettez à niveau maintenant pour continuer.",
+    "lastChanceReferralIncentive": "🎁 Invitez des amis et gagnez des mois supplémentaires :\\n\\n1 ami → +1 mois\\n2 amis → +2 mois\\n3+ amis → +3 mois\\n\\nVotre ami doit configurer l'application pour compter.",
+    "lastChanceCTA": "👉 Mettre à Niveau / Parrainer Maintenant",
+
+    "expiredTitle": "Votre Essai est Terminé – Mettez à Niveau pour Tout Débloquer",
+    "expiredMessage": "Vous êtes de retour ! Pour continuer à utiliser :",
+    "expiredFeaturesList": "• Création de photos avant/après en masse\\n• Filigrane personnalisé et stockage cloud\\n• Gestion d'équipe et nettoyage de photos",
+    "expiredReferralIncentive": "Parrainez un ami et obtenez 1-3 mois gratuits",
+    "expiredCTA": "👉 Mettre à Niveau Maintenant",
+
+    "upgradeNowButton": "Mettre à Niveau Maintenant",
+    "referFriendButton": "Parrainer un Ami",
+    "maybeButton": "Peut-être Plus Tard",
+    "goodButton": "Ça Va",
+    "gotItButton": "Compris"
+  },
+  "referral": {
+    "settingsSectionTitle": "Inviter des Amis",
+    "settingsFriendsJoinedLabel": "Amis Rejoints",
+    "settingsFriendsJoinedSummary": "{{completed}} sur 3",
+    "settingsMonthsEarnedLabel": "Mois Gagnés",
+    "settingsMonthsEarnedSummary": "{{months}} mois",
+    "settingsInviteButton": "Inviter des Amis",
+
+    "screenTitle": "Inviter des Amis",
+    "loading": "Chargement...",
+
+    "earnFreeMonthsTitle": "Gagnez des Mois Gratuits !",
+    "rewardLine1": "1 ami → +1 mois gratuit",
+    "rewardLine2": "2 amis → +2 mois gratuits",
+    "rewardLine3": "3+ amis → +3 mois gratuits",
+
+    "codeLabel": "Votre Code de Parrainage",
+    "copyLinkButton": "Copier le Lien",
+    "shareCodeButton": "Partager le Code",
+
+    "progressTitle": "Votre Progrès",
+    "progressText": "{{completed}} sur 3 amis invités",
+    "statFriendsJoined": "Amis Rejoints",
+    "statMonthsEarned": "Mois Gagnés",
+
+    "shareIntroTitle": "Parrainage ProofPix",
+    "shareIntroMessage": "Rejoignez ProofPix et organisez-vous !\\n\\n📱 Téléchargez ProofPix :\\niOS : {{iosLink}}\\nAndroid : {{androidLink}}\\n\\nAprès l'installation, utilisez mon code de parrainage pour commencer !",
+    "shareCodePromptTitle": "Partager le Code de Parrainage ?",
+    "shareCodePromptMessage": "Maintenant, partagez votre code de parrainage en tant que message séparé pour qu'ils puissent le copier facilement.",
+    "shareErrorMessage": "Échec du partage du lien de parrainage. Veuillez réessayer.",
+
+    "copiedTitle": "Copié !",
+    "copiedMessage": "Code de parrainage copié dans le presse-papiers.",
+    "copyErrorMessage": "Échec de la copie du code.",
+
+    "haveCodeTitle": "Vous Avez un Code de Parrainage ?",
+    "haveCodeSubtitle": "Entrez le code de parrainage de votre ami pour obtenir 45 jours d'essai gratuit ! Votre ami obtient également 1 mois gratuit.",
+    "codePlaceholder": "Entrez le code (ex : ABC123)",
+    "applyAndContinue": "Appliquer et Continuer",
+    "continue": "Continuer",
+    "skip": "Passer",
+
+    "codeAppliedTitle": "🎉 Code de Parrainage Appliqué !",
+    "codeAppliedMessage": "Super ! Vous obtenez 45 jours d'essai gratuit et votre ami obtient 1 mois gratuit !",
+    "alreadyUsedTitle": "Déjà Utilisé",
+    "alreadyUsedMessage": "Cet appareil a déjà utilisé un code de parrainage. Chaque appareil ne peut utiliser qu'un seul code de parrainage.",
+    "unableToApplyTitle": "Impossible d'Appliquer le Code",
+    "invalidCodeMessage": "Code de parrainage invalide. Veuillez vérifier et réessayer.",
+    "codeDoesNotExistMessage": "Ce code de parrainage n'existe pas. Veuillez vérifier avec votre ami et réessayer.",
+
+    "infoModalTitle": "Comment ça Marche",
+    "infoModalDescription": "Partagez l'application avec des amis et soyez récompensé ! Lorsque votre ami installe et configure l'application, vous gagnerez de 1 à 3 mois d'accès gratuit. Plus vous invitez d'amis, plus vous obtenez de mois gratuits.",
+    "infoModalRequirement": "⚠️ Important : Votre ami doit terminer la configuration de l'application (nom, sélection du plan et connexion du compte) pour que le parrainage compte et pour que vous gagniez des récompenses.",
+    "infoModalBenefitsTitle": "Avantages",
+    "infoModalBenefit1": "✓ Facile à Partager : Envoyez un lien de parrainage unique via WhatsApp, e-mail, SMS ou réseaux sociaux.",
+    "infoModalBenefit2": "✓ Suivi Automatique : Votre invitation est suivie automatiquement, donc les récompenses sont appliquées instantanément.",
+    "infoModalBenefit3": "✓ Aucun Coût Supplémentaire : Les récompenses sont gratuites et nécessitent seulement que vos amis configurent l'application.",
+    "infoModalButton": "Compris"
   }
 }

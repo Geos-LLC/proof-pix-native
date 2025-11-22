@@ -446,5 +446,110 @@
     "title": "Benutzername erforderlich",
     "message": "Bitte geben Sie Ihren Namen in den Einstellungen an, bevor Sie ein neues Projekt erstellen.",
     "goToSettings": "Zu den Einstellungen"
+  },
+  "trial": {
+    "extendedTitle": "Herzlichen Glückwunsch!",
+    "extendedLine1": "Sie erhalten {{days}} Tage kostenlose Testversion",
+    "extendedLine2": "Ihr Freund erhält zusätzliche {{friendDays}} Tage kostenlos!",
+    "extendedSubtext": "Willkommen zu Ihrer erweiterten kostenlosen Testversion",
+    "extendedButton": "Verstanden",
+
+    "bannerAvailable": "🎉 {{days}}-Tage Kostenlose Testversion Verfügbar!",
+
+    "confirmationTitle": "Kostenlose Testversion Starten? 🎉",
+    "confirmationMessage": "Sie sind berechtigt für eine {{days}}-tägige kostenlose Testversion der {{planName}}-Funktionen. Möchten Sie jetzt Ihre kostenlose Testversion starten?",
+    "startTrialButton": "Kostenlose Testversion Starten",
+    "continueWithoutTrialButton": "Ohne Testversion Fortfahren",
+
+    "welcomeTitle": "Willkommen zu Ihrer Kostenlosen Testversion! 🎉",
+    "welcomeMessage": "Sie sind jetzt in einer {{days}}-tägigen kostenlosen Testversion der {{planName}}-Funktionen. Beginnen Sie mit Massenfotoaufnahme, benutzerdefinierten Wasserzeichen und Automatisierungswerkzeugen.",
+
+    "engagementTitle": "Passen Sie Ihr Wasserzeichen An",
+    "engagementMessage": "Lassen Sie Ihre Vorher/Nachher-Fotos mit Ihrem eigenen Wasserzeichen hervorstechen.",
+    "engagementCTA": "👉 Gehen Sie zu den Einstellungen, um jetzt zu aktualisieren.",
+
+    "checkinTitle": "Cloud-Speicher Verbinden",
+    "checkinMessage": "Halten Sie Ihre Fotos sicher und organisiert. Verbinden Sie Google Drive oder Dropbox in den Einstellungen.",
+    "checkinCTA": "👉 Gehen Sie zu den Einstellungen zum Verbinden.",
+
+    "reminderTitle": "Speicherplatz Einfach Freigeben",
+    "reminderMessage": "Geben Sie Speicherplatz auf Ihrem Gerät und in der App frei, indem Sie ganze Projekte auf einmal löschen.",
+    "reminderCTA": "👉 Gehen Sie zu den Einstellungen, um Projekte zu löschen und Speicher freizugeben.",
+
+    "lastChanceTitle": "Testversion Endet Bald!",
+    "lastChanceMessage": "Nur noch {{days}} Tage, um alle Funktionen zu genießen. Upgraden Sie jetzt, um fortzufahren.",
+    "lastChanceReferralIncentive": "🎁 Laden Sie Freunde ein und verdienen Sie zusätzliche Monate:\\n\\n1 Freund → +1 Monat\\n2 Freunde → +2 Monate\\n3+ Freunde → +3 Monate\\n\\nIhr Freund muss die App einrichten, damit es zählt.",
+    "lastChanceCTA": "👉 Jetzt Upgraden / Empfehlen",
+
+    "expiredTitle": "Ihre Testversion ist Abgelaufen – Upgraden Sie, um Alles Freizuschalten",
+    "expiredMessage": "Sie sind zurück! Um weiter zu verwenden:",
+    "expiredFeaturesList": "• Massen-Vorher/Nachher-Fotoerstellung\\n• Benutzerdefiniertes Wasserzeichen & Cloud-Speicher\\n• Teamverwaltung & Foto-Bereinigung",
+    "expiredReferralIncentive": "Empfehlen Sie einen Freund und erhalten Sie 1-3 Monate kostenlos",
+    "expiredCTA": "👉 Jetzt Upgraden",
+
+    "upgradeNowButton": "Jetzt Upgraden",
+    "referFriendButton": "Freund Empfehlen",
+    "maybeButton": "Vielleicht Später",
+    "goodButton": "Alles Gut",
+    "gotItButton": "Verstanden"
+  },
+  "referral": {
+    "settingsSectionTitle": "Freunde Einladen",
+    "settingsFriendsJoinedLabel": "Beigetretene Freunde",
+    "settingsFriendsJoinedSummary": "{{completed}} von 3",
+    "settingsMonthsEarnedLabel": "Verdiente Monate",
+    "settingsMonthsEarnedSummary": "{{months}} Monate",
+    "settingsInviteButton": "Freunde Einladen",
+
+    "screenTitle": "Freunde Einladen",
+    "loading": "Wird geladen...",
+
+    "earnFreeMonthsTitle": "Verdienen Sie Kostenlose Monate!",
+    "rewardLine1": "1 Freund → +1 Monat kostenlos",
+    "rewardLine2": "2 Freunde → +2 Monate kostenlos",
+    "rewardLine3": "3+ Freunde → +3 Monate kostenlos",
+
+    "codeLabel": "Ihr Empfehlungscode",
+    "copyLinkButton": "Link Kopieren",
+    "shareCodeButton": "Code Teilen",
+
+    "progressTitle": "Ihr Fortschritt",
+    "progressText": "{{completed}} von 3 Freunden eingeladen",
+    "statFriendsJoined": "Beigetretene Freunde",
+    "statMonthsEarned": "Verdiente Monate",
+
+    "shareIntroTitle": "ProofPix Empfehlung",
+    "shareIntroMessage": "Treten Sie ProofPix bei und organisieren Sie sich!\\n\\n📱 ProofPix Herunterladen:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\nVerwenden Sie nach der Installation meinen Empfehlungscode, um zu beginnen!",
+    "shareCodePromptTitle": "Empfehlungscode Teilen?",
+    "shareCodePromptMessage": "Teilen Sie jetzt Ihren Empfehlungscode als separate Nachricht, damit sie ihn leicht kopieren können.",
+    "shareErrorMessage": "Empfehlungslink konnte nicht geteilt werden. Bitte versuchen Sie es erneut.",
+
+    "copiedTitle": "Kopiert!",
+    "copiedMessage": "Empfehlungscode in die Zwischenablage kopiert.",
+    "copyErrorMessage": "Code konnte nicht kopiert werden.",
+
+    "haveCodeTitle": "Haben Sie einen Empfehlungscode?",
+    "haveCodeSubtitle": "Geben Sie den Empfehlungscode Ihres Freundes ein, um 45 Tage kostenlose Testversion zu erhalten! Ihr Freund erhält auch 1 Monat kostenlos.",
+    "codePlaceholder": "Code eingeben (z.B. ABC123)",
+    "applyAndContinue": "Anwenden & Fortfahren",
+    "continue": "Fortfahren",
+    "skip": "Überspringen",
+
+    "codeAppliedTitle": "🎉 Empfehlungscode Angewendet!",
+    "codeAppliedMessage": "Großartig! Sie erhalten 45 Tage kostenlose Testversion und Ihr Freund erhält 1 Monat kostenlos!",
+    "alreadyUsedTitle": "Bereits Verwendet",
+    "alreadyUsedMessage": "Dieses Gerät hat bereits einen Empfehlungscode verwendet. Jedes Gerät kann nur einen Empfehlungscode verwenden.",
+    "unableToApplyTitle": "Code Kann Nicht Angewendet Werden",
+    "invalidCodeMessage": "Ungültiger Empfehlungscode. Bitte überprüfen und erneut versuchen.",
+    "codeDoesNotExistMessage": "Dieser Empfehlungscode existiert nicht. Bitte überprüfen Sie mit Ihrem Freund und versuchen Sie es erneut.",
+
+    "infoModalTitle": "Wie es Funktioniert",
+    "infoModalDescription": "Teilen Sie die App mit Freunden und werden Sie belohnt! Wenn Ihr Freund die App installiert und einrichtet, verdienen Sie 1-3 Monate kostenlosen Zugang. Je mehr Freunde Sie einladen, desto mehr kostenlose Monate erhalten Sie.",
+    "infoModalRequirement": "⚠️ Wichtig: Ihr Freund muss die App-Einrichtung abschließen (Name, Planauswahl und Kontoverknüpfung), damit die Empfehlung zählt und Sie Belohnungen erhalten.",
+    "infoModalBenefitsTitle": "Vorteile",
+    "infoModalBenefit1": "✓ Einfach zu Teilen: Senden Sie einen eindeutigen Empfehlungslink über WhatsApp, E-Mail, SMS oder soziale Medien.",
+    "infoModalBenefit2": "✓ Automatische Verfolgung: Ihre Einladung wird automatisch verfolgt, sodass Belohnungen sofort angewendet werden.",
+    "infoModalBenefit3": "✓ Keine Zusätzlichen Kosten: Belohnungen sind kostenlos und erfordern nur, dass Ihre Freunde die App einrichten.",
+    "infoModalButton": "Verstanden"
   }
 }

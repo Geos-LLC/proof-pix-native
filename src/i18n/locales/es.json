@@ -444,5 +444,110 @@
     "watermarkColor": "Color de la marca de agua",
     "backgroundColor": "Color de Fondo",
     "default": "Predeterminado"
+  },
+  "trial": {
+    "extendedTitle": "¡Felicitaciones!",
+    "extendedLine1": "Obtienes {{days}} días de prueba gratuita",
+    "extendedLine2": "¡Tu amigo obtiene {{friendDays}} días adicionales gratis!",
+    "extendedSubtext": "Bienvenido a tu prueba gratuita extendida",
+    "extendedButton": "Entendido",
+
+    "bannerAvailable": "🎉 ¡Prueba Gratuita de {{days}} Días Disponible!",
+
+    "confirmationTitle": "¿Iniciar Prueba Gratuita? 🎉",
+    "confirmationMessage": "Eres elegible para una prueba gratuita de {{days}} días de las funciones de {{planName}}. ¿Te gustaría comenzar tu prueba gratuita ahora?",
+    "startTrialButton": "Iniciar Prueba Gratuita",
+    "continueWithoutTrialButton": "Continuar Sin Prueba",
+
+    "welcomeTitle": "¡Bienvenido a Tu Prueba Gratuita! 🎉",
+    "welcomeMessage": "Ahora estás en una prueba gratuita de {{days}} días de las funciones de {{planName}}. Comienza con captura masiva de fotos, marcas de agua personalizadas y herramientas de automatización.",
+
+    "engagementTitle": "Personaliza Tu Marca de Agua",
+    "engagementMessage": "Haz que tus fotos de antes y después destaquen con tu propia marca de agua.",
+    "engagementCTA": "👉 Ve a Configuración para actualizar ahora.",
+
+    "checkinTitle": "Conecta Almacenamiento en la Nube",
+    "checkinMessage": "Mantén tus fotos seguras y organizadas. Conecta Google Drive o Dropbox en Configuración.",
+    "checkinCTA": "👉 Ve a Configuración para conectar.",
+
+    "reminderTitle": "Libera Espacio Fácilmente",
+    "reminderMessage": "Libera espacio en tu dispositivo y en la aplicación eliminando proyectos completos de una vez.",
+    "reminderCTA": "👉 Ve a Configuración para eliminar proyectos y liberar almacenamiento.",
+
+    "lastChanceTitle": "¡Prueba Terminando Pronto!",
+    "lastChanceMessage": "Solo {{days}} días restantes para disfrutar de las funciones completas. Actualiza ahora para continuar.",
+    "lastChanceReferralIncentive": "🎁 Invita amigos y gana meses extra:\\n\\n1 amigo → +1 mes\\n2 amigos → +2 meses\\n3+ amigos → +3 meses\\n\\nTu amigo debe configurar la aplicación para contar.",
+    "lastChanceCTA": "👉 Actualizar / Referir Ahora",
+
+    "expiredTitle": "Tu Prueba Terminó – Actualiza para Desbloquear Todo",
+    "expiredMessage": "¡Has vuelto! Para continuar usando:",
+    "expiredFeaturesList": "• Creación masiva de fotos de antes y después\\n• Marca de agua personalizada y almacenamiento en la nube\\n• Gestión de equipos y limpieza de fotos",
+    "expiredReferralIncentive": "Refiere a un amigo y obtén 1-3 meses gratis",
+    "expiredCTA": "👉 Actualizar Ahora",
+
+    "upgradeNowButton": "Actualizar Ahora",
+    "referFriendButton": "Referir a un Amigo",
+    "maybeButton": "Quizás Más Tarde",
+    "goodButton": "Estoy Bien",
+    "gotItButton": "Entendido"
+  },
+  "referral": {
+    "settingsSectionTitle": "Invitar Amigos",
+    "settingsFriendsJoinedLabel": "Amigos Unidos",
+    "settingsFriendsJoinedSummary": "{{completed}} de 3",
+    "settingsMonthsEarnedLabel": "Meses Ganados",
+    "settingsMonthsEarnedSummary": "{{months}} meses",
+    "settingsInviteButton": "Invitar Amigos",
+
+    "screenTitle": "Invitar Amigos",
+    "loading": "Cargando...",
+
+    "earnFreeMonthsTitle": "¡Gana Meses Gratis!",
+    "rewardLine1": "1 amigo → +1 mes gratis",
+    "rewardLine2": "2 amigos → +2 meses gratis",
+    "rewardLine3": "3+ amigos → +3 meses gratis",
+
+    "codeLabel": "Tu Código de Referido",
+    "copyLinkButton": "Copiar Enlace",
+    "shareCodeButton": "Compartir Código",
+
+    "progressTitle": "Tu Progreso",
+    "progressText": "{{completed}} de 3 amigos invitados",
+    "statFriendsJoined": "Amigos Unidos",
+    "statMonthsEarned": "Meses Ganados",
+
+    "shareIntroTitle": "Referido de ProofPix",
+    "shareIntroMessage": "¡Únete a ProofPix y organízate!\\n\\n📱 Descarga ProofPix:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\n¡Después de instalar, usa mi código de referido para comenzar!",
+    "shareCodePromptTitle": "¿Compartir Código de Referido?",
+    "shareCodePromptMessage": "Ahora comparte tu código de referido como un mensaje separado para que puedan copiarlo fácilmente.",
+    "shareErrorMessage": "Error al compartir el enlace de referido. Por favor, inténtalo de nuevo.",
+
+    "copiedTitle": "¡Copiado!",
+    "copiedMessage": "Código de referido copiado al portapapeles.",
+    "copyErrorMessage": "Error al copiar el código.",
+
+    "haveCodeTitle": "¿Tienes un Código de Referido?",
+    "haveCodeSubtitle": "¡Ingresa el código de referido de tu amigo para obtener 45 días de prueba gratis! Tu amigo también obtiene 1 mes gratis.",
+    "codePlaceholder": "Ingresa el código (ej: ABC123)",
+    "applyAndContinue": "Aplicar y Continuar",
+    "continue": "Continuar",
+    "skip": "Omitir",
+
+    "codeAppliedTitle": "🎉 ¡Código de Referido Aplicado!",
+    "codeAppliedMessage": "¡Genial! ¡Obtienes 45 días de prueba gratis y tu amigo obtiene 1 mes gratis!",
+    "alreadyUsedTitle": "Ya Usado",
+    "alreadyUsedMessage": "Este dispositivo ya ha usado un código de referido. Cada dispositivo solo puede usar un código de referido.",
+    "unableToApplyTitle": "No se Puede Aplicar el Código",
+    "invalidCodeMessage": "Código de referido inválido. Por favor, verifica e inténtalo de nuevo.",
+    "codeDoesNotExistMessage": "Este código de referido no existe. Por favor, verifica con tu amigo e inténtalo de nuevo.",
+
+    "infoModalTitle": "Cómo Funciona",
+    "infoModalDescription": "¡Comparte la aplicación con amigos y obtén recompensas! Cuando tu amigo instale y configure la aplicación, ganarás de 1 a 3 meses de acceso gratuito. Cuantos más amigos invites, más meses gratis obtendrás.",
+    "infoModalRequirement": "⚠️ Importante: Tu amigo debe completar la configuración de la aplicación (nombre, selección de plan y conexión de cuenta) para que el referido cuente y para que ganes recompensas.",
+    "infoModalBenefitsTitle": "Beneficios",
+    "infoModalBenefit1": "✓ Fácil de Compartir: Envía un enlace de referido único a través de WhatsApp, correo electrónico, SMS o redes sociales.",
+    "infoModalBenefit2": "✓ Seguimiento Automático: Tu invitación se rastrea automáticamente, por lo que las recompensas se aplican al instante.",
+    "infoModalBenefit3": "✓ Sin Costo Extra: Las recompensas son gratuitas y solo requieren que tus amigos configuren la aplicación.",
+    "infoModalButton": "Entendido"
   }
 }
