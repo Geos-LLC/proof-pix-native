@@ -307,16 +307,20 @@ app.delete('/api/admin/:sessionId/tokens/:token', async (req, res) => {
       const globalTeamKey = `team:${session.folderId}:members`;
       let globalTeamMembers = await kv.get(globalTeamKey) || [];
 
-      // Convert to Set for easier manipulation
-      if (Array.isArray(globalTeamMembers)) {
-        const memberSet = new Set(globalTeamMembers);
-        memberSet.delete(token);
-        globalTeamMembers = Array.from(memberSet);
+      // Ensure it's an array
+      if (!Array.isArray(globalTeamMembers)) {
+        globalTeamMembers = [];
       }
 
+      // Convert to Set for easier manipulation
+      const memberSet = new Set(globalTeamMembers);
+      const sizeBefore = memberSet.size;
+      memberSet.delete(token);
+      const sizeAfter = memberSet.size;
+
       // Save updated global team members
-      await kv.set(globalTeamKey, globalTeamMembers, { ex: SESSION_TTL });
-      console.log(`Token ${token} removed from global team registry for folder ${session.folderId}`);
+      await kv.set(globalTeamKey, Array.from(memberSet), { ex: SESSION_TTL });
+      console.log(`[TOKEN_REMOVE] Removed token from global registry for folder ${session.folderId}. Count: ${sizeBefore} -> ${sizeAfter}`);
     }
 
     console.log(`Token removed from session ${sessionId}`);
