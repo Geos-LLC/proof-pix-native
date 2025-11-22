@@ -4238,18 +4238,28 @@ export default function SettingsScreen({ navigation, route }) {
 
         {/* Referral Program */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Invite Friends</Text>
+          <Text style={styles.sectionTitle}>{t('referral.settingsSectionTitle', { defaultValue: 'Invite Friends' })}</Text>
           <View style={styles.referralStatsContainer}>
             <View style={styles.referralStatItem}>
-              <Text style={styles.referralStatLabel}>Friends Joined</Text>
+              <Text style={styles.referralStatLabel}>
+                {t('referral.settingsFriendsJoinedLabel', { defaultValue: 'Friends Joined' })}
+              </Text>
               <Text style={styles.referralStatValue}>
-                {referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0} of 3
+                {t('referral.settingsFriendsJoinedSummary', {
+                  completed: referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0,
+                  defaultValue: `${referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0} of 3`
+                })}
               </Text>
             </View>
             <View style={[styles.referralStatItem, styles.referralStatItemRight]}>
-              <Text style={[styles.referralStatLabel, styles.referralStatLabelRight]}>Months Earned</Text>
+              <Text style={[styles.referralStatLabel, styles.referralStatLabelRight]}>
+                {t('referral.settingsMonthsEarnedLabel', { defaultValue: 'Months Earned' })}
+              </Text>
               <Text style={[styles.referralStatValue, styles.referralStatValueRight]}>
-                {referralInfo.totalMonthsEarned || 0} months
+                {t('referral.settingsMonthsEarnedSummary', {
+                  months: referralInfo.totalMonthsEarned || 0,
+                  defaultValue: `${referralInfo.totalMonthsEarned || 0} months`
+                })}
               </Text>
             </View>
           </View>
@@ -4257,7 +4267,9 @@ export default function SettingsScreen({ navigation, route }) {
             style={[styles.featureButton, styles.referralButton]}
             onPress={() => navigation.navigate('Referral')}
           >
-            <Text style={[styles.featureButtonText, styles.referralButtonText]}>Invite Friends</Text>
+            <Text style={[styles.featureButtonText, styles.referralButtonText]}>
+              {t('referral.settingsInviteButton', { defaultValue: 'Invite Friends' })}
+            </Text>
           </TouchableOpacity>
         </View>
 

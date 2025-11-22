@@ -66,15 +66,19 @@ export default function FirstLoadScreen({ navigation, route }) {
         if (result && result.success) {
           console.log('[FirstLoad] Referral tracked on server:', result.data.referralId);
           Alert.alert(
-            '🎉 Referral Code Applied!',
-            'Great! You get 45 days free trial and your friend gets 1 month free!',
-            [{ text: 'OK' }]
+            t('referral.codeAppliedTitle', { defaultValue: '🎉 Referral Code Applied!' }),
+            t('referral.codeAppliedMessage', {
+              defaultValue: 'Great! You get 45 days free trial and your friend gets 1 month free!'
+            }),
+            [{ text: t('common.ok') }]
           );
         } else if (result && result.error) {
           if (result.error.includes('already used a referral code')) {
             Alert.alert(
-              'Already Used',
-              'This device has already used a referral code. Each device can only use one referral code.'
+              t('referral.alreadyUsedTitle', { defaultValue: 'Already Used' }),
+              t('referral.alreadyUsedMessage', {
+                defaultValue: 'This device has already used a referral code. Each device can only use one referral code.'
+              })
             );
           }
         }
@@ -140,19 +144,28 @@ export default function FirstLoadScreen({ navigation, route }) {
         return;
       } else {
         // Handle specific error messages
-        let errorMessage = 'Invalid referral code. Please check and try again.';
+        let errorMessage = t('referral.invalidCodeMessage', {
+          defaultValue: 'Invalid referral code. Please check and try again.'
+        });
 
         if (result && result.error) {
           if (result.error.includes('already used a referral code')) {
-            errorMessage = 'This device has already used a referral code. Each device can only use one referral code.';
+            errorMessage = t('referral.alreadyUsedMessage', {
+              defaultValue: 'This device has already used a referral code. Each device can only use one referral code.'
+            });
           } else if (result.error.includes('Invalid referral code')) {
-            errorMessage = 'This referral code does not exist. Please check with your friend and try again.';
+            errorMessage = t('referral.codeDoesNotExistMessage', {
+              defaultValue: 'This referral code does not exist. Please check with your friend and try again.'
+            });
           } else {
             errorMessage = result.error;
           }
         }
 
-        Alert.alert('Unable to Apply Code', errorMessage);
+        Alert.alert(
+          t('referral.unableToApplyTitle', { defaultValue: 'Unable to Apply Code' }),
+          errorMessage
+        );
         return;
       }
     }
@@ -330,15 +343,21 @@ export default function FirstLoadScreen({ navigation, route }) {
           style={styles.modalOverlay}
         >
           <View style={styles.referralModalContent}>
-            <Text style={styles.modalTitle}>Have a Referral Code?</Text>
-            <Text style={styles.modalSubtitle}>Enter your friend's referral code to get 45 days free trial! Your friend also gets 1 month free.</Text>
+            <Text style={styles.modalTitle}>
+              {t('referral.haveCodeTitle', { defaultValue: 'Have a Referral Code?' })}
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              {t('referral.haveCodeSubtitle', {
+                defaultValue: "Enter your friend's referral code to get 45 days free trial! Your friend also gets 1 month free."
+              })}
+            </Text>
 
             <View style={styles.referralInputContainer}>
               <TextInput
                 style={styles.referralInput}
                 value={referralCodeInput}
                 onChangeText={setReferralCodeInput}
-                placeholder="Enter code (e.g., ABC123)"
+                placeholder={t('referral.codePlaceholder', { defaultValue: 'Enter code (e.g., ABC123)' })}
                 placeholderTextColor="#999"
                 autoCapitalize="characters"
                 autoCorrect={false}
@@ -351,7 +370,9 @@ export default function FirstLoadScreen({ navigation, route }) {
               onPress={handleReferralSubmitAndContinue}
             >
               <Text style={styles.closeModalButtonText}>
-                {referralCodeInput.trim() ? 'Apply & Continue' : 'Continue'}
+                {referralCodeInput.trim()
+                  ? t('referral.applyAndContinue', { defaultValue: 'Apply & Continue' })
+                  : t('referral.continue', { defaultValue: 'Continue' })}
               </Text>
             </TouchableOpacity>
 
@@ -359,7 +380,9 @@ export default function FirstLoadScreen({ navigation, route }) {
               style={styles.skipButton}
               onPress={handleContinueWithoutReferral}
             >
-              <Text style={styles.skipButtonText}>Skip</Text>
+              <Text style={styles.skipButtonText}>
+                {t('referral.skip', { defaultValue: 'Skip' })}
+              </Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -378,14 +401,24 @@ export default function FirstLoadScreen({ navigation, route }) {
         <View style={styles.modalOverlay}>
           <View style={styles.successModalContent}>
             <Text style={styles.successIcon}>🎉</Text>
-            <Text style={styles.successTitle}>Congratulations!</Text>
-            <Text style={styles.successMessage}>
-              You get <Text style={styles.highlightText}>45 days free trial</Text>
+            <Text style={styles.successTitle}>
+              {t('trial.extendedTitle', { defaultValue: 'Congratulations!' })}
             </Text>
             <Text style={styles.successMessage}>
-              Your friend gets <Text style={styles.highlightText}>additional 30 days</Text> free!
+              {t('trial.extendedLine1', {
+                days: 45,
+                defaultValue: 'You get 45 days free trial'
+              })}
             </Text>
-            <Text style={styles.successSubtext}>Welcome to your extended free trial</Text>
+            <Text style={styles.successMessage}>
+              {t('trial.extendedLine2', {
+                friendDays: 30,
+                defaultValue: 'Your friend gets additional 30 days free!'
+              })}
+            </Text>
+            <Text style={styles.successSubtext}>
+              {t('trial.extendedSubtext', { defaultValue: 'Welcome to your extended free trial' })}
+            </Text>
 
             <TouchableOpacity
               style={styles.successButton}
@@ -394,7 +427,9 @@ export default function FirstLoadScreen({ navigation, route }) {
                 navigation.navigate('PlanSelection');
               }}
             >
-              <Text style={styles.successButtonText}>Got it</Text>
+              <Text style={styles.successButtonText}>
+                {t('trial.extendedButton', { defaultValue: 'Got it' })}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

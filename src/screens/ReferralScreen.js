@@ -100,22 +100,28 @@ export default function ReferralScreen({ navigation }) {
 
       // Share the instructions message first
       await Share.share({
-        message: `Join ProofPix and get organized!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\nAfter installing, use my referral code to get started!`,
-        title: 'ProofPix Referral'
+        message: t('referral.shareIntroMessage', {
+          iosLink: iosAppStoreLink,
+          androidLink: androidPlayStoreLink,
+          defaultValue: `Join ProofPix and get organized!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\nAfter installing, use my referral code to get started!`
+        }),
+        title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
       });
 
       // After first share completes, ask user if they want to share the code
       Alert.alert(
-        'Share Referral Code?',
-        'Now share your referral code as a separate message so they can easily copy it.',
+        t('referral.shareCodePromptTitle', { defaultValue: 'Share Referral Code?' }),
+        t('referral.shareCodePromptMessage', {
+          defaultValue: 'Now share your referral code as a separate message so they can easily copy it.'
+        }),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: 'Share Code',
+            text: t('referral.shareCodeButton', { defaultValue: 'Share Code' }),
             onPress: async () => {
               await Share.share({
                 message: referralCode,
-                title: 'ProofPix Referral Code'
+                title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
               });
             }
           }
@@ -123,7 +129,12 @@ export default function ReferralScreen({ navigation }) {
       );
     } catch (error) {
       console.error('[ReferralScreen] Error sharing:', error);
-      Alert.alert('Error', 'Failed to share referral link. Please try again.');
+      Alert.alert(
+        t('common.error'),
+        t('referral.shareErrorMessage', {
+          defaultValue: 'Failed to share referral link. Please try again.'
+        })
+      );
     }
   };
 
@@ -131,10 +142,18 @@ export default function ReferralScreen({ navigation }) {
     try {
       // Copy just the referral code, not the full link
       await Clipboard.setString(referralCode);
-      Alert.alert('Copied!', 'Referral code copied to clipboard.');
+      Alert.alert(
+        t('referral.copiedTitle', { defaultValue: 'Copied!' }),
+        t('referral.copiedMessage', {
+          defaultValue: 'Referral code copied to clipboard.'
+        })
+      );
     } catch (error) {
       console.error('[ReferralScreen] Error copying code:', error);
-      Alert.alert('Error', 'Failed to copy code.');
+      Alert.alert(
+        t('common.error'),
+        t('referral.copyErrorMessage', { defaultValue: 'Failed to copy code.' })
+      );
     }
   };
 
@@ -158,11 +177,15 @@ export default function ReferralScreen({ navigation }) {
           >
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Invite Friends</Text>
+          <Text style={styles.title}>
+            {t('referral.screenTitle', { defaultValue: 'Invite Friends' })}
+          </Text>
           <View style={{ width: 60 }} />
         </View>
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
+          <Text style={styles.loadingText}>
+            {t('referral.loading', { defaultValue: 'Loading...' })}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -180,7 +203,9 @@ export default function ReferralScreen({ navigation }) {
         >
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Invite Friends</Text>
+        <Text style={styles.title}>
+          {t('referral.screenTitle', { defaultValue: 'Invite Friends' })}
+        </Text>
         <View style={{ width: 60 }} />
       </View>
 
@@ -188,7 +213,9 @@ export default function ReferralScreen({ navigation }) {
         {/* Rewards Info */}
         <View style={styles.rewardsSection}>
           <View style={styles.sectionTitleRow}>
-            <Text style={[styles.sectionTitle, styles.earnFreeMonthsTitle]}>Earn Free Months!</Text>
+            <Text style={[styles.sectionTitle, styles.earnFreeMonthsTitle]}>
+              {t('referral.earnFreeMonthsTitle', { defaultValue: 'Earn Free Months!' })}
+            </Text>
             <TouchableOpacity
               style={styles.infoButton}
               onPress={() => setShowInfoModal(true)}
@@ -197,26 +224,36 @@ export default function ReferralScreen({ navigation }) {
             </TouchableOpacity>
           </View>
           <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>1 friend → +1 month free</Text>
+            <Text style={styles.rewardText}>
+              {t('referral.rewardLine1', { defaultValue: '1 friend → +1 month free' })}
+            </Text>
           </View>
           <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>2 friends → +2 months free</Text>
+            <Text style={styles.rewardText}>
+              {t('referral.rewardLine2', { defaultValue: '2 friends → +2 months free' })}
+            </Text>
           </View>
           <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>3+ friends → +3 months free</Text>
+            <Text style={styles.rewardText}>
+              {t('referral.rewardLine3', { defaultValue: '3+ friends → +3 months free' })}
+            </Text>
           </View>
         </View>
 
         {/* Referral Code */}
         <View style={styles.codeSection}>
-          <Text style={styles.codeLabel}>Your Referral Code</Text>
+          <Text style={styles.codeLabel}>
+            {t('referral.codeLabel', { defaultValue: 'Your Referral Code' })}
+          </Text>
           <View style={styles.codeContainer}>
             <Text style={styles.codeText}>{referralCode}</Text>
             <TouchableOpacity
               style={styles.copyButton}
               onPress={handleCopyLink}
             >
-              <Text style={styles.copyButtonText}>Copy Link</Text>
+              <Text style={styles.copyButtonText}>
+                {t('referral.copyLinkButton', { defaultValue: 'Copy Link' })}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -227,13 +264,17 @@ export default function ReferralScreen({ navigation }) {
             style={styles.shareCodeButton}
             onPress={() => handleShare('general')}
           >
-            <Text style={styles.shareCodeButtonText}>Share Code</Text>
+            <Text style={styles.shareCodeButtonText}>
+              {t('referral.shareCodeButton', { defaultValue: 'Share Code' })}
+            </Text>
           </TouchableOpacity>
         </View>
 
         {/* Progress Tracker */}
         <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>Your Progress</Text>
+          <Text style={styles.sectionTitle}>
+            {t('referral.progressTitle', { defaultValue: 'Your Progress' })}
+          </Text>
           <View style={styles.progressBarContainer}>
             <View style={styles.progressBar}>
               <View
@@ -244,17 +285,24 @@ export default function ReferralScreen({ navigation }) {
               />
             </View>
             <Text style={styles.progressText}>
-              {completedCount} of 3 friends invited
+              {t('referral.progressText', {
+                completed: completedCount,
+                defaultValue: `${completedCount} of 3 friends invited`
+              })}
             </Text>
           </View>
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{completedCount}</Text>
-              <Text style={styles.statLabel}>Friends Joined</Text>
+              <Text style={styles.statLabel}>
+                {t('referral.statFriendsJoined', { defaultValue: 'Friends Joined' })}
+              </Text>
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{monthsEarned}</Text>
-              <Text style={styles.statLabel}>Months Earned</Text>
+              <Text style={styles.statLabel}>
+                {t('referral.statMonthsEarned', { defaultValue: 'Months Earned' })}
+              </Text>
             </View>
           </View>
         </View>

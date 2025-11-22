@@ -33,7 +33,10 @@
     "selected": "已选择",
     "select": "选择",
     "all": "全部",
-    "continue": "继续"
+    "continue": "继续",
+    "deleteFromStorageWarning": "Checking the \"Delete from phone storage\" box will permanently delete photos from your device. This action cannot be undone.",
+    "apply": "Apply",
+    "deleteFromPhoneStorage": "Delete from phone storage"
   },
   "firstLoad": {
     "title": "欢迎使用 ProofPix",
@@ -233,6 +236,7 @@
     "useFolderStructure": "使用“之前/之后/合并”文件夹结构",
     "useFolderStructureDescription": "自动为不同的照片状态创建子文件夹。",
     "labelLanguage": "标签语言",
+    "sectionLanguage": "Section language",
     "appLanguage": "应用语言",
     "labelCustomization_short": "标签",
     "folderCustomization_short": "分区",

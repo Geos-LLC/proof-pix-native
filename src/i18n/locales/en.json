@@ -245,6 +245,8 @@
     "connectedToTeam": "Connected to Team",
     "admin": "Admin",
     "connectedToTeamStatus": "Connected to team",
+    "trial": "Trial",
+    "trialDaysRemaining": "{{days}} days remaining",
     "inviteToken": "Invite Token",
     "copied": "Copied",
     "tokenCopied": "Token copied to clipboard",
@@ -584,5 +586,62 @@
     "watermarkColor": "Watermark Color",
     "backgroundColor": "Background Color",
     "default": "Default"
+  },
+  "trial": {
+    "extendedTitle": "Congratulations!",
+    "extendedLine1": "You get {{days}} days free trial",
+    "extendedLine2": "Your friend gets additional {{friendDays}} days free!",
+    "extendedSubtext": "Welcome to your extended free trial",
+    "extendedButton": "Got it"
+  },
+  "referral": {
+    "settingsSectionTitle": "Invite Friends",
+    "settingsFriendsJoinedLabel": "Friends Joined",
+    "settingsFriendsJoinedSummary": "{{completed}} of 3",
+    "settingsMonthsEarnedLabel": "Months Earned",
+    "settingsMonthsEarnedSummary": "{{months}} months",
+    "settingsInviteButton": "Invite Friends",
+
+    "screenTitle": "Invite Friends",
+    "loading": "Loading...",
+
+    "earnFreeMonthsTitle": "Earn Free Months!",
+    "rewardLine1": "1 friend → +1 month free",
+    "rewardLine2": "2 friends → +2 months free",
+    "rewardLine3": "3+ friends → +3 months free",
+
+    "codeLabel": "Your Referral Code",
+    "copyLinkButton": "Copy Link",
+    "shareCodeButton": "Share Code",
+
+    "progressTitle": "Your Progress",
+    "progressText": "{{completed}} of 3 friends invited",
+    "statFriendsJoined": "Friends Joined",
+    "statMonthsEarned": "Months Earned",
+
+    "shareIntroTitle": "ProofPix Referral",
+    "shareIntroMessage": "Join ProofPix and get organized!\\n\\n📱 Download ProofPix:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\nAfter installing, use my referral code to get started!",
+    "shareCodePromptTitle": "Share Referral Code?",
+    "shareCodePromptMessage": "Now share your referral code as a separate message so they can easily copy it.",
+    "shareErrorMessage": "Failed to share referral link. Please try again.",
+
+    "copiedTitle": "Copied!",
+    "copiedMessage": "Referral code copied to clipboard.",
+    "copyErrorMessage": "Failed to copy code.",
+
+    "haveCodeTitle": "Have a Referral Code?",
+    "haveCodeSubtitle": "Enter your friend's referral code to get 45 days free trial! Your friend also gets 1 month free.",
+    "codePlaceholder": "Enter code (e.g., ABC123)",
+    "applyAndContinue": "Apply & Continue",
+    "continue": "Continue",
+    "skip": "Skip",
+
+    "codeAppliedTitle": "🎉 Referral Code Applied!",
+    "codeAppliedMessage": "Great! You get 45 days free trial and your friend gets 1 month free!",
+    "alreadyUsedTitle": "Already Used",
+    "alreadyUsedMessage": "This device has already used a referral code. Each device can only use one referral code.",
+    "unableToApplyTitle": "Unable to Apply Code",
+    "invalidCodeMessage": "Invalid referral code. Please check and try again.",
+    "codeDoesNotExistMessage": "This referral code does not exist. Please check with your friend and try again."
   }
 }

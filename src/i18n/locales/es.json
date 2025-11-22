@@ -33,7 +33,10 @@
     "selected": "seleccionado",
     "select": "Seleccionar",
     "all": "Todos",
-    "continue": "Continuar"
+    "continue": "Continuar",
+    "deleteFromStorageWarning": "Checking the \"Delete from phone storage\" box will permanently delete photos from your device. This action cannot be undone.",
+    "apply": "Apply",
+    "deleteFromPhoneStorage": "Delete from phone storage"
   },
   "firstLoad": {
     "title": "Bienvenido a ProofPix",
@@ -236,6 +239,7 @@
     "useFolderStructure": "Usar estructura de carpetas 'Antes/Después/Combinado'",
     "useFolderStructureDescription": "Crear subcarpetas automáticamente para diferentes estados de fotos.",
     "labelLanguage": "Idioma de las etiquetas",
+    "sectionLanguage": "Section language",
     "appLanguage": "Idioma de la aplicación",
     "labelCustomization_short": "Etiquetas",
     "folderCustomization_short": "Secciones",

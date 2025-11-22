@@ -33,7 +33,10 @@
     "selected": "выбрано",
     "select": "Выбрать",
     "all": "Все",
-    "continue": "Продолжить"
+    "continue": "Продолжить",
+    "deleteFromStorageWarning": "Checking the \"Delete from phone storage\" box will permanently delete photos from your device. This action cannot be undone.",
+    "apply": "Apply",
+    "deleteFromPhoneStorage": "Delete from phone storage"
   },
   "firstLoad": {
     "title": "Добро пожаловать в ProofPix",
@@ -236,6 +239,7 @@
     "useFolderStructure": "Использовать структуру папок 'До/После/Объединенное'",
     "useFolderStructureDescription": "Автоматически создавать подпапки для разных состояний фотографий.",
     "labelLanguage": "Язык меток",
+    "sectionLanguage": "Section language",
     "appLanguage": "Язык приложения",
     "labelCustomization_short": "Метки",
     "folderCustomization_short": "Секции",
