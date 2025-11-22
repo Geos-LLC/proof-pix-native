@@ -1193,7 +1193,12 @@ export default function SettingsScreen({ navigation, route }) {
     // Copy token with sessionId for proxy server
     const inviteData = `${token}|${proxySessionId}`;
     Clipboard.setString(inviteData);
-    Alert.alert('Copied!', 'Invite code copied to clipboard. Share this code with your team member.');
+    Alert.alert(
+      t('settings.inviteCopiedTitle', { defaultValue: 'Copied!' }),
+      t('settings.inviteCopiedMessage', {
+        defaultValue: 'Invite code copied to clipboard. Share this code with your team member.',
+      })
+    );
   };
 
   const handleShareInvite = async (token) => {
@@ -1202,61 +1207,88 @@ export default function SettingsScreen({ navigation, route }) {
       const inviteData = `${token}|${proxySessionId}`;
 
       // Get App Store links from environment variables
-      const iosAppStoreLink = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/proofpix';
-      const androidPlayStoreLink = process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.proofpix';
+      const iosAppStoreLink =
+        process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/proofpix';
+      const androidPlayStoreLink =
+        process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL ||
+        'https://play.google.com/store/apps/details?id=com.proofpix';
 
       // Share the instructions message first
       await Share.share({
-        message: `Join my ProofPix team!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\nAfter installing, open the app, go to "Join Team" and paste the invite code I'll send you next.`,
-        title: 'ProofPix Team Invite'
+        message: t('settings.shareInviteIntroMessage', {
+          iosLink: iosAppStoreLink,
+          androidLink: androidPlayStoreLink,
+          defaultValue:
+            'Join my ProofPix team!\n\n📱 Download ProofPix:\niOS: {{iosLink}}\nAndroid: {{androidLink}}\n\nAfter installing, open the app, go to "Join Team" and paste the invite code I\'ll send you next.',
+        }),
+        title: t('settings.shareInviteIntroTitle', { defaultValue: 'ProofPix Team Invite' }),
       });
 
       // After first share completes, ask user if they want to share the code
       Alert.alert(
-        'Share Invite Code?',
-        'Now share the invite code as a separate message so your team member can easily copy it.',
+        t('settings.shareInviteCodeTitle', { defaultValue: 'Share Invite Code?' }),
+        t('settings.shareInviteCodeMessage', {
+          defaultValue:
+            'Now share the invite code as a separate message so your team member can easily copy it.',
+        }),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
           {
-            text: 'Share Code',
+            text: t('settings.shareInviteCodeButton', { defaultValue: 'Share Code' }),
             onPress: async () => {
               await Share.share({
                 message: inviteData,
-                title: 'ProofPix Invite Code'
+                title: t('settings.shareInviteCodeTitleShort', {
+                  defaultValue: 'ProofPix Invite Code',
+                }),
               });
-            }
-          }
+            },
+          },
         ]
       );
     } catch (error) {
-      Alert.alert('Error', 'Could not share the invite.');
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('settings.shareInviteError', { defaultValue: 'Could not share the invite.' })
+      );
     }
   };
 
   const handleDeleteInvite = (token) => {
     Alert.alert(
-      'Delete Invite',
-      'This will permanently delete this unused invite code. Are you sure?',
+      t('settings.deleteInviteTitle', { defaultValue: 'Delete Invite' }),
+      t('settings.deleteInviteMessage', {
+        defaultValue: 'This will permanently delete this unused invite code. Are you sure?',
+      }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('settings.deleteInviteButton', { defaultValue: 'Delete' }),
           style: 'destructive',
           onPress: async () => {
             try {
               if (proxySessionId) {
                 await proxyService.removeInviteToken(proxySessionId, token);
-                console.log('[SETTINGS] Token removed from proxy server');
               }
               await removeInviteToken(token);
               await fetchTeamMembersForModal();
-              Alert.alert('Deleted', 'The invite code has been deleted successfully.');
+              Alert.alert(
+                t('settings.deleteInviteSuccessTitle', { defaultValue: 'Deleted' }),
+                t('settings.deleteInviteSuccessMessage', {
+                  defaultValue: 'The invite code has been deleted successfully.',
+                })
+              );
             } catch (error) {
               console.error('[SETTINGS] Failed to delete invite token:', error);
-              Alert.alert('Error', 'Failed to delete invite code. Please try again.');
+              Alert.alert(
+                t('common.error', { defaultValue: 'Error' }),
+                t('settings.deleteInviteErrorMessage', {
+                  defaultValue: 'Failed to delete invite code. Please try again.',
+                })
+              );
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
@@ -5401,11 +5433,15 @@ export default function SettingsScreen({ navigation, route }) {
               {showTestNameInput ? (
                 <View style={styles.customModalContent}>
                   <Text style={styles.testModalSubtitle}>
-                    Enter a name to simulate the complete team member setup process.
+                    {t('settings.testTeamMemberDescription', {
+                      defaultValue: 'Enter a name to simulate the complete team member setup process.',
+                    })}
                   </Text>
                   <TextInput
                     style={styles.testNameInput}
-                    placeholder="Enter team member name"
+                    placeholder={t('settings.testTeamMemberPlaceholder', {
+                      defaultValue: 'Enter team member name',
+                    })}
                     placeholderTextColor={COLORS.GRAY}
                     value={testMemberName}
                     onChangeText={setTestMemberName}
@@ -5422,7 +5458,9 @@ export default function SettingsScreen({ navigation, route }) {
                       }}
                       disabled={isTestingInvite}
                     >
-                      <Text style={styles.testModalButtonTextCancel}>Cancel</Text>
+                      <Text style={styles.testModalButtonTextCancel}>
+                        {t('common.cancel', { defaultValue: 'Cancel' })}
+                      </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.testModalButton, styles.testModalButtonJoin]}
@@ -5432,8 +5470,14 @@ export default function SettingsScreen({ navigation, route }) {
                       {isTestingInvite ? (
                         <ActivityIndicator color="#fff" />
                       ) : (
-                        <Text style={[styles.testModalButtonTextJoin, (!testMemberName.trim() || isTestingInvite) && styles.testModalButtonTextDisabled]}>
-                          Join
+                        <Text
+                          style={[
+                            styles.testModalButtonTextJoin,
+                            (!testMemberName.trim() || isTestingInvite) &&
+                              styles.testModalButtonTextDisabled,
+                          ]}
+                        >
+                          {t('settings.testTeamMemberJoin', { defaultValue: 'Join' })}
                         </Text>
                       )}
                     </TouchableOpacity>
@@ -5489,7 +5533,10 @@ export default function SettingsScreen({ navigation, route }) {
 
                         return (
                           <Text style={styles.inviteCountText}>
-                            {remainingSlots} remaining
+                            {t('settings.invitesRemaining', {
+                              count: remainingSlots,
+                              defaultValue: '{{count}} remaining',
+                            })}
                           </Text>
                         );
                       })()}
@@ -5508,23 +5555,34 @@ export default function SettingsScreen({ navigation, route }) {
                               {unusedInvites.map((item) => (
                                 <View key={item} style={styles.inviteItemFull}>
                                   <View style={styles.tokenContainer}>
-                                    <Text style={styles.tokenLabel}>Code:</Text>
+                                    <Text style={styles.tokenLabel}>
+                                      {t('settings.inviteCodeShort', { defaultValue: 'Code:' })}
+                                    </Text>
                                     <Text style={styles.inviteToken} selectable>{item}</Text>
                                   </View>
                                   <View style={styles.buttonGroup}>
                                     <TouchableOpacity onPress={() => handleCopyToken(item)} style={styles.actionButton}>
-                                      <Text style={styles.copyButton}>Copy</Text>
+                                      <Text style={styles.copyButton}>
+                                        {t('settings.copy', { defaultValue: 'Copy' })}
+                                      </Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity onPress={() => handleShareInvite(item)} style={styles.actionButton}>
-                                      <Text style={styles.shareButton}>Share</Text>
+                                      <Text style={styles.shareButton}>
+                                        {t('settings.share', { defaultValue: 'Share' })}
+                                      </Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                       onPress={() => handleTestInvite(item)}
                                       style={[styles.actionButton, (isTestingInvite || showTestNameInput) && styles.buttonDisabled]}
                                       disabled={isTestingInvite || showTestNameInput}
                                     >
-                                      <Text style={[styles.testButton, (isTestingInvite || showTestNameInput) && styles.buttonTextDisabled]}>
-                                        Test
+                                      <Text
+                                        style={[
+                                          styles.testButton,
+                                          (isTestingInvite || showTestNameInput) && styles.buttonTextDisabled,
+                                        ]}
+                                      >
+                                        {t('settings.testInvite', { defaultValue: 'Test' })}
                                       </Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
@@ -5552,7 +5610,7 @@ export default function SettingsScreen({ navigation, route }) {
                         return (
                           <TouchableOpacity style={styles.addMemberButton} onPress={handleOpenAddMemberModal}>
                             <Text style={styles.addMemberButtonText}>
-                              Add Team Member
+                              {t('settings.addTeamMemberButton', { defaultValue: 'Add Team Member' })}
                             </Text>
                             <Text style={styles.addMemberButtonPrice}>
                               ${getPricePerMember()}/member
@@ -5562,7 +5620,9 @@ export default function SettingsScreen({ navigation, route }) {
                       } else if (canAddMoreResult) {
                         return (
                           <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
-                            <Text style={styles.generateButtonText}>Generate New Invite</Text>
+                            <Text style={styles.generateButtonText}>
+                              {t('settings.generateNewInvite', { defaultValue: 'Generate New Invite' })}
+                            </Text>
                           </TouchableOpacity>
                         );
                       }
@@ -5588,17 +5648,27 @@ export default function SettingsScreen({ navigation, route }) {
                                 <View key={`member-${index}-${memberToken || index}`} style={styles.memberCard}>
                                   {/* First row: Name and Revoke button */}
                                   <View style={styles.memberCardRow}>
-                                    <Text style={styles.memberName}>{item.name || 'Unknown'}</Text>
+                                    <Text style={styles.memberName}>
+                                      {item.name ||
+                                        t('settings.unknownMemberName', { defaultValue: 'Unknown' })}
+                                    </Text>
                                     {showRevokeButton && (
                                       <TouchableOpacity
                                         onPress={async () => {
                                           Alert.alert(
-                                            'Revoke Access',
-                                            'This will remove this team member and revoke their access. They will no longer be able to upload using this code.',
+                                            t('settings.revokeAccessTitle', {
+                                              defaultValue: 'Revoke Access',
+                                            }),
+                                            t('settings.revokeAccessMessage', {
+                                              defaultValue:
+                                                'This will remove this team member and revoke their access. They will no longer be able to upload using this code.',
+                                            }),
                                             [
-                                              { text: 'Cancel', style: 'cancel' },
+                                              { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
                                               {
-                                                text: 'Revoke',
+                                                text: t('settings.revokeAccessButton', {
+                                                  defaultValue: 'Revoke',
+                                                }),
                                                 style: 'destructive',
                                                 onPress: async () => {
                                                   try {
@@ -5616,10 +5686,24 @@ export default function SettingsScreen({ navigation, route }) {
                                                     await removeInviteToken(memberToken);
                                                     // Refresh the team members list
                                                     await fetchTeamMembersForModal();
-                                                    Alert.alert('Access Revoked', 'The team member has been removed successfully.');
+                                                    Alert.alert(
+                                                      t('settings.revokeAccessSuccessTitle', {
+                                                        defaultValue: 'Access Revoked',
+                                                      }),
+                                                      t('settings.revokeAccessSuccessMessage', {
+                                                        defaultValue:
+                                                          'The team member has been removed successfully.',
+                                                      })
+                                                    );
                                                   } catch (error) {
                                                     console.error('[SETTINGS] Failed to revoke access:', error);
-                                                    Alert.alert('Error', 'Failed to revoke access. Please try again.');
+                                                    Alert.alert(
+                                                      t('common.error', { defaultValue: 'Error' }),
+                                                      t('settings.revokeAccessErrorMessage', {
+                                                        defaultValue:
+                                                          'Failed to revoke access. Please try again.',
+                                                      })
+                                                    );
                                                   }
                                                 }
                                               }
@@ -5635,7 +5719,11 @@ export default function SettingsScreen({ navigation, route }) {
                                   {/* Second row: Invite Code */}
                                   {memberToken && (
                                     <View style={styles.memberCardTokenRow}>
-                                      <Text style={styles.tokenLabelSmall}>Invite Code: </Text>
+                                      <Text style={styles.tokenLabelSmall}>
+                                        {t('settings.inviteCodeLabel', {
+                                          defaultValue: 'Invite Code: ',
+                                        })}
+                                      </Text>
                                       <Text style={styles.tokenValueSmall} selectable>{memberToken}</Text>
                                     </View>
                                   )}
@@ -5702,13 +5790,26 @@ export default function SettingsScreen({ navigation, route }) {
                       </TouchableWithoutFeedback>
                       <View style={styles.addMemberModalContent}>
                         <View style={styles.modalHandle} />
-                        <Text style={styles.addMemberModalTitle}>Add Team Members</Text>
+                        <Text style={styles.addMemberModalTitle}>
+                          {t('settings.addTeamMembersTitle', { defaultValue: 'Add Team Members' })}
+                        </Text>
                         <Text style={styles.addMemberModalSubtitle}>
-                          Purchase additional team member slots for your {userPlan === 'business' ? 'Business' : 'Enterprise'} plan
+                          {t('settings.addTeamMembersSubtitle', {
+                            plan:
+                              userPlan === 'business'
+                                ? t('planModal.business', { defaultValue: 'Business' })
+                                : t('planModal.enterprise', { defaultValue: 'Enterprise' }),
+                            defaultValue:
+                              'Purchase additional team member slots for your {{plan}} plan',
+                          })}
                         </Text>
 
                         <View style={styles.memberCountSelector}>
-                          <Text style={styles.memberCountLabel}>Number of Members:</Text>
+                          <Text style={styles.memberCountLabel}>
+                            {t('settings.addTeamMembersCountLabel', {
+                              defaultValue: 'Number of Members:',
+                            })}
+                          </Text>
                           <View style={styles.counterContainer}>
                             <TouchableOpacity
                               style={[styles.counterButton, additionalMembersCount <= 1 && styles.counterButtonDisabled]}
@@ -5729,15 +5830,25 @@ export default function SettingsScreen({ navigation, route }) {
 
                         <View style={styles.priceBreakdown}>
                           <View style={styles.priceRow}>
-                            <Text style={styles.priceLabel}>Price per member:</Text>
+                            <Text style={styles.priceLabel}>
+                              {t('settings.addTeamMembersPricePerMember', {
+                                defaultValue: 'Price per member:',
+                              })}
+                            </Text>
                             <Text style={styles.priceValue}>${getPricePerMember().toFixed(2)}</Text>
                           </View>
                           <View style={styles.priceRow}>
-                            <Text style={styles.priceLabel}>Number of members:</Text>
+                            <Text style={styles.priceLabel}>
+                              {t('settings.addTeamMembersNumberOfMembers', {
+                                defaultValue: 'Number of members:',
+                              })}
+                            </Text>
                             <Text style={styles.priceValue}>×{additionalMembersCount}</Text>
                           </View>
                           <View style={[styles.priceRow, styles.totalPriceRow]}>
-                            <Text style={styles.totalPriceLabel}>Total:</Text>
+                            <Text style={styles.totalPriceLabel}>
+                              {t('settings.addTeamMembersTotal', { defaultValue: 'Total:' })}
+                            </Text>
                             <Text style={styles.totalPriceValue}>${(getPricePerMember() * additionalMembersCount).toFixed(2)}</Text>
                           </View>
                         </View>
@@ -5747,13 +5858,17 @@ export default function SettingsScreen({ navigation, route }) {
                             style={[styles.modalButton, styles.cancelButton]}
                             onPress={() => setShowAddMemberModal(false)}
                           >
-                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                            <Text style={styles.cancelButtonText}>
+                              {t('common.cancel', { defaultValue: 'Cancel' })}
+                            </Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={[styles.modalButton, styles.purchaseButton]}
                             onPress={handlePurchaseAdditionalMembers}
                           >
-                            <Text style={styles.purchaseButtonText}>Add</Text>
+                            <Text style={styles.purchaseButtonText}>
+                              {t('settings.addTeamMembersConfirm', { defaultValue: 'Add' })}
+                            </Text>
                           </TouchableOpacity>
                         </View>
                       </View>
