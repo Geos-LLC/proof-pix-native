@@ -8223,8 +8223,9 @@ const sliderStyles = StyleSheet.create({
     },
     addMemberOverlay: {
       ...StyleSheet.absoluteFillObject,
-      justifyContent: 'flex-end',
+      justifyContent: 'flex-start',
       alignItems: 'center',
+      paddingTop: 80, // position just below the Manage Team modal header
     },
     addMemberBackdrop: {
       ...StyleSheet.absoluteFillObject,
@@ -8237,7 +8238,7 @@ const sliderStyles = StyleSheet.create({
       padding: 24,
       maxHeight: '70%',
       width: '100%',
-      marginBottom: 40, // lift the sheet higher on the screen
+      marginBottom: 0,
     },
     addMemberModalTitle: {
       fontSize: 22,
