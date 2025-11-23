@@ -1453,8 +1453,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   colorModalContainer: {
-    width: '90%',
-    maxWidth: 400,
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 20,
