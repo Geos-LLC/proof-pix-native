@@ -314,69 +314,6 @@ export const registerReferralCodeOnServer = async (userId, referralCode) => {
 };
 
 /**
- * Accept a referral code (user enters someone else's code)
- * This marks the user as referred and gives them bonus trial days
- * @param {string} code - The referral code to accept
- * @returns {Promise<{success: boolean, error?: string}>}
- */
-export const acceptReferralCode = async (code) => {
-  try {
-    const userId = await getUserId();
-    const deviceId = await getDeviceId();
-
-    console.log(`[ReferralService] Accepting referral code: ${code}`);
-
-    // Step 1: Track installation on server
-    const trackResponse = await fetch(`${PROXY_SERVER_URL}/api/referrals/track-installation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        referralCode: code,
-        deviceId: deviceId,
-      }),
-    });
-
-    if (!trackResponse.ok) {
-      const errorData = await trackResponse.json();
-      console.error('[ReferralService] Failed to track installation:', errorData);
-      return { success: false, error: errorData.error || 'Invalid referral code' };
-    }
-
-    // Step 2: Complete setup to credit the referrer
-    const setupResponse = await fetch(`${PROXY_SERVER_URL}/api/referrals/complete-setup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        referralCode: code,
-        userId: userId,
-        setupCompletedAt: new Date().toISOString(),
-      }),
-    });
-
-    if (!setupResponse.ok) {
-      const errorData = await setupResponse.json();
-      console.error('[ReferralService] Failed to complete setup:', errorData);
-      // Still save locally even if server fails
-    } else {
-      const setupData = await setupResponse.json();
-      console.log('[ReferralService] Setup completed, referrer earned:', setupData.monthsEarned, 'months');
-    }
-
-    // Step 3: Save locally that user accepted a referral code
-    await AsyncStorage.setItem('@referral_accepted', JSON.stringify({
-      code: code,
-      acceptedAt: new Date().toISOString(),
-    }));
-
-    console.log('[ReferralService] Referral code accepted successfully');
-    return { success: true };
-  } catch (error) {
-    console.error('[ReferralService] Error accepting referral code:', error);
-    return { success: false, error: 'Failed to accept referral code' };
-  }
-};
-
-/**
  * Track referral installation on server
  * @param {string} referralCode - The referral code that was used
  * @returns {Promise<Object|null>}
@@ -483,8 +420,6 @@ export const initializeReferralCode = async () => {
     // Get user ID (this will generate and persist if not exists)
     const userId = await getUserId();
 
-    console.log(`[ReferralService] Initializing referral - userId: ${userId}, code: ${code}`);
-
     if (userId) {
       // Register on server (idempotent - safe to call multiple times)
       await registerReferralCodeOnServer(userId, code);
@@ -575,46 +510,31 @@ export const simulateFriendSignup = async () => {
     const myCode = await getOrCreateReferralCode();
     const myUserId = await getUserId();
 
-    console.log(`[ReferralService] Simulating friend signup with your code: ${myCode}, your userId: ${myUserId}`);
-
-    // Ensure referral code is registered on server
-    await registerReferralCodeOnServer(myUserId, myCode);
-
-    // Create fake friend identifiers
-    const friendDeviceId = `test_device_${Date.now()}`;
+    // Create a fake friend user ID
     const friendUserId = `test_friend_${Date.now()}`;
 
-    // Step 1: Track installation (simulates friend opening app with referral link)
-    console.log(`[ReferralService] Step 1: Tracking installation for device ${friendDeviceId}...`);
-    const trackResponse = await fetch(`${PROXY_SERVER_URL}/api/referrals/track-installation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        referralCode: myCode,
-        deviceId: friendDeviceId,
-      }),
-    });
+    console.log(`[ReferralService] Simulating friend signup with your code: ${myCode}`);
 
-    if (!trackResponse.ok) {
-      const errorData = await trackResponse.json();
-      console.error('[ReferralService] Failed to track installation:', errorData);
-      return false;
-    }
-
-    console.log(`[ReferralService] Step 1 complete: Installation tracked`);
-
-    // Step 2: Complete setup (simulates friend completing onboarding)
-    console.log(`[ReferralService] Step 2: Completing setup for user ${friendUserId}...`);
+    // Complete setup as the friend
     const result = await completeReferralSetup(myCode, friendUserId);
 
     if (result && result.success) {
       console.log(`[ReferralService] ✅ Friend signup simulated! You earned ${result.monthsEarned} month(s)`);
-      console.log(`[ReferralService] Referrer userId on server: ${result.referrerId}`);
+      console.log(`[ReferralService] Run checkAndApplyReferralRewards() to apply the reward to your trial`);
       return true;
-    } else {
-      console.error('[ReferralService] Failed to complete setup:', result);
-      return false;
     }
+
+    // If server-side simulation failed (e.g., "No pending referral found for this code"),
+    // fall back to a local-only simulation so the test button is still useful.
+    console.error('[ReferralService] Failed to simulate friend signup on server, falling back to local simulation:', result);
+    const monthsEarned = await processReferralReward(myCode);
+    if (monthsEarned > 0) {
+      console.log(`[ReferralService] ✅ Local friend signup simulation applied: ${monthsEarned} month(s) locally`);
+      return true;
+    }
+
+    console.error('[ReferralService] Local friend signup simulation did not apply any rewards');
+    return false;
   } catch (error) {
     console.error('[ReferralService] Error simulating friend signup:', error);
     return false;

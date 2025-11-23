@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,11 @@ import {
   Alert,
   SafeAreaView,
   Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { logReferralEvent } from '../utils/analytics';
 import {
   getOrCreateReferralCode,
   getReferralInfo,
@@ -26,7 +24,6 @@ import {
   initializeReferralCode,
   getReferralStatsFromServer,
   getUserId,
-  acceptReferralCode,
 } from '../services/referralService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
@@ -47,29 +44,10 @@ export default function ReferralScreen({ navigation }) {
   });
   const [loading, setLoading] = useState(true);
   const [showInfoModal, setShowInfoModal] = useState(false);
-  // Referral code input mode
-  const [showCodeInput, setShowCodeInput] = useState(false);
-  const [inputCode, setInputCode] = useState('');
-  const [acceptedCode, setAcceptedCode] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const scrollViewRef = useRef(null);
 
   useEffect(() => {
     loadReferralData();
-    checkAcceptedCode();
   }, []);
-
-  const checkAcceptedCode = async () => {
-    try {
-      const accepted = await AsyncStorage.getItem('@referral_accepted');
-      if (accepted) {
-        const data = JSON.parse(accepted);
-        setAcceptedCode(data.code);
-      }
-    } catch (error) {
-      console.error('[ReferralScreen] Error checking accepted code:', error);
-    }
-  };
 
   const loadReferralData = async () => {
     try {
@@ -82,28 +60,14 @@ export default function ReferralScreen({ navigation }) {
 
       // Fetch stats from server
       const stats = await getReferralStatsFromServer(userId);
-
-      // Also check for local dev stats
-      let localStats = { completedInvites: 0, monthsEarned: 0 };
-      try {
-        const stored = await AsyncStorage.getItem('@local_referral_stats');
-        if (stored) {
-          localStats = JSON.parse(stored);
-          console.log('[ReferralScreen] Loaded local dev stats:', localStats);
-        }
-      } catch (e) {}
-
-      // Combine server and local stats (local for dev testing)
-      const combinedCompletedInvites = (stats?.completedInvites || 0) + (localStats.completedInvites || 0);
-      const combinedMonthsEarned = (stats?.monthsEarned || 0) + (localStats.monthsEarned || 0);
-
-      setServerStats({
-        totalInvites: (stats?.totalInvites || 0) + (localStats.completedInvites || 0),
-        completedInvites: combinedCompletedInvites,
-        pendingInvites: stats?.pendingInvites || 0,
-        monthsEarned: combinedMonthsEarned,
-      });
-      console.log('[ReferralScreen] Combined stats:', { completedInvites: combinedCompletedInvites, monthsEarned: combinedMonthsEarned });
+      if (stats) {
+        setServerStats({
+          totalInvites: stats.totalInvites || 0,
+          completedInvites: stats.completedInvites || 0,
+          pendingInvites: stats.pendingInvites || 0,
+          monthsEarned: stats.monthsEarned || 0,
+        });
+      }
 
       // Still load local info for backward compatibility
       const info = await getReferralInfo();
@@ -122,24 +86,39 @@ export default function ReferralScreen({ navigation }) {
 
       await addReferralInvite(method);
 
+      // Analytics: referral invite sent
+      try {
+        logReferralEvent('sent', {
+          code: referralCode,
+        });
+      } catch (e) {
+        // non‑critical
+      }
+
       // Share the instructions message first
       await Share.share({
-        message: `Join ProofPix and get organized!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\nAfter installing, use my referral code to get started!`,
-        title: 'ProofPix Referral'
+        message: t('referral.shareIntroMessage', {
+          iosLink: iosAppStoreLink,
+          androidLink: androidPlayStoreLink,
+          defaultValue: `Join ProofPix and get organized!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\nAfter installing, use my referral code to get started!`
+        }),
+        title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
       });
 
       // After first share completes, ask user if they want to share the code
       Alert.alert(
-        'Share Referral Code?',
-        'Now share your referral code as a separate message so they can easily copy it.',
+        t('referral.shareCodePromptTitle', { defaultValue: 'Share Referral Code?' }),
+        t('referral.shareCodePromptMessage', {
+          defaultValue: 'Now share your referral code as a separate message so they can easily copy it.'
+        }),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: 'Share Code',
+            text: t('referral.shareCodeButton', { defaultValue: 'Share Code' }),
             onPress: async () => {
               await Share.share({
                 message: referralCode,
-                title: 'ProofPix Referral Code'
+                title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
               });
             }
           }
@@ -147,7 +126,12 @@ export default function ReferralScreen({ navigation }) {
       );
     } catch (error) {
       console.error('[ReferralScreen] Error sharing:', error);
-      Alert.alert('Error', 'Failed to share referral link. Please try again.');
+      Alert.alert(
+        t('common.error'),
+        t('referral.shareErrorMessage', {
+          defaultValue: 'Failed to share referral link. Please try again.'
+        })
+      );
     }
   };
 
@@ -155,10 +139,18 @@ export default function ReferralScreen({ navigation }) {
     try {
       // Copy just the referral code, not the full link
       await Clipboard.setString(referralCode);
-      Alert.alert('Copied!', 'Referral code copied to clipboard.');
+      Alert.alert(
+        t('referral.copiedTitle', { defaultValue: 'Copied!' }),
+        t('referral.copiedMessage', {
+          defaultValue: 'Referral code copied to clipboard.'
+        })
+      );
     } catch (error) {
       console.error('[ReferralScreen] Error copying code:', error);
-      Alert.alert('Error', 'Failed to copy code.');
+      Alert.alert(
+        t('common.error'),
+        t('referral.copyErrorMessage', { defaultValue: 'Failed to copy code.' })
+      );
     }
   };
 
@@ -172,42 +164,6 @@ export default function ReferralScreen({ navigation }) {
     return serverStats.monthsEarned || 0;
   };
 
-  const handleSubmitCode = async () => {
-    const code = inputCode.trim().toUpperCase();
-    if (!code) {
-      Alert.alert('Error', 'Please enter a referral code.');
-      return;
-    }
-
-    // Don't allow using your own code
-    if (code === referralCode) {
-      Alert.alert('Error', 'You cannot use your own referral code.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const result = await acceptReferralCode(code);
-      if (result.success) {
-        setAcceptedCode(code);
-        setShowCodeInput(false);
-        setInputCode('');
-        Alert.alert(
-          'Success! 🎉',
-          'Referral code accepted! You now get a 45-day free trial instead of 30 days.',
-          [{ text: 'Great!' }]
-        );
-      } else {
-        Alert.alert('Error', result.error || 'Failed to accept referral code.');
-      }
-    } catch (error) {
-      console.error('[ReferralScreen] Error submitting code:', error);
-      Alert.alert('Error', 'Failed to submit referral code. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -218,11 +174,15 @@ export default function ReferralScreen({ navigation }) {
           >
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Invite Friends</Text>
+          <Text style={styles.title}>
+            {t('referral.screenTitle', { defaultValue: 'Invite Friends' })}
+          </Text>
           <View style={{ width: 60 }} />
         </View>
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
+          <Text style={styles.loadingText}>
+            {t('referral.loading', { defaultValue: 'Loading...' })}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -240,25 +200,19 @@ export default function ReferralScreen({ navigation }) {
         >
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Invite Friends</Text>
+        <Text style={styles.title}>
+          {t('referral.screenTitle', { defaultValue: 'Invite Friends' })}
+        </Text>
         <View style={{ width: 60 }} />
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
-          keyboardShouldPersistTaps="handled"
-        >
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Rewards Info */}
         <View style={styles.rewardsSection}>
           <View style={styles.sectionTitleRow}>
-            <Text style={[styles.sectionTitle, styles.earnFreeMonthsTitle]}>Earn Free Months!</Text>
+            <Text style={[styles.sectionTitle, styles.earnFreeMonthsTitle]}>
+              {t('referral.earnFreeMonthsTitle', { defaultValue: 'Earn Free Months!' })}
+            </Text>
             <TouchableOpacity
               style={styles.infoButton}
               onPress={() => setShowInfoModal(true)}
@@ -267,26 +221,36 @@ export default function ReferralScreen({ navigation }) {
             </TouchableOpacity>
           </View>
           <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>1 friend → +15 days free</Text>
+            <Text style={styles.rewardText}>
+              {t('referral.rewardLine1', { defaultValue: '1 friend → +1 month free' })}
+            </Text>
           </View>
           <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>2 friends → +30 days free</Text>
+            <Text style={styles.rewardText}>
+              {t('referral.rewardLine2', { defaultValue: '2 friends → +2 months free' })}
+            </Text>
           </View>
           <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>3 friends → +45 days free (max)</Text>
+            <Text style={styles.rewardText}>
+              {t('referral.rewardLine3', { defaultValue: '3+ friends → +3 months free' })}
+            </Text>
           </View>
         </View>
 
         {/* Referral Code */}
         <View style={styles.codeSection}>
-          <Text style={styles.codeLabel}>Your Referral Code</Text>
+          <Text style={styles.codeLabel}>
+            {t('referral.codeLabel', { defaultValue: 'Your Referral Code' })}
+          </Text>
           <View style={styles.codeContainer}>
             <Text style={styles.codeText}>{referralCode}</Text>
             <TouchableOpacity
               style={styles.copyButton}
               onPress={handleCopyLink}
             >
-              <Text style={styles.copyButtonText}>Copy Link</Text>
+              <Text style={styles.copyButtonText}>
+                {t('referral.copyLinkButton', { defaultValue: 'Copy Link' })}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -297,13 +261,17 @@ export default function ReferralScreen({ navigation }) {
             style={styles.shareCodeButton}
             onPress={() => handleShare('general')}
           >
-            <Text style={styles.shareCodeButtonText}>Share Code</Text>
+            <Text style={styles.shareCodeButtonText}>
+              {t('referral.shareCodeButton', { defaultValue: 'Share Code' })}
+            </Text>
           </TouchableOpacity>
         </View>
 
         {/* Progress Tracker */}
         <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>Your Progress</Text>
+          <Text style={styles.sectionTitle}>
+            {t('referral.progressTitle', { defaultValue: 'Your Progress' })}
+          </Text>
           <View style={styles.progressBarContainer}>
             <View style={styles.progressBar}>
               <View
@@ -314,79 +282,29 @@ export default function ReferralScreen({ navigation }) {
               />
             </View>
             <Text style={styles.progressText}>
-              {completedCount} of 3 friends invited
+              {t('referral.progressText', {
+                completed: completedCount,
+                defaultValue: `${completedCount} of 3 friends invited`
+              })}
             </Text>
           </View>
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{completedCount}</Text>
-              <Text style={styles.statLabel}>Friends Joined</Text>
+              <Text style={styles.statLabel}>
+                {t('referral.statFriendsJoined', { defaultValue: 'Friends Joined' })}
+              </Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{monthsEarned * 15}</Text>
-              <Text style={styles.statLabel}>Days Earned</Text>
+              <Text style={styles.statValue}>{monthsEarned}</Text>
+              <Text style={styles.statLabel}>
+                {t('referral.statMonthsEarned', { defaultValue: 'Months Earned' })}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* Have a Referral Code Section */}
-        <View style={styles.enterCodeSection}>
-          {acceptedCode ? (
-            <View style={styles.acceptedCodeContainer}>
-              <Text style={styles.acceptedCodeLabel}>✅ You used referral code:</Text>
-              <Text style={styles.acceptedCodeText}>{acceptedCode}</Text>
-              <Text style={styles.acceptedCodeBonus}>+15 days bonus applied to your trial!</Text>
-            </View>
-          ) : showCodeInput ? (
-            <View style={styles.codeInputContainer}>
-              <Text style={styles.codeInputLabel}>Enter Referral Code</Text>
-              <TextInput
-                style={styles.codeInput}
-                value={inputCode}
-                onChangeText={setInputCode}
-                placeholder="e.g. ABC123"
-                placeholderTextColor="#999"
-                autoCapitalize="characters"
-                maxLength={10}
-                onFocus={() => {
-                  setTimeout(() => {
-                    scrollViewRef.current?.scrollToEnd({ animated: true });
-                  }, 300);
-                }}
-              />
-              <View style={styles.codeInputButtons}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={() => {
-                    setShowCodeInput(false);
-                    setInputCode('');
-                  }}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-                  onPress={handleSubmitCode}
-                  disabled={submitting}
-                >
-                  <Text style={styles.submitButtonText}>
-                    {submitting ? 'Submitting...' : 'Submit'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.haveCodeButton}
-              onPress={() => setShowCodeInput(true)}
-            >
-              <Text style={styles.haveCodeButtonText}>Have a Referral Code?</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
       </ScrollView>
-      </KeyboardAvoidingView>
 
       {/* Info Modal */}
       <Modal
@@ -407,7 +325,7 @@ export default function ReferralScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <Text style={styles.modalText}>
-              Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 15 days of free access per friend. Invite up to 3 friends for a maximum of 45 extra days!
+              Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 1–3 months of free access. The more friends you invite, the more free months you get.
             </Text>
             
             <View style={styles.modalNote}>
@@ -788,113 +706,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  // Enter Code Section
-  enterCodeSection: {
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  haveCodeButton: {
-    backgroundColor: '#F5F5F5',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-    borderStyle: 'dashed',
-  },
-  haveCodeButtonText: {
-    color: COLORS.TEXT,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  codeInputContainer: {
-    backgroundColor: '#F5F5F5',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-  },
-  codeInputLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    marginBottom: 12,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  codeInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    letterSpacing: 2,
-    color: COLORS.TEXT,
-  },
-  codeInputButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#E0E0E0',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: COLORS.TEXT,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  submitButton: {
-    flex: 1,
-    backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-  },
-  submitButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  acceptedCodeContainer: {
-    backgroundColor: '#E8F5E9',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-    alignItems: 'center',
-  },
-  acceptedCodeLabel: {
-    fontSize: 14,
-    color: '#2E7D32',
-    marginBottom: 4,
-  },
-  acceptedCodeText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2E7D32',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    letterSpacing: 2,
-  },
-  acceptedCodeBonus: {
-    fontSize: 14,
-    color: '#4CAF50',
-    marginTop: 8,
-    fontWeight: '600',
   },
 });
 
