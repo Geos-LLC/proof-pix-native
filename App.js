@@ -378,15 +378,9 @@ export default function App() {
     } else if (notification?.key === 'day22_24') {
       scrollParam = { scrollToAccountData: true };
     }
-    // Navigate to Settings screen for CTA actions
+    // Navigate to Settings screen with scroll target
     if (navigationRef.current) {
       navigationRef.current.navigate('Settings', scrollParam);
-    }
-    setTrialNotification(null);
-    setShowTrialModal(false);
-    // Navigate to Settings screen for CTA actions
-    if (navigationRef.current) {
-      navigationRef.current.navigate('Settings');
     }
     setTrialNotification(null);
   };

@@ -779,6 +779,9 @@ export default function SettingsScreen({ navigation, route }) {
   const accountDataSectionRef = useRef(null);
   const watermarkSectionY = useRef(null);
   const watermarkSectionAbsoluteY = useRef(null);
+  const [highlightWatermarkSection, setHighlightWatermarkSection] = useState(false);
+  const windowHeight = Dimensions.get('window').height;
+  const [scrollContainerHeight, setScrollContainerHeight] = useState(0);
 
   const isTeamMember = userMode === 'team_member';
   const [canSwitchBack, setCanSwitchBack] = useState(false);
@@ -2229,9 +2232,23 @@ export default function SettingsScreen({ navigation, route }) {
         
         // For watermark, use stored absolute Y position if available
         if (paramKey === 'scrollToWatermark' && watermarkSectionAbsoluteY.current !== null) {
-          console.log(`[SETTINGS] Using stored absolute Y position for watermark:`, watermarkSectionAbsoluteY.current);
+          console.log(
+            `[SETTINGS] Using stored absolute Y position for watermark:`,
+            watermarkSectionAbsoluteY.current
+          );
+          const viewportHeight = scrollContainerHeight || windowHeight;
+          // Scroll so the row sits a bit below center (~60–70% of height visually)
+          const targetOffset = Math.max(
+            0,
+            watermarkSectionAbsoluteY.current - viewportHeight * 0.4
+          );
           setTimeout(() => {
-            mainScrollViewRef.current?.scrollTo({ y: Math.max(0, watermarkSectionAbsoluteY.current - 20), animated: true });
+            mainScrollViewRef.current?.scrollTo({ y: targetOffset, animated: true });
+            // Highlight the watermark row for a short period
+            setHighlightWatermarkSection(true);
+            setTimeout(() => {
+              setHighlightWatermarkSection(false);
+            }, 2000);
             setTimeout(() => {
               navigation.setParams({ [paramKey]: undefined });
             }, 500);
@@ -2254,7 +2271,8 @@ export default function SettingsScreen({ navigation, route }) {
                 // For watermark, try using stored absolute Y as fallback
                 if (paramKey === 'scrollToWatermark' && watermarkSectionAbsoluteY.current !== null) {
                   console.log(`[SETTINGS] Fallback: Using stored absolute Y position for watermark:`, watermarkSectionAbsoluteY.current);
-                  mainScrollViewRef.current?.scrollTo({ y: Math.max(0, watermarkSectionAbsoluteY.current - 20), animated: true });
+                  const targetOffset = Math.max(0, watermarkSectionAbsoluteY.current - windowHeight * 0.3);
+                  mainScrollViewRef.current?.scrollTo({ y: targetOffset, animated: true });
                   navigation.setParams({ [paramKey]: undefined });
                 }
               }
@@ -2267,8 +2285,16 @@ export default function SettingsScreen({ navigation, route }) {
                 console.log(`[SETTINGS] ${paramKey} section position:`, { x, y, attempt: attempt + 1 });
                 if (y >= 0) {
                   setTimeout(() => {
-                    console.log(`[SETTINGS] Scrolling to y:`, y - 20);
-                    mainScrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true });
+                    const viewportHeight = scrollContainerHeight || windowHeight;
+                    const targetOffset = Math.max(0, y - viewportHeight * 0.4);
+                    console.log(`[SETTINGS] Scrolling to y:`, targetOffset);
+                    mainScrollViewRef.current?.scrollTo({ y: targetOffset, animated: true });
+                    if (paramKey === 'scrollToWatermark') {
+                      setHighlightWatermarkSection(true);
+                      setTimeout(() => {
+                        setHighlightWatermarkSection(false);
+                      }, 2000);
+                    }
                     setTimeout(() => {
                       navigation.setParams({ [paramKey]: undefined });
                       console.log(`[SETTINGS] ${paramKey} param cleared`);
@@ -2287,8 +2313,20 @@ export default function SettingsScreen({ navigation, route }) {
                   attemptScroll(attempt + 1);
                 } else if (paramKey === 'scrollToWatermark' && watermarkSectionAbsoluteY.current !== null) {
                   // Fallback for watermark
-                  console.log(`[SETTINGS] Fallback: Using stored absolute Y position for watermark:`, watermarkSectionAbsoluteY.current);
-                  mainScrollViewRef.current?.scrollTo({ y: Math.max(0, watermarkSectionAbsoluteY.current - 20), animated: true });
+                  console.log(
+                    `[SETTINGS] Fallback: Using stored absolute Y position for watermark:`,
+                    watermarkSectionAbsoluteY.current
+                  );
+                  const viewportHeight = scrollContainerHeight || windowHeight;
+                  const targetOffset = Math.max(
+                    0,
+                    watermarkSectionAbsoluteY.current - viewportHeight * 0.4
+                  );
+                  mainScrollViewRef.current?.scrollTo({ y: targetOffset, animated: true });
+                  setHighlightWatermarkSection(true);
+                  setTimeout(() => {
+                    setHighlightWatermarkSection(false);
+                  }, 2000);
                   navigation.setParams({ [paramKey]: undefined });
                 }
               }
@@ -2331,6 +2369,10 @@ export default function SettingsScreen({ navigation, route }) {
       <ScrollView 
         ref={mainScrollViewRef}
         style={styles.content}
+        onLayout={(event) => {
+          const { height } = event.nativeEvent.layout;
+          setScrollContainerHeight(height);
+        }}
       >
         {/* Current Plan - Moved to top */}
         {userPlan && (
@@ -2480,26 +2522,19 @@ export default function SettingsScreen({ navigation, route }) {
 
               <View 
                 ref={watermarkSectionRef}
-                style={styles.settingRow}
+                style={[
+                  styles.settingRow,
+                  highlightWatermarkSection && styles.highlightedSettingRow,
+                ]}
                 onLayout={(event) => {
                   const { y } = event.nativeEvent.layout;
                   watermarkSectionY.current = y;
-                  // Also measure absolute position
+                  // Also measure absolute position for later scrolling
                   if (watermarkSectionRef.current && mainScrollViewRef.current) {
                     watermarkSectionRef.current.measureLayout(
                       mainScrollViewRef.current,
                       (x, absoluteY) => {
                         watermarkSectionAbsoluteY.current = absoluteY;
-                        // If scroll param is set, scroll immediately
-                        const params = route?.params;
-                        if (params?.scrollToWatermark === true) {
-                          setTimeout(() => {
-                            mainScrollViewRef.current?.scrollTo({ y: Math.max(0, absoluteY - 20), animated: true });
-                            setTimeout(() => {
-                              navigation.setParams({ scrollToWatermark: undefined });
-                            }, 500);
-                          }, 300);
-                        }
                       },
                       () => {}
                     );
@@ -6204,6 +6239,12 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingVertical: 12
+    },
+    highlightedSettingRow: {
+      backgroundColor: '#FFF8C4', // soft yellow highlight
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      marginHorizontal: -12,
     },
     settingRowStacked: {
       paddingVertical: 12,
