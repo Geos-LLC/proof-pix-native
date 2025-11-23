@@ -780,6 +780,7 @@ export default function SettingsScreen({ navigation, route }) {
   const watermarkSectionY = useRef(null);
   const watermarkSectionAbsoluteY = useRef(null);
   const [highlightWatermarkSection, setHighlightWatermarkSection] = useState(false);
+  const [highlightCloudSection, setHighlightCloudSection] = useState(false);
   const windowHeight = Dimensions.get('window').height;
   const [scrollContainerHeight, setScrollContainerHeight] = useState(0);
 
@@ -2294,6 +2295,11 @@ export default function SettingsScreen({ navigation, route }) {
                       setTimeout(() => {
                         setHighlightWatermarkSection(false);
                       }, 2000);
+                    } else if (paramKey === 'scrollToCloudSync') {
+                      setHighlightCloudSection(true);
+                      setTimeout(() => {
+                        setHighlightCloudSection(false);
+                      }, 2000);
                     }
                     setTimeout(() => {
                       navigation.setParams({ [paramKey]: undefined });
@@ -2328,6 +2334,22 @@ export default function SettingsScreen({ navigation, route }) {
                     setHighlightWatermarkSection(false);
                   }, 2000);
                   navigation.setParams({ [paramKey]: undefined });
+                } else if (paramKey === 'scrollToCloudSync' && cloudSyncSectionRef.current) {
+                  // Fallback for cloud sync: simple scroll to top of cloud section
+                  cloudSyncSectionRef.current.measureLayout(
+                    mainScrollViewRef.current,
+                    (cx, cy) => {
+                      const viewportHeight = scrollContainerHeight || windowHeight;
+                      const targetOffset = Math.max(0, cy - viewportHeight * 0.4);
+                      mainScrollViewRef.current?.scrollTo({ y: targetOffset, animated: true });
+                      setHighlightCloudSection(true);
+                      setTimeout(() => {
+                        setHighlightCloudSection(false);
+                      }, 2000);
+                      navigation.setParams({ [paramKey]: undefined });
+                    },
+                    () => {}
+                  );
                 }
               }
             );
@@ -2877,8 +2899,10 @@ export default function SettingsScreen({ navigation, route }) {
         {/* Admin Setup Section */}
         <View 
           ref={cloudSyncSectionRef}
-          style={styles.section}
-          onLayout={() => {}}
+          style={[
+            styles.section,
+            highlightCloudSection && styles.highlightedSection,
+          ]}
         >
           <Text style={styles.sectionTitle}>{t('settings.cloudTeamSync')}</Text>
           
@@ -6382,6 +6406,16 @@ const sliderStyles = StyleSheet.create({
       color: '#000000',
       fontSize: 16,
       fontWeight: '600'
+    },
+    highlightedSettingRow: {
+      backgroundColor: '#FFF8C4', // soft yellow highlight
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      marginHorizontal: -12,
+    },
+    highlightedSection: {
+      backgroundColor: '#FFF8C4',
+      borderColor: '#FFEB3B',
     },
     resetButton: {
       backgroundColor: '#FFE6E6',
