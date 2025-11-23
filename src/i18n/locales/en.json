@@ -765,6 +765,8 @@
     "expiredReferralIncentive": "Refer a friend and get 1-3 months free",
     "expiredCTA": "👉 Upgrade Now",
 
+    "endsOnPrefix": "Your trial ends on ",
+
     "upgradeNowButton": "Upgrade Now",
     "referFriendButton": "Refer a Friend",
     "maybeButton": "Maybe Later",

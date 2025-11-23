@@ -616,6 +616,9 @@
     "expiredFeaturesList": "• Bulk before & after photo creation\\n• Custom watermark & cloud storage\\n• Team management & photo cleanup",
     "expiredReferralIncentive": "Mag-refer ng kaibigan at makakuha ng 1-3 buwan na libre",
     "expiredCTA": "👉 Mag-upgrade Ngayon",
+
+    "endsOnPrefix": "Matatapos ang trial mo sa ",
+
     "upgradeNowButton": "Mag-upgrade Ngayon",
     "referFriendButton": "Mag-refer ng Kaibigan",
     "maybeButton": "Siguro Mamaya",

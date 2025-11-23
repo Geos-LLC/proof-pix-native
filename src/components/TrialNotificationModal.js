@@ -14,6 +14,73 @@ export default function TrialNotificationModal({ visible, notification, onClose,
   if (!notification) return null;
   const { t } = useTranslation();
 
+  const getTranslationKeys = () => {
+    switch (notification.key) {
+      case 'day0':
+        return {
+          title: 'trial.welcomeTitle',
+          message: 'trial.welcomeMessage',
+        };
+      case 'day7_10':
+        return {
+          title: 'trial.engagementTitle',
+          message: 'trial.engagementMessage',
+          cta: 'trial.engagementCTA',
+        };
+      case 'day15':
+        return {
+          title: 'trial.checkinTitle',
+          message: 'trial.checkinMessage',
+          cta: 'trial.checkinCTA',
+        };
+      case 'day22_24':
+        return {
+          title: 'trial.reminderTitle',
+          message: 'trial.reminderMessage',
+          cta: 'trial.reminderCTA',
+        };
+      case 'day27_28':
+        return {
+          title: 'trial.lastChanceTitle',
+          message: 'trial.lastChanceMessage',
+          cta: 'trial.lastChanceCTA',
+          referralIncentive: 'trial.lastChanceReferralIncentive',
+        };
+      case 'day30':
+        return {
+          title: 'trial.expiredTitle',
+          message: 'trial.expiredMessage',
+          featuresList: 'trial.expiredFeaturesList',
+          referralIncentive: 'trial.expiredReferralIncentive',
+          cta: 'trial.expiredCTA',
+        };
+      default:
+        return {};
+    }
+  };
+
+  const translationKeys = getTranslationKeys();
+
+  const localizedTitle = translationKeys.title
+    ? t(translationKeys.title, { ...notification, defaultValue: notification.title })
+    : notification.title;
+
+  const localizedMessage = translationKeys.message
+    ? t(translationKeys.message, { ...notification, defaultValue: notification.message })
+    : notification.message;
+
+  const localizedCta = translationKeys.cta
+    ? t(translationKeys.cta, { ...notification, defaultValue: notification.cta })
+    : notification.cta;
+
+  const localizedFeaturesList = translationKeys.featuresList
+    ? t(translationKeys.featuresList, { ...notification, defaultValue: notification.featuresList })
+    : notification.featuresList;
+
+  const localizedReferralIncentive = translationKeys.referralIncentive
+    ? t(translationKeys.referralIncentive, { ...notification, defaultValue: notification.referralIncentive })
+    : notification.referralIncentive;
+
   const getButtonStyle = () => {
     if (notification.urgent) {
       return [styles.button, styles.urgentButton];
@@ -38,7 +105,7 @@ export default function TrialNotificationModal({ visible, notification, onClose,
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <View style={styles.header}>
-            <Text style={styles.title}>{notification.title}</Text>
+            <Text style={styles.title}>{localizedTitle}</Text>
           </View>
           
           <View style={styles.content}>
@@ -84,12 +151,16 @@ export default function TrialNotificationModal({ visible, notification, onClose,
             ) : (
               <>
                 <Text style={styles.message}>
-                  {notification.message}
+                  {localizedMessage}
                   {notification.endDate && (
-                    <Text> Your trial ends on <Text style={styles.endDate}>{notification.endDate}</Text>.</Text>
+                    <Text>
+                      {' '}
+                      {t('trial.endsOnPrefix', { defaultValue: 'Your trial ends on ' })}
+                      <Text style={styles.endDate}>{notification.endDate}</Text>.
+                    </Text>
                   )}
                 </Text>
-                {notification.cta && !notification.showUpgrade && (
+                {localizedCta && !notification.showUpgrade && (
                   <TouchableOpacity
                     onPress={() => {
                       if (onCTA) {
@@ -100,20 +171,25 @@ export default function TrialNotificationModal({ visible, notification, onClose,
                     }}
                     style={styles.ctaButton}
                   >
-                    <Text style={styles.cta}>{notification.cta}</Text>
+                    <Text style={styles.cta}>{localizedCta}</Text>
                   </TouchableOpacity>
                 )}
                 {notification.ctaDescription && (
                   <Text style={styles.ctaDescription}>{notification.ctaDescription}</Text>
                 )}
-                {notification.featuresList && (
-                  <Text style={styles.featuresList}>{notification.featuresList}</Text>
+                {localizedFeaturesList && (
+                  <Text style={styles.featuresList}>{localizedFeaturesList}</Text>
                 )}
-                {notification.referralIncentive && notification.key !== 'day30' && (
-                  <Text style={styles.referralIncentive}>{notification.referralIncentive}</Text>
+                {localizedReferralIncentive && notification.key !== 'day30' && (
+                  <Text style={styles.referralIncentive}>{localizedReferralIncentive}</Text>
                 )}
                 {notification.discountOffer && (
-                  <Text style={styles.discountOffer}>{notification.discountOffer}</Text>
+                  <Text style={styles.discountOffer}>
+                    {t(`trial.${notification.key}.discountOffer`, {
+                      ...notification,
+                      defaultValue: notification.discountOffer,
+                    })}
+                  </Text>
                 )}
               </>
             )}
@@ -130,18 +206,18 @@ export default function TrialNotificationModal({ visible, notification, onClose,
                       onPress={onUpgrade}
                     >
                       <Text style={[styles.buttonText, styles.upgradeButtonText]}>
-                        {notification.cta ? notification.cta.replace('👉 ', '') : 'Upgrade Now'}
+                        {(localizedCta || 'Upgrade Now').replace('👉 ', '')}
                       </Text>
                     </TouchableOpacity>
-                    {notification.referralIncentive && (
-                      <Text style={styles.referralIncentiveDay30}>{notification.referralIncentive}</Text>
+                    {localizedReferralIncentive && (
+                      <Text style={styles.referralIncentiveDay30}>{localizedReferralIncentive}</Text>
                     )}
                     <TouchableOpacity
                       style={[styles.button, styles.referButton]}
                       onPress={onRefer || onClose}
                     >
                       <Text style={[styles.buttonText, styles.referButtonText]}>
-                        Refer a friend
+                        {t('trial.referFriendButton', { defaultValue: 'Refer a Friend' })}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -149,7 +225,7 @@ export default function TrialNotificationModal({ visible, notification, onClose,
                       onPress={onClose}
                     >
                       <Text style={[styles.buttonText, styles.secondaryButtonText]}>
-                        I'm Good
+                        {t('trial.goodButton', { defaultValue: "I'm Good" })}
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -161,16 +237,16 @@ export default function TrialNotificationModal({ visible, notification, onClose,
                         style={[styles.button, styles.upgradeButton]}
                         onPress={onUpgrade}
                       >
-                        <Text style={[styles.buttonText, styles.upgradeButtonText]}>
-                          Upgrade
-                        </Text>
+                      <Text style={[styles.buttonText, styles.upgradeButtonText]}>
+                        {t('trial.upgradeNowButton', { defaultValue: 'Upgrade Now' })}
+                      </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.button, styles.referButton]}
                         onPress={onRefer || onClose}
                       >
                         <Text style={[styles.buttonText, styles.referButtonText]}>
-                          Refer a Friend
+                          {t('trial.referFriendButton', { defaultValue: 'Refer a Friend' })}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -179,7 +255,7 @@ export default function TrialNotificationModal({ visible, notification, onClose,
                       onPress={onClose}
                     >
                       <Text style={[styles.buttonText, styles.secondaryButtonText]}>
-                        Maybe Later
+                        {t('trial.maybeButton', { defaultValue: 'Maybe Later' })}
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -190,7 +266,7 @@ export default function TrialNotificationModal({ visible, notification, onClose,
                       onPress={onUpgrade}
                     >
                       <Text style={getButtonTextStyle()}>
-                        {notification.cta ? notification.cta.replace('👉 ', '') : (notification.urgent ? 'Upgrade Now' : 'Upgrade')}
+                        {(localizedCta || (notification.urgent ? t('trial.upgradeNowButton', { defaultValue: 'Upgrade Now' }) : 'Upgrade')).replace('👉 ', '')}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -198,7 +274,7 @@ export default function TrialNotificationModal({ visible, notification, onClose,
                       onPress={onClose}
                     >
                       <Text style={[styles.buttonText, styles.secondaryButtonText]}>
-                        Maybe Later
+                        {t('trial.maybeButton', { defaultValue: 'Maybe Later' })}
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -209,7 +285,9 @@ export default function TrialNotificationModal({ visible, notification, onClose,
                 style={getButtonStyle()}
                 onPress={onClose}
               >
-                <Text style={getButtonTextStyle()}>Got It</Text>
+                <Text style={getButtonTextStyle()}>
+                  {t('trial.gotItButton', { defaultValue: 'Got It' })}
+                </Text>
               </TouchableOpacity>
             )}
           </View>

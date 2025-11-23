@@ -614,6 +614,9 @@
     "expiredFeaturesList": "• 대량 전후 사진 생성\\n• 사용자 지정 워터마크 및 클라우드 저장소\\n• 팀 관리 및 사진 정리",
     "expiredReferralIncentive": "친구를 추천하고 1-3개월 무료로 받으세요",
     "expiredCTA": "👉 지금 업그레이드",
+
+    "endsOnPrefix": "체험이 종료되는 날짜: ",
+
     "upgradeNowButton": "지금 업그레이드",
     "referFriendButton": "친구 추천",
     "maybeButton": "나중에",

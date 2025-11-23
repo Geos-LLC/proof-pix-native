@@ -614,6 +614,9 @@
     "expiredFeaturesList": "• Tạo ảnh trước & sau hàng loạt\\n• Hình mờ tùy chỉnh & lưu trữ đám mây\\n• Quản lý nhóm & dọn dẹp ảnh",
     "expiredReferralIncentive": "Giới thiệu bạn bè và nhận 1-3 tháng miễn phí",
     "expiredCTA": "👉 Nâng Cấp Ngay",
+
+    "endsOnPrefix": "Bản dùng thử của bạn kết thúc vào ",
+
     "upgradeNowButton": "Nâng Cấp Ngay",
     "referFriendButton": "Giới Thiệu Bạn Bè",
     "maybeButton": "Để Sau",

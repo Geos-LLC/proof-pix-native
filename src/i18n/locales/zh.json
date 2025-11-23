@@ -616,6 +616,9 @@
     "expiredFeaturesList": "• 批量创建前后对比照片\\n• 自定义水印和云存储\\n• 团队管理和照片清理",
     "expiredReferralIncentive": "推荐朋友并获得1-3个月免费",
     "expiredCTA": "👉 立即升级",
+
+    "endsOnPrefix": "您的试用将于 ",
+
     "upgradeNowButton": "立即升级",
     "referFriendButton": "推荐朋友",
     "maybeButton": "稍后再说",

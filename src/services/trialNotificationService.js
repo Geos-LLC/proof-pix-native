@@ -128,14 +128,19 @@ export const getNotificationToShow = async (skipDay0 = false) => {
       console.error('[TrialNotification] Error getting trial end date:', error);
     }
 
+    const planDisplayName = trialPlan ? trialPlan.charAt(0).toUpperCase() + trialPlan.slice(1) : 'Premium';
+
     return {
       key: 'day0',
       type: 'welcome',
       title: 'Welcome to Your Free Trial! 🎉',
-      message: `You're now on a ${trialDuration}-day free trial of ${trialPlan ? trialPlan.charAt(0).toUpperCase() + trialPlan.slice(1) : 'Premium'} features. Get started with bulk photo capture, custom watermarks, and automation tools.`,
+      message: `You're now on a ${trialDuration}-day free trial of ${planDisplayName} features. Get started with bulk photo capture, custom watermarks, and automation tools.`,
       endDate: formattedDate, // Store end date separately for styling
       showUpgrade: false,
       urgent: false,
+      // Extra fields for translations
+      days: trialDuration,
+      planName: planDisplayName,
     };
   }
 
@@ -194,6 +199,8 @@ export const getNotificationToShow = async (skipDay0 = false) => {
       cta: '👉 Upgrade / Refer Now',
       showUpgrade: true,
       urgent: true,
+      // Extra field for translations
+      days: daysRemaining,
     };
   }
 
