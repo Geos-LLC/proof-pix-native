@@ -2224,7 +2224,6 @@ export default function SettingsScreen({ navigation, route }) {
   // Handle navigation to specific sections - using useEffect to watch route params
   useEffect(() => {
     const params = route?.params;
-    console.log('[SETTINGS] Route params changed:', params);
     
     const scrollToSection = (sectionRef, paramKey) => {
       if (params?.[paramKey] === true) {

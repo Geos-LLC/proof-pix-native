@@ -8,7 +8,8 @@
       "Bash(git push:*)",
       "Bash(node -e:*)",
       "Bash(node verify-translations.js:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git diff:*)"
     ],
     "deny": [],
     "ask": []

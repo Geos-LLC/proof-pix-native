@@ -302,8 +302,6 @@ export const registerReferralCodeOnServer = async (userId, referralCode) => {
       // Only log as error if it's not "already in use" (which is expected for existing users)
       if (!data.error || !data.error.includes('already in use')) {
         console.error('[ReferralService] Failed to register code:', data.error);
-      } else {
-        console.log('[ReferralService] Code already registered (expected for existing users)');
       }
       return false;
     }
@@ -396,7 +394,6 @@ export const getReferralStatsFromServer = async (userId) => {
     const data = await response.json();
 
     if (data.code !== undefined) {
-      console.log('[ReferralService] Got stats from server:', data);
       return data;
     } else {
       console.error('[ReferralService] Failed to get stats:', data.error);

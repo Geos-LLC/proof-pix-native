@@ -306,7 +306,7 @@ class GoogleAuthService {
         // Continue with sign out even if revoke fails - revoke is not critical for sign out
       }
     } else {
-      console.log('[AUTH] User not signed in, skipping revoke');
+      // User not signed in, nothing to revoke
     }
     
     // Always attempt to sign out and clear user info

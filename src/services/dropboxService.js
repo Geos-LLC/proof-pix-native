@@ -50,12 +50,9 @@ class DropboxService {
       const folderPath = await retryWithBackoff(async () => {
         const found = await this.findFolder();
         if (found) {
-          console.log('[DROPBOX] Found existing ProofPix folder:', found);
           return found;
         } else {
-          console.log('[DROPBOX] ProofPix folder not found, creating a new one...');
           const created = await this.createFolder();
-          console.log('[DROPBOX] Created new ProofPix folder:', created);
           return created;
         }
       });

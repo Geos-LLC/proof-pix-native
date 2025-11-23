@@ -12,12 +12,9 @@ class GoogleDriveService {
     try {
       const folderId = await this.findFolder();
       if (folderId) {
-        console.log('Found existing ProofPix folder:', folderId);
         return folderId;
       } else {
-        console.log('ProofPix folder not found, creating a new one...');
         const newFolderId = await this.createFolder();
-        console.log('Created new ProofPix folder with ID:', newFolderId);
         return newFolderId;
       }
     } catch (error) {

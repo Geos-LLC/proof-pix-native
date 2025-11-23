@@ -43,16 +43,6 @@ export default function PlanSelectionScreen({ navigation }) {
     const checkTrialAvailability = async () => {
       try {
         const available = await canStartTrial();
-        console.log('[PlanSelection] Trial available:', available);
-
-        // Debug: Check why trial might not be available
-        if (!available) {
-          const { hasUsedTrial, isTrialActive } = await import('../services/trialService');
-          const used = await hasUsedTrial();
-          const active = await isTrialActive();
-          console.log('[PlanSelection] Trial debug - used:', used, 'active:', active);
-        }
-
         setTrialAvailable(available);
 
         // Check if user has a referral code to determine trial days

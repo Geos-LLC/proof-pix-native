@@ -251,20 +251,7 @@ export function AdminProvider({ children }) {
       updatedList = [updatedAccount];
     }
 
-    console.log('[ADMIN] Adding/updating connected account:', user.id);
     await setConnectedAccountsState(updatedList);
-    console.log(
-      '[ADMIN] Connected accounts after add:',
-      JSON.stringify(
-        updatedList.map(({ id, email, name, photo, isActive }) => ({
-          id,
-          email,
-          name,
-          photo,
-          isActive,
-        }))
-      )
-    );
     await applyAccountState(updatedAccount, { syncStorage: true });
     return updatedAccount;
   };
@@ -416,9 +403,6 @@ export function AdminProvider({ children }) {
     }
 
     if (planLimit < minLimit) {
-      console.log(
-        `[ADMIN] Enforcing minimum planLimit from ${planLimit} to ${minLimit} for plan: ${currentUserPlan}`
-      );
       // Use updatePlanLimit to ensure it persists to storage and updates activeAccount
       updatePlanLimit(minLimit).catch((error) => {
         console.warn('[ADMIN] Failed to enforce minimum planLimit:', error);
