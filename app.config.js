@@ -48,7 +48,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 8,
+      versionCode: 9,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
@@ -106,7 +106,7 @@ export default {
           },
           "android": {
             "compileSdkVersion": 35,
-            "targetSdkVersion": 34,
+            "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0"
           }
         }
