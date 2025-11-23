@@ -6,43 +6,60 @@
 import { Platform } from 'react-native';
 import { PROXY_SERVER_URL } from '../config/proxy';
 import googleAuthService from './googleAuthService';
+import dropboxAuthService from './dropboxAuthService';
 
 class ProxyService {
   /**
    * Initialize an admin session on the proxy server
-   * @param {string} folderId - Google Drive folder ID
+   * @param {string} folderId - Google Drive folder ID or Dropbox folder path
+   * @param {string} accountType - Account type: 'google' or 'dropbox' (default: 'google')
+   * @param {string} userId - User ID for global team tracking across accounts
    * @returns {Promise<{sessionId: string}>}
    */
-  async initializeAdminSession(folderId) {
+  async initializeAdminSession(folderId, accountType = 'google', userId = null) {
     try {
-      console.log('[PROXY] Initializing admin session with folder ID:', folderId);
-      console.log('[PROXY] Using proxy server URL:', PROXY_SERVER_URL);
-
-      // Get the one-time serverAuthCode via auth service (stored during sign-in)
-      const serverAuthCode = await googleAuthService.getServerAuthCode();
-      if (!serverAuthCode) {
-        throw new Error('Failed to get serverAuthCode from Google Sign-In.');
-      }
-      console.log('[PROXY] Got serverAuthCode, length:', serverAuthCode.length);
-
-      // IMPORTANT: Always use Web Client ID for server-side token exchange
-      // iOS Client IDs don't have client secrets, so they can't be used for server-side exchange
-      // However, the serverAuthCode from iOS CAN be exchanged with Web Client ID
-      // if both clients are in the same OAuth project (which they should be)
-      // The serverAuthCode is not tied to a specific Client ID - it can be exchanged
-      // with any Client ID in the same OAuth project that has a client secret
-      const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+      let authData = {
+        userId, // Include userId for global team tracking
+      };
       
-      if (!clientId) {
-        throw new Error('Missing Web Client ID. Please check EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in environment variables.');
+      if (accountType === 'dropbox') {
+        // For Dropbox, get access token
+        await dropboxAuthService.loadStoredTokens();
+        const accessToken = dropboxAuthService.getAccessToken();
+        if (!accessToken) {
+          throw new Error('Failed to get Dropbox access token. Please sign in to Dropbox.');
+        }
+        authData = {
+          ...authData,
+          accountType: 'dropbox',
+          accessToken,
+          folderPath: folderId, // For Dropbox, folderId is actually a folder path
+        };
+      } else {
+        // For Google, get serverAuthCode
+        const serverAuthCode = await googleAuthService.getServerAuthCode();
+        if (!serverAuthCode) {
+          throw new Error('Failed to get serverAuthCode from Google Sign-In.');
+        }
+
+        // IMPORTANT: Always use Web Client ID for server-side token exchange
+        const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+
+        if (!clientId) {
+          throw new Error('Missing Web Client ID. Please check EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in environment variables.');
+        }
+
+        authData = {
+          ...authData,
+          accountType: 'google',
+          serverAuthCode,
+          clientId,
+          folderId,
+        };
       }
-      
-      console.log(`[PROXY] Platform: ${Platform.OS}, Using Web Client ID for server-side token exchange: ${clientId.substring(0, 20)}...`);
-      console.log(`[PROXY] Note: serverAuthCode from ${Platform.OS} can be exchanged with Web Client ID if they're in the same OAuth project`);
 
       // Add cache-busting parameter to ensure we hit the latest deployment
       const url = `${PROXY_SERVER_URL}/api/admin/init?v=${Date.now()}`;
-      console.log('[PROXY] Making request to:', url);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -51,23 +68,15 @@ class ProxyService {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
         },
-        body: JSON.stringify({
-          folderId,
-          serverAuthCode,
-          clientId, // Pass the Client ID so server knows which one to use
-        }),
+        body: JSON.stringify(authData),
       });
-
-      console.log('[PROXY] Init response status:', response.status);
-      console.log('[PROXY] Init response ok:', response.ok);
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[PROXY] Init error response:', errorText);
 
-        // If it's an auth code error, clear the stored code so it won't be reused
-        if (errorText.includes('authorization code has expired') || errorText.includes('already been used')) {
-          console.log('[PROXY] Clearing expired/used serverAuthCode');
+        // If it's an auth code error, clear the stored code so it won't be reused (Google only)
+        if (accountType === 'google' && (errorText.includes('authorization code has expired') || errorText.includes('already been used'))) {
           try {
             await googleAuthService.clearServerAuthCode();
           } catch (clearError) {
@@ -79,15 +88,15 @@ class ProxyService {
       }
 
       const data = await response.json();
-      console.log('[PROXY] Session initialized successfully:', data.sessionId);
 
-      // Clear the serverAuthCode after successful use (it's a one-time code)
+      // Clear the serverAuthCode after successful use (it's a one-time code) - Google only
       // This prevents it from being reused if initializeAdminSession is called again
-      try {
-        await googleAuthService.clearServerAuthCode();
-        console.log('[PROXY] Cleared serverAuthCode after successful session initialization');
-      } catch (clearError) {
-        console.warn('[PROXY] Failed to clear serverAuthCode (non-critical):', clearError.message);
+      if (accountType === 'google') {
+        try {
+          await googleAuthService.clearServerAuthCode();
+        } catch (clearError) {
+          console.warn('[PROXY] Failed to clear serverAuthCode (non-critical):', clearError.message);
+        }
       }
 
       return {
@@ -219,7 +228,8 @@ class ProxyService {
           format,
           location,
           cleanerName,
-          flat
+          flat,
+          accountType: 'google' // Team member uploads default to Google (can be extended)
         }),
       });
 
@@ -333,13 +343,9 @@ class ProxyService {
    */
   async getTeamMembers(sessionId) {
     try {
-      console.log('[PROXY] Getting team members:', sessionId);
-
       const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-members`, {
         method: 'GET',
       });
-
-      console.log('[PROXY] Team members response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -348,11 +354,100 @@ class ProxyService {
       }
 
       const data = await response.json();
-      console.log('[PROXY] Team members retrieved:', data.teamMembers?.length || 0);
-
       return data;
     } catch (error) {
       console.error('[PROXY] Error getting team members:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get global team member count across all accounts sharing the same team
+   * @param {string} sessionId - Proxy session ID
+   * @returns {Promise<{success: boolean, globalCount: number, folderId: string}>}
+   */
+  async getGlobalTeamMemberCount(sessionId) {
+    try {
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PROXY] Get global team count error:', errorText);
+        throw new Error(`Failed to get global team count: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('[PROXY] Error getting global team count:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reset global team member count for the current user (by userId).
+   * This clears the server-side global registry used for Enterprise limits.
+   * @param {string} sessionId - Proxy session ID
+   * @returns {Promise<{success: boolean, previousCount: number, remainingCount: number}>}
+   */
+  async resetGlobalTeamMemberCount(sessionId) {
+    try {
+      console.log('[PROXY] Resetting global team member count for session:', sessionId);
+
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
+        method: 'DELETE',
+      });
+
+      console.log('[PROXY] Global team count reset response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PROXY] Reset global team count error:', errorText);
+        throw new Error(`Failed to reset global team count: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[PROXY] Global team member count reset:', data);
+
+      return data;
+    } catch (error) {
+      console.error('[PROXY] Error resetting global team count:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove a team member by their token
+   * This uses the same endpoint as removeInviteToken since removing a token also removes the team member
+   * @param {string} sessionId - Proxy session ID
+   * @param {string} token - The invite token used by the team member
+   * @returns {Promise<{success: boolean}>}
+   */
+  async removeTeamMember(sessionId, token) {
+    try {
+      console.log('[PROXY] Removing team member with token:', token);
+
+      // Use the tokens endpoint - it removes both the token and the associated team member
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens/${encodeURIComponent(token)}`, {
+        method: 'DELETE',
+      });
+
+      console.log('[PROXY] Remove team member response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PROXY] Remove team member error:', errorText);
+        throw new Error(`Failed to remove team member: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[PROXY] Team member removed successfully');
+
+      return data;
+    } catch (error) {
+      console.error('[PROXY] Error removing team member:', error);
       throw error;
     }
   }
@@ -429,6 +524,7 @@ class ProxyService {
    * @param {string} uploadParams.location - Location/city
    * @param {string} uploadParams.cleanerName - Cleaner's name
    * @param {boolean} uploadParams.flat - Flat mode (no subfolders)
+   * @param {string} uploadParams.accountType - Account type: 'google' or 'dropbox' (optional, backend should know from session)
    * @returns {Promise<Object>} Upload result
    */
   async uploadPhotoAsAdmin({
@@ -441,7 +537,8 @@ class ProxyService {
     format = 'default',
     location,
     cleanerName,
-    flat = false
+    flat = false,
+    accountType = 'google'
   }) {
     try {
       console.log('[PROXY] Uploading photo as admin:', { sessionId, filename, albumName, room, type, format, flat });
@@ -461,7 +558,8 @@ class ProxyService {
           format,
           location,
           cleanerName,
-          flat
+          flat,
+          accountType // Pass account type for backend routing
         }),
       });
 

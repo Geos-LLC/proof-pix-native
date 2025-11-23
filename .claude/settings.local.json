@@ -5,7 +5,10 @@
       "Bash(npx expo start:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(node -e:*)",
+      "Bash(node verify-translations.js:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

@@ -22,11 +22,13 @@ const SESSION_TTL = 7 * 24 * 60 * 60;
  */
 app.post('/api/admin/init', async (req, res) => {
   try {
-    const { folderId, serverAuthCode, clientId: requestedClientId } = req.body;
+    const { folderId, serverAuthCode, clientId: requestedClientId, userId } = req.body;
 
     if (!folderId || !serverAuthCode) {
       return res.status(400).json({ error: 'Missing folderId or serverAuthCode' });
     }
+
+    console.log(`[INIT] User ID for global team tracking: ${userId || 'NOT PROVIDED'}`);
 
     // IMPORTANT: Always use Web Client ID for server-side token exchange
     // iOS Client IDs don't have client secrets, so they can't be used for server-side exchange
@@ -202,6 +204,7 @@ app.post('/api/admin/init', async (req, res) => {
       refreshToken,
       clientId, // Store which client ID was used for this session
       adminUserInfo, // Store admin's Google account info
+      userId, // Store user ID for global team tracking across accounts
       inviteTokens: [],
       teamMembers: [], // Track team members: [{ token, name, status: 'pending'|'joined'|'declined', joinedAt, lastUploadAt }]
     };
@@ -266,7 +269,26 @@ app.post('/api/admin/:sessionId/tokens', async (req, res) => {
     session.inviteTokens = Array.from(inviteTokens);
 
     await kv.set(`session:${sessionId}`, session, { ex: SESSION_TTL });
-    
+
+    // Add to global team member registry immediately when invite is created
+    if (session.userId) {
+      const globalTeamKey = `team:${session.userId}:members`;
+      let globalTeamMembers = await kv.get(globalTeamKey) || [];
+
+      // Ensure it's an array
+      if (!Array.isArray(globalTeamMembers)) {
+        globalTeamMembers = [];
+      }
+
+      // Convert to Set for deduplication, add token, convert back to array
+      const memberSet = new Set(globalTeamMembers);
+      memberSet.add(token);
+
+      // Save global team members as array
+      await kv.set(globalTeamKey, Array.from(memberSet), { ex: SESSION_TTL });
+      console.log(`[TOKEN_ADD] Added invite token to global registry for userId ${session.userId}. Total count: ${memberSet.size}`);
+    }
+
     console.log(`Token added to session ${sessionId}`);
 
     res.json({ success: true });
@@ -289,12 +311,40 @@ app.delete('/api/admin/:sessionId/tokens/:token', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
+    // Remove the invite token
     const inviteTokens = new Set(session.inviteTokens);
     inviteTokens.delete(token);
     session.inviteTokens = Array.from(inviteTokens);
 
+    // Also remove the team member associated with this token
+    if (session.teamMembers) {
+      session.teamMembers = session.teamMembers.filter(member => member.token !== token);
+      console.log(`Team member with token ${token} removed from session ${sessionId}`);
+    }
+
     await kv.set(`session:${sessionId}`, session, { ex: SESSION_TTL });
-    
+
+    // Remove from global team member registry (tracked by userId)
+    if (session.userId) {
+      const globalTeamKey = `team:${session.userId}:members`;
+      let globalTeamMembers = await kv.get(globalTeamKey) || [];
+
+      // Ensure it's an array
+      if (!Array.isArray(globalTeamMembers)) {
+        globalTeamMembers = [];
+      }
+
+      // Convert to Set for easier manipulation
+      const memberSet = new Set(globalTeamMembers);
+      const sizeBefore = memberSet.size;
+      memberSet.delete(token);
+      const sizeAfter = memberSet.size;
+
+      // Save updated global team members
+      await kv.set(globalTeamKey, Array.from(memberSet), { ex: SESSION_TTL });
+      console.log(`[TOKEN_REMOVE] Removed token from global registry for userId ${session.userId}. Count: ${sizeBefore} -> ${sizeAfter}`);
+    }
+
     console.log(`Token removed from session ${sessionId}`);
 
     res.json({ success: true });
@@ -535,7 +585,7 @@ app.post('/api/upload/:sessionId', async (req, res) => {
       }
       const memberIndex = session.teamMembers.findIndex(m => m.token === token);
       const now = new Date().toISOString();
-      
+
       if (memberIndex >= 0) {
         // Update existing member - mark as joined and update last upload time
         session.teamMembers[memberIndex] = {
@@ -555,9 +605,28 @@ app.post('/api/upload/:sessionId', async (req, res) => {
           lastUploadAt: now
         });
       }
-      
+
       // Save updated session with team member info
       await kv.set(`session:${sessionId}`, session, { ex: SESSION_TTL });
+
+      // Update global team member registry (for cross-account tracking by userId)
+      if (session.userId) {
+        const globalTeamKey = `team:${session.userId}:members`;
+        let globalTeamMembers = await kv.get(globalTeamKey) || [];
+
+        // Ensure it's an array
+        if (!Array.isArray(globalTeamMembers)) {
+          globalTeamMembers = [];
+        }
+
+        // Convert to Set for deduplication, add token, convert back to array
+        const memberSet = new Set(globalTeamMembers);
+        memberSet.add(token);
+
+        // Save global team members as array
+        await kv.set(globalTeamKey, Array.from(memberSet), { ex: SESSION_TTL });
+        console.log(`[UPLOAD] Added token to global registry for userId ${session.userId}. Total count: ${memberSet.size}`);
+      }
     }
     
     // Get the client ID and secret that were used for this session
@@ -840,6 +909,25 @@ app.post('/api/team/:sessionId/join', async (req, res) => {
 
     await kv.set(`session:${sessionId}`, session, { ex: SESSION_TTL });
 
+    // Update global team member registry (for cross-account tracking by userId)
+    if (session.userId) {
+      const globalTeamKey = `team:${session.userId}:members`;
+      let globalTeamMembers = await kv.get(globalTeamKey) || [];
+
+      // Ensure it's an array
+      if (!Array.isArray(globalTeamMembers)) {
+        globalTeamMembers = [];
+      }
+
+      // Convert to Set for deduplication, add token, convert back to array
+      const memberSet = new Set(globalTeamMembers);
+      memberSet.add(token);
+
+      // Save global team members as array
+      await kv.set(globalTeamKey, Array.from(memberSet), { ex: SESSION_TTL });
+      console.log(`[TEAM_JOIN] Added token to global registry for userId ${session.userId}. Total count: ${memberSet.size}`);
+    }
+
     res.json({
       success: true,
       message: 'Team member registered'
@@ -939,6 +1027,109 @@ app.get('/api/admin/:sessionId/team-members', async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting team members:', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get global team member count across all accounts for the same user (by userId)
+ * GET /api/admin/:sessionId/global-team-count
+ */
+app.get('/api/admin/:sessionId/global-team-count', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await kv.get(`session:${sessionId}`);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (!session.userId) {
+      console.warn(`[GLOBAL_COUNT] Session ${sessionId} does not have userId, falling back to local count`);
+      // Fallback: return local count if no userId
+      return res.json({
+        success: true,
+        globalCount: (session.teamMembers || []).length,
+        userId: null,
+        fallback: true
+      });
+    }
+
+    // Get global team member count from the global registry (by userId)
+    const globalTeamKey = `team:${session.userId}:members`;
+    let globalTeamMembers = await kv.get(globalTeamKey) || [];
+
+    // Ensure it's an array
+    if (!Array.isArray(globalTeamMembers)) {
+      globalTeamMembers = [];
+    }
+
+    console.log(`[GLOBAL_COUNT] User ${session.userId} has ${globalTeamMembers.length} total team members across all accounts`);
+
+    res.json({
+      success: true,
+      globalCount: globalTeamMembers.length,
+      userId: session.userId
+    });
+  } catch (error) {
+    console.error('Error getting global team count:', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Reset global team member registry for this user (by userId).
+ * This is used when the admin explicitly clears all team members in the app,
+ * so both local state and server-side global tracking are reset together.
+ *
+ * DELETE /api/admin/:sessionId/global-team-count
+ */
+app.delete('/api/admin/:sessionId/global-team-count', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await kv.get(`session:${sessionId}`);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (!session.userId) {
+      console.warn(`[GLOBAL_COUNT_RESET] Session ${sessionId} does not have userId, nothing to reset`);
+      return res.json({
+        success: true,
+        userId: null,
+        previousCount: (session.teamMembers || []).length || 0,
+        remainingCount: (session.teamMembers || []).length || 0,
+        fallback: true
+      });
+    }
+
+    const globalTeamKey = `team:${session.userId}:members`;
+    let globalTeamMembers = await kv.get(globalTeamKey) || [];
+
+    if (!Array.isArray(globalTeamMembers)) {
+      globalTeamMembers = [];
+    }
+
+    const previousCount = globalTeamMembers.length;
+
+    // Clear the global registry for this user
+    await kv.del(globalTeamKey);
+
+    console.log(`[GLOBAL_COUNT_RESET] Cleared global team registry for user ${session.userId}. Count: ${previousCount} -> 0`);
+
+    res.json({
+      success: true,
+      userId: session.userId,
+      previousCount,
+      remainingCount: 0
+    });
+  } catch (error) {
+    console.error('Error resetting global team count:', error);
     res.status(500).json({
       error: error.message
     });

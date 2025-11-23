@@ -4,6 +4,11 @@ import googleAuthService from '../services/googleAuthService';
 import proxyService from '../services/proxyService';
 import { useSettings } from './SettingsContext';
 import { hasFeature, FEATURES } from '../constants/featurePermissions';
+import {
+  logSignIn,
+  logSignOut,
+  logTeamMemberJoined,
+} from '../utils/analytics';
 
 const STORAGE_KEYS = {
   ADMIN_FOLDER_ID: '@admin_folder_id',
@@ -33,7 +38,8 @@ export function AdminProvider({ children }) {
   const [userInfo, setUserInfo] = useState(null);
   const [folderId, setFolderId] = useState(null);
   const [inviteTokens, setInviteTokens] = useState([]);
-  const [planLimit, setPlanLimit] = useState(5); // Default plan limit
+  // Initialize planLimit based on current user plan: Enterprise = 15, Business/Others = 5
+  const [planLimit, setPlanLimit] = useState(() => currentUserPlan === 'enterprise' ? 15 : 5);
   const [isLoading, setIsLoading] = useState(true);
   const [userMode, setUserMode] = useState(null); // 'individual', 'admin', or 'team_member'
   const [teamInfo, setTeamInfo] = useState(null);
@@ -181,7 +187,20 @@ export function AdminProvider({ children }) {
     const prevAccounts = connectedAccountsRef.current || [];
     // Use feature permissions system instead of hardcoded check
     const allowMultipleAccounts = hasFeature(FEATURES.MULTIPLE_CLOUD_ACCOUNTS, currentUserPlan);
-    const existing = prevAccounts.find((account) => account.id === user.id);
+    const accountType = overrides.accountType || 'google'; // 'google' or 'dropbox'
+    
+    // Normalize accountType for old accounts that might not have it set
+    const normalizedPrevAccounts = prevAccounts.map(account => ({
+      ...account,
+      accountType: account.accountType || 'google', // Default old accounts to 'google'
+    }));
+    
+    // Use both id and type to uniquely identify accounts (same email can be Google and Dropbox)
+    // Also handle case where old accounts don't have accountType - treat them as 'google'
+    const existing = normalizedPrevAccounts.find((account) => {
+      const accType = account.accountType || 'google';
+      return account.id === user.id && accType === accountType;
+    });
     const rawPlanLimit = overrides.planLimit ?? existing?.planLimit ?? 5;
     const normalizedPlanLimit = Number.isFinite(rawPlanLimit)
       ? rawPlanLimit
@@ -196,6 +215,7 @@ export function AdminProvider({ children }) {
       email: user.email,
       name: user.name || user.givenName || existing?.name || '',
       photo: user.photo || existing?.photo || null,
+      accountType: accountType, // 'google' or 'dropbox'
       userInfo: {
         ...(existing?.userInfo || {}),
         ...user,
@@ -213,12 +233,20 @@ export function AdminProvider({ children }) {
 
     let updatedList;
     if (allowMultipleAccounts) {
-      updatedList = [
-        updatedAccount,
-        ...prevAccounts
-          .filter((account) => account.id !== user.id)
-          .map((account) => ({ ...account, isActive: false })),
-      ];
+      // Remove duplicates: filter out accounts with same id AND accountType
+      // Also ensure all accounts have accountType set
+      const deduplicatedAccounts = normalizedPrevAccounts
+        .filter((account) => {
+          const accType = account.accountType || 'google';
+          return !(account.id === user.id && accType === accountType);
+        })
+        .map((account) => ({
+          ...account,
+          accountType: account.accountType || 'google', // Ensure accountType is set
+          isActive: false,
+        }));
+      
+      updatedList = [updatedAccount, ...deduplicatedAccounts];
     } else {
       updatedList = [updatedAccount];
     }
@@ -272,13 +300,39 @@ export function AdminProvider({ children }) {
     return updatedAccount;
   };
 
-  const removeConnectedAccount = async (accountId) => {
+  const activateConnectedAccount = async (accountId, accountType = 'google') => {
+    const prevAccounts = connectedAccountsRef.current || [];
+    const accountToActivate = prevAccounts.find(
+      (account) => account.id === accountId && account.accountType === accountType
+    );
+
+    if (!accountToActivate) {
+      console.warn('[ADMIN] Account not found for activation:', accountId, accountType);
+      return null;
+    }
+
+    const updatedList = prevAccounts.map((account) => ({
+      ...account,
+      isActive: account.id === accountId && account.accountType === accountType,
+    }));
+
+    await setConnectedAccountsState(updatedList);
+    const activatedAccount = updatedList.find((account) => account.isActive);
+    
+    if (activatedAccount) {
+      await applyAccountState(activatedAccount, { syncStorage: true });
+    }
+
+    return activatedAccount;
+  };
+
+  const removeConnectedAccount = async (accountId, accountType = 'google') => {
     const prevAccounts = connectedAccountsRef.current || [];
     const allowMultipleAccounts = hasFeature(FEATURES.MULTIPLE_CLOUD_ACCOUNTS, currentUserPlan);
     let removedAccount = null;
 
     const filteredAccounts = prevAccounts.filter((account) => {
-      if (account.id === accountId) {
+      if (account.id === accountId && account.accountType === accountType) {
         removedAccount = account;
         return false;
       }
@@ -351,6 +405,28 @@ export function AdminProvider({ children }) {
     loadAdminData();
   }, []);
 
+  // Ensure planLimit is at least the minimum for the current plan,
+  // but DO NOT downscale if user has purchased additional slots.
+  useEffect(() => {
+    let minLimit = 0;
+    if (currentUserPlan === 'enterprise') {
+      minLimit = 15;
+    } else if (currentUserPlan === 'business') {
+      minLimit = 5;
+    }
+
+    if (planLimit < minLimit) {
+      console.log(
+        `[ADMIN] Enforcing minimum planLimit from ${planLimit} to ${minLimit} for plan: ${currentUserPlan}`
+      );
+      // Use updatePlanLimit to ensure it persists to storage and updates activeAccount
+      updatePlanLimit(minLimit).catch((error) => {
+        console.warn('[ADMIN] Failed to enforce minimum planLimit:', error);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserPlan, planLimit]);
+
   /**
    * Load saved admin data from storage
    */
@@ -367,6 +443,41 @@ export function AdminProvider({ children }) {
       }
 
       if (storedAccounts.length > 0) {
+        // Deduplicate accounts: remove duplicates based on id + accountType
+        // Also ensure all accounts have accountType set (default to 'google' for old accounts)
+        const seen = new Map();
+        const deduplicatedAccounts = [];
+        
+        for (const account of storedAccounts) {
+          const accountType = account.accountType || 'google';
+          const key = `${account.id}_${accountType}`;
+          
+          if (!seen.has(key)) {
+            seen.set(key, true);
+            deduplicatedAccounts.push({
+              ...account,
+              accountType: accountType, // Ensure accountType is set
+            });
+          } else {
+            // If duplicate found, keep the one with isActive=true or the most recent
+            const existingIndex = deduplicatedAccounts.findIndex(
+              (acc) => acc.id === account.id && (acc.accountType || 'google') === accountType
+            );
+            if (existingIndex >= 0) {
+              const existing = deduplicatedAccounts[existingIndex];
+              // Keep the active one, or the one with later lastConnectedAt
+              if (account.isActive || (!existing.isActive && (account.lastConnectedAt || 0) > (existing.lastConnectedAt || 0))) {
+                deduplicatedAccounts[existingIndex] = {
+                  ...account,
+                  accountType: accountType,
+                };
+              }
+            }
+          }
+        }
+        
+        storedAccounts = deduplicatedAccounts;
+        
         let activeAccount = storedAccounts.find((account) => account.isActive);
         if (!activeAccount) {
           activeAccount = { ...storedAccounts[0], isActive: true };
@@ -379,6 +490,21 @@ export function AdminProvider({ children }) {
 
         await setConnectedAccountsState(storedAccounts, { persist: false });
         await applyAccountState(activeAccount, { syncStorage: true });
+
+        // Restore Google Sign-In SDK session silently for Google accounts
+        // This is needed to get access tokens after app restart
+        if (activeAccount && activeAccount.accountType === 'google') {
+          try {
+            if (googleAuthService.isAvailable()) {
+              await googleAuthService.signInSilently();
+            }
+          } catch (silentSignInError) {
+            console.warn('[ADMIN] Could not restore Google Sign-In session silently:', silentSignInError.message);
+            console.warn('[ADMIN] User will need to reconnect to use team features');
+            // Don't fail here - user can still see their data and reconnect if needed
+          }
+        }
+
         return;
       }
 
@@ -399,6 +525,20 @@ export function AdminProvider({ children }) {
       if (storedUser) {
         setUserInfo(storedUser);
         setIsAuthenticated(true);
+
+        // Restore Google Sign-In SDK session silently
+        // This is needed to get access tokens after app restart
+        try {
+          if (googleAuthService.isAvailable()) {
+            console.log('[ADMIN] Attempting to restore Google Sign-In session silently...');
+            await googleAuthService.signInSilently();
+            console.log('[ADMIN] ✅ Google Sign-In session restored successfully');
+          }
+        } catch (silentSignInError) {
+          console.warn('[ADMIN] Could not restore Google Sign-In session silently:', silentSignInError.message);
+          console.warn('[ADMIN] User will need to reconnect to use team features');
+          // Don't fail here - user can still see their data and reconnect if needed
+        }
       } else {
         setIsAuthenticated(false);
       }
@@ -473,21 +613,23 @@ export function AdminProvider({ children }) {
    */
   const adminSignIn = async () => {
     try {
-      console.log("Admin sign-in process started...");
       const result = await googleAuthService.signInAsAdmin();
-      console.log("Received response from Google Sign-In service:", JSON.stringify(result, null, 2));
 
       if (result && result.error) {
-        console.log('Sign-in failed with error:', result.error);
         return { success: false, error: result.error };
       }
 
       if (result && result.userInfo) {
-        console.log("Sign-in successful, user info found.");
         setIsAuthenticated(true);
         setUserInfo(result.userInfo);
         setUserMode('admin');
         await upsertConnectedAccount(result.userInfo, { userMode: 'admin' });
+        // Analytics: admin sign-in
+        try {
+          logSignIn('google_admin');
+        } catch (e) {
+          // non‑critical
+        }
         return { success: true };
       }
 
@@ -504,27 +646,28 @@ export function AdminProvider({ children }) {
    */
   const individualSignIn = async () => {
     try {
-      console.log("Individual sign-in process started...");
       const result = await googleAuthService.signInAsIndividual();
-      console.log("Received response from Google Sign-In service:", JSON.stringify(result, null, 2));
 
       if (result && result.error) {
-        console.log('Sign-in failed with error:', result.error);
         return { success: false, error: result.error };
       }
 
       if (result && result.userInfo) {
-        console.log("Sign-in successful, user info found.");
         setIsAuthenticated(true);
         setUserInfo(result.userInfo);
         setUserMode('individual');
         await upsertConnectedAccount(result.userInfo, { userMode: 'individual' });
+        // Analytics: individual sign-in
+        try {
+          logSignIn('google_individual');
+        } catch (e) {
+          // non‑critical
+        }
         return { success: true };
       }
 
       throw new Error("Invalid or unexpected response from googleAuthService");
     } catch (error) {
-      console.log("Unexpected error in individual sign-in flow:", error.message);
       setIsAuthenticated(false);
       return { success: false, error: error.message };
     }
@@ -556,7 +699,6 @@ export function AdminProvider({ children }) {
         if (currentUserName) {
           await AsyncStorage.setItem('@stored_individual_name', currentUserName);
         }
-        console.log('[ADMIN] Stored individual plan, mode, and name:', { plan: currentPlan, mode: currentMode, userName: currentUserName });
       }
 
       // Get team member's name from settings (this should be the name entered in the test modal or join flow)
@@ -568,7 +710,6 @@ export function AdminProvider({ children }) {
       // Register team member join with proxy server
       try {
         await proxyService.registerTeamMemberJoin(sessionId, token, memberName);
-        console.log('[ADMIN] Team member registered with proxy server');
       } catch (registerError) {
         console.warn('[ADMIN] Failed to register team member (non-critical):', registerError.message);
         // Continue anyway - the join can still work
@@ -585,6 +726,15 @@ export function AdminProvider({ children }) {
         userMode: 'team_member',
         teamInfo: newTeamInfo,
       });
+      // Analytics: team member joined using invite
+      try {
+        logTeamMemberJoined({
+          plan: 'Team Member',
+          team_size_after: null,
+        });
+      } catch (e) {
+        // non‑critical
+      }
       // No Google Sign-In for team members, so auth status is not changed
       return { success: true };
     } catch (error) {
@@ -599,13 +749,6 @@ export function AdminProvider({ children }) {
    */
   const switchToIndividualMode = async () => {
     try {
-      console.log('[ADMIN] switchToIndividualMode called - starting switch');
-      console.log('[ADMIN] Current state:', {
-        userMode,
-        proxySessionId,
-        inviteTokens: inviteTokens?.length || 0,
-        folderId
-      });
 
       // Get stored individual plan, mode, and name
       const [storedPlan, storedMode, storedName] = await AsyncStorage.multiGet([
@@ -617,9 +760,6 @@ export function AdminProvider({ children }) {
       const individualPlan = storedPlan[1] || 'starter';
       const individualMode = storedMode[1] || 'individual';
       const individualName = storedName[1] || '';
-
-      console.log('[ADMIN] Switching back to individual mode:', { plan: individualPlan, mode: individualMode, userName: individualName });
-      console.log('[ADMIN] Stored values from AsyncStorage:', { storedPlan: storedPlan[1], storedMode: storedMode[1], storedName: storedName[1] });
 
       // Clear team member info
       await AsyncStorage.removeItem(STORAGE_KEYS.TEAM_MEMBER_INFO);
@@ -637,7 +777,6 @@ export function AdminProvider({ children }) {
         // Use the SettingsContext method to properly update the name and trigger re-renders
         if (settingsContext && settingsContext.updateUserInfo) {
           await settingsContext.updateUserInfo(individualName);
-          console.log('[ADMIN] Restored individual user name via SettingsContext:', individualName);
         } else {
           // Fallback: directly update AsyncStorage if SettingsContext is not available
           const settingsKey = 'app-settings';
@@ -647,7 +786,6 @@ export function AdminProvider({ children }) {
             ...settings,
             userName: individualName
           }));
-          console.log('[ADMIN] Restored individual user name directly:', individualName);
         }
       }
 
@@ -717,6 +855,11 @@ export function AdminProvider({ children }) {
         await removeConnectedAccount(activeAccount.id);
       } else {
         await applyAccountState(null, { syncStorage: true });
+      }
+      try {
+        logSignOut();
+      } catch (e) {
+        // non‑critical
       }
       return { success: true };
     } catch (error) {
@@ -871,10 +1014,11 @@ export function AdminProvider({ children }) {
 
   /**
    * Initialize or retrieve proxy session ID
-   * @param {string} folderId - Google Drive folder ID
-   * @returns {Promise<string|null>} - Proxy session ID or null if failed
+   * @param {string} folderId - Google Drive folder ID or Dropbox folder path
+   * @param {string} accountType - Account type: 'google' or 'dropbox' (default: 'google')
+   * @returns {Promise<{sessionId: string, success: boolean}|{success: false, error: string}>} - Proxy session result
    */
-  const initializeProxySession = async (folderId) => {
+  const initializeProxySession = async (folderId, accountType = 'google') => {
     // Prevent concurrent initialization calls
       if (isInitializingProxy) {
         console.log('[ADMIN] Proxy session initialization already in progress, waiting...');
@@ -905,10 +1049,20 @@ export function AdminProvider({ children }) {
 
       // Set guard to prevent concurrent calls
       setIsInitializingProxy(true);
-      
+
+      // Get or create userId for global team tracking
+      let userId = await AsyncStorage.getItem('@user_id');
+      if (!userId) {
+        userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        await AsyncStorage.setItem('@user_id', userId);
+        console.log('[ADMIN] Created new userId:', userId);
+      } else {
+        console.log('[ADMIN] Using existing userId:', userId);
+      }
+
       // Initialize new session via proxy service
-      console.log('[ADMIN] Initializing new proxy session');
-      const result = await proxyService.initializeAdminSession(folderId);
+      console.log('[ADMIN] Initializing new proxy session for account type:', accountType);
+      const result = await proxyService.initializeAdminSession(folderId, accountType, userId);
       
       if (result && result.sessionId) {
         await AsyncStorage.setItem(STORAGE_KEYS.PROXY_SESSION_ID, result.sessionId);
@@ -956,11 +1110,24 @@ export function AdminProvider({ children }) {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.TEAM_NAME, name);
       setTeamName(name);
+
+      // Also update the active connected account to persist teamName
+      const activeAccount = getActiveAccount();
+      if (activeAccount) {
+        await upsertConnectedAccount(activeAccount.userInfo, {
+          teamName: name
+        });
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
   };
+
+  // Get active account and account type
+  const activeAccount = getActiveAccount();
+  const accountType = activeAccount?.accountType || 'google';
 
   const value = {
     // State
@@ -975,6 +1142,8 @@ export function AdminProvider({ children }) {
     proxySessionId,
     teamName,
     connectedAccounts,
+    activeAccount, // Expose active account
+    accountType, // Expose account type ('google' or 'dropbox')
     isGoogleSignInAvailable: googleAuthService.isAvailable(),
 
     // Actions
@@ -992,12 +1161,16 @@ export function AdminProvider({ children }) {
     initializeProxySession,
     disconnectAllAccounts,
     removeConnectedAccount,
+    upsertConnectedAccount,
+    updateActiveAccount,
+    activateConnectedAccount,
 
     // Helpers
     isSetupComplete,
     canAddMoreInvites,
     getRemainingInvites,
     updateTeamName,
+    getActiveAccount, // Expose function to get active account
 
     // Direct access to auth service for API calls
     googleAuthService,

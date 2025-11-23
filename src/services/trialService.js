@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logTrialEvent } from '../utils/analytics';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
 const TRIAL_DURATION_DAYS = 30;
@@ -107,6 +108,17 @@ export const startTrial = async (plan, durationDays = null) => {
 
     console.log(`[TrialService] Started ${trialDays}-day trial for plan: ${plan}${hasReferral ? ' (with referral bonus)' : ''}`);
 
+    // Analytics: trial started
+    try {
+      logTrialEvent('start', {
+        plan,
+        days_used: 0,
+        days_remaining: trialDays,
+      });
+    } catch (e) {
+      // non‑critical
+    }
+
     // Reset notification flags for new trial
     try {
       const { resetNotifications } = await import('./trialNotificationService');
@@ -130,6 +142,19 @@ export const setTrialInactive = async () => {
   try {
     const trialInfo = await getTrialInfo();
     if (trialInfo) {
+      // Analytics: trial ended/expired
+      try {
+        const now = new Date().getTime();
+        const start = new Date(trialInfo.startDate).getTime();
+        const daysUsed = Math.max(0, Math.ceil((now - start) / (1000 * 60 * 60 * 24)));
+        logTrialEvent('end', {
+          plan: trialInfo.plan || 'unknown',
+          days_used: daysUsed,
+          days_remaining: 0,
+        });
+      } catch (e) {
+        // non‑critical
+      }
       const updated = {
         ...trialInfo,
         active: false,

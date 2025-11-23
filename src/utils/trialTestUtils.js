@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { resetNotifications } from '../services/trialNotificationService';
+import { resetNotifications, getNotificationToShow } from '../services/trialNotificationService';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
 
@@ -44,8 +44,22 @@ export const setTrialDaysRemaining = async (daysRemaining, plan = 'business') =>
  * @param {string} plan - Plan tier
  */
 export const testDay0 = async (plan = 'business') => {
-  await setTrialDaysRemaining(29, plan);
-  console.log('[TrialTest] Set to Day 0 - Welcome message should show');
+  try {
+    await setTrialDaysRemaining(29, plan);
+
+    // Prepare Day 0 notification so it shows on next app start like real flow
+    const notification = await getNotificationToShow(false); // don't skip Day 0
+    if (notification && notification.key === 'day0') {
+      await AsyncStorage.setItem('@pending_trial_notification', JSON.stringify(notification));
+      console.log('[TrialTest] Prepared pending Day 0 notification');
+    } else {
+      console.log('[TrialTest] No Day 0 notification available after setting trial');
+    }
+
+    console.log('[TrialTest] Set to Day 0 - Welcome message should show on next app start');
+  } catch (error) {
+    console.error('[TrialTest] Error preparing Day 0 test:', error);
+  }
 };
 
 /**
@@ -116,8 +130,9 @@ export const testDay30 = async (plan = 'business') => {
 export const clearTrial = async () => {
   try {
     await AsyncStorage.removeItem(TRIAL_STORAGE_KEY);
+    await AsyncStorage.removeItem('@pending_trial_notification');
     await resetNotifications();
-    console.log('[TrialTest] Cleared trial');
+    console.log('[TrialTest] Cleared trial and pending notifications');
   } catch (error) {
     console.error('[TrialTest] Error clearing trial:', error);
   }

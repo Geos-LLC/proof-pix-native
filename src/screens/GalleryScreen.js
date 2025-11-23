@@ -101,7 +101,7 @@ export default function GalleryScreen({ navigation, route }) {
     updateUserPlan,
   } = useSettings();
   const { canUse } = useFeaturePermissions();
-  const { userMode, teamInfo, isAuthenticated, folderId, proxySessionId, initializeProxySession } = useAdmin(); // Get userMode, teamInfo, and auth info
+  const { userMode, teamInfo, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType } = useAdmin(); // Get userMode, teamInfo, auth info, and account type
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
   const [fullScreenPhoto, setFullScreenPhoto] = useState(null);
   const [fullScreenPhotoSet, setFullScreenPhotoSet] = useState(null); // For combined preview
@@ -1942,7 +1942,10 @@ export default function GalleryScreen({ navigation, route }) {
           albumName: albumName,
           location: location || 'tampa', // Use location from settings
           userName: teamUserName, // Use userName as cleanerName
-          flat: !useFolderStructure // Use flat mode if folder structure is disabled
+          flat: !useFolderStructure, // Use flat mode if folder structure is disabled
+          config: {
+            accountType: accountType || 'google' // Pass account type
+          }
         });
         setShowUploadDetails(true);
         return;
@@ -1952,13 +1955,25 @@ export default function GalleryScreen({ navigation, route }) {
       let config = null;
       let uploadConfig = null; // Store config for use in proceedWithUpload
       
+      // Determine account type based on upload destinations selection
+      // If user selected Dropbox in upload options, use Dropbox even if Google is available
+      const selectedAccountType = uploadDestinations.dropbox && !uploadDestinations.google 
+        ? 'dropbox' 
+        : (accountType || 'google');
+      
       // Check if user should use direct Drive API upload
       // Pro, Business, and Enterprise users with individual mode or authenticated admin mode (without team) use direct Drive API
       const shouldUseDirectDrive = userMode === 'individual' || 
         (isAuthenticated && (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') && !teamInfo);
       
-      // For individual/Pro/Business/Enterprise users - use their authenticated Google Drive via proxy
-      if (shouldUseDirectDrive) {
+      // For Dropbox accounts - use Dropbox upload service (no proxy server needed)
+      if (selectedAccountType === 'dropbox') {
+        config = { 
+          accountType: 'dropbox'
+        };
+        uploadConfig = config; // Store for later use
+      } else if (shouldUseDirectDrive) {
+        // For individual/Pro/Business/Enterprise users - use their authenticated Google Drive via proxy
         try {
           const userFolderId = await googleDriveService.findOrCreateProofPixFolder();
           if (!userFolderId) {
@@ -1975,7 +1990,8 @@ export default function GalleryScreen({ navigation, route }) {
           config = { 
             folderId: userFolderId, 
             useDirectDrive: true, // Flag to indicate proxy server upload
-            sessionId: sessionResult.sessionId // Extract sessionId string from result object
+            sessionId: sessionResult.sessionId, // Extract sessionId string from result object
+            accountType: 'google'
           };
           uploadConfig = config; // Store for later use
         } catch (error) {
@@ -1987,19 +2003,22 @@ export default function GalleryScreen({ navigation, route }) {
         // For admin mode (team management) - use configured folder and proxy session
         // Only set config if NOT individual mode (to avoid overwriting Pro/Business/Enterprise user config)
         if (userMode === 'admin' && folderId && proxySessionId) {
-          config = { folderId, useDirectDrive: true, sessionId: proxySessionId };
+          config = { folderId, useDirectDrive: true, sessionId: proxySessionId, accountType: 'google' };
         } else {
           // Fallback to location-based config (folderId only)
           const locationConfig = getLocationConfig(location);
-          config = { folderId: locationConfig?.folderId, useDirectDrive: false };
+          config = { folderId: locationConfig?.folderId, useDirectDrive: false, accountType: 'google' };
         }
         uploadConfig = config; // Store for later use
       }
 
-        // Check if Google Drive is configured
-        // For proxy server uploads (useDirectDrive), we need folderId and sessionId
-        // For location-based uploads, we need folderId (legacy support)
-        if (!config || !config.folderId || (config.useDirectDrive && !config.sessionId)) {
+        // Check if configured (only for Google accounts)
+        // For Dropbox, no folderId or sessionId is needed - skip this check for Dropbox
+        if (selectedAccountType === 'dropbox' || config?.accountType === 'dropbox') {
+          // Dropbox doesn't need folderId or sessionId, skip validation
+          console.log('[UPLOAD] Dropbox account selected, skipping Google Drive validation');
+        } else if (!config || !config.folderId || (config.useDirectDrive && !config.sessionId)) {
+          // Only check Google Drive config if not using Dropbox
           Alert.alert(
             t('gallery.setupRequiredTitle'),
             t('gallery.driveConfigMissing'),
@@ -2012,6 +2031,7 @@ export default function GalleryScreen({ navigation, route }) {
       const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
       const projectUploadId = activeProject?.uploadId || null;
       const albumName = createAlbumName(userName, new Date(), projectUploadId);
+      
       // Scope uploads to the active project if one is selected, or use selected photos
       let sourcePhotos;
       let selectedSets = [];
@@ -2407,8 +2427,9 @@ export default function GalleryScreen({ navigation, route }) {
         const config = configOverride || getLocationConfig(location);
         console.log('[UPLOAD] Google config:', { folderId: config?.folderId, useDirectDrive: config?.useDirectDrive, sessionId: config?.sessionId });
 
-        // Check if Google Drive is configured
-        if (!config || !config.folderId || (config.useDirectDrive && !config.sessionId)) {
+        // Check if Google Drive is configured (only if Google is selected, not Dropbox)
+        const isGoogleConfig = config?.accountType !== 'dropbox' && accountType !== 'dropbox';
+        if (isGoogleConfig && (!config || !config.folderId || (config.useDirectDrive && !config.sessionId))) {
           console.log('[UPLOAD] Google Drive not configured, showing alert');
           Alert.alert(
             t('gallery.setupRequiredTitle'),
@@ -2421,7 +2442,10 @@ export default function GalleryScreen({ navigation, route }) {
         console.log('[UPLOAD] Starting background upload to Google Drive');
         const googleUploadId = startBackgroundUpload({
           items,
-          config,
+          config: {
+            ...config,
+            accountType: config?.accountType || accountType || 'google' // Pass account type
+          },
           albumName,
           location,
           userName,
@@ -2429,6 +2453,7 @@ export default function GalleryScreen({ navigation, route }) {
           uploadType: 'standard',
           useDirectDrive: config?.useDirectDrive || false, // Pass the flag for proxy server upload
           sessionId: config?.sessionId || null, // Pass the proxy session ID
+          accountType: config?.accountType || accountType || 'google' // Pass account type
         });
         console.log('[UPLOAD] Google Drive upload started, ID:', googleUploadId);
         uploadPromises.push({ type: 'google', uploadId: googleUploadId });
@@ -2472,54 +2497,28 @@ export default function GalleryScreen({ navigation, route }) {
           return;
         }
 
-        // Upload to Dropbox directly (without background service for now)
-        // We'll do this in parallel with Google Drive upload
-        console.log('[UPLOAD] Starting Dropbox batch upload');
-        const dropboxUploadPromise = uploadPhotoBatchToDropbox(items, {
+        // Use background upload service for Dropbox (same as Google Drive) to show progress
+        console.log('[UPLOAD] Starting Dropbox background upload with progress tracking');
+        const dropboxUploadId = startBackgroundUpload({
+          items,
+          config: {
+            accountType: 'dropbox' // Pass account type for Dropbox routing
+          },
           albumName,
           location,
-          cleanerName: userName,
+          userName,
           flat: !useFolderStructure,
-          batchSize: items.length,
-          onProgress: (current, total) => {
-            // Update progress for Dropbox upload
-            console.log(`[DROPBOX] Upload progress: ${current}/${total}`);
-          },
+          uploadType: 'standard',
+          accountType: 'dropbox' // Pass account type at top level too
         });
-
-        uploadPromises.push({ type: 'dropbox', promise: dropboxUploadPromise });
-        console.log('[UPLOAD] Dropbox upload promise added');
+        console.log('[UPLOAD] Dropbox background upload started with ID:', dropboxUploadId);
+        uploadPromises.push({ type: 'dropbox', uploadId: dropboxUploadId });
       }
 
-      // Show upload modal immediately (if Google Drive upload is in progress)
-      if (uploadDestinations.google) {
+      // Show upload modal immediately (if any upload is in progress)
+      if (uploadDestinations.google || uploadDestinations.dropbox) {
         console.log('[UPLOAD] Showing upload details modal');
         setShowUploadDetails(true);
-      }
-
-      // Wait for all uploads to complete
-      if (uploadDestinations.dropbox) {
-        try {
-          const dropboxResult = await uploadPromises.find(p => p.type === 'dropbox')?.promise;
-          if (dropboxResult) {
-            console.log('[DROPBOX] Upload completed:', dropboxResult);
-            if (dropboxResult.failed && dropboxResult.failed.length > 0) {
-              Alert.alert(
-                t('gallery.dropboxUploadPartial'),
-                t('gallery.dropboxUploadPartialMessage', {
-                  success: dropboxResult.successCount,
-                  failed: dropboxResult.failureCount,
-                })
-              );
-            }
-          }
-        } catch (error) {
-          console.error('[DROPBOX] Upload error:', error);
-          Alert.alert(
-            t('gallery.dropboxUploadError'),
-            error.message || t('gallery.dropboxUploadErrorMessage')
-          );
-        }
       }
     } catch (error) {
       Alert.alert('Upload Failed', error.message || 'An error occurred while preparing upload');

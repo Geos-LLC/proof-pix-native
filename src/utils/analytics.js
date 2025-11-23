@@ -191,6 +191,196 @@ export const logLanguageChange = (language) => {
   });
 };
 
+/**
+ * ===== Business / product analytics helpers =====
+ * These are thin wrappers around logEvent so you can easily
+ * answer high‑level questions in Firebase / BigQuery.
+ */
+
+// Accounts & plans ---------------------------------------------------------
+
+/**
+ * Log when a user account is created.
+ * @param {object} payload
+ *  - method: 'email', 'google', etc.
+ *  - is_team: boolean
+ *  - plan: 'starter' | 'pro' | 'business' | 'enterprise' | 'team_member'
+ *  - is_trial: boolean
+ */
+export const logAccountCreated = (payload = {}) => {
+  logEvent('account_created', {
+    method: payload.method || 'unknown',
+    is_team: !!payload.is_team,
+    plan: payload.plan || 'unknown',
+    is_trial: !!payload.is_trial,
+    timestamp: Date.now(),
+  });
+};
+
+/**
+ * Log when a user changes plan / tier.
+ * @param {string} fromPlan
+ * @param {string} toPlan
+ * @param {string} sourceScreen - where the change was initiated (e.g. 'Settings')
+ */
+export const logPlanChanged = (fromPlan, toPlan, sourceScreen = 'unknown') => {
+  logEvent('plan_changed', {
+    from_plan: fromPlan || 'unknown',
+    to_plan: toPlan || 'unknown',
+    source: sourceScreen,
+    timestamp: Date.now(),
+  });
+};
+
+// Trials -------------------------------------------------------------------
+
+/**
+ * Log trial lifecycle events.
+ * @param {string} action - 'start' | 'check' | 'end'
+ * @param {object} payload
+ *  - plan
+ *  - days_used
+ *  - days_remaining
+ */
+export const logTrialEvent = (action, payload = {}) => {
+  logEvent('trial_event', {
+    action,
+    plan: payload.plan || 'unknown',
+    days_used: payload.days_used ?? null,
+    days_remaining: payload.days_remaining ?? null,
+    timestamp: Date.now(),
+  });
+};
+
+// Teams & invites ---------------------------------------------------------
+
+/**
+ * Log when team invites are created.
+ * @param {number} count - how many invites created in this action
+ * @param {object} payload
+ *  - plan
+ *  - team_size_before
+ *  - team_size_after
+ */
+export const logTeamInvitesCreated = (count, payload = {}) => {
+  logEvent('team_invites_created', {
+    count: count || 0,
+    plan: payload.plan || 'unknown',
+    team_size_before: payload.team_size_before ?? null,
+    team_size_after: payload.team_size_after ?? null,
+    timestamp: Date.now(),
+  });
+};
+
+/**
+ * Log when a team member actually joins (uses an invite).
+ * @param {object} payload
+ *  - plan
+ *  - team_size_after
+ */
+export const logTeamMemberJoined = (payload = {}) => {
+  logEvent('team_member_joined', {
+    plan: payload.plan || 'unknown',
+    team_size_after: payload.team_size_after ?? null,
+    timestamp: Date.now(),
+  });
+};
+
+// Referrals ----------------------------------------------------------------
+
+/**
+ * Log referral events.
+ * @param {string} action - 'sent' | 'received' | 'completed'
+ * @param {object} payload
+ *  - code
+ *  - from_plan
+ *  - to_plan
+ */
+export const logReferralEvent = (action, payload = {}) => {
+  logEvent('referral_event', {
+    action,
+    code: payload.code || null,
+    from_plan: payload.from_plan || null,
+    to_plan: payload.to_plan || null,
+    timestamp: Date.now(),
+  });
+};
+
+// Connected accounts -------------------------------------------------------
+
+/**
+ * Log when a cloud account (Google / Dropbox) is connected or disconnected.
+ * @param {string} provider - 'google' | 'dropbox'
+ * @param {string} action - 'connect' | 'disconnect'
+ * @param {number} totalConnected - total connected accounts of this provider after the action
+ */
+export const logCloudAccountConnection = (provider, action, totalConnected) => {
+  logEvent('cloud_account_connection', {
+    provider,
+    action,
+    total_connected: totalConnected ?? null,
+    timestamp: Date.now(),
+  });
+};
+
+// Photos, uploads & sharing -----------------------------------------------
+
+/**
+ * Log per-photo upload with rich context.
+ * @param {object} payload
+ *  - drive: 'google' | 'dropbox'
+ *  - type: 'before' | 'after' | 'combined'
+ *  - format: 'default' | 'portrait' | 'square' | etc.
+ *  - room
+ *  - location
+ *  - shared: boolean
+ */
+export const logPhotoUpload = (payload = {}) => {
+  logEvent('photo_upload', {
+    drive: payload.drive || 'google',
+    type: payload.type || 'unknown',
+    format: payload.format || 'default',
+    room: payload.room || null,
+    location: payload.location || null,
+    shared: !!payload.shared,
+    timestamp: Date.now(),
+  });
+};
+
+// Feature gates / paywalled features --------------------------------------
+
+/**
+ * Log when a locked feature popup (tier popup) is shown.
+ * @param {string} featureKey - key from FEATURES (e.g. 'TEAM_INVITES')
+ * @param {string} userPlan
+ * @param {string} screen
+ */
+export const logFeatureGateShown = (featureKey, userPlan, screen) => {
+  logEvent('feature_gate_shown', {
+    feature: featureKey,
+    plan: userPlan || 'unknown',
+    screen: screen || 'unknown',
+    timestamp: Date.now(),
+  });
+};
+
+/**
+ * Log user actions on a locked feature popup (e.g. upgrade, close).
+ * @param {string} featureKey
+ * @param {string} userPlan
+ * @param {string} screen
+ * @param {string} action - 'upgrade_click' | 'close' | 'learn_more'
+ */
+export const logFeatureGateAction = (featureKey, userPlan, screen, action) => {
+  logEvent('feature_gate_action', {
+    feature: featureKey,
+    plan: userPlan || 'unknown',
+    screen: screen || 'unknown',
+    action,
+    timestamp: Date.now(),
+  });
+};
+
 export default {
   logEvent,
   logScreenView,
@@ -206,4 +396,15 @@ export default {
   logTeamAction,
   logLabelCustomization,
   logLanguageChange,
+   // Business helpers
+  logAccountCreated,
+  logPlanChanged,
+  logTrialEvent,
+  logTeamInvitesCreated,
+  logTeamMemberJoined,
+  logReferralEvent,
+  logCloudAccountConnection,
+  logPhotoUpload,
+  logFeatureGateShown,
+  logFeatureGateAction,
 };

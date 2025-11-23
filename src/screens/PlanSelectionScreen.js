@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
+import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
@@ -17,11 +18,11 @@ import TrialNotificationModal from '../components/TrialNotificationModal';
 import TrialConfirmationModal from '../components/TrialConfirmationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
-import { clearTrial } from '../utils/trialTestUtils';
 
 export default function PlanSelectionScreen({ navigation }) {
   const { t } = useTranslation();
   const { updateUserPlan } = useSettings();
+  const { updatePlanLimit } = useAdmin();
   const insets = useSafeAreaInsets();
 
   // Enterprise modal state
@@ -79,8 +80,19 @@ export default function PlanSelectionScreen({ navigation }) {
 
   const handleSelectPlan = async (plan) => {
     if (plan === 'enterprise') {
-      // Show enterprise contact form modal
-      setShowEnterpriseModal(true);
+      // Set up enterprise tier with 15 team member limit
+      try {
+        // Set the plan limit to 15 for team members
+        await updatePlanLimit(15);
+        // Update user plan to enterprise
+        await updateUserPlan('enterprise');
+        // Navigate to next screen (GoogleSignUp) - multiple accounts functionality is already enabled for enterprise tier
+        navigation.navigate('GoogleSignUp', { plan: 'enterprise', trialJustStarted: false });
+      } catch (error) {
+        console.error('[PlanSelection] Error setting up enterprise plan:', error);
+        // Fallback to regular plan selection if there's an error
+        await proceedWithPlanSelection(plan, false);
+      }
       return;
     }
 
@@ -188,19 +200,6 @@ export default function PlanSelectionScreen({ navigation }) {
     navigation.navigate('Referral');
   };
 
-  // Dev-only: Reset trial for testing
-  const handleResetTrial = async () => {
-    try {
-      await clearTrial();
-      // Recheck trial availability
-      const available = await canStartTrial();
-      setTrialAvailable(available);
-      console.log('[PlanSelection] Trial reset, available:', available);
-    } catch (error) {
-      console.error('[PlanSelection] Error resetting trial:', error);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <TouchableOpacity
@@ -225,17 +224,6 @@ export default function PlanSelectionScreen({ navigation }) {
             >
               <Text style={styles.trialBannerText}>
                 🎉 {trialDays}-Day Free Trial Available!
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {__DEV__ && (
-            <TouchableOpacity
-              style={styles.devResetButton}
-              onPress={handleResetTrial}
-            >
-              <Text style={styles.devResetButtonText}>
-                🧪 Dev: Reset Trial (for testing)
               </Text>
             </TouchableOpacity>
           )}
@@ -445,20 +433,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4CAF50',
     fontWeight: '600',
-  },
-  devResetButton: {
-    backgroundColor: '#FF6B6B',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    marginTop: 10,
-    marginBottom: 10,
-    alignSelf: 'center',
-  },
-  devResetButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
   },
 });

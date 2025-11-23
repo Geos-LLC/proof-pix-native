@@ -1,11 +1,12 @@
 /**
  * Upload Service
- * Handles uploading photos to Google Drive via Google Apps Script or direct Drive API
+ * Handles uploading photos to Google Drive or Dropbox based on account type
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
 import googleDriveService from './googleDriveService';
 import proxyService from './proxyService';
+import { uploadPhotoToDropbox } from './dropboxUploadService';
 
 /**
  * Convert file URI to base64 data URL
@@ -71,7 +72,7 @@ function normalizeFileUri(input) {
 }
 
 /**
- * Upload a single photo to Google Drive
+ * Upload a single photo to Google Drive or Dropbox based on account type
  * @param {Object} params - Upload parameters
  * @param {string} params.imageDataUrl - Base64 data URL of the image
  * @param {string} params.filename - Filename for the uploaded image
@@ -81,8 +82,9 @@ function normalizeFileUri(input) {
  * @param {string} params.format - Format type (e.g., "default", "portrait", "square")
  * @param {string} params.location - Location/city
  * @param {string} params.cleanerName - Cleaner's name
- * @param {string} params.folderId - Google Drive folder ID
- * @param {string} params.sessionId - Proxy server session ID (required)
+ * @param {string} params.folderId - Google Drive folder ID (for Google accounts)
+ * @param {string} params.sessionId - Proxy server session ID (required for Google)
+ * @param {string} params.accountType - Account type: 'google' or 'dropbox' (default: 'google')
  * @param {Function} params.onProgress - Progress callback (optional)
  * @returns {Promise<Object>} - Upload result
  */
@@ -100,10 +102,47 @@ export async function uploadPhoto({
   abortSignal,
   flat = false,
   useDirectDrive = true, // Always use proxy server (legacy Apps Script removed)
-  sessionId = null // Proxy server session ID (required)
+  sessionId = null, // Proxy server session ID (required for Google)
+  accountType = 'google' // Account type: 'google' or 'dropbox'
 }) {
   try {
-    // Proxy server uploads are now the only option
+    // Route based on account type and session availability
+    // If sessionId is provided, use proxy server (for both Google and Dropbox team uploads)
+    // If no sessionId and Dropbox, use direct Dropbox upload
+    if (accountType === 'dropbox') {
+      if (sessionId) {
+        // Use proxy server for Dropbox team uploads
+        return await uploadPhotoToDriveDirect({
+          imageDataUrl,
+          filename,
+          albumName,
+          room,
+          type,
+          format,
+          location,
+          cleanerName,
+          folderId, // For Dropbox, this is actually a folder path
+          flat,
+          sessionId,
+          accountType: 'dropbox'
+        });
+      } else {
+        // Direct Dropbox upload for admin (no team setup)
+        return await uploadPhotoToDropbox({
+          imageDataUrl,
+          filename,
+          albumName,
+          room,
+          type,
+          format,
+          location,
+          cleanerName,
+          flat
+        });
+      }
+    }
+    
+    // Google Drive upload via proxy server
     if (!folderId) {
       throw new Error('Missing Google Drive folder ID for upload.');
     }
@@ -111,7 +150,7 @@ export async function uploadPhoto({
       throw new Error('Missing proxy session ID for upload. Please connect your Google account in Settings.');
     }
     
-    // Use proxy server upload
+    // Use proxy server upload for Google
     return await uploadPhotoToDriveDirect({
       imageDataUrl,
       filename,
@@ -123,7 +162,8 @@ export async function uploadPhoto({
       cleanerName,
       folderId,
       flat,
-      sessionId
+      sessionId,
+      accountType: 'google'
     });
   } catch (error) {
     const name = (error && error.name) || '';
@@ -163,7 +203,8 @@ async function uploadPhotoToDriveDirect({
   cleanerName,
   folderId,
   flat = false,
-  sessionId
+  sessionId,
+  accountType = 'google'
 }) {
   try {
     if (!sessionId) {
@@ -183,7 +224,7 @@ async function uploadPhotoToDriveDirect({
         : base64DataUrl;
     }
 
-    // Upload via proxy server
+    // Upload via proxy server (works for both Google and Dropbox)
     const result = await proxyService.uploadPhotoAsAdmin({
       sessionId,
       filename,
@@ -194,7 +235,8 @@ async function uploadPhotoToDriveDirect({
       format,
       location,
       cleanerName,
-      flat
+      flat,
+      accountType // Pass account type so backend knows which service to use
     });
     
     return {
@@ -281,11 +323,13 @@ export async function uploadPhotoAsTeamMember({
 /**
  * Upload multiple photos in batches
  * Supports both admin uploads (Pro/Business/Enterprise) and team member uploads
+ * Supports both Google Drive and Dropbox accounts
  * @param {Array} photos - Array of photo objects with upload parameters
  * @param {Object} config - Upload configuration
- * @param {string} config.folderId - Google Drive folder ID
- * @param {string} config.sessionId - Proxy server session ID (required)
+ * @param {string} config.folderId - Google Drive folder ID (for Google accounts)
+ * @param {string} config.sessionId - Proxy server session ID (required for Google)
  * @param {string} config.token - Invite token (required for team member uploads)
+ * @param {string} config.accountType - Account type: 'google' or 'dropbox' (default: 'google')
  * @param {string} config.albumName - Album name
  * @param {string} config.location - Location/city
  * @param {string} config.cleanerName - Cleaner's name
@@ -307,11 +351,28 @@ export async function uploadPhotoBatch(photos, config) {
     abortSignal, // optional AbortSignal to stop scheduling further uploads
     flat = false, // upload into project root (no subfolders)
     useDirectDrive = true, // Always use proxy server (legacy Apps Script removed)
-    sessionId = null, // Proxy server session ID (required)
-    token = null // Invite token (required for team member uploads)
+    sessionId = null, // Proxy server session ID (required for Google)
+    token = null, // Invite token (required for team member uploads)
+    accountType = 'google' // Account type: 'google' or 'dropbox'
   } = config;
 
-  // Determine if this is a team member upload
+  // Route based on account type and session availability
+  // If sessionId is provided, use proxy server (for both Google and Dropbox team uploads)
+  // If no sessionId and Dropbox, use direct Dropbox upload
+  if (accountType === 'dropbox' && !sessionId) {
+    // Direct Dropbox batch upload (no team setup)
+    const { uploadPhotoBatchToDropbox } = await import('./dropboxUploadService');
+    return await uploadPhotoBatchToDropbox(photos, {
+      albumName,
+      location,
+      cleanerName,
+      batchSize,
+      onProgress,
+      flat
+    });
+  }
+
+  // Determine if this is a team member upload (Google only)
   const isTeamMemberUpload = !!(token && sessionId);
 
   // If using proxy server and albumName is provided, prepare the album folder first
@@ -406,6 +467,7 @@ export async function uploadPhotoBatch(photos, config) {
             flat: isFlat,
             useDirectDrive, // Always use proxy server
             sessionId, // Pass the proxy session ID
+            accountType, // Pass account type
             // Remove intermediate progress reporting for cleaner parallel upload tracking
           });
 

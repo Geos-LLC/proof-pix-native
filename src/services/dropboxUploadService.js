@@ -91,18 +91,27 @@ export async function uploadPhotoToDropbox({
   location,
   cleanerName,
   flat = false,
+  skipFolderCreation = false, // Allow skipping if folders were pre-created
 }) {
   try {
-    // Ensure ProofPix folder exists
-    const parentFolderPath = await dropboxService.findOrCreateProofPixFolder();
-    if (!parentFolderPath) {
-      throw new Error('Could not access or create ProofPix folder in Dropbox.');
-    }
+    let parentFolderPath, albumFolderPath;
+    
+    if (!skipFolderCreation) {
+      // Ensure ProofPix folder exists
+      parentFolderPath = await dropboxService.findOrCreateProofPixFolder();
+      if (!parentFolderPath) {
+        throw new Error('Could not access or create ProofPix folder in Dropbox.');
+      }
 
-    // Create or find album folder
-    const albumFolderPath = await dropboxService.findOrCreateAlbumFolder(parentFolderPath, albumName);
-    if (!albumFolderPath) {
-      throw new Error('Could not create album folder in Dropbox.');
+      // Create or find album folder
+      albumFolderPath = await dropboxService.findOrCreateAlbumFolder(parentFolderPath, albumName);
+      if (!albumFolderPath) {
+        throw new Error('Could not create album folder in Dropbox.');
+      }
+    } else {
+      // Folders were pre-created, use cache
+      parentFolderPath = await dropboxService.findOrCreateProofPixFolder();
+      albumFolderPath = await dropboxService.findOrCreateAlbumFolder(parentFolderPath, albumName);
     }
 
     // Build file path based on folder structure
@@ -211,6 +220,53 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
   const failed = [];
   const total = photos.length;
 
+  // Pre-create all folders before parallel uploads to avoid rate limiting
+  try {
+    console.log('[DROPBOX] Pre-creating folder structure before batch upload...');
+    const parentFolderPath = await dropboxService.findOrCreateProofPixFolder();
+    const albumFolderPath = await dropboxService.findOrCreateAlbumFolder(parentFolderPath, albumName);
+    
+    // Pre-create subfolders if needed (to avoid parallel creation)
+    if (!flat) {
+      // Determine which subfolders we'll need
+      const neededFolders = new Set();
+      photos.forEach(photo => {
+        const rawType = photo.mode || photo.type || 'mix';
+        const isCombined = rawType === 'mix' || rawType === 'combined';
+        const typeParam = isCombined ? 'combined' : rawType;
+        
+        let format = 'default';
+        if (isCombined && photo.templateType) {
+          format = photo.templateType;
+        } else if (photo.format) {
+          format = photo.format;
+        }
+
+        if (format !== 'default') {
+          neededFolders.add('formats');
+          neededFolders.add(`formats/${format}`);
+        } else {
+          neededFolders.add(typeParam);
+        }
+      });
+
+      // Create all needed folders sequentially
+      for (const folderName of neededFolders) {
+        if (folderName.includes('/')) {
+          const [parent, child] = folderName.split('/');
+          const parentPath = await dropboxService.findOrCreateAlbumFolder(albumFolderPath, parent);
+          await dropboxService.findOrCreateAlbumFolder(parentPath, child);
+        } else {
+          await dropboxService.findOrCreateAlbumFolder(albumFolderPath, folderName);
+        }
+      }
+    }
+    console.log('[DROPBOX] Folder structure prepared, starting uploads');
+  } catch (error) {
+    console.warn('[DROPBOX] Failed to pre-create folders (will create during upload):', error.message);
+    // Continue anyway - folders will be created during upload (with retry logic)
+  }
+
   // Split photos into batches
   const batches = [];
   for (let i = 0; i < photos.length; i += batchSize) {
@@ -247,6 +303,7 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
       const isFlat = !!(flat || photo.flat === true || photo.flatOverride === true);
 
       // Create a promise that reports progress during upload
+      // Skip folder creation since we pre-created all folders
       const uploadPromise = uploadPhotoToDropbox({
         imageDataUrl: photo.uri,
         filename: photo.filename || `${photo.name}_${format !== 'default' ? format : typeParam}.jpg`,
@@ -257,6 +314,7 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
         location,
         cleanerName,
         flat: isFlat,
+        skipFolderCreation: true, // Folders were pre-created
       });
 
       // Add progress tracking for parallel uploads
