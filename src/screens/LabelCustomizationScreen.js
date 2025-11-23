@@ -20,6 +20,8 @@ import { COLORS, getLabelPositions } from '../constants/rooms';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
+import ColorPicker, { Panel1, HueSlider } from 'reanimated-color-picker';
+import { runOnJS } from 'react-native-reanimated';
 // HSL conversion utilities
 const hslToHex = (h, s, l) => {
   s /= 100;
@@ -983,62 +985,17 @@ export default function LabelCustomizationScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <View style={styles.colorPickerWrapper}>
-              {/* Hue Slider */}
-              <Text style={styles.sliderLabel}>{t('labelCustomization.colorPicker.hue', { value: Math.round(hue) })}</Text>
-              <Slider
-                style={styles.colorSlider}
-                minimumValue={0}
-                maximumValue={360}
-                step={1}
-                value={hue}
-                onValueChange={(value) => {
-                  setHue(value);
-                  const newColor = hslToHex(value, saturation, lightness);
-                  setDraftColor(newColor);
-                  setColorInput(newColor);
+              <ColorPicker
+                value={draftColor}
+                onComplete={(colors) => {
+                  'worklet';
+                  runOnJS(setDraftColor)(colors.hex);
+                  runOnJS(setColorInput)(colors.hex);
                 }}
-                minimumTrackTintColor={`hsl(${hue}, 100%, 50%)`}
-                maximumTrackTintColor="#d3d3d3"
-                thumbTintColor={`hsl(${hue}, 100%, 50%)`}
-              />
-
-              {/* Saturation Slider */}
-              <Text style={styles.sliderLabel}>{t('labelCustomization.colorPicker.saturation', { value: Math.round(saturation) })}</Text>
-              <Slider
-                style={styles.colorSlider}
-                minimumValue={0}
-                maximumValue={100}
-                step={1}
-                value={saturation}
-                onValueChange={(value) => {
-                  setSaturation(value);
-                  const newColor = hslToHex(hue, value, lightness);
-                  setDraftColor(newColor);
-                  setColorInput(newColor);
-                }}
-                minimumTrackTintColor={draftColor}
-                maximumTrackTintColor="#d3d3d3"
-                thumbTintColor={draftColor}
-              />
-
-              {/* Lightness Slider */}
-              <Text style={styles.sliderLabel}>{t('labelCustomization.colorPicker.lightness', { value: Math.round(lightness) })}</Text>
-              <Slider
-                style={styles.colorSlider}
-                minimumValue={0}
-                maximumValue={100}
-                step={1}
-                value={lightness}
-                onValueChange={(value) => {
-                  setLightness(value);
-                  const newColor = hslToHex(hue, saturation, value);
-                  setDraftColor(newColor);
-                  setColorInput(newColor);
-                }}
-                minimumTrackTintColor={draftColor}
-                maximumTrackTintColor="#d3d3d3"
-                thumbTintColor={draftColor}
-              />
+              >
+                <Panel1 style={styles.colorPanel} />
+                <HueSlider style={styles.hueSlider} />
+              </ColorPicker>
             </View>
             <View style={styles.colorPreview}>
               <View style={[styles.colorPreviewBox, { backgroundColor: draftColor }]} />
@@ -1521,15 +1478,14 @@ const styles = StyleSheet.create({
   colorPickerWrapper: {
     marginBottom: 16,
   },
-  sliderLabel: {
-    fontSize: 14,
-    color: COLORS.TEXT,
-    marginBottom: 4,
-    marginTop: 8,
+  colorPanel: {
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 12,
   },
-  colorSlider: {
-    width: '100%',
-    height: 40,
+  hueSlider: {
+    height: 32,
+    borderRadius: 8,
   },
   colorPreview: {
     flexDirection: 'row',
