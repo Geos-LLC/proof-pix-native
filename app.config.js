@@ -48,7 +48,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: "1.2.0",
+      versionCode: 8,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
