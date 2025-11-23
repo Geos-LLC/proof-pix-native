@@ -41,6 +41,7 @@ yarn-error.*
 !package.json
 !package-lock.json
 !tsconfig.json
+!src/i18n/locales/*.json
 
 # typescript
 *.tsbuildinfo
