@@ -522,10 +522,19 @@ export const simulateFriendSignup = async () => {
       console.log(`[ReferralService] ✅ Friend signup simulated! You earned ${result.monthsEarned} month(s)`);
       console.log(`[ReferralService] Run checkAndApplyReferralRewards() to apply the reward to your trial`);
       return true;
-    } else {
-      console.error('[ReferralService] Failed to simulate friend signup:', result);
-      return false;
     }
+
+    // If server-side simulation failed (e.g., "No pending referral found for this code"),
+    // fall back to a local-only simulation so the test button is still useful.
+    console.error('[ReferralService] Failed to simulate friend signup on server, falling back to local simulation:', result);
+    const monthsEarned = await processReferralReward(myCode);
+    if (monthsEarned > 0) {
+      console.log(`[ReferralService] ✅ Local friend signup simulation applied: ${monthsEarned} month(s) locally`);
+      return true;
+    }
+
+    console.error('[ReferralService] Local friend signup simulation did not apply any rewards');
+    return false;
   } catch (error) {
     console.error('[ReferralService] Error simulating friend signup:', error);
     return false;

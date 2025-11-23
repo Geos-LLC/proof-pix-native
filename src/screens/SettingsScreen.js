@@ -5244,13 +5244,16 @@ export default function SettingsScreen({ navigation, route }) {
                   keyboardShouldPersistTaps="handled"
                   contentContainerStyle={styles.customModalScroll}
                 >
-                  <View style={styles.customModalContent}>
+                    <View style={styles.customModalContent}>
                     <View style={styles.testButtons}>
                       <TouchableOpacity
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay0();
-                          Alert.alert('Test Set', 'Trial set to Day 0. Restart app or go to foreground to see welcome message.');
+                          Alert.alert(
+                            'Test Set',
+                            'Trial set to Day 0. Restart app or bring it to foreground to see the welcome message.'
+                          );
                         }}
                       >
                         <Text style={styles.testButtonText}>Day 0 (Welcome)</Text>
@@ -5259,7 +5262,10 @@ export default function SettingsScreen({ navigation, route }) {
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay7_10();
-                          Alert.alert('Test Set', 'Trial set to Day 7-10. Restart app to see engagement message.');
+                          Alert.alert(
+                            'Test Set',
+                            'Trial set to Day 7-10. Restart app to see the engagement message.'
+                          );
                         }}
                       >
                         <Text style={styles.testButtonText}>Day 7-10</Text>
@@ -5268,7 +5274,10 @@ export default function SettingsScreen({ navigation, route }) {
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay15();
-                          Alert.alert('Test Set', 'Trial set to Day 15. Restart app to see check-in message.');
+                          Alert.alert(
+                            'Test Set',
+                            'Trial set to Day 15. Restart app to see the mid-trial check-in message.'
+                          );
                         }}
                       >
                         <Text style={styles.testButtonText}>Day 15</Text>
@@ -5277,7 +5286,10 @@ export default function SettingsScreen({ navigation, route }) {
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay22_24();
-                          Alert.alert('Test Set', 'Trial set to Day 22-24. Restart app to see early reminder.');
+                          Alert.alert(
+                            'Test Set',
+                            'Trial set to Day 22-24. Restart app to see the early reminder message.'
+                          );
                         }}
                       >
                         <Text style={styles.testButtonText}>Day 22-24</Text>
@@ -5286,7 +5298,10 @@ export default function SettingsScreen({ navigation, route }) {
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay27_28();
-                          Alert.alert('Test Set', 'Trial set to Day 27-28. Restart app to see last chance message.');
+                          Alert.alert(
+                            'Test Set',
+                            'Trial set to Day 27-28. Restart app to see the last chance message.'
+                          );
                         }}
                       >
                         <Text style={styles.testButtonText}>Day 27-28</Text>
@@ -5295,7 +5310,10 @@ export default function SettingsScreen({ navigation, route }) {
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay30();
-                          Alert.alert('Test Set', 'Trial set to expired. Restart app to see expiration message.');
+                          Alert.alert(
+                            'Test Set',
+                            'Trial set to Day 30 (expired). Restart app to see the expiration message.'
+                          );
                         }}
                       >
                         <Text style={styles.testButtonText}>Day 30 (Expired)</Text>
@@ -5304,7 +5322,10 @@ export default function SettingsScreen({ navigation, route }) {
                         style={[styles.testButton, { backgroundColor: '#FF0000' }]}
                         onPress={async () => {
                           await TrialTestUtils.testDay30();
-                          Alert.alert('Test Set', 'Trial set to expired. Restart app to see Day 30 expiration message with discount and referral.');
+                          Alert.alert(
+                            'Test Set',
+                            'Trial set to Day 30 (expired). Restart app to see the full expiration flow.'
+                          );
                         }}
                       >
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Test Day 30</Text>
@@ -5322,6 +5343,19 @@ export default function SettingsScreen({ navigation, route }) {
                         }}
                       >
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Reset Referral Data</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#795548' }]}
+                        onPress={async () => {
+                          await TrialTestUtils.clearTrial();
+                          Alert.alert(
+                            'Trial Reset',
+                            'Trial data cleared. The next time you go through onboarding and reach the plan selection screen, the free trial banner and confirmation dialog will appear again (30 or 45 days depending on referral).'
+                          );
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Reset Trial</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -5377,7 +5411,7 @@ export default function SettingsScreen({ navigation, route }) {
                 </ScrollView>
               </View>
             </View>
-          </Modal>
+        </Modal>
         )}
 
         {/* Manage Team Modal */}
