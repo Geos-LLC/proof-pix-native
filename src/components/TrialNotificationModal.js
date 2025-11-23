@@ -8,9 +8,11 @@ import {
 } from 'react-native';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { useTranslation } from 'react-i18next';
 
 export default function TrialNotificationModal({ visible, notification, onClose, onUpgrade, onCTA, onRefer }) {
   if (!notification) return null;
+  const { t } = useTranslation();
 
   const getButtonStyle = () => {
     if (notification.urgent) {
@@ -40,37 +42,80 @@ export default function TrialNotificationModal({ visible, notification, onClose,
           </View>
           
           <View style={styles.content}>
-            <Text style={styles.message}>
-              {notification.message}
-              {notification.endDate && (
-                <Text> Your trial ends on <Text style={styles.endDate}>{notification.endDate}</Text>.</Text>
-              )}
-            </Text>
-            {notification.cta && !notification.showUpgrade && (
-              <TouchableOpacity
-                onPress={() => {
-                  if (onCTA) {
-                    onCTA(notification);
-                  } else {
-                    onClose();
-                  }
-                }}
-                style={styles.ctaButton}
-              >
-                <Text style={styles.cta}>{notification.cta}</Text>
-              </TouchableOpacity>
-            )}
-            {notification.ctaDescription && (
-              <Text style={styles.ctaDescription}>{notification.ctaDescription}</Text>
-            )}
-            {notification.featuresList && (
-              <Text style={styles.featuresList}>{notification.featuresList}</Text>
-            )}
-            {notification.referralIncentive && notification.key !== 'day30' && (
-              <Text style={styles.referralIncentive}>{notification.referralIncentive}</Text>
-            )}
-            {notification.discountOffer && (
-              <Text style={styles.discountOffer}>{notification.discountOffer}</Text>
+            {notification.key === 'day22_24' ? (
+              // Full visual preview of the delete confirmation modal (non-interactive)
+              <View style={styles.checkboxPreviewContainer}>
+                <Text style={styles.deletePreviewHint}>
+                  {t('gallery.deletePreviewHint', {
+                    defaultValue: 'When you delete photos, this is what the confirmation will look like:'
+                  })}
+                </Text>
+                <View style={styles.deletePreviewModal}>
+                  <Text style={styles.checkboxPreviewTitle}>
+                    {t('gallery.deleteProjectTitle', { defaultValue: 'Delete Project' }).toUpperCase()}
+                  </Text>
+                  <Text style={styles.deletePreviewMessage}>
+                    {t('gallery.deleteProjectMessage', {
+                      defaultValue: 'Are you sure you want to delete this project and all its photos? This action cannot be undone.'
+                    })}
+                  </Text>
+                  <View style={styles.checkboxPreviewRow}>
+                    <View style={[styles.checkboxPreviewBox, styles.checkboxPreviewBoxChecked]}>
+                      <Text style={styles.checkboxCheck}>✓</Text>
+                    </View>
+                    <Text style={styles.checkboxPreviewLabel}>
+                      {t('common.deleteFromPhoneStorage', { defaultValue: 'Delete from phone storage' })}
+                    </Text>
+                  </View>
+                  <View style={styles.deletePreviewButtons}>
+                    <View style={[styles.deletePreviewButton, styles.deletePreviewCancel]}>
+                      <Text style={styles.deletePreviewCancelText}>
+                        {t('common.cancel')}
+                      </Text>
+                    </View>
+                    <View style={[styles.deletePreviewButton, styles.deletePreviewDelete]}>
+                      <Text style={styles.deletePreviewDeleteText}>
+                        {t('common.delete')}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.message}>
+                  {notification.message}
+                  {notification.endDate && (
+                    <Text> Your trial ends on <Text style={styles.endDate}>{notification.endDate}</Text>.</Text>
+                  )}
+                </Text>
+                {notification.cta && !notification.showUpgrade && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (onCTA) {
+                        onCTA(notification);
+                      } else {
+                        onClose();
+                      }
+                    }}
+                    style={styles.ctaButton}
+                  >
+                    <Text style={styles.cta}>{notification.cta}</Text>
+                  </TouchableOpacity>
+                )}
+                {notification.ctaDescription && (
+                  <Text style={styles.ctaDescription}>{notification.ctaDescription}</Text>
+                )}
+                {notification.featuresList && (
+                  <Text style={styles.featuresList}>{notification.featuresList}</Text>
+                )}
+                {notification.referralIncentive && notification.key !== 'day30' && (
+                  <Text style={styles.referralIncentive}>{notification.referralIncentive}</Text>
+                )}
+                {notification.discountOffer && (
+                  <Text style={styles.discountOffer}>{notification.discountOffer}</Text>
+                )}
+              </>
             )}
           </View>
 
@@ -234,6 +279,103 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  checkboxPreviewContainer: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+  },
+  checkboxPreviewTitle: {
+    fontSize: 18,
+    color: COLORS.TEXT,
+    marginBottom: 8,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  checkboxPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxPreviewBox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: COLORS.PRIMARY,
+    marginRight: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  checkboxPreviewBoxChecked: {
+    backgroundColor: COLORS.PRIMARY,
+  },
+  checkboxPreviewLabel: {
+    fontSize: 14,
+    color: COLORS.TEXT,
+    fontWeight: '500',
+  },
+  checkboxCheck: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  deletePreviewMessage: {
+    fontSize: 14,
+    color: COLORS.TEXT,
+    marginTop: 8,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  deletePreviewHint: {
+    fontSize: 13,
+    color: '#777777',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  deletePreviewModal: {
+    width: '90%',
+    maxWidth: 260,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  deletePreviewButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    gap: 12,
+  },
+  deletePreviewButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  deletePreviewCancel: {
+    backgroundColor: '#F5F5F5',
+  },
+  deletePreviewDelete: {
+    backgroundColor: '#FFCDD2',
+  },
+  deletePreviewCancelText: {
+    color: COLORS.TEXT,
+    fontWeight: '600',
+  },
+  deletePreviewDeleteText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   referralIncentive: {
     fontSize: 14,

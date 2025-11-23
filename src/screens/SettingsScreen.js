@@ -781,6 +781,7 @@ export default function SettingsScreen({ navigation, route }) {
   const watermarkSectionAbsoluteY = useRef(null);
   const [highlightWatermarkSection, setHighlightWatermarkSection] = useState(false);
   const [highlightCloudSection, setHighlightCloudSection] = useState(false);
+  const [showDeleteFromStorageHint, setShowDeleteFromStorageHint] = useState(false);
   const windowHeight = Dimensions.get('window').height;
   const [scrollContainerHeight, setScrollContainerHeight] = useState(0);
 
@@ -2300,6 +2301,8 @@ export default function SettingsScreen({ navigation, route }) {
                       setTimeout(() => {
                         setHighlightCloudSection(false);
                       }, 2000);
+                    } else if (paramKey === 'scrollToAccountData') {
+                      setShowDeleteFromStorageHint(true);
                     }
                     setTimeout(() => {
                       navigation.setParams({ [paramKey]: undefined });
@@ -4365,6 +4368,25 @@ export default function SettingsScreen({ navigation, route }) {
             <Text style={styles.resetButtonText}>{t('settings.resetUserData')}</Text>
           </TouchableOpacity>
 
+          {showDeleteFromStorageHint && (
+            <View style={styles.deleteFromStorageHint}>
+              <Text style={styles.deleteFromStorageHintTitle}>
+                {t('common.deleteFromPhoneStorage')}
+              </Text>
+              <View style={styles.deleteFromStorageHintRow}>
+                <View style={styles.deleteFromStorageHintCheckboxBox}>
+                  <Text style={styles.deleteFromStorageHintCheckboxCheck}>✓</Text>
+                </View>
+                <Text style={styles.deleteFromStorageHintLabel}>
+                  {t('common.deleteFromPhoneStorage')}
+                </Text>
+              </View>
+              <Text style={styles.deleteFromStorageHintCaption}>
+                {t('common.deleteFromStorageWarning')}
+              </Text>
+            </View>
+          )}
+
           {/* Test Tools Button - Only in Development and after secret tap unlock */}
           {__DEV__ && devToolsUnlocked && (
             <>
@@ -6429,6 +6451,50 @@ const sliderStyles = StyleSheet.create({
       color: '#CC0000',
       fontSize: 16,
       fontWeight: '600'
+    },
+    deleteFromStorageHint: {
+      marginTop: 16,
+      padding: 12,
+      borderRadius: 12,
+      backgroundColor: '#F9F9F9',
+      borderWidth: 1,
+      borderColor: COLORS.BORDER,
+    },
+    deleteFromStorageHintTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: COLORS.TEXT,
+      marginBottom: 8,
+    },
+    deleteFromStorageHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    deleteFromStorageHintCheckboxBox: {
+      width: 22,
+      height: 22,
+      borderRadius: 4,
+      borderWidth: 2,
+      borderColor: COLORS.PRIMARY,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 8,
+      backgroundColor: '#FFFBE6',
+    },
+    deleteFromStorageHintCheckboxCheck: {
+      color: COLORS.PRIMARY,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    deleteFromStorageHintLabel: {
+      fontSize: 14,
+      color: COLORS.TEXT,
+      fontWeight: '500',
+    },
+    deleteFromStorageHintCaption: {
+      fontSize: 12,
+      color: COLORS.GRAY,
     },
     googleSignInButton: {
       backgroundColor: '#000000', // Black background

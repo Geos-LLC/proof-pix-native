@@ -176,6 +176,7 @@ export const getNotificationToShow = async (skipDay0 = false) => {
       title: 'Free up space Easily',
       message: 'Free up space on your device and in the app by deleting entire projects at once.',
       cta: '👉 Go to Settings to delete projects and free up storage.',
+      ctaDescription: 'In the delete confirmation, look for the checkbox “Delete from phone storage” and check it to remove photos from your device as well: ☐ Delete from phone storage',
       showUpgrade: false,
       urgent: false,
     };
