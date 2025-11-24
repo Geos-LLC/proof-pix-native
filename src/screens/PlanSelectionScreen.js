@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +20,7 @@ import TrialNotificationModal from '../components/TrialNotificationModal';
 import TrialConfirmationModal from '../components/TrialConfirmationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
+import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
 
 export default function PlanSelectionScreen({ navigation }) {
   const { t } = useTranslation();
@@ -69,31 +72,14 @@ export default function PlanSelectionScreen({ navigation }) {
   }, []);
 
   const handleSelectPlan = async (plan) => {
-    if (plan === 'enterprise') {
-      // Set up enterprise tier with 15 team member limit
-      try {
-        // Set the plan limit to 15 for team members
-        await updatePlanLimit(15);
-        // Update user plan to enterprise
-        await updateUserPlan('enterprise');
-        // Navigate to next screen (GoogleSignUp) - multiple accounts functionality is already enabled for enterprise tier
-        navigation.navigate('GoogleSignUp', { plan: 'enterprise', trialJustStarted: false });
-      } catch (error) {
-        console.error('[PlanSelection] Error setting up enterprise plan:', error);
-        // Fallback to regular plan selection if there's an error
-        await proceedWithPlanSelection(plan, false);
-      }
-      return;
-    }
-
-    // If trial is available, show confirmation modal
-    if (trialAvailable) {
+    // If trial is available, show confirmation modal first (except for enterprise which currently has no trial)
+    if (trialAvailable && plan !== 'enterprise') {
       setSelectedPlanForTrial(plan);
       setShowTrialConfirmation(true);
       return;
     }
 
-    // Regular plan selection (trial already used or not available)
+    // No trial flow or enterprise (no trial) → proceed directly
     await proceedWithPlanSelection(plan, false);
   };
 
