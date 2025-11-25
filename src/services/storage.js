@@ -92,61 +92,58 @@ export const savePhotoToDevice = async (uri, filename, projectId = null) => {
       finalFileUri = fileUri;
     }
 
-    // Save to media library (device photos) - iOS only
-    // On Android, skip media library saving to avoid the "allow changing photos" prompt
-    // that appears after each photo. Photos are already saved to app storage which is sufficient.
-    // Users can manually save photos to their gallery if needed via share functionality.
-    if (Platform.OS === 'ios') {
-      let status = 'undetermined';
-      try {
-        // Check current permission status first to avoid unnecessary requests
-        const currentStatus = await MediaLibrary.getPermissionsAsync();
-        status = currentStatus.status;
-        
-        // Only request if not already granted
-        if (status !== 'granted') {
-          const requestResult = await MediaLibrary.requestPermissionsAsync();
-          status = requestResult.status;
-        }
-      } catch (permError) {
-        // If permission check fails, try requesting anyway
-        try {
-          const requestResult = await MediaLibrary.requestPermissionsAsync();
-          status = requestResult.status;
-        } catch (requestError) {
-          // Permission system unavailable, skip media library save
-          console.warn('[Storage] Could not request media library permissions:', requestError);
-        }
+    // Save to media library (device Photos / Gallery) – same flow for iOS and Android.
+    // This mirrors the original iOS behavior: create an asset and ensure it's in a "ProofPix" album.
+    let status = 'undetermined';
+    try {
+      const currentStatus = await MediaLibrary.getPermissionsAsync();
+      status = currentStatus.status;
+      if (status !== 'granted') {
+        const requestResult = await MediaLibrary.requestPermissionsAsync();
+        status = requestResult.status;
       }
-      
-      if (status === 'granted') {
-        try {
-          // Save to media library (device photos)
-          const asset = await MediaLibrary.createAssetAsync(finalFileUri);
+    } catch (permError) {
+      try {
+        const requestResult = await MediaLibrary.requestPermissionsAsync();
+        status = requestResult.status;
+      } catch (requestError) {
+        console.warn('[Storage] Could not request media library permissions:', requestError);
+      }
+    }
 
-          // Create/add to ProofPix album
-          const album = await MediaLibrary.getAlbumAsync('ProofPix');
-          if (album == null) {
-            await MediaLibrary.createAlbumAsync('ProofPix', asset, false);
-          } else {
-            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-          }
-          // Store a mapping from filename -> assetId for reliable deletion later
+    if (status === 'granted') {
+      try {
+        // Create an asset in the system media library
+        const asset = await MediaLibrary.createAssetAsync(finalFileUri);
+
+        // Create/add to ProofPix album (works on both iOS and Android)
+        const album = await MediaLibrary.getAlbumAsync('ProofPix');
+        if (album == null && asset) {
+          await MediaLibrary.createAlbumAsync('ProofPix', asset, false);
+        } else if (album && asset) {
+          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        }
+
+        // Store a mapping from filename -> assetId for reliable deletion later
+        if (asset?.id) {
           try {
             const stored = await AsyncStorage.getItem(ASSET_ID_MAP_KEY);
             const map = stored ? JSON.parse(stored) : {};
             const justName = (finalFileUri.split('/').pop() || '').split('?')[0];
-            if (asset?.id && justName) {
+            if (justName) {
               const prev = map[justName];
-              map[justName] = typeof prev === 'string' ? { id: asset.id, projectId } : { id: asset.id, projectId: prev?.projectId ?? projectId };
+              map[justName] = typeof prev === 'string'
+                ? { id: asset.id, projectId }
+                : { id: asset.id, projectId: prev?.projectId ?? projectId };
               await AsyncStorage.setItem(ASSET_ID_MAP_KEY, JSON.stringify(map));
             }
           } catch (mapErr) {
+            console.warn('[Storage] Could not update asset id map:', mapErr);
           }
-        } catch (mlError) {
-          // Media library save failed, but photo is already in app storage so it's OK
-          console.warn('[Storage] Could not save to media library:', mlError);
         }
+      } catch (mlError) {
+        // Media library save failed, but photo is already in app storage so it's OK
+        console.warn('[Storage] Could not save to media library:', mlError);
       }
     }
     // Return the file URI (not the ph:// URL from media library)
