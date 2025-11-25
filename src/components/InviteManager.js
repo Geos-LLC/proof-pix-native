@@ -32,18 +32,18 @@ export default function InviteManager({ navigation }) {
 
   // Fetch team members
   const fetchTeamMembers = async () => {
-    console.log('[INVITE_MANAGER] fetchTeamMembers called, proxySessionId:', proxySessionId);
+    // console.log('[INVITE_MANAGER] fetchTeamMembers called, proxySessionId:', proxySessionId);
     if (proxySessionId) {
       setLoadingMembers(true);
       try {
-        console.log('[INVITE_MANAGER] Fetching team members from proxy...');
+        // console.log('[INVITE_MANAGER] Fetching team members from proxy...');
         const result = await proxyService.getTeamMembers(proxySessionId);
-        console.log('[INVITE_MANAGER] Team members result:', result);
+        // console.log('[INVITE_MANAGER] Team members result:', result);
         if (result.success && result.teamMembers) {
-          console.log('[INVITE_MANAGER] Setting team members:', result.teamMembers.length, 'members');
+          // console.log('[INVITE_MANAGER] Setting team members:', result.teamMembers.length, 'members');
           setTeamMembers(result.teamMembers);
         } else {
-          console.log('[INVITE_MANAGER] No team members found or result not successful');
+          // console.log('[INVITE_MANAGER] No team members found or result not successful');
           setTeamMembers([]);
         }
       } catch (error) {
@@ -53,7 +53,7 @@ export default function InviteManager({ navigation }) {
         setLoadingMembers(false);
       }
     } else {
-      console.log('[INVITE_MANAGER] No proxySessionId, clearing team members');
+      // console.log('[INVITE_MANAGER] No proxySessionId, clearing team members');
       setTeamMembers([]);
     }
   };
@@ -92,15 +92,15 @@ export default function InviteManager({ navigation }) {
     const newToken = generateInviteToken();
 
     try {
-      console.log('[INVITE] Generating invite token...', { proxySessionId, newToken });
+      // console.log('[INVITE] Generating invite token...', { proxySessionId, newToken });
 
       // Add token to proxy server
       await proxyService.addInviteToken(proxySessionId, newToken);
-      console.log('[INVITE] Token added to proxy server');
+      // console.log('[INVITE] Token added to proxy server');
 
       // Save token locally
       await addInviteToken(newToken);
-      console.log('[INVITE] Invite token generated and saved successfully');
+      // console.log('[INVITE] Invite token generated and saved successfully');
 
       // Refresh team members list
       await fetchTeamMembers();
@@ -153,7 +153,7 @@ export default function InviteManager({ navigation }) {
         userName: testMemberName.trim()
       }));
 
-      console.log('[INVITE] Testing invite by joining team:', { 
+      // console.log('[INVITE] Testing invite by joining team:', { 
         token: currentTestToken, 
         proxySessionId,
         memberName: testMemberName.trim()
@@ -164,7 +164,7 @@ export default function InviteManager({ navigation }) {
       if (result.success) {
         // Update SettingsContext with the team member name so it's displayed correctly
         await updateUserInfo(testMemberName.trim());
-        console.log('[INVITE] Updated SettingsContext with team member name:', testMemberName.trim());
+        // console.log('[INVITE] Updated SettingsContext with team member name:', testMemberName.trim());
         
         Alert.alert(
           'Team Mode Activated',
@@ -260,7 +260,7 @@ export default function InviteManager({ navigation }) {
             try {
               if (proxySessionId) {
                 await proxyService.removeInviteToken(proxySessionId, token);
-                console.log('[INVITE] Token removed from proxy server');
+                // console.log('[INVITE] Token removed from proxy server');
               }
               await removeInviteToken(token);
               await fetchTeamMembers();
@@ -380,7 +380,7 @@ export default function InviteManager({ navigation }) {
                         try {
                           if (proxySessionId) {
                             await proxyService.removeInviteToken(proxySessionId, memberToken);
-                            console.log('[INVITE] Token removed from proxy server');
+                            // console.log('[INVITE] Token removed from proxy server');
                           }
                           await removeInviteToken(memberToken);
                           await fetchTeamMembers();
