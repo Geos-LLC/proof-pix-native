@@ -69,11 +69,9 @@ export default function GlobalBackgroundLabelPreparation() {
     if (!preparingPhoto) return;
     
     try {
-      console.log(`[DEBUG] 📸 Capturing labeled photo (${preparingPhoto.key})...`);
       const ref = preparingPhoto.isCombined ? combinedCaptureRef : labelCaptureRef;
       
       if (!ref.current) {
-        console.log(`[DEBUG] ⚠️ Ref not ready, retrying in 200ms...`);
         setTimeout(() => {
           if (ref.current && !captureTriggeredRef.current) {
             captureAndSave();
@@ -86,16 +84,13 @@ export default function GlobalBackgroundLabelPreparation() {
         format: 'jpg',
         quality: 0.95
       });
-      console.log(`[DEBUG] ✅ Captured labeled photo: ${capturedUri}`);
 
       // Save to cache
-      console.log(`[DEBUG] 💾 Saving to cache...`);
       const cachedUri = await saveCachedLabeledPhoto(
         preparingPhoto.photo, 
         capturedUri, 
         preparingPhoto.settingsHash
       );
-      console.log(`[DEBUG] ✅ Saved to cache: ${cachedUri || 'failed'}`);
 
       // Resolve promise if provided
       if (preparingPhoto.resolve) {
@@ -103,11 +98,9 @@ export default function GlobalBackgroundLabelPreparation() {
       }
 
       // Remove from queue and move to next
-      console.log(`[DEBUG] ✅ Label preparation complete for ${preparingPhoto.key}`);
       backgroundLabelPreparationService.removePreparation(preparingPhoto.key);
       setPreparingPhoto(null);
     } catch (error) {
-      console.log(`[DEBUG] ❌ Error in captureAndSave:`, error);
       if (preparingPhoto?.reject) {
         preparingPhoto.reject(error);
       }
@@ -142,13 +135,10 @@ export default function GlobalBackgroundLabelPreparation() {
                 : preparingPhoto.photo?.uri;
               
               if (!imageUri) {
-                console.log(`[DEBUG] ⚠️ Invalid image URI, skipping capture`);
                 backgroundLabelPreparationService.removePreparation(preparingPhoto.key);
                 setPreparingPhoto(null);
                 return;
               }
-              
-              console.log(`[DEBUG] ✅ All images loaded and validated, capturing...`);
               captureAndSave();
             }
           }, 300); // 300ms background delay - doesn't block UI, just ensures image is rendered
@@ -160,7 +150,6 @@ export default function GlobalBackgroundLabelPreparation() {
   // Reset loaded state when preparingPhoto changes
   useEffect(() => {
     if (preparingPhoto) {
-      console.log(`[DEBUG] 🎬 GlobalBackgroundLabelPreparation: Starting label preparation for ${preparingPhoto.key} (mode: ${preparingPhoto.mode}, isCombined: ${preparingPhoto.isCombined})`);
       setImagesLoaded({ before: false, after: false });
       captureTriggeredRef.current = false;
       
@@ -209,9 +198,6 @@ export default function GlobalBackgroundLabelPreparation() {
       const imageUri = preparingPhoto.isCombined
         ? (imageType === 'before' ? preparingPhoto.beforePhoto?.uri : preparingPhoto.afterPhoto?.uri)
         : preparingPhoto.photo?.uri;
-      console.log(`[DEBUG] ✅ Image load complete: ${imageType}, URI: ${imageUri?.substring(0, 50)}...`);
-    } else {
-      console.log(`[DEBUG] ✅ Image load complete: ${imageType}`);
     }
     setImagesLoaded(prev => {
       const updated = { ...prev, [imageType]: true };
@@ -220,7 +206,6 @@ export default function GlobalBackgroundLabelPreparation() {
   };
 
   const handleImageError = (imageType, error) => {
-    console.log(`[DEBUG] ❌ Image load error for ${imageType}:`, error);
     // Still mark as loaded to prevent infinite waiting, but log the error
     setImagesLoaded(prev => {
       const updated = { ...prev, [imageType]: true };

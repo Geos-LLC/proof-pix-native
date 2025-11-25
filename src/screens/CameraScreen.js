@@ -128,6 +128,17 @@ export default function CameraScreen({ route, navigation }) {
   const device = useCameraDevice(facing, {
     physicalDevices: [cameraType]
   });
+  // Some Samsung/Android lenses (especially ultra-wide) report no flash/torch support.
+  // Guard all flash/torch usage by these caps to avoid runtime crashes.
+  const supportsFlash = !!device?.hasFlash;
+  const supportsTorch = device?.hasTorch != null ? !!device.hasTorch : supportsFlash;
+
+  // If we switch to a lens that doesn't support torch, automatically turn off the toggle
+  useEffect(() => {
+    if (!supportsTorch && enableTorch) {
+      setEnableTorch(false);
+    }
+  }, [supportsTorch, enableTorch]);
   const { hasPermission, requestPermission } = useCameraPermission();
   const [zoom, setZoom] = useState(1.0);
 
@@ -1103,41 +1114,24 @@ export default function CameraScreen({ route, navigation }) {
     }
 
     try {
-      const totalStartTime = Date.now();
-      console.log('[DEBUG] 🎯 Shoot button tapped - setting isCapturing=true');
       setIsCapturing(true);
 
-      const captureStart = Date.now();
-      console.log('[DEBUG] 📸 Taking photo...');
       const photo = await cameraRef.current.takePhoto({
         qualityPrioritization: 'quality',
-        flash: enableTorch ? 'on' : 'off',
+        // Only request flash if the current device reports flash support
+        flash: enableTorch && supportsFlash ? 'on' : 'off',
         enableShutterSound: enableSound
       });
-      console.log(`[DEBUG] ⏱️ Photo capture time: ${Date.now() - captureStart}ms`);
-
       const photoUri = `file://${photo.path}`;
-      console.log('[DEBUG] ✅ Photo taken, URI:', photoUri);
 
       if (mode === 'before') {
-        const handleStart = Date.now();
-        console.log('[DEBUG] 📷 Handling before photo...');
         await handleBeforePhoto(photoUri);
-        console.log(`[DEBUG] ⏱️ Before photo handling time: ${Date.now() - handleStart}ms`);
-        console.log('[DEBUG] ✅ Before photo handling complete');
       } else if (mode === 'after') {
-        const handleStart = Date.now();
-        console.log('[DEBUG] 📷 Handling after photo...');
         await handleAfterPhoto(photoUri);
-        console.log(`[DEBUG] ⏱️ After photo handling time: ${Date.now() - handleStart}ms`);
-        console.log('[DEBUG] ✅ After photo handling complete');
       }
-      console.log(`[DEBUG] ⏱️ Total time from button tap to completion: ${Date.now() - totalStartTime}ms`);
     } catch (error) {
-      console.log('[DEBUG] ❌ Error taking photo:', error);
       Alert.alert('Error', 'Failed to take picture');
     } finally {
-      console.log('[DEBUG] 🔓 Setting isCapturing=false - button active again');
       setIsCapturing(false);
     }
   };
@@ -1182,18 +1176,14 @@ export default function CameraScreen({ route, navigation }) {
   // Now uses global service that stays mounted regardless of navigation
   const prepareLabeledPhotoInBackground = (photo, settingsHash, mode) => {
     return new Promise((resolve, reject) => {
-      console.log(`[DEBUG] 🏷️ prepareLabeledPhotoInBackground called for ${mode} photo, id: ${photo?.id}`);
       if (!photo || !photo.uri || !photo.id) {
-        console.log(`[DEBUG] ⚠️ prepareLabeledPhotoInBackground: missing data, resolving immediately`);
         resolve();
         return;
       }
 
       try {
         // Get image dimensions
-        console.log(`[DEBUG] 📐 Getting image size for ${mode} photo...`);
         Image.getSize(photo.uri, (width, height) => {
-          console.log(`[DEBUG] 📐 Image size: ${width}x${height}`);
           // Determine label position based on photo mode
           let labelPosition;
           if (mode === 'before') {
@@ -1204,7 +1194,6 @@ export default function CameraScreen({ route, navigation }) {
             labelPosition = 'top-left';
           }
 
-          console.log(`[DEBUG] 🎯 Queueing ${mode} photo label preparation (position: ${labelPosition})`);
           // Queue preparation in global service (stays mounted regardless of navigation)
           backgroundLabelPreparationService.queuePreparation({
             photo,
@@ -1216,13 +1205,10 @@ export default function CameraScreen({ route, navigation }) {
             resolve,
             reject,
           });
-          console.log(`[DEBUG] ✅ ${mode} photo queued successfully - function returns immediately`);
         }, (error) => {
-          console.log(`[DEBUG] ❌ Error getting image size:`, error);
           reject(error);
         });
       } catch (error) {
-        console.log(`[DEBUG] ❌ Error in prepareLabeledPhotoInBackground:`, error);
         reject(error);
       }
     });
@@ -1384,12 +1370,10 @@ export default function CameraScreen({ route, navigation }) {
       // This ensures it's ready when user clicks share, making sharing instant
       // Run this in background (don't await) so it doesn't block the UI
       if (showLabels) {
-        console.log('[DEBUG] 🏷️ Starting before photo label preparation process...');
         // Start background preparation immediately (no delay needed)
         // Use Promise.resolve().then() to run async code without blocking
         Promise.resolve().then(async () => {
           try {
-            console.log('[DEBUG] 🔢 Calculating settings hash for before photo...');
             // Calculate settings hash
             const settingsHash = calculateSettingsHash({
               showLabels,
@@ -1402,34 +1386,22 @@ export default function CameraScreen({ route, navigation }) {
               labelMarginVertical,
               labelMarginHorizontal,
             });
-            console.log('[DEBUG] ✅ Settings hash calculated:', settingsHash);
 
             // Prepare before photo with label (don't await - just queue it)
             if (!newPhoto || !newPhoto.id || !newPhoto.uri) {
-              console.log('[DEBUG] ⚠️ Cannot prepare before photo - missing data');
             } else {
-              console.log('[DEBUG] 🔍 Checking cache for before photo...');
               const cachedBefore = await getCachedLabeledPhoto(newPhoto, settingsHash);
               if (!cachedBefore) {
-                console.log('[DEBUG] 🏷️ Before photo not cached, queueing label preparation...');
                 try {
                   // Don't await - just queue it for background processing
                   prepareLabeledPhotoInBackground(newPhoto, settingsHash, 'before');
-                  console.log('[DEBUG] ✅ Before photo label preparation queued');
                 } catch (error) {
-                  console.log('[DEBUG] ❌ Error queueing before photo:', error);
                 }
-              } else {
-                console.log('[DEBUG] ✅ Before photo already cached');
               }
             }
-            console.log('[DEBUG] ✅ Before photo label preparation queueing complete');
           } catch (error) {
-            console.log('[DEBUG] ❌ Error in before photo label preparation queueing:', error);
           }
         });
-      } else {
-        console.log('[DEBUG] ⏭️ Labels disabled, skipping before photo label preparation');
       }
 
       // Stay in before mode to allow taking more photos
@@ -1515,23 +1487,17 @@ export default function CameraScreen({ route, navigation }) {
           );
 
           processedUri = croppedImage.uri;
-          console.log(`[DEBUG] ⏱️ Image cropping: ${Date.now() - cropStart}ms`);
         } catch (cropError) {
           // Fall back to original uri if cropping fails
-          console.log(`[DEBUG] ⏱️ Image cropping (failed): ${Date.now() - cropStart}ms`);
         }
       }
 
       // Save processed photo to device
-      const saveStart = Date.now();
-      console.log('[DEBUG] 💾 Saving after photo to device...');
       const savedUri = await savePhotoToDevice(
         processedUri,
         `${activeBeforePhoto.room}_${activeBeforePhoto.name}_AFTER_${Date.now()}.jpg`,
         activeProjectId || null
       );
-      console.log(`[DEBUG] ⏱️ Save photo to device: ${Date.now() - saveStart}ms`);
-      console.log('[DEBUG] ✅ After photo saved:', savedUri);
 
       // Add after photo (use same aspect ratio, orientation, and camera view mode as before photo)
       const newAfterPhoto = {
@@ -1546,12 +1512,7 @@ export default function CameraScreen({ route, navigation }) {
         orientation: activeBeforePhoto.orientation || deviceOrientation,
         cameraViewMode: activeBeforePhoto.cameraViewMode || 'portrait'
       };
-      const addStart = Date.now();
-      console.log('[DEBUG] 📝 Adding after photo to context...');
       await addPhoto(newAfterPhoto);
-      console.log(`[DEBUG] ⏱️ Add photo to context: ${Date.now() - addStart}ms`);
-      console.log('[DEBUG] ✅ After photo added to context');
-      console.log(`[DEBUG] ⏱️ Total handleAfterPhoto time: ${Date.now() - startTime}ms`);
       
       // Mark that we're processing after photo (for visual feedback)
       // Button is now active, but we show different visual state to indicate background processing
@@ -1567,12 +1528,10 @@ export default function CameraScreen({ route, navigation }) {
       // This ensures it's ready when user clicks share, making sharing instant
       // Run this in background (don't await) so it doesn't block the UI
       if (showLabels) {
-        console.log('[DEBUG] 🏷️ Starting after photo label preparation process...');
         // Start background preparation immediately (no delay needed)
         // Use Promise.resolve().then() to run async code without blocking
         Promise.resolve().then(async () => {
           try {
-            console.log('[DEBUG] 🔢 Calculating settings hash for after photo...');
             // Calculate settings hash
             const settingsHash = calculateSettingsHash({
               showLabels,
@@ -1585,34 +1544,22 @@ export default function CameraScreen({ route, navigation }) {
               labelMarginVertical,
               labelMarginHorizontal,
             });
-            console.log('[DEBUG] ✅ Settings hash calculated:', settingsHash);
 
             // Prepare after photo with label (don't await - just queue it)
             if (!newAfterPhoto || !newAfterPhoto.id || !newAfterPhoto.uri) {
-              console.log('[DEBUG] ⚠️ Cannot prepare after photo - missing data');
             } else {
-              console.log('[DEBUG] 🔍 Checking cache for after photo...');
               const cachedAfter = await getCachedLabeledPhoto(newAfterPhoto, settingsHash);
               if (!cachedAfter) {
-                console.log('[DEBUG] 🏷️ After photo not cached, queueing label preparation...');
                 try {
                   // Don't await - just queue it for background processing
                   prepareLabeledPhotoInBackground(newAfterPhoto, settingsHash, 'after');
-                  console.log('[DEBUG] ✅ After photo label preparation queued');
                 } catch (error) {
-                  console.log('[DEBUG] ❌ Error queueing after photo:', error);
                 }
-              } else {
-                console.log('[DEBUG] ✅ After photo already cached');
               }
             }
-            console.log('[DEBUG] ✅ After photo label preparation queueing complete');
           } catch (error) {
-            console.log('[DEBUG] ❌ Error in after photo label preparation queueing:', error);
           }
         });
-      } else {
-        console.log('[DEBUG] ⏭️ Labels disabled, skipping after photo label preparation');
       }
 
       // Create combined photo in background using ImageManipulator (non-blocking)
@@ -1677,7 +1624,6 @@ export default function CameraScreen({ route, navigation }) {
             
             // Prepare labeled combined photo in background (non-blocking)
             if (showLabels && combinedPhotoSavedUri) {
-              console.log('[DEBUG] 🏷️ Starting combined photo label preparation process...');
               // Use Promise.resolve().then() to run async code without blocking
               Promise.resolve().then(async () => {
                 try {
@@ -1694,7 +1640,6 @@ export default function CameraScreen({ route, navigation }) {
                     beforePhotoId: activeBeforePhoto.id,
                   };
                   
-                  console.log('[DEBUG] 🔢 Calculating settings hash for combined photo...');
                   // Calculate settings hash
                   const settingsHash = calculateSettingsHash({
                     showLabels,
@@ -1707,13 +1652,10 @@ export default function CameraScreen({ route, navigation }) {
                     labelMarginVertical,
                     labelMarginHorizontal,
                   });
-                  console.log('[DEBUG] ✅ Settings hash calculated:', settingsHash);
                   
-                  console.log('[DEBUG] 🔍 Checking cache for combined photo...');
                   // Check if already cached
                   const cachedCombined = await getCachedLabeledPhoto(combinedPhoto, settingsHash);
                   if (!cachedCombined) {
-                    console.log('[DEBUG] 🏷️ Combined photo not cached, queueing label preparation...');
                     try {
                       // Prepare combined photo with labels in background (don't await - just queue it)
                       prepareCombinedPhotoInBackground(
@@ -1723,20 +1665,12 @@ export default function CameraScreen({ route, navigation }) {
                         settingsHash,
                         isLetterbox
                       );
-                      console.log('[DEBUG] ✅ Combined photo label preparation queued');
                     } catch (error) {
-                      console.log('[DEBUG] ❌ Error queueing combined photo:', error);
                     }
-                  } else {
-                    console.log('[DEBUG] ✅ Combined photo already cached');
                   }
-                  console.log('[DEBUG] ✅ Combined photo label preparation queueing complete');
                 } catch (error) {
-                  console.log('[DEBUG] ❌ Error in combined photo label preparation queueing:', error);
                 }
               });
-            } else if (showLabels) {
-              console.log('[DEBUG] ⚠️ Combined photo label preparation skipped - no saved URI');
             }
 
             // In LETTERBOX, also save the SIDE-BY-SIDE variant in addition to STACK
@@ -1809,7 +1743,6 @@ export default function CameraScreen({ route, navigation }) {
       }
       console.log('[DEBUG] ✅ handleAfterPhoto completed');
     } catch (error) {
-      console.log('[DEBUG] ❌ handleAfterPhoto error:', error);
       Alert.alert('Error', 'Failed to save photo');
     }
   };
@@ -1914,7 +1847,8 @@ export default function CameraScreen({ route, navigation }) {
                     photo={true}
                     zoom={zoom}
                     enableZoomGesture={false}
-                    torch={enableTorch ? 'on' : 'off'}
+                // Only enable torch when the current device reports torch/flash support
+                torch={enableTorch && supportsTorch ? 'on' : 'off'}
                     resizeMode="cover"
                   />
                 )}
@@ -1946,7 +1880,8 @@ export default function CameraScreen({ route, navigation }) {
                   photo={true}
                   zoom={zoom}
                   enableZoomGesture={false}
-                  torch={enableTorch ? 'on' : 'off'}
+                  // Only enable torch when the current device reports torch/flash support
+                  torch={enableTorch && supportsTorch ? 'on' : 'off'}
                   resizeMode="cover"
                 />
               )}
@@ -2138,6 +2073,14 @@ export default function CameraScreen({ route, navigation }) {
                 <TouchableOpacity
                   style={styles.flashlightButton}
                   onPress={() => {
+                    // If this lens reports no torch support, show a one-time explanation instead of crashing.
+                    if (!supportsTorch) {
+                      Alert.alert(
+                        'Flash Not Available',
+                        'The selected camera lens does not support flash on this device. Try switching to the 1x camera.'
+                      );
+                      return;
+                    }
                     setEnableTorch(!enableTorch);
                   }}
                   activeOpacity={0.7}
