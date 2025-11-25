@@ -1,5 +1,12 @@
 import { Platform } from 'react-native';
-import * as InAppPurchases from 'expo-in-app-purchases';
+
+// Try to import the native module, but handle gracefully if it's not available
+let InAppPurchases = null;
+try {
+  InAppPurchases = require('expo-in-app-purchases');
+} catch (e) {
+  console.warn('[IAP] expo-in-app-purchases native module not available. Rebuild the app to enable IAP functionality.');
+}
 
 // Product IDs from App Store Connect
 export const IAP_PRODUCTS = {
@@ -12,10 +19,10 @@ export const IAP_PRODUCTS = {
 
 /**
  * Initialize IAP on iOS.
- * Safe to call multiple times; it will no-op on Android.
+ * Safe to call multiple times; it will no-op on Android or if module is unavailable.
  */
 export const initIAPIfNeeded = async () => {
-  if (Platform.OS !== 'ios') return;
+  if (Platform.OS !== 'ios' || !InAppPurchases) return;
   try {
     await InAppPurchases.connectAsync();
   } catch (e) {
@@ -30,6 +37,10 @@ export const initIAPIfNeeded = async () => {
 export const purchaseProduct = async (productId) => {
   if (Platform.OS !== 'ios') {
     throw new Error('IAP_NOT_SUPPORTED');
+  }
+
+  if (!InAppPurchases) {
+    throw new Error('IAP_MODULE_NOT_AVAILABLE - Please rebuild the app to enable in-app purchases.');
   }
 
   await initIAPIfNeeded();

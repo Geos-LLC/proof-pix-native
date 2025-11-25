@@ -154,10 +154,10 @@ export default function InviteManager({ navigation }) {
       }));
 
       // console.log('[INVITE] Testing invite by joining team:', { 
-        token: currentTestToken, 
-        proxySessionId,
-        memberName: testMemberName.trim()
-      });
+      //   token: currentTestToken, 
+      //   proxySessionId,
+      //   memberName: testMemberName.trim()
+      // });
 
       const result = await joinTeam(currentTestToken, proxySessionId);
       
