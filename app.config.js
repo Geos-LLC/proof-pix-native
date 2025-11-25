@@ -33,6 +33,7 @@ export default {
         NSCameraUsageDescription: "ProofPix needs access to your camera to take before and after photos.",
         NSPhotoLibraryUsageDescription: "ProofPix needs access to your photo library to save before and after photos.",
         NSPhotoLibraryAddUsageDescription: "ProofPix needs permission to save photos to your library.",
+        NSLocationWhenInUseUsageDescription: "ProofPix may use your location to help tag cleaning projects by city and improve your reports. Your location is never stored in the photos themselves.",
         UIViewControllerBasedStatusBarAppearance: true,
         UISupportedInterfaceOrientations: [
           "UIInterfaceOrientationPortrait",

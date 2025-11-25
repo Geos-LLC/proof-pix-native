@@ -1,14 +1,7 @@
 import { Platform } from 'react-native';
+import * as RNIap from 'react-native-iap';
 
-// Try to import the native module, but handle gracefully if it's not available
-let InAppPurchases = null;
-try {
-  InAppPurchases = require('expo-in-app-purchases');
-} catch (e) {
-  console.warn('[IAP] expo-in-app-purchases native module not available. Rebuild the app to enable IAP functionality.');
-}
-
-// Product IDs from App Store Connect
+// Product IDs from App Store Connect / Google Play
 export const IAP_PRODUCTS = {
   PRO_MONTHLY: 'com.goscha01.proofpix.pro.monthly',
   BUSINESS_MONTHLY: 'com.goscha01.proofpix.business.monthly',
@@ -17,17 +10,36 @@ export const IAP_PRODUCTS = {
   ENTERPRISE_SEAT: 'com.goscha01.proofpix.enterprise.seat',
 };
 
+let purchaseUpdateSubscription = null;
+let purchaseErrorSubscription = null;
+let connectionInitialized = false;
+
 /**
- * Initialize IAP on iOS.
- * Safe to call multiple times; it will no-op on Android or if module is unavailable.
+ * Initialize IAP on iOS/Android.
+ * Safe to call multiple times.
  */
 export const initIAPIfNeeded = async () => {
-  if (Platform.OS !== 'ios' || !InAppPurchases) return;
+  if (connectionInitialized) return;
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
+
   try {
-    await InAppPurchases.connectAsync();
+    await RNIap.initConnection();
+    connectionInitialized = true;
   } catch (e) {
     // If connection fails, purchases will fail later and be handled per-call.
+    console.warn('[IAP] Failed to init connection:', e);
   }
+};
+
+const cleanupListeners = () => {
+  try {
+    purchaseUpdateSubscription?.remove();
+  } catch {}
+  try {
+    purchaseErrorSubscription?.remove();
+  } catch {}
+  purchaseUpdateSubscription = null;
+  purchaseErrorSubscription = null;
 };
 
 /**
@@ -35,12 +47,8 @@ export const initIAPIfNeeded = async () => {
  * Throws 'USER_CANCELLED' on user cancellation.
  */
 export const purchaseProduct = async (productId) => {
-  if (Platform.OS !== 'ios') {
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
     throw new Error('IAP_NOT_SUPPORTED');
-  }
-
-  if (!InAppPurchases) {
-    throw new Error('IAP_MODULE_NOT_AVAILABLE - Please rebuild the app to enable in-app purchases.');
   }
 
   await initIAPIfNeeded();
@@ -48,42 +56,46 @@ export const purchaseProduct = async (productId) => {
   return new Promise(async (resolve, reject) => {
     let finished = false;
 
-    InAppPurchases.setPurchaseListener(async ({ responseCode, results, errorCode }) => {
-      if (finished) {
+    const finish = (fn) => {
+      if (finished) return;
+      finished = true;
+      cleanupListeners();
+      fn();
+    };
+
+    purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchase) => {
+      const { productId: purchasedId, transactionReceipt } = purchase || {};
+      if (!purchasedId || purchasedId !== productId || !transactionReceipt) {
         return;
       }
 
-      if (responseCode === InAppPurchases.IAPResponseCode.OK) {
-        for (const purchase of results || []) {
-          if (purchase.productId === productId && !purchase.acknowledged) {
-            try {
-              await InAppPurchases.finishTransactionAsync(purchase, false);
-            } catch {
-              // Even if finish fails, treat as purchased so user is not stuck.
-            }
-            finished = true;
-            resolve(purchase);
-            return;
-          }
+      finish(async () => {
+        try {
+          await RNIap.finishTransaction(purchase, false);
+        } catch {
+          // Even if finish fails, treat as purchased so user is not stuck.
         }
-      } else if (responseCode === InAppPurchases.IAPResponseCode.USER_CANCELED) {
-        finished = true;
-        reject(new Error('USER_CANCELLED'));
-      } else {
-        finished = true;
-        reject(new Error(errorCode || 'IAP_ERROR'));
-      }
+        resolve(purchase);
+      });
+    });
+
+    purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
+      finish(() => {
+        if (error?.code === 'E_USER_CANCELLED') {
+          reject(new Error('USER_CANCELLED'));
+        } else {
+          reject(new Error(error?.code || 'IAP_ERROR'));
+        }
+      });
     });
 
     try {
       // Ensure product is known to the store (will also fetch localized price if needed later)
-      await InAppPurchases.getProductsAsync([productId]);
-      await InAppPurchases.purchaseItemAsync(productId);
+      await RNIap.getProducts([productId]);
+      await RNIap.requestPurchase(productId, false);
     } catch (err) {
-      finished = true;
-      reject(err);
+      finish(() => reject(err));
     }
   });
 };
-
 
