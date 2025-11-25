@@ -922,14 +922,6 @@ export default function CameraScreen({ route, navigation }) {
   useEffect(() => {
   }, [aspectRatio]);
 
-  // Update camera view mode when device orientation changes - Android only
-  useEffect(() => {
-    // Only auto-sync on Android; iOS uses manual toggle only
-    if (Platform.OS === 'android') {
-      setCameraViewMode(deviceOrientation);
-    }
-  }, [deviceOrientation]);
-
   // Handle screen focus/blur to re-check permissions and settings
   useFocusEffect(
     useCallback(() => {
@@ -1046,18 +1038,13 @@ export default function CameraScreen({ route, navigation }) {
   // In after mode, camera view mode should match the before photo's camera view mode
   useEffect(() => {
     if (mode === 'after') {
-      // Android: always use device orientation (auto-sync)
-      // iOS: match before photo's camera view mode
-      if (Platform.OS === 'android') {
-        setCameraViewMode(deviceOrientation);
+      const activeBeforePhoto = getActiveBeforePhoto();
+      if (activeBeforePhoto && activeBeforePhoto.cameraViewMode) {
+        // Prefer the camera view mode that was used when taking the before photo
+        setCameraViewMode(activeBeforePhoto.cameraViewMode);
       } else {
-        const activeBeforePhoto = getActiveBeforePhoto();
-        if (activeBeforePhoto && activeBeforePhoto.cameraViewMode) {
-          setCameraViewMode(activeBeforePhoto.cameraViewMode);
-        } else {
-          // Fallback to device orientation if no cameraViewMode saved
-          setCameraViewMode(deviceOrientation);
-        }
+        // Fallback: keep current mode but align with device orientation if unset
+        setCameraViewMode(prev => prev || deviceOrientation);
       }
     }
   }, [mode, deviceOrientation, selectedBeforePhoto]);
@@ -1869,7 +1856,8 @@ export default function CameraScreen({ route, navigation }) {
               <View style={deviceOrientation === 'landscape' ? styles.letterboxBarHorizontal : styles.letterboxBar} />
             </View>
           ) : (
-            <View style={Platform.OS === 'android' ? styles.androidCameraWrapper : {flex: 1}}>
+            // Full-screen camera preview on both platforms when not in letterbox mode
+            <View style={{ flex: 1 }}>
               {layout && device && (
                 <Camera
                   ref={cameraRef}
