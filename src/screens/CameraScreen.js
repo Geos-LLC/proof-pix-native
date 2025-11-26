@@ -85,6 +85,10 @@ export default function CameraScreen({ route, navigation }) {
   const longPressGalleryTimer = useRef(null);
   const roomIndicatorTimer = useRef(null);
   const enlargedGalleryScrollRef = useRef(null);
+  const androidCombinedRef = useRef(null);
+  const [androidCombinedJob, setAndroidCombinedJob] = useState(null); // Android-only combined base capture job
+  const androidCombinedImagesLoaded = useRef(0); // Count how many images finished loading for the off-screen combined view
+  const [androidCombinedReadyTick, setAndroidCombinedReadyTick] = useState(0); // Bump to trigger capture once both images are ready
   const tapStartTime = useRef(null);
   const [dimensions, setDimensions] = useState({ width: initialWidth, height: initialHeight });
   const lastTap = useRef(null);
@@ -1550,7 +1554,7 @@ export default function CameraScreen({ route, navigation }) {
         });
       }
 
-      // Create combined photo in background using ImageManipulator (non-blocking)
+      // Create combined photo in background (non-blocking)
       (async () => {
         try {
           // Measure original sizes
@@ -1592,103 +1596,129 @@ export default function CameraScreen({ route, navigation }) {
             dimsLocal = { width: totalW, height: totalH, leftW, rightW };
           }
 
-          // Use native image compositor instead of view-shot
-          try {
-            const capUri = await compositeImages(
-              activeBeforePhoto.uri,
-              savedUri,
-              isLandscapePair ? 'STACK' : 'SIDE',
-              dimsLocal
-            );
+          const safeName = (activeBeforePhoto.name || 'Photo').replace(/\s+/g, '_');
+          const layout = isLandscapePair ? 'STACK' : 'SIDE';
+          const baseType = layout;
+          const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
 
-            const safeName = (activeBeforePhoto.name || 'Photo').replace(/\s+/g, '_');
-            const baseType = isLandscapePair ? 'STACK' : 'SIDE';
-            const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
-            const combinedPhotoSavedUri = await savePhotoToDevice(
-              capUri,
-              `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${baseType}_${Date.now()}${projectIdSuffix}.jpg`,
-              activeProjectId || null
-            );
-            
-            // Prepare labeled combined photo in background (non-blocking)
-            if (showLabels && combinedPhotoSavedUri) {
-              // Use Promise.resolve().then() to run async code without blocking
-              Promise.resolve().then(async () => {
-                try {
-                  // Create a combined photo object for cache lookup/preparation
-                  // The ID format matches what GalleryScreen uses: combined_<beforePhotoId>
-                  const combinedPhotoId = `combined_${activeBeforePhoto.id}`;
-                  const combinedPhoto = {
-                    id: combinedPhotoId,
-                    mode: PHOTO_MODES.COMBINED,
-                    uri: combinedPhotoSavedUri,
-                    name: activeBeforePhoto.name,
-                    room: activeBeforePhoto.room,
-                    projectId: activeProjectId,
-                    beforePhotoId: activeBeforePhoto.id,
-                  };
-                  
-                  // Calculate settings hash
-                  const settingsHash = calculateSettingsHash({
-                    showLabels,
-                    beforeLabelPosition,
-                    afterLabelPosition,
-                    labelBackgroundColor: labelBackgroundColor || null,
-                    labelTextColor: labelTextColor || null,
-                    labelSize: labelSize || null,
-                    labelFontFamily: labelFontFamily || null,
-                    labelMarginVertical,
-                    labelMarginHorizontal,
-                  });
-                  
-                  // Check if already cached
-                  const cachedCombined = await getCachedLabeledPhoto(combinedPhoto, settingsHash);
-                  if (!cachedCombined) {
-                    try {
-                      // Prepare combined photo with labels in background (don't await - just queue it)
-                      prepareCombinedPhotoInBackground(
-                        combinedPhoto,
-                        activeBeforePhoto,
-                        newAfterPhoto,
-                        settingsHash,
-                        isLetterbox
-                      );
-                    } catch (error) {
-                    }
-                  }
-                } catch (error) {
-                }
+          if (Platform.OS === 'ios') {
+            // iOS: use native image compositor
+            try {
+              console.log('[CameraScreen] 🧩 compositeImages start', Platform.OS, {
+                beforeUri: activeBeforePhoto.uri,
+                afterUri: savedUri,
+                layout,
+                dims: dimsLocal,
               });
-            }
+              const capUri = await compositeImages(
+                activeBeforePhoto.uri,
+                savedUri,
+                layout,
+                dimsLocal
+              );
+              console.log('[CameraScreen] ✅ compositeImages success', Platform.OS, capUri);
 
-            // In LETTERBOX, also save the SIDE-BY-SIDE variant in addition to STACK
-            if (isLetterbox) {
-              try {
-                // Prepare side-by-side dims based on existing sizes and totalW
-                const r1wLB = aSize.w / aSize.h;
-                const r2wLB = bSize.w / bSize.h;
-                const denomLB = (r1wLB + r2wLB) || 1;
-                const totalHLB = Math.max(400, Math.round(totalW / denomLB));
-                const leftWLB = Math.round(totalW * (r1wLB / denomLB));
-                const rightWLB = totalW - leftWLB;
-                const sideDimsLB = { width: totalW, height: totalHLB, leftW: leftWLB, rightW: rightWLB };
-
-                const capUriLB = await compositeImages(
-                  activeBeforePhoto.uri,
-                  savedUri,
-                  'SIDE',
-                  sideDimsLB
-                );
-
-                await savePhotoToDevice(
-                  capUriLB,
-                  `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_SIDE_${Date.now()}${projectIdSuffix}.jpg`,
-                  activeProjectId || null
-                );
-              } catch (eLB) {
+              const combinedPhotoSavedUri = await savePhotoToDevice(
+                capUri,
+                `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${baseType}_${Date.now()}${projectIdSuffix}.jpg`,
+                activeProjectId || null
+              );
+              console.log('[CameraScreen] 💾 combined base saved', Platform.OS, combinedPhotoSavedUri);
+              
+              // Prepare labeled combined photo in background (non-blocking)
+              if (showLabels && combinedPhotoSavedUri) {
+                // Use Promise.resolve().then() to run async code without blocking
+                Promise.resolve().then(async () => {
+                  try {
+                    // Create a combined photo object for cache lookup/preparation
+                    // The ID format matches what GalleryScreen uses: combined_<beforePhotoId>
+                    const combinedPhotoId = `combined_${activeBeforePhoto.id}`;
+                    const combinedPhoto = {
+                      id: combinedPhotoId,
+                      mode: PHOTO_MODES.COMBINED,
+                      uri: combinedPhotoSavedUri,
+                      name: activeBeforePhoto.name,
+                      room: activeBeforePhoto.room,
+                      projectId: activeProjectId,
+                      beforePhotoId: activeBeforePhoto.id,
+                    };
+                    
+                    // Calculate settings hash
+                    const settingsHash = calculateSettingsHash({
+                      showLabels,
+                      beforeLabelPosition,
+                      afterLabelPosition,
+                      labelBackgroundColor: labelBackgroundColor || null,
+                      labelTextColor: labelTextColor || null,
+                      labelSize: labelSize || null,
+                      labelFontFamily: labelFontFamily || null,
+                      labelMarginVertical,
+                      labelMarginHorizontal,
+                    });
+                    
+                    // Check if already cached
+                    const cachedCombined = await getCachedLabeledPhoto(combinedPhoto, settingsHash);
+                    if (!cachedCombined) {
+                      try {
+                        // Prepare combined photo with labels in background (don't await - just queue it)
+                        prepareCombinedPhotoInBackground(
+                          combinedPhoto,
+                          activeBeforePhoto,
+                          newAfterPhoto,
+                          settingsHash,
+                          isLetterbox
+                        );
+                      } catch (error) {
+                      }
+                    }
+                  } catch (error) {
+                  }
+                });
               }
+
+              // In LETTERBOX, also save the SIDE-BY-SIDE variant in addition to STACK
+              if (isLetterbox) {
+                try {
+                  // Prepare side-by-side dims based on existing sizes and totalW
+                  const r1wLB = aSize.w / aSize.h;
+                  const r2wLB = bSize.w / bSize.h;
+                  const denomLB = (r1wLB + r2wLB) || 1;
+                  const totalHLB = Math.max(400, Math.round(totalW / denomLB));
+                  const leftWLB = Math.round(totalW * (r1wLB / denomLB));
+                  const rightWLB = totalW - leftWLB;
+                  const sideDimsLB = { width: totalW, height: totalHLB, leftW: leftWLB, rightW: rightWLB };
+
+                  const capUriLB = await compositeImages(
+                    activeBeforePhoto.uri,
+                    savedUri,
+                    'SIDE',
+                    sideDimsLB
+                  );
+
+                  await savePhotoToDevice(
+                    capUriLB,
+                    `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_SIDE_${Date.now()}${projectIdSuffix}.jpg`,
+                    activeProjectId || null
+                  );
+                } catch (eLB) {
+                }
+              }
+            } catch (captureError) {
             }
-          } catch (captureError) {
+          } else if (Platform.OS === 'android') {
+            // Android: use JS/ViewShot-based compositor
+            // Reset image load counter for the new job; capture will run once both images report onLoad.
+            androidCombinedImagesLoaded.current = 0;
+            setAndroidCombinedJob({
+              beforeUri: activeBeforePhoto.uri,
+              afterUri: savedUri,
+              layout,
+              width: dimsLocal.width,
+              height: dimsLocal.height,
+              room: activeBeforePhoto.room,
+              safeName,
+              projectId: activeProjectId || null,
+            });
           }
         } catch (error) {
         }
@@ -1745,6 +1775,68 @@ export default function CameraScreen({ route, navigation }) {
       return newFacing;
     });
   };
+
+  // Android-only: when a combined capture job is queued and both images have finished loading,
+  // render an off-screen combined view and capture it with ViewShot, then save as a COMBINED_BASE image
+  // via savePhotoToDevice so it appears in the gallery and can be cleaned up later.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!androidCombinedJob) return;
+    // Wait until both BEFORE and AFTER images reported onLoad
+    if (androidCombinedImagesLoaded.current < 2) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        // Give React a moment to render the off-screen view even after images loaded
+        await new Promise(resolve => setTimeout(resolve, 120));
+        if (cancelled || !androidCombinedRef.current) return;
+
+        const { room, safeName, layout, width, height, projectId } = androidCombinedJob;
+        const baseType = layout === 'STACK' ? 'STACK' : 'SIDE';
+        const projectIdSuffix = projectId ? `_P${projectId}` : '';
+
+        // Use a normalized canvas size to avoid huge off-screen views, preserve aspect ratio
+        const baseWidth = 1920;
+        const aspect = height > 0 ? height / width : 1;
+        const baseHeight = Math.max(400, Math.round(baseWidth * aspect));
+
+        // Update the view size just before capture
+        if (androidCombinedRef.current) {
+          androidCombinedRef.current.setNativeProps({
+            style: { width: baseWidth, height: baseHeight },
+          });
+        }
+
+        const capturedUri = await captureRef(androidCombinedRef, {
+          format: 'jpg',
+          quality: 0.95,
+        });
+
+        const savedUri = await savePhotoToDevice(
+          capturedUri,
+          `${room}_${safeName}_COMBINED_BASE_${baseType}_${Date.now()}${projectIdSuffix}.jpg`,
+          projectId || null
+        );
+        console.log('[CameraScreen][Android] 💾 combined base saved via ViewShot', savedUri);
+      } catch (err) {
+        console.error('[CameraScreen][Android] ❌ Failed to create combined base via ViewShot:', err);
+      } finally {
+        if (!cancelled) {
+          // Reset load counter and clear the job so the off-screen view unmounts
+          androidCombinedImagesLoaded.current = 0;
+          setAndroidCombinedJob(null);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [androidCombinedJob, androidCombinedRef, androidCombinedReadyTick]);
 
   // Get current room info
   const getCurrentRoomInfo = () => {
@@ -2207,6 +2299,65 @@ export default function CameraScreen({ route, navigation }) {
             );
           })()}
         </Animated.View>
+      )}
+
+      {/* Android-only off-screen combined view for original COMBINED_BASE capture via ViewShot */}
+      {Platform.OS === 'android' && androidCombinedJob && (
+        <View
+          style={{
+            position: 'absolute',
+            left: -10000,
+            top: -10000,
+            width: androidCombinedJob.width || 1920,
+            height: androidCombinedJob.height || 1080,
+          }}
+          pointerEvents="none"
+        >
+          <View
+            ref={androidCombinedRef}
+            collapsable={false}
+            style={{
+              width: '100%',
+              height: '100%',
+              backgroundColor: 'white',
+              overflow: 'hidden',
+              flexDirection: androidCombinedJob.layout === 'STACK' ? 'column' : 'row',
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Image
+                source={{ uri: androidCombinedJob.beforeUri }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+                onLoad={() => {
+                  // Track when the BEFORE image has loaded for the off-screen combined view
+                  if (Platform.OS === 'android') {
+                    androidCombinedImagesLoaded.current += 1;
+                    if (androidCombinedImagesLoaded.current >= 2) {
+                      setAndroidCombinedReadyTick(t => t + 1);
+                    }
+                  }
+                }}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Image
+                source={{ uri: androidCombinedJob.afterUri }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+                onLoad={() => {
+                  // Track when the AFTER image has loaded for the off-screen combined view
+                  if (Platform.OS === 'android') {
+                    androidCombinedImagesLoaded.current += 1;
+                    if (androidCombinedImagesLoaded.current >= 2) {
+                      setAndroidCombinedReadyTick(t => t + 1);
+                    }
+                  }
+                }}
+              />
+            </View>
+          </View>
+        </View>
       )}
 
       {/* Enlarged gallery carousel - shown when tapping a gallery item */}

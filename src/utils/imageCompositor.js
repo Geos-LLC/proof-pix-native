@@ -13,16 +13,29 @@ const { ImageCompositor } = NativeModules;
 export async function compositeImages(beforeUri, afterUri, layout, dimensions) {
   // Supported on native mobile platforms where the ImageCompositor module is linked
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+    console.warn('[ImageCompositor] Unsupported platform for compositeImages:', Platform.OS);
     throw new Error('Image composition is only supported on native mobile platforms');
   }
 
   if (!ImageCompositor) {
+    console.error('[ImageCompositor] Native module not found in NativeModules:', Object.keys(NativeModules || {}));
     throw new Error('ImageCompositor native module is not available');
   }
 
   const { width, height, topH, bottomH, leftW, rightW } = dimensions;
 
   try {
+    console.log('[ImageCompositor] Calling native compositeImages', {
+      platform: Platform.OS,
+      layout,
+      width,
+      height,
+      topH,
+      bottomH,
+      leftW,
+      rightW,
+    });
+
     const resultUri = await ImageCompositor.compositeImages(
       beforeUri,
       afterUri,
@@ -35,8 +48,10 @@ export async function compositeImages(beforeUri, afterUri, layout, dimensions) {
       rightW || null
     );
 
+    console.log('[ImageCompositor] Success, resultUri:', resultUri);
     return resultUri;
   } catch (error) {
+    console.error('[ImageCompositor] Error from native compositeImages:', error);
     throw error;
   }
 }
