@@ -58,6 +58,7 @@ import {
   logFeatureGateShown,
   logFeatureGateAction,
 } from '../utils/analytics';
+import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
 
 const getFontOptions = (t) => [
   {
@@ -1364,26 +1365,84 @@ export default function SettingsScreen({ navigation, route }) {
             try {
               setShowAddMemberModal(false);
 
-              // Show loading
-              Alert.alert('Processing', 'Processing your purchase...', [], { cancelable: false });
+              // On iOS, require in-app purchase for each additional seat
+              let seatsToAdd = additionalMembersCount || 1;
+              if (Platform.OS === 'ios') {
+                // Determine which IAP product to use based on current plan
+                let seatProductId = null;
+                if (userPlan === 'business') {
+                  seatProductId = IAP_PRODUCTS.BUSINESS_SEAT;
+                } else if (userPlan === 'enterprise') {
+                  seatProductId = IAP_PRODUCTS.ENTERPRISE_SEAT;
+                }
 
-              // TODO: Implement actual payment processing here
-              // For now, simulate payment success after a short delay
-              await new Promise(resolve => setTimeout(resolve, 1500));
+                if (!seatProductId) {
+                  Alert.alert('Error', 'Additional members are only available for Business and Enterprise plans on iOS.');
+                  return;
+                }
 
-              // Increase the plan limit
+                // Inform user if multiple seats will require multiple purchases
+                if (seatsToAdd > 1) {
+                  const proceed = await new Promise((resolve) => {
+                    Alert.alert(
+                      'Multiple Purchases Required',
+                      'Adding multiple team members on iOS requires confirming a purchase for each additional member. Continue?',
+                      [
+                        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                        { text: 'Continue', onPress: () => resolve(true) },
+                      ]
+                    );
+                  });
+                  if (!proceed) {
+                    return;
+                  }
+                }
+
+                for (let i = 0; i < seatsToAdd; i++) {
+                  try {
+                    await purchaseProduct(seatProductId);
+                  } catch (err) {
+                    if (err?.message === 'USER_CANCELLED') {
+                      // If user cancels mid-way, stop further purchases and don't change remaining seats
+                      if (i === 0) {
+                        // No seats purchased
+                        return;
+                      } else {
+                        // Some seats purchased; adjust seatsToAdd to what was successfully purchased
+                        seatsToAdd = i;
+                        break;
+                      }
+                    } else {
+                      console.error('[PURCHASE] Error during seat purchase:', err);
+                      Alert.alert('Error', 'Failed to complete purchase. Some seats may not have been added.');
+                      // Adjust seatsToAdd to how many were successfully purchased
+                      seatsToAdd = i;
+                      break;
+                    }
+                  }
+                }
+
+                if (seatsToAdd <= 0) {
+                  return;
+                }
+              }
+
+              // Show loading (for consistency across platforms)
+              Alert.alert('Processing', 'Updating your team size...', [], { cancelable: false });
+
+              // Increase the plan limit by the number of seats actually added
               const currentPlanLimit = planLimit || 5;
-              const newPlanLimit = currentPlanLimit + additionalMembersCount;
+              const newPlanLimit = currentPlanLimit + seatsToAdd;
 
               console.log('[PURCHASE] Increasing planLimit from', currentPlanLimit, 'to', newPlanLimit, 'for plan:', userPlan);
 
               // Update plan limit via AdminContext helper so state, storage, and activeAccount stay in sync
               await updatePlanLimit(newPlanLimit);
 
-              // Dismiss loading alert
+              // Dismiss loading alert / show success
               Alert.alert(
                 'Purchase Successful',
-                `Successfully added ${additionalMembersCount} team member slot${additionalMembersCount > 1 ? 's' : ''}. You now have ${newPlanLimit} total slots.`,
+                `Successfully added ${seatsToAdd} team member slot${seatsToAdd > 1 ? 's' : ''}. You now have ${newPlanLimit} total slots.`,
                 [{ text: 'OK' }]
               );
 
@@ -3062,6 +3121,21 @@ export default function SettingsScreen({ navigation, route }) {
                             console.error('[SETTINGS] Error clearing team data:', error);
                           }
                         }
+                        // On iOS, require in-app purchase for Pro plan
+                        if (Platform.OS === 'ios') {
+                          try {
+                            await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED') {
+                              return;
+                            }
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        }
                         await updateUserPlan('pro');
                         setShowPlanSelection(false);
                         navigation.navigate('GoogleSignUp', { plan: 'pro' });
@@ -3076,6 +3150,21 @@ export default function SettingsScreen({ navigation, route }) {
                     <TouchableOpacity
                       style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                       onPress={async () => {
+                        // On iOS, require in-app purchase for Business plan
+                        if (Platform.OS === 'ios') {
+                          try {
+                            await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED') {
+                              return;
+                            }
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        }
                         await updateUserPlan('business');
                         setShowPlanSelection(false);
                         navigation.navigate('GoogleSignUp', { plan: 'business' });
@@ -3091,6 +3180,21 @@ export default function SettingsScreen({ navigation, route }) {
                       style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
                       onPress={async () => {
                         try {
+                          // On iOS, require in-app purchase for Enterprise plan
+                          if (Platform.OS === 'ios') {
+                            try {
+                              await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                            } catch (err) {
+                              if (err?.message === 'USER_CANCELLED') {
+                                return;
+                              }
+                              Alert.alert(
+                                t('common.error', { defaultValue: 'Error' }),
+                                t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                              );
+                              return;
+                            }
+                          }
                           // Set up enterprise tier with 15 team member limit
                           await updatePlanLimit(15);
                           // Update user plan to enterprise

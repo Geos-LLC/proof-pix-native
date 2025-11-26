@@ -100,6 +100,29 @@ export default function PlanSelectionScreen({ navigation }) {
       }
     } else {
       // Regular plan selection without trial
+      // On iOS, require in-app purchase for paid plans before changing plan.
+      if (Platform.OS === 'ios') {
+        let productId = null;
+        if (plan === 'pro') productId = IAP_PRODUCTS.PRO_MONTHLY;
+        else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
+        else if (plan === 'enterprise') productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
+
+        if (productId) {
+          try {
+            await purchaseProduct(productId);
+          } catch (err) {
+            if (err?.message === 'USER_CANCELLED') {
+              return; // user cancelled, do not change plan
+            }
+            Alert.alert(
+              t('common.error', { defaultValue: 'Error' }),
+              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+            );
+            return;
+          }
+        }
+      }
+
       await updateUserPlan(plan);
     }
 
