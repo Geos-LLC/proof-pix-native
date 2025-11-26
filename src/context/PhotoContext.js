@@ -202,11 +202,18 @@ export const PhotoProvider = ({ children }) => {
     await savePhotos(newPhotos);
   };
 
-  const deletePhoto = async (photoId) => {
+  const deletePhoto = async (photoId, options = {}) => {
     try {
+      console.log('[PhotoContext] deletePhoto called with options:', options);
       const target = photos.find(p => p.id === photoId);
       if (target) {
-        await deletePhotoFromDevice(target);
+        const shouldDeleteFromStorage = options.deleteFromStorage !== false;
+        console.log('[PhotoContext] Photo found, deleteFromStorage:', shouldDeleteFromStorage);
+        if (shouldDeleteFromStorage) {
+          await deletePhotoFromDevice(target, options);
+        } else {
+          console.log('[PhotoContext] Skipping device deletion for photo:', photoId);
+        }
       }
     } finally {
       const newPhotos = photos.filter(p => p.id !== photoId);
@@ -214,7 +221,7 @@ export const PhotoProvider = ({ children }) => {
     }
   };
 
-  const deletePhotoSet = async (beforePhotoId) => {
+  const deletePhotoSet = async (beforePhotoId, options = {}) => {
     try {
         const beforePhoto = photos.find(p => p.id === beforePhotoId && p.mode === PHOTO_MODES.BEFORE);
         if (!beforePhoto) {
@@ -230,18 +237,23 @@ export const PhotoProvider = ({ children }) => {
 
         const combinedPhotos = photos.filter(p => p.name === beforePhoto.name && p.room === beforePhoto.room && p.mode === PHOTO_MODES.COMBINED);
         photosToDelete.push(...combinedPhotos);
-        
+
         // --- Deletion Logic ---
 
-        // 1. Collect local file URIs to delete silently
+        const shouldDeleteFromStorage = options.deleteFromStorage !== false;
+        console.log('[PhotoContext] deletePhotoSet with deleteFromStorage:', shouldDeleteFromStorage);
+
+        // 1. Always delete local file URIs (app's document directory)
         const localFileUris = photosToDelete
             .map(p => p.uri)
             .filter(uri => uri && uri.startsWith(FileSystem.documentDirectory));
-        
+
         for (const uri of localFileUris) {
             try {
                 await FileSystem.deleteAsync(uri, { idempotent: true });
+                console.log('[PhotoContext] Deleted local file:', uri);
             } catch (e) {
+                console.warn('[PhotoContext] Failed to delete local file:', e);
             }
         }
 
@@ -256,8 +268,12 @@ export const PhotoProvider = ({ children }) => {
             `${beforePhoto.room}_${safeName}_COMBINED_BASE_SIDE_`
         ];
 
-        // 3. Perform a single, unified deletion for all media assets
-        await deleteAssetsBatch({ filenames: mediaLibraryFilenames, prefixes });
+        // 3. Perform a single, unified deletion for all media assets (respecting deleteFromStorage option)
+        await deleteAssetsBatch({
+            filenames: mediaLibraryFilenames,
+            prefixes,
+            deleteFromStorage: shouldDeleteFromStorage
+        });
 
         // 4. Remove from metadata
         const photoIdsToDelete = new Set(photosToDelete.map(p => p.id));

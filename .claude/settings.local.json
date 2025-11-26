@@ -9,7 +9,11 @@
       "Bash(node -e:*)",
       "Bash(node verify-translations.js:*)",
       "Bash(cat:*)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" log --oneline --all)",
+      "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" show 26ba71a --stat)",
+      "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" log --all --pretty=format:\"%h %s\")",
+      "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" show 26ba71a)"
     ],
     "deny": [],
     "ask": []

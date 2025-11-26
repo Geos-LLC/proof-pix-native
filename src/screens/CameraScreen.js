@@ -1788,14 +1788,33 @@ export default function CameraScreen({ route, navigation }) {
     let cancelled = false;
 
     const run = async () => {
-      try {
-        // Give React a moment to render the off-screen view even after images loaded
-        await new Promise(resolve => setTimeout(resolve, 120));
-        if (cancelled || !androidCombinedRef.current) return;
+      const { room, safeName, layout, width, height, projectId } = androidCombinedJob;
+      const baseType = layout === 'STACK' ? 'STACK' : 'SIDE';
+      const projectIdSuffix = projectId ? `_P${projectId}` : '';
 
-        const { room, safeName, layout, width, height, projectId } = androidCombinedJob;
-        const baseType = layout === 'STACK' ? 'STACK' : 'SIDE';
-        const projectIdSuffix = projectId ? `_P${projectId}` : '';
+      try {
+        console.log('[CameraScreen][Android] 🎬 Starting combined photo save for', safeName);
+
+        // Give React a moment to render the off-screen view even after images loaded
+        // Wait for ref to be ready with retry logic
+        let refReady = false;
+        for (let i = 0; i < 10; i++) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          if (cancelled) {
+            console.log('[CameraScreen][Android] ⚠️ Cancelled before capture');
+            return;
+          }
+          if (androidCombinedRef.current) {
+            refReady = true;
+            console.log('[CameraScreen][Android] ✅ Ref ready after', (i + 1) * 100, 'ms');
+            break;
+          }
+        }
+
+        if (!refReady || !androidCombinedRef.current) {
+          console.error('[CameraScreen][Android] ❌ androidCombinedRef never became ready');
+          throw new Error('androidCombinedRef is null after waiting');
+        }
 
         // Use a normalized canvas size to avoid huge off-screen views, preserve aspect ratio
         const baseWidth = 1920;
@@ -1803,27 +1822,44 @@ export default function CameraScreen({ route, navigation }) {
         const baseHeight = Math.max(400, Math.round(baseWidth * aspect));
 
         // Update the view size just before capture
-        if (androidCombinedRef.current) {
-          androidCombinedRef.current.setNativeProps({
-            style: { width: baseWidth, height: baseHeight },
-          });
-        }
+        androidCombinedRef.current.setNativeProps({
+          style: { width: baseWidth, height: baseHeight },
+        });
 
+        // Extra small delay after setting size
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        console.log('[CameraScreen][Android] 📸 Capturing ViewShot...');
         const capturedUri = await captureRef(androidCombinedRef, {
           format: 'jpg',
           quality: 0.95,
         });
 
+        if (!capturedUri) {
+          throw new Error('ViewShot returned null URI');
+        }
+
+        console.log('[CameraScreen][Android] 💾 Saving to device storage...');
         const savedUri = await savePhotoToDevice(
           capturedUri,
           `${room}_${safeName}_COMBINED_BASE_${baseType}_${Date.now()}${projectIdSuffix}.jpg`,
           projectId || null
         );
-        console.log('[CameraScreen][Android] 💾 combined base saved via ViewShot', savedUri);
+        console.log('[CameraScreen][Android] ✅ Combined photo saved successfully:', savedUri);
       } catch (err) {
         console.error('[CameraScreen][Android] ❌ Failed to create combined base via ViewShot:', err);
+        console.error('[CameraScreen][Android] ❌ Error details:', {
+          message: err.message,
+          stack: err.stack,
+          room,
+          safeName,
+          layout,
+          hasRef: !!androidCombinedRef.current
+        });
       } finally {
         if (!cancelled) {
+          // Small delay before cleanup to ensure save completes
+          await new Promise(resolve => setTimeout(resolve, 100));
           // Reset load counter and clear the job so the off-screen view unmounts
           androidCombinedImagesLoaded.current = 0;
           setAndroidCombinedJob(null);
@@ -2332,11 +2368,18 @@ export default function CameraScreen({ route, navigation }) {
                 onLoad={() => {
                   // Track when the BEFORE image has loaded for the off-screen combined view
                   if (Platform.OS === 'android') {
+                    console.log('[CameraScreen][Android] 📥 BEFORE image loaded');
                     androidCombinedImagesLoaded.current += 1;
                     if (androidCombinedImagesLoaded.current >= 2) {
                       setAndroidCombinedReadyTick(t => t + 1);
                     }
                   }
+                }}
+                onError={(error) => {
+                  console.error('[CameraScreen][Android] ❌ BEFORE image failed to load:', error);
+                  // Reset job on error to prevent hanging
+                  androidCombinedImagesLoaded.current = 0;
+                  setAndroidCombinedJob(null);
                 }}
               />
             </View>
@@ -2348,11 +2391,18 @@ export default function CameraScreen({ route, navigation }) {
                 onLoad={() => {
                   // Track when the AFTER image has loaded for the off-screen combined view
                   if (Platform.OS === 'android') {
+                    console.log('[CameraScreen][Android] 📥 AFTER image loaded');
                     androidCombinedImagesLoaded.current += 1;
                     if (androidCombinedImagesLoaded.current >= 2) {
                       setAndroidCombinedReadyTick(t => t + 1);
                     }
                   }
+                }}
+                onError={(error) => {
+                  console.error('[CameraScreen][Android] ❌ AFTER image failed to load:', error);
+                  // Reset job on error to prevent hanging
+                  androidCombinedImagesLoaded.current = 0;
+                  setAndroidCombinedJob(null);
                 }}
               />
             </View>

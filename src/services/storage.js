@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as FS from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
+import { saveImageToGalleryNative } from '../utils/mediaStoreSaver';
 
 const PHOTOS_METADATA_KEY = 'cleaning-photos-metadata';
 const USER_PREFS_KEY = 'user-preferences';
@@ -95,50 +96,87 @@ export const savePhotoToDevice = async (uri, filename, projectId = null) => {
     // Save to media library (device Photos / Gallery) – same flow for iOS and Android.
     // This mirrors the original iOS behavior: create an asset and ensure it's in a "ProofPix" album.
     let status = 'undetermined';
+    let accessPrivileges = 'none';
     try {
+      // Check current permission status first (no options to avoid Kotlin conversion error)
       const currentStatus = await MediaLibrary.getPermissionsAsync();
       status = currentStatus.status;
-      if (status !== 'granted') {
+      accessPrivileges = currentStatus.accessPrivileges || 'none';
+
+      console.log('[Storage] Current permission status:', status, ', accessPrivileges:', accessPrivileges);
+
+      // On Android 14+, if status is "limited", user selected partial access which causes confirmation dialogs
+      // We need full access to avoid the dialog on each photo save
+      if (status === 'limited' || (status === 'granted' && accessPrivileges === 'limited')) {
+        console.log('[Storage] ⚠️ Limited access detected - app will show confirmation on each save');
+        console.log('[Storage] Requesting full access...');
         const requestResult = await MediaLibrary.requestPermissionsAsync();
         status = requestResult.status;
+        accessPrivileges = requestResult.accessPrivileges || 'none';
+        console.log('[Storage] New permission:', status, ', accessPrivileges:', accessPrivileges);
+      } else if (status !== 'granted') {
+        console.log('[Storage] Requesting media library permission...');
+        const requestResult = await MediaLibrary.requestPermissionsAsync();
+        status = requestResult.status;
+        accessPrivileges = requestResult.accessPrivileges || 'none';
+        console.log('[Storage] Permission result:', status, ', accessPrivileges:', accessPrivileges);
+      } else {
+        console.log('[Storage] ✅ Full media library access granted');
       }
     } catch (permError) {
-      try {
-        const requestResult = await MediaLibrary.requestPermissionsAsync();
-        status = requestResult.status;
-      } catch (requestError) {
-        console.warn('[Storage] Could not request media library permissions:', requestError);
-      }
+      console.warn('[Storage] Permission error:', permError);
     }
 
-    if (status === 'granted') {
+    if (status === 'granted' || status === 'limited') {
       try {
-        // Create an asset in the system media library
-        const asset = await MediaLibrary.createAssetAsync(finalFileUri);
+        let asset = null;
 
-        // Create/add to ProofPix album (works on both iOS and Android)
-        const album = await MediaLibrary.getAlbumAsync('ProofPix');
-        if (album == null && asset) {
-          await MediaLibrary.createAlbumAsync('ProofPix', asset, false);
-        } else if (album && asset) {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        // On Android, use native MediaStore API to avoid confirmation dialogs on Samsung devices
+        if (Platform.OS === 'android') {
+          try {
+            console.log('[Storage] Using native MediaStore saver for Android');
+            const justName = (finalFileUri.split('/').pop() || '').split('?')[0];
+            await saveImageToGalleryNative(finalFileUri, justName);
+            console.log('[Storage] ✅ Saved via native MediaStore (no confirmation dialog)');
+
+            // Note: We don't get an asset ID from native saver, so we skip asset ID mapping
+            // Photos can still be found by filename for deletion
+          } catch (nativeError) {
+            console.warn('[Storage] Native saver failed, falling back to expo-media-library:', nativeError);
+            // Fallback to expo-media-library
+            asset = await MediaLibrary.createAssetAsync(finalFileUri);
+          }
+        } else {
+          // iOS: use expo-media-library as usual
+          asset = await MediaLibrary.createAssetAsync(finalFileUri);
         }
 
-        // Store a mapping from filename -> assetId for reliable deletion later
-        if (asset?.id) {
-          try {
-            const stored = await AsyncStorage.getItem(ASSET_ID_MAP_KEY);
-            const map = stored ? JSON.parse(stored) : {};
-            const justName = (finalFileUri.split('/').pop() || '').split('?')[0];
-            if (justName) {
-              const prev = map[justName];
-              map[justName] = typeof prev === 'string'
-                ? { id: asset.id, projectId }
-                : { id: asset.id, projectId: prev?.projectId ?? projectId };
-              await AsyncStorage.setItem(ASSET_ID_MAP_KEY, JSON.stringify(map));
+        // Only handle album and asset ID mapping if we used expo-media-library
+        if (asset) {
+          // Create/add to ProofPix album (works on both iOS and Android)
+          const album = await MediaLibrary.getAlbumAsync('ProofPix');
+          if (album == null) {
+            await MediaLibrary.createAlbumAsync('ProofPix', asset, false);
+          } else {
+            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          }
+
+          // Store a mapping from filename -> assetId for reliable deletion later
+          if (asset?.id) {
+            try {
+              const stored = await AsyncStorage.getItem(ASSET_ID_MAP_KEY);
+              const map = stored ? JSON.parse(stored) : {};
+              const justName = (finalFileUri.split('/').pop() || '').split('?')[0];
+              if (justName) {
+                const prev = map[justName];
+                map[justName] = typeof prev === 'string'
+                  ? { id: asset.id, projectId }
+                  : { id: asset.id, projectId: prev?.projectId ?? projectId };
+                await AsyncStorage.setItem(ASSET_ID_MAP_KEY, JSON.stringify(map));
+              }
+            } catch (mapErr) {
+              console.warn('[Storage] Could not update asset id map:', mapErr);
             }
-          } catch (mapErr) {
-            console.warn('[Storage] Could not update asset id map:', mapErr);
           }
         }
       } catch (mlError) {
@@ -163,23 +201,37 @@ export const deletePhotoFromDevice = async (photo, options = {}) => {
     const uri = photo.uri;
     if (!uri || typeof uri !== 'string') return;
 
+    const shouldDeleteFromStorage = options.deleteFromStorage !== false;
+    console.log('[Storage] deletePhotoFromDevice called with deleteFromStorage:', shouldDeleteFromStorage);
+
     // Derive a filename for media library lookup
     const filename = (uri.split('/').pop() || '').split('?')[0];
+
     // 1) Delete from app documents directory (idempotent)
     try {
       if (uri.startsWith(FileSystem.documentDirectory)) {
         await FileSystem.deleteAsync(uri, { idempotent: true });
+        console.log('[Storage] Deleted from app directory:', filename);
       } else if (uri.startsWith('file://')) {
         // Try deleting other file:// targets as best-effort
         await FileSystem.deleteAsync(uri, { idempotent: true });
+        console.log('[Storage] Deleted file:', filename);
       }
     } catch (fsErr) {
+      console.warn('[Storage] Failed to delete local file:', fsErr);
     }
 
-    // 2) Delete from media library (first by stored assetId, then fallbacks)
+    // 2) Delete from media library only if deleteFromStorage is not false
+    if (!shouldDeleteFromStorage) {
+      console.log('[Storage] Skipping media library deletion as requested');
+      return;
+    }
+
+    console.log('[Storage] Proceeding with media library deletion');
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
+        console.warn('[Storage] Media library permission not granted');
         return;
       }
 
@@ -194,11 +246,14 @@ export const deletePhotoFromDevice = async (photo, options = {}) => {
             await MediaLibrary.deleteAssetsAsync([assetId]);
             delete map[filename];
             await AsyncStorage.setItem(ASSET_ID_MAP_KEY, JSON.stringify(map));
+            console.log('[Storage] ✅ Deleted from media library by assetId:', filename);
             return; // deletion done
           } catch (byIdErr) {
+            console.warn('[Storage] Failed to delete by assetId:', byIdErr);
           }
         }
       } catch (mapDelErr) {
+        console.warn('[Storage] Failed to access asset map:', mapDelErr);
       }
 
       const findMatch = (assetsArr) => assetsArr.find((a) => {
@@ -228,19 +283,26 @@ export const deletePhotoFromDevice = async (photo, options = {}) => {
       if (match) {
         try {
           await MediaLibrary.deleteAssetsAsync([match]);
+          console.log('[Storage] ✅ Deleted from media library by filename search:', filename);
         } catch (delErr) {
+          console.warn('[Storage] Failed to delete asset:', delErr);
           if (album) {
             try {
               await MediaLibrary.removeAssetsFromAlbumAsync([match], album, false);
+              console.log('[Storage] ✅ Removed from ProofPix album:', filename);
             } catch (remErr) {
+              console.warn('[Storage] Failed to remove from album:', remErr);
             }
           }
         }
       } else {
+        console.warn('[Storage] ⚠️ Photo not found in media library:', filename);
       }
     } catch (mlErr) {
+      console.error('[Storage] Media library deletion error:', mlErr);
     }
   } catch (error) {
+    console.error('[Storage] deletePhotoFromDevice error:', error);
   }
 };
 
@@ -378,9 +440,11 @@ export const deleteAssetsByPrefixes = async (prefixes, projectIdFilter = null) =
 export const deleteProjectAssets = async (projectId) => {
   try {
     if (!projectId) {
+      console.warn('[Storage] deleteProjectAssets called with no projectId');
       return;
     }
-    
+
+    console.log('[Storage] deleteProjectAssets for projectId:', projectId);
     const map = await getAssetIdMap();
     const filenames = [];
     const assetIds = [];
@@ -392,17 +456,28 @@ export const deleteProjectAssets = async (projectId) => {
         if (id) assetIds.push(id);
       }
     }
+
+    console.log(`[Storage] Found ${assetIds.length} assets for project ${projectId}`);
+
     // Delete media assets in a single batch
     if (assetIds.length > 0) {
       try {
+        console.log('[Storage] Requesting permission for deletion...');
         const { status } = await MediaLibrary.requestPermissionsAsync();
+        console.log('[Storage] Permission status:', status);
+
         if (status === 'granted') {
+          console.log(`[Storage] Deleting ${assetIds.length} assets from media library...`);
           await MediaLibrary.deleteAssetsAsync(assetIds);
+          console.log('[Storage] ✅ Assets deleted from media library');
         } else {
+          console.warn('[Storage] ⚠️ Permission not granted, cannot delete from media library');
         }
       } catch (e) {
+        console.error('[Storage] ❌ Error deleting assets:', e);
       }
     } else {
+      console.warn('[Storage] ⚠️ No assets found to delete for project', projectId);
     }
 
     // Delete local doc files by filename
@@ -510,12 +585,21 @@ export const purgeAllDevicePhotos = async () => {
  * Batch delete media library assets by a combination of filenames and prefixes.
  * Consolidates deletion into a single OS prompt.
  */
-export const deleteAssetsBatch = async ({ filenames = [], prefixes = [] }) => {
+export const deleteAssetsBatch = async ({ filenames = [], prefixes = [], deleteFromStorage = true }) => {
   try {
+    console.log('[Storage] deleteAssetsBatch called with deleteFromStorage:', deleteFromStorage);
+
+    // If deleteFromStorage is false, skip all media library deletion
+    if (deleteFromStorage === false) {
+      console.log('[Storage] Skipping batch media library deletion as requested');
+      return;
+    }
+
     const uniqueNames = Array.from(new Set(filenames.filter(Boolean)));
     if (uniqueNames.length === 0 && prefixes.length === 0) return;
     const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status !== 'granted') {
+      console.warn('[Storage] Media library permission not granted for batch delete');
       return;
     }
 
@@ -584,19 +668,25 @@ export const deleteAssetsBatch = async ({ filenames = [], prefixes = [] }) => {
     const ids = Array.from(allIdsToDelete);
     if (ids.length > 0) {
       try {
+        console.log(`[Storage] Deleting ${ids.length} assets from media library...`);
         await MediaLibrary.deleteAssetsAsync(ids);
+        console.log('[Storage] ✅ Assets deleted from media library');
         // Clean mapping
         const newMap = { ...map };
         for (const key of keysToDeleteFromMap) {
           delete newMap[key];
         }
         await setAssetIdMap(newMap);
+        console.log('[Storage] ✅ Asset map updated');
 
       } catch (err) {
+        console.error('[Storage] ❌ Failed to delete assets batch:', err);
       }
     } else {
+      console.warn('[Storage] ⚠️ No assets found to delete in batch');
     }
   } catch (e) {
+    console.error('[Storage] deleteAssetsBatch error:', e);
   }
 };
 

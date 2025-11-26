@@ -2669,12 +2669,14 @@ export default function GalleryScreen({ navigation, route }) {
 
   const handleDeleteSelectedConfirmed = async (deleteFromStorageParam) => {
     const shouldDeleteFromStorage = deleteFromStorageParam !== undefined ? deleteFromStorageParam : true;
+    console.log('[GalleryScreen] handleDeleteSelectedConfirmed called with deleteFromStorageParam:', deleteFromStorageParam);
+    console.log('[GalleryScreen] shouldDeleteFromStorage:', shouldDeleteFromStorage);
 
     try {
       // Get selected photos/sets before starting deletion
       const selected = getSelectedPhotos();
       const selectedSets = getSelectedPhotoSets();
-      
+
       // Collect all photo IDs to delete
       const photoIdsToDelete = new Set();
       selected.forEach(photo => photoIdsToDelete.add(photo.id));
@@ -2690,13 +2692,13 @@ export default function GalleryScreen({ navigation, route }) {
       setIsSelectionMode(false);
       setShowOnlySelected(false); // Clear filter when deleting selected
 
-      // Delete photos sequentially
-      // Note: deletePhoto always deletes from device
-      // TODO: Update deletePhoto to accept options to conditionally skip device deletion
+      // Delete photos sequentially with storage deletion option
+      const deleteOptions = { deleteFromStorage: shouldDeleteFromStorage };
+
       // Delete individual photos
       for (const photo of selected) {
         try {
-          await deletePhoto(photo.id);
+          await deletePhoto(photo.id, deleteOptions);
         } catch (error) {
           console.error(`[GalleryScreen] Failed to delete photo ${photo.id}:`, error);
           // Continue with other deletions even if one fails
@@ -2705,8 +2707,8 @@ export default function GalleryScreen({ navigation, route }) {
       // Delete combined photo sets
       for (const set of selectedSets) {
         try {
-          if (set.before) await deletePhoto(set.before.id);
-          if (set.after) await deletePhoto(set.after.id);
+          if (set.before) await deletePhoto(set.before.id, deleteOptions);
+          if (set.after) await deletePhoto(set.after.id, deleteOptions);
         } catch (error) {
           console.error(`[GalleryScreen] Failed to delete photo set:`, error);
           // Continue with other deletions even if one fails
