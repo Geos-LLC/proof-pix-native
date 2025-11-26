@@ -60,7 +60,7 @@ export default function CameraScreen({ route, navigation }) {
   const [room, setRoom] = useState(initialRoom);
   const [facing, setFacing] = useState('back');
   const [enableTorch, setEnableTorch] = useState(false);
-  const [enableSound, setEnableSound] = useState(true); // Default sound on
+  const [enableSound, setEnableSound] = useState(false); // Default shutter sound OFF
   const [aspectRatio, setAspectRatio] = useState('4:3'); // '4:3' or '2:3'
   const [selectedBeforePhoto, setSelectedBeforePhoto] = useState(beforePhoto);
   const [isCapturing, setIsCapturing] = useState(false);

@@ -51,7 +51,7 @@ export default function HomeScreen({ navigation }) {
   const [openProjectVisible, setOpenProjectVisible] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const { projects, getPhotosByProject, deleteProject, setActiveProject, activeProjectId, createProject, photos } = usePhotos();
+  const { projects, getPhotosByProject, deleteProject, setActiveProject, activeProjectId, createProject, renameProject, photos } = usePhotos();
   const { userName, location, getRooms, userPlan, cleaningServiceEnabled, sectionLanguage, updateUserPlan } = useSettings();
   const { exceedsLimit } = useFeaturePermissions();
   const { uploadStatus, cancelUpload, cancelAllUploads } = useBackgroundUpload();
@@ -69,6 +69,8 @@ export default function HomeScreen({ navigation }) {
   const [showDeleteProjectsConfirm, setShowDeleteProjectsConfirm] = useState(false);
   const deletedProjectIdsRef = useRef([]);
   const selectedProjectsForDeleteRef = useRef(new Set());
+  const [isEditingProjectName, setIsEditingProjectName] = useState(false);
+  const [editedProjectName, setEditedProjectName] = useState('');
 
   // Get rooms from settings (custom or default)
   const { customRooms, saveCustomRooms, resetCustomRooms } = useSettings();
@@ -1202,11 +1204,96 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Active project name (tiny line under header) */}
+      {/* Active project name (tiny line under header) with inline edit */}
       <View style={styles.projectNameContainer}>
-        <Text style={styles.projectNameText}>
-          {projects.find(p => p.id === activeProjectId)?.name || t('projects.noProjects')}
-        </Text>
+        {(() => {
+          const activeProject = projects.find(p => p.id === activeProjectId);
+          const displayName = activeProject?.name || t('projects.noProjects');
+
+          if (!activeProject) {
+            return (
+              <Text style={styles.projectNameText}>
+                {displayName}
+              </Text>
+            );
+          }
+
+          if (isEditingProjectName) {
+            return (
+              <View style={styles.projectEditRow}>
+                <TextInput
+                  style={styles.projectNameInput}
+                  value={editedProjectName}
+                  onChangeText={setEditedProjectName}
+                  placeholder={t('projects.projectNamePlaceholder', { defaultValue: 'Project name' })}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={async () => {
+                    const trimmed = editedProjectName.trim();
+                    if (!trimmed || trimmed === activeProject.name) {
+                      setIsEditingProjectName(false);
+                      setEditedProjectName('');
+                      return;
+                    }
+                    try {
+                      await renameProject(activeProject.id, trimmed);
+                    } catch (e) {
+                    } finally {
+                      setIsEditingProjectName(false);
+                      setEditedProjectName('');
+                    }
+                  }}
+                />
+                <TouchableOpacity
+                  style={styles.projectEditIconButton}
+                  onPress={async () => {
+                    const trimmed = editedProjectName.trim();
+                    if (!trimmed || trimmed === activeProject.name) {
+                      setIsEditingProjectName(false);
+                      setEditedProjectName('');
+                      return;
+                    }
+                    try {
+                      await renameProject(activeProject.id, trimmed);
+                    } catch (e) {
+                    } finally {
+                      setIsEditingProjectName(false);
+                      setEditedProjectName('');
+                    }
+                  }}
+                >
+                  <Text style={styles.projectEditIconText}>✓</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.projectEditIconButton}
+                  onPress={() => {
+                    setIsEditingProjectName(false);
+                    setEditedProjectName('');
+                  }}
+                >
+                  <Text style={styles.projectEditIconText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          return (
+            <View style={styles.projectNameRow}>
+              <Text style={styles.projectNameText} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <TouchableOpacity
+                style={styles.projectEditIconButton}
+                onPress={() => {
+                  setEditedProjectName(displayName);
+                  setIsEditingProjectName(true);
+                }}
+              >
+                <Text style={styles.projectEditIconText}>✏️</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })()}
         <UploadIndicatorLine 
           uploadStatus={uploadStatus}
           onPress={() => {
@@ -1772,7 +1859,38 @@ const styles = StyleSheet.create({
   projectNameText: {
     fontSize: 16,
     color: COLORS.TEXT,
-    fontWeight: '500'
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  projectNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  projectEditIconButton: {
+    marginLeft: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  projectEditIconText: {
+    fontSize: 14,
+    color: COLORS.GRAY,
+  },
+  projectEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  projectNameInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 16,
+    color: COLORS.TEXT,
   },
   allPhotosButtonBottom: {
     backgroundColor: COLORS.PRIMARY,

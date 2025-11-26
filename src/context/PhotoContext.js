@@ -305,6 +305,21 @@ export const PhotoProvider = ({ children }) => {
     await savePhotos(updated);
   };
 
+  const renameProject = async (projectId, newName) => {
+    try {
+      const trimmed = (newName || '').trim();
+      if (!trimmed) return;
+
+      const updated = projects.map(p =>
+        p.id === projectId ? { ...p, name: trimmed } : p
+      );
+      setProjects(updated);
+      await saveProjects(updated);
+    } catch (error) {
+      throw error;
+    }
+  };
+
   const getPhotosByProject = (projectId) => {
     return photos.filter(p => p.projectId === projectId);
   };
@@ -399,6 +414,7 @@ export const PhotoProvider = ({ children }) => {
     },
     createProject,
     assignPhotosToProject,
+    renameProject,
     getPhotosByProject,
     deleteProject,
     getPhotosByRoom,
