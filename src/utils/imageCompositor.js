@@ -11,8 +11,9 @@ const { ImageCompositor } = NativeModules;
  * @returns {Promise<string>} - URI of the composed image
  */
 export async function compositeImages(beforeUri, afterUri, layout, dimensions) {
-  if (Platform.OS !== 'ios') {
-    throw new Error('Image composition is only supported on iOS');
+  // Supported on native mobile platforms where the ImageCompositor module is linked
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+    throw new Error('Image composition is only supported on native mobile platforms');
   }
 
   if (!ImageCompositor) {
