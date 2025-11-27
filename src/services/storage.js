@@ -4,6 +4,15 @@ import * as FS from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
 import { saveImageToGalleryNative } from '../utils/mediaStoreSaver';
+import { testMediaStoreSaverModule } from '../utils/testMediaStoreSaver';
+
+// Test if MediaStoreSaver module is available on startup
+if (Platform.OS === 'android') {
+  const isAvailable = testMediaStoreSaverModule();
+  if (!isAvailable) {
+    console.warn('⚠️ MediaStoreSaver native module NOT found! Rebuild the app with EAS.');
+  }
+}
 
 const PHOTOS_METADATA_KEY = 'cleaning-photos-metadata';
 const USER_PREFS_KEY = 'user-preferences';
@@ -458,6 +467,7 @@ export const deleteProjectAssets = async (projectId) => {
     }
 
     console.log(`[Storage] Found ${assetIds.length} assets for project ${projectId}`);
+    console.log('[Storage] Asset IDs to delete:', assetIds);
 
     // Delete media assets in a single batch
     if (assetIds.length > 0) {
@@ -467,14 +477,33 @@ export const deleteProjectAssets = async (projectId) => {
         console.log('[Storage] Permission status:', status);
 
         if (status === 'granted') {
-          console.log(`[Storage] Deleting ${assetIds.length} assets from media library...`);
-          await MediaLibrary.deleteAssetsAsync(assetIds);
-          console.log('[Storage] ✅ Assets deleted from media library');
+          console.log(`[Storage] Attempting to delete ${assetIds.length} assets from media library...`);
+          console.log('[Storage] Asset IDs:', JSON.stringify(assetIds));
+
+          const deleteResult = await MediaLibrary.deleteAssetsAsync(assetIds);
+          console.log('[Storage] MediaLibrary.deleteAssetsAsync result:', deleteResult);
+
+          // Verify deletion by trying to fetch the assets
+          for (const assetId of assetIds) {
+            try {
+              const asset = await MediaLibrary.getAssetInfoAsync(assetId);
+              if (asset) {
+                console.warn('[Storage] ⚠️ Asset still exists after deletion:', assetId, asset.filename);
+              } else {
+                console.log('[Storage] ✅ Asset successfully deleted:', assetId);
+              }
+            } catch (verifyError) {
+              console.log('[Storage] ✅ Asset deleted (not found):', assetId);
+            }
+          }
+
+          console.log('[Storage] ✅ Delete operation completed');
         } else {
           console.warn('[Storage] ⚠️ Permission not granted, cannot delete from media library');
         }
       } catch (e) {
         console.error('[Storage] ❌ Error deleting assets:', e);
+        console.error('[Storage] Error details:', e.message, e.stack);
       }
     } else {
       console.warn('[Storage] ⚠️ No assets found to delete for project', projectId);
