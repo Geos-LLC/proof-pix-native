@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as FS from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
-import { saveImageToGalleryNative } from '../utils/mediaStoreSaver';
+import { saveImageToGalleryNative, deleteImagesFromGalleryNative } from '../utils/mediaStoreSaver';
 import { testMediaStoreSaverModule } from '../utils/testMediaStoreSaver';
 
 // Test if MediaStoreSaver module is available on startup
@@ -244,6 +244,18 @@ export const deletePhotoFromDevice = async (photo, options = {}) => {
         return;
       }
 
+      // On Android, try native MediaStore deletion first (more reliable)
+      if (Platform.OS === 'android') {
+        try {
+          const result = await deleteImagesFromGalleryNative([filename]);
+          console.log('[Storage] ✅ Native delete result:', result);
+          return; // Successfully deleted via native method
+        } catch (nativeDelErr) {
+          console.warn('[Storage] Native delete failed, falling back to expo-media-library:', nativeDelErr);
+          // Continue to expo-media-library fallback below
+        }
+      }
+
       // Try direct assetId from stored mapping
       try {
         const stored = await AsyncStorage.getItem(ASSET_ID_MAP_KEY);
@@ -468,15 +480,30 @@ export const deleteProjectAssets = async (projectId) => {
 
     console.log(`[Storage] Found ${assetIds.length} assets for project ${projectId}`);
     console.log('[Storage] Asset IDs to delete:', assetIds);
+    console.log('[Storage] Filenames to delete:', filenames);
 
     // Delete media assets in a single batch
-    if (assetIds.length > 0) {
+    if (assetIds.length > 0 || filenames.length > 0) {
       try {
         console.log('[Storage] Requesting permission for deletion...');
         const { status } = await MediaLibrary.requestPermissionsAsync();
         console.log('[Storage] Permission status:', status);
 
         if (status === 'granted') {
+          // On Android, try native MediaStore deletion first (more reliable)
+          if (Platform.OS === 'android' && filenames.length > 0) {
+            try {
+              console.log(`[Storage] Attempting native delete for ${filenames.length} files...`);
+              const result = await deleteImagesFromGalleryNative(filenames);
+              console.log('[Storage] ✅ Native delete result:', result);
+              console.log('[Storage] ✅ Delete operation completed via native method');
+              return; // Successfully deleted via native method
+            } catch (nativeDelErr) {
+              console.warn('[Storage] Native delete failed, falling back to expo-media-library:', nativeDelErr);
+              // Continue to expo-media-library fallback below
+            }
+          }
+
           console.log(`[Storage] Attempting to delete ${assetIds.length} assets from media library...`);
           console.log('[Storage] Asset IDs:', JSON.stringify(assetIds));
 

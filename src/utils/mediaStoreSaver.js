@@ -30,4 +30,31 @@ export const saveImageToGalleryNative = async (sourceUri, fileName) => {
   }
 };
 
-export default { saveImageToGalleryNative };
+/**
+ * Delete images from gallery using native MediaStore API (Android only)
+ * This properly deletes images from the Android gallery/Photos app
+ *
+ * @param {string[]} fileNames - Array of filenames to delete (just the filename, not full path)
+ * @returns {Promise<string>} - Result message with deletion status
+ */
+export const deleteImagesFromGalleryNative = async (fileNames) => {
+  if (Platform.OS !== 'android') {
+    throw new Error('MediaStoreSaver is only available on Android');
+  }
+
+  if (!MediaStoreSaver) {
+    throw new Error('MediaStoreSaver native module not found');
+  }
+
+  try {
+    console.log('[MediaStoreSaver] Deleting images:', fileNames);
+    const result = await MediaStoreSaver.deleteImagesFromGallery(fileNames);
+    console.log('[MediaStoreSaver] ✅ Delete result:', result);
+    return result;
+  } catch (error) {
+    console.error('[MediaStoreSaver] ❌ Failed to delete images:', error);
+    throw error;
+  }
+};
+
+export default { saveImageToGalleryNative, deleteImagesFromGalleryNative };
