@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch } from '../services/storage';
+import { deleteImagesFromGalleryNative } from '../utils/mediaStoreSaver';
 import * as FileSystem from 'expo-file-system/legacy';
 import { PHOTO_MODES, ROOMS } from '../constants/rooms';
 
@@ -370,13 +371,29 @@ export const PhotoProvider = ({ children }) => {
         console.error(`[PhotoContext] ❌ Error deleting local files:`, err);
       }
 
-      // 2) Remove project-scoped derived files via asset map (handled below)
-
-      // 3) Project-scoped media+local deletion using asset map (prevents cross-project deletes)
-      try {
-        await deleteProjectAssets(projectId);
-      } catch (projErr) {
-        console.error(`[PhotoContext] ❌ Error deleting project assets:`, projErr);
+      // 2) Delete from MediaStore/gallery using native deleter (on Android) or deleteProjectAssets (fallback)
+      if (Platform.OS === 'android' && filenamesSet.size > 0) {
+        try {
+          console.log(`[PhotoContext] 🗑️ Deleting ${filenamesSet.size} files from gallery using native method`);
+          const filenames = Array.from(filenamesSet);
+          await deleteImagesFromGalleryNative(filenames);
+          console.log(`[PhotoContext] ✅ Successfully deleted project photos from gallery`);
+        } catch (nativeDelErr) {
+          console.error(`[PhotoContext] ❌ Native gallery delete failed:`, nativeDelErr);
+          // Fallback to asset map method
+          try {
+            await deleteProjectAssets(projectId);
+          } catch (projErr) {
+            console.error(`[PhotoContext] ❌ Error deleting project assets via fallback:`, projErr);
+          }
+        }
+      } else {
+        // iOS or no filenames: use asset map method
+        try {
+          await deleteProjectAssets(projectId);
+        } catch (projErr) {
+          console.error(`[PhotoContext] ❌ Error deleting project assets:`, projErr);
+        }
       }
     }
     
