@@ -154,4 +154,58 @@ class MediaStoreSaverModule(reactContext: ReactApplicationContext) : ReactContex
             promise.reject("DELETE_ERROR", "Failed to delete images: ${e.message}", e)
         }
     }
+
+    @ReactMethod
+    fun deleteImagesByProjectId(projectId: String, promise: Promise) {
+        try {
+            val context: Context = reactApplicationContext
+            val contentResolver = context.contentResolver
+            var deletedCount = 0
+            val deletedFiles = mutableListOf<String>()
+
+            // Query for all images in ProofPix folder that contain _P{projectId} in their name
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DISPLAY_NAME
+            )
+            val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("%Pictures/ProofPix%", "%_P${projectId}%")
+
+            var cursor: Cursor? = null
+            try {
+                cursor = contentResolver.query(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null
+                )
+
+                if (cursor != null) {
+                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                    val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idColumn)
+                        val fileName = cursor.getString(nameColumn)
+                        val imageUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+
+                        // Delete the image
+                        val deleted = contentResolver.delete(imageUri, null, null)
+                        if (deleted > 0) {
+                            deletedCount++
+                            deletedFiles.add(fileName)
+                        }
+                    }
+                }
+            } finally {
+                cursor?.close()
+            }
+
+            promise.resolve("Successfully deleted $deletedCount images for project $projectId: ${deletedFiles.joinToString(", ")}")
+
+        } catch (e: Exception) {
+            promise.reject("DELETE_ERROR", "Failed to delete images by project: ${e.message}", e)
+        }
+    }
 }

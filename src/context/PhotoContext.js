@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { AppState, Platform } from 'react-native';
 import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch } from '../services/storage';
-import { deleteImagesFromGalleryNative } from '../utils/mediaStoreSaver';
+import { deleteImagesFromGalleryNative, deleteImagesByProjectIdNative } from '../utils/mediaStoreSaver';
 import * as FileSystem from 'expo-file-system/legacy';
 import { PHOTO_MODES, ROOMS } from '../constants/rooms';
 
@@ -372,12 +372,19 @@ export const PhotoProvider = ({ children }) => {
       }
 
       // 2) Delete from MediaStore/gallery using native deleter (on Android) or deleteProjectAssets (fallback)
-      if (Platform.OS === 'android' && filenamesSet.size > 0) {
+      if (Platform.OS === 'android') {
         try {
-          console.log(`[PhotoContext] 🗑️ Deleting ${filenamesSet.size} files from gallery using native method`);
-          const filenames = Array.from(filenamesSet);
-          await deleteImagesFromGalleryNative(filenames);
-          console.log(`[PhotoContext] ✅ Successfully deleted project photos from gallery`);
+          // First delete tracked photos by filename
+          if (filenamesSet.size > 0) {
+            console.log(`[PhotoContext] 🗑️ Deleting ${filenamesSet.size} tracked files from gallery`);
+            const filenames = Array.from(filenamesSet);
+            await deleteImagesFromGalleryNative(filenames);
+          }
+
+          // Then delete ALL photos for this project (including combined photos) by project ID
+          console.log(`[PhotoContext] 🗑️ Deleting all photos for project ${projectId} (including combined)`);
+          await deleteImagesByProjectIdNative(projectId);
+          console.log(`[PhotoContext] ✅ Successfully deleted all project photos from gallery`);
         } catch (nativeDelErr) {
           console.error(`[PhotoContext] ❌ Native gallery delete failed:`, nativeDelErr);
           // Fallback to asset map method

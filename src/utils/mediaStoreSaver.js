@@ -57,4 +57,31 @@ export const deleteImagesFromGalleryNative = async (fileNames) => {
   }
 };
 
-export default { saveImageToGalleryNative, deleteImagesFromGalleryNative };
+/**
+ * Delete all images for a project by project ID using native MediaStore API (Android only)
+ * This finds and deletes all images with _P{projectId} in their filename, including combined photos
+ *
+ * @param {string} projectId - The project ID to delete images for
+ * @returns {Promise<string>} - Result message with deletion status
+ */
+export const deleteImagesByProjectIdNative = async (projectId) => {
+  if (Platform.OS !== 'android') {
+    throw new Error('MediaStoreSaver is only available on Android');
+  }
+
+  if (!MediaStoreSaver) {
+    throw new Error('MediaStoreSaver native module not found');
+  }
+
+  try {
+    console.log('[MediaStoreSaver] Deleting all images for project:', projectId);
+    const result = await MediaStoreSaver.deleteImagesByProjectId(projectId);
+    console.log('[MediaStoreSaver] ✅ Delete by project result:', result);
+    return result;
+  } catch (error) {
+    console.error('[MediaStoreSaver] ❌ Failed to delete images by project:', error);
+    throw error;
+  }
+};
+
+export default { saveImageToGalleryNative, deleteImagesFromGalleryNative, deleteImagesByProjectIdNative };
