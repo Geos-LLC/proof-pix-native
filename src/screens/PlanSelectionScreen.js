@@ -72,33 +72,42 @@ export default function PlanSelectionScreen({ navigation }) {
   }, []);
 
   const handleSelectPlan = async (plan) => {
+    console.log('[PlanSelection] handleSelectPlan called for plan:', plan);
+    console.log('[PlanSelection] trialAvailable:', trialAvailable);
+
     // If trial is available, show confirmation modal first (except for enterprise which currently has no trial)
     if (trialAvailable && plan !== 'enterprise') {
+      console.log('[PlanSelection] Showing trial confirmation modal');
       setSelectedPlanForTrial(plan);
       setShowTrialConfirmation(true);
       return;
     }
 
     // No trial flow or enterprise (no trial) → proceed directly
+    console.log('[PlanSelection] Proceeding without trial');
     await proceedWithPlanSelection(plan, false);
   };
 
   // Proceed with plan selection (with or without trial)
   const proceedWithPlanSelection = async (plan, useTrial = false) => {
+    console.log('[PlanSelection] proceedWithPlanSelection called - plan:', plan, 'useTrial:', useTrial);
     let trialJustStarted = false;
 
     if (useTrial) {
+      console.log('[PlanSelection] Starting trial for plan:', plan);
       try {
         // Start 30-day free trial for the selected plan
         await startTrial(plan);
         await updateUserPlan(plan);
         trialJustStarted = true;
+        console.log('[PlanSelection] ✅ Trial started successfully');
       } catch (error) {
-        console.error('[PlanSelection] Error starting trial:', error);
+        console.error('[PlanSelection] ❌ Error starting trial:', error);
         // Fallback to regular plan selection
         await updateUserPlan(plan);
       }
     } else {
+      console.log('[PlanSelection] Regular plan selection (no trial)');
       // Regular plan selection without trial
       // On iOS, require in-app purchase for paid plans before changing plan.
       if (Platform.OS === 'ios') {
@@ -107,11 +116,17 @@ export default function PlanSelectionScreen({ navigation }) {
         else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
         else if (plan === 'enterprise') productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
 
+        console.log('[PlanSelection] iOS platform detected, productId:', productId);
+
         if (productId) {
           try {
+            console.log('[PlanSelection] Initiating purchase for:', productId);
             await purchaseProduct(productId);
+            console.log('[PlanSelection] ✅ Purchase completed successfully');
           } catch (err) {
+            console.error('[PlanSelection] ❌ Purchase error:', err);
             if (err?.message === 'USER_CANCELLED') {
+              console.log('[PlanSelection] User cancelled purchase, not changing plan');
               return; // user cancelled, do not change plan
             }
             Alert.alert(
@@ -120,9 +135,14 @@ export default function PlanSelectionScreen({ navigation }) {
             );
             return;
           }
+        } else {
+          console.log('[PlanSelection] No productId for plan (probably starter/free)');
         }
+      } else {
+        console.log('[PlanSelection] Not iOS platform, skipping IAP');
       }
 
+      console.log('[PlanSelection] Updating user plan to:', plan);
       await updateUserPlan(plan);
     }
 
@@ -148,17 +168,21 @@ export default function PlanSelectionScreen({ navigation }) {
 
   // Handle trial confirmation - use trial
   const handleUseTrial = async () => {
+    console.log('[PlanSelection] handleUseTrial called');
     setShowTrialConfirmation(false);
     const plan = selectedPlanForTrial;
     setSelectedPlanForTrial(null);
+    console.log('[PlanSelection] Proceeding with trial for plan:', plan);
     await proceedWithPlanSelection(plan, true);
   };
 
   // Handle trial confirmation - cancel (continue without trial)
   const handleCancelTrial = async () => {
+    console.log('[PlanSelection] handleCancelTrial called - user declined trial');
     setShowTrialConfirmation(false);
     const plan = selectedPlanForTrial;
     setSelectedPlanForTrial(null);
+    console.log('[PlanSelection] Proceeding WITHOUT trial for plan:', plan);
     await proceedWithPlanSelection(plan, false);
   };
 
