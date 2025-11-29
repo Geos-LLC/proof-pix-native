@@ -1279,54 +1279,51 @@ export default function CameraScreen({ route, navigation }) {
         // Letterbox mode: logical aspect is always 4:3
         aspectRatio = '4:3';
 
-        // On iOS we crop to an exact 4:3 window to match the preview bars.
-        // On Android we keep the raw VisionCamera frame to avoid extra zoom.
-        if (Platform.OS === 'ios') {
-          try {
-            // Get original image dimensions
-            const imageInfo = await new Promise((resolve, reject) => {
-              Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-            });
+        // Crop to exact 4:3 window to match the preview bars (both iOS and Android)
+        try {
+          // Get original image dimensions
+          const imageInfo = await new Promise((resolve, reject) => {
+            Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
+          });
 
-            // Calculate 4:3 crop (1.333:1 ratio)
-            const targetRatio = 4 / 3;
-            const photoRatio = imageInfo.width / imageInfo.height;
+          // Calculate 4:3 crop (1.333:1 ratio)
+          const targetRatio = 4 / 3;
+          const photoRatio = imageInfo.width / imageInfo.height;
 
-            let cropWidth, cropHeight, cropX, cropY;
+          let cropWidth, cropHeight, cropX, cropY;
 
-            if (photoRatio > targetRatio) {
-              // Photo is wider than 4:3 - crop sides
-              cropHeight = imageInfo.height;
-              cropWidth = cropHeight * targetRatio;
-              cropX = (imageInfo.width - cropWidth) / 2;
-              cropY = 0;
-            } else {
-              // Photo is taller than 4:3 - crop top/bottom
-              cropWidth = imageInfo.width;
-              cropHeight = cropWidth / targetRatio;
-              cropX = 0;
-              cropY = (imageInfo.height - cropHeight) / 2;
-            }
-
-            const croppedImage = await ImageManipulator.manipulateAsync(
-              uri,
-              [
-                {
-                  crop: {
-                    originX: cropX,
-                    originY: cropY,
-                    width: cropWidth,
-                    height: cropHeight
-                  }
-                }
-              ],
-              { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
-            );
-
-            processedUri = croppedImage.uri;
-          } catch (cropError) {
-            // Fall back to original uri if cropping fails
+          if (photoRatio > targetRatio) {
+            // Photo is wider than 4:3 - crop sides
+            cropHeight = imageInfo.height;
+            cropWidth = cropHeight * targetRatio;
+            cropX = (imageInfo.width - cropWidth) / 2;
+            cropY = 0;
+          } else {
+            // Photo is taller than 4:3 - crop top/bottom
+            cropWidth = imageInfo.width;
+            cropHeight = cropWidth / targetRatio;
+            cropX = 0;
+            cropY = (imageInfo.height - cropHeight) / 2;
           }
+
+          const croppedImage = await ImageManipulator.manipulateAsync(
+            uri,
+            [
+              {
+                crop: {
+                  originX: cropX,
+                  originY: cropY,
+                  width: cropWidth,
+                  height: cropHeight
+                }
+              }
+            ],
+            { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+          );
+
+          processedUri = croppedImage.uri;
+        } catch (cropError) {
+          // Fall back to original uri if cropping fails
         }
       } else {
         // Portrait mode: calculate from actual screen dimensions
@@ -1434,9 +1431,8 @@ export default function CameraScreen({ route, navigation }) {
       let processedUri = uri;
       const beforeCameraViewMode = activeBeforePhoto.cameraViewMode || 'portrait';
 
-      if (beforeCameraViewMode === 'landscape' && Platform.OS === 'ios') {
-        // iOS: crop to exact 4:3 to match preview.
-        // Android: keep raw VisionCamera frame to avoid extra zoom.
+      if (beforeCameraViewMode === 'landscape') {
+        // Crop to exact 4:3 to match preview (both iOS and Android)
         try {
           // Get original image dimensions
           const imageInfo = await new Promise((resolve, reject) => {
