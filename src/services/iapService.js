@@ -111,16 +111,16 @@ export const purchaseProduct = async (productId) => {
 
     try {
       // Ensure product is known to the store (will also fetch localized price if needed later)
-      console.log('[IAP] Fetching product from store:', productId);
-      const products = await RNIap.getProducts([productId]);
-      console.log('[IAP] Products fetched:', products);
+      console.log('[IAP] Fetching subscriptions from store:', productId);
+      const subscriptions = await RNIap.getSubscriptions({ skus: [productId] });
+      console.log('[IAP] Subscriptions fetched:', subscriptions);
 
-      if (!products || products.length === 0) {
+      if (!subscriptions || subscriptions.length === 0) {
         throw new Error('PRODUCT_NOT_FOUND');
       }
 
-      console.log('[IAP] Requesting purchase...');
-      await RNIap.requestPurchase(productId, false);
+      console.log('[IAP] Requesting subscription purchase...');
+      await RNIap.requestSubscription({ sku: productId });
       console.log('[IAP] Purchase request sent');
     } catch (err) {
       console.error('[IAP] Error during purchase flow:', err);
