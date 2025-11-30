@@ -112,7 +112,7 @@ export const purchaseProduct = async (productId) => {
     try {
       // Ensure product is known to the store (will also fetch localized price if needed later)
       console.log('[IAP] Fetching subscriptions from store:', productId);
-      const subscriptions = await RNIap.getSubscriptions({ skus: [productId] });
+      const subscriptions = await RNIap.getSubscriptions([productId]);
       console.log('[IAP] Subscriptions fetched:', subscriptions);
 
       if (!subscriptions || subscriptions.length === 0) {
@@ -120,7 +120,7 @@ export const purchaseProduct = async (productId) => {
       }
 
       console.log('[IAP] Requesting subscription purchase...');
-      await RNIap.requestSubscription({ sku: productId });
+      await RNIap.requestSubscription(productId);
       console.log('[IAP] Purchase request sent');
     } catch (err) {
       console.error('[IAP] Error during purchase flow:', err);
