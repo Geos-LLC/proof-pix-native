@@ -9,7 +9,7 @@ export default {
     orientation: "default",
     icon: "./assets/PP_logo.png",
     userInterfaceStyle: "light",
-    newArchEnabled: true,
+    newArchEnabled: false,
     backgroundColor: "#000000",
     scheme: "proofpix",
     splash: {
