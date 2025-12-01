@@ -102,16 +102,26 @@ export default function PlanSelectionScreen({ navigation }) {
       // Regular plan selection without trial
       // On iOS, require in-app purchase for paid plans before changing plan.
       if (Platform.OS === 'ios') {
+        console.log('[PlanSelection] iOS platform detected, checking for IAP');
         let productId = null;
         if (plan === 'pro') productId = IAP_PRODUCTS.PRO_MONTHLY;
         else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
         else if (plan === 'enterprise') productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
 
+        console.log('[PlanSelection] Selected plan:', plan, 'Product ID:', productId);
+
         if (productId) {
           try {
-            await purchaseProduct(productId);
+            console.log('[PlanSelection] Starting purchase for:', productId);
+            const purchaseResult = await purchaseProduct(productId);
+            console.log('[PlanSelection] ✅ Purchase successful:', JSON.stringify(purchaseResult, null, 2));
           } catch (err) {
+            console.error('[PlanSelection] ❌ Purchase failed:', err);
+            console.error('[PlanSelection] Error message:', err?.message);
+            console.error('[PlanSelection] Error stack:', err?.stack);
+
             if (err?.message === 'USER_CANCELLED') {
+              console.log('[PlanSelection] User cancelled purchase');
               return; // user cancelled, do not change plan
             }
             Alert.alert(
@@ -120,7 +130,11 @@ export default function PlanSelectionScreen({ navigation }) {
             );
             return;
           }
+        } else {
+          console.log('[PlanSelection] No product ID for plan:', plan, '(free plan?)');
         }
+      } else {
+        console.log('[PlanSelection] Platform is not iOS:', Platform.OS);
       }
 
       await updateUserPlan(plan);
