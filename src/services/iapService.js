@@ -131,17 +131,25 @@ export const purchaseProduct = async (productId) => {
     });
 
     try {
-      console.log('[IAP] Fetching subscriptions for:', [productId]);
-      const products = await RNIap.getSubscriptions({ skus: [productId] });
-      console.log('[IAP] Subscriptions fetched:', JSON.stringify(products, null, 2));
+      console.log('[IAP] Fetching products for:', [productId]);
+      const products = await RNIap.fetchProducts({
+        skus: [productId],
+        type: 'subs'
+      });
+      console.log('[IAP] Products fetched:', JSON.stringify(products, null, 2));
 
       if (!products || products.length === 0) {
-        console.error('[IAP] ❌ No subscriptions found for:', productId);
+        console.error('[IAP] ❌ No products found for:', productId);
         throw new Error('PRODUCT_NOT_FOUND');
       }
 
       console.log('[IAP] Requesting purchase with v14 API...');
-      await RNIap.requestSubscription({ sku: productId });
+      await RNIap.requestPurchase({
+        request: {
+          ios: { sku: productId },
+          android: { skus: [productId] }
+        }
+      });
       console.log('[IAP] Purchase request sent, waiting for response...');
     } catch (err) {
       console.error('[IAP] ❌ Error during purchase flow:', err);
