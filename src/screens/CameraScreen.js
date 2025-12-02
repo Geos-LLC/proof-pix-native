@@ -160,6 +160,12 @@ export default function CameraScreen({ route, navigation }) {
 
   // Calculate target aspect ratio for format selection
   const targetAspectRatio = useMemo(() => {
+    // Letterbox mode: always use 4:3 ratio
+    if (cameraViewMode === 'landscape') {
+      return 4 / 3;
+    }
+
+    // Full screen mode: match screen ratio
     const screenWidth = dimensions.width;
     const screenHeight = dimensions.height;
     const isLandscape = screenWidth > screenHeight;
@@ -167,7 +173,7 @@ export default function CameraScreen({ route, navigation }) {
       ? screenWidth / screenHeight
       : screenHeight / screenWidth;
     return ratio;
-  }, [dimensions]);
+  }, [dimensions, cameraViewMode]);
 
   // Select best camera format
   const format = useMemo(() => {
@@ -1299,51 +1305,13 @@ export default function CameraScreen({ route, navigation }) {
       }
 
       if (cameraViewMode === 'landscape') {
-        // Letterbox mode: Crop to 4:3 aspect ratio to match the visible area between bars
+        // Letterbox mode: Camera captures at native 4:3, no cropping needed
         aspectRatio = '4:3';
+        processedUri = uri;
 
         if (imageInfo) {
-          try {
-            // Calculate 4:3 crop (1.333:1 ratio - width is 1.333x the height)
-            const targetRatio = 4 / 3;
-            const photoRatio = imageInfo.width / imageInfo.height;
-
-            let cropWidth, cropHeight, cropX, cropY;
-
-            if (photoRatio > targetRatio) {
-              // Photo is wider than 4:3 - crop sides
-              cropHeight = imageInfo.height;
-              cropWidth = cropHeight * targetRatio;
-              cropX = (imageInfo.width - cropWidth) / 2;
-              cropY = 0;
-            } else {
-              // Photo is taller than 4:3 - crop top/bottom
-              cropWidth = imageInfo.width;
-              cropHeight = cropWidth / targetRatio;
-              cropX = 0;
-              cropY = (imageInfo.height - cropHeight) / 2;
-            }
-
-            const croppedImage = await ImageManipulator.manipulateAsync(
-              uri,
-              [
-                {
-                  crop: {
-                    originX: cropX,
-                    originY: cropY,
-                    width: cropWidth,
-                    height: cropHeight
-                  }
-                }
-              ],
-              { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
-            );
-
-            processedUri = croppedImage.uri;
-          } catch (cropError) {
-            console.error('[CameraScreen] Failed to crop letterbox photo:', cropError);
-            // Fall back to original uri if cropping fails
-          }
+          console.log('[CameraScreen] Letterbox - Device orientation:', deviceOrientation);
+          console.log('[CameraScreen] Letterbox - Photo dimensions (native 4:3):', imageInfo);
         }
       } else {
         // Full screen mode: Save the full sensor output without cropping
@@ -1470,52 +1438,8 @@ export default function CameraScreen({ route, navigation }) {
       const beforeCameraViewMode = activeBeforePhoto.cameraViewMode || 'portrait';
 
       if (beforeCameraViewMode === 'landscape') {
-        // Letterbox mode: Crop to 4:3 aspect ratio to match before photo
-        try {
-          const imageInfo = await new Promise((resolve, reject) => {
-            Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-          });
-
-          // Calculate 4:3 crop (1.333:1 ratio)
-          const targetRatio = 4 / 3;
-          const photoRatio = imageInfo.width / imageInfo.height;
-
-          let cropWidth, cropHeight, cropX, cropY;
-
-          if (photoRatio > targetRatio) {
-            // Photo is wider than 4:3 - crop sides
-            cropHeight = imageInfo.height;
-            cropWidth = cropHeight * targetRatio;
-            cropX = (imageInfo.width - cropWidth) / 2;
-            cropY = 0;
-          } else {
-            // Photo is taller than 4:3 - crop top/bottom
-            cropWidth = imageInfo.width;
-            cropHeight = cropWidth / targetRatio;
-            cropX = 0;
-            cropY = (imageInfo.height - cropHeight) / 2;
-          }
-
-          const croppedImage = await ImageManipulator.manipulateAsync(
-            uri,
-            [
-              {
-                crop: {
-                  originX: cropX,
-                  originY: cropY,
-                  width: cropWidth,
-                  height: cropHeight
-                }
-              }
-            ],
-            { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
-          );
-
-          processedUri = croppedImage.uri;
-        } catch (cropError) {
-          console.error('[CameraScreen] Failed to crop letterbox after photo:', cropError);
-          // Fall back to original uri if cropping fails
-        }
+        // Letterbox mode: Camera captures at native 4:3, no cropping needed
+        processedUri = uri;
       } else {
         // Full screen mode: Save full sensor output to match before photo (no cropping)
         processedUri = uri;
