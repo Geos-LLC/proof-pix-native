@@ -89,6 +89,8 @@ export default function CameraScreen({ route, navigation }) {
   const [androidCombinedJob, setAndroidCombinedJob] = useState(null); // Android-only combined base capture job
   const androidCombinedImagesLoaded = useRef(0); // Count how many images finished loading for the off-screen combined view
   const [androidCombinedReadyTick, setAndroidCombinedReadyTick] = useState(0); // Bump to trigger capture once both images are ready
+  const androidCombinedCaptureInProgress = useRef(false); // Prevent simultaneous captures
+  const completionAlertTimer = useRef(null); // Timer for "All Photos Taken" alert
   const tapStartTime = useRef(null);
   const [dimensions, setDimensions] = useState({ width: initialWidth, height: initialHeight });
   const lastTap = useRef(null);
@@ -143,6 +145,16 @@ export default function CameraScreen({ route, navigation }) {
       setEnableTorch(false);
     }
   }, [supportsTorch, enableTorch]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (completionAlertTimer.current) {
+        clearTimeout(completionAlertTimer.current);
+      }
+    };
+  }, []);
+
   const { hasPermission, requestPermission } = useCameraPermission();
   const [zoom, setZoom] = useState(1.0);
 
@@ -1275,107 +1287,91 @@ export default function CameraScreen({ route, navigation }) {
       let aspectRatio;
       let processedUri = uri;
 
+      // Get original image dimensions first
+      let imageInfo;
+      try {
+        imageInfo = await new Promise((resolve, reject) => {
+          Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
+        });
+      } catch (error) {
+        console.error('[CameraScreen] Failed to get image dimensions:', error);
+        imageInfo = null;
+      }
+
       if (cameraViewMode === 'landscape') {
-        // Letterbox mode: logical aspect is always 4:3
+        // Letterbox mode: Crop to 4:3 aspect ratio to match the visible area between bars
         aspectRatio = '4:3';
 
-        // Crop to exact 4:3 window to match the preview bars on both iOS and Android
-        try {
-          // Get original image dimensions
-          const imageInfo = await new Promise((resolve, reject) => {
-            Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-          });
+        if (imageInfo) {
+          try {
+            // Calculate 4:3 crop (1.333:1 ratio - width is 1.333x the height)
+            const targetRatio = 4 / 3;
+            const photoRatio = imageInfo.width / imageInfo.height;
 
-          // Calculate 4:3 crop (1.333:1 ratio)
-          const targetRatio = 4 / 3;
-          const photoRatio = imageInfo.width / imageInfo.height;
+            let cropWidth, cropHeight, cropX, cropY;
 
-          let cropWidth, cropHeight, cropX, cropY;
+            if (photoRatio > targetRatio) {
+              // Photo is wider than 4:3 - crop sides
+              cropHeight = imageInfo.height;
+              cropWidth = cropHeight * targetRatio;
+              cropX = (imageInfo.width - cropWidth) / 2;
+              cropY = 0;
+            } else {
+              // Photo is taller than 4:3 - crop top/bottom
+              cropWidth = imageInfo.width;
+              cropHeight = cropWidth / targetRatio;
+              cropX = 0;
+              cropY = (imageInfo.height - cropHeight) / 2;
+            }
 
-          if (photoRatio > targetRatio) {
-            // Photo is wider than 4:3 - crop sides
-            cropHeight = imageInfo.height;
-            cropWidth = cropHeight * targetRatio;
-            cropX = (imageInfo.width - cropWidth) / 2;
-            cropY = 0;
-          } else {
-            // Photo is taller than 4:3 - crop top/bottom
-            cropWidth = imageInfo.width;
-            cropHeight = cropWidth / targetRatio;
-            cropX = 0;
-            cropY = (imageInfo.height - cropHeight) / 2;
-          }
-
-          const croppedImage = await ImageManipulator.manipulateAsync(
-            uri,
-            [
-              {
-                crop: {
-                  originX: cropX,
-                  originY: cropY,
-                  width: cropWidth,
-                  height: cropHeight
+            const croppedImage = await ImageManipulator.manipulateAsync(
+              uri,
+              [
+                {
+                  crop: {
+                    originX: cropX,
+                    originY: cropY,
+                    width: cropWidth,
+                    height: cropHeight
+                  }
                 }
-              }
-            ],
-            { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
-          );
+              ],
+              { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+            );
 
-          processedUri = croppedImage.uri;
-        } catch (cropError) {
-          console.error('[CameraScreen] Failed to crop letterbox photo:', cropError);
-          // Fall back to original uri if cropping fails
+            processedUri = croppedImage.uri;
+          } catch (cropError) {
+            console.error('[CameraScreen] Failed to crop letterbox photo:', cropError);
+            // Fall back to original uri if cropping fails
+          }
         }
       } else {
-        // Portrait mode: crop to standard 3:4 aspect ratio
-        aspectRatio = '3:4';
-
-        try {
-          // Get original image dimensions
-          const imageInfo = await new Promise((resolve, reject) => {
-            Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-          });
-
-          // Calculate 3:4 crop (0.75:1 ratio)
-          const targetRatio = 3 / 4;
-          const photoRatio = imageInfo.width / imageInfo.height;
-
-          let cropWidth, cropHeight, cropX, cropY;
-
-          if (photoRatio > targetRatio) {
-            // Photo is wider than 3:4 - crop sides
-            cropHeight = imageInfo.height;
-            cropWidth = cropHeight * targetRatio;
-            cropX = (imageInfo.width - cropWidth) / 2;
-            cropY = 0;
+        // Full screen mode: Save the full sensor output without cropping
+        // Determine aspect ratio based on actual photo dimensions
+        if (imageInfo) {
+          if (imageInfo.width > imageInfo.height) {
+            // Landscape photo
+            const ratio = imageInfo.width / imageInfo.height;
+            if (ratio >= 1.7) {
+              aspectRatio = '16:9';
+            } else {
+              aspectRatio = '4:3';
+            }
           } else {
-            // Photo is taller than 3:4 - crop top/bottom
-            cropWidth = imageInfo.width;
-            cropHeight = cropWidth / targetRatio;
-            cropX = 0;
-            cropY = (imageInfo.height - cropHeight) / 2;
+            // Portrait photo
+            const ratio = imageInfo.height / imageInfo.width;
+            if (ratio >= 1.7) {
+              aspectRatio = '9:16';
+            } else {
+              aspectRatio = '3:4';
+            }
           }
-
-          const croppedImage = await ImageManipulator.manipulateAsync(
-            uri,
-            [
-              {
-                crop: {
-                  originX: cropX,
-                  originY: cropY,
-                  width: cropWidth,
-                  height: cropHeight
-                }
-              }
-            ],
-            { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
-          );
-
-          processedUri = croppedImage.uri;
-        } catch (cropError) {
-          console.error('[CameraScreen] Failed to crop portrait photo:', cropError);
-          // Fall back to original uri if cropping fails
+        } else {
+          // Fallback if we can't get dimensions
+          aspectRatio = deviceOrientation === 'landscape' ? '4:3' : '3:4';
         }
+        // No cropping - save full sensor output
+        processedUri = uri;
       }
 
       // Save processed photo to device
@@ -1469,14 +1465,13 @@ export default function CameraScreen({ route, navigation }) {
         console.log(`[DEBUG] ⏱️ Delete existing combined photo: ${Date.now() - deleteStart}ms`);
       }
 
-      // Crop after photo if in letterbox mode to match before photo
+      // Crop after photo to match before photo's camera view mode
       let processedUri = uri;
       const beforeCameraViewMode = activeBeforePhoto.cameraViewMode || 'portrait';
 
       if (beforeCameraViewMode === 'landscape') {
-        // Crop to exact 4:3 to match preview on both iOS and Android
+        // Letterbox mode: Crop to 4:3 aspect ratio to match before photo
         try {
-          // Get original image dimensions
           const imageInfo = await new Promise((resolve, reject) => {
             Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
           });
@@ -1522,53 +1517,8 @@ export default function CameraScreen({ route, navigation }) {
           // Fall back to original uri if cropping fails
         }
       } else {
-        // Portrait mode: crop to standard 3:4 aspect ratio to match before photo
-        try {
-          // Get original image dimensions
-          const imageInfo = await new Promise((resolve, reject) => {
-            Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-          });
-
-          // Calculate 3:4 crop (0.75:1 ratio)
-          const targetRatio = 3 / 4;
-          const photoRatio = imageInfo.width / imageInfo.height;
-
-          let cropWidth, cropHeight, cropX, cropY;
-
-          if (photoRatio > targetRatio) {
-            // Photo is wider than 3:4 - crop sides
-            cropHeight = imageInfo.height;
-            cropWidth = cropHeight * targetRatio;
-            cropX = (imageInfo.width - cropWidth) / 2;
-            cropY = 0;
-          } else {
-            // Photo is taller than 3:4 - crop top/bottom
-            cropWidth = imageInfo.width;
-            cropHeight = cropWidth / targetRatio;
-            cropX = 0;
-            cropY = (imageInfo.height - cropHeight) / 2;
-          }
-
-          const croppedImage = await ImageManipulator.manipulateAsync(
-            uri,
-            [
-              {
-                crop: {
-                  originX: cropX,
-                  originY: cropY,
-                  width: cropWidth,
-                  height: cropHeight
-                }
-              }
-            ],
-            { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
-          );
-
-          processedUri = croppedImage.uri;
-        } catch (cropError) {
-          console.error('[CameraScreen] Failed to crop portrait after photo:', cropError);
-          // Fall back to original uri if cropping fails
-        }
+        // Full screen mode: Save full sensor output to match before photo (no cropping)
+        processedUri = uri;
       }
 
       // Save processed photo to device
@@ -1696,6 +1646,11 @@ export default function CameraScreen({ route, navigation }) {
                 afterUri: savedUri,
                 layout,
                 dims: dimsLocal,
+                beforeSize: aSize,
+                afterSize: bSize,
+                beforeOrientation,
+                cameraVM,
+                isLandscapePair,
               });
               const capUri = await compositeImages(
                 activeBeforePhoto.uri,
@@ -1791,17 +1746,43 @@ export default function CameraScreen({ route, navigation }) {
                 }
               }
             } catch (captureError) {
+              console.error('[CameraScreen] ❌ Combined photo creation failed:', captureError);
+              console.error('[CameraScreen] Error details:', {
+                message: captureError.message,
+                stack: captureError.stack,
+                beforeUri: activeBeforePhoto.uri,
+                afterUri: savedUri,
+                layout,
+                dims: dimsLocal,
+              });
+              Alert.alert('Error', `Failed to create combined photo: ${captureError.message || 'Unknown error'}`);
             }
           } else if (Platform.OS === 'android') {
             // Android: use JS/ViewShot-based compositor
+            // Limit dimensions to prevent ViewShot failures on large images
+            const MAX_DIMENSION = 4096; // ViewShot has limits on Android
+            let limitedWidth = dimsLocal.width;
+            let limitedHeight = dimsLocal.height;
+
+            if (limitedWidth > MAX_DIMENSION || limitedHeight > MAX_DIMENSION) {
+              const scale = Math.min(MAX_DIMENSION / limitedWidth, MAX_DIMENSION / limitedHeight);
+              limitedWidth = Math.round(limitedWidth * scale);
+              limitedHeight = Math.round(limitedHeight * scale);
+              console.log('[CameraScreen][Android] Scaling down dimensions to prevent ViewShot failure:', {
+                original: { width: dimsLocal.width, height: dimsLocal.height },
+                limited: { width: limitedWidth, height: limitedHeight },
+                scale,
+              });
+            }
+
             // Reset image load counter for the new job; capture will run once both images report onLoad.
             androidCombinedImagesLoaded.current = 0;
             setAndroidCombinedJob({
               beforeUri: activeBeforePhoto.uri,
               afterUri: savedUri,
               layout,
-              width: dimsLocal.width,
-              height: dimsLocal.height,
+              width: limitedWidth,
+              height: limitedHeight,
               room: activeBeforePhoto.room,
               safeName,
               projectId: activeProjectId || null,
@@ -1828,23 +1809,38 @@ export default function CameraScreen({ route, navigation }) {
         // Select the next unpaired photo
         setSelectedBeforePhoto(nextUnpaired[0]);
       } else {
-        // All photos paired, go back to main grid
-        Alert.alert(
-          'All Photos Taken',
-          'All after photos have been captured!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                if (navigation.canGoBack()) {
-                  navigation.goBack();
-                } else {
-                  navigation.navigate('Home');
+        // All photos paired - wait for the combined photo capture to complete
+        // before showing the completion alert. This prevents navigation from
+        // unmounting the camera screen mid-capture.
+        const showCompletionAlert = () => {
+          // Check if a capture is still in progress
+          if (Platform.OS === 'android' && androidCombinedCaptureInProgress.current) {
+            console.log('[CameraScreen] Waiting for combined photo capture to complete before showing alert...');
+            // Check again in 500ms
+            completionAlertTimer.current = setTimeout(showCompletionAlert, 500);
+            return;
+          }
+
+          Alert.alert(
+            'All Photos Taken',
+            'All after photos have been captured!',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else {
+                    navigation.navigate('Home');
+                  }
                 }
               }
-            }
-          ]
-        );
+            ]
+          );
+        };
+
+        // Start with initial delay to give capture time to start
+        completionAlertTimer.current = setTimeout(showCompletionAlert, 800);
       }
       console.log('[DEBUG] ✅ handleAfterPhoto completed');
     } catch (error) {
@@ -1872,6 +1868,12 @@ export default function CameraScreen({ route, navigation }) {
     // Wait until both BEFORE and AFTER images reported onLoad
     if (androidCombinedImagesLoaded.current < 2) return;
 
+    // Prevent simultaneous captures
+    if (androidCombinedCaptureInProgress.current) {
+      console.log('[CameraScreen][Android] ⏸️ Capture already in progress, waiting...');
+      return;
+    }
+
     let cancelled = false;
 
     const run = async () => {
@@ -1879,27 +1881,92 @@ export default function CameraScreen({ route, navigation }) {
       const baseType = layout === 'STACK' ? 'STACK' : 'SIDE';
       const projectIdSuffix = projectId ? `_P${projectId}` : '';
 
+      // Set capture in progress flag
+      androidCombinedCaptureInProgress.current = true;
+
       try {
-        // Give React a moment to render the off-screen view even after images loaded
-        await new Promise(resolve => setTimeout(resolve, 120));
-        if (cancelled || !androidCombinedRef.current) return;
+        console.log('[CameraScreen][Android] 🧩 Starting combined photo capture:', {
+          layout,
+          requestedDimensions: { width, height },
+          beforeUri: androidCombinedJob.beforeUri,
+          afterUri: androidCombinedJob.afterUri,
+        });
+
+        // Give React more time to render and stabilize the off-screen view
+        // Increased from 120ms to 300ms for better reliability
+        await new Promise(resolve => setTimeout(resolve, 300));
+        if (cancelled || !androidCombinedRef.current) {
+          console.log('[CameraScreen][Android] ⚠️ Capture cancelled or ref not available');
+          return;
+        }
 
         // Use a normalized canvas size to avoid huge off-screen views, preserve aspect ratio
-        const baseWidth = 1920;
+        // Cap at 2048 for better compatibility
+        const MAX_CAPTURE_WIDTH = 2048;
+        const baseWidth = Math.min(width, MAX_CAPTURE_WIDTH);
         const aspect = height > 0 ? height / width : 1;
         const baseHeight = Math.max(400, Math.round(baseWidth * aspect));
+
+        console.log('[CameraScreen][Android] 📐 Capture dimensions:', { width: baseWidth, height: baseHeight, aspect });
 
         // Update the view size just before capture
         if (androidCombinedRef.current) {
           androidCombinedRef.current.setNativeProps({
             style: { width: baseWidth, height: baseHeight },
           });
+          // Give the view a moment to apply the new dimensions
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        const capturedUri = await captureRef(androidCombinedRef, {
-          format: 'jpg',
-          quality: 0.95,
-        });
+        // Retry mechanism for ViewShot capture
+        let capturedUri = null;
+        let lastError = null;
+        const MAX_RETRIES = 2;
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            // Validate ref before each attempt
+            if (!androidCombinedRef.current) {
+              throw new Error('View ref is no longer available');
+            }
+
+            console.log(`[CameraScreen][Android] 📸 Capture attempt ${attempt}/${MAX_RETRIES}`);
+
+            capturedUri = await captureRef(androidCombinedRef, {
+              format: 'jpg',
+              quality: 0.95,
+            });
+
+            console.log('[CameraScreen][Android] ✅ ViewShot capture successful:', capturedUri);
+            break; // Success, exit retry loop
+          } catch (captureError) {
+            lastError = captureError;
+            console.warn(`[CameraScreen][Android] ⚠️ Capture attempt ${attempt} failed:`, captureError.message);
+
+            if (attempt < MAX_RETRIES) {
+              // Check if component was cancelled/unmounted
+              if (cancelled) {
+                console.log('[CameraScreen][Android] ⚠️ Capture cancelled, aborting retries');
+                break;
+              }
+
+              // Wait before retrying, increasing delay with each attempt
+              const retryDelay = 300 * attempt;
+              console.log(`[CameraScreen][Android] ⏳ Waiting ${retryDelay}ms before retry...`);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+
+              // Verify ref is still valid after waiting
+              if (!androidCombinedRef.current) {
+                console.error('[CameraScreen][Android] ❌ View ref lost during retry delay');
+                break;
+              }
+            }
+          }
+        }
+
+        if (!capturedUri) {
+          throw lastError || new Error('Failed to capture view after retries');
+        }
 
         const savedUri = await savePhotoToDevice(
           capturedUri,
@@ -1909,7 +1976,15 @@ export default function CameraScreen({ route, navigation }) {
         console.log('[CameraScreen][Android] 💾 combined base saved via ViewShot', savedUri);
       } catch (err) {
         console.error('[CameraScreen][Android] ❌ Failed to create combined base via ViewShot:', err);
+        console.error('[CameraScreen][Android] Error details:', {
+          message: err.message,
+          stack: err.stack,
+          job: androidCombinedJob,
+        });
       } finally {
+        // Clear capture in progress flag
+        androidCombinedCaptureInProgress.current = false;
+
         if (!cancelled) {
           // Reset load counter and clear the job so the off-screen view unmounts
           androidCombinedImagesLoaded.current = 0;
@@ -2389,14 +2464,21 @@ export default function CameraScreen({ route, navigation }) {
       )}
 
       {/* Android-only off-screen combined view for original COMBINED_BASE capture via ViewShot */}
-      {Platform.OS === 'android' && androidCombinedJob && (
+      {Platform.OS === 'android' && androidCombinedJob && (() => {
+        // Use reasonable initial dimensions to prevent rendering issues
+        const MAX_INITIAL = 2048;
+        const initialWidth = Math.min(androidCombinedJob.width || 1920, MAX_INITIAL);
+        const initialAspect = androidCombinedJob.height / androidCombinedJob.width;
+        const initialHeight = Math.round(initialWidth * initialAspect);
+
+        return (
         <View
           style={{
             position: 'absolute',
             left: -10000,
             top: -10000,
-            width: androidCombinedJob.width || 1920,
-            height: androidCombinedJob.height || 1080,
+            width: initialWidth,
+            height: initialHeight,
           }}
           pointerEvents="none"
         >
@@ -2459,7 +2541,8 @@ export default function CameraScreen({ route, navigation }) {
             </View>
           </View>
         </View>
-      )}
+        );
+      })()}
 
       {/* Enlarged gallery carousel - shown when tapping a gallery item */}
       {showEnlargedGallery && (() => {
