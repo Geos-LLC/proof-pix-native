@@ -40,33 +40,53 @@ export default function PlanSelectionScreen({ navigation }) {
   const [selectedPlanForTrial, setSelectedPlanForTrial] = useState(null);
   // Track if we've shown the notification in this session
   const hasShownTrialNotification = useRef(false);
+  // Track if component is mounted to prevent state updates after unmount
+  const isMounted = useRef(true);
 
   useEffect(() => {
+    console.log('[PlanSelection] 🔵 Component mounted, isMounted set to true');
+    isMounted.current = true;
+
     // Check if trial is available for new users
     const checkTrialAvailability = async () => {
       try {
         const available = await canStartTrial();
-        setTrialAvailable(available);
+        if (isMounted.current) {
+          setTrialAvailable(available);
+        }
 
         // Check if user has a referral code to determine trial days
         try {
           const AsyncStorage = await import('@react-native-async-storage/async-storage');
           const referralData = await AsyncStorage.default.getItem('@referral_accepted');
-          setTrialDays(referralData !== null ? 45 : 30);
+          if (isMounted.current) {
+            setTrialDays(referralData !== null ? 45 : 30);
+          }
         } catch (error) {
-          setTrialDays(30);
+          if (isMounted.current) {
+            setTrialDays(30);
+          }
         }
       } catch (error) {
         console.error('[PlanSelection] Error checking trial availability:', error);
         // Default to showing trial UI if check fails (for new users)
-        setTrialAvailable(true);
-        setTrialDays(30);
+        if (isMounted.current) {
+          setTrialAvailable(true);
+          setTrialDays(30);
+        }
       }
     };
     checkTrialAvailability();
-    
+
     // Clear modal state when screen is focused (e.g., when navigating back)
-    setShowTrialModal(false);
+    if (isMounted.current) {
+      setShowTrialModal(false);
+    }
+
+    return () => {
+      console.log('[PlanSelection] 🔴 Component unmounting, isMounted set to false');
+      isMounted.current = false;
+    };
     setTrialNotification(null);
     hasShownTrialNotification.current = false;
   }, []);
@@ -85,20 +105,25 @@ export default function PlanSelectionScreen({ navigation }) {
 
   // Proceed with plan selection (with or without trial)
   const proceedWithPlanSelection = async (plan, useTrial = false) => {
+    console.log('[PlanSelection] 🟢 proceedWithPlanSelection START - plan:', plan, 'useTrial:', useTrial);
     let trialJustStarted = false;
 
     if (useTrial) {
+      console.log('[PlanSelection] 🟡 Using trial flow');
       try {
-        // Start 30-day free trial for the selected plan
+        console.log('[PlanSelection] 🟡 Calling startTrial...');
         await startTrial(plan);
+        console.log('[PlanSelection] 🟡 startTrial completed, calling updateUserPlan...');
         await updateUserPlan(plan);
+        console.log('[PlanSelection] 🟡 updateUserPlan completed');
         trialJustStarted = true;
       } catch (error) {
-        console.error('[PlanSelection] Error starting trial:', error);
+        console.error('[PlanSelection] ❌ Error starting trial:', error);
         // Fallback to regular plan selection
         await updateUserPlan(plan);
       }
     } else {
+      console.log('[PlanSelection] 🔵 Regular plan flow (no trial)');
       // Regular plan selection without trial
       // On iOS, require in-app purchase for paid plans before changing plan.
       if (Platform.OS === 'ios') {
@@ -137,35 +162,37 @@ export default function PlanSelectionScreen({ navigation }) {
         console.log('[PlanSelection] Platform is not iOS:', Platform.OS);
       }
 
+      console.log('[PlanSelection] 🔵 Calling updateUserPlan...');
       await updateUserPlan(plan);
+      console.log('[PlanSelection] 🔵 updateUserPlan completed');
     }
 
+    console.log('[PlanSelection] 🟢 About to navigate to GoogleSignUp, trialJustStarted:', trialJustStarted);
     // Navigate to next screen (all plans go to GoogleSignUp)
-    navigation.navigate('GoogleSignUp', { plan, trialJustStarted: trialJustStarted });
-
-    // If trial just started, show welcome notification
-    if (trialJustStarted && !hasShownTrialNotification.current) {
-      hasShownTrialNotification.current = true;
-      setTimeout(async () => {
-        try {
-          const notification = await getNotificationToShow(false); // Don't skip Day 0
-          if (notification && notification.key === 'day0') {
-            setTrialNotification(notification);
-            setShowTrialModal(true);
-          }
-        } catch (error) {
-          console.error('[PlanSelection] Error checking welcome notification:', error);
-        }
-      }, 500);
-    }
+    // Use setTimeout with longer delay to ensure all context state updates and re-renders complete
+    // This prevents React errors when updating context state and navigating simultaneously
+    setTimeout(() => {
+      if (isMounted.current) {
+        console.log('[PlanSelection] 🟢 Navigating now (component still mounted)...');
+        navigation.navigate('GoogleSignUp', { plan, trialJustStarted: trialJustStarted });
+        console.log('[PlanSelection] 🟢 Navigation called, proceedWithPlanSelection END');
+      } else {
+        console.log('[PlanSelection] ⚠️ Component unmounted, skipping navigation');
+      }
+    }, 500);
   };
 
   // Handle trial confirmation - use trial
   const handleUseTrial = async () => {
+    console.log('[PlanSelection] 🔴 handleUseTrial START');
+    console.log('[PlanSelection] 🔴 Closing trial confirmation modal');
     setShowTrialConfirmation(false);
     const plan = selectedPlanForTrial;
+    console.log('[PlanSelection] 🔴 Selected plan for trial:', plan);
     setSelectedPlanForTrial(null);
+    console.log('[PlanSelection] 🔴 Calling proceedWithPlanSelection with useTrial=true');
     await proceedWithPlanSelection(plan, true);
+    console.log('[PlanSelection] 🔴 handleUseTrial END');
   };
 
   // Handle trial confirmation - cancel (continue without trial)

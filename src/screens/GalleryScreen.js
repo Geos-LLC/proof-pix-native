@@ -55,6 +55,8 @@ import {
 } from '../services/labelCacheService';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { FEATURES } from '../constants/featurePermissions';
+import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { isTrialActive } from '../services/trialService';
 
 const { width } = Dimensions.get('window');
 const CONTAINER_PADDING = 32; // 16px on each side
@@ -4540,6 +4542,24 @@ export default function GalleryScreen({ navigation, route }) {
                       style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                       onPress={async () => {
                         console.log('[GALLERY] Plan selected: pro');
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
+
+                        // On iOS, require in-app purchase for Pro plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          try {
+                            await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED') {
+                              return;
+                            }
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        }
                         await updateUserPlan('pro');
                         handleSharePlanModalClose();
                       }}
@@ -4554,6 +4574,24 @@ export default function GalleryScreen({ navigation, route }) {
                       style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                       onPress={async () => {
                         console.log('[GALLERY] Plan selected: business');
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
+
+                        // On iOS, require in-app purchase for Business plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          try {
+                            await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED') {
+                              return;
+                            }
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        }
                         await updateUserPlan('business');
                         handleSharePlanModalClose();
                       }}
@@ -4568,6 +4606,24 @@ export default function GalleryScreen({ navigation, route }) {
                       style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
                       onPress={async () => {
                         console.log('[GALLERY] Plan selected: enterprise');
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
+
+                        // On iOS, require in-app purchase for Enterprise plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          try {
+                            await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED') {
+                              return;
+                            }
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        }
                         await updateUserPlan('enterprise');
                         handleSharePlanModalClose();
                       }}
@@ -4629,6 +4685,24 @@ export default function GalleryScreen({ navigation, route }) {
                   style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                   onPress={async () => {
                     console.log('[GALLERY] Plan selected: pro');
+                    // Check if user is on active trial - if so, skip IAP
+                    const onTrial = await isTrialActive();
+
+                    // On iOS, require in-app purchase for Pro plan (unless on trial)
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      try {
+                        await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED') {
+                          return;
+                        }
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                        );
+                        return;
+                      }
+                    }
                     await updateUserPlan('pro');
                     handleSharePlanModalClose();
                   }}
@@ -4643,6 +4717,24 @@ export default function GalleryScreen({ navigation, route }) {
                   style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                   onPress={async () => {
                     console.log('[GALLERY] Plan selected: business');
+                    // Check if user is on active trial - if so, skip IAP
+                    const onTrial = await isTrialActive();
+
+                    // On iOS, require in-app purchase for Business plan (unless on trial)
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      try {
+                        await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED') {
+                          return;
+                        }
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                        );
+                        return;
+                      }
+                    }
                     await updateUserPlan('business');
                     handleSharePlanModalClose();
                   }}
@@ -4657,6 +4749,24 @@ export default function GalleryScreen({ navigation, route }) {
                   style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
                   onPress={async () => {
                     console.log('[GALLERY] Plan selected: enterprise');
+                    // Check if user is on active trial - if so, skip IAP
+                    const onTrial = await isTrialActive();
+
+                    // On iOS, require in-app purchase for Enterprise plan (unless on trial)
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      try {
+                        await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED') {
+                          return;
+                        }
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                        );
+                        return;
+                      }
+                    }
                     await updateUserPlan('enterprise');
                     handleSharePlanModalClose();
                   }}

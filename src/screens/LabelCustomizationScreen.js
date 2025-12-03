@@ -12,6 +12,7 @@ import {
   Pressable,
   TouchableWithoutFeedback,
   Switch,
+  Alert,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +21,8 @@ import { COLORS, getLabelPositions } from '../constants/rooms';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
+import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { isTrialActive } from '../services/trialService';
 import ColorPicker, { Panel1, HueSlider } from 'reanimated-color-picker';
 import { runOnJS } from 'react-native-reanimated';
 // HSL conversion utilities
@@ -1147,6 +1150,24 @@ export default function LabelCustomizationScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                   onPress={async () => {
+                    // Check if user is on active trial - if so, skip IAP
+                    const onTrial = await isTrialActive();
+
+                    // On iOS, require in-app purchase for Pro plan (unless on trial)
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      try {
+                        await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED') {
+                          return;
+                        }
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                        );
+                        return;
+                      }
+                    }
                     await updateUserPlan('pro');
                     setShowPlanModal(false);
                     // Reset color picker key to ensure proper remounting
@@ -1165,6 +1186,24 @@ export default function LabelCustomizationScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                   onPress={async () => {
+                    // Check if user is on active trial - if so, skip IAP
+                    const onTrial = await isTrialActive();
+
+                    // On iOS, require in-app purchase for Business plan (unless on trial)
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      try {
+                        await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED') {
+                          return;
+                        }
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                        );
+                        return;
+                      }
+                    }
                     await updateUserPlan('business');
                     setShowPlanModal(false);
                     // Reset color picker key to ensure proper remounting

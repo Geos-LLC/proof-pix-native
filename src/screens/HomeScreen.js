@@ -28,6 +28,8 @@ import UploadIndicatorLine from '../components/UploadIndicatorLine';
 import RoomEditor from '../components/RoomEditor';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
+import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { isTrialActive } from '../services/trialService';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 
 const { width } = Dimensions.get('window');
@@ -1712,6 +1714,24 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                   onPress={async () => {
+                    // Check if user is on active trial - if so, skip IAP
+                    const onTrial = await isTrialActive();
+
+                    // On iOS, require in-app purchase for Pro plan (unless on trial)
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      try {
+                        await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED') {
+                          return;
+                        }
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                        );
+                        return;
+                      }
+                    }
                     await updateUserPlan('pro');
                     handlePlanModalClose();
                   }}
@@ -1725,6 +1745,24 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                   onPress={async () => {
+                    // Check if user is on active trial - if so, skip IAP
+                    const onTrial = await isTrialActive();
+
+                    // On iOS, require in-app purchase for Business plan (unless on trial)
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      try {
+                        await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED') {
+                          return;
+                        }
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                        );
+                        return;
+                      }
+                    }
                     await updateUserPlan('business');
                     handlePlanModalClose();
                   }}

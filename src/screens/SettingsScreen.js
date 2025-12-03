@@ -4766,6 +4766,24 @@ export default function SettingsScreen({ navigation, route }) {
                           console.error('[SETTINGS] Error clearing team data:', error);
                         }
                       }
+                      // Check if user is on active trial - if so, skip IAP
+                      const onTrial = await isTrialActive();
+
+                      // On iOS, require in-app purchase for Pro plan (unless on trial)
+                      if (Platform.OS === 'ios' && !onTrial) {
+                        try {
+                          await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                        } catch (err) {
+                          if (err?.message === 'USER_CANCELLED') {
+                            return;
+                          }
+                          Alert.alert(
+                            t('common.error', { defaultValue: 'Error' }),
+                            t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                          );
+                          return;
+                        }
+                      }
                       await updateUserPlan('pro');
                       setShowPlanModal(false);
                     }}
@@ -4783,6 +4801,24 @@ export default function SettingsScreen({ navigation, route }) {
                     style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                     onPress={async () => {
                       try {
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
+
+                        // On iOS, require in-app purchase for Business plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          try {
+                            await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED') {
+                              return;
+                            }
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        }
                         // Set up business tier with 5 team member limit
                         await updatePlanLimit(5);
                         await updateUserPlan('business');
@@ -4811,6 +4847,24 @@ export default function SettingsScreen({ navigation, route }) {
                     style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
                     onPress={async () => {
                       try {
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
+
+                        // On iOS, require in-app purchase for Enterprise plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          try {
+                            await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED') {
+                              return;
+                            }
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        }
                         // Set up enterprise tier with 15 team member limit
                         await updatePlanLimit(15);
                         // Update user plan to enterprise
