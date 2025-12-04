@@ -86,7 +86,9 @@ export default function CameraScreen({ route, navigation }) {
   const roomIndicatorTimer = useRef(null);
   const enlargedGalleryScrollRef = useRef(null);
   const androidCombinedRef = useRef(null);
-  const [androidCombinedJob, setAndroidCombinedJob] = useState(null); // Android-only combined base capture job
+  const [androidCombinedJobs, setAndroidCombinedJobs] = useState([]); // Android-only combined base capture jobs (array for parallel processing)
+  const androidCombinedJobsRef = useRef([]); // Ref to track current queue state (always up-to-date)
+  const [androidProcessorTrigger, setAndroidProcessorTrigger] = useState(0); // Increment to start processor
   const androidCombinedImagesLoaded = useRef(0); // Count how many images finished loading for the off-screen combined view
   const [androidCombinedReadyTick, setAndroidCombinedReadyTick] = useState(0); // Bump to trigger capture once both images are ready
   const androidCombinedCaptureInProgress = useRef(false); // Prevent simultaneous captures
@@ -1561,6 +1563,8 @@ export default function CameraScreen({ route, navigation }) {
           const layout = isLandscapePair ? 'STACK' : 'SIDE';
           const baseType = layout;
           const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
+          // For landscape pairs (landscape full or letterbox), create both STACK and SIDE layouts
+          const shouldCreateBothLayouts = isLandscapePair;
 
           if (Platform.OS === 'ios') {
             // iOS: use native image compositor
@@ -1642,8 +1646,8 @@ export default function CameraScreen({ route, navigation }) {
                 });
               }
 
-              // In LETTERBOX, also save the SIDE-BY-SIDE variant in addition to STACK
-              if (isLetterbox) {
+              // For landscape pairs (letterbox or landscape full), also save the SIDE-BY-SIDE variant in addition to STACK
+              if (shouldCreateBothLayouts) {
                 try {
                   // Prepare side-by-side dims based on existing sizes and totalW
                   const r1wLB = aSize.w / aSize.h;
@@ -1699,18 +1703,72 @@ export default function CameraScreen({ route, navigation }) {
               });
             }
 
-            // Reset image load counter for the new job; capture will run once both images report onLoad.
-            androidCombinedImagesLoaded.current = 0;
-            setAndroidCombinedJob({
-              beforeUri: activeBeforePhoto.uri,
-              afterUri: savedUri,
-              layout,
-              width: limitedWidth,
-              height: limitedHeight,
-              room: activeBeforePhoto.room,
-              safeName,
-              projectId: activeProjectId || null,
+            // Create array of jobs to process (primary layout + letterbox SIDE layout if applicable)
+            const jobs = [
+              {
+                beforeUri: activeBeforePhoto.uri,
+                afterUri: savedUri,
+                layout,
+                width: limitedWidth,
+                height: limitedHeight,
+                room: activeBeforePhoto.room,
+                safeName,
+                projectId: activeProjectId || null,
+                jobId: `${Date.now()}_${layout}`, // Unique ID to force image remount
+              }
+            ];
+
+            // For landscape pairs (letterbox or landscape full), also add the SIDE-BY-SIDE variant job
+            if (shouldCreateBothLayouts) {
+              const r1wLB = aSize.w / aSize.h;
+              const r2wLB = bSize.w / bSize.h;
+              const denomLB = (r1wLB + r2wLB) || 1;
+              const totalHLB = Math.max(400, Math.round(totalW / denomLB));
+              const leftWLB = Math.round(totalW * (r1wLB / denomLB));
+              const rightWLB = totalW - leftWLB;
+
+              let limitedSideWidth = totalW;
+              let limitedSideHeight = totalHLB;
+
+              if (limitedSideWidth > MAX_DIMENSION || limitedSideHeight > MAX_DIMENSION) {
+                const scaleSide = Math.min(MAX_DIMENSION / limitedSideWidth, MAX_DIMENSION / limitedSideHeight);
+                limitedSideWidth = Math.round(limitedSideWidth * scaleSide);
+                limitedSideHeight = Math.round(limitedSideHeight * scaleSide);
+              }
+
+              jobs.push({
+                beforeUri: activeBeforePhoto.uri,
+                afterUri: savedUri,
+                layout: 'SIDE',
+                width: limitedSideWidth,
+                height: limitedSideHeight,
+                leftW: leftWLB,
+                rightW: rightWLB,
+                room: activeBeforePhoto.room,
+                safeName,
+                projectId: activeProjectId || null,
+                jobId: `${Date.now() + 1}_SIDE`, // Unique ID to force image remount
+              });
+            }
+
+            // Append jobs to the existing queue (don't replace)
+            console.log(`[CameraScreen][Android] Queueing ${jobs.length} combined photo job(s)`);
+
+            const wasEmpty = androidCombinedJobsRef.current.length === 0;
+
+            // Add new jobs to the end of the queue
+            setAndroidCombinedJobs(prevJobs => {
+              const newQueue = [...prevJobs, ...jobs];
+              androidCombinedJobsRef.current = newQueue; // Keep ref in sync
+              console.log(`[CameraScreen][Android] Total jobs in queue: ${newQueue.length}`);
+              return newQueue;
             });
+
+            // If queue was empty and processor isn't running, start it
+            if (wasEmpty && !androidCombinedCaptureInProgress.current) {
+              console.log(`[CameraScreen][Android] Starting processor for new jobs`);
+              setAndroidProcessorTrigger(prev => prev + 1);
+            }
           }
         } catch (error) {
         }
@@ -1733,38 +1791,46 @@ export default function CameraScreen({ route, navigation }) {
         // Select the next unpaired photo
         setSelectedBeforePhoto(nextUnpaired[0]);
       } else {
-        // All photos paired - wait for the combined photo capture to complete
-        // before showing the completion alert. This prevents navigation from
-        // unmounting the camera screen mid-capture.
-        const showCompletionAlert = () => {
-          // Check if a capture is still in progress
-          if (Platform.OS === 'android' && androidCombinedCaptureInProgress.current) {
-            console.log('[CameraScreen] Waiting for combined photo capture to complete before showing alert...');
-            // Check again in 500ms
-            completionAlertTimer.current = setTimeout(showCompletionAlert, 500);
-            return;
-          }
+        // All photos paired - show alert immediately, but delay navigation until processing completes
+        Alert.alert(
+          'All Photos Taken',
+          'All after photos have been captured!',
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                // For Android, wait for combined photo processing to complete before navigating
+                if (Platform.OS === 'android') {
+                  let attempts = 0;
+                  const maxAttempts = 100; // Max 10 seconds (100 * 100ms)
 
-          Alert.alert(
-            'All Photos Taken',
-            'All after photos have been captured!',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  if (navigation.canGoBack()) {
-                    navigation.goBack();
-                  } else {
-                    navigation.navigate('Home');
+                  while (attempts < maxAttempts) {
+                    const isProcessing = androidCombinedCaptureInProgress.current;
+                    const hasJobs = androidCombinedJobsRef.current && androidCombinedJobsRef.current.length > 0;
+
+                    if (!isProcessing && !hasJobs) {
+                      console.log('[CameraScreen] ✅ All processing complete, safe to navigate');
+                      break;
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    attempts++;
+                  }
+
+                  if (attempts >= maxAttempts) {
+                    console.warn('[CameraScreen] ⚠️ Navigation timeout, proceeding anyway');
                   }
                 }
-              }
-            ]
-          );
-        };
 
-        // Start with initial delay to give capture time to start
-        completionAlertTimer.current = setTimeout(showCompletionAlert, 800);
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  navigation.navigate('Home');
+                }
+              }
+            }
+          ]
+        );
       }
       console.log('[DEBUG] ✅ handleAfterPhoto completed');
     } catch (error) {
@@ -1783,45 +1849,37 @@ export default function CameraScreen({ route, navigation }) {
     });
   };
 
-  // Android-only: when a combined capture job is queued and both images have finished loading,
-  // render an off-screen combined view and capture it with ViewShot, then save as a COMBINED_BASE image
+  // Android-only: when combined capture jobs are queued, process them sequentially
+  // Each job renders an off-screen combined view and captures it with ViewShot, then saves as a COMBINED_BASE image
   // via savePhotoToDevice so it appears in the gallery and can be cleaned up later.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    if (!androidCombinedJob) return;
-    // Wait until both BEFORE and AFTER images reported onLoad
-    if (androidCombinedImagesLoaded.current < 2) return;
+    if (!androidCombinedJobs || androidCombinedJobs.length === 0) return;
 
-    // Prevent simultaneous captures
+    // Prevent simultaneous processing - if already processing, the current run will handle all queued jobs
     if (androidCombinedCaptureInProgress.current) {
-      console.log('[CameraScreen][Android] ⏸️ Capture already in progress, waiting...');
+      console.log('[CameraScreen][Android] ⏸️ Capture already in progress, new jobs will be processed by current run');
       return;
     }
 
-    let cancelled = false;
-
-    const run = async () => {
-      const { room, safeName, layout, width, height, projectId } = androidCombinedJob;
+    const processJob = async (job) => {
+      const { room, safeName, layout, width, height, projectId, beforeUri, afterUri } = job;
       const baseType = layout === 'STACK' ? 'STACK' : 'SIDE';
       const projectIdSuffix = projectId ? `_P${projectId}` : '';
-
-      // Set capture in progress flag
-      androidCombinedCaptureInProgress.current = true;
 
       try {
         console.log('[CameraScreen][Android] 🧩 Starting combined photo capture:', {
           layout,
           requestedDimensions: { width, height },
-          beforeUri: androidCombinedJob.beforeUri,
-          afterUri: androidCombinedJob.afterUri,
+          beforeUri,
+          afterUri,
         });
 
-        // Give React more time to render and stabilize the off-screen view
-        // Increased from 120ms to 300ms for better reliability
-        await new Promise(resolve => setTimeout(resolve, 300));
-        if (cancelled || !androidCombinedRef.current) {
-          console.log('[CameraScreen][Android] ⚠️ Capture cancelled or ref not available');
-          return;
+        // Give React time to render and stabilize the off-screen view (reduced delay)
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (!androidCombinedRef.current) {
+          console.log('[CameraScreen][Android] ⚠️ Ref not available');
+          return null;
         }
 
         // Use a normalized canvas size to avoid huge off-screen views, preserve aspect ratio
@@ -1831,16 +1889,44 @@ export default function CameraScreen({ route, navigation }) {
         const aspect = height > 0 ? height / width : 1;
         const baseHeight = Math.max(400, Math.round(baseWidth * aspect));
 
-        console.log('[CameraScreen][Android] 📐 Capture dimensions:', { width: baseWidth, height: baseHeight, aspect });
+        console.log('[CameraScreen][Android] 📐 Capture dimensions:', { width: baseWidth, height: baseHeight, aspect, layout });
 
         // Update the view size just before capture
         if (androidCombinedRef.current) {
           androidCombinedRef.current.setNativeProps({
-            style: { width: baseWidth, height: baseHeight },
+            style: {
+              width: baseWidth,
+              height: baseHeight,
+              flexDirection: layout === 'STACK' ? 'column' : 'row',
+            },
           });
-          // Give the view a moment to apply the new dimensions
-          await new Promise(resolve => setTimeout(resolve, 100));
+          // Give the view a moment to apply the new dimensions (reduced delay)
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
+
+        // Wait for both images to load before capturing
+        console.log('[CameraScreen][Android] ⏳ Waiting for images to load...', {
+          currentLoaded: androidCombinedImagesLoaded.current,
+          layout,
+          beforeUri: beforeUri.substring(beforeUri.lastIndexOf('/') + 1),
+          afterUri: afterUri.substring(afterUri.lastIndexOf('/') + 1),
+        });
+        const maxWaitTime = 5000; // 5 seconds max wait
+        const startTime = Date.now();
+
+        while (androidCombinedImagesLoaded.current < 2) {
+          if (Date.now() - startTime > maxWaitTime) {
+            console.warn('[CameraScreen][Android] ⚠️ Image loading timeout, proceeding anyway. Loaded:', androidCombinedImagesLoaded.current);
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        const loadTime = Date.now() - startTime;
+        console.log(`[CameraScreen][Android] ✅ Images loaded in ${loadTime}ms, waiting additional 200ms for rendering...`);
+
+        // Give extra time for images to fully render to screen before capture
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         // Retry mechanism for ViewShot capture
         let capturedUri = null;
@@ -1854,28 +1940,22 @@ export default function CameraScreen({ route, navigation }) {
               throw new Error('View ref is no longer available');
             }
 
-            console.log(`[CameraScreen][Android] 📸 Capture attempt ${attempt}/${MAX_RETRIES}`);
+            console.log(`[CameraScreen][Android] 📸 Capture attempt ${attempt}/${MAX_RETRIES} for ${layout}`);
 
             capturedUri = await captureRef(androidCombinedRef, {
               format: 'jpg',
               quality: 0.95,
             });
 
-            console.log('[CameraScreen][Android] ✅ ViewShot capture successful:', capturedUri);
+            console.log('[CameraScreen][Android] ✅ ViewShot capture successful:', layout, capturedUri);
             break; // Success, exit retry loop
           } catch (captureError) {
             lastError = captureError;
             console.warn(`[CameraScreen][Android] ⚠️ Capture attempt ${attempt} failed:`, captureError.message);
 
             if (attempt < MAX_RETRIES) {
-              // Check if component was cancelled/unmounted
-              if (cancelled) {
-                console.log('[CameraScreen][Android] ⚠️ Capture cancelled, aborting retries');
-                break;
-              }
-
               // Wait before retrying, increasing delay with each attempt
-              const retryDelay = 300 * attempt;
+              const retryDelay = 150 * attempt;
               console.log(`[CameraScreen][Android] ⏳ Waiting ${retryDelay}ms before retry...`);
               await new Promise(resolve => setTimeout(resolve, retryDelay));
 
@@ -1897,32 +1977,84 @@ export default function CameraScreen({ route, navigation }) {
           `${room}_${safeName}_COMBINED_BASE_${baseType}_${Date.now()}${projectIdSuffix}.jpg`,
           projectId || null
         );
-        console.log('[CameraScreen][Android] 💾 combined base saved via ViewShot', savedUri);
+        console.log('[CameraScreen][Android] 💾 combined base saved via ViewShot', layout, savedUri);
+        return savedUri;
       } catch (err) {
         console.error('[CameraScreen][Android] ❌ Failed to create combined base via ViewShot:', err);
         console.error('[CameraScreen][Android] Error details:', {
           message: err.message,
           stack: err.stack,
-          job: androidCombinedJob,
+          layout,
+          job,
         });
+        return null;
+      }
+    };
+
+    const run = async () => {
+      // Set capture in progress flag
+      androidCombinedCaptureInProgress.current = true;
+
+      try {
+        console.log(`[CameraScreen][Android] 🚀 Starting job processor`);
+
+        // Process jobs continuously until queue is empty
+        let jobCount = 0;
+        while (true) {
+          // Get current queue state from ref (always up-to-date)
+          const currentQueue = androidCombinedJobsRef.current;
+          if (!currentQueue || currentQueue.length === 0) {
+            console.log(`[CameraScreen][Android] ✅ Queue empty, processed ${jobCount} total jobs`);
+            break;
+          }
+
+          const currentJob = currentQueue[0];
+          jobCount++;
+          console.log(`[CameraScreen][Android] 📝 Processing job ${jobCount}: ${currentJob.layout} (${currentQueue.length} in queue)`);
+
+          // Reset image load counter for this job
+          androidCombinedImagesLoaded.current = 0;
+
+          // Process the job
+          await processJob(currentJob);
+
+          // Remove the completed job from the queue
+          await new Promise(resolve => {
+            setAndroidCombinedJobs(prevJobs => {
+              const remaining = prevJobs.slice(1);
+              androidCombinedJobsRef.current = remaining; // Keep ref in sync
+              console.log(`[CameraScreen][Android] ✅ Job completed, ${remaining.length} remaining in queue`);
+              resolve();
+              return remaining;
+            });
+          });
+
+          // Wait for state update and next job's view to render (reduced delay)
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        console.log('[CameraScreen][Android] ✅ All combined photo jobs completed');
+      } catch (err) {
+        console.error('[CameraScreen][Android] ❌ Error processing combined jobs:', err);
       } finally {
         // Clear capture in progress flag
         androidCombinedCaptureInProgress.current = false;
 
-        if (!cancelled) {
-          // Reset load counter and clear the job so the off-screen view unmounts
-          androidCombinedImagesLoaded.current = 0;
-          setAndroidCombinedJob(null);
-        }
+        // Reset load counter and clear queue
+        androidCombinedImagesLoaded.current = 0;
+        setAndroidCombinedJobs([]);
+        androidCombinedJobsRef.current = [];
       }
     };
 
     run();
 
+    // Don't cancel the processor on unmount - let it finish in background
     return () => {
-      cancelled = true;
+      // Component unmounting, but let processor complete
+      console.log('[CameraScreen][Android] Component unmounting, processor will continue in background');
     };
-  }, [androidCombinedJob, androidCombinedReadyTick]);
+  }, [androidProcessorTrigger]); // Only trigger when explicitly requested
 
   // Get current room info
   const getCurrentRoomInfo = () => {
@@ -2388,15 +2520,22 @@ export default function CameraScreen({ route, navigation }) {
       )}
 
       {/* Android-only off-screen combined view for original COMBINED_BASE capture via ViewShot */}
-      {Platform.OS === 'android' && androidCombinedJob && (() => {
+      {Platform.OS === 'android' && androidCombinedJobs && androidCombinedJobs.length > 0 && (() => {
+        // Render based on the first job in the queue (jobs are processed sequentially)
+        const currentJob = androidCombinedJobs[0];
+
         // Use reasonable initial dimensions to prevent rendering issues
         const MAX_INITIAL = 2048;
-        const initialWidth = Math.min(androidCombinedJob.width || 1920, MAX_INITIAL);
-        const initialAspect = androidCombinedJob.height / androidCombinedJob.width;
+        const initialWidth = Math.min(currentJob.width || 1920, MAX_INITIAL);
+        const initialAspect = currentJob.height / currentJob.width;
         const initialHeight = Math.round(initialWidth * initialAspect);
+
+        // Use the unique jobId to force complete remounting of images
+        const jobKey = currentJob.jobId || `${currentJob.layout}_${Date.now()}`;
 
         return (
         <View
+          key={jobKey}
           style={{
             position: 'absolute',
             left: -10000,
@@ -2414,19 +2553,20 @@ export default function CameraScreen({ route, navigation }) {
               height: '100%',
               backgroundColor: 'white',
               overflow: 'hidden',
-              flexDirection: androidCombinedJob.layout === 'STACK' ? 'column' : 'row',
+              flexDirection: currentJob.layout === 'STACK' ? 'column' : 'row',
             }}
           >
-            <View style={{ flex: 1 }}>
+            <View key={`before_container_${jobKey}`} style={{ flex: 1 }}>
               <Image
-                source={{ uri: androidCombinedJob.beforeUri }}
+                key={`before_${jobKey}`}
+                source={{ uri: currentJob.beforeUri, cache: 'reload' }}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
                 onLoad={() => {
                   // Track when the BEFORE image has loaded for the off-screen combined view
                   if (Platform.OS === 'android') {
-                    console.log('[CameraScreen][Android] 📥 BEFORE image loaded');
                     androidCombinedImagesLoaded.current += 1;
+                    console.log('[CameraScreen][Android] 📥 BEFORE image loaded for', currentJob.layout, `(${androidCombinedImagesLoaded.current}/2)`);
                     if (androidCombinedImagesLoaded.current >= 2) {
                       setAndroidCombinedReadyTick(t => t + 1);
                     }
@@ -2434,22 +2574,23 @@ export default function CameraScreen({ route, navigation }) {
                 }}
                 onError={(error) => {
                   console.error('[CameraScreen][Android] ❌ BEFORE image failed to load:', error);
-                  // Reset job on error to prevent hanging
+                  // Reset jobs on error to prevent hanging
                   androidCombinedImagesLoaded.current = 0;
-                  setAndroidCombinedJob(null);
+                  setAndroidCombinedJobs([]);
                 }}
               />
             </View>
-            <View style={{ flex: 1 }}>
+            <View key={`after_container_${jobKey}`} style={{ flex: 1 }}>
               <Image
-                source={{ uri: androidCombinedJob.afterUri }}
+                key={`after_${jobKey}`}
+                source={{ uri: currentJob.afterUri, cache: 'reload' }}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
                 onLoad={() => {
                   // Track when the AFTER image has loaded for the off-screen combined view
                   if (Platform.OS === 'android') {
-                    console.log('[CameraScreen][Android] 📥 AFTER image loaded');
                     androidCombinedImagesLoaded.current += 1;
+                    console.log('[CameraScreen][Android] 📥 AFTER image loaded for', currentJob.layout, `(${androidCombinedImagesLoaded.current}/2)`);
                     if (androidCombinedImagesLoaded.current >= 2) {
                       setAndroidCombinedReadyTick(t => t + 1);
                     }
@@ -2457,9 +2598,9 @@ export default function CameraScreen({ route, navigation }) {
                 }}
                 onError={(error) => {
                   console.error('[CameraScreen][Android] ❌ AFTER image failed to load:', error);
-                  // Reset job on error to prevent hanging
+                  // Reset jobs on error to prevent hanging
                   androidCombinedImagesLoaded.current = 0;
-                  setAndroidCombinedJob(null);
+                  setAndroidCombinedJobs([]);
                 }}
               />
             </View>
