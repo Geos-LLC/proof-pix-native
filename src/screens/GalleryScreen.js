@@ -56,7 +56,7 @@ import {
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { FEATURES } from '../constants/featurePermissions';
 
-const { width } = Dimensions.get('window');
+const { width, height: screenHeight } = Dimensions.get('window');
 const CONTAINER_PADDING = 32; // 16px on each side
 const PHOTO_SPACING = 16; // 8px between each of the 2 gaps
 const AVAILABLE_WIDTH = width - CONTAINER_PADDING - PHOTO_SPACING;
@@ -3578,62 +3578,105 @@ export default function GalleryScreen({ navigation, route }) {
         </TouchableWithoutFeedback>
       )}
 
-      {/* Full-screen combined photo view - 1:1 square with before/after */}
+      {/* Full-screen combined photo view - dynamic aspect ratio based on photo orientation */}
       {fullScreenPhotoSet && (
         <TouchableWithoutFeedback onPress={handleLongPressEnd}>
           <View style={styles.fullScreenPhotoContainer}>
-            <View 
-              ref={combinedCaptureRef}
-              collapsable={false}
-              style={[
-              styles.fullScreenCombinedPreview,
-              (() => {
-                const phoneOrientation = fullScreenPhotoSet.before.orientation || 'portrait';
-                const cameraViewMode = fullScreenPhotoSet.before.cameraViewMode || 'portrait';
-                const isLetterbox = fullScreenPhotoSet.before.templateType === 'letterbox' || (phoneOrientation === 'portrait' && cameraViewMode === 'landscape');
-                
-                // In the enlarged view, only letterbox photos should be stacked.
-                // True landscape and portrait photos are better side-by-side.
-                return isLetterbox ? styles.fullScreenStacked : styles.fullScreenSideBySide;
-              })()
-            ]}>
-              <View style={styles.fullScreenHalf}>
-                <Image
-                  source={{ uri: fullScreenPhotoSet.before.uri }}
-                  style={styles.fullScreenHalfImage}
-                  resizeMode="cover"
-                  onError={(error) => {
-                  }}
-                  onLoad={() => {
-                  }}
-                />
-                {/* Show BEFORE label only if showLabels is true */}
-                {showLabels && (
-                  <PhotoLabel 
-                    label="common.before" 
-                    position={beforeLabelPosition || 'top-left'}
-                  />
-                )}
-              </View>
-              <View style={styles.fullScreenHalf}>
-                <Image
-                  source={{ uri: fullScreenPhotoSet.after.uri }}
-                  style={styles.fullScreenHalfImage}
-                  resizeMode="cover"
-                  onError={(error) => {
-                  }}
-                  onLoad={() => {
-                  }}
-                />
-                {/* Show AFTER label only if showLabels is true */}
-                {showLabels && (
-                  <PhotoLabel 
-                    label="common.after" 
-                    position={afterLabelPosition || 'top-right'}
-                  />
-                )}
-              </View>
-            </View>
+            {(() => {
+              const phoneOrientation = fullScreenPhotoSet.before.orientation || 'portrait';
+              const cameraViewMode = fullScreenPhotoSet.before.cameraViewMode || 'portrait';
+              const isLetterbox = fullScreenPhotoSet.before.templateType === 'letterbox' || (phoneOrientation === 'portrait' && cameraViewMode === 'landscape');
+              
+              // In the enlarged view, only letterbox photos should be stacked.
+              // True landscape and portrait photos are better side-by-side.
+              const isStacked = isLetterbox;
+              
+              // Parse photo aspect ratio - handle both string ('16:9') and fallback cases
+              const photoAspectRatio = fullScreenPhotoSet.before.aspectRatio || '16:9';
+              let singlePhotoAspect = 16 / 9; // Default fallback
+              if (typeof photoAspectRatio === 'string' && photoAspectRatio.includes(':')) {
+                const parts = photoAspectRatio.split(':').map(Number);
+                if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
+                  singlePhotoAspect = parts[0] / parts[1];
+                }
+              }
+              
+              // Calculate combined aspect ratio based on layout
+              // For stacked (vertical): height doubles, width stays same → aspect = singleAspect / 2
+              // For side-by-side (horizontal): width doubles, height stays same → aspect = singleAspect * 2
+              const combinedAspect = isStacked ? (singlePhotoAspect / 2) : (singlePhotoAspect * 2);
+              
+              // Calculate container dimensions to fit screen while maintaining aspect ratio
+              // Use responsive maxHeight based on screen height (60% of screen height minus space for header/buttons)
+              const maxWidth = width * 0.9;
+              const maxHeight = Math.min(screenHeight * 0.6, 500);
+              
+              let containerWidth, containerHeight;
+              if (combinedAspect > 1) {
+                // Landscape combined image
+                containerWidth = Math.min(maxWidth, maxHeight * combinedAspect);
+                containerHeight = containerWidth / combinedAspect;
+              } else {
+                // Portrait combined image
+                containerHeight = Math.min(maxHeight, maxWidth / combinedAspect);
+                containerWidth = containerHeight * combinedAspect;
+              }
+              
+              return (
+                <View 
+                  ref={combinedCaptureRef}
+                  collapsable={false}
+                  style={[
+                    styles.fullScreenCombinedPreview,
+                    {
+                      width: containerWidth,
+                      height: containerHeight,
+                      aspectRatio: undefined, // Override the default aspectRatio: 1
+                      maxWidth: undefined,
+                      maxHeight: undefined,
+                    },
+                    isStacked ? styles.fullScreenStacked : styles.fullScreenSideBySide
+                  ]}
+                >
+                  <View style={styles.fullScreenHalf}>
+                    <Image
+                      source={{ uri: fullScreenPhotoSet.before.uri }}
+                      style={styles.fullScreenHalfImage}
+                      resizeMode="cover"
+                      onError={(error) => {
+                      }}
+                      onLoad={() => {
+                      }}
+                    />
+                    {/* Show BEFORE label only if showLabels is true */}
+                    {showLabels && (
+                      <PhotoLabel 
+                        label="common.before" 
+                        position={beforeLabelPosition || 'top-left'}
+                      />
+                    )}
+                  </View>
+                  <View style={styles.fullScreenHalf}>
+                    <Image
+                      source={{ uri: fullScreenPhotoSet.after.uri }}
+                      style={styles.fullScreenHalfImage}
+                      resizeMode="cover"
+                      onError={(error) => {
+                      }}
+                      onLoad={() => {
+                      }}
+                    />
+                    {/* Show AFTER label only if showLabels is true */}
+                    {showLabels && (
+                      <PhotoLabel 
+                        label="common.after" 
+                        position={afterLabelPosition || 'top-right'}
+                      />
+                    )}
+                  </View>
+                </View>
+              );
+            })()}
             <TouchableOpacity
               style={styles.shareButton}
               onPress={() => shareCombinedPhoto(fullScreenPhotoSet)}
