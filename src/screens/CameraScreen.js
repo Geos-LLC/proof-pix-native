@@ -253,6 +253,21 @@ export default function CameraScreen({ route, navigation }) {
     setCurrentRoom(room);
   }, [room, setCurrentRoom]);
 
+  // Log when navigating during processing (but don't block)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const unsubscribe = navigation.addListener('beforeRemove', () => {
+      // Log warning if navigating while processing, but allow it
+      if (androidCombinedCaptureInProgress.current ||
+          (androidCombinedJobsRef.current && androidCombinedJobsRef.current.length > 0)) {
+        console.log('[CameraScreen] ⚠️ Navigating while combined photos processing - some may fail to save');
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
   // Cleanup: Turn off flashlight when component unmounts
   useEffect(() => {
     return () => {
@@ -1791,37 +1806,14 @@ export default function CameraScreen({ route, navigation }) {
         // Select the next unpaired photo
         setSelectedBeforePhoto(nextUnpaired[0]);
       } else {
-        // All photos paired - show alert immediately, but delay navigation until processing completes
+        // All photos paired - show alert and navigate immediately
         Alert.alert(
           'All Photos Taken',
           'All after photos have been captured!',
           [
             {
               text: 'OK',
-              onPress: async () => {
-                // For Android, wait for combined photo processing to complete before navigating
-                if (Platform.OS === 'android') {
-                  let attempts = 0;
-                  const maxAttempts = 100; // Max 10 seconds (100 * 100ms)
-
-                  while (attempts < maxAttempts) {
-                    const isProcessing = androidCombinedCaptureInProgress.current;
-                    const hasJobs = androidCombinedJobsRef.current && androidCombinedJobsRef.current.length > 0;
-
-                    if (!isProcessing && !hasJobs) {
-                      console.log('[CameraScreen] ✅ All processing complete, safe to navigate');
-                      break;
-                    }
-
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    attempts++;
-                  }
-
-                  if (attempts >= maxAttempts) {
-                    console.warn('[CameraScreen] ⚠️ Navigation timeout, proceeding anyway');
-                  }
-                }
-
+              onPress: () => {
                 if (navigation.canGoBack()) {
                   navigation.goBack();
                 } else {
@@ -2044,6 +2036,9 @@ export default function CameraScreen({ route, navigation }) {
         androidCombinedImagesLoaded.current = 0;
         setAndroidCombinedJobs([]);
         androidCombinedJobsRef.current = [];
+
+        // Processing complete
+        console.log('[CameraScreen][Android] ✅ All combined photo processing completed');
       }
     };
 
