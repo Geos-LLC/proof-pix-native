@@ -56,7 +56,7 @@ import {
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { FEATURES } from '../constants/featurePermissions';
 
-const { width, height: screenHeight } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 const CONTAINER_PADDING = 32; // 16px on each side
 const PHOTO_SPACING = 16; // 8px between each of the 2 gaps
 const AVAILABLE_WIDTH = width - CONTAINER_PADDING - PHOTO_SPACING;
@@ -3578,7 +3578,7 @@ export default function GalleryScreen({ navigation, route }) {
         </TouchableWithoutFeedback>
       )}
 
-      {/* Full-screen combined photo view - dynamic aspect ratio based on photo orientation */}
+      {/* Full-screen combined photo view - dynamic aspect ratio to prevent cropping */}
       {fullScreenPhotoSet && (
         <TouchableWithoutFeedback onPress={handleLongPressEnd}>
           <View style={styles.fullScreenPhotoContainer}>
@@ -3591,36 +3591,20 @@ export default function GalleryScreen({ navigation, route }) {
               // True landscape and portrait photos are better side-by-side.
               const isStacked = isLetterbox;
               
-              // Parse photo aspect ratio - handle both string ('16:9') and fallback cases
-              const photoAspectRatio = fullScreenPhotoSet.before.aspectRatio || '16:9';
-              let singlePhotoAspect = 16 / 9; // Default fallback
+              // Parse photo aspect ratio (width:height format like '16:9' or '9:16')
+              const photoAspectRatio = fullScreenPhotoSet.before.aspectRatio || '4:3';
+              let photoAspect = 4 / 3; // Default fallback (landscape)
               if (typeof photoAspectRatio === 'string' && photoAspectRatio.includes(':')) {
                 const parts = photoAspectRatio.split(':').map(Number);
                 if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
-                  singlePhotoAspect = parts[0] / parts[1];
+                  photoAspect = parts[0] / parts[1];
                 }
               }
               
               // Calculate combined aspect ratio based on layout
-              // For stacked (vertical): height doubles, width stays same → aspect = singleAspect / 2
-              // For side-by-side (horizontal): width doubles, height stays same → aspect = singleAspect * 2
-              const combinedAspect = isStacked ? (singlePhotoAspect / 2) : (singlePhotoAspect * 2);
-              
-              // Calculate container dimensions to fit screen while maintaining aspect ratio
-              // Use responsive maxHeight based on screen height (60% of screen height minus space for header/buttons)
-              const maxWidth = width * 0.9;
-              const maxHeight = Math.min(screenHeight * 0.6, 500);
-              
-              let containerWidth, containerHeight;
-              if (combinedAspect > 1) {
-                // Landscape combined image
-                containerWidth = Math.min(maxWidth, maxHeight * combinedAspect);
-                containerHeight = containerWidth / combinedAspect;
-              } else {
-                // Portrait combined image
-                containerHeight = Math.min(maxHeight, maxWidth / combinedAspect);
-                containerWidth = containerHeight * combinedAspect;
-              }
+              // For stacked (vertical): two photos on top of each other → height doubles → aspect = original / 2
+              // For side-by-side (horizontal): two photos next to each other → width doubles → aspect = original * 2
+              const combinedAspect = isStacked ? (photoAspect / 2) : (photoAspect * 2);
               
               return (
                 <View 
@@ -3629,11 +3613,8 @@ export default function GalleryScreen({ navigation, route }) {
                   style={[
                     styles.fullScreenCombinedPreview,
                     {
-                      width: containerWidth,
-                      height: containerHeight,
-                      aspectRatio: undefined, // Override the default aspectRatio: 1
-                      maxWidth: undefined,
-                      maxHeight: undefined,
+                      // Override the fixed aspectRatio: 1 with the calculated combined aspect ratio
+                      aspectRatio: combinedAspect,
                     },
                     isStacked ? styles.fullScreenStacked : styles.fullScreenSideBySide
                   ]}
