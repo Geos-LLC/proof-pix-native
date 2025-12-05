@@ -1536,16 +1536,23 @@ export default function CameraScreen({ route, navigation }) {
           const isLandscapePair = beforeOrientation === 'landscape' || cameraVM === 'landscape';
           const isLetterbox = beforeOrientation === 'portrait' && cameraVM === 'landscape';
 
+          // Determine layout FIRST before calculating dimensions
+          // Letterbox portrait (portrait phone + landscape camera): SIDE layout
+          // Letterbox landscape (landscape phone + landscape camera): STACK layout
+          // Landscape full (landscape phone + any camera): STACK layout
+          const layout = isLetterbox && beforeOrientation === 'portrait' ? 'SIDE' : (isLandscapePair ? 'STACK' : 'SIDE');
+          const isStackLayout = layout === 'STACK';
+
           const sourceMaxWidth = Math.max(aSize.w, bSize.w);
           const combinedWidthCandidate = aSize.w + bSize.w;
           const targetWidthBase = Math.max(sourceMaxWidth, 2048);
           const totalW = Math.min(
-            isLandscapePair ? targetWidthBase : Math.max(targetWidthBase, combinedWidthCandidate),
+            isStackLayout ? targetWidthBase : Math.max(targetWidthBase, combinedWidthCandidate),
             8192
           );
 
           let dimsLocal;
-          if (isLandscapePair) {
+          if (isStackLayout) {
             // STACK: heights sum based on width
             const r1h = aSize.h / aSize.w; // height per unit width
             const r2h = bSize.h / bSize.w;
@@ -1565,11 +1572,11 @@ export default function CameraScreen({ route, navigation }) {
           }
 
           const safeName = (activeBeforePhoto.name || 'Photo').replace(/\s+/g, '_');
-          const layout = isLandscapePair ? 'STACK' : 'SIDE';
           const baseType = layout;
           const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
-          // For landscape pairs (landscape full or letterbox), create both STACK and SIDE layouts
-          const shouldCreateBothLayouts = isLandscapePair;
+          // For landscape full and letterbox landscape, create both STACK and SIDE layouts
+          // For letterbox portrait, only create SIDE layout
+          const shouldCreateBothLayouts = isLandscapePair && !(isLetterbox && beforeOrientation === 'portrait');
 
           if (Platform.OS === 'ios') {
             // iOS: use native image compositor

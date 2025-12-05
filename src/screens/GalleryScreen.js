@@ -2777,9 +2777,10 @@ export default function GalleryScreen({ navigation, route }) {
       
       const isLetterbox = photoSet.before.templateType === 'letterbox' || (phoneOrientation === 'portrait' && cameraViewMode === 'landscape');
       const isTrueLandscape = phoneOrientation === 'landscape';
-      
-      // For thumbnails, both should be stacked to fit the square aspect ratio.
-      const useStackedLayout = isTrueLandscape || isLetterbox;
+      const isLetterboxLandscape = isLetterbox && isTrueLandscape;
+
+      // For thumbnails: landscape letterbox uses stack, portrait letterbox uses side-by-side
+      const useStackedLayout = isTrueLandscape && !isLetterbox ? true : isLetterboxLandscape;
 
       const combinedId = `combined_${photoSet.before.id}`;
       const isSelected = currentSelectionMode && currentSelectedPhotos.has(combinedId);

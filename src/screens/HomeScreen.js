@@ -1045,9 +1045,20 @@ export default function HomeScreen({ navigation }) {
           const isLetterbox = beforePhoto.templateType === 'letterbox' || (phoneOrientation === 'portrait' && cameraViewMode === 'landscape');
           // A photo is "true landscape" if the phone itself was held horizontally.
           const isTrueLandscape = phoneOrientation === 'landscape';
-          
-          // For square thumbnails, both letterbox and landscape should be stacked to fit best.
-          const useStackedLayout = isTrueLandscape || isLetterbox;
+          const isLetterboxLandscape = isLetterbox && isTrueLandscape;
+
+          // For thumbnails: landscape letterbox uses stack, portrait letterbox uses side-by-side
+          const useStackedLayout = isTrueLandscape && !isLetterbox ? true : isLetterboxLandscape;
+
+          console.log('[HomeScreen] Thumbnail layout:', {
+            name: beforePhoto.name,
+            phoneOrientation,
+            cameraViewMode,
+            isLetterbox,
+            isTrueLandscape,
+            isLetterboxLandscape,
+            useStackedLayout
+          });
 
           gridItems.push(
             <TouchableOpacity
