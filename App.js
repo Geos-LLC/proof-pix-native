@@ -37,6 +37,7 @@ import SectionLanguageSetupScreen from './src/screens/SectionLanguageSetupScreen
 import AuthLoadingScreen from './src/screens/AuthLoadingScreen';
 import VisionCameraTest from './src/screens/VisionCameraTest';
 import GlobalBackgroundLabelPreparation from './src/components/GlobalBackgroundLabelPreparation';
+import GlobalBackgroundCombinedPhotoCreator from './src/components/GlobalBackgroundCombinedPhotoCreator';
 
 const Stack = createNativeStackNavigator();
 
@@ -466,8 +467,9 @@ export default function App() {
               >
                 <AppNavigator />
               </NavigationContainer>
-              {/* Global background label preparation - stays mounted regardless of navigation */}
+              {/* Global background components - stay mounted regardless of navigation */}
               <GlobalBackgroundLabelPreparation />
+              <GlobalBackgroundCombinedPhotoCreator />
             </PhotoProvider>
           </AdminProvider>
         </SettingsProvider>
