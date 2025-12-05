@@ -1574,9 +1574,10 @@ export default function CameraScreen({ route, navigation }) {
           const safeName = (activeBeforePhoto.name || 'Photo').replace(/\s+/g, '_');
           const baseType = layout;
           const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
-          // For landscape full and letterbox landscape, create both STACK and SIDE layouts
-          // For letterbox portrait, only create SIDE layout
-          const shouldCreateBothLayouts = isLandscapePair && !(isLetterbox && beforeOrientation === 'portrait');
+
+          // Create both STACK and SIDE layouts for all landscape pairs (including letterbox portrait)
+          // This gives users both "original-stack" and "original-side" options
+          const shouldCreateBothLayouts = isLandscapePair;
 
           if (Platform.OS === 'ios') {
             // iOS: use native image compositor
@@ -1659,37 +1660,50 @@ export default function CameraScreen({ route, navigation }) {
                 });
               }
 
-              // For landscape pairs (letterbox or landscape full), also save the SIDE-BY-SIDE variant in addition to STACK
+              // For landscape pairs, also create the alternate layout (STACK <-> SIDE)
               if (shouldCreateBothLayouts) {
                 try {
-                  console.log('[CameraScreen] 🧩 Creating SIDE layout for landscape pair');
-                  // Prepare side-by-side dims based on existing sizes and totalW
-                  const r1wLB = aSize.w / aSize.h;
-                  const r2wLB = bSize.w / bSize.h;
-                  const denomLB = (r1wLB + r2wLB) || 1;
-                  const totalHLB = Math.max(400, Math.round(totalW / denomLB));
-                  const leftWLB = Math.round(totalW * (r1wLB / denomLB));
-                  const rightWLB = totalW - leftWLB;
-                  const sideDimsLB = { width: totalW, height: totalHLB, leftW: leftWLB, rightW: rightWLB };
+                  const alternateLayout = layout === 'STACK' ? 'SIDE' : 'STACK';
+                  console.log(`[CameraScreen] 🧩 Creating ${alternateLayout} layout (alternate to ${layout})`);
 
-                  console.log('[CameraScreen] 🧩 SIDE layout dims:', sideDimsLB);
+                  let alternateDims;
+                  if (alternateLayout === 'SIDE') {
+                    // Prepare side-by-side dims
+                    const r1wLB = aSize.w / aSize.h;
+                    const r2wLB = bSize.w / bSize.h;
+                    const denomLB = (r1wLB + r2wLB) || 1;
+                    const totalHLB = Math.max(400, Math.round(totalW / denomLB));
+                    const leftWLB = Math.round(totalW * (r1wLB / denomLB));
+                    const rightWLB = totalW - leftWLB;
+                    alternateDims = { width: totalW, height: totalHLB, leftW: leftWLB, rightW: rightWLB };
+                  } else {
+                    // Prepare stack dims
+                    const r1h = aSize.h / aSize.w;
+                    const r2h = bSize.h / bSize.w;
+                    const totalH = Math.max(400, Math.round(totalW * (r1h + r2h)));
+                    const topH = Math.round(totalW * r1h);
+                    const bottomH = totalH - topH;
+                    alternateDims = { width: totalW, height: totalH, topH, bottomH };
+                  }
+
+                  console.log(`[CameraScreen] 🧩 ${alternateLayout} layout dims:`, alternateDims);
                   const capUriLB = await compositeImages(
                     activeBeforePhoto.uri,
                     savedUri,
-                    'SIDE',
-                    sideDimsLB
+                    alternateLayout,
+                    alternateDims
                   );
-                  console.log('[CameraScreen] ✅ SIDE layout composite success:', capUriLB);
+                  console.log(`[CameraScreen] ✅ ${alternateLayout} layout composite success:`, capUriLB);
 
-                  const sideSavedUri = await savePhotoToDevice(
+                  const altSavedUri = await savePhotoToDevice(
                     capUriLB,
-                    `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_SIDE_${Date.now()}${projectIdSuffix}.jpg`,
+                    `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`,
                     activeProjectId || null
                   );
-                  console.log('[CameraScreen] 💾 SIDE layout saved:', sideSavedUri);
+                  console.log(`[CameraScreen] 💾 ${alternateLayout} layout saved:`, altSavedUri);
                 } catch (eLB) {
-                  console.error('[CameraScreen] ❌ Failed to create SIDE layout for landscape pair:', eLB);
-                  console.error('[CameraScreen] SIDE layout error details:', {
+                  console.error(`[CameraScreen] ❌ Failed to create ${alternateLayout || 'alternate'} layout:`, eLB);
+                  console.error(`[CameraScreen] ${alternateLayout || 'alternate'} layout error details:`, {
                     message: eLB.message,
                     stack: eLB.stack,
                     beforeUri: activeBeforePhoto.uri,
@@ -1744,40 +1758,55 @@ export default function CameraScreen({ route, navigation }) {
               jobId: `${Date.now()}_${layout}`,
             });
 
-            // For landscape pairs (letterbox or landscape full), also add the SIDE-BY-SIDE variant job
+            // For landscape pairs, also add the alternate layout job (STACK <-> SIDE)
             if (shouldCreateBothLayouts) {
-              console.log('[CameraScreen][Android] Adding SIDE layout job for landscape pair');
-              const r1wLB = aSize.w / aSize.h;
-              const r2wLB = bSize.w / bSize.h;
-              const denomLB = (r1wLB + r2wLB) || 1;
-              const totalHLB = Math.max(400, Math.round(totalW / denomLB));
+              const alternateLayout = layout === 'STACK' ? 'SIDE' : 'STACK';
+              console.log(`[CameraScreen][Android] Adding ${alternateLayout} layout job (alternate to ${layout})`);
 
-              let limitedSideWidth = totalW;
-              let limitedSideHeight = totalHLB;
+              let altWidth, altHeight;
+              if (alternateLayout === 'SIDE') {
+                // Prepare side-by-side dims
+                const r1wLB = aSize.w / aSize.h;
+                const r2wLB = bSize.w / bSize.h;
+                const denomLB = (r1wLB + r2wLB) || 1;
+                const totalHLB = Math.max(400, Math.round(totalW / denomLB));
+                altWidth = totalW;
+                altHeight = totalHLB;
+              } else {
+                // Prepare stack dims
+                const r1h = aSize.h / aSize.w;
+                const r2h = bSize.h / bSize.w;
+                const totalH = Math.max(400, Math.round(totalW * (r1h + r2h)));
+                altWidth = totalW;
+                altHeight = totalH;
+              }
 
-              if (limitedSideWidth > MAX_DIMENSION || limitedSideHeight > MAX_DIMENSION) {
-                const scaleSide = Math.min(MAX_DIMENSION / limitedSideWidth, MAX_DIMENSION / limitedSideHeight);
-                limitedSideWidth = Math.round(limitedSideWidth * scaleSide);
-                limitedSideHeight = Math.round(limitedSideHeight * scaleSide);
-                console.log('[CameraScreen][Android] Scaling SIDE layout dimensions:', {
-                  original: { width: totalW, height: totalHLB },
-                  limited: { width: limitedSideWidth, height: limitedSideHeight },
+              let limitedAltWidth = altWidth;
+              let limitedAltHeight = altHeight;
+
+              if (limitedAltWidth > MAX_DIMENSION || limitedAltHeight > MAX_DIMENSION) {
+                const scaleAlt = Math.min(MAX_DIMENSION / limitedAltWidth, MAX_DIMENSION / limitedAltHeight);
+                limitedAltWidth = Math.round(limitedAltWidth * scaleAlt);
+                limitedAltHeight = Math.round(limitedAltHeight * scaleAlt);
+                console.log(`[CameraScreen][Android] Scaling ${alternateLayout} layout dimensions:`, {
+                  original: { width: altWidth, height: altHeight },
+                  limited: { width: limitedAltWidth, height: limitedAltHeight },
                 });
               }
 
               backgroundCombinedPhotoService.addJob({
                 beforeUri: activeBeforePhoto.uri,
                 afterUri: savedUri,
-                layout: 'SIDE',
-                width: limitedSideWidth,
-                height: limitedSideHeight,
+                layout: alternateLayout,
+                width: limitedAltWidth,
+                height: limitedAltHeight,
                 room: activeBeforePhoto.room,
                 safeName,
                 projectId: activeProjectId || null,
                 projectIdSuffix,
-                jobId: `${Date.now() + 1}_SIDE`,
+                jobId: `${Date.now() + 1}_${alternateLayout}`,
               });
-              console.log('[CameraScreen][Android] SIDE layout job queued');
+              console.log(`[CameraScreen][Android] ${alternateLayout} layout job queued`);
             }
           }
         } catch (error) {

@@ -309,21 +309,31 @@ export default function HomeScreen({ navigation }) {
             return match ? parseInt(match[1], 10) : 0;
           };
 
-          // Find newest combined base images - prioritize STACK over SIDE
+          // Determine primary layout based on orientation
+          // Letterbox portrait (portrait phone + landscape camera): SIDE is primary
+          // Letterbox landscape & true landscape: STACK is primary
+          const phoneOrientation = beforePhoto.orientation || 'portrait';
+          const cameraViewMode = beforePhoto.cameraViewMode || 'portrait';
+          const isLetterboxPortrait = phoneOrientation === 'portrait' && cameraViewMode === 'landscape';
+
           const stackPrefix = `${beforePhoto.room}_${safeName}_COMBINED_BASE_STACK_`;
           const sidePrefix = `${beforePhoto.room}_${safeName}_COMBINED_BASE_SIDE_`;
 
           let newestUri = null;
           let newestTs = -1;
 
-          // First, try to find STACK variant
-          const stackMatches = entries.filter(name => {
-            if (!name.startsWith(stackPrefix)) return false;
+          // For letterbox portrait: prioritize SIDE, otherwise prioritize STACK
+          const primaryPrefix = isLetterboxPortrait ? sidePrefix : stackPrefix;
+          const fallbackPrefix = isLetterboxPortrait ? stackPrefix : sidePrefix;
+
+          // First, try to find primary variant
+          const primaryMatches = entries.filter(name => {
+            if (!name.startsWith(primaryPrefix)) return false;
             if (projectId && !name.includes(projectIdSuffix)) return false;
             return true;
           });
 
-          for (const filename of stackMatches) {
+          for (const filename of primaryMatches) {
             const ts = extractTimestamp(filename);
             if (ts > newestTs) {
               newestTs = ts;
@@ -331,15 +341,15 @@ export default function HomeScreen({ navigation }) {
             }
           }
 
-          // Only use SIDE if no STACK found
+          // Only use fallback if no primary found
           if (!newestUri) {
-            const sideMatches = entries.filter(name => {
-              if (!name.startsWith(sidePrefix)) return false;
+            const fallbackMatches = entries.filter(name => {
+              if (!name.startsWith(fallbackPrefix)) return false;
               if (projectId && !name.includes(projectIdSuffix)) return false;
               return true;
             });
 
-            for (const filename of sideMatches) {
+            for (const filename of fallbackMatches) {
               const ts = extractTimestamp(filename);
               if (ts > newestTs) {
                 newestTs = ts;
@@ -392,21 +402,31 @@ export default function HomeScreen({ navigation }) {
                 return match ? parseInt(match[1], 10) : 0;
               };
 
-              // Prioritize STACK over SIDE variant
+              // Determine primary layout based on orientation
+              // Letterbox portrait (portrait phone + landscape camera): SIDE is primary
+              // Letterbox landscape & true landscape: STACK is primary
+              const phoneOrientation = beforePhoto.orientation || 'portrait';
+              const cameraViewMode = beforePhoto.cameraViewMode || 'portrait';
+              const isLetterboxPortrait = phoneOrientation === 'portrait' && cameraViewMode === 'landscape';
+
               const stackPrefix = `${beforePhoto.room}_${safeName}_COMBINED_BASE_STACK_`;
               const sidePrefix = `${beforePhoto.room}_${safeName}_COMBINED_BASE_SIDE_`;
 
               let newestUri = null;
               let newestTs = -1;
 
-              // First, try to find STACK variant
-              const stackMatches = entries.filter(name => {
-                if (!name.startsWith(stackPrefix)) return false;
+              // For letterbox portrait: prioritize SIDE, otherwise prioritize STACK
+              const primaryPrefix = isLetterboxPortrait ? sidePrefix : stackPrefix;
+              const fallbackPrefix = isLetterboxPortrait ? stackPrefix : sidePrefix;
+
+              // First, try to find primary variant
+              const primaryMatches = entries.filter(name => {
+                if (!name.startsWith(primaryPrefix)) return false;
                 if (projectId && !name.includes(projectIdSuffix)) return false;
                 return true;
               });
 
-              for (const filename of stackMatches) {
+              for (const filename of primaryMatches) {
                 const ts = extractTimestamp(filename);
                 if (ts > newestTs) {
                   newestTs = ts;
@@ -414,15 +434,15 @@ export default function HomeScreen({ navigation }) {
                 }
               }
 
-              // Only use SIDE if no STACK found
+              // Only use fallback if no primary found
               if (!newestUri) {
-                const sideMatches = entries.filter(name => {
-                  if (!name.startsWith(sidePrefix)) return false;
+                const fallbackMatches = entries.filter(name => {
+                  if (!name.startsWith(fallbackPrefix)) return false;
                   if (projectId && !name.includes(projectIdSuffix)) return false;
                   return true;
                 });
 
-                for (const filename of sideMatches) {
+                for (const filename of fallbackMatches) {
                   const ts = extractTimestamp(filename);
                   if (ts > newestTs) {
                     newestTs = ts;
@@ -1049,16 +1069,6 @@ export default function HomeScreen({ navigation }) {
 
           // For thumbnails: landscape letterbox uses stack, portrait letterbox uses side-by-side
           const useStackedLayout = isTrueLandscape && !isLetterbox ? true : isLetterboxLandscape;
-
-          console.log('[HomeScreen] Thumbnail layout:', {
-            name: beforePhoto.name,
-            phoneOrientation,
-            cameraViewMode,
-            isLetterbox,
-            isTrueLandscape,
-            isLetterboxLandscape,
-            useStackedLayout
-          });
 
           gridItems.push(
             <TouchableOpacity
