@@ -1534,13 +1534,17 @@ export default function CameraScreen({ route, navigation }) {
           const beforeOrientation = activeBeforePhoto.orientation || 'portrait';
           const cameraVM = activeBeforePhoto.cameraViewMode || 'portrait';
           const isLandscapePair = beforeOrientation === 'landscape' || cameraVM === 'landscape';
-          const isLetterbox = beforeOrientation === 'portrait' && cameraVM === 'landscape';
+
+          // Letterbox mode: cameraViewMode === 'landscape' (4:3 camera view with bars)
+          const isLetterboxMode = cameraVM === 'landscape';
+          const isLetterboxPortrait = beforeOrientation === 'portrait' && cameraVM === 'landscape';
+          const isLetterboxLandscape = beforeOrientation === 'landscape' && cameraVM === 'landscape';
 
           // Determine layout FIRST before calculating dimensions
           // Letterbox portrait (portrait phone + landscape camera): SIDE layout
           // Letterbox landscape (landscape phone + landscape camera): STACK layout
-          // Landscape full (landscape phone + any camera): STACK layout
-          const layout = isLetterbox && beforeOrientation === 'portrait' ? 'SIDE' : (isLandscapePair ? 'STACK' : 'SIDE');
+          // Landscape full (landscape phone + portrait/full camera): STACK layout
+          const layout = isLetterboxPortrait ? 'SIDE' : (isLandscapePair ? 'STACK' : 'SIDE');
           const isStackLayout = layout === 'STACK';
 
           const sourceMaxWidth = Math.max(aSize.w, bSize.w);
@@ -1575,9 +1579,9 @@ export default function CameraScreen({ route, navigation }) {
           const baseType = layout;
           const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
 
-          // Create both STACK and SIDE layouts for all landscape pairs (including letterbox portrait)
-          // This gives users both "original-stack" and "original-side" options
-          const shouldCreateBothLayouts = isLandscapePair;
+          // Create both STACK and SIDE layouts only for letterbox mode (portrait/landscape phone + landscape camera view)
+          // For landscape full (landscape phone + portrait/full camera view), only create STACK
+          const shouldCreateBothLayouts = isLetterboxMode;
 
           if (Platform.OS === 'ios') {
             // iOS: use native image compositor
@@ -1650,7 +1654,7 @@ export default function CameraScreen({ route, navigation }) {
                           activeBeforePhoto,
                           newAfterPhoto,
                           settingsHash,
-                          isLetterbox
+                          isLetterboxMode
                         );
                       } catch (error) {
                       }
