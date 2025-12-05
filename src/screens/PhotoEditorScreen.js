@@ -575,7 +575,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
     }
     const combinedId = getCombinedId(photoSet);
     const photoSetIsSelected = getIsSelected(photoSet);
-    console.log('[PhotoEditorScreen] Rendering combined preview:', combinedId, 'Is selected:', photoSetIsSelected, 'Selected photos:', Array.from(localSelectedPhotos));
+    // Removed repetitive logging that was flooding console
     let config = getTemplateConfig(templateType, photoSet);
     if (!config) {
       // Guard against undefined (e.g., original not present yet)
@@ -586,9 +586,13 @@ export default function PhotoEditorScreen({ route, navigation }) {
 
     // Calculate preview dimensions to fit on screen
     const maxWidth = 350;
-    const maxHeight = 500;
     const maxSquareSize = 320; // Smaller size for square formats
     const aspectRatio = config.width / config.height;
+
+    // Calculate available height dynamically for portrait/stacked layouts
+    const estimatedUIHeight = 400;
+    const availableHeight = height - estimatedUIHeight;
+    const maxHeight = isStack ? Math.min(availableHeight * 0.9, 800) : 500;
 
     let previewWidth, previewHeight;
     if (aspectRatio === 1) {
@@ -600,7 +604,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
       previewWidth = maxWidth;
       previewHeight = maxWidth / aspectRatio;
     } else {
-      // Portrait
+      // Portrait - use dynamic maxHeight for better display
       previewHeight = maxHeight;
       previewWidth = maxHeight * aspectRatio;
     }
@@ -609,27 +613,53 @@ export default function PhotoEditorScreen({ route, navigation }) {
     if ((templateType === 'original-stack' && originalBaseUris.stack) || (templateType === 'original-side' && originalBaseUris.side)) {
       const uri = templateType === 'original-stack' ? originalBaseUris.stack : originalBaseUris.side;
       const isStackLayout = templateType === 'original-stack';
-      // Fit inside max box while preserving original aspect
+      // Fit inside max box while preserving original photo's aspect ratio
+      // For stacked layouts, use more available screen height
       const maxW = 350;
-      const maxH = 500;
+      // Calculate available height: screen height minus estimated UI elements (header ~100px, template selector ~200px, padding ~100px)
+      const estimatedUIHeight = 400;
+      const availableHeight = height - estimatedUIHeight;
+      const maxH = isStackLayout ? Math.min(availableHeight * 0.9, 800) : 500;
+
       let ow = originalImageSize?.width || maxW;
       let oh = originalImageSize?.height || maxH;
       let ratio = ow && oh ? ow / oh : 1;
+
+      // Start with max width
       let w = maxW;
       let h = w / ratio;
+
+      // If height exceeds max, scale down based on height instead
       if (h > maxH) {
         h = maxH;
         w = h * ratio;
       }
+
+      console.log('[PhotoEditor] 📸 Combined Preview - Original Base:', {
+        templateType,
+        originalPhotoSize: originalImageSize ? { width: originalImageSize.width, height: originalImageSize.height, aspectRatio: (originalImageSize.width / originalImageSize.height).toFixed(2) } : 'unknown',
+        viewportSize: { width: w.toFixed(0), height: h.toFixed(0), aspectRatio: (w/h).toFixed(2) },
+        isStackLayout
+      });
+
       return (
         <View
           ref={combinedRef}
           style={[styles.combinedPreview, { width: w, height: h }]}
           collapsable={false}
+          onLayout={(event) => {
+            const { width, height } = event.nativeEvent.layout;
+            console.log('[PhotoEditor] 📐 Viewport Actual Size (Original Base):', {
+              templateType,
+              rendered: { width: width.toFixed(0), height: height.toFixed(0), aspectRatio: (width/height).toFixed(2) },
+              expected: { width: w.toFixed(0), height: h.toFixed(0) },
+              originalPhoto: originalImageSize ? { width: originalImageSize.width, height: originalImageSize.height } : 'unknown'
+            });
+          }}
         >
-          <Image 
-            source={{ uri }} 
-            style={{ width: '100%', height: '100%' }} 
+          <Image
+            source={{ uri }}
+            style={{ width: '100%', height: '100%' }}
             resizeMode="contain"
             onError={(error) => {
             }}

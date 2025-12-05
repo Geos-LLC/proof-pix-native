@@ -3582,7 +3582,7 @@ export default function GalleryScreen({ navigation, route }) {
       {fullScreenPhotoSet && (
         <TouchableWithoutFeedback onPress={handleLongPressEnd}>
           <View style={styles.fullScreenPhotoContainer}>
-            <View 
+            <View
               ref={combinedCaptureRef}
               collapsable={false}
               style={[
@@ -3591,12 +3591,55 @@ export default function GalleryScreen({ navigation, route }) {
                 const phoneOrientation = fullScreenPhotoSet.before.orientation || 'portrait';
                 const cameraViewMode = fullScreenPhotoSet.before.cameraViewMode || 'portrait';
                 const isLetterbox = fullScreenPhotoSet.before.templateType === 'letterbox' || (phoneOrientation === 'portrait' && cameraViewMode === 'landscape');
-                
-                // In the enlarged view, only letterbox photos should be stacked.
-                // True landscape and portrait photos are better side-by-side.
-                return isLetterbox ? styles.fullScreenStacked : styles.fullScreenSideBySide;
+                const isLandscapeFull = phoneOrientation === 'landscape' && cameraViewMode === 'landscape';
+
+                // Use STACKED for letterbox and landscape full (both create vertical combined photos)
+                const shouldStack = isLetterbox || isLandscapeFull;
+                const layoutStyle = shouldStack ? styles.fullScreenStacked : styles.fullScreenSideBySide;
+
+                // Log dimensions for debugging
+                console.log('[GalleryScreen] 📸 Combined Preview Opened:', {
+                  photoName: fullScreenPhotoSet.before.name,
+                  beforePhotoSize: {
+                    width: fullScreenPhotoSet.before.width,
+                    height: fullScreenPhotoSet.before.height
+                  },
+                  afterPhotoSize: {
+                    width: fullScreenPhotoSet.after.width,
+                    height: fullScreenPhotoSet.after.height
+                  },
+                  phoneOrientation,
+                  cameraViewMode,
+                  isLetterbox,
+                  isLandscapeFull,
+                  layout: shouldStack ? 'STACKED' : 'SIDE-BY-SIDE',
+                  styleAspectRatio: layoutStyle.aspectRatio,
+                  styleMaxHeight: layoutStyle.maxHeight
+                });
+
+                // In the enlarged view, letterbox and landscape full photos are stacked vertically.
+                // Portrait photos are better side-by-side.
+                return layoutStyle;
               })()
-            ]}>
+            ]}
+              onLayout={(event) => {
+                const { width, height } = event.nativeEvent.layout;
+                const photoWidth = fullScreenPhotoSet.before.width;
+                const photoHeight = fullScreenPhotoSet.before.height;
+                const photoAspectRatio = photoWidth / photoHeight;
+                const containerAspectRatio = width / height;
+
+                console.log('[GalleryScreen] 📐 Viewport vs Photo Dimensions:', {
+                  photoName: fullScreenPhotoSet.before.name,
+                  photoSize: { width: photoWidth, height: photoHeight, aspectRatio: photoAspectRatio.toFixed(2) },
+                  viewportSize: { width: width.toFixed(0), height: height.toFixed(0), aspectRatio: containerAspectRatio.toFixed(2) },
+                  fitPercentage: {
+                    width: ((width / photoWidth) * 100).toFixed(1) + '%',
+                    height: ((height / photoHeight) * 100).toFixed(1) + '%'
+                  }
+                });
+              }}
+            >
               <View style={styles.fullScreenHalf}>
                 <Image
                   source={{ uri: fullScreenPhotoSet.before.uri }}
@@ -5072,10 +5115,8 @@ const styles = StyleSheet.create({
     height: '100%'
   },
   fullScreenCombinedPreview: {
-    aspectRatio: 1,
     width: '90%',
     maxWidth: 500,
-    maxHeight: 500,
     backgroundColor: 'white',
     borderRadius: 12,
     overflow: 'hidden',
@@ -5083,10 +5124,14 @@ const styles = StyleSheet.create({
     borderColor: COLORS.PRIMARY
   },
   fullScreenStacked: {
-    flexDirection: 'column'
+    flexDirection: 'column',
+    aspectRatio: 18 / 9, // 2.0 - height is twice width for vertical stacked photos
+    maxHeight: '90%' // Allow taller for vertical photos
   },
   fullScreenSideBySide: {
-    flexDirection: 'row'
+    flexDirection: 'row',
+    aspectRatio: 16 / 9, // Horizontal aspect ratio for side-by-side photos
+    maxHeight: 500
   },
   fullScreenHalf: {
     flex: 1
