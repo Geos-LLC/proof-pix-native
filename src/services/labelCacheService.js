@@ -7,6 +7,10 @@ import { PHOTO_MODES } from '../constants/rooms';
 const LABEL_CACHE_METADATA_KEY = 'label-cache-metadata';
 const LABEL_CACHE_DIR = '_labeled_cache';
 
+// Cache version - increment this to invalidate all cached photos
+// v2: Native image labeling implementation (replaces ViewShot)
+const CACHE_VERSION = 2;
+
 /**
  * Calculate a hash of label settings to determine if cached version is still valid
  */
@@ -23,8 +27,9 @@ export const calculateSettingsHash = (settings) => {
     labelMarginHorizontal,
   } = settings;
 
-  // Create a string representation of all settings
+  // Create a string representation of all settings including cache version
   const settingsString = JSON.stringify({
+    version: CACHE_VERSION, // Include version to invalidate old cache
     showLabels: showLabels || false,
     beforeLabelPosition: beforeLabelPosition || 'top-left',
     afterLabelPosition: afterLabelPosition || 'top-right',
