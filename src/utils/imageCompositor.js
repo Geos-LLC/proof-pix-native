@@ -61,3 +61,45 @@ export async function compositeImages(beforeUri, afterUri, layout, dimensions) {
     throw error;
   }
 }
+
+/**
+ * Add a text label to an image at full resolution using native code
+ * @param {string} imageUri - URI of the source image
+ * @param {string} labelText - Text to display on the label
+ * @param {object} labelConfig - Label configuration
+ * @param {string} labelConfig.position - Label position: 'top-left', 'top-right', 'bottom-left', 'bottom-right'
+ * @param {string} labelConfig.backgroundColor - Background color in hex format (e.g., '#FFD700')
+ * @param {string} labelConfig.textColor - Text color in hex format (e.g., '#000000')
+ * @param {number} labelConfig.fontSize - Base font size (will be scaled based on image dimensions)
+ * @param {number} labelConfig.marginHorizontal - Horizontal margin
+ * @param {number} labelConfig.marginVertical - Vertical margin
+ * @param {number} labelConfig.padding - Padding inside the label
+ * @returns {Promise<string>} - URI of the labeled image
+ */
+export async function addLabelToImage(imageUri, labelText, labelConfig = {}) {
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+    console.warn('[ImageCompositor] Unsupported platform for addLabelToImage:', Platform.OS);
+    throw new Error('Label addition is only supported on native mobile platforms');
+  }
+
+  if (!ImageCompositor || !ImageCompositor.addLabelToImage) {
+    console.error('[ImageCompositor] addLabelToImage method not found.');
+    throw new Error('ImageCompositor.addLabelToImage is not available');
+  }
+
+  try {
+    console.log('[ImageCompositor] Calling native addLabelToImage', {
+      platform: Platform.OS,
+      labelText,
+      labelConfig,
+    });
+
+    const resultUri = await ImageCompositor.addLabelToImage(imageUri, labelText, labelConfig);
+
+    console.log('[ImageCompositor] addLabelToImage success, resultUri:', resultUri);
+    return resultUri;
+  } catch (error) {
+    console.error('[ImageCompositor] Error from native addLabelToImage:', error);
+    throw error;
+  }
+}

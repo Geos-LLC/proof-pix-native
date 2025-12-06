@@ -3,7 +3,12 @@ package com.proofpix.app
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import com.facebook.react.bridge.Promise
@@ -17,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.max
 
 class ImageCompositorModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -113,6 +119,132 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
 
             } catch (e: Exception) {
                 promise.reject("COMPOSITE_ERROR", "Failed to composite images: ${e.message}", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun addLabelToImage(
+        imageUri: String,
+        labelText: String,
+        labelConfig: ReadableMap,
+        promise: Promise
+    ) {
+        // Run on background thread
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Load original bitmap at full resolution
+                val bitmap = loadBitmap(imageUri)
+                if (bitmap == null) {
+                    promise.reject("LOAD_ERROR", "Failed to load image")
+                    return@launch
+                }
+
+                // Create a mutable copy to draw on
+                val labeledBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+                bitmap.recycle()
+
+                val canvas = Canvas(labeledBitmap)
+
+                // Parse label configuration
+                val position = if (labelConfig.hasKey("position")) labelConfig.getString("position") else "top-left"
+                val backgroundColor = if (labelConfig.hasKey("backgroundColor"))
+                    Color.parseColor(labelConfig.getString("backgroundColor")) else Color.parseColor("#FFD700")
+                val textColor = if (labelConfig.hasKey("textColor"))
+                    Color.parseColor(labelConfig.getString("textColor")) else Color.BLACK
+                val fontSize = if (labelConfig.hasKey("fontSize")) labelConfig.getInt("fontSize") else 48
+                val marginH = if (labelConfig.hasKey("marginHorizontal")) labelConfig.getInt("marginHorizontal") else 20
+                val marginV = if (labelConfig.hasKey("marginVertical")) labelConfig.getInt("marginVertical") else 20
+                val padding = if (labelConfig.hasKey("padding")) labelConfig.getInt("padding") else 16
+
+                // Calculate scaled sizes based on image dimensions
+                // Scale font size and margins based on image width (assuming ~1000px as baseline)
+                val scale = labeledBitmap.width / 1000f
+                val scaledFontSize = (fontSize * scale).coerceAtLeast(24f)
+                val scaledMarginH = (marginH * scale).toInt().coerceAtLeast(10)
+                val scaledMarginV = (marginV * scale).toInt().coerceAtLeast(10)
+                val scaledPadding = (padding * scale).toInt().coerceAtLeast(8)
+
+                // Setup text paint
+                val textPaint = Paint().apply {
+                    color = textColor
+                    textSize = scaledFontSize
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    isAntiAlias = true
+                }
+
+                // Measure text
+                val textBounds = Rect()
+                textPaint.getTextBounds(labelText, 0, labelText.length, textBounds)
+
+                // Calculate label background dimensions
+                val labelWidth = textBounds.width() + (scaledPadding * 2)
+                val labelHeight = textBounds.height() + (scaledPadding * 2)
+
+                // Calculate label position
+                val labelRect = when (position) {
+                    "top-left" -> RectF(
+                        scaledMarginH.toFloat(),
+                        scaledMarginV.toFloat(),
+                        scaledMarginH + labelWidth.toFloat(),
+                        scaledMarginV + labelHeight.toFloat()
+                    )
+                    "top-right" -> RectF(
+                        labeledBitmap.width - scaledMarginH - labelWidth.toFloat(),
+                        scaledMarginV.toFloat(),
+                        labeledBitmap.width - scaledMarginH.toFloat(),
+                        scaledMarginV + labelHeight.toFloat()
+                    )
+                    "bottom-left" -> RectF(
+                        scaledMarginH.toFloat(),
+                        labeledBitmap.height - scaledMarginV - labelHeight.toFloat(),
+                        scaledMarginH + labelWidth.toFloat(),
+                        labeledBitmap.height - scaledMarginV.toFloat()
+                    )
+                    "bottom-right" -> RectF(
+                        labeledBitmap.width - scaledMarginH - labelWidth.toFloat(),
+                        labeledBitmap.height - scaledMarginV - labelHeight.toFloat(),
+                        labeledBitmap.width - scaledMarginH.toFloat(),
+                        labeledBitmap.height - scaledMarginV.toFloat()
+                    )
+                    else -> RectF(
+                        scaledMarginH.toFloat(),
+                        scaledMarginV.toFloat(),
+                        scaledMarginH + labelWidth.toFloat(),
+                        scaledMarginV + labelHeight.toFloat()
+                    )
+                }
+
+                // Draw label background with rounded corners
+                val backgroundPaint = Paint().apply {
+                    color = backgroundColor
+                    isAntiAlias = true
+                }
+                val cornerRadius = 8f * scale
+                canvas.drawRoundRect(labelRect, cornerRadius, cornerRadius, backgroundPaint)
+
+                // Draw text centered in the label
+                val textX = labelRect.left + scaledPadding - textBounds.left
+                val textY = labelRect.top + scaledPadding - textBounds.top
+                canvas.drawText(labelText, textX, textY, textPaint)
+
+                // Save to file
+                val cacheDir = reactApplicationContext.cacheDir
+                val outputFile = File(cacheDir, "labeled_${System.currentTimeMillis()}.jpg")
+
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(outputFile).use { out ->
+                        labeledBitmap.compress(Bitmap.CompressFormat.JPEG, 98, out)
+                    }
+                }
+
+                labeledBitmap.recycle()
+
+                // Return file URI
+                promise.resolve("file://${outputFile.absolutePath}")
+
+            } catch (e: Exception) {
+                promise.reject("LABEL_ERROR", "Failed to add label to image: ${e.message}", e)
             }
         }
     }
