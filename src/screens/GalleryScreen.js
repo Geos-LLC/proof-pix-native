@@ -774,9 +774,17 @@ export default function GalleryScreen({ navigation, route }) {
                 try {
                     const cachedUri = await getCachedLabeledPhoto(item, settingsHash);
                     if (cachedUri) {
-                        // Store the cached URI for reuse
-                        cachedPhotoUris.set(item.id, cachedUri);
-                        console.log(`[GALLERY] Photo ${item.id} (${item.mode}) found in cache`);
+                        // Double-check that the cached file actually exists
+                        const fileInfo = await FileSystem.getInfoAsync(cachedUri);
+                        if (fileInfo.exists) {
+                            // Store the cached URI for reuse
+                            cachedPhotoUris.set(item.id, cachedUri);
+                            console.log(`[GALLERY] Photo ${item.id} (${item.mode}) found in cache`);
+                        } else {
+                            console.warn(`[GALLERY] Cache metadata exists but file missing for ${item.id}: ${cachedUri}`);
+                            needsPreparation = true;
+                            console.log(`[GALLERY] Photo ${item.id} (${item.mode}) needs preparation (cache file missing)`);
+                        }
                     } else {
                         needsPreparation = true;
                         console.log(`[GALLERY] Photo ${item.id} (${item.mode}) needs preparation`);
