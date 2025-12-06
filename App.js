@@ -249,7 +249,18 @@ export default function App() {
       }
     };
 
+    // Validate and clear old label cache if version changed
+    const initializeLabelCache = async () => {
+      try {
+        const { validateCacheVersion } = await import('./src/services/labelCacheService');
+        await validateCacheVersion();
+      } catch (error) {
+        console.error('[App] Error validating label cache:', error);
+      }
+    };
+
     initializeFirebase();
+    initializeLabelCache();
 
     // Check trial expiration on app startup
     checkTrialExpiration();

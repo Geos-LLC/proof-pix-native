@@ -311,6 +311,57 @@ const saveCacheMetadata = async (metadata) => {
 };
 
 /**
+ * Clear all cached labeled photos and metadata
+ */
+export const clearAllCache = async () => {
+  try {
+    const cacheDir = getCacheDir();
+    const dirInfo = await FileSystem.getInfoAsync(cacheDir);
+
+    if (dirInfo.exists) {
+      // Delete entire cache directory
+      await FileSystem.deleteAsync(cacheDir, { idempotent: true });
+      console.log('[LabelCache] Cleared all cached labeled photos');
+    }
+
+    // Clear metadata
+    await AsyncStorage.removeItem(LABEL_CACHE_METADATA_KEY);
+    console.log('[LabelCache] Cleared cache metadata');
+
+    return true;
+  } catch (error) {
+    console.error('[LabelCache] Error clearing cache:', error);
+    return false;
+  }
+};
+
+/**
+ * Check cache version and clear if outdated
+ * Call this on app startup to ensure cache is compatible
+ */
+export const validateCacheVersion = async () => {
+  try {
+    const CACHE_VERSION_KEY = 'label-cache-version';
+    const storedVersion = await AsyncStorage.getItem(CACHE_VERSION_KEY);
+    const currentVersion = CACHE_VERSION.toString();
+
+    if (storedVersion !== currentVersion) {
+      console.log(`[LabelCache] Cache version mismatch (stored: ${storedVersion}, current: ${currentVersion}). Clearing old cache...`);
+      await clearAllCache();
+      await AsyncStorage.setItem(CACHE_VERSION_KEY, currentVersion);
+      console.log('[LabelCache] Cache cleared and version updated');
+      return true;
+    }
+
+    console.log('[LabelCache] Cache version is up to date');
+    return false;
+  } catch (error) {
+    console.error('[LabelCache] Error validating cache version:', error);
+    return false;
+  }
+};
+
+/**
  * Get cache statistics
  */
 export const getCacheStats = async () => {
@@ -318,14 +369,14 @@ export const getCacheStats = async () => {
     const metadata = await loadCacheMetadata();
     const cacheDir = getCacheDir();
     const dirInfo = await FileSystem.getInfoAsync(cacheDir);
-    
+
     let totalSize = 0;
     let fileCount = 0;
 
     if (dirInfo.exists) {
       const files = await FileSystem.readDirectoryAsync(cacheDir);
       fileCount = files.length;
-      
+
       for (const file of files) {
         try {
           const fileInfo = await FileSystem.getInfoAsync(`${cacheDir}${file}`);
