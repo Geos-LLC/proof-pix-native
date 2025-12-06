@@ -35,6 +35,7 @@ import dropboxService from '../services/dropboxService';
 import { uploadPhotoBatchToDropbox } from '../services/dropboxUploadService';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
+import { getContentUriAsync } from 'expo-file-system';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadIndicatorLine from '../components/UploadIndicatorLine';
@@ -1228,14 +1229,37 @@ export default function GalleryScreen({ navigation, route }) {
                     console.log('[GALLERY] About to call Share.open() with', urls.length, 'photos');
                     console.log('[GALLERY] First photo URI:', urls[0]);
                     console.log('[GALLERY] Last photo URI:', urls[urls.length - 1]);
-                    
+
+                    // On Android, convert file:// URIs to content:// URIs for sharing
+                    let shareUrls = urls;
+                    if (Platform.OS === 'android') {
+                        console.log('[GALLERY] Converting file URIs to content URIs for Android...');
+                        shareUrls = await Promise.all(
+                            urls.map(async (uri) => {
+                                try {
+                                    if (uri.startsWith('file://')) {
+                                        const contentUri = await getContentUriAsync(uri);
+                                        console.log('[GALLERY] Converted:', uri.substring(0, 80), '-> content URI');
+                                        return contentUri;
+                                    }
+                                    return uri;
+                                } catch (error) {
+                                    console.error('[GALLERY] Failed to convert URI:', uri, error);
+                                    return uri; // Fall back to original URI
+                                }
+                            })
+                        );
+                        console.log('[GALLERY] Converted', shareUrls.length, 'URIs to content URIs');
+                        console.log('[GALLERY] First content URI:', shareUrls[0]);
+                    }
+
                     const shareResult = await new Promise((resolve, reject) => {
                         requestAnimationFrame(async () => {
                             try {
                                 const result = await Share.open({
-                                    urls: urls,
+                                    urls: shareUrls,
                                     title: `Share ${projectName} Photos`,
-                                    message: `Sharing ${urls.length} photos from ${projectName}`,
+                                    message: `Sharing ${shareUrls.length} photos from ${projectName}`,
                                     type: 'image/jpeg',
                                 });
                                 resolve(result);
@@ -1269,9 +1293,20 @@ export default function GalleryScreen({ navigation, route }) {
                         for (let i = 0; i < urls.length; i++) {
                             try {
                                 console.log(`[GALLERY] Sharing photo ${i + 1}/${urls.length}...`);
-                                
+
+                                // Convert to content URI on Android
+                                let shareUrl = urls[i];
+                                if (Platform.OS === 'android' && shareUrl.startsWith('file://')) {
+                                    try {
+                                        shareUrl = await getContentUriAsync(shareUrl);
+                                        console.log(`[GALLERY] Converted photo ${i + 1} to content URI`);
+                                    } catch (convErr) {
+                                        console.error(`[GALLERY] Failed to convert photo ${i + 1}:`, convErr);
+                                    }
+                                }
+
                                 await Share.open({
-                                    url: urls[i],
+                                    url: shareUrl,
                                     title: `${projectName} Photo ${i + 1}/${urls.length}`,
                                     message: `Photo ${i + 1} of ${urls.length} from ${projectName}`,
                                     type: 'image/jpeg',
