@@ -848,63 +848,83 @@ export default function GalleryScreen({ navigation, route }) {
             if (beforePhoto && afterPhoto && showLabels) {
                 // Capture combined view with both labels
                 return new Promise((resolve, reject) => {
-                    // Get dimensions of both photos
-                    Image.getSize(beforePhoto.uri, (beforeWidth, beforeHeight) => {
-                        Image.getSize(afterPhoto.uri, (afterWidth, afterHeight) => {
-                            // Determine layout based on photo orientation
-                            const phoneOrientation = beforePhoto.orientation || 'portrait';
-                            const cameraViewMode = beforePhoto.cameraViewMode || 'portrait';
-                            const isLetterbox = beforePhoto.templateType === 'letterbox' || 
-                                              (phoneOrientation === 'portrait' && cameraViewMode === 'landscape');
-                            
-                            // Use combined photo dimensions if available, otherwise calculate
-                            Image.getSize(photo.uri, (combinedWidth, combinedHeight) => {
-                                // Set the combined photo to capture (triggers useEffect)
-                                setCapturingPhoto({ 
-                                    photo: {
-                                        ...photo,
-                                        beforePhoto,
-                                        afterPhoto,
-                                        isCombined: true,
-                                        isLetterbox
-                                    }, 
-                                    index, 
-                                    width: combinedWidth, 
-                                    height: combinedHeight, 
-                                    labelPosition: null, // Not used for combined
-                                    resolve, 
-                                    reject 
-                                });
-                            }, (error) => {
-                                // If getSize fails, use before photo dimensions
-                                const totalWidth = beforeWidth * 2; // Side by side
-                                const totalHeight = isLetterbox ? beforeHeight * 2 : beforeHeight; // Stacked or side by side
-                                setCapturingPhoto({ 
-                                    photo: {
-                                        ...photo,
-                                        beforePhoto,
-                                        afterPhoto,
-                                        isCombined: true,
-                                        isLetterbox
-                                    }, 
-                                    index, 
-                                    width: totalWidth, 
-                                    height: totalHeight, 
-                                    labelPosition: null,
-                                    resolve, 
-                                    reject 
-                                });
+                    // Get combined photo dimensions first to determine actual layout
+                    Image.getSize(photo.uri, (combinedWidth, combinedHeight) => {
+                        // Determine layout based on ACTUAL combined photo dimensions
+                        // If width > height, it's a landscape photo (could be SIDE for portrait or STACK for landscape)
+                        // If height > width, it's a portrait photo (could be STACK for portrait)
+                        const isLandscapeOriented = combinedWidth > combinedHeight;
+
+                        // For landscape-oriented combined photos, determine if it's SIDE or STACK
+                        // by comparing aspect ratio with individual photo dimensions
+                        Image.getSize(beforePhoto.uri, (beforeWidth, beforeHeight) => {
+                            // Calculate expected dimensions for each layout
+                            const combinedAspectRatio = combinedWidth / combinedHeight;
+                            const beforeAspectRatio = beforeWidth / beforeHeight;
+
+                            // Determine if this is a SIDE or STACK layout based on aspect ratio
+                            // SIDE: combined width ≈ 2x individual width, heights similar
+                            // STACK: combined height ≈ 2x individual height, widths similar
+                            let isLetterbox;
+                            if (isLandscapeOriented) {
+                                // For landscape combined photos:
+                                // If aspect ratio is close to double the before photo's aspect ratio, it's SIDE
+                                // If aspect ratio is close to half, it's STACK
+                                const expectedSideRatio = beforeAspectRatio * 2;
+                                const expectedStackRatio = beforeAspectRatio / 2;
+                                const diffToSide = Math.abs(combinedAspectRatio - expectedSideRatio);
+                                const diffToStack = Math.abs(combinedAspectRatio - expectedStackRatio);
+
+                                // Choose the layout that's closer to the expected ratio
+                                isLetterbox = diffToStack < diffToSide;
+                            } else {
+                                // Portrait combined photos are always STACK
+                                isLetterbox = true;
+                            }
+
+                            console.log(`[GALLERY] Combined photo layout determination: width=${combinedWidth}, height=${combinedHeight}, isLetterbox=${isLetterbox}, aspectRatio=${combinedAspectRatio.toFixed(2)}, beforeAspectRatio=${beforeAspectRatio.toFixed(2)}`);
+
+                            // Set the combined photo to capture (triggers useEffect)
+                            setCapturingPhoto({
+                                photo: {
+                                    ...photo,
+                                    beforePhoto,
+                                    afterPhoto,
+                                    isCombined: true,
+                                    isLetterbox
+                                },
+                                index,
+                                width: combinedWidth,
+                                height: combinedHeight,
+                                labelPosition: null, // Not used for combined
+                                resolve,
+                                reject
                             });
-                        }, (error) => {
-                            // If getSize fails, just copy original combined photo
-                            const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
-                            const tempUri = FileSystem.cacheDirectory + tempFileName;
-                            FileSystem.copyAsync({ from: photo.uri, to: tempUri }).then(() => {
-                                resolve(tempUri);
-                            }).catch(reject);
+                        }, (beforeError) => {
+                            // If can't get before photo dimensions, fall back to simple width/height comparison
+                            // Wider than tall = SIDE (not letterbox), Taller than wide = STACK (letterbox)
+                            const isLetterbox = combinedHeight > combinedWidth;
+                            console.log(`[GALLERY] Combined photo layout fallback: width=${combinedWidth}, height=${combinedHeight}, isLetterbox=${isLetterbox}`);
+
+                            setCapturingPhoto({
+                                photo: {
+                                    ...photo,
+                                    beforePhoto,
+                                    afterPhoto,
+                                    isCombined: true,
+                                    isLetterbox
+                                },
+                                index,
+                                width: combinedWidth,
+                                height: combinedHeight,
+                                labelPosition: null,
+                                resolve,
+                                reject
+                            });
                         });
                     }, (error) => {
-                        // If getSize fails, just copy original combined photo
+                        // If getSize fails on combined photo, just copy original combined photo
+                        console.log(`[GALLERY] Could not get combined photo dimensions, using original file`);
                         const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
                         const tempUri = FileSystem.cacheDirectory + tempFileName;
                         FileSystem.copyAsync({ from: photo.uri, to: tempUri }).then(() => {
