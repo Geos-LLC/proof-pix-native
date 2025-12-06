@@ -160,7 +160,7 @@ export default function GalleryScreen({ navigation, route }) {
                 try {
                   const capturedUri = await captureRef(labelCaptureRef, {
                     format: 'jpg',
-                    quality: 0.95
+                    quality: 1.0
                   });
                   
                   const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
@@ -185,7 +185,7 @@ export default function GalleryScreen({ navigation, route }) {
             
             const capturedUri = await captureRef(labelCaptureRef, {
               format: 'jpg',
-              quality: 0.95
+              quality: 1.0
             });
             
             const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;

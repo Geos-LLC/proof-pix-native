@@ -102,7 +102,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
 
                 withContext(Dispatchers.IO) {
                     FileOutputStream(outputFile).use { out ->
-                        combinedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                        combinedBitmap.compress(Bitmap.CompressFormat.JPEG, 98, out)
                     }
                 }
 
@@ -123,10 +123,18 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
             val bitmap: Bitmap?
             val exifOrientation: Int
 
+            // Configure BitmapFactory options for best quality
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888  // Full quality color
+                inScaled = false  // Don't scale the bitmap
+                inDither = false  // Don't dither
+                inPreferQualityOverSpeed = true  // Prefer quality
+            }
+
             when {
                 uriString.startsWith("file://") -> {
                     val path = uriString.substring(7)
-                    bitmap = BitmapFactory.decodeFile(path)
+                    bitmap = BitmapFactory.decodeFile(path, options)
 
                     // Read EXIF orientation
                     val exif = ExifInterface(path)
@@ -137,7 +145,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 }
                 uriString.startsWith("content://") -> {
                     val inputStream = reactApplicationContext.contentResolver.openInputStream(uri)
-                    bitmap = BitmapFactory.decodeStream(inputStream)
+                    bitmap = BitmapFactory.decodeStream(inputStream, null, options)
                     inputStream?.close()
 
                     // Read EXIF orientation from content URI
@@ -150,7 +158,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                     exifInputStream?.close()
                 }
                 else -> {
-                    bitmap = BitmapFactory.decodeFile(uriString)
+                    bitmap = BitmapFactory.decodeFile(uriString, options)
 
                     // Read EXIF orientation
                     val exif = ExifInterface(uriString)
