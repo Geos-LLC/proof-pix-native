@@ -1229,13 +1229,35 @@ export default function GalleryScreen({ navigation, route }) {
                     console.log('[GALLERY] First photo URI:', urls[0]);
                     console.log('[GALLERY] Last photo URI:', urls[urls.length - 1]);
 
+                    // On Android, copy files to shareable cache directory
+                    let shareUrls = urls;
+                    if (Platform.OS === 'android') {
+                        console.log('[GALLERY] Copying files to shareable cache for Android...');
+                        const tempUrls = [];
+                        for (const uri of urls) {
+                            try {
+                                const filename = uri.split('/').pop();
+                                const tempUri = `${FileSystem.cacheDirectory}share_${filename}`;
+                                await FileSystem.copyAsync({ from: uri, to: tempUri });
+                                tempUrls.push(tempUri);
+                                console.log('[GALLERY] Copied to shareable location:', filename);
+                            } catch (copyErr) {
+                                console.error('[GALLERY] Failed to copy file:', uri, copyErr);
+                                tempUrls.push(uri); // Fallback to original
+                            }
+                        }
+                        shareUrls = tempUrls;
+                        tempFiles.push(...shareUrls); // Track for cleanup
+                        console.log('[GALLERY] Copied', shareUrls.length, 'files to shareable cache');
+                    }
+
                     const shareResult = await new Promise((resolve, reject) => {
                         requestAnimationFrame(async () => {
                             try {
                                 const result = await Share.open({
-                                    urls: urls,
+                                    urls: shareUrls,
                                     title: `Share ${projectName} Photos`,
-                                    message: `Sharing ${urls.length} photos from ${projectName}`,
+                                    message: `Sharing ${shareUrls.length} photos from ${projectName}`,
                                     type: 'image/jpeg',
                                     failOnCancel: false,
                                 });
