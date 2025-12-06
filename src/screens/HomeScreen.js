@@ -282,19 +282,21 @@ export default function HomeScreen({ navigation }) {
   // Load combined base images for thumbnails (efficiently)
   useEffect(() => {
     let cancelled = false;
-    
-    (async () => {
-      try {
-        const dir = FileSystem.documentDirectory;
-        if (!dir || cancelled) return;
 
-        const beforePhotos = getBeforePhotos(currentRoom);
-        const afterPhotos = getAfterPhotos(currentRoom);
-        const uriMap = {};
+    // Defer execution to prevent blocking UI when navigating to this screen
+    setTimeout(() => {
+      (async () => {
+        try {
+          const dir = FileSystem.documentDirectory;
+          if (!dir || cancelled) return;
 
-        // Read directory once
-        const entries = await FileSystem.readDirectoryAsync(dir);
-        if (cancelled) return;
+          const beforePhotos = getBeforePhotos(currentRoom);
+          const afterPhotos = getAfterPhotos(currentRoom);
+          const uriMap = {};
+
+          // Read directory once
+          const entries = await FileSystem.readDirectoryAsync(dir);
+          if (cancelled) return;
         
         for (const beforePhoto of beforePhotos) {
           const afterPhoto = afterPhotos.find(p => p.beforePhotoId === beforePhoto.id);
@@ -368,8 +370,9 @@ export default function HomeScreen({ navigation }) {
         }
       } catch (e) {
       }
-    })();
-    
+      })();
+    }, 50); // 50ms delay to allow screen to render before processing files
+
     return () => { cancelled = true; };
   }, [photos.length, currentRoom]);
 

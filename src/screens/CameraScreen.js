@@ -1473,11 +1473,17 @@ export default function CameraScreen({ route, navigation }) {
         cameraViewMode: activeBeforePhoto.cameraViewMode || 'portrait'
       };
       await addPhoto(newAfterPhoto);
-      
+
+      // Check if all photos are paired BEFORE starting background processing
+      // This prevents UI freeze when showing the "All Photos Taken" alert
+      const remainingUnpaired = getUnpairedBeforePhotos(activeBeforePhoto.room);
+      const nextUnpaired = remainingUnpaired.filter(p => p.id !== beforePhotoId);
+      const allPhotosPaired = nextUnpaired.length === 0;
+
       // Mark that we're processing after photo (for visual feedback)
       // Button is now active, but we show different visual state to indicate background processing
       setIsProcessingAfter(true);
-      
+
       // Clear processing state after combined photo creation starts (it's non-blocking)
       // This gives visual feedback that background processing is happening
       setTimeout(() => {
@@ -1488,12 +1494,12 @@ export default function CameraScreen({ route, navigation }) {
       // This ensures it's ready when user clicks share, making sharing instant
       // Run this in background (don't await) so it doesn't block the UI
       if (showLabels) {
-        // Start background preparation immediately (no delay needed)
-        // Use Promise.resolve().then() to run async code without blocking
-        Promise.resolve().then(async () => {
-          try {
-            // Calculate settings hash
-            const settingsHash = calculateSettingsHash({
+        // Defer to next tick to prevent blocking UI
+        setTimeout(() => {
+          (async () => {
+            try {
+              // Calculate settings hash
+              const settingsHash = calculateSettingsHash({
               showLabels,
               beforeLabelPosition,
               afterLabelPosition,
@@ -1519,18 +1525,21 @@ export default function CameraScreen({ route, navigation }) {
             }
           } catch (error) {
           }
-        });
+          })();
+        }, 100); // 100ms delay to give UI time to become responsive
       }
 
       // Create combined photo in background (non-blocking)
-      (async () => {
-        try {
-          // Measure original sizes
-          const getSize = (u) => new Promise((resolve) => {
-            Image.getSize(u, (w, h) => resolve({ w, h }), () => resolve({ w: 1080, h: 1920 }));
-          });
-          const aSize = await getSize(activeBeforePhoto.uri);
-          const bSize = await getSize(savedUri);
+      // Use setTimeout with 100ms delay to give UI time to become responsive
+      setTimeout(() => {
+        (async () => {
+          try {
+            // Measure original sizes
+            const getSize = (u) => new Promise((resolve) => {
+              Image.getSize(u, (w, h) => resolve({ w, h }), () => resolve({ w: 1080, h: 1920 }));
+            });
+            const aSize = await getSize(activeBeforePhoto.uri);
+            const bSize = await getSize(savedUri);
           const beforeOrientation = activeBeforePhoto.orientation || 'portrait';
           const cameraVM = activeBeforePhoto.cameraViewMode || 'portrait';
           const isLandscapePair = beforeOrientation === 'landscape' || cameraVM === 'landscape';
@@ -1728,94 +1737,101 @@ export default function CameraScreen({ route, navigation }) {
               Alert.alert('Error', `Failed to create combined photo: ${captureError.message || 'Unknown error'}`);
             }
           } else if (Platform.OS === 'android') {
-            // Android: use background service for combined photo creation
-            // This allows photos to be created even after navigating away from CameraScreen
-            const MAX_DIMENSION = 2048; // Reasonable limit for background Modal
-            let limitedWidth = dimsLocal.width;
-            let limitedHeight = dimsLocal.height;
+            // Android: use native compositor (runs on background thread, won't block UI)
+            try {
+              const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
 
-            if (limitedWidth > MAX_DIMENSION || limitedHeight > MAX_DIMENSION) {
-              const scale = Math.min(MAX_DIMENSION / limitedWidth, MAX_DIMENSION / limitedHeight);
-              limitedWidth = Math.round(limitedWidth * scale);
-              limitedHeight = Math.round(limitedHeight * scale);
-              console.log('[CameraScreen][Android] Scaling down dimensions:', {
-                original: { width: dimsLocal.width, height: dimsLocal.height },
-                limited: { width: limitedWidth, height: limitedHeight },
-                scale,
-              });
-            }
+              // Create primary layout (STACK for landscape, SIDE for portrait)
+              console.log(`[CameraScreen][Android] Creating ${layout} layout with native compositor`);
 
-            const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
+              const capUri = await compositeImages(
+                activeBeforePhoto.uri,
+                savedUri,
+                layout,
+                dimsLocal
+              );
 
-            // Create primary layout job (STACK for landscape, SIDE for portrait)
-            console.log(`[CameraScreen][Android] Queueing ${layout} layout job`);
-            backgroundCombinedPhotoService.addJob({
-              beforeUri: activeBeforePhoto.uri,
-              afterUri: savedUri,
-              layout,
-              width: limitedWidth,
-              height: limitedHeight,
-              room: activeBeforePhoto.room,
-              safeName,
-              projectId: activeProjectId || null,
-              projectIdSuffix,
-              jobId: `${Date.now()}_${layout}`,
-            });
+              const combinedPhotoSavedUri = await savePhotoToDevice(
+                capUri,
+                `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectIdSuffix}.jpg`,
+                activeProjectId || null
+              );
 
-            // For landscape pairs, also add the alternate layout job (STACK <-> SIDE)
-            if (shouldCreateBothLayouts) {
-              const alternateLayout = layout === 'STACK' ? 'SIDE' : 'STACK';
-              console.log(`[CameraScreen][Android] Adding ${alternateLayout} layout job (alternate to ${layout})`);
+              console.log(`[CameraScreen][Android] ✅ ${layout} combined photo saved:`, combinedPhotoSavedUri);
 
-              let altWidth, altHeight;
-              if (alternateLayout === 'SIDE') {
-                // Prepare side-by-side dims
-                const r1wLB = aSize.w / aSize.h;
-                const r2wLB = bSize.w / bSize.h;
-                const denomLB = (r1wLB + r2wLB) || 1;
-                const totalHLB = Math.max(400, Math.round(totalW / denomLB));
-                altWidth = totalW;
-                altHeight = totalHLB;
-              } else {
-                // Prepare stack dims
-                const r1h = aSize.h / aSize.w;
-                const r2h = bSize.h / bSize.w;
-                const totalH = Math.max(400, Math.round(totalW * (r1h + r2h)));
-                altWidth = totalW;
-                altHeight = totalH;
+              // For letterbox modes, also create the alternate layout (STACK <-> SIDE)
+              if (shouldCreateBothLayouts) {
+                const alternateLayout = layout === 'STACK' ? 'SIDE' : 'STACK';
+                console.log(`[CameraScreen][Android] Creating ${alternateLayout} layout (alternate to ${layout})`);
+
+                let altWidth, altHeight, altDims;
+                if (alternateLayout === 'SIDE') {
+                  // Prepare side-by-side dims
+                  const r1wLB = aSize.w / aSize.h;
+                  const r2wLB = bSize.w / bSize.h;
+                  const denomLB = (r1wLB + r2wLB) || 1;
+                  const totalHLB = Math.max(400, Math.round(totalW / denomLB));
+                  altWidth = totalW;
+                  altHeight = totalHLB;
+
+                  const lw = Math.round(altWidth * (r1wLB / denomLB));
+                  const rw = altWidth - lw;
+                  altDims = {
+                    width: altWidth,
+                    height: altHeight,
+                    leftW: lw,
+                    rightW: rw,
+                  };
+                } else {
+                  // Prepare stack dims
+                  const r1h = aSize.h / aSize.w;
+                  const r2h = bSize.h / bSize.w;
+                  const totalH = Math.max(400, Math.round(totalW * (r1h + r2h)));
+                  altWidth = totalW;
+                  altHeight = totalH;
+
+                  const th = Math.round(altHeight * (r1h / (r1h + r2h)));
+                  const bh = altHeight - th;
+                  altDims = {
+                    width: altWidth,
+                    height: altHeight,
+                    topH: th,
+                    bottomH: bh,
+                  };
+                }
+
+                const altCapUri = await compositeImages(
+                  activeBeforePhoto.uri,
+                  savedUri,
+                  alternateLayout,
+                  altDims
+                );
+
+                const altCombinedPhotoSavedUri = await savePhotoToDevice(
+                  altCapUri,
+                  `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`,
+                  activeProjectId || null
+                );
+
+                console.log(`[CameraScreen][Android] ✅ ${alternateLayout} combined photo saved:`, altCombinedPhotoSavedUri);
               }
-
-              let limitedAltWidth = altWidth;
-              let limitedAltHeight = altHeight;
-
-              if (limitedAltWidth > MAX_DIMENSION || limitedAltHeight > MAX_DIMENSION) {
-                const scaleAlt = Math.min(MAX_DIMENSION / limitedAltWidth, MAX_DIMENSION / limitedAltHeight);
-                limitedAltWidth = Math.round(limitedAltWidth * scaleAlt);
-                limitedAltHeight = Math.round(limitedAltHeight * scaleAlt);
-                console.log(`[CameraScreen][Android] Scaling ${alternateLayout} layout dimensions:`, {
-                  original: { width: altWidth, height: altHeight },
-                  limited: { width: limitedAltWidth, height: limitedAltHeight },
-                });
-              }
-
-              backgroundCombinedPhotoService.addJob({
+            } catch (compositeError) {
+              console.error('[CameraScreen][Android] ❌ Combined photo creation failed:', compositeError);
+              console.error('[CameraScreen][Android] Error details:', {
+                message: compositeError.message,
+                stack: compositeError.stack,
                 beforeUri: activeBeforePhoto.uri,
                 afterUri: savedUri,
-                layout: alternateLayout,
-                width: limitedAltWidth,
-                height: limitedAltHeight,
-                room: activeBeforePhoto.room,
-                safeName,
-                projectId: activeProjectId || null,
-                projectIdSuffix,
-                jobId: `${Date.now() + 1}_${alternateLayout}`,
+                layout,
+                dims: dimsLocal,
               });
-              console.log(`[CameraScreen][Android] ${alternateLayout} layout job queued`);
+              Alert.alert('Error', `Failed to create combined photo: ${compositeError.message || 'Unknown error'}`);
             }
           }
         } catch (error) {
         }
-      })();
+        })();
+      }, 100); // 100ms delay to give UI time to become responsive
 
       // If we're replacing an existing combined photo, navigate to PhotoEditor to recreate it
       if (existingCombinedPhoto) {
@@ -1826,14 +1842,9 @@ export default function CameraScreen({ route, navigation }) {
         return;
       }
 
-      // Auto-advance to next unpaired photo (immediate)
-      const remainingUnpaired = getUnpairedBeforePhotos(activeBeforePhoto.room);
-      // Filter out the photo we just paired to ensure we don't count it
-      const nextUnpaired = remainingUnpaired.filter(p => p.id !== beforePhotoId);
-      if (nextUnpaired.length > 0) {
-        // Select the next unpaired photo
-        setSelectedBeforePhoto(nextUnpaired[0]);
-      } else {
+      // Show "All Photos Taken" alert or advance to next photo
+      // This happens immediately without waiting for background processing
+      if (allPhotosPaired) {
         // All photos paired - show alert and navigate immediately
         Alert.alert(
           'All Photos Taken',
@@ -1851,6 +1862,9 @@ export default function CameraScreen({ route, navigation }) {
             }
           ]
         );
+      } else {
+        // Auto-advance to next unpaired photo (immediate)
+        setSelectedBeforePhoto(nextUnpaired[0]);
       }
       console.log('[DEBUG] ✅ handleAfterPhoto completed');
     } catch (error) {

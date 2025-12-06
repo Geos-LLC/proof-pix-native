@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Modal, Image, Dimensions, Platform } from 'react-native';
+import { View, Modal, Image, Dimensions, Platform, InteractionManager } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import { savePhotoToDevice } from '../services/storage';
 
@@ -71,7 +71,11 @@ export default function GlobalBackgroundCombinedPhotoCreator() {
         }
         if (jobs.length > 0) {
           console.log('[BackgroundCombinedPhotoCreator] Starting next job from queue');
-          return jobs[0];
+          // Small delay to allow UI to breathe before starting job
+          setTimeout(() => {
+            setCurrentJob(jobs[0]);
+          }, 100);
+          return current; // Keep current null temporarily
         }
         return null;
       });
@@ -81,7 +85,10 @@ export default function GlobalBackgroundCombinedPhotoCreator() {
     const jobs = backgroundCombinedPhotoService.getJobs();
     if (jobs.length > 0) {
       console.log('[BackgroundCombinedPhotoCreator] Found', jobs.length, 'pending jobs on mount');
-      setCurrentJob(jobs[0]);
+      // Delay before starting first job to let screen render
+      setTimeout(() => {
+        setCurrentJob(jobs[0]);
+      }, 100);
     }
 
     return unsubscribe;
@@ -93,10 +100,11 @@ export default function GlobalBackgroundCombinedPhotoCreator() {
       const jobs = backgroundCombinedPhotoService.getJobs();
       if (jobs.length > 0) {
         console.log('[BackgroundCombinedPhotoCreator] Current job done, processing next. Queue length:', jobs.length);
-        // Small delay to ensure state is clean before next job
+        // Longer delay between jobs to allow UI to remain responsive
+        // This gives the main thread more time to process touch events and render updates
         setTimeout(() => {
           setCurrentJob(jobs[0]);
-        }, 100);
+        }, 1000);
       } else {
         console.log('[BackgroundCombinedPhotoCreator] All jobs completed, queue empty');
       }
