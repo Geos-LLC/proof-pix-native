@@ -3,7 +3,9 @@ package com.proofpix.app
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.net.Uri
+import androidx.exifinterface.media.ExifInterface
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -118,19 +120,93 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
     private fun loadBitmap(uriString: String): Bitmap? {
         return try {
             val uri = Uri.parse(uriString)
-            val path = when {
-                uriString.startsWith("file://") -> uriString.substring(7)
-                uriString.startsWith("content://") -> {
-                    // For content URIs, we need to use content resolver
-                    val inputStream = reactApplicationContext.contentResolver.openInputStream(uri)
-                    return BitmapFactory.decodeStream(inputStream)
+            val bitmap: Bitmap?
+            val exifOrientation: Int
+
+            when {
+                uriString.startsWith("file://") -> {
+                    val path = uriString.substring(7)
+                    bitmap = BitmapFactory.decodeFile(path)
+
+                    // Read EXIF orientation
+                    val exif = ExifInterface(path)
+                    exifOrientation = exif.getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION,
+                        ExifInterface.ORIENTATION_NORMAL
+                    )
                 }
-                else -> uriString
+                uriString.startsWith("content://") -> {
+                    val inputStream = reactApplicationContext.contentResolver.openInputStream(uri)
+                    bitmap = BitmapFactory.decodeStream(inputStream)
+                    inputStream?.close()
+
+                    // Read EXIF orientation from content URI
+                    val exifInputStream = reactApplicationContext.contentResolver.openInputStream(uri)
+                    val exif = exifInputStream?.let { ExifInterface(it) }
+                    exifOrientation = exif?.getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION,
+                        ExifInterface.ORIENTATION_NORMAL
+                    ) ?: ExifInterface.ORIENTATION_NORMAL
+                    exifInputStream?.close()
+                }
+                else -> {
+                    bitmap = BitmapFactory.decodeFile(uriString)
+
+                    // Read EXIF orientation
+                    val exif = ExifInterface(uriString)
+                    exifOrientation = exif.getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION,
+                        ExifInterface.ORIENTATION_NORMAL
+                    )
+                }
             }
 
-            BitmapFactory.decodeFile(path)
+            // Apply EXIF rotation if needed
+            if (bitmap != null && exifOrientation != ExifInterface.ORIENTATION_NORMAL) {
+                return rotateBitmap(bitmap, exifOrientation)
+            }
+
+            bitmap
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun rotateBitmap(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            else -> return bitmap
+        }
+
+        val rotatedBitmap = Bitmap.createBitmap(
+            bitmap,
+            0,
+            0,
+            bitmap.width,
+            bitmap.height,
+            matrix,
+            true
+        )
+
+        // Recycle original bitmap if it's different from rotated
+        if (rotatedBitmap != bitmap) {
+            bitmap.recycle()
+        }
+
+        return rotatedBitmap
     }
 }
