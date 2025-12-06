@@ -35,7 +35,6 @@ import dropboxService from '../services/dropboxService';
 import { uploadPhotoBatchToDropbox } from '../services/dropboxUploadService';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
-import { getContentUriAsync } from 'expo-file-system';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadIndicatorLine from '../components/UploadIndicatorLine';
@@ -1230,27 +1229,21 @@ export default function GalleryScreen({ navigation, route }) {
                     console.log('[GALLERY] First photo URI:', urls[0]);
                     console.log('[GALLERY] Last photo URI:', urls[urls.length - 1]);
 
-                    // On Android, convert file:// URIs to content:// URIs for sharing
+                    // On Android, react-native-share needs absolute paths without file:// prefix
                     let shareUrls = urls;
                     if (Platform.OS === 'android') {
-                        console.log('[GALLERY] Converting file URIs to content URIs for Android...');
-                        shareUrls = await Promise.all(
-                            urls.map(async (uri) => {
-                                try {
-                                    if (uri.startsWith('file://')) {
-                                        const contentUri = await getContentUriAsync(uri);
-                                        console.log('[GALLERY] Converted:', uri.substring(0, 80), '-> content URI');
-                                        return contentUri;
-                                    }
-                                    return uri;
-                                } catch (error) {
-                                    console.error('[GALLERY] Failed to convert URI:', uri, error);
-                                    return uri; // Fall back to original URI
-                                }
-                            })
-                        );
-                        console.log('[GALLERY] Converted', shareUrls.length, 'URIs to content URIs');
-                        console.log('[GALLERY] First content URI:', shareUrls[0]);
+                        console.log('[GALLERY] Converting file URIs to absolute paths for Android...');
+                        shareUrls = urls.map((uri) => {
+                            // Remove file:// prefix for Android
+                            if (uri.startsWith('file://')) {
+                                const absolutePath = uri.substring(7); // Remove 'file://'
+                                console.log('[GALLERY] Converted:', uri.substring(0, 60), '-> absolute path');
+                                return absolutePath;
+                            }
+                            return uri;
+                        });
+                        console.log('[GALLERY] Converted', shareUrls.length, 'URIs to absolute paths');
+                        console.log('[GALLERY] First path:', shareUrls[0].substring(0, 80));
                     }
 
                     const shareResult = await new Promise((resolve, reject) => {
@@ -1294,15 +1287,11 @@ export default function GalleryScreen({ navigation, route }) {
                             try {
                                 console.log(`[GALLERY] Sharing photo ${i + 1}/${urls.length}...`);
 
-                                // Convert to content URI on Android
+                                // Convert to absolute path on Android
                                 let shareUrl = urls[i];
                                 if (Platform.OS === 'android' && shareUrl.startsWith('file://')) {
-                                    try {
-                                        shareUrl = await getContentUriAsync(shareUrl);
-                                        console.log(`[GALLERY] Converted photo ${i + 1} to content URI`);
-                                    } catch (convErr) {
-                                        console.error(`[GALLERY] Failed to convert photo ${i + 1}:`, convErr);
-                                    }
+                                    shareUrl = shareUrl.substring(7); // Remove 'file://' prefix
+                                    console.log(`[GALLERY] Converted photo ${i + 1} to absolute path`);
                                 }
 
                                 await Share.open({
