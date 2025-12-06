@@ -1229,31 +1229,15 @@ export default function GalleryScreen({ navigation, route }) {
                     console.log('[GALLERY] First photo URI:', urls[0]);
                     console.log('[GALLERY] Last photo URI:', urls[urls.length - 1]);
 
-                    // On Android, react-native-share needs absolute paths without file:// prefix
-                    let shareUrls = urls;
-                    if (Platform.OS === 'android') {
-                        console.log('[GALLERY] Converting file URIs to absolute paths for Android...');
-                        shareUrls = urls.map((uri) => {
-                            // Remove file:// prefix for Android
-                            if (uri.startsWith('file://')) {
-                                const absolutePath = uri.substring(7); // Remove 'file://'
-                                console.log('[GALLERY] Converted:', uri.substring(0, 60), '-> absolute path');
-                                return absolutePath;
-                            }
-                            return uri;
-                        });
-                        console.log('[GALLERY] Converted', shareUrls.length, 'URIs to absolute paths');
-                        console.log('[GALLERY] First path:', shareUrls[0].substring(0, 80));
-                    }
-
                     const shareResult = await new Promise((resolve, reject) => {
                         requestAnimationFrame(async () => {
                             try {
                                 const result = await Share.open({
-                                    urls: shareUrls,
+                                    urls: urls,
                                     title: `Share ${projectName} Photos`,
-                                    message: `Sharing ${shareUrls.length} photos from ${projectName}`,
+                                    message: `Sharing ${urls.length} photos from ${projectName}`,
                                     type: 'image/jpeg',
+                                    failOnCancel: false,
                                 });
                                 resolve(result);
                             } catch (error) {
@@ -1287,18 +1271,12 @@ export default function GalleryScreen({ navigation, route }) {
                             try {
                                 console.log(`[GALLERY] Sharing photo ${i + 1}/${urls.length}...`);
 
-                                // Convert to absolute path on Android
-                                let shareUrl = urls[i];
-                                if (Platform.OS === 'android' && shareUrl.startsWith('file://')) {
-                                    shareUrl = shareUrl.substring(7); // Remove 'file://' prefix
-                                    console.log(`[GALLERY] Converted photo ${i + 1} to absolute path`);
-                                }
-
                                 await Share.open({
-                                    url: shareUrl,
+                                    url: urls[i],
                                     title: `${projectName} Photo ${i + 1}/${urls.length}`,
                                     message: `Photo ${i + 1} of ${urls.length} from ${projectName}`,
                                     type: 'image/jpeg',
+                                    failOnCancel: false,
                                 });
                                 
                                 console.log(`[GALLERY] Photo ${i + 1} shared successfully`);
