@@ -17,7 +17,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
-import { compositeImages } from '../utils/imageCompositor';
+import { compositeImages, isNativeCompositorAvailable } from '../utils/imageCompositor';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -1737,19 +1737,93 @@ export default function CameraScreen({ route, navigation }) {
               Alert.alert('Error', `Failed to create combined photo: ${captureError.message || 'Unknown error'}`);
             }
           } else if (Platform.OS === 'android') {
-            // Android: use native compositor (runs on background thread, won't block UI)
-            try {
+            // Android: Try to use native compositor, fallback to background service if not available
+            const hasNativeCompositor = isNativeCompositorAvailable();
+            console.log(`[CameraScreen][Android] Native compositor available: ${hasNativeCompositor}`);
+
+            if (!hasNativeCompositor) {
+              // Fallback to background service
+              console.log('[CameraScreen][Android] Using background service fallback');
+              const MAX_DIMENSION = 2048;
+              let limitedWidth = dimsLocal.width;
+              let limitedHeight = dimsLocal.height;
+
+              if (limitedWidth > MAX_DIMENSION || limitedHeight > MAX_DIMENSION) {
+                const scale = Math.min(MAX_DIMENSION / limitedWidth, MAX_DIMENSION / limitedHeight);
+                limitedWidth = Math.round(limitedWidth * scale);
+                limitedHeight = Math.round(limitedHeight * scale);
+              }
+
               const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
 
-              // Create primary layout (STACK for landscape, SIDE for portrait)
-              console.log(`[CameraScreen][Android] Creating ${layout} layout with native compositor`);
-
-              const capUri = await compositeImages(
-                activeBeforePhoto.uri,
-                savedUri,
+              backgroundCombinedPhotoService.addJob({
+                beforeUri: activeBeforePhoto.uri,
+                afterUri: savedUri,
                 layout,
-                dimsLocal
-              );
+                width: limitedWidth,
+                height: limitedHeight,
+                room: activeBeforePhoto.room,
+                safeName,
+                projectId: activeProjectId || null,
+                projectIdSuffix,
+                jobId: `${Date.now()}_${layout}`,
+              });
+
+              if (shouldCreateBothLayouts) {
+                const alternateLayout = layout === 'STACK' ? 'SIDE' : 'STACK';
+                let altWidth, altHeight;
+
+                if (alternateLayout === 'SIDE') {
+                  const r1wLB = aSize.w / aSize.h;
+                  const r2wLB = bSize.w / bSize.h;
+                  const denomLB = (r1wLB + r2wLB) || 1;
+                  const totalHLB = Math.max(400, Math.round(totalW / denomLB));
+                  altWidth = totalW;
+                  altHeight = totalHLB;
+                } else {
+                  const r1h = aSize.h / aSize.w;
+                  const r2h = bSize.h / bSize.w;
+                  const totalH = Math.max(400, Math.round(totalW * (r1h + r2h)));
+                  altWidth = totalW;
+                  altHeight = totalH;
+                }
+
+                let limitedAltWidth = altWidth;
+                let limitedAltHeight = altHeight;
+
+                if (limitedAltWidth > MAX_DIMENSION || limitedAltHeight > MAX_DIMENSION) {
+                  const scaleAlt = Math.min(MAX_DIMENSION / limitedAltWidth, MAX_DIMENSION / limitedAltHeight);
+                  limitedAltWidth = Math.round(limitedAltWidth * scaleAlt);
+                  limitedAltHeight = Math.round(limitedAltHeight * scaleAlt);
+                }
+
+                backgroundCombinedPhotoService.addJob({
+                  beforeUri: activeBeforePhoto.uri,
+                  afterUri: savedUri,
+                  layout: alternateLayout,
+                  width: limitedAltWidth,
+                  height: limitedAltHeight,
+                  room: activeBeforePhoto.room,
+                  safeName,
+                  projectId: activeProjectId || null,
+                  projectIdSuffix,
+                  jobId: `${Date.now() + 1}_${alternateLayout}`,
+                });
+              }
+            } else {
+              // Use native compositor
+              try {
+                const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
+
+                // Create primary layout (STACK for landscape, SIDE for portrait)
+                console.log(`[CameraScreen][Android] Creating ${layout} layout with native compositor`);
+
+                const capUri = await compositeImages(
+                  activeBeforePhoto.uri,
+                  savedUri,
+                  layout,
+                  dimsLocal
+                );
 
               const combinedPhotoSavedUri = await savePhotoToDevice(
                 capUri,
@@ -1815,17 +1889,18 @@ export default function CameraScreen({ route, navigation }) {
 
                 console.log(`[CameraScreen][Android] ✅ ${alternateLayout} combined photo saved:`, altCombinedPhotoSavedUri);
               }
-            } catch (compositeError) {
-              console.error('[CameraScreen][Android] ❌ Combined photo creation failed:', compositeError);
-              console.error('[CameraScreen][Android] Error details:', {
-                message: compositeError.message,
-                stack: compositeError.stack,
-                beforeUri: activeBeforePhoto.uri,
-                afterUri: savedUri,
-                layout,
-                dims: dimsLocal,
-              });
-              Alert.alert('Error', `Failed to create combined photo: ${compositeError.message || 'Unknown error'}`);
+              } catch (compositeError) {
+                console.error('[CameraScreen][Android] ❌ Combined photo creation failed:', compositeError);
+                console.error('[CameraScreen][Android] Error details:', {
+                  message: compositeError.message,
+                  stack: compositeError.stack,
+                  beforeUri: activeBeforePhoto.uri,
+                  afterUri: savedUri,
+                  layout,
+                  dims: dimsLocal,
+                });
+                Alert.alert('Error', `Failed to create combined photo: ${compositeError.message || 'Unknown error'}`);
+              }
             }
           }
         } catch (error) {

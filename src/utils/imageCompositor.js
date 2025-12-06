@@ -2,6 +2,11 @@ import { NativeModules, Platform } from 'react-native';
 
 const { ImageCompositor } = NativeModules;
 
+// Export for checking availability
+export const isNativeCompositorAvailable = () => {
+  return ImageCompositor != null;
+};
+
 /**
  * Composite two images side-by-side or stacked using native code
  * @param {string} beforeUri - URI of the before image
@@ -18,7 +23,8 @@ export async function compositeImages(beforeUri, afterUri, layout, dimensions) {
   }
 
   if (!ImageCompositor) {
-    console.error('[ImageCompositor] Native module not found in NativeModules:', Object.keys(NativeModules || {}));
+    console.error('[ImageCompositor] Native module not found.');
+    console.error('[ImageCompositor] Available NativeModules:', Object.keys(NativeModules).slice(0, 20));
     throw new Error('ImageCompositor native module is not available');
   }
 
