@@ -34,6 +34,7 @@ import dropboxAuthService from '../services/dropboxAuthService';
 import dropboxService from '../services/dropboxService';
 import { uploadPhotoBatchToDropbox } from '../services/dropboxUploadService';
 import { captureRef } from 'react-native-view-shot';
+import { addLabelToImage, compositeImages } from '../utils/imageCompositor';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
@@ -803,11 +804,38 @@ export default function GalleryScreen({ navigation, route }) {
         console.log('[GALLERY] Labels disabled - no preparation needed');
     }
     
+    // Helper function to get label text for a photo mode
+    const getLabelTextForMode = (mode) => {
+        if (mode === PHOTO_MODES.BEFORE) {
+            return t('common.before') || 'BEFORE';
+        } else if (mode === PHOTO_MODES.AFTER) {
+            return t('common.after') || 'AFTER';
+        }
+        return '';
+    };
+
+    // Helper function to convert label position from PhotoLabel format to native format
+    const convertLabelPosition = (position) => {
+        // PhotoLabel uses positions like "left-top", "right-top", etc.
+        // Native module uses "top-left", "top-right", "bottom-left", "bottom-right"
+        const positionMap = {
+            'left-top': 'top-left',
+            'right-top': 'top-right',
+            'left-bottom': 'bottom-left',
+            'right-bottom': 'bottom-right',
+            'top-left': 'top-left',
+            'top-right': 'top-right',
+            'bottom-left': 'bottom-left',
+            'bottom-right': 'bottom-right',
+        };
+        return positionMap[position] || 'top-left';
+    };
+
     // Helper function to capture a photo with label if showLabels is enabled
     // This is used by both ZIP and non-ZIP sharing paths
     const capturePhotoWithLabel = async (photo, index) => {
         console.log(`[GALLERY] capturePhotoWithLabel called for photo ${index + 1}, mode: ${photo.mode}, id: ${photo.id}`);
-        
+
         // Check if we already have this photo in cache from the initial check
         if (showLabels && photo.mode && cachedPhotoUris.has(photo.id)) {
             const cachedUri = cachedPhotoUris.get(photo.id);
@@ -815,7 +843,7 @@ export default function GalleryScreen({ navigation, route }) {
             await updateCacheLastUsed(photo);
             return cachedUri;
         }
-        
+
         // If not in initial cache check, check cache now (for photos that weren't checked initially)
         if (showLabels && photo.mode) {
             try {
@@ -854,92 +882,113 @@ export default function GalleryScreen({ navigation, route }) {
             console.log(`[GALLERY] Reconstructing combined photo: ${photo.name} (beforePhotoId: ${photo.beforePhotoId}) - Found before: ${!!beforePhoto}, after: ${!!afterPhoto}`);
             
             if (beforePhoto && afterPhoto && showLabels) {
-                // Capture combined view with both labels
-                return new Promise((resolve, reject) => {
-                    // Get combined photo dimensions first to determine actual layout
-                    Image.getSize(photo.uri, (combinedWidth, combinedHeight) => {
-                        // Determine layout based on ACTUAL combined photo dimensions
-                        // If width > height, it's a landscape photo (could be SIDE for portrait or STACK for landscape)
-                        // If height > width, it's a portrait photo (could be STACK for portrait)
-                        const isLandscapeOriented = combinedWidth > combinedHeight;
-
-                        // For landscape-oriented combined photos, determine if it's SIDE or STACK
-                        // by comparing aspect ratio with individual photo dimensions
-                        Image.getSize(beforePhoto.uri, (beforeWidth, beforeHeight) => {
-                            // Calculate expected dimensions for each layout
-                            const combinedAspectRatio = combinedWidth / combinedHeight;
-                            const beforeAspectRatio = beforeWidth / beforeHeight;
-
-                            // Determine if this is a SIDE or STACK layout based on aspect ratio
-                            // SIDE: combined width ≈ 2x individual width, heights similar
-                            // STACK: combined height ≈ 2x individual height, widths similar
-                            let isLetterbox;
-                            if (isLandscapeOriented) {
-                                // For landscape combined photos:
-                                // If aspect ratio is close to double the before photo's aspect ratio, it's SIDE
-                                // If aspect ratio is close to half, it's STACK
-                                const expectedSideRatio = beforeAspectRatio * 2;
-                                const expectedStackRatio = beforeAspectRatio / 2;
-                                const diffToSide = Math.abs(combinedAspectRatio - expectedSideRatio);
-                                const diffToStack = Math.abs(combinedAspectRatio - expectedStackRatio);
-
-                                // Choose the layout that's closer to the expected ratio
-                                isLetterbox = diffToStack < diffToSide;
-                            } else {
-                                // Portrait combined photos are always STACK
-                                isLetterbox = true;
-                            }
-
-                            console.log(`[GALLERY] Combined photo layout determination: width=${combinedWidth}, height=${combinedHeight}, isLetterbox=${isLetterbox}, aspectRatio=${combinedAspectRatio.toFixed(2)}, beforeAspectRatio=${beforeAspectRatio.toFixed(2)}`);
-
-                            // Set the combined photo to capture (triggers useEffect)
-                            setCapturingPhoto({
-                                photo: {
-                                    ...photo,
-                                    beforePhoto,
-                                    afterPhoto,
-                                    isCombined: true,
-                                    isLetterbox
-                                },
-                                index,
-                                width: combinedWidth,
-                                height: combinedHeight,
-                                labelPosition: null, // Not used for combined
-                                resolve,
-                                reject
-                            });
-                        }, (beforeError) => {
-                            // If can't get before photo dimensions, fall back to simple width/height comparison
-                            // Wider than tall = SIDE (not letterbox), Taller than wide = STACK (letterbox)
-                            const isLetterbox = combinedHeight > combinedWidth;
-                            console.log(`[GALLERY] Combined photo layout fallback: width=${combinedWidth}, height=${combinedHeight}, isLetterbox=${isLetterbox}`);
-
-                            setCapturingPhoto({
-                                photo: {
-                                    ...photo,
-                                    beforePhoto,
-                                    afterPhoto,
-                                    isCombined: true,
-                                    isLetterbox
-                                },
-                                index,
-                                width: combinedWidth,
-                                height: combinedHeight,
-                                labelPosition: null,
-                                resolve,
-                                reject
-                            });
-                        });
-                    }, (error) => {
-                        // If getSize fails on combined photo, just copy original combined photo
-                        console.log(`[GALLERY] Could not get combined photo dimensions, using original file`);
-                        const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
-                        const tempUri = FileSystem.cacheDirectory + tempFileName;
-                        FileSystem.copyAsync({ from: photo.uri, to: tempUri }).then(() => {
-                            resolve(tempUri);
-                        }).catch(reject);
+                // Use native compositor to recreate combined photo with labels at full resolution
+                try {
+                    // Get dimensions of before photo to determine layout
+                    const beforeDimensions = await new Promise((resolve, reject) => {
+                        Image.getSize(beforePhoto.uri,
+                            (width, height) => resolve({ width, height }),
+                            (error) => reject(error)
+                        );
                     });
-                });
+
+                    const combinedDimensions = await new Promise((resolve, reject) => {
+                        Image.getSize(photo.uri,
+                            (width, height) => resolve({ width, height }),
+                            (error) => reject(error)
+                        );
+                    });
+
+                    // Determine layout (STACK or SIDE)
+                    const isStack = combinedDimensions.height > combinedDimensions.width;
+                    const layout = isStack ? 'STACK' : 'SIDE';
+
+                    // Prepare dimensions for native compositor
+                    const dimensions = {
+                        width: combinedDimensions.width,
+                        height: combinedDimensions.height,
+                        topH: isStack ? Math.round(combinedDimensions.height / 2) : null,
+                        bottomH: isStack ? Math.round(combinedDimensions.height / 2) : null,
+                        leftW: !isStack ? Math.round(combinedDimensions.width / 2) : null,
+                        rightW: !isStack ? Math.round(combinedDimensions.width / 2) : null,
+                    };
+
+                    console.log(`[GALLERY] Recreating combined photo with native compositor: layout=${layout}, dimensions=`, dimensions);
+
+                    // Add labels to before and after photos first
+                    const labelSizeMap = {
+                        small: 48,
+                        medium: 56,
+                        large: 64,
+                    };
+                    const fontSize = labelSizeMap[labelSize] || 56;
+
+                    const beforeLabelConfig = {
+                        position: convertLabelPosition(beforeLabelPosition || 'left-top'),
+                        backgroundColor: labelBackgroundColor || '#FFD700',
+                        textColor: labelTextColor || '#000000',
+                        fontSize: fontSize,
+                        marginHorizontal: labelMarginHorizontal || 20,
+                        marginVertical: labelMarginVertical || 20,
+                        padding: 16,
+                    };
+
+                    const afterLabelConfig = {
+                        position: convertLabelPosition(afterLabelPosition || 'right-top'),
+                        backgroundColor: labelBackgroundColor || '#FFD700',
+                        textColor: labelTextColor || '#000000',
+                        fontSize: fontSize,
+                        marginHorizontal: labelMarginHorizontal || 20,
+                        marginVertical: labelMarginVertical || 20,
+                        padding: 16,
+                    };
+
+                    console.log(`[GALLERY] Adding labels to before and after photos for combined photo ${index + 1}`);
+
+                    const labeledBeforeUri = await addLabelToImage(
+                        beforePhoto.uri,
+                        getLabelTextForMode(PHOTO_MODES.BEFORE),
+                        beforeLabelConfig
+                    );
+
+                    const labeledAfterUri = await addLabelToImage(
+                        afterPhoto.uri,
+                        getLabelTextForMode(PHOTO_MODES.AFTER),
+                        afterLabelConfig
+                    );
+
+                    console.log(`[GALLERY] Compositing labeled photos into combined photo ${index + 1}`);
+
+                    // Composite the labeled photos
+                    const combinedUri = await compositeImages(
+                        labeledBeforeUri,
+                        labeledAfterUri,
+                        layout,
+                        dimensions
+                    );
+
+                    console.log(`[GALLERY] ✅ Combined photo ${index + 1} created with native compositor: ${combinedUri}`);
+
+                    // Cache the combined photo
+                    try {
+                        const savedCacheUri = await saveCachedLabeledPhoto(photo, combinedUri, settingsHash);
+                        if (savedCacheUri) {
+                            console.log(`[GALLERY] ✅ Combined photo ${index + 1} saved to cache: ${savedCacheUri}`);
+                            return savedCacheUri;
+                        }
+                    } catch (cacheError) {
+                        console.warn(`[GALLERY] Failed to cache combined photo ${index + 1}:`, cacheError);
+                    }
+
+                    return combinedUri;
+                } catch (error) {
+                    console.error(`[GALLERY] Error creating combined photo ${index + 1} with native compositor:`, error);
+                    // Fall back to original combined photo
+                    const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
+                    const tempUri = FileSystem.cacheDirectory + tempFileName;
+                    await FileSystem.copyAsync({ from: photo.uri, to: tempUri });
+                    return tempUri;
+                }
             } else {
                 // No labels or couldn't find before/after photos, just copy original
                 const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
@@ -956,40 +1005,69 @@ export default function GalleryScreen({ navigation, route }) {
             await FileSystem.copyAsync({ from: photo.uri, to: tempUri });
             return tempUri;
         }
-        
-        // Need to capture with label - use state-based approach with hidden modal
-        return new Promise((resolve, reject) => {
-            // Get image dimensions first
-            Image.getSize(photo.uri, (width, height) => {
-                // Determine label position based on photo mode
-                let labelPosition;
-                if (photo.mode === PHOTO_MODES.BEFORE) {
-                    labelPosition = beforeLabelPosition || 'top-left';
-                } else if (photo.mode === PHOTO_MODES.AFTER) {
-                    labelPosition = afterLabelPosition || 'top-right';
-                } else {
-                    labelPosition = 'top-left'; // Default for combined
+
+        // Add label using native module at full resolution
+        try {
+            // Determine label position based on photo mode
+            let labelPosition;
+            if (photo.mode === PHOTO_MODES.BEFORE) {
+                labelPosition = convertLabelPosition(beforeLabelPosition || 'left-top');
+            } else if (photo.mode === PHOTO_MODES.AFTER) {
+                labelPosition = convertLabelPosition(afterLabelPosition || 'right-top');
+            } else {
+                labelPosition = 'top-left'; // Default
+            }
+
+            // Get label text
+            const labelText = getLabelTextForMode(photo.mode);
+
+            // Map label size to font size
+            const labelSizeMap = {
+                small: 48,
+                medium: 56,
+                large: 64,
+            };
+            const fontSize = labelSizeMap[labelSize] || 56;
+
+            // Build label configuration
+            const labelConfig = {
+                position: labelPosition,
+                backgroundColor: labelBackgroundColor || '#FFD700',
+                textColor: labelTextColor || '#000000',
+                fontSize: fontSize,
+                marginHorizontal: labelMarginHorizontal || 20,
+                marginVertical: labelMarginVertical || 20,
+                padding: 16,
+            };
+
+            console.log(`[GALLERY] Adding native label to photo ${index + 1}: "${labelText}" at position ${labelPosition}`);
+
+            // Add label using native module
+            const labeledUri = await addLabelToImage(photo.uri, labelText, labelConfig);
+
+            console.log(`[GALLERY] ✅ Native label added to photo ${index + 1}: ${labeledUri}`);
+
+            // Cache the labeled photo
+            try {
+                const savedCacheUri = await saveCachedLabeledPhoto(photo, labeledUri, settingsHash);
+                if (savedCacheUri) {
+                    console.log(`[GALLERY] ✅ Labeled photo ${index + 1} saved to cache: ${savedCacheUri}`);
+                    return savedCacheUri;
                 }
-                
-                // Set the photo to capture (triggers useEffect to render and capture)
-                setCapturingPhoto({ 
-                    photo, 
-                    index, 
-                    width, 
-                    height, 
-                    labelPosition,
-                    resolve, 
-                    reject 
-                });
-            }, (error) => {
-                // If getSize fails, just copy original
-                const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
-                const tempUri = FileSystem.cacheDirectory + tempFileName;
-                FileSystem.copyAsync({ from: photo.uri, to: tempUri }).then(() => {
-                    resolve(tempUri);
-                }).catch(reject);
-            });
-        });
+            } catch (cacheError) {
+                console.warn(`[GALLERY] Failed to cache labeled photo ${index + 1}:`, cacheError);
+            }
+
+            // Return labeled photo URI
+            return labeledUri;
+        } catch (error) {
+            console.error(`[GALLERY] Error adding native label to photo ${index + 1}:`, error);
+            // Fall back to original photo
+            const tempFileName = `temp_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
+            const tempUri = FileSystem.cacheDirectory + tempFileName;
+            await FileSystem.copyAsync({ from: photo.uri, to: tempUri });
+            return tempUri;
+        }
     };
     
     try {
