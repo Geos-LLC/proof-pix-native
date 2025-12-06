@@ -642,9 +642,10 @@ export default function GalleryScreen({ navigation, route }) {
                             name: beforePhoto.name,
                             room: beforePhoto.room,
                             projectId: beforePhoto.projectId,
+                            beforePhotoId: beforePhoto.id, // Store before photo ID for correct matching
                             id: `combined_${beforePhoto.id}`, // Unique ID for combined photo
                         });
-                        console.log(`[GALLERY] Found combined photo from selected set: ${beforePhoto.name}`);
+                        console.log(`[GALLERY] Found combined photo from selected set: ${beforePhoto.name} (beforePhotoId: ${beforePhoto.id})`);
                     }
                 }
             }
@@ -717,6 +718,7 @@ export default function GalleryScreen({ navigation, route }) {
                         name: beforePhoto.name,
                         room: beforePhoto.room,
                         projectId: beforePhoto.projectId,
+                        beforePhotoId: beforePhoto.id, // Store before photo ID for correct matching
                         id: `combined_${beforePhoto.id}`, // Unique ID for combined photo
                     });
                 }
@@ -826,18 +828,22 @@ export default function GalleryScreen({ navigation, route }) {
 
         // Handle combined photos specially - need to find before and after photos
         if (photo.mode === PHOTO_MODES.COMBINED || photo.mode === 'mix' || photo.mode === 'combined') {
-            // Find the corresponding before and after photos
-            const beforePhoto = photos.find(p => 
-                p.mode === PHOTO_MODES.BEFORE && 
-                p.name === photo.name && 
-                p.room === photo.room &&
-                p.projectId === photo.projectId
-            );
-            const afterPhoto = photos.find(p => 
-                p.mode === PHOTO_MODES.AFTER && 
+            // Find the corresponding before and after photos using beforePhotoId if available
+            const beforePhoto = photo.beforePhotoId
+                ? photos.find(p => p.id === photo.beforePhotoId)
+                : photos.find(p =>
+                    p.mode === PHOTO_MODES.BEFORE &&
+                    p.name === photo.name &&
+                    p.room === photo.room &&
+                    p.projectId === photo.projectId
+                );
+            const afterPhoto = photos.find(p =>
+                p.mode === PHOTO_MODES.AFTER &&
                 p.beforePhotoId === beforePhoto?.id &&
                 p.projectId === photo.projectId
             );
+
+            console.log(`[GALLERY] Reconstructing combined photo: ${photo.name} (beforePhotoId: ${photo.beforePhotoId}) - Found before: ${!!beforePhoto}, after: ${!!afterPhoto}`);
             
             if (beforePhoto && afterPhoto && showLabels) {
                 // Capture combined view with both labels
