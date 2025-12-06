@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   Platform,
   Alert,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -20,7 +21,7 @@ import TrialNotificationModal from '../components/TrialNotificationModal';
 import TrialConfirmationModal from '../components/TrialConfirmationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
-import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, restorePurchases } from '../services/iapService';
 
 export default function PlanSelectionScreen({ navigation }) {
   const { t } = useTranslation();
@@ -42,6 +43,8 @@ export default function PlanSelectionScreen({ navigation }) {
   const hasShownTrialNotification = useRef(false);
   // Track if component is mounted to prevent state updates after unmount
   const isMounted = useRef(true);
+  // Track restore purchases loading state
+  const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
 
   useEffect(() => {
     console.log('[PlanSelection] 🔵 Component mounted, isMounted set to true');
@@ -240,6 +243,39 @@ export default function PlanSelectionScreen({ navigation }) {
     navigation.navigate('Referral');
   };
 
+  // Handle restore purchases
+  const handleRestorePurchases = async () => {
+    if (Platform.OS !== 'ios') {
+      return; // Only show on iOS
+    }
+
+    setIsRestoringPurchases(true);
+    try {
+      await restorePurchases();
+      Alert.alert(
+        t('common.success', { defaultValue: 'Success' }),
+        t('settings.purchasesRestored', { defaultValue: 'Your purchases have been restored successfully.' })
+      );
+    } catch (error) {
+      console.error('[PlanSelection] Error restoring purchases:', error);
+
+      // Check if user cancelled the restore
+      const errorMessage = error?.message || '';
+      if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED')) {
+        // User cancelled - don't show error alert
+        console.log('[PlanSelection] User cancelled restore purchases');
+        return;
+      }
+
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('settings.restoreFailed', { defaultValue: 'Failed to restore purchases. Please try again or contact support if the problem persists.' })
+      );
+    } finally {
+      setIsRestoringPurchases(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <TouchableOpacity
@@ -256,7 +292,20 @@ export default function PlanSelectionScreen({ navigation }) {
       >
         <View style={styles.formContainer}>
           <Text style={styles.welcomeText}>{t('firstLoad.choosePlan')}</Text>
-          
+
+          {/* Restore Purchases Button - iOS only */}
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.restorePurchasesButton}
+              onPress={handleRestorePurchases}
+              disabled={isRestoringPurchases}
+            >
+              <Text style={styles.restorePurchasesText}>
+                {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {trialAvailable && (
             <TouchableOpacity
               style={styles.trialBanner}
@@ -322,6 +371,29 @@ export default function PlanSelectionScreen({ navigation }) {
             <Text style={styles.planSubtext}>
               For growing organisations with 15 team members and more
             </Text>
+          </View>
+
+          {/* Terms and Privacy Policy Links */}
+          <View style={styles.legalLinksContainer}>
+            <TouchableOpacity
+              onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
+              style={styles.legalLinkButton}
+            >
+              <Text style={styles.legalLinkText}>
+                {t('settings.termsOfUse', { defaultValue: 'Terms of Use (EULA)' })}
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.legalLinkSeparator}>•</Text>
+
+            <TouchableOpacity
+              onPress={() => Linking.openURL('https://sayapingeorge.wixsite.com/geos/privacy-policy')}
+              style={styles.legalLinkButton}
+            >
+              <Text style={styles.legalLinkText}>
+                {t('settings.privacyPolicy', { defaultValue: 'Privacy Policy' })}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -399,7 +471,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.TEXT,
     textAlign: 'center',
-    marginBottom: 30,
+    marginBottom: 10,
     fontFamily: FONTS.QUICKSAND_BOLD,
   },
   planContainer: {
@@ -473,5 +545,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4CAF50',
     fontWeight: '600',
+  },
+  restorePurchasesButton: {
+    marginTop: 2,
+    marginBottom: 15,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  restorePurchasesText: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    textDecorationLine: 'underline',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+  },
+  legalLinksContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 15,
+    marginBottom: 20,
+    paddingHorizontal: 20,
+    flexWrap: 'wrap',
+  },
+  legalLinkButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  legalLinkText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    textDecorationLine: 'underline',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+  },
+  legalLinkSeparator: {
+    fontSize: 12,
+    color: '#666',
+    marginHorizontal: 8,
+    fontFamily: FONTS.QUICKSAND_BOLD,
   },
 });

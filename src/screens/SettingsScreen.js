@@ -21,6 +21,7 @@ import {
   FlatList,
   Share,
   InteractionManager,
+  Linking,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,7 +59,7 @@ import {
   logFeatureGateShown,
   logFeatureGateAction,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, restorePurchases } from '../services/iapService';
 
 const getFontOptions = (t) => [
   {
@@ -762,6 +763,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [editingTeamName, setEditingTeamName] = useState(false);
+  const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [labelLanguageModalVisible, setLabelLanguageModalVisible] = useState(false);
   const [sectionLanguageModalVisible, setSectionLanguageModalVisible] = useState(false);
@@ -1678,6 +1680,39 @@ export default function SettingsScreen({ navigation, route }) {
         }
       ]
     );
+  };
+
+  // Handle restore purchases
+  const handleRestorePurchases = async () => {
+    if (Platform.OS !== 'ios') {
+      return; // Only available on iOS
+    }
+
+    setIsRestoringPurchases(true);
+    try {
+      await restorePurchases();
+      Alert.alert(
+        t('common.success', { defaultValue: 'Success' }),
+        t('settings.purchasesRestored', { defaultValue: 'Your purchases have been restored successfully.' })
+      );
+    } catch (error) {
+      console.error('[Settings] Error restoring purchases:', error);
+
+      // Check if user cancelled the restore
+      const errorMessage = error?.message || '';
+      if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED')) {
+        // User cancelled - don't show error alert
+        console.log('[Settings] User cancelled restore purchases');
+        return;
+      }
+
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('settings.restoreFailed', { defaultValue: 'Failed to restore purchases. Please try again or contact support if the problem persists.' })
+      );
+    } finally {
+      setIsRestoringPurchases(false);
+    }
   };
 
   const handleSetupTeam = async () => {
@@ -4891,6 +4926,42 @@ export default function SettingsScreen({ navigation, route }) {
                   <Text style={styles.planSubtext}>
                     For growing organisations with 15 team members and more
                   </Text>
+                </View>
+
+                {/* Restore Purchases Button - iOS only */}
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={styles.restorePurchasesButton}
+                    onPress={handleRestorePurchases}
+                    disabled={isRestoringPurchases}
+                  >
+                    <Text style={styles.restorePurchasesText}>
+                      {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Terms and Privacy Policy Links */}
+                <View style={styles.legalLinksContainer}>
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
+                    style={styles.legalLinkButton}
+                  >
+                    <Text style={styles.legalLinkText}>
+                      {t('settings.termsOfUse', { defaultValue: 'Terms of Use (EULA)' })}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.legalLinkSeparator}>•</Text>
+
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL('https://sayapingeorge.wixsite.com/geos/privacy-policy')}
+                    style={styles.legalLinkButton}
+                  >
+                    <Text style={styles.legalLinkText}>
+                      {t('settings.privacyPolicy', { defaultValue: 'Privacy Policy' })}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </ScrollView>
             </View>
@@ -8777,5 +8848,46 @@ const sliderStyles = StyleSheet.create({
     },
     testModalButtonTextDisabled: {
       color: '#999',
+    },
+    restorePurchasesButton: {
+      marginTop: 20,
+      marginBottom: 10,
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    restorePurchasesText: {
+      fontSize: 14,
+      color: '#666',
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+      fontFamily: FONTS.QUICKSAND_BOLD,
+    },
+    legalLinksContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginTop: 20,
+      marginBottom: 20,
+      paddingHorizontal: 20,
+      flexWrap: 'wrap',
+    },
+    legalLinkButton: {
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+    },
+    legalLinkText: {
+      fontSize: 12,
+      color: '#666',
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+      fontFamily: FONTS.QUICKSAND_BOLD,
+    },
+    legalLinkSeparator: {
+      fontSize: 12,
+      color: '#666',
+      marginHorizontal: 8,
+      fontFamily: FONTS.QUICKSAND_BOLD,
     },
   });

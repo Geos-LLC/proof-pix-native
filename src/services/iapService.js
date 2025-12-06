@@ -159,3 +159,32 @@ export const purchaseProduct = async (productId) => {
   });
 };
 
+/**
+ * Restore purchases for the user.
+ * This is required by Apple for apps with auto-renewable subscriptions.
+ * Call this when user taps "Restore Purchases" button.
+ */
+export const restorePurchases = async () => {
+  console.log('[IAP] restorePurchases called');
+  console.log('[IAP] Platform:', Platform.OS);
+
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+    console.error('[IAP] ❌ Platform not supported:', Platform.OS);
+    throw new Error('IAP_NOT_SUPPORTED');
+  }
+
+  console.log('[IAP] Initializing IAP connection...');
+  await initIAPIfNeeded();
+
+  try {
+    console.log('[IAP] Calling RNIap.restorePurchases()...');
+    const purchases = await RNIap.restorePurchases();
+    console.log('[IAP] ✅ Restore successful, purchases:', JSON.stringify(purchases, null, 2));
+    return purchases;
+  } catch (error) {
+    console.error('[IAP] ❌ Restore failed:', error);
+    console.error('[IAP] Error details:', JSON.stringify(error, null, 2));
+    throw error;
+  }
+};
+
