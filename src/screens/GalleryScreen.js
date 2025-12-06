@@ -1229,18 +1229,22 @@ export default function GalleryScreen({ navigation, route }) {
                     console.log('[GALLERY] First photo URI:', urls[0]);
                     console.log('[GALLERY] Last photo URI:', urls[urls.length - 1]);
 
-                    // On Android, copy files to shareable cache directory
+                    // On Android, copy files to shareable cache directory with clean filenames
                     let shareUrls = urls;
                     if (Platform.OS === 'android') {
                         console.log('[GALLERY] Copying files to shareable cache for Android...');
                         const tempUrls = [];
-                        for (const uri of urls) {
+                        for (let i = 0; i < urls.length; i++) {
+                            const uri = urls[i];
                             try {
-                                const filename = uri.split('/').pop();
-                                const tempUri = `${FileSystem.cacheDirectory}share_${filename}`;
+                                // Create simple, clean filename without spaces or special chars
+                                const timestamp = Date.now();
+                                const randomId = Math.random().toString(36).substring(7);
+                                const cleanFilename = `photo_${i + 1}_${timestamp}_${randomId}.jpg`;
+                                const tempUri = `${FileSystem.cacheDirectory}${cleanFilename}`;
                                 await FileSystem.copyAsync({ from: uri, to: tempUri });
                                 tempUrls.push(tempUri);
-                                console.log('[GALLERY] Copied to shareable location:', filename);
+                                console.log(`[GALLERY] Copied photo ${i + 1} to: ${cleanFilename}`);
                             } catch (copyErr) {
                                 console.error('[GALLERY] Failed to copy file:', uri, copyErr);
                                 tempUrls.push(uri); // Fallback to original
@@ -1248,7 +1252,7 @@ export default function GalleryScreen({ navigation, route }) {
                         }
                         shareUrls = tempUrls;
                         tempFiles.push(...shareUrls); // Track for cleanup
-                        console.log('[GALLERY] Copied', shareUrls.length, 'files to shareable cache');
+                        console.log('[GALLERY] Copied', shareUrls.length, 'files to shareable cache with clean names');
                     }
 
                     const shareResult = await new Promise((resolve, reject) => {
@@ -1258,7 +1262,7 @@ export default function GalleryScreen({ navigation, route }) {
                                     urls: shareUrls,
                                     title: `Share ${projectName} Photos`,
                                     message: `Sharing ${shareUrls.length} photos from ${projectName}`,
-                                    type: 'image/jpeg',
+                                    type: 'image/*',
                                     failOnCancel: false,
                                 });
                                 resolve(result);
