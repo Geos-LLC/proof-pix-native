@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Application from 'expo-application';
 
 // Try to import GoogleSignin, but handle gracefully if not available (Expo Go)
 let GoogleSignin = null;
@@ -55,11 +54,6 @@ class GoogleAuthService {
       const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
       
       console.log('[AUTH] 🔍 --- Google Sign-In Debug Info ---');
-      try {
-        console.log(`[AUTH] App Bundle ID: ${Application.applicationId}`);
-      } catch (e) {
-        console.log('[AUTH] Could not get Application.applicationId');
-      }
       console.log(`[AUTH] Web Client ID (Env): ${webClientId}`);
       console.log('[AUTH] -----------------------------------');
 
