@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Application from 'expo-application';
 
 // Try to import GoogleSignin, but handle gracefully if not available (Expo Go)
 let GoogleSignin = null;
@@ -52,6 +53,16 @@ class GoogleAuthService {
       ];
 
       const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+      
+      console.log('[AUTH] 🔍 --- Google Sign-In Debug Info ---');
+      try {
+        console.log(`[AUTH] App Bundle ID: ${Application.applicationId}`);
+      } catch (e) {
+        console.log('[AUTH] Could not get Application.applicationId');
+      }
+      console.log(`[AUTH] Web Client ID (Env): ${webClientId}`);
+      console.log('[AUTH] -----------------------------------');
+
       if (!webClientId) {
         console.warn('[AUTH] ⚠️ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not set. Google Sign-In may fail on Android or for offline access.');
       }
@@ -187,6 +198,12 @@ class GoogleAuthService {
 
     } catch (error) {
       console.error('Google Sign-In Error Details:', error);
+      try {
+        console.error('Error Object Keys:', Object.keys(error));
+        console.error('Full Error JSON:', JSON.stringify(error, null, 2));
+      } catch (e) {
+        console.error('Could not stringify error:', e);
+      }
       
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         return { error: 'Sign in was cancelled.' };
