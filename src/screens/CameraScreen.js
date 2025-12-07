@@ -1833,6 +1833,59 @@ export default function CameraScreen({ route, navigation }) {
 
               console.log(`[CameraScreen][Android] ✅ ${layout} combined photo saved:`, combinedPhotoSavedUri);
 
+              // Prepare labeled combined photo in background (non-blocking)
+              if (showLabels && combinedPhotoSavedUri) {
+                // Use Promise.resolve().then() to run async code without blocking
+                Promise.resolve().then(async () => {
+                  try {
+                    // Create a combined photo object for cache lookup/preparation
+                    // The ID format matches what GalleryScreen uses: combined_<beforePhotoId>
+                    const combinedPhotoId = `combined_${activeBeforePhoto.id}`;
+                    const combinedPhoto = {
+                      id: combinedPhotoId,
+                      mode: PHOTO_MODES.COMBINED,
+                      uri: combinedPhotoSavedUri,
+                      name: activeBeforePhoto.name,
+                      room: activeBeforePhoto.room,
+                      projectId: activeProjectId,
+                      beforePhotoId: activeBeforePhoto.id,
+                    };
+                    
+                    // Calculate settings hash
+                    const settingsHash = calculateSettingsHash({
+                      showLabels,
+                      beforeLabelPosition,
+                      afterLabelPosition,
+                      labelBackgroundColor: labelBackgroundColor || null,
+                      labelTextColor: labelTextColor || null,
+                      labelSize: labelSize || null,
+                      labelFontFamily: labelFontFamily || null,
+                      labelMarginVertical,
+                      labelMarginHorizontal,
+                    });
+                    
+                    // Check if already cached
+                    const cachedCombined = await getCachedLabeledPhoto(combinedPhoto, settingsHash);
+                    if (!cachedCombined) {
+                      try {
+                        // Prepare combined photo with labels in background (don't await - just queue it)
+                        prepareCombinedPhotoInBackground(
+                          combinedPhoto,
+                          activeBeforePhoto,
+                          newAfterPhoto,
+                          settingsHash,
+                          isLetterboxMode
+                        );
+                      } catch (error) {
+                        console.error('[CameraScreen][Android] Error queuing combined photo prep:', error);
+                      }
+                    }
+                  } catch (error) {
+                    console.error('[CameraScreen][Android] Error in background prep block:', error);
+                  }
+                });
+              }
+
               // For letterbox modes, also create the alternate layout (STACK <-> SIDE)
               if (shouldCreateBothLayouts) {
                 const alternateLayout = layout === 'STACK' ? 'SIDE' : 'STACK';

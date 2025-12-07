@@ -9,7 +9,7 @@ import backgroundLabelPreparationService from '../services/backgroundLabelPrepar
 import { saveCachedLabeledPhoto } from '../services/labelCacheService';
 import { PHOTO_MODES } from '../constants/rooms';
 import { useSettings } from '../context/SettingsContext';
-import { addLabelToImage } from '../utils/imageCompositor';
+import { addLabelToImage, compositeImages } from '../utils/imageCompositor';
 import { useTranslation } from 'react-i18next';
 
 export default function GlobalBackgroundLabelPreparation() {
@@ -122,8 +122,63 @@ export default function GlobalBackgroundLabelPreparation() {
 
       console.log('[BackgroundLabelPrep] Adding native label:', labelText, 'at', labelPosition);
 
-      // Add label using native module
-      const labeledUri = await addLabelToImage(preparingPhoto.photo.uri, labelText, labelConfig);
+      let labeledUri;
+
+      if (preparingPhoto.isCombined && preparingPhoto.beforePhoto && preparingPhoto.afterPhoto) {
+        console.log('[BackgroundLabelPrep] Handling combined photo labeling');
+        
+        // 1. Determine layout (STACK or SIDE)
+        const isStack = preparingPhoto.height > preparingPhoto.width;
+        const layout = isStack ? 'STACK' : 'SIDE';
+        
+        // 2. Prepare dimensions for native compositor
+        const dimensions = {
+          width: preparingPhoto.width,
+          height: preparingPhoto.height,
+          topH: isStack ? Math.round(preparingPhoto.height / 2) : null,
+          bottomH: isStack ? Math.round(preparingPhoto.height / 2) : null,
+          leftW: !isStack ? Math.round(preparingPhoto.width / 2) : null,
+          rightW: !isStack ? Math.round(preparingPhoto.width / 2) : null,
+        };
+        
+        // 3. Prepare label configs
+        const beforeLabelConfig = {
+          ...labelConfig,
+          position: convertLabelPosition(beforeLabelPosition || 'left-top'),
+        };
+        
+        const afterLabelConfig = {
+          ...labelConfig,
+          position: convertLabelPosition(afterLabelPosition || 'right-top'),
+        };
+        
+        // 4. Label before and after photos
+        const labeledBeforeUri = await addLabelToImage(
+          preparingPhoto.beforePhoto.uri,
+          t('common.before') || 'BEFORE',
+          beforeLabelConfig
+        );
+        
+        const labeledAfterUri = await addLabelToImage(
+          preparingPhoto.afterPhoto.uri,
+          t('common.after') || 'AFTER',
+          afterLabelConfig
+        );
+        
+        // 5. Composite them
+        labeledUri = await compositeImages(
+          labeledBeforeUri,
+          labeledAfterUri,
+          layout,
+          dimensions
+        );
+        console.log('[BackgroundLabelPrep] ✅ Combined photo created:', labeledUri);
+        
+      } else {
+        // Standard single photo labeling
+        // Add label using native module
+        labeledUri = await addLabelToImage(preparingPhoto.photo.uri, labelText, labelConfig);
+      }
 
       console.log('[BackgroundLabelPrep] ✅ Native label added:', labeledUri);
 
