@@ -1370,6 +1370,7 @@ export default function GalleryScreen({ navigation, route }) {
                                     message: `Sharing ${shareUrls.length} photos from ${projectName}`,
                                     type: 'image/*',
                                     failOnCancel: false,
+                                    forceDialog: true, // Android: Forces the system share sheet, helping with back navigation
                                 });
                                 resolve(result);
                             } catch (error) {

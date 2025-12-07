@@ -51,8 +51,13 @@ class GoogleAuthService {
         'https://www.googleapis.com/auth/drive', // Include Drive scope here for iOS
       ];
 
+      const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+      if (!webClientId) {
+        console.warn('[AUTH] ⚠️ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not set. Google Sign-In may fail on Android or for offline access.');
+      }
+
       GoogleSignin.configure({
-        webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, // MUST be Web Client ID for serverAuthCode
+        webClientId: webClientId, // MUST be Web Client ID for serverAuthCode
         iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, // Required for iOS SDK to work
         scopes: defaultScopes, // Set scopes in configure() for iOS to show in consent screen
         offlineAccess: true, // Required to get serverAuthCode
@@ -181,6 +186,8 @@ class GoogleAuthService {
       return { error: "Could not retrieve user information from Google." };
 
     } catch (error) {
+      console.error('Google Sign-In Error Details:', error);
+      
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         return { error: 'Sign in was cancelled.' };
       } else if (error.code === statusCodes.IN_PROGRESS) {
@@ -189,7 +196,10 @@ class GoogleAuthService {
         return { error: 'Play services not available or outdated.' };
       } else {
         console.error('Google Sign-In Error:', error);
-        return { error: 'Something went wrong during sign in.' };
+        // Return detailed error for UI
+        const errorMsg = error.message || 'Unknown error';
+        const errorCode = error.code ? ` (Code: ${error.code})` : '';
+        return { error: `Sign-in failed: ${errorMsg}${errorCode}` };
       }
     }
   }

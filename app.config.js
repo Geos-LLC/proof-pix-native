@@ -49,7 +49,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 18,
+      versionCode: 19,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
