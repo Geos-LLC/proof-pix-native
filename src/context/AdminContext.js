@@ -629,14 +629,19 @@ export function AdminProvider({ children }) {
    * Sign in for individual use
    */
   const individualSignIn = async () => {
+    console.log('[AdminContext] 🔵 individualSignIn called');
     try {
+      console.log('[AdminContext] Calling googleAuthService.signInAsIndividual()...');
       const result = await googleAuthService.signInAsIndividual();
+      console.log('[AdminContext] googleAuthService.signInAsIndividual() returned:', JSON.stringify(result));
 
       if (result && result.error) {
+        console.error('[AdminContext] ❌ Sign-in failed with error:', result.error);
         return { success: false, error: result.error };
       }
 
       if (result && result.userInfo) {
+        console.log('[AdminContext] ✅ Sign-in successful, updating state...');
         setIsAuthenticated(true);
         setUserInfo(result.userInfo);
         setUserMode('individual');

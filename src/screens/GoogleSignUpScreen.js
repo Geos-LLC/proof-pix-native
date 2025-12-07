@@ -22,6 +22,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
 
   const handleGoogleSignIn = async () => {
+    console.log('[GoogleSignUp] 🟢 Connect to Google Account button PRESSED');
     // Check if user is on starter plan - show upgrade modal instead
     if (userPlan === 'starter') {
       setShowPlanModal(true);
