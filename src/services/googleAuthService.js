@@ -52,22 +52,28 @@ class GoogleAuthService {
       ];
 
       const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-      
-      console.log('[AUTH] 🔍 --- Google Sign-In Debug Info ---');
+      const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+
+      console.log('[AUTH] 🔍 --- Google Sign-In Configuration Debug ---');
       console.log(`[AUTH] Web Client ID (Env): ${webClientId}`);
+      console.log(`[AUTH] iOS Client ID (Env): ${iosClientId}`);
+      console.log(`[AUTH] Default Scopes: ${JSON.stringify(defaultScopes)}`);
       console.log('[AUTH] -----------------------------------');
 
       if (!webClientId) {
         console.warn('[AUTH] ⚠️ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not set. Google Sign-In may fail on Android or for offline access.');
       }
 
-      GoogleSignin.configure({
+      const configOptions = {
         webClientId: webClientId, // MUST be Web Client ID for serverAuthCode
-        iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, // Required for iOS SDK to work
+        iosClientId: iosClientId, // Required for iOS SDK to work
         scopes: defaultScopes, // Set scopes in configure() for iOS to show in consent screen
         offlineAccess: true, // Required to get serverAuthCode
         forceCodeForRefreshToken: true, // Force showing consent screen to get refresh token
-      });
+      };
+
+      console.log('[AUTH] 📋 GoogleSignin.configure() called with:', JSON.stringify(configOptions, null, 2));
+      GoogleSignin.configure(configOptions);
     }
   }
 
@@ -113,24 +119,40 @@ class GoogleAuthService {
    */
   async signIn(scopes = []) {
     try {
+      console.log('[AUTH] 🔐 --- Starting Google Sign-In Process ---');
+      console.log('[AUTH] Requested scopes:', JSON.stringify(scopes));
+
+      console.log('[AUTH] Checking Google Play Services...');
       await GoogleSignin.hasPlayServices();
-      
+      console.log('[AUTH] ✅ Google Play Services available');
+
       // Sign out locally to ensure clean state
       // NOTE: We do NOT revoke access here because:
       // 1. It would invalidate the refresh token used by team members
       // 2. Google will still show consent screen if new scopes are requested
       try {
+        console.log('[AUTH] Signing out to ensure clean state...');
         await GoogleSignin.signOut();
         // Wait a moment to ensure sign out completes
         await new Promise(resolve => setTimeout(resolve, 500));
+        console.log('[AUTH] ✅ Signed out successfully');
       } catch (signOutError) {
         // Ignore if sign out fails - user might not be signed in
+        console.log('[AUTH] Sign out failed (user may not be signed in):', signOutError.message);
       }
-      
+
       // Sign in with all required scopes
       // After revokeAccess and signOut, this should show the consent screen with all requested permissions including Drive
 
+      console.log('[AUTH] 📞 Calling GoogleSignin.signIn() with scopes:', JSON.stringify({ scopes }));
       const response = await GoogleSignin.signIn({ scopes });
+      console.log('[AUTH] ✅ GoogleSignin.signIn() returned response');
+      console.log('[AUTH] Response keys:', Object.keys(response));
+      console.log('[AUTH] Response type:', response?.type);
+      console.log('[AUTH] Has user:', !!response?.user);
+      console.log('[AUTH] Has data.user:', !!response?.data?.user);
+      console.log('[AUTH] Has serverAuthCode:', !!response?.serverAuthCode);
+      console.log('[AUTH] Has data.serverAuthCode:', !!response?.data?.serverAuthCode);
 
       // If the user cancelled, Google Sign-In SDK returns an object with type "cancelled"
       if (response?.type === 'cancelled') {
@@ -191,14 +213,24 @@ class GoogleAuthService {
       return { error: "Could not retrieve user information from Google." };
 
     } catch (error) {
-      console.error('Google Sign-In Error Details:', error);
+      console.error('[AUTH] ❌ --- Google Sign-In Error Occurred ---');
+      console.error('[AUTH] Error message:', error.message);
+      console.error('[AUTH] Error code:', error.code);
+      console.error('[AUTH] Error name:', error.name);
+
       try {
-        console.error('Error Object Keys:', Object.keys(error));
-        console.error('Full Error JSON:', JSON.stringify(error, null, 2));
+        console.error('[AUTH] Error Object Keys:', Object.keys(error));
+        console.error('[AUTH] Full Error JSON:', JSON.stringify(error, null, 2));
       } catch (e) {
-        console.error('Could not stringify error:', e);
+        console.error('[AUTH] Could not stringify error:', e);
       }
-      
+
+      // Log status codes for comparison
+      console.error('[AUTH] statusCodes.SIGN_IN_CANCELLED:', statusCodes?.SIGN_IN_CANCELLED);
+      console.error('[AUTH] statusCodes.IN_PROGRESS:', statusCodes?.IN_PROGRESS);
+      console.error('[AUTH] statusCodes.PLAY_SERVICES_NOT_AVAILABLE:', statusCodes?.PLAY_SERVICES_NOT_AVAILABLE);
+      console.error('[AUTH] Error code matches DEVELOPER_ERROR (10)?:', error.code === '10' || error.code === 10);
+
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         return { error: 'Sign in was cancelled.' };
       } else if (error.code === statusCodes.IN_PROGRESS) {
