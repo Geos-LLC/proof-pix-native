@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import googleAuthService from '../services/googleAuthService';
+import appleAuthService from '../services/appleAuthService';
 import proxyService from '../services/proxyService';
 import { useSettings } from './SettingsContext';
 import { hasFeature, FEATURES } from '../constants/featurePermissions';
@@ -607,7 +608,7 @@ export function AdminProvider({ children }) {
         setIsAuthenticated(true);
         setUserInfo(result.userInfo);
         setUserMode('admin');
-        await upsertConnectedAccount(result.userInfo, { userMode: 'admin' });
+        await upsertConnectedAccount(result.userInfo, { userMode: 'admin', accountType: 'google' });
         // Analytics: admin sign-in
         try {
           logSignIn('google_admin');
@@ -640,7 +641,7 @@ export function AdminProvider({ children }) {
         setIsAuthenticated(true);
         setUserInfo(result.userInfo);
         setUserMode('individual');
-        await upsertConnectedAccount(result.userInfo, { userMode: 'individual' });
+        await upsertConnectedAccount(result.userInfo, { userMode: 'individual', accountType: 'google' });
         // Analytics: individual sign-in
         try {
           logSignIn('google_individual');
@@ -651,6 +652,71 @@ export function AdminProvider({ children }) {
       }
 
       throw new Error("Invalid or unexpected response from googleAuthService");
+    } catch (error) {
+      setIsAuthenticated(false);
+      return { success: false, error: error.message };
+    }
+  };
+
+  /**
+   * Sign in with Apple for admin (team) use
+   */
+  const appleAdminSignIn = async () => {
+    try {
+      const result = await appleAuthService.signIn();
+
+      if (result && result.error) {
+        return { success: false, error: result.error };
+      }
+
+      if (result && result.userInfo) {
+        setIsAuthenticated(true);
+        setUserInfo(result.userInfo);
+        setUserMode('admin');
+        await upsertConnectedAccount(result.userInfo, { userMode: 'admin', accountType: 'apple' });
+        // Analytics: admin sign-in
+        try {
+          logSignIn('apple_admin');
+        } catch (e) {
+          // non‑critical
+        }
+        return { success: true };
+      }
+
+      throw new Error("Invalid or unexpected response from appleAuthService");
+    } catch (error) {
+      console.log("Unexpected error in Apple admin sign-in flow:", error.message);
+      setIsAuthenticated(false);
+      return { success: false, error: error.message };
+    }
+  };
+
+  /**
+   * Sign in with Apple for individual use
+   */
+  const appleIndividualSignIn = async () => {
+    try {
+      const result = await appleAuthService.signIn();
+
+      if (result && result.error) {
+        return { success: false, error: result.error };
+      }
+
+      if (result && result.userInfo) {
+        setIsAuthenticated(true);
+        setUserInfo(result.userInfo);
+        setUserMode('individual');
+        await upsertConnectedAccount(result.userInfo, { userMode: 'individual', accountType: 'apple' });
+        // Analytics: individual sign-in
+        try {
+          logSignIn('apple_individual');
+        } catch (e) {
+          // non‑critical
+        }
+        return { success: true };
+      }
+
+      throw new Error("Invalid or unexpected response from appleAuthService");
     } catch (error) {
       setIsAuthenticated(false);
       return { success: false, error: error.message };
@@ -1127,12 +1193,14 @@ export function AdminProvider({ children }) {
     teamName,
     connectedAccounts,
     activeAccount, // Expose active account
-    accountType, // Expose account type ('google' or 'dropbox')
+    accountType, // Expose account type ('google', 'dropbox', or 'apple')
     isGoogleSignInAvailable: googleAuthService.isAvailable(),
 
     // Actions
     adminSignIn,
     individualSignIn,
+    appleAdminSignIn,
+    appleIndividualSignIn,
     signOut,
     signOutFromTeam,
     joinTeam,
@@ -1156,8 +1224,9 @@ export function AdminProvider({ children }) {
     updateTeamName,
     getActiveAccount, // Expose function to get active account
 
-    // Direct access to auth service for API calls
+    // Direct access to auth services for API calls
     googleAuthService,
+    appleAuthService,
   };
 
   return (

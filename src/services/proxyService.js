@@ -7,12 +7,13 @@ import { Platform } from 'react-native';
 import { PROXY_SERVER_URL } from '../config/proxy';
 import googleAuthService from './googleAuthService';
 import dropboxAuthService from './dropboxAuthService';
+import appleAuthService from './appleAuthService';
 
 class ProxyService {
   /**
    * Initialize an admin session on the proxy server
-   * @param {string} folderId - Google Drive folder ID or Dropbox folder path
-   * @param {string} accountType - Account type: 'google' or 'dropbox' (default: 'google')
+   * @param {string} folderId - Google Drive folder ID, Dropbox folder path, or iCloud container ID
+   * @param {string} accountType - Account type: 'google', 'dropbox', or 'apple' (default: 'google')
    * @param {string} userId - User ID for global team tracking across accounts
    * @returns {Promise<{sessionId: string}>}
    */
@@ -21,8 +22,26 @@ class ProxyService {
       let authData = {
         userId, // Include userId for global team tracking
       };
-      
-      if (accountType === 'dropbox') {
+
+      if (accountType === 'apple') {
+        // For Apple/iCloud, get authorization code and identity token
+        const authorizationCode = await appleAuthService.getAuthorizationCode();
+        const identityToken = await appleAuthService.getIdentityToken();
+        const appleUserId = await appleAuthService.getUserId();
+
+        if (!authorizationCode || !identityToken) {
+          throw new Error('Failed to get Apple credentials. Please sign in with Apple.');
+        }
+
+        authData = {
+          ...authData,
+          accountType: 'apple',
+          authorizationCode,
+          identityToken,
+          appleUserId,
+          folderId, // For iCloud, this is the container ID
+        };
+      } else if (accountType === 'dropbox') {
         // For Dropbox, get access token
         await dropboxAuthService.loadStoredTokens();
         const accessToken = dropboxAuthService.getAccessToken();
@@ -89,13 +108,19 @@ class ProxyService {
 
       const data = await response.json();
 
-      // Clear the serverAuthCode after successful use (it's a one-time code) - Google only
+      // Clear the authorization code after successful use (it's a one-time code)
       // This prevents it from being reused if initializeAdminSession is called again
       if (accountType === 'google') {
         try {
           await googleAuthService.clearServerAuthCode();
         } catch (clearError) {
           console.warn('[PROXY] Failed to clear serverAuthCode (non-critical):', clearError.message);
+        }
+      } else if (accountType === 'apple') {
+        try {
+          await appleAuthService.clearAuthorizationCode();
+        } catch (clearError) {
+          console.warn('[PROXY] Failed to clear Apple authorizationCode (non-critical):', clearError.message);
         }
       }
 

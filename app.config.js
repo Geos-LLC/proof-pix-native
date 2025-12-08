@@ -26,7 +26,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "12",
+      buildNumber: "13",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -41,7 +41,11 @@ export default {
           "UIInterfaceOrientationLandscapeRight"
         ],
         ITSAppUsesNonExemptEncryption: false
-      }
+      },
+      entitlements: {
+        "com.apple.developer.applesignin": ["Default"]
+      },
+      usesAppleSignIn: true
     },
     android: {
       adaptiveIcon: {

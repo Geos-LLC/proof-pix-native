@@ -35,6 +35,7 @@ import PhotoWatermark from '../components/PhotoWatermark';
 import googleDriveService from '../services/googleDriveService';
 import dropboxAuthService from '../services/dropboxAuthService';
 import dropboxService from '../services/dropboxService';
+import iCloudService from '../services/iCloudService';
 import InviteManager from '../components/InviteManager';
 import {
   getOrCreateReferralCode,
@@ -610,6 +611,8 @@ export default function SettingsScreen({ navigation, route }) {
     removeInviteToken,
     adminSignIn,
     individualSignIn,
+    appleAdminSignIn,
+    appleIndividualSignIn,
     isGoogleSignInAvailable,
     initializeProxySession,
     teamName,
@@ -3543,7 +3546,70 @@ export default function SettingsScreen({ navigation, route }) {
                         )}
                       </TouchableOpacity>
                     )}
-                    
+
+                    {/* Connect to iCloud/Apple Button - iOS only */}
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity
+                        style={[
+                          styles.featureButton,
+                          styles.appleSignInButton,
+                          (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn) && styles.appleButtonDisabled
+                        ]}
+                        onPress={async () => {
+                          // Check tier access
+                          if (!canUse(FEATURES.GOOGLE_DRIVE_SYNC)) {
+                            setShowPlanModal(true);
+                            return;
+                          }
+
+                          setIsSigningIn(true);
+                          try {
+                            // For Pro, use individual sign-in; for Business/Enterprise, use admin sign-in
+                            if (userPlan === 'pro') {
+                              await appleIndividualSignIn();
+                            } else {
+                              await appleAdminSignIn();
+                            }
+
+                            // Initialize iCloud folder
+                            try {
+                              const folderId = await iCloudService.findOrCreateProofPixFolder();
+                              console.log('[iCloud] Folder ready:', folderId);
+                            } catch (folderError) {
+                              console.error('[iCloud] Folder creation error:', folderError);
+                            }
+
+                            Alert.alert(
+                              t('settings.appleConnected', { defaultValue: 'Connected to iCloud' }),
+                              t('settings.appleConnectedMessage', { defaultValue: 'Your account has been connected successfully.' }),
+                              [{ text: t('common.ok') }]
+                            );
+                          } catch (error) {
+                            console.error('[APPLE] Sign-in error:', error);
+                            Alert.alert(
+                              t('common.error'),
+                              error.message || t('settings.appleSignInError', { defaultValue: 'Failed to connect with Apple. Please try again.' })
+                            );
+                          } finally {
+                            setIsSigningIn(false);
+                          }
+                        }}
+                        disabled={!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn}
+                      >
+                        {isSigningIn ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={[
+                            styles.featureButtonText,
+                            styles.appleButtonText,
+                            !canUse(FEATURES.GOOGLE_DRIVE_SYNC) && styles.appleButtonTextDisabled
+                          ]}>
+                            {t('settings.connectToiCloud', { defaultValue: 'Connect with Apple / iCloud' })}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+
                     {/* Connect Team Button - Always visible */}
                     <TouchableOpacity
                       style={[
@@ -7212,6 +7278,13 @@ const sliderStyles = StyleSheet.create({
     dropboxButton: {
       backgroundColor: '#0061FF',
     },
+    appleSignInButton: {
+      backgroundColor: '#000000', // Apple black
+    },
+    appleButtonDisabled: {
+      backgroundColor: '#999999',
+      opacity: 0.6,
+    },
     multipleProfilesButton: {
       backgroundColor: '#28a745', // Green background
     },
@@ -7227,6 +7300,14 @@ const sliderStyles = StyleSheet.create({
       color: '#FFFFFF',
       fontSize: 16,
       fontWeight: '600'
+    },
+    appleButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600'
+    },
+    appleButtonTextDisabled: {
+      color: '#CCCCCC',
     },
     accountLabelRow: {
       flexDirection: 'row',
