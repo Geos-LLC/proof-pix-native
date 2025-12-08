@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Try to import GoogleSignin, but handle gracefully if not available (Expo Go)
 let GoogleSignin = null;
@@ -52,20 +53,28 @@ class GoogleAuthService {
       ];
 
       const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+      const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
       const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 
       console.log('[AUTH] 🔍 --- Google Sign-In Configuration Debug ---');
+      console.log(`[AUTH] Platform: ${Platform.OS}`);
       console.log(`[AUTH] Web Client ID (Env): ${webClientId}`);
+      console.log(`[AUTH] Android Client ID (Env): ${androidClientId}`);
       console.log(`[AUTH] iOS Client ID (Env): ${iosClientId}`);
       console.log(`[AUTH] Default Scopes: ${JSON.stringify(defaultScopes)}`);
       console.log('[AUTH] -----------------------------------');
 
-      if (!webClientId) {
-        console.warn('[AUTH] ⚠️ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not set. Google Sign-In may fail on Android or for offline access.');
+      // Use platform-specific client ID for Android, otherwise use original web client ID
+      const effectiveWebClientId = Platform.OS === 'android' && androidClientId ? androidClientId : webClientId;
+
+      console.log(`[AUTH] Using webClientId: ${effectiveWebClientId}`);
+
+      if (!effectiveWebClientId) {
+        console.warn('[AUTH] ⚠️ No web client ID configured. Google Sign-In may fail.');
       }
 
       const configOptions = {
-        webClientId: webClientId, // MUST be Web Client ID for serverAuthCode
+        webClientId: effectiveWebClientId, // Platform-specific client ID
         iosClientId: iosClientId, // Required for iOS SDK to work
         scopes: defaultScopes, // Set scopes in configure() for iOS to show in consent screen
         offlineAccess: true, // Required to get serverAuthCode

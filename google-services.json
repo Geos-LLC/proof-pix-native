@@ -22,7 +22,15 @@
           }
         },
         {
-          "client_id": "366423185-r9t2c8bcroqaiii2e6jvokmnovjbog0v.apps.googleusercontent.com",
+          "client_id": "366423185-lagq6q2cph7vooljpckea22n1rh856qj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.proofpix.app",
+            "certificate_hash": "92a62e2057b969016be65cc2dc7f53c42e0440d6"
+          }
+        },
+        {
+          "client_id": "366423185-ai122ab7ud310hl33dmivohqmleapojf.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
@@ -35,7 +43,7 @@
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "366423185-r9t2c8bcroqaiii2e6jvokmnovjbog0v.apps.googleusercontent.com",
+              "client_id": "366423185-ai122ab7ud310hl33dmivohqmleapojf.apps.googleusercontent.com",
               "client_type": 3
             },
             {
