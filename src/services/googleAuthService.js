@@ -64,8 +64,11 @@ class GoogleAuthService {
       console.log(`[AUTH] Default Scopes: ${JSON.stringify(defaultScopes)}`);
       console.log('[AUTH] -----------------------------------');
 
-      // Use platform-specific client ID for Android, otherwise use original web client ID
-      const effectiveWebClientId = Platform.OS === 'android' && androidClientId ? androidClientId : webClientId;
+      // IMPORTANT: Always use Web Client ID for webClientId parameter
+      // This is required for server-side token exchange (serverAuthCode)
+      // Android Client ID is only for app authentication, not for server token exchange
+      // The Web Client ID has a client secret that the server can use
+      const effectiveWebClientId = webClientId;
 
       console.log(`[AUTH] Using webClientId: ${effectiveWebClientId}`);
 

@@ -39,15 +39,20 @@ class ProxyService {
         // For Google, get serverAuthCode
         const serverAuthCode = await googleAuthService.getServerAuthCode();
         if (!serverAuthCode) {
-          throw new Error('Failed to get serverAuthCode from Google Sign-In.');
+          throw new Error('No authorization code found. Please reconnect your Google account in Settings.');
         }
 
         // IMPORTANT: Always use Web Client ID for server-side token exchange
-        const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+        // The serverAuthCode is generated using Web Client ID, which has a client secret
+        // Android Client ID doesn't have a secret and can't be used for server-side exchange
+        const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+        const clientId = webClientId;
 
         if (!clientId) {
-          throw new Error('Missing Web Client ID. Please check EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in environment variables.');
+          throw new Error('Missing Client ID. Please check EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID or EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in environment variables.');
         }
+
+        console.log('[PROXY] Using client ID for token exchange:', clientId);
 
         authData = {
           ...authData,

@@ -108,7 +108,8 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
 
                 withContext(Dispatchers.IO) {
                     FileOutputStream(outputFile).use { out ->
-                        combinedBitmap.compress(Bitmap.CompressFormat.JPEG, 98, out)
+                        // Use 85 quality to match iOS compression and stay under Vercel 4.5MB limit
+                        combinedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                     }
                 }
 
@@ -234,7 +235,8 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
 
                 withContext(Dispatchers.IO) {
                     FileOutputStream(outputFile).use { out ->
-                        labeledBitmap.compress(Bitmap.CompressFormat.JPEG, 98, out)
+                        // Use 85 quality to reduce file size and stay under Vercel 4.5MB limit
+                        labeledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                     }
                 }
 
