@@ -4,9 +4,54 @@
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
+import * as ImageManipulator from 'expo-image-manipulator';
 import googleDriveService from './googleDriveService';
+import googleAuthService from './googleAuthService';
 import proxyService from './proxyService';
 import { uploadPhotoToDropbox } from './dropboxUploadService';
+
+/**
+ * Compress image if needed (Android only) to fit within serverless limits (4.5MB)
+ * @param {string} uri - Image URI
+ * @returns {Promise<string>} - Compressed image URI
+ */
+async function compressImageIfNeeded(uri) {
+  if (Platform.OS !== 'android') return uri; 
+
+  try {
+    const fileInfo = await FileSystem.getInfoAsync(uri);
+    // 3.5MB limit to leave room for Base64 overhead (x1.33) = ~4.6MB total
+    const MAX_SIZE = 3.5 * 1024 * 1024; 
+
+    if (fileInfo.exists && fileInfo.size > MAX_SIZE) {
+       console.log(`[UPLOAD] Image size ${(fileInfo.size / 1024 / 1024).toFixed(2)}MB exceeds safety limit, compressing lightly...`);
+       
+       // Very light compression (0.9) often reduces file size significantly without visible loss
+       let result = await ImageManipulator.manipulateAsync(
+         uri,
+         [],
+         { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+       );
+
+       let resultInfo = await FileSystem.getInfoAsync(result.uri);
+       
+       // If still huge, step down gradually
+       if (resultInfo.size > MAX_SIZE) {
+          console.log(`[UPLOAD] Still too large (${(resultInfo.size / 1024 / 1024).toFixed(2)}MB), using standard compression...`);
+          result = await ImageManipulator.manipulateAsync(
+             result.uri,
+             [], 
+             { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+          );
+       }
+       return result.uri;
+    }
+  } catch (error) {
+    console.warn('[UPLOAD] Compression check failed, proceeding with original:', error);
+  }
+  return uri;
+}
 
 /**
  * Convert file URI to base64 data URL
@@ -217,18 +262,92 @@ async function uploadPhotoToDriveDirect({
       base64String = imageDataUrl.split('base64,')[1];
     } else {
       // If it's a file URI, convert to base64
-      const normalized = normalizeFileUri(imageDataUrl);
+      let normalized = normalizeFileUri(imageDataUrl);
+      
+      // Check and compress if needed (Android only) to prevent proxy rejection
+      if (accountType !== 'google' || !(await googleAuthService.isSignedIn())) {
+         normalized = await compressImageIfNeeded(normalized);
+      }
+
       const base64DataUrl = await fileUriToBase64(normalized);
       base64String = base64DataUrl.includes('base64,') 
         ? base64DataUrl.split('base64,')[1] 
         : base64DataUrl;
     }
 
-    // Upload via proxy server (works for both Google and Dropbox)
+    // ATTEMPT DIRECT UPLOAD (Bypass Proxy Limit for Admins)
+    // This allows uploading large files (>4.5MB) that would fail on Vercel
+    if (accountType === 'google') {
+      try {
+        const isSignedIn = await googleAuthService.isSignedIn();
+        if (isSignedIn) {
+          console.log('[UPLOAD] User is signed in (Admin), attempting direct upload to Google Drive...');
+          
+          // 1. Get/Create Album Folder
+          const albumFolderId = await googleDriveService.findOrCreateAlbumFolder(folderId, albumName);
+          
+          // 2. Determine target folder
+          let targetFolderId = albumFolderId;
+          let subfolderPath = '';
+          
+          if (!flat) {
+             let subfolderName;
+             if (format !== 'default') {
+               // Ensure 'formats' folder exists first
+               const formatsFolderId = await googleDriveService.findOrCreateSubfolder(albumFolderId, 'formats');
+               subfolderName = format;
+               targetFolderId = await googleDriveService.findOrCreateSubfolder(formatsFolderId, subfolderName);
+               subfolderPath = `formats/${format}/`;
+             } else {
+               subfolderName = (type === 'mix' || type === 'combined') ? 'combined' : type;
+               targetFolderId = await googleDriveService.findOrCreateSubfolder(albumFolderId, subfolderName);
+               subfolderPath = `${subfolderName}/`;
+             }
+          }
+          
+          // 3. Upload File Directly
+          const result = await googleDriveService.uploadFile(base64String, filename, targetFolderId);
+          
+          console.log('[UPLOAD] Direct upload successful:', result.fileId);
+          
+          return {
+            success: true,
+            fileId: result.fileId,
+            fileName: filename,
+            albumName: albumName,
+            room: room || 'general',
+            type: type,
+            format: format,
+            location: location,
+            cleanerName: cleanerName,
+            folderPath: `${albumName}/${flat ? '' : subfolderPath}`,
+            message: 'Photo uploaded successfully via direct Drive API'
+          };
+        }
+      } catch (directError) {
+        console.warn('[UPLOAD] Direct upload attempt failed, falling back to proxy:', directError.message);
+        
+        // If direct upload failed, we are falling back to proxy.
+        // We will try multipart upload first if available, which avoids the size overhead.
+      }
+    }
+
+    // Upload via proxy server (works for both Google and Dropbox, or fallback for Admin)
+    // Use multipart upload (fileUri) for Android or if file is large to avoid Base64 overhead
+    // iOS and small files can continue using Base64 if preferred
+    const useMultipart = Platform.OS === 'android' && !imageDataUrl.startsWith('data:');
+    
+    // Normalize URI for multipart upload if needed
+    let uploadUri = null;
+    if (useMultipart) {
+       uploadUri = normalizeFileUri(imageDataUrl);
+    }
+    
     const result = await proxyService.uploadPhotoAsAdmin({
       sessionId,
       filename,
-      contentBase64: base64String,
+      contentBase64: useMultipart ? null : base64String,
+      fileUri: useMultipart ? uploadUri : null,
       albumName,
       room,
       type,
@@ -293,20 +412,32 @@ export async function uploadPhotoAsTeamMember({
       throw new Error('Missing session ID or invite token.');
     }
 
-    let base64String = imageDataUrl;
-    if (imageDataUrl.startsWith('data:')) {
-      base64String = imageDataUrl.split('base64,')[1];
+    // Determine upload method: Multipart (Android/Efficient) vs Base64 (Legacy/iOS)
+    // Use multipart for Android to avoid 4.5MB serverless limit issues
+    const useMultipart = Platform.OS === 'android' && !imageDataUrl.startsWith('data:');
+    
+    let base64String = null;
+    let uploadUri = null;
+
+    if (useMultipart) {
+       uploadUri = normalizeFileUri(imageDataUrl);
     } else {
-      // If it's a file URI, convert to base64
-      const normalized = normalizeFileUri(imageDataUrl);
-      const base64DataUrl = await fileUriToBase64(normalized);
-      base64String = base64DataUrl.includes('base64,') 
-        ? base64DataUrl.split('base64,')[1] 
-        : base64DataUrl;
+       // Legacy Base64 Path
+       if (imageDataUrl.startsWith('data:')) {
+         base64String = imageDataUrl.split('base64,')[1];
+       } else {
+         let normalized = normalizeFileUri(imageDataUrl);
+         // No compression needed here if using multipart, but if falling back to Base64 on Android we might need it
+         // However, we are prioritizing multipart for Android now.
+         const base64DataUrl = await fileUriToBase64(normalized);
+         base64String = base64DataUrl.includes('base64,') 
+           ? base64DataUrl.split('base64,')[1] 
+           : base64DataUrl;
+       }
     }
 
     // Upload via proxy server with full upload structure (same as Pro/Business/Enterprise)
-    return await proxyService.uploadPhoto(sessionId, token, filename, base64String, {
+    return await proxyService.uploadPhoto(sessionId, token, filename, base64String, uploadUri, {
       albumName,
       room,
       type,

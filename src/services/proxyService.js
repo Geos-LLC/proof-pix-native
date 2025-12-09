@@ -186,6 +186,7 @@ class ProxyService {
    * @param {string} token - Invite token
    * @param {string} filename - Filename
    * @param {string} contentBase64 - Base64 encoded image
+   * @param {string} fileUri - (Optional) File URI for multipart upload
    * @param {Object} uploadParams - Upload parameters (same as admin uploads)
    * @param {string} uploadParams.albumName - Album folder name
    * @param {string} uploadParams.room - Room name
@@ -195,7 +196,7 @@ class ProxyService {
    * @param {string} uploadParams.cleanerName - Cleaner's name
    * @param {boolean} uploadParams.flat - Flat mode (no subfolders)
    */
-  async uploadPhoto(sessionId, token, filename, contentBase64, uploadParams = {}) {
+  async uploadPhoto(sessionId, token, filename, contentBase64, fileUri, uploadParams = {}) {
     try {
       const {
         albumName,
@@ -215,28 +216,61 @@ class ProxyService {
         room,
         type,
         format,
-        flat
+        flat,
+        mode: fileUri ? 'multipart' : 'base64'
       });
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          token,
-          filename,
-          contentBase64,
-          albumName,
-          room,
-          type,
-          format,
-          location,
-          cleanerName,
-          flat,
-          accountType: 'google' // Team member uploads default to Google (can be extended)
-        }),
-      });
+      let response;
+
+      if (fileUri) {
+        // Multipart upload for Team Members
+        const formData = new FormData();
+        formData.append('photo', {
+          uri: fileUri,
+          name: filename,
+          type: 'image/jpeg'
+        });
+        formData.append('token', token);
+        if (albumName) formData.append('albumName', albumName);
+        if (room) formData.append('room', room);
+        if (type) formData.append('type', type);
+        if (format) formData.append('format', format);
+        if (location) formData.append('location', location);
+        if (cleanerName) formData.append('cleanerName', cleanerName);
+        formData.append('flat', String(flat));
+        formData.append('accountType', 'google');
+        formData.append('filename', filename);
+
+        response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'multipart/form-data',
+          },
+          body: formData,
+        });
+      } else {
+        // Legacy Base64 upload
+        response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            token,
+            filename,
+            contentBase64,
+            albumName,
+            room,
+            type,
+            format,
+            location,
+            cleanerName,
+            flat,
+            accountType: 'google'
+          }),
+        });
+      }
 
       console.log('[PROXY] Upload response status:', response.status);
 
