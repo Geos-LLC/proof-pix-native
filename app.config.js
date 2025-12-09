@@ -4,7 +4,7 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    owner: "goscha01",
+
     version: process.env.VERSION || "1.2.0",
     orientation: "default",
     icon: "./assets/PP_logo.png",
@@ -128,7 +128,7 @@ export default {
     ],
     extra: {
       eas: {
-        projectId: "c65badb3-ddbc-4bb8-9de5-fab32a427f16"
+        projectId: "3e7ed884-bb3a-4191-bcb0-188386d7e977"
       },
       // Environment variables accessible in your app
       googleServiceAccountPath: process.env.GOOGLE_SERVICE_ACCOUNT_PATH,
