@@ -35,7 +35,7 @@ class AppleAuthService {
       return false;
     }
     try {
-      return await AppleAuthentication.AppleAuthentication.isAvailableAsync();
+      return await AppleAuthentication.isAvailableAsync();
     } catch (error) {
       console.error('[APPLE_AUTH] Error checking availability:', error);
       return false;
@@ -62,10 +62,10 @@ class AppleAuthService {
     await this.checkAvailability();
 
     try {
-      const credential = await AppleAuthentication.AppleAuthentication.signInAsync({
+      const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
-          AppleAuthentication.AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
 
@@ -192,7 +192,7 @@ class AppleAuthService {
     await this.checkAvailability();
 
     try {
-      const credentialState = await AppleAuthentication.AppleAuthentication.getCredentialStateAsync(userId);
+      const credentialState = await AppleAuthentication.getCredentialStateAsync(userId);
       return credentialState;
     } catch (error) {
       console.error('[APPLE_AUTH] Error checking credential state:', error);
