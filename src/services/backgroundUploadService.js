@@ -55,11 +55,17 @@ class BackgroundUploadService {
 
   // Process upload queue
   async processQueue() {
+    console.log('[BG_UPLOAD] 🔄 processQueue called');
+    console.log('[BG_UPLOAD] 📊 Queue length:', this.uploadQueue.length);
+    console.log('[BG_UPLOAD] ⚙️ isProcessing:', this.isProcessing);
+    
     if (this.isProcessing || this.uploadQueue.length === 0) {
+      console.log('[BG_UPLOAD] ⏹️ Skipping queue processing');
       return;
     }
 
     this.isProcessing = true;
+    console.log('[BG_UPLOAD] ✅ Starting queue processing');
     this.notifyListeners();
 
     while (this.uploadQueue.length > 0) {
@@ -77,6 +83,13 @@ class BackgroundUploadService {
 
   // Process individual upload
   async processUpload(upload) {
+    console.log('[BG_UPLOAD] 📤 processUpload called for upload:', upload.id);
+    console.log('[BG_UPLOAD] 📸 Items count:', upload.items.length);
+    console.log('[BG_UPLOAD] 🔍 upload object:', JSON.stringify(upload, null, 2));
+    console.log('[BG_UPLOAD] 🔍 upload.config:', upload.config);
+    console.log('[BG_UPLOAD] 🔍 upload.sessionId:', upload.sessionId);
+    console.log('[BG_UPLOAD] 🔍 upload.accountType:', upload.accountType);
+    
     try {
       // Move to active uploads
       upload.status = 'uploading';
@@ -104,8 +117,14 @@ class BackgroundUploadService {
         }
       };
 
+      console.log('[BG_UPLOAD] 🎯 Upload options:', JSON.stringify(uploadOptions, null, 2));
+      console.log('[BG_UPLOAD] 🚀 Calling uploadPhotoBatch...');
+
       // Perform upload
       const result = await uploadPhotoBatch(upload.items, uploadOptions);
+      
+      console.log('[BG_UPLOAD] ✅ uploadPhotoBatch completed');
+      console.log('[BG_UPLOAD] 📊 Result:', result);
       
       // Mark photos as uploaded in tracker (only successful ones)
       if (result.successful && result.successful.length > 0) {
@@ -126,6 +145,10 @@ class BackgroundUploadService {
       this.notifyListeners();
 
     } catch (error) {
+      console.error('[BG_UPLOAD] ❌ Upload failed with error:', error);
+      console.error('[BG_UPLOAD] ❌ Error message:', error.message);
+      console.error('[BG_UPLOAD] ❌ Error stack:', error.stack);
+      
       // Mark as failed
       upload.status = 'failed';
       upload.endTime = Date.now();

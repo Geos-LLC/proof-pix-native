@@ -361,9 +361,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   googleButton: {
-    backgroundColor: '#000000', // Black background
+    backgroundColor: '#DB4437', // Google red
     borderWidth: 1,
-    borderColor: '#000000',
+    borderColor: '#DB4437',
   },
   dropboxButton: {
     backgroundColor: '#0061FF', // Dropbox blue

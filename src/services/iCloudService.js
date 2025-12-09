@@ -1,29 +1,59 @@
 /**
  * iCloud Service
- * Handles iCloud Drive integration through the proxy server
- *
- * Note: Direct iCloud Drive API access from React Native is not available.
- * Instead, we use Apple's CloudKit JS API through our proxy server,
- * or store files locally and sync via iCloud Document storage.
- *
- * For this implementation, we'll use the proxy server approach similar to Google Drive.
+ * Handles DIRECT iCloud Drive uploads using iOS native file system
+ * Files are written to the app's Documents directory which syncs to iCloud Drive
+ * 
+ * Note: This bypasses the proxy server and stores files directly in user's iCloud Drive
+ * Files will appear in: Files app → iCloud Drive → ProofPix → Documents
  */
+
+import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 
 const FOLDER_NAME = 'ProofPix-Uploads';
 
 class ICloudService {
+  constructor() {
+    this.documentsPath = null;
+  }
+
   /**
-   * Initialize iCloud connection
-   * This is a placeholder that will be handled by the proxy server
+   * Check if iCloud is available on this device
+   * @returns {boolean}
+   */
+  isAvailable() {
+    // iCloud is only available on iOS
+    if (Platform.OS !== 'ios') {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Get the app's Documents directory path
+   * Files stored here will automatically sync to iCloud Drive if enabled
+   * @returns {string}
+   */
+  getDocumentsPath() {
+    if (this.documentsPath) {
+      return this.documentsPath;
+    }
+    
+    // Use Expo FileSystem's documentDirectory
+    // This maps to the app's Documents folder which syncs to iCloud
+    this.documentsPath = FileSystem.documentDirectory;
+    console.log('[iCloud] Documents path:', this.documentsPath);
+    return this.documentsPath;
+  }
+
+  /**
+   * Initialize iCloud connection (create ProofPix-Uploads folder)
    * @returns {Promise<{folderId: string}>}
    */
   async initialize() {
     try {
-      // For iCloud, we'll use a virtual folder ID
-      // The actual folder will be created on the proxy server using CloudKit
-      const folderId = `icloud_${Date.now()}`;
-
-      console.log('[iCloud] Initialized virtual folder:', folderId);
+      const folderId = await this.findOrCreateProofPixFolder();
+      console.log('[iCloud] Initialized folder:', folderId);
       return { folderId };
     } catch (error) {
       console.error('[iCloud] Error initializing:', error);
@@ -32,14 +62,26 @@ class ICloudService {
   }
 
   /**
-   * Finds or creates a "ProofPix-Uploads" folder in iCloud Drive
-   * This will be handled by the proxy server
-   * @returns {Promise<string>} The ID of the folder
+   * Finds or creates a "ProofPix-Uploads" folder in the Documents directory
+   * @returns {Promise<string>} The path to the folder
    */
   async findOrCreateProofPixFolder() {
     try {
-      const { folderId } = await this.initialize();
-      return folderId;
+      const documentsPath = this.getDocumentsPath();
+      const proofPixPath = `${documentsPath}${FOLDER_NAME}/`;
+
+      // Check if folder exists
+      const folderInfo = await FileSystem.getInfoAsync(proofPixPath);
+      
+      if (!folderInfo.exists) {
+        // Create folder
+        await FileSystem.makeDirectoryAsync(proofPixPath, { intermediates: true });
+        console.log('[iCloud] Created ProofPix-Uploads folder');
+      } else {
+        console.log('[iCloud] ProofPix-Uploads folder already exists');
+      }
+
+      return proofPixPath;
     } catch (error) {
       console.error('[iCloud] Error in findOrCreateProofPixFolder:', error);
       throw new Error('Could not find or create the ProofPix folder in iCloud Drive.');
@@ -47,20 +89,129 @@ class ICloudService {
   }
 
   /**
-   * Check if iCloud is available on this device
-   * @returns {Promise<boolean>}
+   * Upload a photo to iCloud Drive
+   * @param {string} photoUri - Local photo URI
+   * @param {string} filename - File name
+   * @param {string} albumName - Album name
+   * @param {object} metadata - Photo metadata (room, type, format, etc.)
+   * @returns {Promise<object>} Upload result
    */
-  async isAvailable() {
-    // iCloud is only available on iOS
-    const { Platform } = require('react-native');
-    if (Platform.OS !== 'ios') {
-      return false;
+  async uploadPhoto(photoUri, filename, albumName, metadata = {}) {
+    try {
+      console.log('[iCloud] Uploading:', filename);
+
+      const proofPixPath = await this.findOrCreateProofPixFolder();
+      
+      // Create album folder
+      const albumPath = `${proofPixPath}${albumName}/`;
+      const albumInfo = await FileSystem.getInfoAsync(albumPath);
+      if (!albumInfo.exists) {
+        await FileSystem.makeDirectoryAsync(albumPath, { intermediates: true });
+      }
+
+      // Create subfolder based on type (if not flat)
+      let destinationPath = albumPath;
+      if (!metadata.flat) {
+        const subfolder = this.getSubfolder(metadata.type, metadata.format);
+        destinationPath = `${albumPath}${subfolder}/`;
+        
+        const subfolderInfo = await FileSystem.getInfoAsync(destinationPath);
+        if (!subfolderInfo.exists) {
+          await FileSystem.makeDirectoryAsync(destinationPath, { intermediates: true });
+        }
+      }
+
+      // Copy file to iCloud Drive
+      const destinationFile = `${destinationPath}${filename}`;
+      
+      // Clean the source URI (remove file:// prefix if present)
+      const cleanPhotoUri = photoUri.startsWith('file://') ? photoUri : `file://${photoUri}`;
+      
+      await FileSystem.copyAsync({
+        from: cleanPhotoUri,
+        to: destinationFile
+      });
+
+      console.log('[iCloud] Upload complete:', destinationFile);
+
+      return {
+        success: true,
+        fileId: destinationFile,
+        fileName: filename,
+        albumName: albumName,
+        room: metadata.room || 'general',
+        type: metadata.type || 'before',
+        format: metadata.format || 'default',
+        location: metadata.location || '',
+        cleanerName: metadata.cleanerName || '',
+        folderPath: destinationPath.replace(proofPixPath, ''),
+        flatMode: !!metadata.flat,
+        message: 'Photo uploaded to your iCloud Drive'
+      };
+    } catch (error) {
+      console.error('[iCloud] Upload error:', error);
+      throw new Error(`Failed to upload to iCloud Drive: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get subfolder name based on photo type and format
+   * @param {string} type - Photo type (before, after, combined)
+   * @param {string} format - Photo format
+   * @returns {string} Subfolder path
+   */
+  getSubfolder(type, format) {
+    if (format && format !== 'default') {
+      return `formats/${format}`;
+    }
+    
+    if (type === 'combined' || type === 'mix') {
+      return 'combined';
+    }
+    
+    return type; // 'before' or 'after'
+  }
+
+  /**
+   * Upload multiple photos (batch)
+   * @param {Array} photos - Array of photo objects
+   * @param {string} albumName - Album name
+   * @param {object} metadata - Common metadata for all photos
+   * @returns {Promise<object>} Batch upload results
+   */
+  async uploadPhotoBatch(photos, albumName, metadata = {}) {
+    const results = {
+      successful: [],
+      failed: []
+    };
+
+    console.log(`[iCloud] Starting batch upload of ${photos.length} photos`);
+
+    for (const photo of photos) {
+      try {
+        const filename = photo.filename || `${photo.name}_${photo.mode}.jpg`;
+        const result = await this.uploadPhoto(
+          photo.uri,
+          filename,
+          albumName,
+          {
+            ...metadata,
+            type: photo.mode === 'mix' ? 'combined' : photo.mode,
+            format: photo.format || 'default',
+            room: photo.room
+          }
+        );
+
+        results.successful.push({ photo, result });
+        console.log(`[iCloud] ✅ Uploaded: ${filename}`);
+      } catch (error) {
+        results.failed.push({ photo, error });
+        console.error(`[iCloud] ❌ Failed: ${photo.filename}`, error.message);
+      }
     }
 
-    // Check if user is signed in to iCloud
-    // Note: We can't directly check this without native modules
-    // For now, we'll assume it's available on iOS
-    return true;
+    console.log(`[iCloud] Batch complete: ${results.successful.length} succeeded, ${results.failed.length} failed`);
+    return results;
   }
 
   /**
@@ -70,14 +221,6 @@ class ICloudService {
   getFolderName() {
     return FOLDER_NAME;
   }
-
-  /**
-   * Note: File upload operations will be handled through the proxy server
-   * The proxy server will use CloudKit JS API or alternative methods to
-   * interact with iCloud Drive.
-   *
-   * The actual implementation depends on the proxy server's capabilities.
-   */
 }
 
 export default new ICloudService();

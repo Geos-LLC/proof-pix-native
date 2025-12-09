@@ -43,9 +43,13 @@ export default {
         ITSAppUsesNonExemptEncryption: false
       },
       entitlements: {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": ["Default"],
+        "com.apple.developer.icloud-container-identifiers": ["iCloud.com.proofpix.app"],
+        "com.apple.developer.ubiquity-container-identifiers": ["iCloud.com.proofpix.app"],
+        "com.apple.developer.icloud-services": ["CloudDocuments"]
       },
-      usesAppleSignIn: true
+      usesAppleSignIn: true,
+      usesIcloudStorage: true
     },
     android: {
       adaptiveIcon: {

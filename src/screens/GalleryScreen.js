@@ -32,6 +32,7 @@ import googleDriveService from '../services/googleDriveService';
 import googleAuthService from '../services/googleAuthService';
 import dropboxAuthService from '../services/dropboxAuthService';
 import dropboxService from '../services/dropboxService';
+import iCloudService from '../services/iCloudService';
 import { uploadPhotoBatchToDropbox } from '../services/dropboxUploadService';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -275,7 +276,7 @@ export default function GalleryScreen({ navigation, route }) {
   // For starter users, unchecking (when checked) will show tier popup (handled in checkbox onPress)
   const [shareAsArchive, setShareAsArchive] = useState(false);
   
-  const [uploadDestinations, setUploadDestinations] = useState({ google: true, dropbox: false }); // Default: Google only
+  const [uploadDestinations, setUploadDestinations] = useState({ google: true, dropbox: false, icloud: false }); // Default: Google only
   const [showAdvancedShareFormats, setShowAdvancedShareFormats] = useState(false);
   const [showSharePlanModal, setShowSharePlanModal] = useState(false);
   const [isDropboxConnected, setIsDropboxConnected] = useState(false);
@@ -332,9 +333,14 @@ export default function GalleryScreen({ navigation, route }) {
         setIsDropboxConnected(isDropboxAuth);
         
         // Set default destinations: check all connected accounts
+        const isAppleAuth = isAuthenticated && accountType === 'apple';
+        const isGoogleAuth = isAuthenticated && accountType === 'google';
+        const isICloudAvailable = isAppleAuth && iCloudService.isAvailable();
+        
         setUploadDestinations({
-          google: isAuthenticated, // Check Google if connected
-          dropbox: isDropboxAuth   // Check Dropbox if connected
+          google: isGoogleAuth,    // Check Google if connected with Google auth
+          dropbox: isDropboxAuth,  // Check Dropbox if connected
+          icloud: isICloudAvailable // Check iCloud if Apple auth
         });
       }).catch(err => {
         console.error('[GALLERY] Error loading Dropbox tokens:', err);
@@ -1366,13 +1372,21 @@ export default function GalleryScreen({ navigation, route }) {
     // Load Dropbox tokens before checking authentication
     await dropboxAuthService.loadStoredTokens();
 
-    // Check if at least one upload service is available (Google Drive or Dropbox)
-    const hasGoogle = isAuthenticated;
+    // Check if at least one upload service is available (Google Drive, Dropbox, or iCloud)
+    // Only count as Google if accountType is specifically 'google' (not Apple)
+    const hasGoogle = isAuthenticated && accountType === 'google';
     const hasDropbox = dropboxAuthService.isAuthenticated();
+    const hasApple = isAuthenticated && accountType === 'apple';
+    // For Apple accounts, use iCloud as storage
+    const hasICloud = hasApple && iCloudService.isAvailable();
     console.log('[UPLOAD] Has Google:', hasGoogle);
     console.log('[UPLOAD] Has Dropbox:', hasDropbox);
+    console.log('[UPLOAD] Has Apple:', hasApple);
+    console.log('[UPLOAD] Has iCloud:', hasICloud);
+    console.log('[UPLOAD] Account Type:', accountType);
     
-    if (!hasGoogle && !hasDropbox) {
+    // Check if ANY upload service is available (Google, Dropbox, or iCloud)
+    if (!hasGoogle && !hasDropbox && !hasICloud) {
       console.log('[UPLOAD] No upload service available, showing custom modal');
       setUploadAlertConfig({
         title: t('gallery.noUploadServiceTitle'),
@@ -1443,6 +1457,7 @@ export default function GalleryScreen({ navigation, route }) {
     
     if (shouldUseDirectDrive) {
       console.log('[UPLOAD] Direct drive path');
+      
       // If Google is authenticated, try to ensure Google Drive folder exists
       if (hasGoogle) {
         console.log('[UPLOAD] Google authenticated, finding/creating folder');
@@ -1484,9 +1499,10 @@ export default function GalleryScreen({ navigation, route }) {
       console.log('[UPLOAD] Setting default destinations and opening options');
       setUploadDestinations({
         google: hasGoogle,
-        dropbox: hasDropbox && !hasGoogle // Default to Dropbox if Google not available
+        dropbox: hasDropbox && !hasGoogle && !hasICloud, // Default to Dropbox if Google/iCloud not available
+        icloud: hasICloud // Default to iCloud for Apple accounts
       });
-      console.log('[UPLOAD] Upload destinations set:', { google: hasGoogle, dropbox: hasDropbox && !hasGoogle });
+      console.log('[UPLOAD] Upload destinations set:', { google: hasGoogle, dropbox: hasDropbox && !hasGoogle && !hasICloud, icloud: hasICloud });
 
       // Open options modal
       console.log('[UPLOAD] Opening options modal');
@@ -1547,7 +1563,7 @@ export default function GalleryScreen({ navigation, route }) {
     console.log('[UPLOAD] Upload destinations:', uploadDestinations);
     try {
       // Check if at least one destination is selected
-      if (!uploadDestinations.google && !uploadDestinations.dropbox) {
+      if (!uploadDestinations.google && !uploadDestinations.dropbox && !uploadDestinations.icloud) {
         console.log('[UPLOAD] No destination selected, showing alert');
         Alert.alert(
           t('gallery.noDestinationSelected'),
@@ -1598,6 +1614,38 @@ export default function GalleryScreen({ navigation, route }) {
           message: t('gallery.dropboxNotConnectedMessage'),
           onGoToSettings: () => {
             console.log('[UPLOAD] onGoToSettings callback called (from Dropbox check)');
+            console.log('[UPLOAD] Closing modal first');
+            setShowUploadAlertModal(false);
+            setTimeout(() => {
+              console.log('[UPLOAD] Executing navigation to Settings');
+              try {
+                // Since Gallery is a fullScreenModal, we need to go back first, then navigate
+                navigation.goBack();
+                setTimeout(() => {
+                  console.log('[UPLOAD] Navigating to Settings from parent screen');
+                  navigation.navigate('Settings', { scrollToCloudSync: true });
+                  console.log('[UPLOAD] Navigation call completed');
+                }, 100);
+              } catch (error) {
+                console.error('[UPLOAD] Navigation error:', error);
+              }
+            }, 300);
+          }
+        });
+        setShowUploadAlertModal(true);
+        return;
+      }
+
+      // Check iCloud authentication
+      const isICloudAvailable = iCloudService.isAvailable() && accountType === 'apple';
+      console.log('[UPLOAD] Checking iCloud authentication:', { selected: uploadDestinations.icloud, available: isICloudAvailable });
+      if (uploadDestinations.icloud && !isICloudAvailable) {
+        console.log('[UPLOAD] iCloud not available, showing custom modal');
+        setUploadAlertConfig({
+          title: t('gallery.iCloudNotConnected', { defaultValue: 'iCloud Not Connected' }),
+          message: t('gallery.iCloudNotConnectedMessage', { defaultValue: 'Please sign in with Apple to use iCloud Drive uploads.' }),
+          onGoToSettings: () => {
+            console.log('[UPLOAD] onGoToSettings callback called (from iCloud check)');
             console.log('[UPLOAD] Closing modal first');
             setShowUploadAlertModal(false);
             setTimeout(() => {
@@ -1958,8 +2006,10 @@ export default function GalleryScreen({ navigation, route }) {
       let uploadConfig = null; // Store config for use in proceedWithUpload
       
       // Determine account type based on upload destinations selection
-      // If user selected Dropbox in upload options, use Dropbox even if Google is available
-      const selectedAccountType = uploadDestinations.dropbox && !uploadDestinations.google 
+      // Priority: iCloud > Dropbox > Google (if multiple selected in Enterprise)
+      const selectedAccountType = uploadDestinations.icloud 
+        ? 'apple'
+        : (uploadDestinations.dropbox && !uploadDestinations.google)
         ? 'dropbox' 
         : (accountType || 'google');
       
@@ -1968,8 +2018,35 @@ export default function GalleryScreen({ navigation, route }) {
       const shouldUseDirectDrive = userMode === 'individual' || 
         (isAuthenticated && (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') && !teamInfo);
       
-      // For Dropbox accounts - use Dropbox upload service (no proxy server needed)
-      if (selectedAccountType === 'dropbox') {
+      // For iCloud accounts - use proxy server upload
+      if (selectedAccountType === 'apple') {
+        try {
+          const iCloudFolderId = await iCloudService.findOrCreateProofPixFolder();
+          if (!iCloudFolderId) {
+            Alert.alert('Error', 'Could not access iCloud Drive folder. Please sign in with Apple again.');
+            return;
+          }
+          // Initialize proxy session for iCloud uploads
+          const sessionResult = await initializeProxySession(iCloudFolderId, 'apple');
+          if (!sessionResult || !sessionResult.success || !sessionResult.sessionId) {
+            Alert.alert('Error', 'Failed to initialize iCloud session. Please try again.');
+            return;
+          }
+          // Use proxy server upload for iCloud
+          config = { 
+            folderId: iCloudFolderId, 
+            useDirectDrive: true, // Flag to indicate proxy server upload
+            sessionId: sessionResult.sessionId, // Extract sessionId string from result object
+            accountType: 'apple'
+          };
+          uploadConfig = config; // Store for later use
+        } catch (error) {
+          console.error('Error setting up iCloud proxy upload:', error);
+          Alert.alert('Error', `Failed to setup iCloud upload: ${error.message}`);
+          return;
+        }
+      } else if (selectedAccountType === 'dropbox') {
+        // For Dropbox accounts - use Dropbox upload service (no proxy server needed)
         config = { 
           accountType: 'dropbox'
         };
@@ -2015,12 +2092,12 @@ export default function GalleryScreen({ navigation, route }) {
       }
 
         // Check if configured (only for Google accounts)
-        // For Dropbox, no folderId or sessionId is needed - skip this check for Dropbox
-        if (selectedAccountType === 'dropbox' || config?.accountType === 'dropbox') {
-          // Dropbox doesn't need folderId or sessionId, skip validation
-          console.log('[UPLOAD] Dropbox account selected, skipping Google Drive validation');
+        // For Dropbox and iCloud, no folderId or sessionId is needed - skip this check
+        if (selectedAccountType === 'apple' || config?.accountType === 'apple' || selectedAccountType === 'dropbox' || config?.accountType === 'dropbox') {
+          // Dropbox and iCloud don't need folderId or sessionId, skip validation
+          console.log(`[UPLOAD] ${selectedAccountType === 'apple' ? 'iCloud' : 'Dropbox'} account selected, skipping Google Drive validation`);
         } else if (!config || !config.folderId || (config.useDirectDrive && !config.sessionId)) {
-          // Only check Google Drive config if not using Dropbox
+          // Only check Google Drive config if not using Dropbox or iCloud
           Alert.alert(
             t('gallery.setupRequiredTitle'),
             t('gallery.driveConfigMissing'),
@@ -2429,8 +2506,8 @@ export default function GalleryScreen({ navigation, route }) {
         const config = configOverride || getLocationConfig(location);
         console.log('[UPLOAD] Google config:', { folderId: config?.folderId, useDirectDrive: config?.useDirectDrive, sessionId: config?.sessionId });
 
-        // Check if Google Drive is configured (only if Google is selected, not Dropbox)
-        const isGoogleConfig = config?.accountType !== 'dropbox' && accountType !== 'dropbox';
+        // Check if Google Drive is configured (only if Google is selected, not Dropbox or iCloud)
+        const isGoogleConfig = config?.accountType !== 'dropbox' && config?.accountType !== 'apple' && accountType !== 'dropbox' && accountType !== 'apple';
         if (isGoogleConfig && (!config || !config.folderId || (config.useDirectDrive && !config.sessionId))) {
           console.log('[UPLOAD] Google Drive not configured, showing alert');
           Alert.alert(
@@ -2517,8 +2594,87 @@ export default function GalleryScreen({ navigation, route }) {
         uploadPromises.push({ type: 'dropbox', uploadId: dropboxUploadId });
       }
 
+      // Upload to iCloud if selected
+      if (uploadDestinations.icloud) {
+        console.log('[UPLOAD] Starting iCloud upload');
+        
+        // Check if iCloud is available
+        const isICloudAvailable = iCloudService.isAvailable() && accountType === 'apple';
+        console.log('[UPLOAD] iCloud available:', isICloudAvailable);
+        if (!isICloudAvailable) {
+          console.log('[UPLOAD] iCloud not available in proceedWithUpload, showing custom modal');
+          setUploadAlertConfig({
+            title: t('gallery.iCloudNotConnected', { defaultValue: 'iCloud Not Connected' }),
+            message: t('gallery.iCloudNotConnectedMessage', { defaultValue: 'Please sign in with Apple to use iCloud Drive uploads.' }),
+            onGoToSettings: () => {
+              console.log('[UPLOAD] onGoToSettings callback called (from proceedWithUpload)');
+              console.log('[UPLOAD] Closing modal first');
+              setShowUploadAlertModal(false);
+              setTimeout(() => {
+                console.log('[UPLOAD] Executing navigation to Settings');
+                try {
+                  // Since Gallery is a fullScreenModal, we need to go back first, then navigate
+                  navigation.goBack();
+                  setTimeout(() => {
+                    console.log('[UPLOAD] Navigating to Settings from parent screen');
+                    navigation.navigate('Settings', { scrollToCloudSync: true });
+                    console.log('[UPLOAD] Navigation call completed');
+                  }, 100);
+                } catch (error) {
+                  console.error('[UPLOAD] Navigation error:', error);
+                }
+              }, 300);
+            }
+          });
+          setShowUploadAlertModal(true);
+          return;
+        }
+
+        // Use DIRECT iCloud Drive upload (no proxy server)
+        console.log('[UPLOAD] Starting DIRECT iCloud Drive upload');
+        try {
+          const result = await iCloudService.uploadPhotoBatch(
+            items,
+            albumName,
+            {
+              location,
+              cleanerName: userName,
+              flat: !useFolderStructure
+            }
+          );
+
+          // Show results
+          console.log('[UPLOAD] iCloud upload complete:', result);
+          
+          if (result.successful.length > 0) {
+            Alert.alert(
+              t('common.success'),
+              `${result.successful.length} ${result.successful.length === 1 ? 'photo' : 'photos'} uploaded to your iCloud Drive.\n\nView in: Files app → iCloud Drive → ProofPix-Uploads → ${albumName}`,
+              [{ text: t('common.ok') }]
+            );
+          }
+
+          if (result.failed.length > 0) {
+            Alert.alert(
+              t('common.error'),
+              `${result.failed.length} ${result.failed.length === 1 ? 'photo' : 'photos'} failed to upload.`,
+              [{ text: t('common.ok') }]
+            );
+          }
+
+          // Mark photos as uploaded
+          if (result.successful.length > 0) {
+            const successfulPhotos = result.successful.map(item => item.photo);
+            await markPhotosAsUploaded(successfulPhotos, albumName);
+          }
+        } catch (error) {
+          console.error('[UPLOAD] iCloud upload error:', error);
+          Alert.alert(t('common.error'), error.message || 'Failed to upload to iCloud Drive');
+        }
+      }
+
       // Show upload modal immediately (if any upload is in progress)
-      if (uploadDestinations.google || uploadDestinations.dropbox) {
+      if (uploadDestinations.google || uploadDestinations.dropbox || uploadDestinations.icloud) {
         console.log('[UPLOAD] Showing upload details modal');
         setShowUploadDetails(true);
       }
@@ -3871,8 +4027,15 @@ export default function GalleryScreen({ navigation, route }) {
               <TouchableOpacity
                 style={styles.checkboxContainer}
                 onPress={() => {
-                  if (isAuthenticated) {
-                    setUploadDestinations(prev => ({ ...prev, google: !prev.google }));
+                  const isGoogleAuth = isAuthenticated && accountType === 'google';
+                  if (isGoogleAuth) {
+                    // For Pro/Business: Only one destination allowed (radio button behavior)
+                    // For Enterprise: Multiple destinations allowed (checkbox behavior)
+                    if (userPlan === 'pro' || userPlan === 'business') {
+                      setUploadDestinations({ google: true, dropbox: false, icloud: false });
+                    } else {
+                      setUploadDestinations(prev => ({ ...prev, google: !prev.google }));
+                    }
                   } else {
                     console.log('[UPLOAD] Google checkbox clicked but not authenticated, showing custom modal');
                     setUploadAlertConfig({
@@ -3901,12 +4064,12 @@ export default function GalleryScreen({ navigation, route }) {
                     setShowUploadAlertModal(true);
                   }
                 }}
-                disabled={!isAuthenticated}
+                disabled={!(isAuthenticated && accountType === 'google')}
               >
                 <View style={[
                   styles.checkbox,
                   uploadDestinations.google && styles.checkboxChecked,
-                  !isAuthenticated && styles.checkboxDisabled
+                  !(isAuthenticated && accountType === 'google') && styles.checkboxDisabled
                 ]}>
                   {uploadDestinations.google && (
                     <Text style={styles.checkmark}>✓</Text>
@@ -3915,11 +4078,11 @@ export default function GalleryScreen({ navigation, route }) {
                 <View style={styles.checkboxLabelContainer}>
                   <Text style={[
                     styles.checkboxLabelText,
-                    !isAuthenticated && styles.checkboxLabelDisabled
+                    !(isAuthenticated && accountType === 'google') && styles.checkboxLabelDisabled
                   ]}>
                     {t('gallery.googleDrive')}
                   </Text>
-                  {isAuthenticated && (
+                  {isAuthenticated && accountType === 'google' && (
                     <View style={styles.connectedIndicatorInline}>
                       <Text style={styles.connectedCheckmarkInline}>✓</Text>
                     </View>
@@ -3937,7 +4100,13 @@ export default function GalleryScreen({ navigation, route }) {
                   const connected = dropboxAuthService.isAuthenticated();
                   setIsDropboxConnected(connected);
                   if (connected) {
-                    setUploadDestinations(prev => ({ ...prev, dropbox: !prev.dropbox }));
+                    // For Pro/Business: Only one destination allowed (radio button behavior)
+                    // For Enterprise: Multiple destinations allowed (checkbox behavior)
+                    if (userPlan === 'pro' || userPlan === 'business') {
+                      setUploadDestinations({ google: false, dropbox: true, icloud: false });
+                    } else {
+                      setUploadDestinations(prev => ({ ...prev, dropbox: !prev.dropbox }));
+                    }
                   } else {
                     console.log('[UPLOAD] Dropbox checkbox clicked but not authenticated, showing custom modal');
                     setUploadAlertConfig({
@@ -3993,9 +4162,78 @@ export default function GalleryScreen({ navigation, route }) {
               </TouchableOpacity>
             </View>
 
+            {/* iCloud Drive Checkbox */}
+            <View style={styles.checkboxRow}>
+              <TouchableOpacity
+                style={styles.checkboxContainer}
+                onPress={() => {
+                  const isICloudAvailable = iCloudService.isAvailable() && accountType === 'apple';
+                  if (isICloudAvailable) {
+                    // For Pro/Business: Only one destination allowed (radio button behavior)
+                    // For Enterprise: Multiple destinations allowed (checkbox behavior)
+                    if (userPlan === 'pro' || userPlan === 'business') {
+                      setUploadDestinations({ google: false, dropbox: false, icloud: true });
+                    } else {
+                      setUploadDestinations(prev => ({ ...prev, icloud: !prev.icloud }));
+                    }
+                  } else {
+                    console.log('[UPLOAD] iCloud checkbox clicked but not available, showing alert');
+                    Alert.alert(
+                      t('gallery.iCloudNotAvailable', { defaultValue: 'iCloud Not Available' }),
+                      t('gallery.iCloudNotAvailableMessage', { defaultValue: 'Please sign in with Apple to use iCloud Drive uploads.' }),
+                      [
+                        { text: t('common.cancel'), style: 'cancel' },
+                        { 
+                          text: t('settings.title'), 
+                          onPress: () => {
+                            setOptionsVisible(false);
+                            setTimeout(() => {
+                              navigation.goBack();
+                              setTimeout(() => {
+                                navigation.navigate('Settings', { scrollToCloudSync: true });
+                              }, 100);
+                            }, 300);
+                          }
+                        }
+                      ]
+                    );
+                  }
+                }}
+                disabled={!(iCloudService.isAvailable() && accountType === 'apple')}
+              >
+                <View style={[
+                  styles.checkbox,
+                  uploadDestinations.icloud && styles.checkboxCheckediCloud,
+                  !(iCloudService.isAvailable() && accountType === 'apple') && styles.checkboxDisabled
+                ]}>
+                  {uploadDestinations.icloud && (
+                    <Text style={styles.checkmark}>✓</Text>
+                  )}
+                </View>
+                <View style={styles.checkboxLabelContainer}>
+                  <Text style={[
+                    styles.checkboxLabelText,
+                    !(iCloudService.isAvailable() && accountType === 'apple') && styles.checkboxLabelDisabled
+                  ]}>
+                    {t('gallery.iCloudDrive', { defaultValue: 'iCloud Drive' })}
+                  </Text>
+                  {iCloudService.isAvailable() && accountType === 'apple' && (
+                    <View style={styles.connectedIndicatorInlineiCloud}>
+                      <Text style={styles.connectedCheckmarkInline}>✓</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+
             {/* Warning if no destination selected */}
-            {!uploadDestinations.google && !uploadDestinations.dropbox && (
-              <Text style={styles.warningText}>{t('gallery.selectAtLeastOneDestination')}</Text>
+            {!uploadDestinations.google && !uploadDestinations.dropbox && !uploadDestinations.icloud && (
+              <Text style={styles.warningText}>
+                {userPlan === 'enterprise' 
+                  ? t('gallery.selectAtLeastOneDestination')
+                  : t('gallery.selectOneDestination', { defaultValue: 'Please select one destination' })
+                }
+              </Text>
             )}
 
             <Text style={[styles.optionsSectionLabel, { marginTop: 16 }]}>{t('gallery.photoTypes')}</Text>
@@ -5480,6 +5718,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0061FF',
     borderColor: '#0061FF'
   },
+  checkboxCheckediCloud: {
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: COLORS.PRIMARY
+  },
   checkboxDisabled: {
     opacity: 0.5,
     backgroundColor: COLORS.BORDER
@@ -5518,6 +5760,15 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     backgroundColor: '#0061FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8
+  },
+  connectedIndicatorInlineiCloud: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.PRIMARY,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8

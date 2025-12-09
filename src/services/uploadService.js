@@ -105,10 +105,39 @@ export async function uploadPhoto({
   sessionId = null, // Proxy server session ID (required for Google)
   accountType = 'google' // Account type: 'google' or 'dropbox'
 }) {
-  try {
+try {
+    console.log('[UPLOAD_PHOTO] 📤 uploadPhoto called for:', filename);
+    console.log('[UPLOAD_PHOTO] 🎯 Account type:', accountType);
+    console.log('[UPLOAD_PHOTO] 🔑 Session ID:', sessionId);
+    console.log('[UPLOAD_PHOTO] 📁 Folder ID:', folderId);
+    
     // Route based on account type and session availability
     // If sessionId is provided, use proxy server (for both Google and Dropbox team uploads)
     // If no sessionId and Dropbox, use direct Dropbox upload
+    if (accountType === 'apple') {
+      console.log('[UPLOAD_PHOTO] 🍎 Taking Apple/iCloud route');
+      // iCloud upload via proxy server
+      if (!sessionId) {
+        throw new Error('Missing proxy session ID for iCloud upload. Please connect your Apple account in Settings.');
+      }
+      
+      // Use proxy server upload for iCloud
+      return await uploadPhotoToDriveDirect({
+        imageDataUrl,
+        filename,
+        albumName,
+        room,
+        type,
+        format,
+        location,
+        cleanerName,
+        folderId: folderId || 'icloud_root', // iCloud uses container ID, default to root
+        flat,
+        sessionId,
+        accountType: 'apple'
+      });
+    }
+    
     if (accountType === 'dropbox') {
       if (sessionId) {
         // Use proxy server for Dropbox team uploads
@@ -206,11 +235,20 @@ async function uploadPhotoToDriveDirect({
   sessionId,
   accountType = 'google'
 }) {
+  console.log('[UPLOAD_DIRECT] 🚀 uploadPhotoToDriveDirect called');
+  console.log('[UPLOAD_DIRECT] 📄 Filename:', filename);
+  console.log('[UPLOAD_DIRECT] 🎯 Account type:', accountType);
+  console.log('[UPLOAD_DIRECT] 🔑 Session ID:', sessionId);
+  console.log('[UPLOAD_DIRECT] 📁 Folder ID:', folderId);
+  console.log('[UPLOAD_DIRECT] 📦 Album:', albumName);
+  
   try {
     if (!sessionId) {
       throw new Error('Proxy session ID is required for upload');
     }
 
+    console.log('[UPLOAD_DIRECT] 🔄 Converting image to base64...');
+    
     // Get base64 data
     let base64String = imageDataUrl;
     if (imageDataUrl.startsWith('data:')) {
@@ -224,6 +262,9 @@ async function uploadPhotoToDriveDirect({
         : base64DataUrl;
     }
 
+    console.log('[UPLOAD_DIRECT] ✅ Base64 conversion complete');
+    console.log('[UPLOAD_DIRECT] 📡 Calling proxyService.uploadPhotoAsAdmin...');
+    
     // Upload via proxy server (works for both Google and Dropbox)
     const result = await proxyService.uploadPhotoAsAdmin({
       sessionId,
@@ -239,6 +280,8 @@ async function uploadPhotoToDriveDirect({
       accountType // Pass account type so backend knows which service to use
     });
     
+    console.log('[UPLOAD_DIRECT] ✅ Proxy upload successful:', result);
+    
     return {
       success: true,
       fileId: result.fileId,
@@ -253,7 +296,9 @@ async function uploadPhotoToDriveDirect({
       message: result.message || 'Photo uploaded successfully via proxy server'
     };
   } catch (error) {
-    console.error('Proxy upload error:', error);
+    console.error('[UPLOAD_DIRECT] ❌ Error:', error);
+    console.error('[UPLOAD_DIRECT] ❌ Error message:', error.message);
+    console.error('[UPLOAD_DIRECT] ❌ Error stack:', error.stack);
     throw new Error(`Failed to upload via proxy server: ${error.message}`);
   }
 }
@@ -339,6 +384,10 @@ export async function uploadPhotoAsTeamMember({
  * @returns {Promise<Object>} - Upload results { successful: [], failed: [] }
  */
 export async function uploadPhotoBatch(photos, config) {
+  console.log('[UPLOAD_BATCH] 🚀 uploadPhotoBatch called');
+  console.log('[UPLOAD_BATCH] 📸 Photos count:', photos.length);
+  console.log('[UPLOAD_BATCH] ⚙️ Config:', JSON.stringify(config, null, 2));
+  
   const {
     folderId,
     albumName,
@@ -355,6 +404,10 @@ export async function uploadPhotoBatch(photos, config) {
     token = null, // Invite token (required for team member uploads)
     accountType = 'google' // Account type: 'google' or 'dropbox'
   } = config;
+
+  console.log('[UPLOAD_BATCH] 🎯 Account type:', accountType);
+  console.log('[UPLOAD_BATCH] 🔑 Session ID:', sessionId);
+  console.log('[UPLOAD_BATCH] 📁 Folder ID:', folderId);
 
   // Route based on account type and session availability
   // If sessionId is provided, use proxy server (for both Google and Dropbox team uploads)

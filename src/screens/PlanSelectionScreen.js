@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   Linking,
+  InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -111,6 +112,11 @@ export default function PlanSelectionScreen({ navigation }) {
     console.log('[PlanSelection] 🟢 proceedWithPlanSelection START - plan:', plan, 'useTrial:', useTrial);
     let trialJustStarted = false;
 
+    // Close all modals before proceeding to prevent state updates during navigation
+    setShowTrialModal(false);
+    setShowTrialConfirmation(false);
+    setTrialNotification(null);
+
     if (useTrial) {
       console.log('[PlanSelection] 🟡 Using trial flow');
       try {
@@ -171,18 +177,17 @@ export default function PlanSelectionScreen({ navigation }) {
     }
 
     console.log('[PlanSelection] 🟢 About to navigate to GoogleSignUp, trialJustStarted:', trialJustStarted);
-    // Navigate to next screen (all plans go to GoogleSignUp)
-    // Use setTimeout with longer delay to ensure all context state updates and re-renders complete
-    // This prevents React errors when updating context state and navigating simultaneously
-    setTimeout(() => {
-      if (isMounted.current) {
-        console.log('[PlanSelection] 🟢 Navigating now (component still mounted)...');
-        navigation.navigate('GoogleSignUp', { plan, trialJustStarted: trialJustStarted });
-        console.log('[PlanSelection] 🟢 Navigation called, proceedWithPlanSelection END');
-      } else {
-        console.log('[PlanSelection] ⚠️ Component unmounted, skipping navigation');
-      }
-    }, 500);
+    
+    // Use InteractionManager to wait for all animations/interactions to complete
+    // This prevents React errors during navigation
+    InteractionManager.runAfterInteractions(() => {
+      console.log('[PlanSelection] 🔵 All interactions complete, setting isMounted to false');
+      isMounted.current = false;
+      
+      console.log('[PlanSelection] 🟢 Navigating to GoogleSignUp...');
+      navigation.navigate('GoogleSignUp', { plan, trialJustStarted: trialJustStarted });
+      console.log('[PlanSelection] 🟢 Navigation called, proceedWithPlanSelection END');
+    });
   };
 
   // Handle trial confirmation - use trial

@@ -655,6 +655,12 @@ export default function SettingsScreen({ navigation, route }) {
   // For non-enterprise: create a virtual Dropbox account if authenticated but not in connectedAccounts
   // For enterprise: use the active account from connectedAccounts
   const displayedActiveAccount = useMemo(() => {
+    console.log('[SETTINGS] 🔍 displayedActiveAccount calculating...');
+    console.log('[SETTINGS] 🔍 isEnterprisePlan:', isEnterprisePlan);
+    console.log('[SETTINGS] 🔍 adminUserInfo:', JSON.stringify(adminUserInfo, null, 2));
+    console.log('[SETTINGS] 🔍 accountType from AdminContext:', accountType);
+    console.log('[SETTINGS] 🔍 connectedAccounts:', JSON.stringify(connectedAccounts, null, 2));
+    
     if (isEnterprisePlan) {
       return activeEnterpriseAccount || null;
     }
@@ -692,9 +698,29 @@ export default function SettingsScreen({ navigation, route }) {
       }
     }
     
-    // Check Google first for other cases
+    // Check Google/Apple first for other cases
     if (adminUserInfo) {
-      return adminUserInfo;
+      console.log('[SETTINGS] 🔍 adminUserInfo exists, determining accountType...');
+      // Determine accountType: prefer from userInfo, fallback to AdminContext accountType, then check connectedAccounts
+      let determinedAccountType = adminUserInfo.accountType || accountType;
+      console.log('[SETTINGS] 🔍 Initial determinedAccountType:', determinedAccountType);
+      
+      // If still no accountType, check if there's an active Apple account in connectedAccounts
+      if (!determinedAccountType || determinedAccountType === 'google') {
+        const appleAccount = connectedAccounts?.find(acc => acc.accountType === 'apple' && acc.isActive);
+        console.log('[SETTINGS] 🔍 Found Apple account in connectedAccounts?', !!appleAccount);
+        if (appleAccount) {
+          determinedAccountType = 'apple';
+          console.log('[SETTINGS] 🍎 Using Apple accountType from connectedAccounts');
+        }
+      }
+      
+      const finalAccount = {
+        ...adminUserInfo,
+        accountType: determinedAccountType || 'google'
+      };
+      console.log('[SETTINGS] ✅ Final displayed account:', JSON.stringify(finalAccount, null, 2));
+      return finalAccount;
     }
     
     // If Dropbox is authenticated, create virtual account object for non-enterprise plans
@@ -1727,6 +1753,25 @@ export default function SettingsScreen({ navigation, route }) {
       return;
     }
 
+    // Check if user is trying to set up team with iCloud
+    if (currentAccountType === 'apple') {
+      Alert.alert(
+        'iCloud Does Not Support Teams',
+        'Team uploads are only available with Google Drive or Dropbox. iCloud can only be used for individual uploads.\n\nTo enable team features, please connect Google Drive or Dropbox in Settings.',
+        [
+          {
+            text: 'Send Feedback',
+            onPress: () => {
+              // Open the existing feedback/contact form
+              setShowContactModal(true);
+            }
+          },
+          { text: 'OK', style: 'cancel' }
+        ]
+      );
+      return;
+    }
+
     // Check if already set up
     if (isSetupComplete()) {
       Alert.alert(t('settings.alreadyConnected'), t('settings.alreadyConnectedMessage'));
@@ -2215,7 +2260,8 @@ export default function SettingsScreen({ navigation, route }) {
   // Check if Google account needs reconnection (missing serverAuthCode)
   useEffect(() => {
     const checkReconnectionNeeded = async () => {
-      if (isAuthenticated && userMode === 'admin') {
+      // Only check for Google accounts (Apple doesn't use serverAuthCode)
+      if (isAuthenticated && userMode === 'admin' && accountType === 'google') {
         try {
           const googleAuthService = await import('../services/googleAuthService');
           const serverAuthCode = await googleAuthService.default.getServerAuthCode();
@@ -2229,7 +2275,7 @@ export default function SettingsScreen({ navigation, route }) {
       }
     };
     checkReconnectionNeeded();
-  }, [isAuthenticated, userMode]);
+  }, [isAuthenticated, userMode, accountType]);
 
   // Fetch admin info for team members
   useEffect(() => {
@@ -2995,7 +3041,8 @@ export default function SettingsScreen({ navigation, route }) {
           </>
         )}
 
-        {/* Admin Setup Section */}
+        {/* Admin Setup Section - Hidden for Starter plan */}
+        {userPlan !== 'starter' && (
         <View 
           ref={cloudSyncSectionRef}
           style={[
@@ -3268,9 +3315,14 @@ export default function SettingsScreen({ navigation, route }) {
                   
                   {/* Buttons - Show opposite account's connect button to allow switching (for Pro/Business) */}
                   <>
-                    {/* Connect to Google Account Button - Hide if Google is connected (for Pro/Business), show if Dropbox is connected or neither */}
+                    {/* Connect to Google Account Button - Hide if Google is connected (for Pro/Business), show if Dropbox or Apple is connected */}
                         {(() => {
-                          const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? (!isAuthenticated || isDropboxAuthenticatedForDisplay) : true;
+                          // Show Google button if accountType is NOT 'google' (i.e., Dropbox or Apple is connected, or nothing is connected)
+                          // Use displayedActiveAccount.accountType to get the correct current account type
+                          const currentAccountType = displayedActiveAccount?.accountType || accountType;
+                          const isGoogleConnected = isAuthenticated && currentAccountType === 'google';
+                          const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? !isGoogleConnected : true;
+                          console.log('[SETTINGS] 🔍 Google button shouldShow:', shouldShow, '(isGoogleConnected:', isGoogleConnected, ', currentAccountType:', currentAccountType, ')');
                           const isDisabled = (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn);
                           const canUseFeature = canUse(FEATURES.GOOGLE_DRIVE_SYNC);
                           return shouldShow;
@@ -3789,6 +3841,8 @@ export default function SettingsScreen({ navigation, route }) {
 
                     // Icon component for account type
                     const AccountIcon = () => {
+                      console.log('[SETTINGS] 🎨 Rendering AccountIcon with accountType:', accountType);
+                      
                       if (accountType === 'dropbox') {
                         return (
                           <View style={styles.accountIconContainer}>
@@ -3797,7 +3851,16 @@ export default function SettingsScreen({ navigation, route }) {
                             </View>
                           </View>
                         );
+                      } else if (accountType === 'apple') {
+                        return (
+                          <View style={styles.accountIconContainer}>
+                            <View style={[styles.accountIcon, styles.appleIcon]}>
+                              <Text style={styles.accountIconText}>🍎</Text>
+                            </View>
+                          </View>
+                        );
                       } else {
+                        // Google (default)
                         return (
                           <View style={styles.accountIconContainer}>
                             <View style={[styles.accountIcon, styles.googleIcon]}>
@@ -3851,10 +3914,14 @@ export default function SettingsScreen({ navigation, route }) {
                     );
                   };
 
-                  const activeAccountEmail = displayedActiveAccount?.email || displayedActiveAccount?.name || t('settings.unknownEmail');
+                  // For Apple accounts, show Apple ID if no email/name available
+                  const activeAccountEmail = displayedActiveAccount?.email || 
+                                            displayedActiveAccount?.name || 
+                                            (displayedActiveAccount?.accountType === 'apple' ? 'Apple ID' : t('settings.unknownEmail'));
 
                   const accountType = displayedActiveAccount?.accountType || 'google';
                   const isDropboxAccount = accountType === 'dropbox';
+                  const isAppleAccount = accountType === 'apple';
 
                   // Check if team is connected (proxySessionId exists, userMode === 'admin', AND plan supports teams)
                   const isTeamConnected = proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise');
@@ -4023,9 +4090,12 @@ export default function SettingsScreen({ navigation, route }) {
                         <TouchableOpacity
                           style={[styles.accountActionButton, styles.accountActionButtonDisconnect]}
                           onPress={async () => {
-                            // Handle disconnect for both Google and Dropbox accounts
+                            // Handle disconnect for Google, Dropbox, and Apple accounts
+                            console.log('[SETTINGS] 🔌 Disconnect button pressed for accountType:', accountType);
+                            
                             if (isDropboxAccount) {
                               // Disconnect Dropbox account
+                              console.log('[SETTINGS] 🔌 Disconnecting Dropbox...');
                               try {
                                 await dropboxAuthService.signOut();
                                 setIsDropboxAuthenticated(false);
@@ -4040,6 +4110,26 @@ export default function SettingsScreen({ navigation, route }) {
                               } catch (error) {
                                 console.error('[SETTINGS] Error disconnecting Dropbox:', error);
                                 Alert.alert(t('common.error'), t('settings.dropboxDisconnectError'));
+                              }
+                            } else if (isAppleAccount) {
+                              // Disconnect Apple account
+                              console.log('[SETTINGS] 🔌 Disconnecting Apple...');
+                              try {
+                                await signOut();
+                                
+                                // For enterprise, also remove from connectedAccounts
+                                if (isEnterprisePlan && displayedActiveAccount?.id && removeConnectedAccount) {
+                                  console.log('[SETTINGS] 🔌 Removing Apple account from connectedAccounts (Enterprise)');
+                                  await removeConnectedAccount(displayedActiveAccount.id, 'apple');
+                                }
+                                
+                                Alert.alert(
+                                  t('common.success'), 
+                                  t('settings.appleDisconnected', { defaultValue: 'Apple account disconnected successfully.' })
+                                );
+                              } catch (error) {
+                                console.error('[SETTINGS] Error disconnecting Apple:', error);
+                                Alert.alert(t('common.error'), t('settings.appleDisconnectError', { defaultValue: 'Failed to disconnect Apple account.' }));
                               }
                             } else {
                               // Disconnect Google account
@@ -4085,9 +4175,24 @@ export default function SettingsScreen({ navigation, route }) {
 
               {/* Show all buttons when authenticated, with enable/disable based on plan */}
               <>
-                {/* Connect to Google button - Only show if not connected or enterprise can add multiple */}
+                {/* Connect to Google button - Show for Pro/Business when Apple/Dropbox is connected (for switching), or Enterprise with multiple accounts */}
                 {(() => {
-                  const shouldShow = !isAuthenticated || (isAuthenticated && canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS));
+                  // For Pro/Business: Show Google button if Apple or Dropbox is connected (to allow switching)
+                  // For Enterprise: Show if MULTIPLE_CLOUD_ACCOUNTS feature is available
+                  // For others: Don't show (handled in unauthenticated section)
+                  const currentAccountType = displayedActiveAccount?.accountType || accountType;
+                  const isGoogleConnected = isAuthenticated && currentAccountType === 'google';
+                  
+                  let shouldShow = false;
+                  if (userPlan === 'pro' || userPlan === 'business') {
+                    // For Pro/Business, show if Google is NOT connected (i.e., Apple or Dropbox is connected)
+                    shouldShow = !isGoogleConnected;
+                  } else if (userPlan === 'enterprise') {
+                    // For Enterprise, show if multiple accounts feature is available
+                    shouldShow = canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS);
+                  }
+                  
+                  console.log('[SETTINGS] 🔍 (Authenticated section) Google button shouldShow:', shouldShow, '(isGoogleConnected:', isGoogleConnected, ', currentAccountType:', currentAccountType, ')');
                   return shouldShow;
                 })() && (
                   <TouchableOpacity
@@ -4486,6 +4591,7 @@ export default function SettingsScreen({ navigation, route }) {
             </>
           ) : null}
         </View>
+        )}
 
         {/* Referral Program */}
         <View style={styles.section}>
@@ -5307,7 +5413,16 @@ export default function SettingsScreen({ navigation, route }) {
                                   </View>
                                 </View>
                               );
+                            } else if (accountType === 'apple') {
+                              return (
+                                <View style={styles.accountIconContainer}>
+                                  <View style={[styles.accountIcon, styles.appleIcon]}>
+                                    <Text style={styles.accountIconText}>🍎</Text>
+                                  </View>
+                                </View>
+                              );
                             } else {
+                              // Google (default)
                               return (
                                 <View style={styles.accountIconContainer}>
                                   <View style={[styles.accountIcon, styles.googleIcon]}>
@@ -6791,7 +6906,7 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.GRAY,
     },
     googleSignInButton: {
-      backgroundColor: '#000000', // Black background
+      backgroundColor: '#DB4437', // Google red
       borderRadius: 12,
       paddingVertical: 16,
       paddingHorizontal: 20,
@@ -8316,6 +8431,10 @@ const sliderStyles = StyleSheet.create({
     dropboxIcon: {
       backgroundColor: '#0061FF',
       borderColor: '#0061FF',
+    },
+    appleIcon: {
+      backgroundColor: '#000000',
+      borderColor: '#000000',
     },
     accountIconText: {
       color: '#fff',

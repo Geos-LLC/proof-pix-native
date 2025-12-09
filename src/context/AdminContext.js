@@ -180,7 +180,12 @@ export function AdminProvider({ children }) {
   };
 
   const upsertConnectedAccount = async (user, overrides = {}) => {
+    console.log('[ADMIN] 📝 upsertConnectedAccount called');
+    console.log('[ADMIN] 📝 User ID:', user?.id);
+    console.log('[ADMIN] 📝 Overrides:', JSON.stringify(overrides, null, 2));
+    
     if (!user?.id) {
+      console.log('[ADMIN] ❌ No user ID, returning null');
       return null;
     }
 
@@ -188,7 +193,8 @@ export function AdminProvider({ children }) {
     const prevAccounts = connectedAccountsRef.current || [];
     // Use feature permissions system instead of hardcoded check
     const allowMultipleAccounts = hasFeature(FEATURES.MULTIPLE_CLOUD_ACCOUNTS, currentUserPlan);
-    const accountType = overrides.accountType || 'google'; // 'google' or 'dropbox'
+    const accountType = overrides.accountType || 'google'; // 'google' or 'dropbox' or 'apple'
+    console.log('[ADMIN] 📝 Determined accountType:', accountType);
     
     // Normalize accountType for old accounts that might not have it set
     const normalizedPrevAccounts = prevAccounts.map(account => ({
@@ -252,8 +258,11 @@ export function AdminProvider({ children }) {
       updatedList = [updatedAccount];
     }
 
+    console.log('[ADMIN] 📝 Updated account:', JSON.stringify(updatedAccount, null, 2));
+    console.log('[ADMIN] 📝 Updated accounts list:', JSON.stringify(updatedList, null, 2));
     await setConnectedAccountsState(updatedList);
     await applyAccountState(updatedAccount, { syncStorage: true });
+    console.log('[ADMIN] ✅ upsertConnectedAccount completed');
     return updatedAccount;
   };
 
@@ -606,9 +615,11 @@ export function AdminProvider({ children }) {
 
       if (result && result.userInfo) {
         setIsAuthenticated(true);
-        setUserInfo(result.userInfo);
+        // Add accountType to userInfo so it's available everywhere
+        const userInfoWithType = { ...result.userInfo, accountType: 'google' };
+        setUserInfo(userInfoWithType);
         setUserMode('admin');
-        await upsertConnectedAccount(result.userInfo, { userMode: 'admin', accountType: 'google' });
+        await upsertConnectedAccount(userInfoWithType, { userMode: 'admin', accountType: 'google' });
         // Analytics: admin sign-in
         try {
           logSignIn('google_admin');
@@ -639,9 +650,11 @@ export function AdminProvider({ children }) {
 
       if (result && result.userInfo) {
         setIsAuthenticated(true);
-        setUserInfo(result.userInfo);
+        // Add accountType to userInfo so it's available everywhere
+        const userInfoWithType = { ...result.userInfo, accountType: 'google' };
+        setUserInfo(userInfoWithType);
         setUserMode('individual');
-        await upsertConnectedAccount(result.userInfo, { userMode: 'individual', accountType: 'google' });
+        await upsertConnectedAccount(userInfoWithType, { userMode: 'individual', accountType: 'google' });
         // Analytics: individual sign-in
         try {
           logSignIn('google_individual');
@@ -671,9 +684,11 @@ export function AdminProvider({ children }) {
 
       if (result && result.userInfo) {
         setIsAuthenticated(true);
-        setUserInfo(result.userInfo);
+        // Add accountType to userInfo so it's available everywhere
+        const userInfoWithType = { ...result.userInfo, accountType: 'apple' };
+        setUserInfo(userInfoWithType);
         setUserMode('admin');
-        await upsertConnectedAccount(result.userInfo, { userMode: 'admin', accountType: 'apple' });
+        await upsertConnectedAccount(userInfoWithType, { userMode: 'admin', accountType: 'apple' });
         // Analytics: admin sign-in
         try {
           logSignIn('apple_admin');
@@ -703,10 +718,16 @@ export function AdminProvider({ children }) {
       }
 
       if (result && result.userInfo) {
+        console.log('[ADMIN] 🍎 Apple individual sign-in successful');
+        console.log('[ADMIN] 🍎 Apple userInfo:', JSON.stringify(result.userInfo, null, 2));
         setIsAuthenticated(true);
-        setUserInfo(result.userInfo);
+        // Add accountType to userInfo so it's available everywhere
+        const userInfoWithType = { ...result.userInfo, accountType: 'apple' };
+        console.log('[ADMIN] 🍎 userInfoWithType (added accountType):', JSON.stringify(userInfoWithType, null, 2));
+        setUserInfo(userInfoWithType);
         setUserMode('individual');
-        await upsertConnectedAccount(result.userInfo, { userMode: 'individual', accountType: 'apple' });
+        console.log('[ADMIN] 🍎 Calling upsertConnectedAccount with accountType: apple');
+        await upsertConnectedAccount(userInfoWithType, { userMode: 'individual', accountType: 'apple' });
         // Analytics: individual sign-in
         try {
           logSignIn('apple_individual');
@@ -897,12 +918,16 @@ export function AdminProvider({ children }) {
   const signOut = async () => {
     try {
       const activeAccount = getActiveAccount();
+      console.log('[AUTH] Signing out, activeAccount:', JSON.stringify(activeAccount, null, 2));
       await googleAuthService.signOut();
       await clearAdminData();
       await AsyncStorage.removeItem(STORAGE_KEYS.ADMIN_USER_MODE);
       await AsyncStorage.removeItem(STORAGE_KEYS.TEAM_MEMBER_INFO);
       if (activeAccount) {
-        await removeConnectedAccount(activeAccount.id);
+        // Pass accountType to ensure proper removal (defaults to 'google' if not specified)
+        const accountTypeToRemove = activeAccount.accountType || 'google';
+        console.log('[AUTH] Removing account with type:', accountTypeToRemove);
+        await removeConnectedAccount(activeAccount.id, accountTypeToRemove);
       } else {
         await applyAccountState(null, { syncStorage: true });
       }
@@ -911,6 +936,7 @@ export function AdminProvider({ children }) {
       } catch (e) {
         // non‑critical
       }
+      console.log('[AUTH] Signed out successfully (permissions preserved for team members)');
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
