@@ -245,7 +245,7 @@ class ProxyService {
           method: 'POST',
           headers: {
             'Accept': 'application/json',
-            'Content-Type': 'multipart/form-data',
+            // 'Content-Type': 'multipart/form-data', // DO NOT SET THIS MANUALLY! It breaks the boundary.
           },
           body: formData,
         });
@@ -570,6 +570,7 @@ class ProxyService {
     sessionId,
     filename,
     contentBase64,
+    fileUri, // Optional: Use fileUri for FormData upload instead of contentBase64
     albumName,
     room,
     type,
@@ -580,27 +581,61 @@ class ProxyService {
     accountType = 'google'
   }) {
     try {
-      console.log('[PROXY] Uploading photo as admin:', { sessionId, filename, albumName, room, type, format, flat });
+      console.log('[PROXY] Uploading photo as admin:', { sessionId, filename, albumName, room, type, format, flat, mode: fileUri ? 'multipart' : 'base64' });
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          // No token for admin uploads
-          filename,
-          contentBase64,
-          albumName,
-          room,
-          type,
-          format,
-          location,
-          cleanerName,
-          flat,
-          accountType // Pass account type for backend routing
-        }),
-      });
+      let response;
+
+      if (fileUri) {
+        // Use FormData for multipart upload (efficient, no base64 overhead)
+        const formData = new FormData();
+        
+        // Append file (must be first or early in form data for some parsers)
+        formData.append('photo', {
+          uri: fileUri,
+          name: filename,
+          type: 'image/jpeg'
+        });
+
+        // Append metadata
+        if (albumName) formData.append('albumName', albumName);
+        if (room) formData.append('room', room);
+        if (type) formData.append('type', type);
+        if (format) formData.append('format', format);
+        if (location) formData.append('location', location);
+        if (cleanerName) formData.append('cleanerName', cleanerName);
+        formData.append('flat', String(flat));
+        if (accountType) formData.append('accountType', accountType);
+        formData.append('filename', filename); // explicit filename field
+
+        response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            // 'Content-Type': 'multipart/form-data', // DO NOT SET THIS MANUALLY! It breaks the boundary.
+          },
+          body: formData,
+        });
+      } else {
+        // Legacy Base64 upload
+        response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filename,
+            contentBase64,
+            albumName,
+            room,
+            type,
+            format,
+            location,
+            cleanerName,
+            flat,
+            accountType
+          }),
+        });
+      }
 
       console.log('[PROXY] Upload response status:', response.status);
 

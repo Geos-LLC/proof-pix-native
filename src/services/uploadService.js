@@ -265,7 +265,8 @@ async function uploadPhotoToDriveDirect({
       let normalized = normalizeFileUri(imageDataUrl);
       
       // Check and compress if needed (Android only) to prevent proxy rejection
-      if (accountType !== 'google' || !(await googleAuthService.isSignedIn())) {
+      // Team members are never signed in locally as admin, so we compress if falling back to Base64 on Android
+      if (Platform.OS === 'android') {
          normalized = await compressImageIfNeeded(normalized);
       }
 
@@ -279,7 +280,14 @@ async function uploadPhotoToDriveDirect({
     // This allows uploading large files (>4.5MB) that would fail on Vercel
     if (accountType === 'google') {
       try {
-        const isSignedIn = await googleAuthService.isSignedIn();
+        // Safe check for sign-in status
+        let isSignedIn = false;
+        try {
+           isSignedIn = await googleAuthService.isSignedIn();
+        } catch (e) {
+           console.warn('[UPLOAD] Failed to check sign-in status:', e);
+        }
+
         if (isSignedIn) {
           console.log('[UPLOAD] User is signed in (Admin), attempting direct upload to Google Drive...');
           
@@ -343,11 +351,23 @@ async function uploadPhotoToDriveDirect({
        uploadUri = normalizeFileUri(imageDataUrl);
     }
     
+    // Check and compress if needed (Android only or huge files) to prevent proxy rejection
+    // Vercel has a 4.5MB body limit. Even with multipart, we must respect this.
+    // So we compress if the file is likely to exceed this limit.
+    if (Platform.OS === 'android') {
+       // Always check compression on Android where photos are huge
+       const originalUri = imageDataUrl.startsWith('data:') ? null : normalizeFileUri(imageDataUrl);
+       if (originalUri) {
+          // Use the compressed URI for upload
+          uploadUri = await compressImageIfNeeded(originalUri);
+       }
+    }
+
     const result = await proxyService.uploadPhotoAsAdmin({
       sessionId,
       filename,
       contentBase64: useMultipart ? null : base64String,
-      fileUri: useMultipart ? uploadUri : null,
+      fileUri: useMultipart ? (uploadUri || normalizeFileUri(imageDataUrl)) : null,
       albumName,
       room,
       type,
@@ -421,6 +441,10 @@ export async function uploadPhotoAsTeamMember({
 
     if (useMultipart) {
        uploadUri = normalizeFileUri(imageDataUrl);
+       // Ensure it fits in Vercel 4.5MB limit
+       if (Platform.OS === 'android') {
+          uploadUri = await compressImageIfNeeded(uploadUri);
+       }
     } else {
        // Legacy Base64 Path
        if (imageDataUrl.startsWith('data:')) {
@@ -475,7 +499,7 @@ export async function uploadPhotoBatch(photos, config) {
     albumName,
     location,
     cleanerName,
-    batchSize = photos.length, // Upload all photos in parallel by default
+    batchSize = 2, // Reduced from all-parallel to 2 to prevent Vercel rate limiting (403)
     onProgress,
     onBatchComplete,
     getAbortController, // optional callback to retrieve/create AbortController per request
