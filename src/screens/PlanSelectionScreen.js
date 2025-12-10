@@ -158,6 +158,16 @@ export default function PlanSelectionScreen({ navigation }) {
               console.log('[PlanSelection] User cancelled purchase');
               return; // user cancelled, do not change plan
             }
+            
+            if (err?.message === 'PURCHASE_TIMEOUT') {
+              Alert.alert(
+                'Existing Subscription Detected',
+                'You already have an active subscription. To change your plan, please cancel your current subscription in Settings → Account Data → Manage Subscription, then purchase the new plan.',
+                [{ text: 'OK' }]
+              );
+              return;
+            }
+            
             Alert.alert(
               t('common.error', { defaultValue: 'Error' }),
               t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
@@ -205,10 +215,15 @@ export default function PlanSelectionScreen({ navigation }) {
 
   // Handle trial confirmation - cancel (continue without trial)
   const handleCancelTrial = async () => {
+    console.log('[PlanSelection] 🟣 handleCancelTrial START');
+    console.log('[PlanSelection] 🟣 Closing trial confirmation modal');
     setShowTrialConfirmation(false);
     const plan = selectedPlanForTrial;
+    console.log('[PlanSelection] 🟣 Selected plan:', plan);
     setSelectedPlanForTrial(null);
+    console.log('[PlanSelection] 🟣 Calling proceedWithPlanSelection with useTrial=false');
     await proceedWithPlanSelection(plan, false);
+    console.log('[PlanSelection] 🟣 handleCancelTrial END');
   };
 
   const handleGoBack = () => {

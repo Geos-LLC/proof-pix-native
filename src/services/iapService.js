@@ -144,13 +144,27 @@ export const purchaseProduct = async (productId) => {
       }
 
       console.log('[IAP] Requesting purchase with v14 API...');
-      await RNIap.requestPurchase({
-        request: {
-          ios: { sku: productId },
-          android: { skus: [productId] }
-        }
-      });
-      console.log('[IAP] Purchase request sent, waiting for response...');
+      
+      // Set a timeout to detect if purchase is silently blocked (e.g., existing subscription)
+      const purchaseTimeout = setTimeout(() => {
+        console.warn('[IAP] ⚠️ Purchase request timed out after 3 seconds');
+        console.warn('[IAP] ⚠️ This may indicate an existing active subscription');
+        finish(() => reject(new Error('PURCHASE_TIMEOUT')));
+      }, 3000);
+      
+      try {
+        await RNIap.requestPurchase({
+          request: {
+            ios: { sku: productId },
+            android: { skus: [productId] }
+          }
+        });
+        clearTimeout(purchaseTimeout);
+        console.log('[IAP] Purchase request sent, waiting for response...');
+      } catch (requestErr) {
+        clearTimeout(purchaseTimeout);
+        throw requestErr;
+      }
     } catch (err) {
       console.error('[IAP] ❌ Error during purchase flow:', err);
       console.error('[IAP] Error details:', JSON.stringify(err, null, 2));
