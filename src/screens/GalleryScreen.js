@@ -2035,8 +2035,8 @@ export default function GalleryScreen({ navigation, route }) {
           // Use proxy server upload for iCloud
           config = { 
             folderId: iCloudFolderId, 
-            useDirectDrive: true, // Flag to indicate proxy server upload
-            sessionId: sessionResult.sessionId, // Extract sessionId string from result object
+            useDirectDrive: false, // Use proxy server for iCloud
+            sessionId: sessionResult.sessionId,
             accountType: 'apple'
           };
           uploadConfig = config; // Store for later use
@@ -2613,7 +2613,6 @@ export default function GalleryScreen({ navigation, route }) {
               setTimeout(() => {
                 console.log('[UPLOAD] Executing navigation to Settings');
                 try {
-                  // Since Gallery is a fullScreenModal, we need to go back first, then navigate
                   navigation.goBack();
                   setTimeout(() => {
                     console.log('[UPLOAD] Navigating to Settings from parent screen');
@@ -2630,47 +2629,40 @@ export default function GalleryScreen({ navigation, route }) {
           return;
         }
 
-        // Use DIRECT iCloud Drive upload (no proxy server)
-        console.log('[UPLOAD] Starting DIRECT iCloud Drive upload');
-        try {
-          const result = await iCloudService.uploadPhotoBatch(
-            items,
-            albumName,
-            {
-              location,
-              cleanerName: userName,
-              flat: !useFolderStructure
-            }
+        // Use proxy server upload for iCloud (same as Google/Dropbox)
+        console.log('[UPLOAD] Starting iCloud upload via proxy server');
+        const config = configOverride || {};
+        console.log('[UPLOAD] iCloud config:', { folderId: config?.folderId, sessionId: config?.sessionId });
+
+        // Validate iCloud config
+        if (!config || !config.folderId || !config.sessionId) {
+          console.log('[UPLOAD] iCloud not configured, showing alert');
+          Alert.alert(
+            t('gallery.setupRequiredTitle'),
+            'Please sign in with Apple to upload to iCloud Drive.'
           );
-
-          // Show results
-          console.log('[UPLOAD] iCloud upload complete:', result);
-          
-          if (result.successful.length > 0) {
-            Alert.alert(
-              t('common.success'),
-              `${result.successful.length} ${result.successful.length === 1 ? 'photo' : 'photos'} uploaded to your iCloud Drive.\n\nView in: Files app → iCloud Drive → ProofPix-Uploads → ${albumName}`,
-              [{ text: t('common.ok') }]
-            );
-          }
-
-          if (result.failed.length > 0) {
-            Alert.alert(
-              t('common.error'),
-              `${result.failed.length} ${result.failed.length === 1 ? 'photo' : 'photos'} failed to upload.`,
-              [{ text: t('common.ok') }]
-            );
-          }
-
-          // Mark photos as uploaded
-          if (result.successful.length > 0) {
-            const successfulPhotos = result.successful.map(item => item.photo);
-            await markPhotosAsUploaded(successfulPhotos, albumName);
-          }
-        } catch (error) {
-          console.error('[UPLOAD] iCloud upload error:', error);
-          Alert.alert(t('common.error'), error.message || 'Failed to upload to iCloud Drive');
+          return;
         }
+
+        // Start background upload to iCloud via proxy server
+        console.log('[UPLOAD] Starting background upload to iCloud');
+        const iCloudUploadId = startBackgroundUpload({
+          items,
+          config: {
+            ...config,
+            accountType: 'apple'
+          },
+          albumName,
+          location,
+          userName,
+          flat: !useFolderStructure,
+          uploadType: 'standard',
+          useDirectDrive: false,
+          sessionId: config?.sessionId,
+          accountType: 'apple'
+        });
+        console.log('[UPLOAD] iCloud upload started, ID:', iCloudUploadId);
+        uploadPromises.push({ type: 'icloud', uploadId: iCloudUploadId });
       }
 
       // Show upload modal immediately (if any upload is in progress)
@@ -5995,3 +5987,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10
   }
 });
+
+
+
