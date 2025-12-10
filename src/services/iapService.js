@@ -71,6 +71,7 @@ export const purchaseProduct = async (productId) => {
 
   return new Promise(async (resolve, reject) => {
     let finished = false;
+    let purchaseTimeout = null;
 
     const finish = (fn) => {
       if (finished) {
@@ -79,6 +80,10 @@ export const purchaseProduct = async (productId) => {
       }
       console.log('[IAP] Finishing transaction...');
       finished = true;
+      if (purchaseTimeout) {
+        clearTimeout(purchaseTimeout);
+        purchaseTimeout = null;
+      }
       cleanupListeners();
       fn();
     };
@@ -156,13 +161,6 @@ export const purchaseProduct = async (productId) => {
 
       console.log('[IAP] Requesting purchase with v14 API...');
       
-      // Set a timeout to detect if purchase is silently blocked (e.g., existing subscription)
-      const purchaseTimeout = setTimeout(() => {
-        console.warn('[IAP] ⚠️ Purchase request timed out after 3 seconds');
-        console.warn('[IAP] ⚠️ This may indicate an existing active subscription');
-        finish(() => reject(new Error('PURCHASE_TIMEOUT')));
-      }, 3000);
-      
       try {
         await RNIap.requestPurchase({
           request: {
@@ -170,10 +168,19 @@ export const purchaseProduct = async (productId) => {
             android: { skus: [productId] }
           }
         });
-        clearTimeout(purchaseTimeout);
         console.log('[IAP] Purchase request sent, waiting for response...');
+        
+        // Set a timeout to detect if purchase is silently blocked (e.g., existing subscription)
+        // This timeout will trigger if no response comes from the purchase listeners within 3 seconds
+        purchaseTimeout = setTimeout(() => {
+          if (!finished) {
+            console.warn('[IAP] ⚠️ Purchase request timed out after 3 seconds');
+            console.warn('[IAP] ⚠️ This usually means iOS blocked the purchase silently');
+            console.warn('[IAP] ⚠️ This happens when the user already has an active subscription');
+            finish(() => reject(new Error('PURCHASE_TIMEOUT')));
+          }
+        }, 3000);
       } catch (requestErr) {
-        clearTimeout(purchaseTimeout);
         throw requestErr;
       }
     } catch (err) {
@@ -182,6 +189,46 @@ export const purchaseProduct = async (productId) => {
       finish(() => reject(err));
     }
   });
+};
+
+/**
+ * Check for active subscriptions without showing UI.
+ * Returns the active subscription info if found, or null if none.
+ */
+export const checkActiveSubscription = async () => {
+  console.log('[IAP] Checking for active subscriptions...');
+  
+  try {
+    await initIAPIfNeeded();
+    const purchases = await RNIap.restorePurchases();
+    
+    if (!purchases || purchases.length === 0) {
+      console.log('[IAP] No active subscriptions found');
+      return null;
+    }
+    
+    // Find an active subscription (not expired)
+    const now = Date.now();
+    const activeSubscription = purchases.find(purchase => {
+      // Check if subscription is still valid
+      const expirationDate = purchase.expirationDateIOS;
+      if (expirationDate && expirationDate > now) {
+        return true;
+      }
+      return false;
+    });
+    
+    if (activeSubscription) {
+      console.log('[IAP] ✅ Active subscription found:', activeSubscription.productId);
+      return activeSubscription;
+    } else {
+      console.log('[IAP] No active (non-expired) subscriptions found');
+      return null;
+    }
+  } catch (error) {
+    console.warn('[IAP] ⚠️ Error checking subscriptions:', error);
+    return null; // Don't block purchase on error
+  }
 };
 
 /**
