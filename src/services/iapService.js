@@ -95,7 +95,13 @@ export const purchaseProduct = async (productId) => {
       // Only log detailed info for actual purchases, not renewals
       if (transactionReasonIOS === 'RENEWAL') {
         console.log('[IAP] 🔄 Renewal detected for:', purchasedId);
-        return; // Ignore renewals
+        // Finish renewal transactions to prevent them from replaying
+        try {
+          await RNIap.finishTransaction(purchase, false);
+        } catch (err) {
+          console.warn('[IAP] ⚠️ Failed to finish renewal:', err);
+        }
+        return;
       }
       
       console.log('[IAP] purchaseUpdatedListener triggered');
@@ -104,7 +110,13 @@ export const purchaseProduct = async (productId) => {
       console.log('[IAP] Has receipt:', !!transactionReceipt);
 
       if (!purchasedId || purchasedId !== productId || !transactionReceipt) {
-        console.log('[IAP] Purchase validation failed - ignoring');
+        console.log('[IAP] Purchase validation failed - finishing invalid transaction to clear it');
+        try {
+          await RNIap.finishTransaction(purchase, false);
+          console.log('[IAP] ✅ Invalid transaction cleared');
+        } catch (err) {
+          console.warn('[IAP] ⚠️ Failed to clear invalid transaction:', err);
+        }
         return;
       }
 
