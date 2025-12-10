@@ -7,7 +7,7 @@
  * Files will appear in: Files app → iCloud Drive → ProofPix → Documents
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
 const FOLDER_NAME = 'ProofPix-Uploads';
@@ -42,7 +42,14 @@ class ICloudService {
     // Use Expo FileSystem's documentDirectory
     // This maps to the app's Documents folder which syncs to iCloud
     this.documentsPath = FileSystem.documentDirectory;
-    console.log('[iCloud] Documents path:', this.documentsPath);
+    console.log('[iCloud] 📁 Documents path:', this.documentsPath);
+    
+    if (!this.documentsPath) {
+      console.error('[iCloud] ❌ ERROR: FileSystem.documentDirectory is undefined!');
+      console.error('[iCloud] ❌ This means the app cannot access the file system.');
+      console.error('[iCloud] ❌ Make sure you are running on a real device or simulator, not in Expo Go.');
+    }
+    
     return this.documentsPath;
   }
 
@@ -132,7 +139,12 @@ class ICloudService {
         to: destinationFile
       });
 
-      console.log('[iCloud] Upload complete:', destinationFile);
+      console.log('[iCloud] ✅ Upload complete:', destinationFile);
+      console.log('[iCloud] 📍 File saved to app Documents folder');
+      console.log('[iCloud] ℹ️  Note: iOS does not allow direct access to iCloud Drive from apps.');
+      console.log('[iCloud] ℹ️  Files are saved locally. To access them:');
+      console.log('[iCloud] ℹ️  1. Open Files app → On My iPhone/iPad → ProofPix');
+      console.log('[iCloud] ℹ️  2. You can then manually move files to iCloud Drive if needed');
 
       return {
         success: true,
