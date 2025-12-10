@@ -85,13 +85,17 @@ export const purchaseProduct = async (productId) => {
 
     console.log('[IAP] Setting up purchaseUpdatedListener...');
     purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchase) => {
+      const { productId: purchasedId, transactionReceipt, transactionReasonIOS } = purchase || {};
+      
+      // Only log detailed info for actual purchases, not renewals
+      if (transactionReasonIOS === 'RENEWAL') {
+        console.log('[IAP] 🔄 Renewal detected for:', purchasedId);
+        return; // Ignore renewals
+      }
+      
       console.log('[IAP] purchaseUpdatedListener triggered');
-      // Log purchase without the massive token to keep logs clean
-      const { purchaseToken, ...purchaseWithoutToken } = purchase || {};
-      console.log('[IAP] Purchase:', JSON.stringify(purchaseWithoutToken, null, 2));
-
-      const { productId: purchasedId, transactionReceipt } = purchase || {};
       console.log('[IAP] Purchased ID:', purchasedId, 'Expected:', productId);
+      console.log('[IAP] Transaction reason:', transactionReasonIOS);
       console.log('[IAP] Has receipt:', !!transactionReceipt);
 
       if (!purchasedId || purchasedId !== productId || !transactionReceipt) {
@@ -138,7 +142,12 @@ export const purchaseProduct = async (productId) => {
         skus: [productId],
         type: 'subs'
       });
-      console.log('[IAP] Products fetched:', JSON.stringify(products, null, 2));
+      // Log products without the massive JSON representation
+      const cleanProducts = products.map(p => {
+        const { jsonRepresentationIOS, ...rest } = p;
+        return { ...rest, jsonRepresentationIOS: '[REDACTED]' };
+      });
+      console.log('[IAP] Products fetched:', JSON.stringify(cleanProducts, null, 2));
 
       if (!products || products.length === 0) {
         console.error('[IAP] ❌ No products found for:', productId);
