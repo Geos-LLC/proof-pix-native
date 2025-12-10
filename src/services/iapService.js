@@ -95,12 +95,7 @@ export const purchaseProduct = async (productId) => {
       // Only log detailed info for actual purchases, not renewals
       if (transactionReasonIOS === 'RENEWAL') {
         console.log('[IAP] 🔄 Renewal detected for:', purchasedId);
-        // Finish renewal transactions to prevent them from replaying
-        try {
-          await RNIap.finishTransaction(purchase, false);
-        } catch (err) {
-          console.warn('[IAP] ⚠️ Failed to finish renewal:', err);
-        }
+        // Silently ignore renewals - don't try to finish them as they're auto-renewed by iOS
         return;
       }
       
@@ -110,13 +105,9 @@ export const purchaseProduct = async (productId) => {
       console.log('[IAP] Has receipt:', !!transactionReceipt);
 
       if (!purchasedId || purchasedId !== productId || !transactionReceipt) {
-        console.log('[IAP] Purchase validation failed - finishing invalid transaction to clear it');
-        try {
-          await RNIap.finishTransaction(purchase, false);
-          console.log('[IAP] ✅ Invalid transaction cleared');
-        } catch (err) {
-          console.warn('[IAP] ⚠️ Failed to clear invalid transaction:', err);
-        }
+        console.log('[IAP] Purchase validation failed - ignoring (wrong product or no receipt)');
+        // Don't try to finish invalid/incomplete transactions - they may be missing required fields
+        // These are likely from previous test sessions and will be cleared when subscriptions expire
         return;
       }
 
