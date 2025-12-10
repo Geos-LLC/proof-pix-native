@@ -251,10 +251,13 @@ export const PhotoProvider = ({ children }) => {
 
         for (const uri of localFileUris) {
             try {
-                await FileSystem.deleteAsync(uri, { idempotent: true });
-                console.log('[PhotoContext] Deleted local file:', uri);
+                const fileInfo = await FileSystem.getInfoAsync(uri);
+                if (fileInfo.exists) {
+                    await FileSystem.deleteAsync(uri);
+                    console.log('[PhotoContext] ✅ Deleted local file:', uri);
+                }
             } catch (e) {
-                console.warn('[PhotoContext] Failed to delete local file:', e);
+                console.warn('[PhotoContext] ⚠️ Failed to delete local file:', e);
             }
         }
 
@@ -362,7 +365,13 @@ export const PhotoProvider = ({ children }) => {
       try {
         for (const path of filePaths) {
           try {
-            await FileSystem.deleteAsync(path, { idempotent: true });
+            // Remove file:// prefix if present
+            const cleanPath = path.replace('file://', '');
+            const fileInfo = await FileSystem.getInfoAsync(cleanPath);
+            if (fileInfo.exists) {
+              await FileSystem.deleteAsync(cleanPath);
+              console.log('[PhotoContext] ✅ Deleted local file:', path);
+            }
           } catch (e) {
             console.error(`[PhotoContext] ⚠️ Failed to delete file ${path}:`, e);
           }
