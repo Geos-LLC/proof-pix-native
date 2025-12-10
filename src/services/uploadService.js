@@ -4,12 +4,13 @@
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
-import { Platform } from 'react-native';
+import { Platform, Image } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import googleDriveService from './googleDriveService';
 import googleAuthService from './googleAuthService';
 import proxyService from './proxyService';
 import { uploadPhotoToDropbox } from './dropboxUploadService';
+import backgroundLabelPreparationService from './backgroundLabelPreparationService';
 
 /**
  * Compress image if needed (Android only) to fit within serverless limits (4.5MB)
@@ -476,6 +477,71 @@ export async function uploadPhotoAsTeamMember({
 }
 
 /**
+ * Ensure a photo has labels applied if enabled in settings
+ * Uses the global background label preparation service
+ * @param {Object} photo - Photo object
+ * @returns {Promise<string>} - URI of the labeled photo (or original if labeling disabled/failed)
+ */
+async function ensureLabelForPhoto(photo) {
+  // Only apply to before/after photos (combined/mix usually handled elsewhere or don't need standard labels)
+  // Check both type and mode to be safe
+  const effectiveType = photo.type || photo.mode;
+  if (effectiveType !== 'before' && effectiveType !== 'after' && effectiveType !== 'combined' && effectiveType !== 'mix') {
+    return photo.uri;
+  }
+
+  // For combined/mix photos, we only label if it's an "Original" combined format
+  // Normal combined photos are created via GlobalBackgroundCombinedPhotoCreator and already have labels if configured
+  // However, if we are uploading "original-side" or "original-stack", those might be raw composites without labels?
+  // Actually, GlobalBackgroundCombinedPhotoCreator creates "COMBINED_BASE" images which are raw composites without labels.
+  // Then the UI overlays labels.
+  // If we upload "original-side" or "original-stack", we are uploading the base image.
+  // So we DO need to label them here if the user wants labels on their "Original" uploads.
+  
+  return new Promise((resolve) => {
+    // Timeout safety: if labeling takes too long (e.g. service not running), proceed with original
+    const timeoutId = setTimeout(() => {
+      console.warn(`[UPLOAD] Label preparation timed out for ${photo.id}, using original URI`);
+      resolve(photo.uri);
+    }, 10000); // 10 seconds timeout
+
+    // Get image dimensions required for labeling service
+    Image.getSize(
+      photo.uri,
+      (width, height) => {
+        // Queue the preparation
+        backgroundLabelPreparationService.queuePreparation({
+          photo: {
+            ...photo,
+            // Ensure essential properties are present
+            id: photo.id || `temp_${Date.now()}`,
+            uri: photo.uri,
+            mode: effectiveType // Map 'type' to 'mode' for the service
+          },
+          width,
+          height,
+          // If labels are disabled in settings, the service resolves with original URI immediately
+          resolve: (labeledUri) => {
+            clearTimeout(timeoutId);
+            resolve(labeledUri);
+          },
+          reject: (error) => {
+            clearTimeout(timeoutId);
+            console.warn('[UPLOAD] Label preparation failed in service, using original:', error);
+            resolve(photo.uri); // Fallback to original on error
+          }
+        });
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        console.warn('[UPLOAD] Failed to get image dimensions for labeling:', error);
+        resolve(photo.uri);
+      }
+    );
+  });
+}
+
+/**
  * Upload multiple photos in batches
  * Supports both admin uploads (Pro/Business/Enterprise) and team member uploads
  * Supports both Google Drive and Dropbox accounts
@@ -571,10 +637,33 @@ export async function uploadPhotoBatch(photos, config) {
     const batch = batches[batchIndex];
 
     // Process all photos in the batch concurrently
-    const batchPromises = batch.map((photo, index) => {
+    const batchPromises = batch.map(async (photo, index) => {
       if (abortSignal?.aborted) {
         return Promise.reject(new Error('Aborted'));
       }
+
+      // Pre-process: Apply labels if this is a raw "Original" photo (before/after)
+      // This ensures "Original" uploads respects the "Show Labels" setting
+      let photoUri = photo.uri;
+      try {
+         // Determine type from either property (some objects use 'mode', others 'type')
+         const effectiveType = photo.mode || photo.type;
+         
+         // Only attempt labeling for before/after types when using default/original format
+         const isCandidate = ((effectiveType === 'before' || effectiveType === 'after') && 
+             (!photo.format || photo.format === 'default')) ||
+             ((effectiveType === 'combined' || effectiveType === 'mix') &&
+             (photo.format === 'original-side' || photo.format === 'original-stack'));
+
+         if (isCandidate) {
+             // Ensure the photo object has the 'type' property set for the helper function
+             const photoWithType = { ...photo, type: effectiveType };
+             photoUri = await ensureLabelForPhoto(photoWithType);
+         }
+      } catch (labelError) {
+         console.warn('[UPLOAD] Labeling check failed:', labelError);
+      }
+
       // Map photo mode; server expects 'combined' (not 'mix') for combined photos
       const rawType = photo.mode || photo.type || 'mix';
       const isCombined = rawType === 'mix' || rawType === 'combined';
@@ -596,7 +685,7 @@ export async function uploadPhotoBatch(photos, config) {
       // Use team member upload if token is provided, otherwise use admin upload
       const uploadPromise = isTeamMemberUpload
         ? uploadPhotoAsTeamMember({
-            imageDataUrl: photo.uri,
+            imageDataUrl: photoUri, // Use the potentially labeled URI
             filename: photo.filename || `${photo.name}_${format !== 'default' ? format : typeParam}.jpg`,
             sessionId,
             token,
@@ -609,7 +698,7 @@ export async function uploadPhotoBatch(photos, config) {
             flat: isFlat,
           })
         : uploadPhoto({
-            imageDataUrl: photo.uri,
+            imageDataUrl: photoUri, // Use the potentially labeled URI
             filename: photo.filename || `${photo.name}_${format !== 'default' ? format : typeParam}.jpg`,
             albumName,
             room: photo.room || 'general',

@@ -92,14 +92,27 @@ export default function GlobalBackgroundLabelPreparation() {
         labelPosition = convertLabelPosition(beforeLabelPosition || 'left-top');
       } else if (preparingPhoto.photo.mode === PHOTO_MODES.AFTER) {
         labelPosition = convertLabelPosition(afterLabelPosition || 'right-top');
+      } else if (preparingPhoto.isCombined) {
+        // For combined photos, this logic only applies to the *container* if we were labeling it directly.
+        // But we label the parts separately below.
+        // However, if 'preparingPhoto' has a 'mode' property (like 'mix'), we need to handle it.
+        labelPosition = 'top-left'; // Fallback
       } else {
         labelPosition = 'top-left';
       }
 
       // Get label text
-      const labelText = preparingPhoto.photo.mode === PHOTO_MODES.BEFORE
-        ? (t('common.before') || 'BEFORE')
-        : (t('common.after') || 'AFTER');
+      let labelText;
+      if (preparingPhoto.photo.mode === PHOTO_MODES.BEFORE) {
+        labelText = t('common.before') || 'BEFORE';
+      } else if (preparingPhoto.photo.mode === PHOTO_MODES.AFTER) {
+        labelText = t('common.after') || 'AFTER';
+      } else {
+        // For combined photos uploading as 'Original', the mode might be 'combined' or 'mix'
+        // We don't want a generic "BEFORE" or "AFTER" label on the whole image if it's not one of those.
+        // If it's combined, we handle text per-part below.
+        labelText = ''; 
+      }
 
       // Map label size to font size
       const labelSizeMap = {
@@ -173,6 +186,120 @@ export default function GlobalBackgroundLabelPreparation() {
           dimensions
         );
         console.log('[BackgroundLabelPrep] ✅ Combined photo created:', labeledUri);
+        
+      } else if (preparingPhoto.photo.mode === 'mix' || preparingPhoto.photo.mode === 'combined') {
+        // Handle "Original" combined upload where we don't have separate before/after objects
+        // but we have a single image that needs labeling.
+        // We will attempt to apply two labels to the single composite image.
+        
+        console.log('[BackgroundLabelPrep] Applying labels to flattened combined photo');
+        
+        // 1. Infer layout from format or dimensions
+        const format = preparingPhoto.photo.format || '';
+        const width = preparingPhoto.width;
+        const height = preparingPhoto.height;
+        const isStack = format.includes('stack') || height > width;
+        
+        // 2. Prepare label configs
+        // We use the user's preferred positions, but we might need to adjust them if they fall on the wrong half
+        // For now, we assume standard positioning: Before=Left/Top, After=Right/Bottom
+        
+        const beforeLabelConfig = {
+          ...labelConfig,
+          position: convertLabelPosition(beforeLabelPosition || 'left-top'),
+        };
+        
+        const afterLabelConfig = {
+          ...labelConfig,
+          position: convertLabelPosition(afterLabelPosition || 'right-top'),
+        };
+        
+        // ADJUST POSITIONS FOR COMPOSITE
+        // If it's Side-by-Side:
+        // - After label needs to be shifted to the right half
+        // - Before label should stay on the left half
+        
+        // If it's Stacked:
+        // - After label needs to be shifted to the bottom half
+        // - Before label should stay on the top half
+        
+        // Since native addLabelToImage only supports standard positions (corners), we use margins to shift.
+        // We assume "top-left" means top-left of the *respective photo*.
+        
+        // Apply FIRST label (Before)
+        // If before label is 'top-right' or 'bottom-right' in Side-by-Side, it might overlap After photo.
+        // We will constrain Before label to Left/Top half and After label to Right/Bottom half.
+        
+        // Strategy:
+        // 1. Add Before Label to the composite
+        // 2. Take the result, Add After Label to it
+        
+        // Modify configs to target specific quadrants
+        
+        // Before Label: Should be in Top-Left, Bottom-Left (Side) OR Top-Left, Top-Right (Stack)
+        // We force it? Or just apply standard positions and hope user config is sane?
+        // User config is "top-left" relative to the PHOTO.
+        
+        // Let's implement a smart offset based on layout.
+        
+        const halfWidth = Math.round(width / 2);
+        const halfHeight = Math.round(height / 2);
+        
+        // Clone configs to avoid mutating originals
+        const config1 = { ...beforeLabelConfig };
+        const config2 = { ...afterLabelConfig };
+        
+        // --- BEFORE LABEL ADJUSTMENTS ---
+        if (isStack) {
+            // Stacked: Before is Top Half.
+            // Standard positions (TL, TR) work fine.
+            // Bottom positions (BL, BR) need to be shifted UP by half height to stay in top half.
+            // marginVertical += halfHeight
+            if (config1.position.includes('bottom')) {
+                config1.marginVertical = (config1.marginVertical || 20) + halfHeight;
+            }
+        } else {
+            // Side: Before is Left Half.
+            // Standard positions (TL, BL) work fine.
+            // Right positions (TR, BR) need to be shifted LEFT by half width to stay in left half.
+            // marginHorizontal += halfWidth
+            if (config1.position.includes('right')) {
+                config1.marginHorizontal = (config1.marginHorizontal || 20) + halfWidth;
+            }
+        }
+        
+        // --- AFTER LABEL ADJUSTMENTS ---
+        if (isStack) {
+            // Stacked: After is Bottom Half.
+            // Standard positions (BL, BR) work fine.
+            // Top positions (TL, TR) need to be shifted DOWN by half height to stay in bottom half.
+            // marginVertical += halfHeight
+            if (config2.position.includes('top')) {
+                config2.marginVertical = (config2.marginVertical || 20) + halfHeight;
+            }
+        } else {
+            // Side: After is Right Half.
+            // Standard positions (TR, BR) work fine.
+            // Left positions (TL, BL) need to be shifted RIGHT by half width to stay in right half.
+            // marginHorizontal += halfWidth
+            if (config2.position.includes('left')) {
+                config2.marginHorizontal = (config2.marginHorizontal || 20) + halfWidth;
+            }
+        }
+        
+        // Apply Label 1 (Before)
+        const intermediateUri = await addLabelToImage(
+          preparingPhoto.photo.uri,
+          t('common.before') || 'BEFORE',
+          config1
+        );
+        
+        // Apply Label 2 (After) to the result of step 1
+        labeledUri = await addLabelToImage(
+          intermediateUri,
+          t('common.after') || 'AFTER',
+          config2
+        );
         
       } else {
         // Standard single photo labeling
