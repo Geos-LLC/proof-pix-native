@@ -171,13 +171,17 @@ export const purchaseProduct = async (productId) => {
         console.log('[IAP] Purchase request sent, waiting for response...');
         
         // Set a timeout to detect if purchase is silently blocked (e.g., existing subscription)
-        // This timeout will trigger if no response comes from the purchase listeners within 3 seconds
+        // This timeout should trigger if no response comes from the purchase listeners within 3 seconds
+        console.log('[IAP] Setting 3-second timeout...');
         purchaseTimeout = setTimeout(() => {
+          console.warn('[IAP] ⏰ Timeout fired! finished=' + finished);
           if (!finished) {
             console.warn('[IAP] ⚠️ Purchase request timed out after 3 seconds');
             console.warn('[IAP] ⚠️ This usually means iOS blocked the purchase silently');
             console.warn('[IAP] ⚠️ This happens when the user already has an active subscription');
             finish(() => reject(new Error('PURCHASE_TIMEOUT')));
+          } else {
+            console.log('[IAP] Timeout fired but purchase already finished, ignoring');
           }
         }, 3000);
       } catch (requestErr) {
