@@ -86,7 +86,9 @@ export const purchaseProduct = async (productId) => {
     console.log('[IAP] Setting up purchaseUpdatedListener...');
     purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchase) => {
       console.log('[IAP] purchaseUpdatedListener triggered');
-      console.log('[IAP] Purchase object:', JSON.stringify(purchase, null, 2));
+      // Log purchase without the massive token to keep logs clean
+      const { purchaseToken, ...purchaseWithoutToken } = purchase || {};
+      console.log('[IAP] Purchase:', JSON.stringify(purchaseWithoutToken, null, 2));
 
       const { productId: purchasedId, transactionReceipt } = purchase || {};
       console.log('[IAP] Purchased ID:', purchasedId, 'Expected:', productId);
@@ -193,7 +195,8 @@ export const restorePurchases = async () => {
   try {
     console.log('[IAP] Calling RNIap.restorePurchases()...');
     const purchases = await RNIap.restorePurchases();
-    console.log('[IAP] ✅ Restore successful, purchases:', JSON.stringify(purchases, null, 2));
+    // Log count only to avoid massive token logs
+    console.log('[IAP] ✅ Restore successful, found', purchases?.length || 0, 'purchase(s)');
     return purchases;
   } catch (error) {
     console.error('[IAP] ❌ Restore failed:', error);
