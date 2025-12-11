@@ -202,6 +202,39 @@ export const purchaseProduct = async (productId) => {
  * Check for active subscriptions without showing UI.
  * Returns the active subscription info if found, or null if none.
  */
+/**
+ * Clear all pending transactions from the queue.
+ * Use this to clear stuck/ghost transactions from sandbox testing.
+ */
+export const clearPendingTransactions = async () => {
+  console.log('[IAP] Clearing pending transactions...');
+  
+  try {
+    await initIAPIfNeeded();
+    
+    // Get all pending transactions
+    const purchases = await RNIap.getAvailablePurchases();
+    console.log('[IAP] Found', purchases?.length || 0, 'pending transaction(s)');
+    
+    // Finish all of them to clear the queue
+    for (const purchase of purchases || []) {
+      try {
+        console.log('[IAP] Finishing transaction:', purchase.productId);
+        await RNIap.finishTransaction(purchase, false);
+      } catch (err) {
+        console.warn('[IAP] Failed to finish transaction:', err?.message);
+        // Continue with next transaction even if one fails
+      }
+    }
+    
+    console.log('[IAP] ✅ All pending transactions cleared');
+    return true;
+  } catch (error) {
+    console.error('[IAP] ❌ Failed to clear transactions:', error);
+    return false;
+  }
+};
+
 export const checkActiveSubscription = async () => {
   console.log('[IAP] Checking for active subscriptions...');
   
