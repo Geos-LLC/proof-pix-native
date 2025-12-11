@@ -192,13 +192,17 @@ export default function PlanSelectionScreen({ navigation }) {
     
     // Use InteractionManager to wait for all animations/interactions to complete
     // This prevents React errors during navigation
-    InteractionManager.runAfterInteractions(() => {
-      console.log('[PlanSelection] 🔵 All interactions complete, setting isMounted to false');
-      isMounted.current = false;
-      
-      console.log('[PlanSelection] 🟢 Navigating to GoogleSignUp...');
-      navigation.navigate('GoogleSignUp', { plan, trialJustStarted: trialJustStarted });
-      console.log('[PlanSelection] 🟢 Navigation called, proceedWithPlanSelection END');
+    // Wrap in a Promise to ensure we wait for navigation to complete
+    return new Promise((resolve) => {
+      InteractionManager.runAfterInteractions(() => {
+        console.log('[PlanSelection] 🔵 All interactions complete, setting isMounted to false');
+        isMounted.current = false;
+        
+        console.log('[PlanSelection] 🟢 Navigating to GoogleSignUp...');
+        navigation.navigate('GoogleSignUp', { plan, trialJustStarted: trialJustStarted });
+        console.log('[PlanSelection] 🟢 Navigation called, proceedWithPlanSelection END');
+        resolve();
+      });
     });
   };
 
