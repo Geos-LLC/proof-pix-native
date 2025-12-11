@@ -60,7 +60,7 @@ import {
   logFeatureGateShown,
   logFeatureGateAction,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct, restorePurchases } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions } from '../services/iapService';
 
 const getFontOptions = (t) => [
   {
@@ -401,7 +401,7 @@ export default function SettingsScreen({ navigation, route }) {
 
     devTapCountRef.current += 1;
 
-    if (devTapCountRef.current >= 7) {
+    if (devTapCountRef.current >= 8) {
       devTapCountRef.current = 0;
       setDevToolsUnlocked(true);
       try {
@@ -4697,7 +4697,7 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
           )}
 
-          {/* Test Tools Button - Only in Development and after secret tap unlock */}
+          {/* Developer Tools - Only in Development and after secret tap unlock */}
           {__DEV__ && devToolsUnlocked && (
             <>
               <View style={styles.divider} />
@@ -4707,6 +4707,34 @@ export default function SettingsScreen({ navigation, route }) {
               >
                 <Text style={styles.testToolsButtonText}>🧪 Test Tools</Text>
               </TouchableOpacity>
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity
+                  style={[styles.testToolsButton, { backgroundColor: '#fff3e0', marginTop: 10 }]}
+                  onPress={async () => {
+                    Alert.alert(
+                      'Clear IAP Cache',
+                      'This will clear stuck sandbox IAP transactions. Only use if purchases are timing out. Continue?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Clear',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await clearPendingTransactions();
+                              Alert.alert('Success', 'IAP transaction cache cleared!');
+                            } catch (error) {
+                              Alert.alert('Error', 'Failed to clear cache.');
+                            }
+                          }
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={[styles.testToolsButtonText, { color: '#e65100' }]}>🗑️ Clear IAP Cache</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>

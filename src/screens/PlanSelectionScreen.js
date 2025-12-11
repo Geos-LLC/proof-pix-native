@@ -22,7 +22,7 @@ import TrialNotificationModal from '../components/TrialNotificationModal';
 import TrialConfirmationModal from '../components/TrialConfirmationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
-import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, restorePurchases } from '../services/iapService';
 
 export default function PlanSelectionScreen({ navigation }) {
   const { t } = useTranslation();
@@ -298,38 +298,6 @@ export default function PlanSelectionScreen({ navigation }) {
     }
   };
 
-  // Handle clear pending transactions (for stuck sandbox transactions)
-  const handleClearTransactions = async () => {
-    if (Platform.OS !== 'ios') {
-      return;
-    }
-
-    Alert.alert(
-      'Clear Transaction Cache',
-      'This will clear stuck sandbox transactions. Only use this if purchases are timing out. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear Cache',
-          style: 'destructive',
-          onPress: async () => {
-            setIsRestoringPurchases(true);
-            try {
-              await clearPendingTransactions();
-              Alert.alert(
-                'Success',
-                'Transaction cache cleared! Try purchasing again.'
-              );
-            } catch (error) {
-              Alert.alert('Error', 'Failed to clear cache. Try reinstalling the app.');
-            } finally {
-              setIsRestoringPurchases(false);
-            }
-          }
-        }
-      ]
-    );
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -350,26 +318,15 @@ export default function PlanSelectionScreen({ navigation }) {
 
           {/* Restore Purchases Button - iOS only */}
           {Platform.OS === 'ios' && (
-            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 15, marginBottom: 15 }}>
-              <TouchableOpacity
-                style={styles.restorePurchasesButton}
-                onPress={handleRestorePurchases}
-                disabled={isRestoringPurchases}
-              >
-                <Text style={styles.restorePurchasesText}>
-                  {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.restorePurchasesButton, { backgroundColor: '#ffe6e6' }]}
-                onPress={handleClearTransactions}
-                disabled={isRestoringPurchases}
-              >
-                <Text style={[styles.restorePurchasesText, { color: '#d32f2f' }]}>
-                  Clear Cache
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.restorePurchasesButton}
+              onPress={handleRestorePurchases}
+              disabled={isRestoringPurchases}
+            >
+              <Text style={styles.restorePurchasesText}>
+                {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
+              </Text>
+            </TouchableOpacity>
           )}
 
           {trialAvailable && (
