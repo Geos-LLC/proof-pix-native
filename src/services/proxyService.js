@@ -130,6 +130,12 @@ class ProxyService {
         sessionId: data.sessionId
       };
     } catch (error) {
+      // Handle expected "not connected" errors gracefully
+      if (error.message === 'GOOGLE_NOT_CONNECTED') {
+        console.log('[PROXY] Google not connected - user needs to sign in first');
+        throw error;
+      }
+      
       console.error('[PROXY] Error initializing session:', error);
       console.error('[PROXY] Error details:', {
         message: error.message,
