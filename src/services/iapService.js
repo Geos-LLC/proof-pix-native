@@ -138,6 +138,13 @@ export const purchaseProduct = async (productId) => {
         return;
       }
 
+      // Check if item already owned - this is expected behavior
+      if (errorCode === 'already-owned' || errorMsg.includes('already owned')) {
+        console.log('[IAP] Item already owned - subscription exists');
+        finish(() => reject(new Error('already-owned')));
+        return;
+      }
+
       // Log other errors
       console.error('[IAP] purchaseErrorListener triggered');
       console.error('[IAP] Error code:', errorCode);

@@ -157,6 +157,19 @@ export default function PlanSelectionScreen({ navigation }) {
               return; // user cancelled, do not change plan
             }
 
+            // Check if item already owned
+            if (errorMsg === 'already-owned') {
+              console.log('[PlanSelection] Item already owned');
+              Alert.alert(
+                t('settings.existingSubscriptionTitle', { defaultValue: 'Active Subscription Detected' }),
+                t('settings.alreadyOwnedMessage', {
+                  defaultValue: 'You already have an active subscription for this plan. To manage your subscriptions, go to iOS Settings → [Your Name] → Subscriptions.'
+                }),
+                [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+              );
+              return;
+            }
+
             console.error('[PlanSelection] ❌ Purchase failed:', err);
             console.error('[PlanSelection] Error message:', err?.message);
             console.error('[PlanSelection] Error stack:', err?.stack);
