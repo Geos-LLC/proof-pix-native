@@ -128,19 +128,24 @@ export const purchaseProduct = async (productId) => {
 
     console.log('[IAP] Setting up purchaseErrorListener...');
     purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
+      const errorCode = error?.code || '';
+      const errorMsg = error?.message || '';
+      
+      // Check if user cancelled - handle silently
+      if (errorCode === 'E_USER_CANCELLED' || errorCode === 'user-cancelled' || errorMsg.includes('cancelled')) {
+        console.log('[IAP] User cancelled purchase');
+        finish(() => reject(new Error('user-cancelled')));
+        return;
+      }
+
+      // Log other errors
       console.error('[IAP] purchaseErrorListener triggered');
-      console.error('[IAP] Error object:', JSON.stringify(error, null, 2));
-      console.error('[IAP] Error code:', error?.code);
-      console.error('[IAP] Error message:', error?.message);
+      console.error('[IAP] Error code:', errorCode);
+      console.error('[IAP] Error message:', errorMsg);
 
       finish(() => {
-        if (error?.code === 'E_USER_CANCELLED') {
-          console.log('[IAP] User cancelled purchase');
-          reject(new Error('USER_CANCELLED'));
-        } else {
-          console.error('[IAP] ❌ Purchase error:', error?.code || 'IAP_ERROR');
-          reject(new Error(error?.code || 'IAP_ERROR'));
-        }
+        console.error('[IAP] ❌ Purchase error:', errorCode || 'IAP_ERROR');
+        reject(new Error(errorCode || 'IAP_ERROR'));
       });
     });
 

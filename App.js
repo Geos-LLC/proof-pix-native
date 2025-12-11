@@ -286,7 +286,9 @@ export default function App() {
           checkTrialNotifications(true); // Skip Day 0 on startup
         }
       } catch (error) {
-        console.error('[App] Error checking trial status:', error);
+        // Silent fail - trial status check is not critical for app functionality
+        // Common error: LoadBundleFromServerRequestError (Firebase bundle not available)
+        console.warn('[App] Could not check trial status:', error?.message || error);
       }
     }, 2000);
 

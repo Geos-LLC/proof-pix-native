@@ -150,14 +150,16 @@ export default function PlanSelectionScreen({ navigation }) {
             const purchaseResult = await purchaseProduct(productId);
             console.log('[PlanSelection] ✅ Purchase successful:', JSON.stringify(purchaseResult, null, 2));
           } catch (err) {
-            console.error('[PlanSelection] ❌ Purchase failed:', err);
-            console.error('[PlanSelection] Error message:', err?.message);
-            console.error('[PlanSelection] Error stack:', err?.stack);
-
-            if (err?.message === 'USER_CANCELLED') {
+            // Check if user cancelled - handle silently
+            const errorMsg = err?.message || '';
+            if (errorMsg === 'USER_CANCELLED' || errorMsg === 'user-cancelled' || errorMsg.includes('cancelled')) {
               console.log('[PlanSelection] User cancelled purchase');
               return; // user cancelled, do not change plan
             }
+
+            console.error('[PlanSelection] ❌ Purchase failed:', err);
+            console.error('[PlanSelection] Error message:', err?.message);
+            console.error('[PlanSelection] Error stack:', err?.stack);
             
             if (err?.message === 'PURCHASE_TIMEOUT') {
               Alert.alert(
