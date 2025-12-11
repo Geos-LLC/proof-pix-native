@@ -1151,6 +1151,13 @@ export function AdminProvider({ children }) {
 
       throw new Error('Failed to initialize proxy session - no sessionId returned');
     } catch (error) {
+      // Handle expected errors more gracefully
+      if (error.message === 'GOOGLE_NOT_CONNECTED') {
+        console.log('[ADMIN] Google not connected yet - skipping proxy initialization');
+        setIsInitializingProxy(false);
+        return { success: false, error: 'GOOGLE_NOT_CONNECTED', skippable: true };
+      }
+      
       console.error('[ADMIN] Error initializing proxy session:', error);
       setIsInitializingProxy(false);
       // Return error object instead of null

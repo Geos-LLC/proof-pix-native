@@ -486,8 +486,7 @@ class GoogleAuthService {
       if (stored) {
         return stored;
       } else {
-        console.warn('[AUTH] ❌ No serverAuthCode found in storage');
-        console.warn('[AUTH] This means you need to reconnect to get a new serverAuthCode');
+        console.log('[AUTH] No serverAuthCode found - user needs to sign in to Google');
       }
     } catch (e) {
       console.error('[AUTH] Error reading serverAuthCode from storage:', e);

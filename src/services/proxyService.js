@@ -58,7 +58,9 @@ class ProxyService {
         // For Google, get serverAuthCode
         const serverAuthCode = await googleAuthService.getServerAuthCode();
         if (!serverAuthCode) {
-          throw new Error('Failed to get serverAuthCode from Google Sign-In.');
+          // This is expected if user hasn't signed in to Google yet
+          console.log('[PROXY] No serverAuthCode available - user needs to sign in to Google first');
+          throw new Error('GOOGLE_NOT_CONNECTED');
         }
 
         // IMPORTANT: Always use Web Client ID for server-side token exchange
