@@ -4713,7 +4713,7 @@ export default function SettingsScreen({ navigation, route }) {
                   onPress={async () => {
                     Alert.alert(
                       'Clear IAP Cache',
-                      'This will clear stuck sandbox IAP transactions. Only use if purchases are timing out. Continue?',
+                      'Clear stuck sandbox transactions.\n\nNote: Sandbox transactions often cannot be fully cleared.\n\nContinue?',
                       [
                         { text: 'Cancel', style: 'cancel' },
                         {
@@ -4721,8 +4721,12 @@ export default function SettingsScreen({ navigation, route }) {
                           style: 'destructive',
                           onPress: async () => {
                             try {
-                              await clearPendingTransactions();
-                              Alert.alert('Success', 'IAP transaction cache cleared!');
+                              const success = await clearPendingTransactions();
+                              Alert.alert(
+                                'Cache Cleared',
+                                `Cleared sandbox transactions.\n\nNote: Red errors in console are normal for old sandbox transactions. These are cosmetic and can be ignored.`,
+                                [{ text: 'OK' }]
+                              );
                             } catch (error) {
                               Alert.alert('Error', 'Failed to clear cache.');
                             }
@@ -4992,35 +4996,79 @@ export default function SettingsScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                     onPress={async () => {
-                      // Clear team data when switching to Pro
-                      if (userPlan === 'business' || userPlan === 'enterprise') {
-                        try {
-                          await updatePlanLimit(0);
-                          await initializeProxySession(null);
-                        } catch (error) {
-                          console.error('[SETTINGS] Error clearing team data:', error);
+                      try {
+                        // Clear team data when switching to Pro
+                        if (userPlan === 'business' || userPlan === 'enterprise') {
+                          try {
+                            await updatePlanLimit(0);
+                            await initializeProxySession(null);
+                          } catch (error) {
+                            console.error('[SETTINGS] Error clearing team data:', error);
+                          }
                         }
-                      }
-                      // Check if user is on active trial - if so, skip IAP
-                      const onTrial = await isTrialActive();
+                        
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
 
-                      // On iOS, require in-app purchase for Pro plan (unless on trial)
-                      if (Platform.OS === 'ios' && !onTrial) {
-                        try {
-                          await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
-                        } catch (err) {
-                          if (err?.message === 'USER_CANCELLED') {
+                        // On iOS, require in-app purchase for Pro plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          // Check if already on Pro plan
+                          if (userPlan === 'pro') {
+                            Alert.alert(
+                              'Already Subscribed',
+                              'You already have the Pro plan.',
+                              [{ text: 'OK' }]
+                            );
                             return;
                           }
-                          Alert.alert(
-                            t('common.error', { defaultValue: 'Error' }),
-                            t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-                          );
-                          return;
+                          
+                          try {
+                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Pro...');
+                            
+                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
+                            setShowPlanModal(false);
+                            
+                            // Wait for modal to close
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            
+                            await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                            
+                            // Purchase succeeded - update plan
+                            await updateUserPlan('pro');
+                            
+                            // Wait for context to update
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            
+                            // Show success message
+                            Alert.alert(
+                              t('common.success', { defaultValue: 'Success' }),
+                              t('settings.proPlanActivated', { 
+                                defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' 
+                              })
+                            );
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
+                              return;
+                            }
+                            
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        } else {
+                          // Trial or non-iOS - update plan directly
+                          await updateUserPlan('pro');
+                          setShowPlanModal(false);
                         }
+                      } catch (error) {
+                        console.error('[SETTINGS] Error changing to Pro plan:', error);
+                        Alert.alert(
+                          t('common.error'),
+                          t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                        );
                       }
-                      await updateUserPlan('pro');
-                      setShowPlanModal(false);
                     }}
                   >
                     <View style={styles.planButtonRow}>
@@ -5041,23 +5089,58 @@ export default function SettingsScreen({ navigation, route }) {
 
                         // On iOS, require in-app purchase for Business plan (unless on trial)
                         if (Platform.OS === 'ios' && !onTrial) {
+                          // Check if already on Business plan
+                          if (userPlan === 'business') {
+                            Alert.alert(
+                              'Already Subscribed',
+                              'You already have the Business plan.',
+                              [{ text: 'OK' }]
+                            );
+                            return;
+                          }
+                          
                           try {
+                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Business...');
+                            
+                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
+                            setShowPlanModal(false);
+                            
+                            // Wait for modal to close
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            
                             await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                            
+                            // Purchase succeeded - update plan
+                            await updatePlanLimit(5);
+                            await updateUserPlan('business');
+                            
+                            // Wait for context to update
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            
+                            // Show success message
+                            Alert.alert(
+                              t('common.success', { defaultValue: 'Success' }),
+                              t('settings.businessPlanActivated', { 
+                                defaultValue: 'Business plan activated! You can now add up to 5 team members.' 
+                              })
+                            );
                           } catch (err) {
-                            if (err?.message === 'USER_CANCELLED') {
+                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                               return;
                             }
+                            
                             Alert.alert(
                               t('common.error', { defaultValue: 'Error' }),
                               t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
                             );
                             return;
                           }
+                        } else {
+                          // Trial or non-iOS - update plan directly
+                          await updatePlanLimit(5);
+                          await updateUserPlan('business');
+                          setShowPlanModal(false);
                         }
-                        // Set up business tier with 5 team member limit
-                        await updatePlanLimit(5);
-                        await updateUserPlan('business');
-                        setShowPlanModal(false);
                       } catch (error) {
                         console.error('[SETTINGS] Error setting up business plan:', error);
                         Alert.alert(
@@ -5087,28 +5170,60 @@ export default function SettingsScreen({ navigation, route }) {
 
                         // On iOS, require in-app purchase for Enterprise plan (unless on trial)
                         if (Platform.OS === 'ios' && !onTrial) {
+                          // Check if already on Enterprise plan
+                          if (userPlan === 'enterprise') {
+                            Alert.alert(
+                              'Already Subscribed',
+                              'You already have the Enterprise plan.',
+                              [{ text: 'OK' }]
+                            );
+                            return;
+                          }
+                          
                           try {
+                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Enterprise...');
+                            
+                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
+                            setShowPlanModal(false);
+                            
+                            // Wait for modal to close
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            
                             await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                            
+                            // Purchase succeeded - update plan
+                            await updatePlanLimit(15);
+                            await updateUserPlan('enterprise');
+                            
+                            // Wait for context to update
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            
+                            Alert.alert(
+                              t('common.success', { defaultValue: 'Success' }),
+                              t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
+                            );
                           } catch (err) {
-                            if (err?.message === 'USER_CANCELLED') {
+                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                               return;
                             }
+                            
                             Alert.alert(
                               t('common.error', { defaultValue: 'Error' }),
                               t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
                             );
                             return;
                           }
+                        } else {
+                          // Trial or non-iOS - update plan directly
+                          await updatePlanLimit(15);
+                          await updateUserPlan('enterprise');
+                          setShowPlanModal(false);
+                          
+                          Alert.alert(
+                            t('common.success', { defaultValue: 'Success' }),
+                            t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
+                          );
                         }
-                        // Set up enterprise tier with 15 team member limit
-                        await updatePlanLimit(15);
-                        // Update user plan to enterprise
-                        await updateUserPlan('enterprise');
-                        setShowPlanModal(false);
-                        Alert.alert(
-                          t('common.success', { defaultValue: 'Success' }),
-                          t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
-                        );
                       } catch (error) {
                         console.error('[SETTINGS] Error setting up enterprise plan:', error);
                         Alert.alert(

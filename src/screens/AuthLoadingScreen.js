@@ -9,6 +9,8 @@ export default function AuthLoadingScreen({ navigation }) {
   const [iapChecked, setIapChecked] = useState(false);
 
   // Auto-restore IAP subscriptions on app launch (iOS only)
+  // IMPORTANT: Disabled in development mode to prevent constant password prompts
+  // Users can manually restore via "Restore Purchases" button when needed
   useEffect(() => {
     const autoRestoreSubscriptions = async () => {
       if (Platform.OS !== 'ios') {
@@ -16,9 +18,27 @@ export default function AuthLoadingScreen({ navigation }) {
         return;
       }
 
+      // SKIP auto-restore in development mode (hot reload causes constant prompts)
+      // In production, this will still work for automatic subscription restoration
+      if (__DEV__) {
+        console.log('[AuthLoading] Development mode - skipping auto-restore (use "Restore Purchases" button to test)');
+        setIapChecked(true);
+        return;
+      }
+
+      // Skip auto-restore if user already has a plan (to reduce password prompts)
+      // Users can manually restore via "Restore Purchases" button if needed
+      if (userPlan && userPlan !== 'starter') {
+        console.log('[AuthLoading] User already has plan:', userPlan, '- skipping auto-restore');
+        setIapChecked(true);
+        return;
+      }
+
+      // Only auto-restore for completely new users or those with no plan
+      // This helps during first app launch after reinstall
       try {
         const { restorePurchases } = await import('../services/iapService');
-        console.log('[AuthLoading] Auto-restoring IAP subscriptions...');
+        console.log('[AuthLoading] Checking for existing subscriptions (one-time check)...');
         const purchases = await restorePurchases();
         
         if (purchases && purchases.length > 0) {
@@ -39,11 +59,9 @@ export default function AuthLoadingScreen({ navigation }) {
             else if (productId.includes('business.monthly')) planName = 'business';
             else if (productId.includes('enterprise.monthly')) planName = 'enterprise';
             
-            // Update user plan if different
-            if (planName !== userPlan && planName !== 'starter') {
-              console.log('[AuthLoading] Updating plan from subscription:', planName);
-              await updateUserPlan(planName);
-            }
+            // Update user plan
+            console.log('[AuthLoading] Updating plan from subscription:', planName);
+            await updateUserPlan(planName);
           } else {
             console.log('[AuthLoading] No active subscriptions found');
           }
@@ -52,6 +70,7 @@ export default function AuthLoadingScreen({ navigation }) {
         }
       } catch (error) {
         console.warn('[AuthLoading] Failed to auto-restore subscriptions:', error?.message);
+        // Don't block app startup if restore fails - user can restore manually
       } finally {
         setIapChecked(true);
       }
@@ -60,7 +79,7 @@ export default function AuthLoadingScreen({ navigation }) {
     if (!settingsLoading) {
       autoRestoreSubscriptions();
     }
-  }, [settingsLoading]);
+  }, [settingsLoading, userPlan]);
 
   useEffect(() => {
     const navigate = () => {
