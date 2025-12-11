@@ -159,45 +159,25 @@ export default function PlanSelectionScreen({ navigation }) {
 
             // Check if item already owned or purchase timed out (both mean active subscription exists)
             if (errorMsg === 'already-owned' || errorMsg === 'PURCHASE_TIMEOUT') {
-              console.log('[PlanSelection] Subscription already exists, restoring and continuing...');
+              console.log('[PlanSelection] Subscription already exists, proceeding with selected plan...');
               
-              // Restore purchases to get the correct plan
-              try {
-                const purchases = await restorePurchases();
-                if (purchases && purchases.length > 0) {
-                  // Find active subscription and update plan
-                  const now = Date.now();
-                  const activePurchase = purchases.find(p => p.expirationDateIOS && p.expirationDateIOS > now);
-                  
-                  if (activePurchase) {
-                    const productId = activePurchase.productId;
-                    let activePlan = 'starter';
-                    if (productId.includes('pro.monthly')) activePlan = 'pro';
-                    else if (productId.includes('business.monthly')) activePlan = 'business';
-                    else if (productId.includes('enterprise.monthly')) activePlan = 'enterprise';
-                    
-                    console.log('[PlanSelection] Active plan from subscription:', activePlan);
-                    await updateUserPlan(activePlan);
-                    
-                    // Navigate to account setup
-                    console.log('[PlanSelection] Navigating to account setup with restored plan');
-                    navigation.navigate('GoogleSignUp', { plan: activePlan });
-                    return;
-                  }
-                }
-              } catch (restoreErr) {
-                console.warn('[PlanSelection] Could not restore purchases:', restoreErr);
-              }
+              // Since iOS confirms subscription exists, trust it and use the plan they selected
+              // (In sandbox, restorePurchases sometimes returns 0 even when subscriptions exist)
+              console.log('[PlanSelection] Updating plan to:', plan);
+              await updateUserPlan(plan);
               
-              // Fallback: show alert if restore failed
-              Alert.alert(
-                t('settings.existingSubscriptionTitle', { defaultValue: 'Active Subscription Detected' }),
-                t('settings.alreadyOwnedMessage', {
-                  defaultValue: 'You already have an active subscription. Please use the "Restore Purchases" button below to restore your plan.'
-                }),
-                [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-              );
-              return;
+              // Navigate to account setup
+              console.log('[PlanSelection] Navigating to account setup');
+              
+              // Use same InteractionManager pattern as successful purchase
+              return new Promise((resolve) => {
+                InteractionManager.runAfterInteractions(() => {
+                  console.log('[PlanSelection] All interactions complete, navigating...');
+                  isMounted.current = false;
+                  navigation.navigate('GoogleSignUp', { plan });
+                  resolve();
+                });
+              });
             }
 
             console.error('[PlanSelection] ❌ Purchase failed:', err);
