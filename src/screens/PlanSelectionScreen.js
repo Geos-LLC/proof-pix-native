@@ -291,11 +291,50 @@ export default function PlanSelectionScreen({ navigation }) {
 
     setIsRestoringPurchases(true);
     try {
-      await restorePurchases();
-      Alert.alert(
-        t('common.success', { defaultValue: 'Success' }),
-        t('settings.purchasesRestored', { defaultValue: 'Your purchases have been restored successfully.' })
-      );
+      console.log('[PlanSelection] Restoring purchases...');
+      const purchases = await restorePurchases();
+      
+      if (!purchases || purchases.length === 0) {
+        Alert.alert(
+          t('common.info', { defaultValue: 'No Purchases Found' }),
+          t('settings.noPurchasesFound', { defaultValue: 'No active subscriptions found. If you recently purchased, please wait a moment and try again.' })
+        );
+        setIsRestoringPurchases(false);
+        return;
+      }
+      
+      // Find active subscription
+      const now = Date.now();
+      const activePurchase = purchases.find(p => p.expirationDateIOS && p.expirationDateIOS > now);
+      
+      if (activePurchase) {
+        const productId = activePurchase.productId;
+        let restoredPlan = 'starter';
+        if (productId.includes('pro.monthly')) restoredPlan = 'pro';
+        else if (productId.includes('business.monthly')) restoredPlan = 'business';
+        else if (productId.includes('enterprise.monthly')) restoredPlan = 'enterprise';
+        
+        console.log('[PlanSelection] Restored active plan:', restoredPlan);
+        await updateUserPlan(restoredPlan);
+        
+        setIsRestoringPurchases(false);
+        
+        // Navigate to account setup with the restored plan
+        console.log('[PlanSelection] Navigating to account setup with restored plan');
+        return new Promise((resolve) => {
+          InteractionManager.runAfterInteractions(() => {
+            isMounted.current = false;
+            navigation.navigate('GoogleSignUp', { plan: restoredPlan });
+            resolve();
+          });
+        });
+      } else {
+        Alert.alert(
+          t('common.info', { defaultValue: 'Expired Subscription' }),
+          t('settings.expiredSubscription', { defaultValue: 'Your subscription has expired. Please select a new plan.' })
+        );
+        setIsRestoringPurchases(false);
+      }
     } catch (error) {
       console.error('[PlanSelection] Error restoring purchases:', error);
 
@@ -304,6 +343,7 @@ export default function PlanSelectionScreen({ navigation }) {
       if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED')) {
         // User cancelled - don't show error alert
         console.log('[PlanSelection] User cancelled restore purchases');
+        setIsRestoringPurchases(false);
         return;
       }
 
@@ -311,7 +351,6 @@ export default function PlanSelectionScreen({ navigation }) {
         t('common.error', { defaultValue: 'Error' }),
         t('settings.restoreFailed', { defaultValue: 'Failed to restore purchases. Please try again or contact support if the problem persists.' })
       );
-    } finally {
       setIsRestoringPurchases(false);
     }
   };
