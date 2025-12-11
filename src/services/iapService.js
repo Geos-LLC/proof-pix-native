@@ -217,18 +217,28 @@ export const clearPendingTransactions = async () => {
   try {
     await initIAPIfNeeded();
     
-    // Get all pending transactions
+    // Get all available purchases (completed transactions)
     const purchases = await RNIap.getAvailablePurchases();
-    console.log('[IAP] Found', purchases?.length || 0, 'pending transaction(s)');
+    console.log('[IAP] Found', purchases?.length || 0, 'available purchase(s)');
     
-    // Finish all of them to clear the queue
+    // Finish all available purchases
     for (const purchase of purchases || []) {
       try {
-        console.log('[IAP] Finishing transaction:', purchase.productId);
+        console.log('[IAP] Finishing available purchase:', purchase.productId);
         await RNIap.finishTransaction(purchase, false);
       } catch (err) {
-        console.warn('[IAP] Failed to finish transaction:', err?.message);
-        // Continue with next transaction even if one fails
+        console.warn('[IAP] Failed to finish purchase:', err?.message);
+      }
+    }
+    
+    // Also try to clear incomplete transactions by calling clearTransactionIOS (iOS only)
+    if (Platform.OS === 'ios') {
+      try {
+        console.log('[IAP] Clearing incomplete iOS transactions...');
+        await RNIap.clearTransactionIOS();
+        console.log('[IAP] ✅ Incomplete transactions cleared');
+      } catch (err) {
+        console.warn('[IAP] Could not clear incomplete transactions:', err?.message);
       }
     }
     
