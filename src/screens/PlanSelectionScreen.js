@@ -157,13 +157,43 @@ export default function PlanSelectionScreen({ navigation }) {
               return; // user cancelled, do not change plan
             }
 
-            // Check if item already owned
-            if (errorMsg === 'already-owned') {
-              console.log('[PlanSelection] Item already owned');
+            // Check if item already owned or purchase timed out (both mean active subscription exists)
+            if (errorMsg === 'already-owned' || errorMsg === 'PURCHASE_TIMEOUT') {
+              console.log('[PlanSelection] Subscription already exists, restoring and continuing...');
+              
+              // Restore purchases to get the correct plan
+              try {
+                const purchases = await restorePurchases();
+                if (purchases && purchases.length > 0) {
+                  // Find active subscription and update plan
+                  const now = Date.now();
+                  const activePurchase = purchases.find(p => p.expirationDateIOS && p.expirationDateIOS > now);
+                  
+                  if (activePurchase) {
+                    const productId = activePurchase.productId;
+                    let activePlan = 'starter';
+                    if (productId.includes('pro.monthly')) activePlan = 'pro';
+                    else if (productId.includes('business.monthly')) activePlan = 'business';
+                    else if (productId.includes('enterprise.monthly')) activePlan = 'enterprise';
+                    
+                    console.log('[PlanSelection] Active plan from subscription:', activePlan);
+                    await updateUserPlan(activePlan);
+                    
+                    // Navigate to account setup
+                    console.log('[PlanSelection] Navigating to account setup with restored plan');
+                    navigation.navigate('GoogleSignUp', { plan: activePlan });
+                    return;
+                  }
+                }
+              } catch (restoreErr) {
+                console.warn('[PlanSelection] Could not restore purchases:', restoreErr);
+              }
+              
+              // Fallback: show alert if restore failed
               Alert.alert(
                 t('settings.existingSubscriptionTitle', { defaultValue: 'Active Subscription Detected' }),
                 t('settings.alreadyOwnedMessage', {
-                  defaultValue: 'You already have an active subscription for this plan. To manage your subscriptions, go to iOS Settings → [Your Name] → Subscriptions.'
+                  defaultValue: 'You already have an active subscription. Please use the "Restore Purchases" button below to restore your plan.'
                 }),
                 [{ text: t('common.ok', { defaultValue: 'OK' }) }]
               );
@@ -173,15 +203,6 @@ export default function PlanSelectionScreen({ navigation }) {
             console.error('[PlanSelection] ❌ Purchase failed:', err);
             console.error('[PlanSelection] Error message:', err?.message);
             console.error('[PlanSelection] Error stack:', err?.stack);
-            
-            if (err?.message === 'PURCHASE_TIMEOUT') {
-              Alert.alert(
-                'Existing Subscription Detected',
-                'You already have an active subscription. To change your plan, please cancel your current subscription in Settings → Account Data → Manage Subscription, then purchase the new plan.',
-                [{ text: 'OK' }]
-              );
-              return;
-            }
             
             Alert.alert(
               t('common.error', { defaultValue: 'Error' }),
