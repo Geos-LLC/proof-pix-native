@@ -41,8 +41,9 @@ class ImageCompositor: NSObject {
         let canvasHeight = CGFloat(truncating: height)
         let canvasSize = CGSize(width: canvasWidth, height: canvasHeight)
 
-        // Create image context
-        UIGraphicsBeginImageContextWithOptions(canvasSize, false, 1.0)
+        // Create image context with scale 1.0 to match exact pixel dimensions
+        // Note: Using 1.0 ensures the canvas size matches the calculated dimensions exactly
+        UIGraphicsBeginImageContextWithOptions(canvasSize, true, 1.0)
         guard let context = UIGraphicsGetCurrentContext() else {
           reject("E_CONTEXT", "Failed to create graphics context", nil)
           return
@@ -84,8 +85,8 @@ class ImageCompositor: NSObject {
 
         UIGraphicsEndImageContext()
 
-        // Save to temp file
-        guard let imageData = composedImage.jpegData(compressionQuality: 0.95) else {
+        // Save to temp file with 85% quality to match Android and reduce file size
+        guard let imageData = composedImage.jpegData(compressionQuality: 0.85) else {
           reject("E_JPEG", "Failed to create JPEG data", nil)
           return
         }
@@ -271,16 +272,25 @@ class ImageCompositor: NSObject {
       urlString = String(urlString.dropFirst(7))
     }
 
+    var loadedImage: UIImage? = nil
+
     // Try to load from file path
     if let image = UIImage(contentsOfFile: urlString) {
-      return image
+      loadedImage = image
+    } else if let url = URL(string: uriString), let data = try? Data(contentsOf: url) {
+      // Try to load from URL
+      loadedImage = UIImage(data: data)
     }
 
-    // Try to load from URL
-    if let url = URL(string: uriString), let data = try? Data(contentsOf: url) {
-      return UIImage(data: data)
+    // Normalize image scale to 1.0 to ensure consistent rendering
+    // This prevents issues with images that have different embedded scale metadata
+    if let image = loadedImage, image.scale != 1.0 {
+      // Create a new image with scale 1.0
+      if let cgImage = image.cgImage {
+        return UIImage(cgImage: cgImage, scale: 1.0, orientation: image.imageOrientation)
+      }
     }
 
-    return nil
+    return loadedImage
   }
 }
