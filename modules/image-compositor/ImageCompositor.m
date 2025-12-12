@@ -14,4 +14,10 @@ RCT_EXTERN_METHOD(compositeImages:(NSString *)beforeUri
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(addLabelToImage:(NSString *)imageUri
+                  labelText:(NSString *)labelText
+                  labelConfig:(NSDictionary *)labelConfig
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end
