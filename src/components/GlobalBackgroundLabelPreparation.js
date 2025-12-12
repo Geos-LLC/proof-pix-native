@@ -249,41 +249,45 @@ export default function GlobalBackgroundLabelPreparation() {
         const config1 = { ...beforeLabelConfig };
         const config2 = { ...afterLabelConfig };
         
-        // --- BEFORE LABEL ADJUSTMENTS ---
+        // --- LABEL POSITIONING FOR COMPOSITE IMAGES ---
+        // For composite images, we need to position labels in the correct half
+        // However, we can't just adjust margins - we need to force specific positions
+
+        // Force BEFORE label to left/top half
         if (isStack) {
-            // Stacked: Before is Top Half.
-            // Standard positions (TL, TR) work fine.
-            // Bottom positions (BL, BR) need to be shifted UP by half height to stay in top half.
-            // marginVertical += halfHeight
-            if (config1.position.includes('bottom')) {
-                config1.marginVertical = (config1.marginVertical || 20) + halfHeight;
+            // Stack layout: Before should be in top half
+            // Force top positions (top-left or top-right based on original preference)
+            if (config1.position.includes('right')) {
+                config1.position = 'top-right';
+            } else {
+                config1.position = 'top-left';
             }
         } else {
-            // Side: Before is Left Half.
-            // Standard positions (TL, BL) work fine.
-            // Right positions (TR, BR) need to be shifted LEFT by half width to stay in left half.
-            // marginHorizontal += halfWidth
-            if (config1.position.includes('right')) {
-                config1.marginHorizontal = (config1.marginHorizontal || 20) + halfWidth;
+            // Side layout: Before should be in left half
+            // Force left positions (top-left or bottom-left based on original preference)
+            if (config1.position.includes('bottom')) {
+                config1.position = 'bottom-left';
+            } else {
+                config1.position = 'top-left';
             }
         }
-        
-        // --- AFTER LABEL ADJUSTMENTS ---
+
+        // Force AFTER label to right/bottom half
         if (isStack) {
-            // Stacked: After is Bottom Half.
-            // Standard positions (BL, BR) work fine.
-            // Top positions (TL, TR) need to be shifted DOWN by half height to stay in bottom half.
-            // marginVertical += halfHeight
-            if (config2.position.includes('top')) {
-                config2.marginVertical = (config2.marginVertical || 20) + halfHeight;
+            // Stack layout: After should be in bottom half
+            // Force bottom positions (bottom-left or bottom-right based on original preference)
+            if (config2.position.includes('right')) {
+                config2.position = 'bottom-right';
+            } else {
+                config2.position = 'bottom-left';
             }
         } else {
-            // Side: After is Right Half.
-            // Standard positions (TR, BR) work fine.
-            // Left positions (TL, BL) need to be shifted RIGHT by half width to stay in right half.
-            // marginHorizontal += halfWidth
-            if (config2.position.includes('left')) {
-                config2.marginHorizontal = (config2.marginHorizontal || 20) + halfWidth;
+            // Side layout: After should be in right half
+            // Force right positions (top-right or bottom-right based on original preference)
+            if (config2.position.includes('bottom')) {
+                config2.position = 'bottom-right';
+            } else {
+                config2.position = 'top-right';
             }
         }
         
