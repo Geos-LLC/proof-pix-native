@@ -29,7 +29,7 @@ export const calculateSettingsHash = (settings) => {
   } = settings;
 
   // Create a string representation of all settings including cache version
-  const settingsString = JSON.stringify({
+  const settingsObj = {
     version: CACHE_VERSION, // Include version to invalidate old cache
     showLabels: showLabels || false,
     beforeLabelPosition: beforeLabelPosition || 'top-left',
@@ -40,6 +40,13 @@ export const calculateSettingsHash = (settings) => {
     labelFontFamily: labelFontFamily || 'system',
     labelMarginVertical: labelMarginVertical || 10,
     labelMarginHorizontal: labelMarginHorizontal || 10,
+  };
+
+  const settingsString = JSON.stringify(settingsObj);
+
+  console.log(`[LabelCache] 🔢 calculateSettingsHash called`, {
+    settingsObj,
+    settingsString: settingsString.substring(0, 100) + '...',
   });
 
   // Simple hash function (djb2 algorithm)
@@ -47,7 +54,9 @@ export const calculateSettingsHash = (settings) => {
   for (let i = 0; i < settingsString.length; i++) {
     hash = ((hash << 5) + hash) + settingsString.charCodeAt(i);
   }
-  return Math.abs(hash).toString(36).substring(0, 8); // 8 character hash
+  const hashResult = Math.abs(hash).toString(36).substring(0, 8); // 8 character hash
+  console.log(`[LabelCache] ✅ Hash result: ${hashResult}`);
+  return hashResult;
 };
 
 /**
@@ -73,8 +82,16 @@ export const ensureCacheDir = async () => {
  * Get cached labeled photo URI if it exists and is valid
  */
 export const getCachedLabeledPhoto = async (photo, settingsHash) => {
+  const checkId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
   try {
+    console.log(`[LabelCache:${checkId}] 🔍 Checking cache for photo`, {
+      photoId: photo?.id,
+      mode: photo?.mode,
+      settingsHash,
+    });
+
     if (!photo || !photo.uri || !photo.id) {
+      console.log(`[LabelCache:${checkId}] ❌ Invalid photo object`);
       return null;
     }
 
@@ -84,18 +101,26 @@ export const getCachedLabeledPhoto = async (photo, settingsHash) => {
     const cached = metadata[cacheKey];
 
     if (!cached) {
+      console.log(`[LabelCache:${checkId}] ❌ No cache entry found for key: ${cacheKey}`);
       return null;
     }
 
+    console.log(`[LabelCache:${checkId}] 📋 Found cache entry`, {
+      cachedHash: cached.settingsHash,
+      requestedHash: settingsHash,
+      cachedUri: cached.uri?.substring(0, 50) + '...',
+    });
+
     // Check if settings hash matches
     if (cached.settingsHash !== settingsHash) {
-      // Settings changed, cache is invalid
+      console.log(`[LabelCache:${checkId}] ❌ Settings hash mismatch - cache invalid`);
       return null;
     }
 
     // Check if file exists
     const fileInfo = await FileSystem.getInfoAsync(cached.uri);
     if (!fileInfo.exists) {
+      console.log(`[LabelCache:${checkId}] ❌ Cached file doesn't exist, removing from metadata`);
       // File was deleted, remove from metadata
       delete metadata[cacheKey];
       await saveCacheMetadata(metadata);
@@ -105,13 +130,16 @@ export const getCachedLabeledPhoto = async (photo, settingsHash) => {
     // Check if original photo still exists (if original was deleted, cache is invalid)
     const originalInfo = await FileSystem.getInfoAsync(photo.uri);
     if (!originalInfo.exists) {
+      console.log(`[LabelCache:${checkId}] ❌ Original photo doesn't exist, removing cache`);
       // Original deleted, remove cache
       await deleteCachedPhoto(photo);
       return null;
     }
 
+    console.log(`[LabelCache:${checkId}] ✅ Cache HIT! Returning cached URI`);
     return cached.uri;
   } catch (error) {
+    console.error(`[LabelCache:${checkId}] ❌ Error checking cache:`, error);
     return null;
   }
 };

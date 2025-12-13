@@ -216,6 +216,15 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                     )
                 }
 
+                android.util.Log.d("ImageCompositor", "📍 Label Position Calculation:")
+                android.util.Log.d("ImageCompositor", "  Image size: ${labeledBitmap.width} x ${labeledBitmap.height}")
+                android.util.Log.d("ImageCompositor", "  Position: $position")
+                android.util.Log.d("ImageCompositor", "  Text: $labelText")
+                android.util.Log.d("ImageCompositor", "  Scaled fontSize: $scaledFontSize")
+                android.util.Log.d("ImageCompositor", "  Scaled marginH: $scaledMarginH, marginV: $scaledMarginV")
+                android.util.Log.d("ImageCompositor", "  Label size: $labelWidth x $labelHeight")
+                android.util.Log.d("ImageCompositor", "  Label rect: left=${labelRect.left}, top=${labelRect.top}, right=${labelRect.right}, bottom=${labelRect.bottom}")
+
                 // Draw label background with rounded corners
                 val backgroundPaint = Paint().apply {
                     color = backgroundColor

@@ -369,7 +369,6 @@ export default function PhotoDetailScreen({ route, navigation }) {
 
   const renderPhoto = (photoToRender = currentPhoto) => {
     const photoIsSelected = getIsSelected(photoToRender.id);
-    console.log('[PhotoDetailScreen] Rendering photo:', photoToRender.id, 'Is selected:', photoIsSelected, 'Selected photos:', Array.from(localSelectedPhotos));
     // Get the appropriate label position based on photo mode
     const currentLabelPosition = photoToRender.mode === 'before' ? beforeLabelPosition : afterLabelPosition;
     const positions = getLabelPositions(labelMarginVertical, labelMarginHorizontal);

@@ -97,16 +97,22 @@ export default function GlobalBackgroundLabelPreparation() {
       // Determine label position based on photo mode
       let labelPosition;
       if (preparingPhoto.photo.mode === PHOTO_MODES.BEFORE) {
-        labelPosition = convertLabelPosition(beforeLabelPosition || 'left-top');
+        const rawPosition = beforeLabelPosition || 'left-top';
+        labelPosition = convertLabelPosition(rawPosition);
+        console.log(`[BackgroundLabelPrep:${taskId}] 📍 BEFORE label position: ${rawPosition} -> ${labelPosition}`);
       } else if (preparingPhoto.photo.mode === PHOTO_MODES.AFTER) {
-        labelPosition = convertLabelPosition(afterLabelPosition || 'right-top');
+        const rawPosition = afterLabelPosition || 'right-top';
+        labelPosition = convertLabelPosition(rawPosition);
+        console.log(`[BackgroundLabelPrep:${taskId}] 📍 AFTER label position: ${rawPosition} -> ${labelPosition}`);
       } else if (preparingPhoto.isCombined) {
         // For combined photos, this logic only applies to the *container* if we were labeling it directly.
         // But we label the parts separately below.
         // However, if 'preparingPhoto' has a 'mode' property (like 'mix'), we need to handle it.
         labelPosition = 'top-left'; // Fallback
+        console.log(`[BackgroundLabelPrep:${taskId}] 📍 Combined label position (fallback): ${labelPosition}`);
       } else {
         labelPosition = 'top-left';
+        console.log(`[BackgroundLabelPrep:${taskId}] 📍 Unknown mode label position (fallback): ${labelPosition}`);
       }
 
       // Get label text
@@ -141,7 +147,16 @@ export default function GlobalBackgroundLabelPreparation() {
         padding: 16,
       };
 
-      console.log(`[BackgroundLabelPrep:${taskId}] 📝 Label config:`, { labelText, labelPosition });
+      console.log(`[BackgroundLabelPrep:${taskId}] 📝 Full Label config:`, {
+        labelText,
+        position: labelConfig.position,
+        fontSize: labelConfig.fontSize,
+        marginH: labelConfig.marginHorizontal,
+        marginV: labelConfig.marginVertical,
+        padding: labelConfig.padding,
+        bgColor: labelConfig.backgroundColor,
+        textColor: labelConfig.textColor,
+      });
 
       let labeledUri;
 
@@ -167,12 +182,27 @@ export default function GlobalBackgroundLabelPreparation() {
           ...labelConfig,
           position: convertLabelPosition(beforeLabelPosition || 'left-top'),
         };
-        
+
         const afterLabelConfig = {
           ...labelConfig,
           position: convertLabelPosition(afterLabelPosition || 'right-top'),
         };
-        
+
+        console.log(`[BackgroundLabelPrep:${taskId}] 📍 Combined Photo Label Configs:`, {
+          beforeConfig: {
+            position: beforeLabelConfig.position,
+            rawPosition: beforeLabelPosition || 'left-top',
+            marginH: beforeLabelConfig.marginHorizontal,
+            marginV: beforeLabelConfig.marginVertical,
+          },
+          afterConfig: {
+            position: afterLabelConfig.position,
+            rawPosition: afterLabelPosition || 'right-top',
+            marginH: afterLabelConfig.marginHorizontal,
+            marginV: afterLabelConfig.marginVertical,
+          },
+        });
+
         // 4. Label before and after photos
         console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 1: Labeling BEFORE photo...`);
         const labeledBeforeUri = await addLabelToImage(
@@ -261,7 +291,25 @@ export default function GlobalBackgroundLabelPreparation() {
         // Clone configs to avoid mutating originals
         const config1 = { ...beforeLabelConfig };
         const config2 = { ...afterLabelConfig };
-        
+
+        console.log(`[BackgroundLabelPrep:${taskId}] 📐 Position adjustment START:`, {
+          layout: isStack ? 'STACK' : 'SIDE',
+          width,
+          height,
+          halfWidth,
+          halfHeight,
+          config1Before: {
+            position: config1.position,
+            marginH: config1.marginHorizontal,
+            marginV: config1.marginVertical,
+          },
+          config2Before: {
+            position: config2.position,
+            marginH: config2.marginHorizontal,
+            marginV: config2.marginVertical,
+          },
+        });
+
         // --- BEFORE LABEL ADJUSTMENTS ---
         if (isStack) {
             // Stacked: Before is Top Half.
@@ -299,7 +347,20 @@ export default function GlobalBackgroundLabelPreparation() {
                 config2.marginHorizontal = (config2.marginHorizontal || 20) + halfWidth;
             }
         }
-        
+
+        console.log(`[BackgroundLabelPrep:${taskId}] 📐 Position adjustment COMPLETE:`, {
+          config1After: {
+            position: config1.position,
+            marginH: config1.marginHorizontal,
+            marginV: config1.marginVertical,
+          },
+          config2After: {
+            position: config2.position,
+            marginH: config2.marginHorizontal,
+            marginV: config2.marginVertical,
+          },
+        });
+
         // Apply Label 1 (Before)
         console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 1: Applying BEFORE label to combined photo...`);
         const intermediateUri = await addLabelToImage(

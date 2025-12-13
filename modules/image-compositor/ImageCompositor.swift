@@ -191,6 +191,15 @@ class ImageCompositor: NSObject {
           )
         }
 
+        print("[ImageCompositor] 📍 Label Position Calculation:")
+        print("  Image size: \(image.size.width) x \(image.size.height)")
+        print("  Position: \(position)")
+        print("  Text: \(labelText)")
+        print("  Scaled fontSize: \(scaledFontSize)")
+        print("  Scaled marginH: \(scaledMarginH), marginV: \(scaledMarginV)")
+        print("  Label size: \(labelWidth) x \(labelHeight)")
+        print("  Label rect: x=\(labelRect.origin.x), y=\(labelRect.origin.y), w=\(labelRect.width), h=\(labelRect.height)")
+
         // Create image context
         UIGraphicsBeginImageContextWithOptions(image.size, false, 0)
 

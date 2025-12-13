@@ -1,17 +1,30 @@
-import firebase from '@react-native-firebase/app';
-import analytics from '@react-native-firebase/analytics';
+import { getApp, getApps } from '@react-native-firebase/app';
+import { getAnalytics, logEvent as firebaseLogEvent, setUserId as firebaseSetUserId, setUserProperty, setAnalyticsCollectionEnabled } from '@react-native-firebase/analytics';
 
 /**
  * Analytics utility for Firebase Analytics
  * Provides helper functions to track user events and screen views
  */
 
+// Get analytics instance
+let analyticsInstance = null;
+const getAnalyticsInstance = () => {
+  if (!analyticsInstance) {
+    try {
+      analyticsInstance = getAnalytics();
+    } catch (error) {
+      return null;
+    }
+  }
+  return analyticsInstance;
+};
+
 /**
  * Check if Firebase is initialized
  */
 const isFirebaseReady = () => {
   try {
-    return firebase.apps.length > 0;
+    return getApps().length > 0;
   } catch (error) {
     return false;
   }
@@ -28,7 +41,10 @@ export const logEvent = async (eventName, params = {}) => {
   }
 
   try {
-    await analytics().logEvent(eventName, params);
+    const analytics = getAnalyticsInstance();
+    if (analytics) {
+      await firebaseLogEvent(analytics, eventName, params);
+    }
   } catch (error) {
   }
 };
@@ -45,10 +61,13 @@ export const logScreenView = async (screenName, screenClass = screenName) => {
   }
 
   try {
-    await analytics().logEvent('screen_view', {
-      screen_name: screenName,
-      screen_class: screenClass,
-    });
+    const analytics = getAnalyticsInstance();
+    if (analytics) {
+      await firebaseLogEvent(analytics, 'screen_view', {
+        screen_name: screenName,
+        screen_class: screenClass,
+      });
+    }
   } catch (error) {
   }
 };
@@ -59,8 +78,11 @@ export const logScreenView = async (screenName, screenClass = screenName) => {
  */
 export const setUserProperties = async (properties) => {
   try {
-    for (const [key, value] of Object.entries(properties)) {
-      await analytics().setUserProperty(key, value);
+    const analytics = getAnalyticsInstance();
+    if (analytics) {
+      for (const [key, value] of Object.entries(properties)) {
+        await setUserProperty(analytics, key, value);
+      }
     }
   } catch (error) {
   }
@@ -72,7 +94,10 @@ export const setUserProperties = async (properties) => {
  */
 export const setUserId = async (userId) => {
   try {
-    await analytics().setUserId(userId);
+    const analytics = getAnalyticsInstance();
+    if (analytics) {
+      await firebaseSetUserId(analytics, userId);
+    }
   } catch (error) {
   }
 };
@@ -83,7 +108,10 @@ export const setUserId = async (userId) => {
  */
 export const setAnalyticsEnabled = async (enabled) => {
   try {
-    await analytics().setAnalyticsCollectionEnabled(enabled);
+    const analytics = getAnalyticsInstance();
+    if (analytics) {
+      await setAnalyticsCollectionEnabled(analytics, enabled);
+    }
   } catch (error) {
   }
 };
