@@ -42,7 +42,7 @@ class ImageCompositor: NSObject {
         let canvasSize = CGSize(width: canvasWidth, height: canvasHeight)
 
         // Create image context
-        UIGraphicsBeginImageContextWithOptions(canvasSize, false, 1.0)
+        UIGraphicsBeginImageContextWithOptions(canvasSize, false, 0)
         guard let context = UIGraphicsGetCurrentContext() else {
           reject("E_CONTEXT", "Failed to create graphics context", nil)
           return
@@ -192,7 +192,7 @@ class ImageCompositor: NSObject {
         }
 
         // Create image context
-        UIGraphicsBeginImageContextWithOptions(image.size, false, 1.0)
+        UIGraphicsBeginImageContextWithOptions(image.size, false, 0)
 
         // Draw original image
         image.draw(at: .zero)
