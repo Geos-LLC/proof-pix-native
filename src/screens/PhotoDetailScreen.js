@@ -17,8 +17,8 @@ import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
 import { COLORS, PHOTO_MODES, getLabelPositions, ROOMS } from '../constants/rooms';
 import * as FileSystem from 'expo-file-system/legacy';
-import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
+import { getCachedLabeledPhoto, calculateSettingsHash } from '../services/labelCacheService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -26,7 +26,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
   const { photo, isSelectionMode = false, selectedPhotos = [], onSelectionChange, allPhotos: providedPhotos } = route.params;
   const { deletePhoto, getBeforePhotos, getAfterPhotos, activeProjectId } = usePhotos();
   const settings = useSettings();
-  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, labelMarginVertical, labelMarginHorizontal } = settings || {};
+  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, labelMarginVertical, labelMarginHorizontal, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily } = settings || {};
   const getRooms = settings?.getRooms;
   const [sharing, setSharing] = useState(false);
   const [containerLayout, setContainerLayout] = useState(null);
@@ -34,6 +34,9 @@ export default function PhotoDetailScreen({ route, navigation }) {
   const [currentPhoto, setCurrentPhoto] = useState(photo);
   const [allPhotos, setAllPhotos] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [displayUri, setDisplayUri] = useState(photo.uri); // URI to display for current photo (original or labeled)
+  const [displayUriMap, setDisplayUriMap] = useState({}); // Map of photo.id -> displayUri for all photos
+  const [loadingLabeledImage, setLoadingLabeledImage] = useState(false);
   const scrollViewRef = useRef(null);
   const imageContainerRef = useRef(null);
   const captureViewRef = useRef(null);
@@ -42,6 +45,59 @@ export default function PhotoDetailScreen({ route, navigation }) {
   // Track selected photos locally
   const [localSelectedPhotos, setLocalSelectedPhotos] = useState(new Set(selectedPhotos));
   
+  // Load cached labeled images for all photos when settings or photos change
+  useEffect(() => {
+    const loadAllDisplayImages = async () => {
+      if (!allPhotos || allPhotos.length === 0) return;
+
+      const newDisplayUriMap = {};
+
+      // Calculate settings hash once
+      const settingsHash = showLabels ? calculateSettingsHash({
+        showLabels,
+        beforeLabelPosition,
+        afterLabelPosition,
+        labelBackgroundColor,
+        labelTextColor,
+        labelSize,
+        labelFontFamily,
+        labelMarginVertical,
+        labelMarginHorizontal,
+      }) : null;
+
+      // Load display URIs for all photos
+      for (const photoItem of allPhotos) {
+        // If labels are disabled or photo doesn't have a mode, use original
+        if (!showLabels || !photoItem.mode) {
+          newDisplayUriMap[photoItem.id] = photoItem.uri;
+          continue;
+        }
+
+        try {
+          // Try to get cached labeled image
+          const cachedUri = await getCachedLabeledPhoto(photoItem, settingsHash);
+          newDisplayUriMap[photoItem.id] = cachedUri || photoItem.uri;
+        } catch (error) {
+          console.error('[PhotoDetailScreen] Error loading labeled image for', photoItem.id, error);
+          newDisplayUriMap[photoItem.id] = photoItem.uri;
+        }
+      }
+
+      setDisplayUriMap(newDisplayUriMap);
+    };
+
+    loadAllDisplayImages();
+  }, [allPhotos, showLabels, beforeLabelPosition, afterLabelPosition, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily, labelMarginVertical, labelMarginHorizontal]);
+
+  // Update displayUri when currentPhoto changes
+  useEffect(() => {
+    if (displayUriMap[currentPhoto.id]) {
+      setDisplayUri(displayUriMap[currentPhoto.id]);
+    } else {
+      setDisplayUri(currentPhoto.uri);
+    }
+  }, [currentPhoto, displayUriMap]);
+
   // Sync with route params when they change
   useEffect(() => {
     const newSet = new Set(selectedPhotos);
@@ -272,36 +328,36 @@ export default function PhotoDetailScreen({ route, navigation }) {
   const handleShare = async () => {
     try {
       setSharing(true);
-      
+
       let tempUri;
 
-      // If labels or watermark are enabled, capture the view (image + label + watermark)
-      if ((showLabels || shouldShowWatermark) && currentPhoto.mode && captureDimensions) {
+      // If watermark is enabled, capture the view (image + watermark)
+      // Otherwise, share the displayUri directly (which already has labels if enabled)
+      if (shouldShowWatermark && captureDimensions) {
         try {
-
           // Capture the hidden view which has exact image dimensions (no white padding)
           const capturedUri = await captureRef(captureViewRef, {
             format: 'jpg',
             quality: 0.95
           });
-          
+
           // Copy captured image to cache directory to ensure it's temporary
-          const tempFileName = `${currentPhoto.room}_${currentPhoto.name}_${currentPhoto.mode}_labeled_${Date.now()}.jpg`;
+          const tempFileName = `${currentPhoto.room}_${currentPhoto.name}_${currentPhoto.mode}_watermarked_${Date.now()}.jpg`;
           tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
           await FileSystem.copyAsync({ from: capturedUri, to: tempUri });
 
         } catch (error) {
-
-          // Fall back to original image if capture fails
+          console.error('[PhotoDetailScreen] Capture failed:', error);
+          // Fall back to displayUri if capture fails
           const tempFileName = `${currentPhoto.room}_${currentPhoto.name}_${currentPhoto.mode}_${Date.now()}.jpg`;
           tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
-          await FileSystem.copyAsync({ from: currentPhoto.uri, to: tempUri });
+          await FileSystem.copyAsync({ from: displayUri, to: tempUri });
         }
       } else {
-        // Share original image without label - copy to cache directory
+        // Share displayUri (labeled or original) - copy to cache directory
         const tempFileName = `${currentPhoto.room}_${currentPhoto.name}_${currentPhoto.mode}_${Date.now()}.jpg`;
         tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
-        await FileSystem.copyAsync({ from: currentPhoto.uri, to: tempUri });
+        await FileSystem.copyAsync({ from: displayUri, to: tempUri });
       }
 
       // Share the image
@@ -312,25 +368,18 @@ export default function PhotoDetailScreen({ route, navigation }) {
       };
 
       const result = await Share.share(shareOptions);
-      
-      if (result.action === Share.sharedAction) {
 
-      } else if (result.action === Share.dismissedAction) {
-
-      }
-      
       // Clean up temporary file after sharing
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
         if (fileInfo.exists) {
           await FileSystem.deleteAsync(tempUri, { idempotent: true });
-
         }
       } catch (cleanupError) {
-
+        console.error('[PhotoDetailScreen] Cleanup error:', cleanupError);
       }
     } catch (error) {
-
+      console.error('[PhotoDetailScreen] Share error:', error);
       Alert.alert('Error', 'Failed to share photo');
     } finally {
       setSharing(false);
@@ -367,56 +416,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
     };
   };
 
-  const renderPhoto = (photoToRender = currentPhoto) => {
+  const renderPhoto = (photoToRender = currentPhoto, uriToDisplay = displayUri) => {
     const photoIsSelected = getIsSelected(photoToRender.id);
-    // Get the appropriate label position based on photo mode
-    const currentLabelPosition = photoToRender.mode === 'before' ? beforeLabelPosition : afterLabelPosition;
-    const positions = getLabelPositions(labelMarginVertical, labelMarginHorizontal);
-    const positionConfig = positions[currentLabelPosition] || positions['left-top'];
-
-    // Calculate label position based on actual image display area
-    const getLabelStyle = () => {
-      const bounds = getImageDisplayBounds();
-      if (!bounds) {
-        // Fallback to default position coordinates if bounds not available
-        const { name, horizontalAlign, verticalAlign, ...coordinates } = positionConfig;
-        return coordinates;
-      }
-
-      // Apply position offset based on image display bounds
-      const style = {};
-
-      // Handle vertical positioning
-      if (positionConfig.top !== undefined) {
-        if (typeof positionConfig.top === 'string' && positionConfig.top.includes('%')) {
-          style.top = bounds.offsetY + (bounds.height * parseFloat(positionConfig.top) / 100);
-        } else {
-          style.top = bounds.offsetY + positionConfig.top;
-        }
-      }
-      if (positionConfig.bottom !== undefined) {
-        style.bottom = bounds.offsetY + positionConfig.bottom;
-      }
-
-      // Handle horizontal positioning
-      if (positionConfig.left !== undefined) {
-        if (typeof positionConfig.left === 'string' && positionConfig.left.includes('%')) {
-          style.left = bounds.offsetX + (bounds.width * parseFloat(positionConfig.left) / 100);
-        } else {
-          style.left = bounds.offsetX + positionConfig.left;
-        }
-      }
-      if (positionConfig.right !== undefined) {
-        style.right = bounds.offsetX + positionConfig.right;
-      }
-
-      // Handle transform
-      if (positionConfig.transform) {
-        style.transform = positionConfig.transform;
-      }
-
-      return style;
-    };
 
     // Calculate watermark position based on actual image display area
     const getWatermarkStyle = () => {
@@ -432,7 +433,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
       };
     };
 
-    // Show all photos as they are - no dimming, no frame
+    // Unified approach: Display either original or cached labeled image
+    // No overlay labels needed - labels are permanently embedded in cached images
     return (
       <View
         ref={imageContainerRef}
@@ -445,28 +447,19 @@ export default function PhotoDetailScreen({ route, navigation }) {
       >
         <Image
           ref={imageRef}
-          source={{ uri: photoToRender.uri }}
+          source={{ uri: uriToDisplay }}
           style={styles.image}
           resizeMode="contain"
           onLoad={(event) => {
             const { width, height } = event.nativeEvent.source;
-
             setImageSize({ width, height });
           }}
         />
-        {/* Show label overlay for before/after photos if showLabels is true */}
-        {showLabels && photoToRender.mode && (
-          <PhotoLabel
-            label={photoToRender.mode.toUpperCase()}
-            position={currentLabelPosition}
-            style={getLabelStyle()}
-          />
-        )}
         {/* Show watermark if enabled */}
         {shouldShowWatermark && (
           <PhotoWatermark style={getWatermarkStyle()} />
         )}
-        
+
         {/* Checkbox overlay in selection mode */}
         {isSelectionMode && (
           <TouchableOpacity
@@ -535,7 +528,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
         >
           {allPhotos.map((photoItem, index) => (
             <View key={photoItem.id} style={{ width, height: height - 200 }}>
-              {renderPhoto(photoItem)}
+              {renderPhoto(photoItem, displayUriMap[photoItem.id] || photoItem.uri)}
             </View>
           ))}
         </ScrollView>
@@ -543,8 +536,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
         renderPhoto()
       )}
 
-      {/* Hidden capture view - exact image size, no white padding */}
-      {(showLabels || shouldShowWatermark) && currentPhoto.mode && captureDimensions && (
+      {/* Hidden capture view - only needed for watermark now (labels are in cached images) */}
+      {shouldShowWatermark && captureDimensions && (
         <View
           ref={captureViewRef}
           style={{
@@ -560,75 +553,27 @@ export default function PhotoDetailScreen({ route, navigation }) {
           collapsable={false}
         >
           <Image
-            source={{ uri: currentPhoto.uri }}
+            source={{ uri: displayUri }}
             style={{ width: '100%', height: '100%' }}
             resizeMode="cover"
           />
           {(() => {
-            // Use a consistent scale factor to match the "correct" label size from landscape photos
-            // Landscape photos (1920px wide) have a scaleFactor of ~5.09 which looks correct
-            // Use 1920 as reference for all orientations to maintain consistent label size
-            const referenceWidth = 1920; // Landscape photo width reference
+            // Use a consistent scale factor for watermark
+            const referenceWidth = 1920;
             const screenWidth = width;
             const scaleFactor = referenceWidth / screenWidth;
 
-            // Get position for the capture view
-            const currentLabelPosition = currentPhoto.mode === 'before' ? beforeLabelPosition : afterLabelPosition;
-            const capturePositions = getLabelPositions(labelMarginVertical, labelMarginHorizontal);
-            const capturePositionConfig = capturePositions[currentLabelPosition] || capturePositions['left-top'];
-
-            // Scale position coordinates for capture
-            const capturePositionStyle = {};
-            if (capturePositionConfig.top !== undefined) {
-              capturePositionStyle.top = typeof capturePositionConfig.top === 'string'
-                ? capturePositionConfig.top
-                : capturePositionConfig.top * scaleFactor;
-            }
-            if (capturePositionConfig.bottom !== undefined) {
-              capturePositionStyle.bottom = capturePositionConfig.bottom * scaleFactor;
-            }
-            if (capturePositionConfig.left !== undefined) {
-              capturePositionStyle.left = typeof capturePositionConfig.left === 'string'
-                ? capturePositionConfig.left
-                : capturePositionConfig.left * scaleFactor;
-            }
-            if (capturePositionConfig.right !== undefined) {
-              capturePositionStyle.right = capturePositionConfig.right * scaleFactor;
-            }
-            if (capturePositionConfig.transform) {
-              capturePositionStyle.transform = capturePositionConfig.transform;
-            }
-
             return (
-              <>
-                {showLabels && (
-                  <PhotoLabel
-                    label={currentPhoto.mode.toUpperCase()}
-                    position={currentLabelPosition}
-                    style={{
-                      ...capturePositionStyle,
-                      paddingHorizontal: 12 * scaleFactor,
-                      paddingVertical: 6 * scaleFactor,
-                      borderRadius: 6 * scaleFactor
-                    }}
-                    textStyle={{
-                      fontSize: 14 * scaleFactor
-                    }}
-                  />
-                )}
-                {shouldShowWatermark && (
-                  <PhotoWatermark
-                    style={{
-                      bottom: 10 * scaleFactor,
-                      right: 10 * scaleFactor,
-                      paddingHorizontal: 10 * scaleFactor,
-                      paddingVertical: 4 * scaleFactor,
-                      borderRadius: 4 * scaleFactor
-                    }}
-                    onPress={null}
-                  />
-                )}
-              </>
+              <PhotoWatermark
+                style={{
+                  bottom: 10 * scaleFactor,
+                  right: 10 * scaleFactor,
+                  paddingHorizontal: 10 * scaleFactor,
+                  paddingVertical: 4 * scaleFactor,
+                  borderRadius: 4 * scaleFactor
+                }}
+                onPress={null}
+              />
             );
           })()}
         </View>
