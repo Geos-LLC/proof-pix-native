@@ -70,13 +70,21 @@ export default function GlobalBackgroundLabelPreparation() {
   const processPhoto = useCallback(async () => {
     if (!preparingPhoto || isProcessing) return;
 
+    const taskId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
     try {
       setIsProcessing(true);
-      console.log('[BackgroundLabelPrep] Processing photo:', preparingPhoto.photo.id, 'mode:', preparingPhoto.photo.mode);
+      console.log(`[BackgroundLabelPrep:${taskId}] 🎬 START Processing`, {
+        photoId: preparingPhoto.photo.id,
+        mode: preparingPhoto.photo.mode,
+        isCombined: preparingPhoto.isCombined,
+        hasBeforePhoto: !!preparingPhoto.beforePhoto,
+        hasAfterPhoto: !!preparingPhoto.afterPhoto,
+        key: preparingPhoto.key,
+      });
 
       // Skip if labels are disabled (this shouldn't happen, but safety check)
       if (!showLabels) {
-        console.log('[BackgroundLabelPrep] Labels disabled, skipping');
+        console.log(`[BackgroundLabelPrep:${taskId}] ⏭️  Labels disabled, skipping`);
         if (preparingPhoto.resolve) {
           preparingPhoto.resolve(preparingPhoto.photo.uri);
         }
@@ -133,12 +141,12 @@ export default function GlobalBackgroundLabelPreparation() {
         padding: 16,
       };
 
-      console.log('[BackgroundLabelPrep] Adding native label:', labelText, 'at', labelPosition);
+      console.log(`[BackgroundLabelPrep:${taskId}] 📝 Label config:`, { labelText, labelPosition });
 
       let labeledUri;
 
       if (preparingPhoto.isCombined && preparingPhoto.beforePhoto && preparingPhoto.afterPhoto) {
-        console.log('[BackgroundLabelPrep] Handling combined photo labeling');
+        console.log(`[BackgroundLabelPrep:${taskId}] 🔄 PATH 1: Combined photo labeling (separate before/after)`);
         
         // 1. Determine layout (STACK or SIDE)
         const isStack = preparingPhoto.height > preparingPhoto.width;
@@ -166,33 +174,38 @@ export default function GlobalBackgroundLabelPreparation() {
         };
         
         // 4. Label before and after photos
+        console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 1: Labeling BEFORE photo...`);
         const labeledBeforeUri = await addLabelToImage(
           preparingPhoto.beforePhoto.uri,
           t('common.before') || 'BEFORE',
           beforeLabelConfig
         );
-        
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ BEFORE labeled:`, labeledBeforeUri?.substring(0, 50));
+
+        console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 2: Labeling AFTER photo...`);
         const labeledAfterUri = await addLabelToImage(
           preparingPhoto.afterPhoto.uri,
           t('common.after') || 'AFTER',
           afterLabelConfig
         );
-        
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ AFTER labeled:`, labeledAfterUri?.substring(0, 50));
+
         // 5. Composite them
+        console.log(`[BackgroundLabelPrep:${taskId}] 🎨 Step 3: Compositing labeled images...`);
         labeledUri = await compositeImages(
           labeledBeforeUri,
           labeledAfterUri,
           layout,
           dimensions
         );
-        console.log('[BackgroundLabelPrep] ✅ Combined photo created:', labeledUri);
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ Combined photo created:`, labeledUri?.substring(0, 50));
         
       } else if (preparingPhoto.photo.mode === 'mix' || preparingPhoto.photo.mode === 'combined') {
         // Handle "Original" combined upload where we don't have separate before/after objects
         // but we have a single image that needs labeling.
         // We will attempt to apply two labels to the single composite image.
-        
-        console.log('[BackgroundLabelPrep] Applying labels to flattened combined photo');
+
+        console.log(`[BackgroundLabelPrep:${taskId}] 🔄 PATH 2: Flattened combined photo (double labeling)`);
         
         // 1. Infer layout from format or dimensions
         const format = preparingPhoto.photo.format || '';
@@ -288,26 +301,32 @@ export default function GlobalBackgroundLabelPreparation() {
         }
         
         // Apply Label 1 (Before)
+        console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 1: Applying BEFORE label to combined photo...`);
         const intermediateUri = await addLabelToImage(
           preparingPhoto.photo.uri,
           t('common.before') || 'BEFORE',
           config1
         );
-        
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ BEFORE label applied:`, intermediateUri?.substring(0, 50));
+
         // Apply Label 2 (After) to the result of step 1
+        console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 2: Applying AFTER label to combined photo...`);
         labeledUri = await addLabelToImage(
           intermediateUri,
           t('common.after') || 'AFTER',
           config2
         );
-        
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ AFTER label applied:`, labeledUri?.substring(0, 50));
+
       } else {
         // Standard single photo labeling
+        console.log(`[BackgroundLabelPrep:${taskId}] �� PATH 3: Standard single photo labeling`);
         // Add label using native module
         labeledUri = await addLabelToImage(preparingPhoto.photo.uri, labelText, labelConfig);
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ Label applied:`, labeledUri?.substring(0, 50));
       }
 
-      console.log('[BackgroundLabelPrep] ✅ Native label added:', labeledUri);
+      console.log(`[BackgroundLabelPrep:${taskId}] 💾 Saving to cache...`);
 
       // Save to cache
       const cachedUri = await saveCachedLabeledPhoto(
@@ -316,17 +335,20 @@ export default function GlobalBackgroundLabelPreparation() {
         preparingPhoto.settingsHash
       );
 
-      console.log('[BackgroundLabelPrep] ✅ Saved to cache:', cachedUri);
+      console.log(`[BackgroundLabelPrep:${taskId}] ✅ Saved to cache:`, cachedUri?.substring(0, 50));
 
       // Resolve promise if provided
       if (preparingPhoto.resolve) {
+        console.log(`[BackgroundLabelPrep:${taskId}] 📤 Resolving promise...`);
         preparingPhoto.resolve(cachedUri || labeledUri);
       }
 
       // Remove from queue
+      console.log(`[BackgroundLabelPrep:${taskId}] 🗑️  Removing from queue...`);
       backgroundLabelPreparationService.removePreparation(preparingPhoto.key);
       setPreparingPhoto(null);
       setIsProcessing(false);
+      console.log(`[BackgroundLabelPrep:${taskId}] ✅ COMPLETE`);
 
       // Check for next preparation immediately
       setTimeout(() => {
@@ -339,11 +361,14 @@ export default function GlobalBackgroundLabelPreparation() {
       }, 0);
 
     } catch (error) {
-      console.error('[BackgroundLabelPrep] Error processing photo:', error);
+      console.error(`[BackgroundLabelPrep:${taskId}] ❌ ERROR:`, error);
+      console.error(`[BackgroundLabelPrep:${taskId}] Error stack:`, error.stack);
       if (preparingPhoto?.reject) {
+        console.log(`[BackgroundLabelPrep:${taskId}] Rejecting promise...`);
         preparingPhoto.reject(error);
       }
       if (preparingPhoto) {
+        console.log(`[BackgroundLabelPrep:${taskId}] Cleaning up failed task...`);
         backgroundLabelPreparationService.removePreparation(preparingPhoto.key);
       }
       setPreparingPhoto(null);

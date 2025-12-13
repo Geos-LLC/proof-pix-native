@@ -1191,8 +1191,16 @@ export default function CameraScreen({ route, navigation }) {
   // Helper function to prepare labeled photo in background and save to cache
   // Now uses global service that stays mounted regardless of navigation
   const prepareLabeledPhotoInBackground = (photo, settingsHash, mode) => {
+    const queueId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    console.log(`[CameraScreen:${queueId}] 📋 Queueing label preparation`, {
+      photoId: photo?.id,
+      mode,
+      settingsHash: settingsHash?.substring(0, 8),
+    });
+
     return new Promise((resolve, reject) => {
       if (!photo || !photo.uri || !photo.id) {
+        console.log(`[CameraScreen:${queueId}] ⚠️  Invalid photo, skipping`);
         resolve();
         return;
       }
@@ -1200,6 +1208,8 @@ export default function CameraScreen({ route, navigation }) {
       try {
         // Get image dimensions
         Image.getSize(photo.uri, (width, height) => {
+          console.log(`[CameraScreen:${queueId}] 📐 Got dimensions:`, { width, height });
+
           // Determine label position based on photo mode
           let labelPosition;
           if (mode === 'before') {
@@ -1210,6 +1220,7 @@ export default function CameraScreen({ route, navigation }) {
             labelPosition = 'top-left';
           }
 
+          console.log(`[CameraScreen:${queueId}] 🎯 Calling backgroundLabelPreparationService.queuePreparation...`);
           // Queue preparation in global service (stays mounted regardless of navigation)
           backgroundLabelPreparationService.queuePreparation({
             photo,
@@ -1221,10 +1232,13 @@ export default function CameraScreen({ route, navigation }) {
             resolve,
             reject,
           });
+          console.log(`[CameraScreen:${queueId}] ✅ Queued successfully`);
         }, (error) => {
+          console.error(`[CameraScreen:${queueId}] ❌ Image.getSize error:`, error);
           reject(error);
         });
       } catch (error) {
+        console.error(`[CameraScreen:${queueId}] ❌ Error:`, error);
         reject(error);
       }
     });
