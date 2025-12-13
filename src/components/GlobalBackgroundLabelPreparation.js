@@ -187,11 +187,12 @@ export default function GlobalBackgroundLabelPreparation() {
         );
         console.log('[BackgroundLabelPrep] ✅ Combined photo created:', labeledUri);
         
-      } else if (preparingPhoto.photo.mode === 'mix' || preparingPhoto.photo.mode === 'combined') {
+      } else if (!preparingPhoto.isCombined && (preparingPhoto.photo.mode === 'mix' || preparingPhoto.photo.mode === 'combined')) {
         // Handle "Original" combined upload where we don't have separate before/after objects
         // but we have a single image that needs labeling.
         // We will attempt to apply two labels to the single composite image.
-        
+        // IMPORTANT: Only process this if isCombined is false (wasn't already handled above)
+
         console.log('[BackgroundLabelPrep] Applying labels to flattened combined photo');
         
         // 1. Infer layout from format or dimensions
