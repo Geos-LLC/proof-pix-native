@@ -951,19 +951,32 @@ export default function GalleryScreen({ navigation, route }) {
                         padding: 16,
                     };
 
-                    console.log(`[GALLERY] Adding labels to before and after photos for combined photo ${index + 1}`);
+                    console.log(`[GALLERY] Preparing labels for before and after photos for combined photo ${index + 1}`);
 
-                    const labeledBeforeUri = await addLabelToImage(
-                        beforePhoto.uri,
-                        getLabelTextForMode(PHOTO_MODES.BEFORE),
-                        beforeLabelConfig
-                    );
+                    // Check if we already have cached labeled versions of before/after photos
+                    let labeledBeforeUri = await getCachedLabeledPhoto(beforePhoto, settingsHash);
+                    if (!labeledBeforeUri) {
+                        console.log(`[GALLERY] No cached before photo, labeling now...`);
+                        labeledBeforeUri = await addLabelToImage(
+                            beforePhoto.uri,
+                            getLabelTextForMode(PHOTO_MODES.BEFORE),
+                            beforeLabelConfig
+                        );
+                    } else {
+                        console.log(`[GALLERY] ✅ Using cached labeled before photo`);
+                    }
 
-                    const labeledAfterUri = await addLabelToImage(
-                        afterPhoto.uri,
-                        getLabelTextForMode(PHOTO_MODES.AFTER),
-                        afterLabelConfig
-                    );
+                    let labeledAfterUri = await getCachedLabeledPhoto(afterPhoto, settingsHash);
+                    if (!labeledAfterUri) {
+                        console.log(`[GALLERY] No cached after photo, labeling now...`);
+                        labeledAfterUri = await addLabelToImage(
+                            afterPhoto.uri,
+                            getLabelTextForMode(PHOTO_MODES.AFTER),
+                            afterLabelConfig
+                        );
+                    } else {
+                        console.log(`[GALLERY] ✅ Using cached labeled after photo`);
+                    }
 
                     console.log(`[GALLERY] Compositing labeled photos into combined photo ${index + 1}`);
 
