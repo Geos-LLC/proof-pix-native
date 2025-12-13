@@ -36,7 +36,7 @@ import {
 import backgroundLabelPreparationService from '../services/backgroundLabelPreparationService';
 import { backgroundCombinedPhotoService } from '../components/GlobalBackgroundCombinedPhotoCreator';
 import { captureRef } from 'react-native-view-shot';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
 import { useFocusEffect } from '@react-navigation/native';

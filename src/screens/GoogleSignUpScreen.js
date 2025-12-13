@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Modal, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Modal, ScrollView, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { COLORS } from '../constants/rooms';
@@ -8,18 +9,37 @@ import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
 import dropboxAuthService from '../services/dropboxAuthService';
 import dropboxService from '../services/dropboxService';
+import iCloudService from '../services/iCloudService';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 
 export default function GoogleSignUpScreen({ navigation, route }) {
   const { t } = useTranslation();
-  const { individualSignIn, adminSignIn } = useAdmin();
+  const { individualSignIn, adminSignIn, appleIndividualSignIn, appleAdminSignIn } = useAdmin();
   const { userPlan, updateUserPlan } = useSettings();
   const { plan } = route.params || {};
   const insets = useSafeAreaInsets();
   const [isSigningInGoogle, setIsSigningInGoogle] = useState(false);
   const [isSigningInDropbox, setIsSigningInDropbox] = useState(false);
+  const [isSigningInApple, setIsSigningInApple] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
+  const [isAppleSignInAvailable, setIsAppleSignInAvailable] = useState(false);
+
+  // Check if Sign in with Apple is available
+  useEffect(() => {
+    const checkAppleSignInAvailability = async () => {
+      if (Platform.OS === 'ios') {
+        try {
+          const available = await AppleAuthentication.isAvailableAsync();
+          setIsAppleSignInAvailable(available);
+        } catch (error) {
+          console.log('[APPLE_AUTH] Error checking availability:', error);
+          setIsAppleSignInAvailable(false);
+        }
+      }
+    };
+    checkAppleSignInAvailability();
+  }, []);
 
   const handleGoogleSignIn = async () => {
     console.log('[GoogleSignUp] 🟢 Connect to Google Account button PRESSED');
@@ -48,6 +68,40 @@ export default function GoogleSignUpScreen({ navigation, route }) {
     }
   };
 
+  const handleAppleSignIn = async () => {
+    // Check if user is on starter plan - show upgrade modal instead
+    if (userPlan === 'starter') {
+      setShowPlanModal(true);
+      return;
+    }
+
+    setIsSigningInApple(true);
+    try {
+      let result;
+      if (plan === 'business' || plan === 'enterprise') {
+        result = await appleAdminSignIn();
+      } else {
+        result = await appleIndividualSignIn();
+      }
+
+      if (result.success) {
+        // Initialize iCloud folder
+        try {
+          const folderId = await iCloudService.findOrCreateProofPixFolder();
+          console.log('[iCloud] Folder ready:', folderId);
+        } catch (folderError) {
+          console.error('[iCloud] Folder creation error:', folderError);
+          // Don't fail the sign-in if folder creation fails
+        }
+        navigation.replace('LabelLanguageSetup');
+      } else {
+        Alert.alert(t('googleSignUp.signInError'), result.error || t('googleSignUp.unexpectedError'));
+      }
+    } finally {
+      setIsSigningInApple(false);
+    }
+  };
+
   const handleDropboxSignIn = async () => {
     // Check if user is on starter plan - show upgrade modal instead
     if (userPlan === 'starter') {
@@ -66,7 +120,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
     setIsSigningInDropbox(true);
     try {
       const result = await dropboxAuthService.signIn();
-      
+
       // Find or create ProofPix folder
       try {
         const folderPath = await dropboxService.findOrCreateProofPixFolder();
@@ -80,7 +134,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
       await dropboxAuthService.loadStoredTokens();
       const isAuth = dropboxAuthService.isAuthenticated();
       const userInfo = dropboxAuthService.getUserInfo();
-      
+
       if (isAuth && userInfo) {
         Alert.alert(
           t('settings.dropboxConnected'),
@@ -123,10 +177,21 @@ export default function GoogleSignUpScreen({ navigation, route }) {
           {t('googleSignUp.subtitle')}
         </Text>
 
+        {/* Sign in with Apple button (iOS only) */}
+        {isAppleSignInAvailable && (
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+            cornerRadius={12}
+            style={styles.appleButton}
+            onPress={handleAppleSignIn}
+          />
+        )}
+
         <TouchableOpacity
           style={[styles.button, styles.googleButton]}
           onPress={handleGoogleSignIn}
-          disabled={isSigningInGoogle || isSigningInDropbox}
+          disabled={isSigningInGoogle || isSigningInDropbox || isSigningInApple}
         >
           {isSigningInGoogle ? (
             <ActivityIndicator size="small" color="#fff" />
@@ -138,7 +203,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
         <TouchableOpacity
           style={[styles.button, styles.dropboxButton]}
           onPress={handleDropboxSignIn}
-          disabled={isSigningInGoogle || isSigningInDropbox}
+          disabled={isSigningInGoogle || isSigningInDropbox || isSigningInApple}
         >
           {isSigningInDropbox ? (
             <ActivityIndicator size="small" color="#fff" />
@@ -150,7 +215,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
         <TouchableOpacity
           style={[styles.button, styles.skipButton]}
           onPress={handleSkip}
-          disabled={isSigningInGoogle || isSigningInDropbox}
+          disabled={isSigningInGoogle || isSigningInDropbox || isSigningInApple}
         >
           <Text style={styles.buttonText}>{t('googleSignUp.skipForNow')}</Text>
         </TouchableOpacity>
@@ -291,10 +356,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     minHeight: 50,
   },
+  appleButton: {
+    width: '100%',
+    height: 50,
+    marginBottom: 16,
+  },
   googleButton: {
-    backgroundColor: '#000000', // Black background
+    backgroundColor: '#DB4437', // Google red
     borderWidth: 1,
-    borderColor: '#000000',
+    borderColor: '#DB4437',
   },
   dropboxButton: {
     backgroundColor: '#0061FF', // Dropbox blue

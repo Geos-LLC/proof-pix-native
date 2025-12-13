@@ -21,6 +21,7 @@ import {
   FlatList,
   Share,
   InteractionManager,
+  Linking,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,6 +35,7 @@ import PhotoWatermark from '../components/PhotoWatermark';
 import googleDriveService from '../services/googleDriveService';
 import dropboxAuthService from '../services/dropboxAuthService';
 import dropboxService from '../services/dropboxService';
+import iCloudService from '../services/iCloudService';
 import InviteManager from '../components/InviteManager';
 import {
   getOrCreateReferralCode,
@@ -58,7 +60,7 @@ import {
   logFeatureGateShown,
   logFeatureGateAction,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions } from '../services/iapService';
 
 const getFontOptions = (t) => [
   {
@@ -399,7 +401,7 @@ export default function SettingsScreen({ navigation, route }) {
 
     devTapCountRef.current += 1;
 
-    if (devTapCountRef.current >= 7) {
+    if (devTapCountRef.current >= 8) {
       devTapCountRef.current = 0;
       setDevToolsUnlocked(true);
       try {
@@ -609,6 +611,8 @@ export default function SettingsScreen({ navigation, route }) {
     removeInviteToken,
     adminSignIn,
     individualSignIn,
+    appleAdminSignIn,
+    appleIndividualSignIn,
     isGoogleSignInAvailable,
     initializeProxySession,
     teamName,
@@ -651,6 +655,12 @@ export default function SettingsScreen({ navigation, route }) {
   // For non-enterprise: create a virtual Dropbox account if authenticated but not in connectedAccounts
   // For enterprise: use the active account from connectedAccounts
   const displayedActiveAccount = useMemo(() => {
+    console.log('[SETTINGS] 🔍 displayedActiveAccount calculating...');
+    console.log('[SETTINGS] 🔍 isEnterprisePlan:', isEnterprisePlan);
+    console.log('[SETTINGS] 🔍 adminUserInfo:', JSON.stringify(adminUserInfo, null, 2));
+    console.log('[SETTINGS] 🔍 accountType from AdminContext:', accountType);
+    console.log('[SETTINGS] 🔍 connectedAccounts:', JSON.stringify(connectedAccounts, null, 2));
+    
     if (isEnterprisePlan) {
       return activeEnterpriseAccount || null;
     }
@@ -688,9 +698,29 @@ export default function SettingsScreen({ navigation, route }) {
       }
     }
     
-    // Check Google first for other cases
+    // Check Google/Apple first for other cases
     if (adminUserInfo) {
-      return adminUserInfo;
+      console.log('[SETTINGS] 🔍 adminUserInfo exists, determining accountType...');
+      // Determine accountType: prefer from userInfo, fallback to AdminContext accountType, then check connectedAccounts
+      let determinedAccountType = adminUserInfo.accountType || accountType;
+      console.log('[SETTINGS] 🔍 Initial determinedAccountType:', determinedAccountType);
+      
+      // If still no accountType, check if there's an active Apple account in connectedAccounts
+      if (!determinedAccountType || determinedAccountType === 'google') {
+        const appleAccount = connectedAccounts?.find(acc => acc.accountType === 'apple' && acc.isActive);
+        console.log('[SETTINGS] 🔍 Found Apple account in connectedAccounts?', !!appleAccount);
+        if (appleAccount) {
+          determinedAccountType = 'apple';
+          console.log('[SETTINGS] 🍎 Using Apple accountType from connectedAccounts');
+        }
+      }
+      
+      const finalAccount = {
+        ...adminUserInfo,
+        accountType: determinedAccountType || 'google'
+      };
+      console.log('[SETTINGS] ✅ Final displayed account:', JSON.stringify(finalAccount, null, 2));
+      return finalAccount;
     }
     
     // If Dropbox is authenticated, create virtual account object for non-enterprise plans
@@ -762,6 +792,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [editingTeamName, setEditingTeamName] = useState(false);
+  const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [labelLanguageModalVisible, setLabelLanguageModalVisible] = useState(false);
   const [sectionLanguageModalVisible, setSectionLanguageModalVisible] = useState(false);
@@ -1680,12 +1711,64 @@ export default function SettingsScreen({ navigation, route }) {
     );
   };
 
+  // Handle restore purchases
+  const handleRestorePurchases = async () => {
+    if (Platform.OS !== 'ios') {
+      return; // Only available on iOS
+    }
+
+    setIsRestoringPurchases(true);
+    try {
+      await restorePurchases();
+      Alert.alert(
+        t('common.success', { defaultValue: 'Success' }),
+        t('settings.purchasesRestored', { defaultValue: 'Your purchases have been restored successfully.' })
+      );
+    } catch (error) {
+      console.error('[Settings] Error restoring purchases:', error);
+
+      // Check if user cancelled the restore
+      const errorMessage = error?.message || '';
+      if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED')) {
+        // User cancelled - don't show error alert
+        console.log('[Settings] User cancelled restore purchases');
+        return;
+      }
+
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('settings.restoreFailed', { defaultValue: 'Failed to restore purchases. Please try again or contact support if the problem persists.' })
+      );
+    } finally {
+      setIsRestoringPurchases(false);
+    }
+  };
+
   const handleSetupTeam = async () => {
     // Get active account and account type
     const activeAccount = getActiveAccount();
     const currentAccountType = activeAccount?.accountType || accountType || 'google';
 
     if (!isAuthenticated || userMode !== 'admin' || isSigningIn) {
+      return;
+    }
+
+    // Check if user is trying to set up team with iCloud
+    if (currentAccountType === 'apple') {
+      Alert.alert(
+        'iCloud Does Not Support Teams',
+        'Team uploads are only available with Google Drive or Dropbox. iCloud can only be used for individual uploads.\n\nTo enable team features, please connect Google Drive or Dropbox in Settings.',
+        [
+          {
+            text: 'Send Feedback',
+            onPress: () => {
+              // Open the existing feedback/contact form
+              setShowContactModal(true);
+            }
+          },
+          { text: 'OK', style: 'cancel' }
+        ]
+      );
       return;
     }
 
@@ -2177,7 +2260,8 @@ export default function SettingsScreen({ navigation, route }) {
   // Check if Google account needs reconnection (missing serverAuthCode)
   useEffect(() => {
     const checkReconnectionNeeded = async () => {
-      if (isAuthenticated && userMode === 'admin') {
+      // Only check for Google accounts (Apple doesn't use serverAuthCode)
+      if (isAuthenticated && userMode === 'admin' && accountType === 'google') {
         try {
           const googleAuthService = await import('../services/googleAuthService');
           const serverAuthCode = await googleAuthService.default.getServerAuthCode();
@@ -2191,7 +2275,7 @@ export default function SettingsScreen({ navigation, route }) {
       }
     };
     checkReconnectionNeeded();
-  }, [isAuthenticated, userMode]);
+  }, [isAuthenticated, userMode, accountType]);
 
   // Fetch admin info for team members
   useEffect(() => {
@@ -2957,7 +3041,8 @@ export default function SettingsScreen({ navigation, route }) {
           </>
         )}
 
-        {/* Admin Setup Section */}
+        {/* Admin Setup Section - Hidden for Starter plan */}
+        {userPlan !== 'starter' && (
         <View 
           ref={cloudSyncSectionRef}
           style={[
@@ -3230,9 +3315,14 @@ export default function SettingsScreen({ navigation, route }) {
                   
                   {/* Buttons - Show opposite account's connect button to allow switching (for Pro/Business) */}
                   <>
-                    {/* Connect to Google Account Button - Hide if Google is connected (for Pro/Business), show if Dropbox is connected or neither */}
+                    {/* Connect to Google Account Button - Hide if Google is connected (for Pro/Business), show if Dropbox or Apple is connected */}
                         {(() => {
-                          const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? (!isAuthenticated || isDropboxAuthenticatedForDisplay) : true;
+                          // Show Google button if accountType is NOT 'google' (i.e., Dropbox or Apple is connected, or nothing is connected)
+                          // Use displayedActiveAccount.accountType to get the correct current account type
+                          const currentAccountType = displayedActiveAccount?.accountType || accountType;
+                          const isGoogleConnected = isAuthenticated && currentAccountType === 'google';
+                          const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? !isGoogleConnected : true;
+                          console.log('[SETTINGS] 🔍 Google button shouldShow:', shouldShow, '(isGoogleConnected:', isGoogleConnected, ', currentAccountType:', currentAccountType, ')');
                           const isDisabled = (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn);
                           const canUseFeature = canUse(FEATURES.GOOGLE_DRIVE_SYNC);
                           return shouldShow;
@@ -3508,7 +3598,70 @@ export default function SettingsScreen({ navigation, route }) {
                         )}
                       </TouchableOpacity>
                     )}
-                    
+
+                    {/* Connect to iCloud/Apple Button - iOS only */}
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity
+                        style={[
+                          styles.featureButton,
+                          styles.appleSignInButton,
+                          (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn) && styles.appleButtonDisabled
+                        ]}
+                        onPress={async () => {
+                          // Check tier access
+                          if (!canUse(FEATURES.GOOGLE_DRIVE_SYNC)) {
+                            setShowPlanModal(true);
+                            return;
+                          }
+
+                          setIsSigningIn(true);
+                          try {
+                            // For Pro, use individual sign-in; for Business/Enterprise, use admin sign-in
+                            if (userPlan === 'pro') {
+                              await appleIndividualSignIn();
+                            } else {
+                              await appleAdminSignIn();
+                            }
+
+                            // Initialize iCloud folder
+                            try {
+                              const folderId = await iCloudService.findOrCreateProofPixFolder();
+                              console.log('[iCloud] Folder ready:', folderId);
+                            } catch (folderError) {
+                              console.error('[iCloud] Folder creation error:', folderError);
+                            }
+
+                            Alert.alert(
+                              t('settings.appleConnected', { defaultValue: 'Connected to iCloud' }),
+                              t('settings.appleConnectedMessage', { defaultValue: 'Your account has been connected successfully.' }),
+                              [{ text: t('common.ok') }]
+                            );
+                          } catch (error) {
+                            console.error('[APPLE] Sign-in error:', error);
+                            Alert.alert(
+                              t('common.error'),
+                              error.message || t('settings.appleSignInError', { defaultValue: 'Failed to connect with Apple. Please try again.' })
+                            );
+                          } finally {
+                            setIsSigningIn(false);
+                          }
+                        }}
+                        disabled={!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn}
+                      >
+                        {isSigningIn ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={[
+                            styles.featureButtonText,
+                            styles.appleButtonText,
+                            !canUse(FEATURES.GOOGLE_DRIVE_SYNC) && styles.appleButtonTextDisabled
+                          ]}>
+                            {t('settings.connectToiCloud', { defaultValue: 'Connect with Apple / iCloud' })}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+
                     {/* Connect Team Button - Always visible */}
                     <TouchableOpacity
                       style={[
@@ -3688,6 +3841,8 @@ export default function SettingsScreen({ navigation, route }) {
 
                     // Icon component for account type
                     const AccountIcon = () => {
+                      console.log('[SETTINGS] 🎨 Rendering AccountIcon with accountType:', accountType);
+                      
                       if (accountType === 'dropbox') {
                         return (
                           <View style={styles.accountIconContainer}>
@@ -3696,7 +3851,16 @@ export default function SettingsScreen({ navigation, route }) {
                             </View>
                           </View>
                         );
+                      } else if (accountType === 'apple') {
+                        return (
+                          <View style={styles.accountIconContainer}>
+                            <View style={[styles.accountIcon, styles.appleIcon]}>
+                              <Text style={styles.accountIconText}>🍎</Text>
+                            </View>
+                          </View>
+                        );
                       } else {
+                        // Google (default)
                         return (
                           <View style={styles.accountIconContainer}>
                             <View style={[styles.accountIcon, styles.googleIcon]}>
@@ -3750,10 +3914,14 @@ export default function SettingsScreen({ navigation, route }) {
                     );
                   };
 
-                  const activeAccountEmail = displayedActiveAccount?.email || displayedActiveAccount?.name || t('settings.unknownEmail');
+                  // For Apple accounts, show Apple ID if no email/name available
+                  const activeAccountEmail = displayedActiveAccount?.email || 
+                                            displayedActiveAccount?.name || 
+                                            (displayedActiveAccount?.accountType === 'apple' ? 'Apple ID' : t('settings.unknownEmail'));
 
                   const accountType = displayedActiveAccount?.accountType || 'google';
                   const isDropboxAccount = accountType === 'dropbox';
+                  const isAppleAccount = accountType === 'apple';
 
                   // Check if team is connected (proxySessionId exists, userMode === 'admin', AND plan supports teams)
                   const isTeamConnected = proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise');
@@ -3922,9 +4090,12 @@ export default function SettingsScreen({ navigation, route }) {
                         <TouchableOpacity
                           style={[styles.accountActionButton, styles.accountActionButtonDisconnect]}
                           onPress={async () => {
-                            // Handle disconnect for both Google and Dropbox accounts
+                            // Handle disconnect for Google, Dropbox, and Apple accounts
+                            console.log('[SETTINGS] 🔌 Disconnect button pressed for accountType:', accountType);
+                            
                             if (isDropboxAccount) {
                               // Disconnect Dropbox account
+                              console.log('[SETTINGS] 🔌 Disconnecting Dropbox...');
                               try {
                                 await dropboxAuthService.signOut();
                                 setIsDropboxAuthenticated(false);
@@ -3939,6 +4110,26 @@ export default function SettingsScreen({ navigation, route }) {
                               } catch (error) {
                                 console.error('[SETTINGS] Error disconnecting Dropbox:', error);
                                 Alert.alert(t('common.error'), t('settings.dropboxDisconnectError'));
+                              }
+                            } else if (isAppleAccount) {
+                              // Disconnect Apple account
+                              console.log('[SETTINGS] 🔌 Disconnecting Apple...');
+                              try {
+                                await signOut();
+                                
+                                // For enterprise, also remove from connectedAccounts
+                                if (isEnterprisePlan && displayedActiveAccount?.id && removeConnectedAccount) {
+                                  console.log('[SETTINGS] 🔌 Removing Apple account from connectedAccounts (Enterprise)');
+                                  await removeConnectedAccount(displayedActiveAccount.id, 'apple');
+                                }
+                                
+                                Alert.alert(
+                                  t('common.success'), 
+                                  t('settings.appleDisconnected', { defaultValue: 'Apple account disconnected successfully.' })
+                                );
+                              } catch (error) {
+                                console.error('[SETTINGS] Error disconnecting Apple:', error);
+                                Alert.alert(t('common.error'), t('settings.appleDisconnectError', { defaultValue: 'Failed to disconnect Apple account.' }));
                               }
                             } else {
                               // Disconnect Google account
@@ -3984,9 +4175,24 @@ export default function SettingsScreen({ navigation, route }) {
 
               {/* Show all buttons when authenticated, with enable/disable based on plan */}
               <>
-                {/* Connect to Google button - Only show if not connected or enterprise can add multiple */}
+                {/* Connect to Google button - Show for Pro/Business when Apple/Dropbox is connected (for switching), or Enterprise with multiple accounts */}
                 {(() => {
-                  const shouldShow = !isAuthenticated || (isAuthenticated && canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS));
+                  // For Pro/Business: Show Google button if Apple or Dropbox is connected (to allow switching)
+                  // For Enterprise: Show if MULTIPLE_CLOUD_ACCOUNTS feature is available
+                  // For others: Don't show (handled in unauthenticated section)
+                  const currentAccountType = displayedActiveAccount?.accountType || accountType;
+                  const isGoogleConnected = isAuthenticated && currentAccountType === 'google';
+                  
+                  let shouldShow = false;
+                  if (userPlan === 'pro' || userPlan === 'business') {
+                    // For Pro/Business, show if Google is NOT connected (i.e., Apple or Dropbox is connected)
+                    shouldShow = !isGoogleConnected;
+                  } else if (userPlan === 'enterprise') {
+                    // For Enterprise, show if multiple accounts feature is available
+                    shouldShow = canUse(FEATURES.MULTIPLE_CLOUD_ACCOUNTS);
+                  }
+                  
+                  console.log('[SETTINGS] 🔍 (Authenticated section) Google button shouldShow:', shouldShow, '(isGoogleConnected:', isGoogleConnected, ', currentAccountType:', currentAccountType, ')');
                   return shouldShow;
                 })() && (
                   <TouchableOpacity
@@ -4385,6 +4591,7 @@ export default function SettingsScreen({ navigation, route }) {
             </>
           ) : null}
         </View>
+        )}
 
         {/* Referral Program */}
         <View style={styles.section}>
@@ -4490,7 +4697,7 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
           )}
 
-          {/* Test Tools Button - Only in Development and after secret tap unlock */}
+          {/* Developer Tools - Only in Development and after secret tap unlock */}
           {__DEV__ && devToolsUnlocked && (
             <>
               <View style={styles.divider} />
@@ -4500,6 +4707,38 @@ export default function SettingsScreen({ navigation, route }) {
               >
                 <Text style={styles.testToolsButtonText}>🧪 Test Tools</Text>
               </TouchableOpacity>
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity
+                  style={[styles.testToolsButton, { backgroundColor: '#fff3e0', marginTop: 10 }]}
+                  onPress={async () => {
+                    Alert.alert(
+                      'Clear IAP Cache',
+                      'Clear stuck sandbox transactions.\n\nNote: Sandbox transactions often cannot be fully cleared.\n\nContinue?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Clear',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              const success = await clearPendingTransactions();
+                              Alert.alert(
+                                'Cache Cleared',
+                                `Cleared sandbox transactions.\n\nNote: Red errors in console are normal for old sandbox transactions. These are cosmetic and can be ignored.`,
+                                [{ text: 'OK' }]
+                              );
+                            } catch (error) {
+                              Alert.alert('Error', 'Failed to clear cache.');
+                            }
+                          }
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={[styles.testToolsButtonText, { color: '#e65100' }]}>🗑️ Clear IAP Cache</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>
@@ -4757,17 +4996,79 @@ export default function SettingsScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                     onPress={async () => {
-                      // Clear team data when switching to Pro
-                      if (userPlan === 'business' || userPlan === 'enterprise') {
-                        try {
-                          await updatePlanLimit(0);
-                          await initializeProxySession(null);
-                        } catch (error) {
-                          console.error('[SETTINGS] Error clearing team data:', error);
+                      try {
+                        // Clear team data when switching to Pro
+                        if (userPlan === 'business' || userPlan === 'enterprise') {
+                          try {
+                            await updatePlanLimit(0);
+                            await initializeProxySession(null);
+                          } catch (error) {
+                            console.error('[SETTINGS] Error clearing team data:', error);
+                          }
                         }
+                        
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
+
+                        // On iOS, require in-app purchase for Pro plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          // Check if already on Pro plan
+                          if (userPlan === 'pro') {
+                            Alert.alert(
+                              'Already Subscribed',
+                              'You already have the Pro plan.',
+                              [{ text: 'OK' }]
+                            );
+                            return;
+                          }
+                          
+                          try {
+                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Pro...');
+                            
+                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
+                            setShowPlanModal(false);
+                            
+                            // Wait for modal to close
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            
+                            await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                            
+                            // Purchase succeeded - update plan
+                            await updateUserPlan('pro');
+                            
+                            // Wait for context to update
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            
+                            // Show success message
+                            Alert.alert(
+                              t('common.success', { defaultValue: 'Success' }),
+                              t('settings.proPlanActivated', { 
+                                defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' 
+                              })
+                            );
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
+                              return;
+                            }
+                            
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        } else {
+                          // Trial or non-iOS - update plan directly
+                          await updateUserPlan('pro');
+                          setShowPlanModal(false);
+                        }
+                      } catch (error) {
+                        console.error('[SETTINGS] Error changing to Pro plan:', error);
+                        Alert.alert(
+                          t('common.error'),
+                          t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                        );
                       }
-                      await updateUserPlan('pro');
-                      setShowPlanModal(false);
                     }}
                   >
                     <View style={styles.planButtonRow}>
@@ -4783,10 +5084,63 @@ export default function SettingsScreen({ navigation, route }) {
                     style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                     onPress={async () => {
                       try {
-                        // Set up business tier with 5 team member limit
-                        await updatePlanLimit(5);
-                        await updateUserPlan('business');
-                        setShowPlanModal(false);
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
+
+                        // On iOS, require in-app purchase for Business plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          // Check if already on Business plan
+                          if (userPlan === 'business') {
+                            Alert.alert(
+                              'Already Subscribed',
+                              'You already have the Business plan.',
+                              [{ text: 'OK' }]
+                            );
+                            return;
+                          }
+                          
+                          try {
+                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Business...');
+                            
+                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
+                            setShowPlanModal(false);
+                            
+                            // Wait for modal to close
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            
+                            await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                            
+                            // Purchase succeeded - update plan
+                            await updatePlanLimit(5);
+                            await updateUserPlan('business');
+                            
+                            // Wait for context to update
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            
+                            // Show success message
+                            Alert.alert(
+                              t('common.success', { defaultValue: 'Success' }),
+                              t('settings.businessPlanActivated', { 
+                                defaultValue: 'Business plan activated! You can now add up to 5 team members.' 
+                              })
+                            );
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
+                              return;
+                            }
+                            
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        } else {
+                          // Trial or non-iOS - update plan directly
+                          await updatePlanLimit(5);
+                          await updateUserPlan('business');
+                          setShowPlanModal(false);
+                        }
                       } catch (error) {
                         console.error('[SETTINGS] Error setting up business plan:', error);
                         Alert.alert(
@@ -4811,15 +5165,65 @@ export default function SettingsScreen({ navigation, route }) {
                     style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
                     onPress={async () => {
                       try {
-                        // Set up enterprise tier with 15 team member limit
-                        await updatePlanLimit(15);
-                        // Update user plan to enterprise
-                        await updateUserPlan('enterprise');
-                        setShowPlanModal(false);
-                        Alert.alert(
-                          t('common.success', { defaultValue: 'Success' }),
-                          t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
-                        );
+                        // Check if user is on active trial - if so, skip IAP
+                        const onTrial = await isTrialActive();
+
+                        // On iOS, require in-app purchase for Enterprise plan (unless on trial)
+                        if (Platform.OS === 'ios' && !onTrial) {
+                          // Check if already on Enterprise plan
+                          if (userPlan === 'enterprise') {
+                            Alert.alert(
+                              'Already Subscribed',
+                              'You already have the Enterprise plan.',
+                              [{ text: 'OK' }]
+                            );
+                            return;
+                          }
+                          
+                          try {
+                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Enterprise...');
+                            
+                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
+                            setShowPlanModal(false);
+                            
+                            // Wait for modal to close
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            
+                            await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                            
+                            // Purchase succeeded - update plan
+                            await updatePlanLimit(15);
+                            await updateUserPlan('enterprise');
+                            
+                            // Wait for context to update
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            
+                            Alert.alert(
+                              t('common.success', { defaultValue: 'Success' }),
+                              t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
+                            );
+                          } catch (err) {
+                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
+                              return;
+                            }
+                            
+                            Alert.alert(
+                              t('common.error', { defaultValue: 'Error' }),
+                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            );
+                            return;
+                          }
+                        } else {
+                          // Trial or non-iOS - update plan directly
+                          await updatePlanLimit(15);
+                          await updateUserPlan('enterprise');
+                          setShowPlanModal(false);
+                          
+                          Alert.alert(
+                            t('common.success', { defaultValue: 'Success' }),
+                            t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
+                          );
+                        }
                       } catch (error) {
                         console.error('[SETTINGS] Error setting up enterprise plan:', error);
                         Alert.alert(
@@ -4837,6 +5241,42 @@ export default function SettingsScreen({ navigation, route }) {
                   <Text style={styles.planSubtext}>
                     For growing organisations with 15 team members and more
                   </Text>
+                </View>
+
+                {/* Restore Purchases Button - iOS only */}
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={styles.restorePurchasesButton}
+                    onPress={handleRestorePurchases}
+                    disabled={isRestoringPurchases}
+                  >
+                    <Text style={styles.restorePurchasesText}>
+                      {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Terms and Privacy Policy Links */}
+                <View style={styles.legalLinksContainer}>
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
+                    style={styles.legalLinkButton}
+                  >
+                    <Text style={styles.legalLinkText}>
+                      {t('settings.termsOfUse', { defaultValue: 'Terms of Use (EULA)' })}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.legalLinkSeparator}>•</Text>
+
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL('https://sayapingeorge.wixsite.com/geos/privacy-policy')}
+                    style={styles.legalLinkButton}
+                  >
+                    <Text style={styles.legalLinkText}>
+                      {t('settings.privacyPolicy', { defaultValue: 'Privacy Policy' })}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </ScrollView>
             </View>
@@ -5116,7 +5556,16 @@ export default function SettingsScreen({ navigation, route }) {
                                   </View>
                                 </View>
                               );
+                            } else if (accountType === 'apple') {
+                              return (
+                                <View style={styles.accountIconContainer}>
+                                  <View style={[styles.accountIcon, styles.appleIcon]}>
+                                    <Text style={styles.accountIconText}>🍎</Text>
+                                  </View>
+                                </View>
+                              );
                             } else {
+                              // Google (default)
                               return (
                                 <View style={styles.accountIconContainer}>
                                   <View style={[styles.accountIcon, styles.googleIcon]}>
@@ -6600,7 +7049,7 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.GRAY,
     },
     googleSignInButton: {
-      backgroundColor: '#000000', // Black background
+      backgroundColor: '#DB4437', // Google red
       borderRadius: 12,
       paddingVertical: 16,
       paddingHorizontal: 20,
@@ -7087,6 +7536,13 @@ const sliderStyles = StyleSheet.create({
     dropboxButton: {
       backgroundColor: '#0061FF',
     },
+    appleSignInButton: {
+      backgroundColor: '#000000', // Apple black
+    },
+    appleButtonDisabled: {
+      backgroundColor: '#999999',
+      opacity: 0.6,
+    },
     multipleProfilesButton: {
       backgroundColor: '#28a745', // Green background
     },
@@ -7102,6 +7558,14 @@ const sliderStyles = StyleSheet.create({
       color: '#FFFFFF',
       fontSize: 16,
       fontWeight: '600'
+    },
+    appleButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600'
+    },
+    appleButtonTextDisabled: {
+      color: '#CCCCCC',
     },
     accountLabelRow: {
       flexDirection: 'row',
@@ -8111,6 +8575,10 @@ const sliderStyles = StyleSheet.create({
       backgroundColor: '#0061FF',
       borderColor: '#0061FF',
     },
+    appleIcon: {
+      backgroundColor: '#000000',
+      borderColor: '#000000',
+    },
     accountIconText: {
       color: '#fff',
       fontSize: 16,
@@ -8723,5 +9191,46 @@ const sliderStyles = StyleSheet.create({
     },
     testModalButtonTextDisabled: {
       color: '#999',
+    },
+    restorePurchasesButton: {
+      marginTop: 20,
+      marginBottom: 10,
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    restorePurchasesText: {
+      fontSize: 14,
+      color: '#666',
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+      fontFamily: FONTS.QUICKSAND_BOLD,
+    },
+    legalLinksContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginTop: 20,
+      marginBottom: 20,
+      paddingHorizontal: 20,
+      flexWrap: 'wrap',
+    },
+    legalLinkButton: {
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+    },
+    legalLinkText: {
+      fontSize: 12,
+      color: '#666',
+      textAlign: 'center',
+      textDecorationLine: 'underline',
+      fontFamily: FONTS.QUICKSAND_BOLD,
+    },
+    legalLinkSeparator: {
+      fontSize: 12,
+      color: '#666',
+      marginHorizontal: 8,
+      fontFamily: FONTS.QUICKSAND_BOLD,
     },
   });

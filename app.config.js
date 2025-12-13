@@ -5,7 +5,7 @@ export default {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
     owner: "sayapingeorge",
-    version: process.env.VERSION || "1.2.0",
+    version: process.env.VERSION || "1.2.1",
     orientation: "default",
     icon: "./assets/PP_logo.png",
     userInterfaceStyle: "light",
@@ -26,7 +26,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "10",
+      buildNumber: "2",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -40,8 +40,18 @@ export default {
           "UIInterfaceOrientationLandscapeLeft",
           "UIInterfaceOrientationLandscapeRight"
         ],
-        ITSAppUsesNonExemptEncryption: false
-      }
+        ITSAppUsesNonExemptEncryption: false,
+        UIFileSharingEnabled: true,
+        LSSupportsOpeningDocumentsInPlace: true
+      },
+      entitlements: {
+        "com.apple.developer.applesignin": ["Default"],
+        "com.apple.developer.icloud-container-identifiers": ["iCloud.com.proofpix.app"],
+        "com.apple.developer.ubiquity-container-identifiers": ["iCloud.com.proofpix.app"],
+        "com.apple.developer.icloud-services": ["CloudDocuments"]
+      },
+      usesAppleSignIn: true,
+      usesIcloudStorage: true
     },
     android: {
       adaptiveIcon: {
