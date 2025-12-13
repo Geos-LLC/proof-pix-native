@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ROOMS, DEFAULT_LABEL_POSITION } from '../constants/rooms';
+import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_AFTER_LABEL_POSITION } from '../constants/rooms';
 
 const SETTINGS_KEY = 'app-settings';
 const CUSTOM_ROOMS_KEY = 'custom-rooms';
@@ -91,8 +91,8 @@ export const SettingsProvider = ({ children }) => {
   const [labelSize, setLabelSize] = useState(DEFAULT_LABEL_SIZE);
   const [labelCornerStyle, setLabelCornerStyle] = useState(DEFAULT_LABEL_CORNER_STYLE);
   const [labelFontFamily, setLabelFontFamily] = useState('system'); // Default system font
-  const [beforeLabelPosition, setBeforeLabelPosition] = useState(DEFAULT_LABEL_POSITION);
-  const [afterLabelPosition, setAfterLabelPosition] = useState(DEFAULT_LABEL_POSITION);
+  const [beforeLabelPosition, setBeforeLabelPosition] = useState(DEFAULT_BEFORE_LABEL_POSITION);
+  const [afterLabelPosition, setAfterLabelPosition] = useState(DEFAULT_AFTER_LABEL_POSITION);
   const [combinedLabelPosition, setCombinedLabelPosition] = useState(DEFAULT_LABEL_POSITION);
   const [labelMarginVertical, setLabelMarginVertical] = useState(10); // Top/bottom margin
   const [labelMarginHorizontal, setLabelMarginHorizontal] = useState(10); // Left/right margin
@@ -153,8 +153,8 @@ export const SettingsProvider = ({ children }) => {
         setLabelSize(settings.labelSize ?? DEFAULT_LABEL_SIZE);
         setLabelCornerStyle(settings.labelCornerStyle ?? DEFAULT_LABEL_CORNER_STYLE);
         setLabelFontFamily(normalizeFontKey(settings.labelFontFamily));
-        setBeforeLabelPosition(settings.beforeLabelPosition ?? DEFAULT_LABEL_POSITION);
-        setAfterLabelPosition(settings.afterLabelPosition ?? DEFAULT_LABEL_POSITION);
+        setBeforeLabelPosition(settings.beforeLabelPosition ?? DEFAULT_BEFORE_LABEL_POSITION);
+        setAfterLabelPosition(settings.afterLabelPosition ?? DEFAULT_AFTER_LABEL_POSITION);
         setCombinedLabelPosition(settings.combinedLabelPosition ?? DEFAULT_LABEL_POSITION);
         setLabelMarginVertical(settings.labelMarginVertical ?? 10);
         setLabelMarginHorizontal(settings.labelMarginHorizontal ?? 10);
@@ -459,8 +459,8 @@ export const SettingsProvider = ({ children }) => {
       setLabelSize(DEFAULT_LABEL_SIZE);
       setLabelCornerStyle(DEFAULT_LABEL_CORNER_STYLE);
       setLabelFontFamily('system');
-      setBeforeLabelPosition(DEFAULT_LABEL_POSITION);
-      setAfterLabelPosition(DEFAULT_LABEL_POSITION);
+      setBeforeLabelPosition(DEFAULT_BEFORE_LABEL_POSITION);
+      setAfterLabelPosition(DEFAULT_AFTER_LABEL_POSITION);
       setCombinedLabelPosition(DEFAULT_LABEL_POSITION);
       setLabelMarginVertical(10);
       setLabelMarginHorizontal(10);
@@ -483,8 +483,8 @@ export const SettingsProvider = ({ children }) => {
         labelFontFamily: 'system',
         labelSize: DEFAULT_LABEL_SIZE,
         labelCornerStyle: DEFAULT_LABEL_CORNER_STYLE,
-        beforeLabelPosition: DEFAULT_LABEL_POSITION,
-        afterLabelPosition: DEFAULT_LABEL_POSITION,
+        beforeLabelPosition: DEFAULT_BEFORE_LABEL_POSITION,
+        afterLabelPosition: DEFAULT_AFTER_LABEL_POSITION,
         combinedLabelPosition: DEFAULT_LABEL_POSITION,
         labelMarginVertical: 10,
         labelMarginHorizontal: 10,
