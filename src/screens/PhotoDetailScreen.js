@@ -19,6 +19,8 @@ import { COLORS, PHOTO_MODES, getLabelPositions, ROOMS } from '../constants/room
 import * as FileSystem from 'expo-file-system/legacy';
 import PhotoWatermark from '../components/PhotoWatermark';
 import { getCachedLabeledPhoto, calculateSettingsHash } from '../services/labelCacheService';
+import backgroundLabelPreparationService from '../services/backgroundLabelPreparationService';
+import { Image as RNImage } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -65,6 +67,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
         labelMarginHorizontal,
       }) : null;
 
+      console.log('[PhotoDetailScreen] Loading display images for', allPhotos.length, 'photos with hash:', settingsHash);
+
       // Load display URIs for all photos
       for (const photoItem of allPhotos) {
         // If labels are disabled or photo doesn't have a mode, use original
@@ -76,7 +80,29 @@ export default function PhotoDetailScreen({ route, navigation }) {
         try {
           // Try to get cached labeled image
           const cachedUri = await getCachedLabeledPhoto(photoItem, settingsHash);
-          newDisplayUriMap[photoItem.id] = cachedUri || photoItem.uri;
+
+          if (cachedUri) {
+            console.log('[PhotoDetailScreen] Cache HIT for photo', photoItem.id);
+            newDisplayUriMap[photoItem.id] = cachedUri;
+          } else {
+            console.log('[PhotoDetailScreen] Cache MISS for photo', photoItem.id, '- queuing for lazy re-labeling');
+            // Cache miss - show original for now and queue for background labeling
+            newDisplayUriMap[photoItem.id] = photoItem.uri;
+
+            // Queue photo for lazy re-labeling (will be processed in background)
+            RNImage.getSize(photoItem.uri, (w, h) => {
+              backgroundLabelPreparationService.queuePreparation({
+                photo: photoItem,
+                width: w,
+                height: h,
+                settingsHash: settingsHash,
+                mode: photoItem.mode,
+              });
+              console.log('[PhotoDetailScreen] Queued photo', photoItem.id, 'for re-labeling');
+            }, (error) => {
+              console.error('[PhotoDetailScreen] Failed to get image size for', photoItem.id, error);
+            });
+          }
         } catch (error) {
           console.error('[PhotoDetailScreen] Error loading labeled image for', photoItem.id, error);
           newDisplayUriMap[photoItem.id] = photoItem.uri;
@@ -97,6 +123,48 @@ export default function PhotoDetailScreen({ route, navigation }) {
       setDisplayUri(currentPhoto.uri);
     }
   }, [currentPhoto, displayUriMap]);
+
+  // Listen for background labeling completion to update display
+  useEffect(() => {
+    const unsubscribe = backgroundLabelPreparationService.subscribe(async (state) => {
+      // When background labeling completes, refresh the displayUriMap
+      // This will cause photos to automatically update from unlabeled to labeled
+      if (state.pendingPreparations.length === 0 && allPhotos.length > 0 && showLabels) {
+        console.log('[PhotoDetailScreen] Background labeling queue empty - refreshing display URIs');
+
+        const settingsHash = calculateSettingsHash({
+          showLabels,
+          beforeLabelPosition,
+          afterLabelPosition,
+          labelBackgroundColor,
+          labelTextColor,
+          labelSize,
+          labelFontFamily,
+          labelMarginVertical,
+          labelMarginHorizontal,
+        });
+
+        const updatedMap = {};
+        for (const photoItem of allPhotos) {
+          if (!photoItem.mode) {
+            updatedMap[photoItem.id] = photoItem.uri;
+            continue;
+          }
+
+          try {
+            const cachedUri = await getCachedLabeledPhoto(photoItem, settingsHash);
+            updatedMap[photoItem.id] = cachedUri || photoItem.uri;
+          } catch (error) {
+            updatedMap[photoItem.id] = photoItem.uri;
+          }
+        }
+
+        setDisplayUriMap(updatedMap);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [allPhotos, showLabels, beforeLabelPosition, afterLabelPosition, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily, labelMarginVertical, labelMarginHorizontal]);
 
   // Sync with route params when they change
   useEffect(() => {
