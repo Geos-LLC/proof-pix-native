@@ -172,6 +172,8 @@ export default function CameraScreen({ route, navigation }) {
   }, [dimensions, cameraViewMode]);
 
   // Select best camera format
+  // IMPORTANT: Consider BOTH photo resolution AND video/preview resolution
+  // The preview stream uses video resolution, so low video resolution = blurry preview
   const format = useMemo(() => {
     if (!device?.formats) return undefined;
 
@@ -184,29 +186,42 @@ export default function CameraScreen({ route, navigation }) {
 
     let selected;
     if (matchingFormats.length > 0) {
-      // Sort by total pixels (highest first)
+      // Sort by video pixels first (for sharp preview), then photo pixels
+      // Preview quality depends on video resolution, not photo resolution
       const sorted = matchingFormats.sort((a, b) => {
-        const aPixels = a.photoWidth * a.photoHeight;
-        const bPixels = b.photoWidth * b.photoHeight;
-        return bPixels - aPixels;
+        const aVideoPixels = (a.videoWidth || 0) * (a.videoHeight || 0);
+        const bVideoPixels = (b.videoWidth || 0) * (b.videoHeight || 0);
+        // Prioritize high video resolution for sharp preview
+        if (aVideoPixels !== bVideoPixels) {
+          return bVideoPixels - aVideoPixels;
+        }
+        // Secondary: high photo resolution
+        const aPhotoPixels = a.photoWidth * a.photoHeight;
+        const bPhotoPixels = b.photoWidth * b.photoHeight;
+        return bPhotoPixels - aPhotoPixels;
       });
       selected = sorted[0];
     } else {
-      // Find closest ratio
+      // Find closest ratio, prioritizing video resolution
       const withDiff = device.formats.map(f => {
         const formatRatio = Math.max(f.photoWidth, f.photoHeight) / Math.min(f.photoWidth, f.photoHeight);
         return {
           format: f,
           diff: Math.abs(formatRatio - targetAspectRatio),
-          ratio: formatRatio
+          ratio: formatRatio,
+          videoPixels: (f.videoWidth || 0) * (f.videoHeight || 0)
         };
       });
 
       withDiff.sort((a, b) => {
         if (Math.abs(a.diff - b.diff) < 0.01) {
-          const aPixels = a.format.photoWidth * a.format.photoHeight;
-          const bPixels = b.format.photoWidth * b.format.photoHeight;
-          return bPixels - aPixels;
+          // Same aspect ratio - prioritize video resolution for sharp preview
+          if (a.videoPixels !== b.videoPixels) {
+            return b.videoPixels - a.videoPixels;
+          }
+          const aPhotoPixels = a.format.photoWidth * a.format.photoHeight;
+          const bPhotoPixels = b.format.photoWidth * b.format.photoHeight;
+          return bPhotoPixels - aPhotoPixels;
         }
         return a.diff - b.diff;
       });
@@ -216,6 +231,7 @@ export default function CameraScreen({ route, navigation }) {
 
     if (selected) {
       const ratio = Math.max(selected.photoWidth, selected.photoHeight) / Math.min(selected.photoWidth, selected.photoHeight);
+      console.log(`[CameraScreen] Selected format: photo=${selected.photoWidth}x${selected.photoHeight}, video=${selected.videoWidth || 'N/A'}x${selected.videoHeight || 'N/A'}, ratio=${ratio.toFixed(2)}`);
     }
 
     return selected;

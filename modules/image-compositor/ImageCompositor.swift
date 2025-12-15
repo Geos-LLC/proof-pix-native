@@ -37,52 +37,56 @@ class ImageCompositor: NSObject {
           return
         }
 
-        let canvasWidth = CGFloat(truncating: width)
-        let canvasHeight = CGFloat(truncating: height)
+        var canvasWidth = CGFloat(truncating: width)
+        var canvasHeight = CGFloat(truncating: height)
+
+        // Limit canvas size to prevent memory issues
+        let maxDimension: CGFloat = 4096.0
+        var scaleFactor: CGFloat = 1.0
+        if canvasWidth > maxDimension || canvasHeight > maxDimension {
+          print("[ImageCompositor] ⚠️ Canvas too large (\(canvasWidth) x \(canvasHeight)), downscaling...")
+          scaleFactor = min(maxDimension / canvasWidth, maxDimension / canvasHeight)
+          canvasWidth *= scaleFactor
+          canvasHeight *= scaleFactor
+          print("[ImageCompositor] ✅ Canvas scaled to: \(canvasWidth) x \(canvasHeight)")
+        }
+
         let canvasSize = CGSize(width: canvasWidth, height: canvasHeight)
 
-        // Create image context
-        UIGraphicsBeginImageContextWithOptions(canvasSize, false, 0)
-        guard let context = UIGraphicsGetCurrentContext() else {
-          reject("E_CONTEXT", "Failed to create graphics context", nil)
-          return
+        // Use UIGraphicsImageRenderer instead of UIGraphicsBeginImageContextWithOptions
+        // This is Apple's recommended approach and handles memory more efficiently
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0 // Use scale 1.0 to avoid multiplying dimensions
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+
+        let composedImage = renderer.image { context in
+          // Fill background with white
+          UIColor.white.setFill()
+          context.fill(CGRect(origin: .zero, size: canvasSize))
+
+          if layout == "STACK" {
+            // Stacked layout (vertical)
+            let topH = CGFloat(truncating: topHeight ?? 0) * scaleFactor
+            let bottomH = CGFloat(truncating: bottomHeight ?? 0) * scaleFactor
+
+            // Draw before image on top
+            beforeImage.draw(in: CGRect(x: 0, y: 0, width: canvasWidth, height: topH))
+
+            // Draw after image on bottom
+            afterImage.draw(in: CGRect(x: 0, y: topH, width: canvasWidth, height: bottomH))
+
+          } else {
+            // Side-by-side layout (horizontal)
+            let leftW = CGFloat(truncating: leftWidth ?? 0) * scaleFactor
+            let rightW = CGFloat(truncating: rightWidth ?? 0) * scaleFactor
+
+            // Draw before image on left
+            beforeImage.draw(in: CGRect(x: 0, y: 0, width: leftW, height: canvasHeight))
+
+            // Draw after image on right
+            afterImage.draw(in: CGRect(x: leftW, y: 0, width: rightW, height: canvasHeight))
+          }
         }
-
-        // Fill background with white
-        context.setFillColor(UIColor.white.cgColor)
-        context.fill(CGRect(origin: .zero, size: canvasSize))
-
-        if layout == "STACK" {
-          // Stacked layout (vertical)
-          let topH = CGFloat(truncating: topHeight ?? 0)
-          let bottomH = CGFloat(truncating: bottomHeight ?? 0)
-
-          // Draw before image on top
-          beforeImage.draw(in: CGRect(x: 0, y: 0, width: canvasWidth, height: topH))
-
-          // Draw after image on bottom
-          afterImage.draw(in: CGRect(x: 0, y: topH, width: canvasWidth, height: bottomH))
-
-        } else {
-          // Side-by-side layout (horizontal)
-          let leftW = CGFloat(truncating: leftWidth ?? 0)
-          let rightW = CGFloat(truncating: rightWidth ?? 0)
-
-          // Draw before image on left
-          beforeImage.draw(in: CGRect(x: 0, y: 0, width: leftW, height: canvasHeight))
-
-          // Draw after image on right
-          afterImage.draw(in: CGRect(x: leftW, y: 0, width: rightW, height: canvasHeight))
-        }
-
-        // Get the composed image
-        guard let composedImage = UIGraphicsGetImageFromCurrentImageContext() else {
-          UIGraphicsEndImageContext()
-          reject("E_COMPOSE", "Failed to compose image", nil)
-          return
-        }
-
-        UIGraphicsEndImageContext()
 
         // Save to temp file
         guard let imageData = composedImage.jpegData(compressionQuality: 0.95) else {
@@ -105,6 +109,10 @@ class ImageCompositor: NSObject {
     }
   }
 
+  // Maximum dimension for images to prevent memory issues
+  // iOS can struggle with images larger than ~4000-5000px when creating contexts
+  private let maxImageDimension: CGFloat = 4096.0
+
   @objc
   func addLabelToImage(
     _ imageUri: String,
@@ -116,9 +124,24 @@ class ImageCompositor: NSObject {
     DispatchQueue.global(qos: .userInitiated).async {
       do {
         // Load image
-        guard let image = self.loadImage(from: imageUri) else {
+        guard var image = self.loadImage(from: imageUri) else {
           reject("LOAD_ERROR", "Failed to load image", nil)
           return
+        }
+
+        // Downscale if image is too large to prevent memory issues
+        let originalSize = image.size
+        if originalSize.width > self.maxImageDimension || originalSize.height > self.maxImageDimension {
+          print("[ImageCompositor] ⚠️ Image too large (\(originalSize.width) x \(originalSize.height)), downscaling...")
+          let scaleFactor = min(self.maxImageDimension / originalSize.width, self.maxImageDimension / originalSize.height)
+          let newSize = CGSize(width: originalSize.width * scaleFactor, height: originalSize.height * scaleFactor)
+
+          // Use UIGraphicsImageRenderer for downscaling (memory efficient)
+          let renderer = UIGraphicsImageRenderer(size: newSize)
+          image = renderer.image { context in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+          }
+          print("[ImageCompositor] ✅ Downscaled to: \(image.size.width) x \(image.size.height)")
         }
 
         // Parse label configuration
@@ -200,42 +223,31 @@ class ImageCompositor: NSObject {
         print("  Label size: \(labelWidth) x \(labelHeight)")
         print("  Label rect: x=\(labelRect.origin.x), y=\(labelRect.origin.y), w=\(labelRect.width), h=\(labelRect.height)")
 
-        // Create image context
-        UIGraphicsBeginImageContextWithOptions(image.size, false, 0)
+        // Use UIGraphicsImageRenderer instead of UIGraphicsBeginImageContextWithOptions
+        // This is Apple's recommended approach and handles memory more efficiently
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0 // Use scale 1.0 to avoid multiplying dimensions
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
 
-        // Draw original image
-        image.draw(at: .zero)
+        let labeledImage = renderer.image { context in
+          // Draw original image
+          image.draw(at: .zero)
 
-        guard let context = UIGraphicsGetCurrentContext() else {
-          UIGraphicsEndImageContext()
-          reject("E_CONTEXT", "Failed to create graphics context", nil)
-          return
+          // Draw label background with rounded corners
+          let cornerRadius = 8.0 * scale
+          let path = UIBezierPath(roundedRect: labelRect, cornerRadius: cornerRadius)
+          backgroundColor.setFill()
+          path.fill()
+
+          // Draw text centered in the label
+          let textRect = CGRect(
+            x: labelRect.origin.x + scaledPadding,
+            y: labelRect.origin.y + scaledPadding,
+            width: textSize.width,
+            height: textSize.height
+          )
+          (labelText as NSString).draw(in: textRect, withAttributes: textAttributes)
         }
-
-        // Draw label background with rounded corners
-        let cornerRadius = 8.0 * scale
-        let path = UIBezierPath(roundedRect: labelRect, cornerRadius: cornerRadius)
-        context.setFillColor(backgroundColor.cgColor)
-        context.addPath(path.cgPath)
-        context.fillPath()
-
-        // Draw text centered in the label
-        let textRect = CGRect(
-          x: labelRect.origin.x + scaledPadding,
-          y: labelRect.origin.y + scaledPadding,
-          width: textSize.width,
-          height: textSize.height
-        )
-        (labelText as NSString).draw(in: textRect, withAttributes: textAttributes)
-
-        // Get the labeled image
-        guard let labeledImage = UIGraphicsGetImageFromCurrentImageContext() else {
-          UIGraphicsEndImageContext()
-          reject("E_COMPOSE", "Failed to create labeled image", nil)
-          return
-        }
-
-        UIGraphicsEndImageContext()
 
         // Save to temp file with 85% quality to match Android
         guard let imageData = labeledImage.jpegData(compressionQuality: 0.85) else {
