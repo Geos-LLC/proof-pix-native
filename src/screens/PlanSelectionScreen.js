@@ -504,28 +504,17 @@ ${results.error ? `Error: ${results.error}` : ''}
         <View style={styles.formContainer}>
           <Text style={styles.welcomeText}>{t('firstLoad.choosePlan')}</Text>
 
-          {/* Restore Purchases & Diagnostics - HIDDEN in production, only for dev/testing */}
-          {Platform.OS === 'ios' && __DEV__ && (
-            <>
-              <TouchableOpacity
-                style={styles.restorePurchasesButton}
-                onPress={handleRestorePurchases}
-                disabled={isRestoringPurchases}
-              >
-                <Text style={styles.restorePurchasesText}>
-                  {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : '🔧 Restore Purchases (Dev Only)'}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.restorePurchasesButton, { marginTop: 5 }]}
-                onPress={handleDiagnose}
-              >
-                <Text style={[styles.restorePurchasesText, { color: '#999' }]}>
-                  🔍 Run IAP Diagnostics
-                </Text>
-              </TouchableOpacity>
-            </>
+          {/* Restore Purchases - iOS only */}
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.restorePurchasesButton}
+              onPress={handleRestorePurchases}
+              disabled={isRestoringPurchases}
+            >
+              <Text style={styles.restorePurchasesText}>
+                {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
+              </Text>
+            </TouchableOpacity>
           )}
 
           {trialAvailable && (
