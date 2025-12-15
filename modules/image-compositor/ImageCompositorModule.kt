@@ -23,9 +23,14 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.max
+import kotlin.math.min
 
 class ImageCompositorModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
+
+    // Maximum dimension for images to prevent memory issues
+    // Android can struggle with images larger than ~4000-5000px when creating bitmaps
+    private val maxImageDimension = 4096
 
     override fun getName(): String {
         return "ImageCompositor"
@@ -56,39 +61,55 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                     return@launch
                 }
 
+                // Limit canvas size to prevent memory issues
+                var canvasWidth = width
+                var canvasHeight = height
+                var scaleFactor = 1.0f
+
+                if (canvasWidth > maxImageDimension || canvasHeight > maxImageDimension) {
+                    android.util.Log.d("ImageCompositor", "⚠️ Canvas too large ($canvasWidth x $canvasHeight), downscaling...")
+                    scaleFactor = min(maxImageDimension.toFloat() / canvasWidth, maxImageDimension.toFloat() / canvasHeight)
+                    canvasWidth = (canvasWidth * scaleFactor).toInt()
+                    canvasHeight = (canvasHeight * scaleFactor).toInt()
+                    android.util.Log.d("ImageCompositor", "✅ Canvas scaled to: $canvasWidth x $canvasHeight")
+                }
+
                 // Create combined bitmap
-                val combinedBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val combinedBitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(combinedBitmap)
+
+                // Fill background with white
+                canvas.drawColor(Color.WHITE)
 
                 // Draw images based on layout
                 when (layout.uppercase()) {
                     "STACK" -> {
                         // Vertical stack layout
-                        val topHeight = topH ?: (height / 2)
-                        val bottomHeight = bottomH ?: (height / 2)
+                        val topHeight = ((topH ?: (height / 2)) * scaleFactor).toInt()
+                        val bottomHeight = ((bottomH ?: (height / 2)) * scaleFactor).toInt()
 
                         // Draw before photo on top
-                        val beforeScaled = Bitmap.createScaledBitmap(beforeBitmap, width, topHeight, true)
+                        val beforeScaled = Bitmap.createScaledBitmap(beforeBitmap, canvasWidth, topHeight, true)
                         canvas.drawBitmap(beforeScaled, 0f, 0f, null)
                         beforeScaled.recycle()
 
                         // Draw after photo on bottom
-                        val afterScaled = Bitmap.createScaledBitmap(afterBitmap, width, bottomHeight, true)
+                        val afterScaled = Bitmap.createScaledBitmap(afterBitmap, canvasWidth, bottomHeight, true)
                         canvas.drawBitmap(afterScaled, 0f, topHeight.toFloat(), null)
                         afterScaled.recycle()
                     }
                     "SIDE" -> {
                         // Side-by-side layout
-                        val leftWidth = leftW ?: (width / 2)
-                        val rightWidth = rightW ?: (width / 2)
+                        val leftWidth = ((leftW ?: (width / 2)) * scaleFactor).toInt()
+                        val rightWidth = ((rightW ?: (width / 2)) * scaleFactor).toInt()
 
                         // Draw before photo on left
-                        val beforeScaled = Bitmap.createScaledBitmap(beforeBitmap, leftWidth, height, true)
+                        val beforeScaled = Bitmap.createScaledBitmap(beforeBitmap, leftWidth, canvasHeight, true)
                         canvas.drawBitmap(beforeScaled, 0f, 0f, null)
                         beforeScaled.recycle()
 
                         // Draw after photo on right
-                        val afterScaled = Bitmap.createScaledBitmap(afterBitmap, rightWidth, height, true)
+                        val afterScaled = Bitmap.createScaledBitmap(afterBitmap, rightWidth, canvasHeight, true)
                         canvas.drawBitmap(afterScaled, leftWidth.toFloat(), 0f, null)
                         afterScaled.recycle()
                     }
@@ -108,7 +129,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
 
                 withContext(Dispatchers.IO) {
                     FileOutputStream(outputFile).use { out ->
-                        // Use 85 quality to match iOS compression and stay under Vercel 4.5MB limit
+                        // Use 85 quality to match iOS compression
                         combinedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                     }
                 }
@@ -135,10 +156,24 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // Load original bitmap at full resolution
-                val bitmap = loadBitmap(imageUri)
+                var bitmap = loadBitmap(imageUri)
                 if (bitmap == null) {
                     promise.reject("LOAD_ERROR", "Failed to load image")
                     return@launch
+                }
+
+                // Downscale if image is too large to prevent memory issues
+                val originalWidth = bitmap.width
+                val originalHeight = bitmap.height
+                if (originalWidth > maxImageDimension || originalHeight > maxImageDimension) {
+                    android.util.Log.d("ImageCompositor", "⚠️ Image too large ($originalWidth x $originalHeight), downscaling...")
+                    val scaleFactor = min(maxImageDimension.toFloat() / originalWidth, maxImageDimension.toFloat() / originalHeight)
+                    val newWidth = (originalWidth * scaleFactor).toInt()
+                    val newHeight = (originalHeight * scaleFactor).toInt()
+                    val scaledBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+                    bitmap.recycle()
+                    bitmap = scaledBitmap
+                    android.util.Log.d("ImageCompositor", "✅ Downscaled to: ${bitmap.width} x ${bitmap.height}")
                 }
 
                 // Create a mutable copy to draw on
@@ -157,13 +192,19 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 val marginH = if (labelConfig.hasKey("marginHorizontal")) labelConfig.getInt("marginHorizontal") else 20
                 val marginV = if (labelConfig.hasKey("marginVertical")) labelConfig.getInt("marginVertical") else 20
                 val padding = if (labelConfig.hasKey("padding")) labelConfig.getInt("padding") else 16
+                // When absoluteMargins is true, margins are already in absolute pixels (not scaled)
+                val absoluteMargins = if (labelConfig.hasKey("absoluteMargins")) labelConfig.getBoolean("absoluteMargins") else false
+                // Offsets for shifting label position (used for After labels in combined photos)
+                val offsetX = if (labelConfig.hasKey("offsetX")) labelConfig.getInt("offsetX") else 0
+                val offsetY = if (labelConfig.hasKey("offsetY")) labelConfig.getInt("offsetY") else 0
 
                 // Calculate scaled sizes based on image dimensions
                 // Scale font size and margins based on image width (assuming ~1000px as baseline)
                 val scale = labeledBitmap.width / 1000f
                 val scaledFontSize = (fontSize * scale).coerceAtLeast(24f)
-                val scaledMarginH = (marginH * scale).toInt().coerceAtLeast(10)
-                val scaledMarginV = (marginV * scale).toInt().coerceAtLeast(10)
+                // If absoluteMargins is true, use the margins as-is (they're already calculated for the actual image size)
+                val scaledMarginH = if (absoluteMargins) marginH else (marginH * scale).toInt().coerceAtLeast(10)
+                val scaledMarginV = if (absoluteMargins) marginV else (marginV * scale).toInt().coerceAtLeast(10)
                 val scaledPadding = (padding * scale).toInt().coerceAtLeast(8)
 
                 // Setup text paint
@@ -182,44 +223,45 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 val labelWidth = textBounds.width() + (scaledPadding * 2)
                 val labelHeight = textBounds.height() + (scaledPadding * 2)
 
-                // Calculate label position
-                val labelRect = when (position) {
-                    "top-left" -> RectF(
-                        scaledMarginH.toFloat(),
-                        scaledMarginV.toFloat(),
-                        scaledMarginH + labelWidth.toFloat(),
-                        scaledMarginV + labelHeight.toFloat()
-                    )
-                    "top-right" -> RectF(
-                        labeledBitmap.width - scaledMarginH - labelWidth.toFloat(),
-                        scaledMarginV.toFloat(),
-                        labeledBitmap.width - scaledMarginH.toFloat(),
-                        scaledMarginV + labelHeight.toFloat()
-                    )
-                    "bottom-left" -> RectF(
-                        scaledMarginH.toFloat(),
-                        labeledBitmap.height - scaledMarginV - labelHeight.toFloat(),
-                        scaledMarginH + labelWidth.toFloat(),
-                        labeledBitmap.height - scaledMarginV.toFloat()
-                    )
-                    "bottom-right" -> RectF(
-                        labeledBitmap.width - scaledMarginH - labelWidth.toFloat(),
-                        labeledBitmap.height - scaledMarginV - labelHeight.toFloat(),
-                        labeledBitmap.width - scaledMarginH.toFloat(),
-                        labeledBitmap.height - scaledMarginV.toFloat()
-                    )
-                    else -> RectF(
-                        scaledMarginH.toFloat(),
-                        scaledMarginV.toFloat(),
-                        scaledMarginH + labelWidth.toFloat(),
-                        scaledMarginV + labelHeight.toFloat()
-                    )
+                // Calculate label position based on 9-position grid
+                // Positions: left-top, left-middle, left-bottom, center-top, center-middle, center-bottom, right-top, right-middle, right-bottom
+                // Also support legacy format: top-left, top-right, bottom-left, bottom-right
+                val pos = position ?: "left-top"
+
+                // Determine horizontal position (x)
+                val labelX: Float = when {
+                    pos.contains("left") -> scaledMarginH.toFloat()
+                    pos.contains("right") -> labeledBitmap.width - scaledMarginH - labelWidth.toFloat()
+                    else -> {
+                        // center - add offsetX to shift center position (e.g., to center of right half)
+                        (labeledBitmap.width - labelWidth) / 2f + offsetX
+                    }
                 }
+
+                // Determine vertical position (y)
+                val labelY: Float = when {
+                    pos.contains("top") -> scaledMarginV.toFloat()
+                    pos.contains("bottom") -> labeledBitmap.height - scaledMarginV - labelHeight.toFloat()
+                    else -> {
+                        // middle - add offsetY to shift middle position (e.g., to middle of bottom half)
+                        (labeledBitmap.height - labelHeight) / 2f + offsetY
+                    }
+                }
+
+                val labelRect = RectF(
+                    labelX,
+                    labelY,
+                    labelX + labelWidth,
+                    labelY + labelHeight
+                )
 
                 android.util.Log.d("ImageCompositor", "📍 Label Position Calculation:")
                 android.util.Log.d("ImageCompositor", "  Image size: ${labeledBitmap.width} x ${labeledBitmap.height}")
                 android.util.Log.d("ImageCompositor", "  Position: $position")
                 android.util.Log.d("ImageCompositor", "  Text: $labelText")
+                android.util.Log.d("ImageCompositor", "  absoluteMargins: $absoluteMargins")
+                android.util.Log.d("ImageCompositor", "  Input marginH: $marginH, marginV: $marginV")
+                android.util.Log.d("ImageCompositor", "  offsetX: $offsetX, offsetY: $offsetY")
                 android.util.Log.d("ImageCompositor", "  Scaled fontSize: $scaledFontSize")
                 android.util.Log.d("ImageCompositor", "  Scaled marginH: $scaledMarginH, marginV: $scaledMarginV")
                 android.util.Log.d("ImageCompositor", "  Label size: $labelWidth x $labelHeight")
@@ -244,7 +286,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
 
                 withContext(Dispatchers.IO) {
                     FileOutputStream(outputFile).use { out ->
-                        // Use 85 quality to reduce file size and stay under Vercel 4.5MB limit
+                        // Use 85 quality to match iOS
                         labeledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                     }
                 }
@@ -264,7 +306,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
         android.util.Log.d("ImageCompositor", "📂 loadBitmap called with: $uriString")
         return try {
             val uri = Uri.parse(uriString)
-            val bitmap: Bitmap?
+            var bitmap: Bitmap?
             val exifOrientation: Int
 
             // Configure BitmapFactory options for best quality
@@ -324,6 +366,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
 
             bitmap
         } catch (e: Exception) {
+            android.util.Log.e("ImageCompositor", "❌ Error loading bitmap: ${e.message}")
             null
         }
     }
