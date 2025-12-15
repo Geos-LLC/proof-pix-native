@@ -44,24 +44,41 @@ const withMediaStoreSaver = (config) => {
 
         // Check if MediaStoreSaverPackage is already registered
         if (!mainAppContent.includes('MediaStoreSaverPackage()')) {
-          // Find the getPackages() method and add the package
-          // Look for the ImageCompositorPackage line as a reference point
+          let modified = false;
+
+          // Try different patterns to find where to add the package
+          // Pattern 1: Look for ImageCompositorPackage
           if (mainAppContent.includes('ImageCompositorPackage()')) {
-            // Add after ImageCompositorPackage
             mainAppContent = mainAppContent.replace(
               /(\s+add\(ImageCompositorPackage\(\)\))/,
               '$1\n              add(MediaStoreSaverPackage())'
             );
-          } else {
-            // Add after PackageList if ImageCompositor not found
+            modified = true;
+          }
+          // Pattern 2: Look for PackageList(this).packages.apply { with any content before first add or }
+          else if (mainAppContent.includes('PackageList(this).packages.apply')) {
+            // Match the opening of the apply block and add right after the opening brace
             mainAppContent = mainAppContent.replace(
-              /(PackageList\(this\)\.packages\.apply\s*\{[^}]*?\/\/[^\n]*\n)/,
-              '$1              add(MediaStoreSaverPackage())\n'
+              /(PackageList\(this\)\.packages\.apply\s*\{)/,
+              '$1\n              add(MediaStoreSaverPackage())'
             );
+            modified = true;
+          }
+          // Pattern 3: Look for PackageList(this).packages (without apply) - older format
+          else if (mainAppContent.includes('PackageList(this).packages')) {
+            mainAppContent = mainAppContent.replace(
+              /(PackageList\(this\)\.packages)/,
+              '$1.apply { add(MediaStoreSaverPackage()) }'
+            );
+            modified = true;
           }
 
-          await fs.writeFile(mainApplicationPath, mainAppContent);
-          console.log(`✅ Registered MediaStoreSaverPackage in MainApplication.kt`);
+          if (modified) {
+            await fs.writeFile(mainApplicationPath, mainAppContent);
+            console.log(`✅ Registered MediaStoreSaverPackage in MainApplication.kt`);
+          } else {
+            console.error(`❌ Could not find suitable location to add MediaStoreSaverPackage`);
+          }
         } else {
           console.log(`ℹ️  MediaStoreSaverPackage already registered in MainApplication.kt`);
         }

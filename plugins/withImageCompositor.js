@@ -80,24 +80,41 @@ const withImageCompositor = (config) => {
 
         // Check if ImageCompositorPackage is already registered
         if (!mainAppContent.includes('ImageCompositorPackage()')) {
-          // Find the getPackages() method and add the package
-          // Look for the MediaStoreSaverPackage line as a reference point
+          let modified = false;
+
+          // Try different patterns to find where to add the package
+          // Pattern 1: Look for MediaStoreSaverPackage
           if (mainAppContent.includes('MediaStoreSaverPackage()')) {
-            // Add after MediaStoreSaverPackage
             mainAppContent = mainAppContent.replace(
               /(\s+add\(MediaStoreSaverPackage\(\)\))/,
               '$1\n              add(ImageCompositorPackage())'
             );
-          } else {
-            // Add after PackageList if MediaStoreSaver not found
+            modified = true;
+          }
+          // Pattern 2: Look for PackageList(this).packages.apply { with any content before first add or }
+          else if (mainAppContent.includes('PackageList(this).packages.apply')) {
+            // Match the opening of the apply block and add right after the opening brace
             mainAppContent = mainAppContent.replace(
-              /(PackageList\(this\)\.packages\.apply\s*\{[^}]*?\/\/[^\n]*\n)/,
-              '$1              add(ImageCompositorPackage())\n'
+              /(PackageList\(this\)\.packages\.apply\s*\{)/,
+              '$1\n              add(ImageCompositorPackage())'
             );
+            modified = true;
+          }
+          // Pattern 3: Look for PackageList(this).packages (without apply) - older format
+          else if (mainAppContent.includes('PackageList(this).packages')) {
+            mainAppContent = mainAppContent.replace(
+              /(PackageList\(this\)\.packages)/,
+              '$1.apply { add(ImageCompositorPackage()) }'
+            );
+            modified = true;
           }
 
-          await fs.writeFile(mainApplicationPath, mainAppContent);
-          console.log(`✅ Registered ImageCompositorPackage in MainApplication.kt`);
+          if (modified) {
+            await fs.writeFile(mainApplicationPath, mainAppContent);
+            console.log(`✅ Registered ImageCompositorPackage in MainApplication.kt`);
+          } else {
+            console.error(`❌ Could not find suitable location to add ImageCompositorPackage`);
+          }
         } else {
           console.log(`ℹ️  ImageCompositorPackage already registered in MainApplication.kt`);
         }

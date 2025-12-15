@@ -591,6 +591,10 @@ export default function GalleryScreen({ navigation, route }) {
             // These don't require both before and after to be in sourcePhotos
             const dir = FileSystem.documentDirectory;
             const entries = await FileSystem.readDirectoryAsync(dir);
+
+            // Debug: Log all combined base files found
+            const combinedBaseFiles = entries.filter(name => name.includes('COMBINED_BASE'));
+            console.log(`[GALLERY] 🔍 Debug: Found ${combinedBaseFiles.length} COMBINED_BASE files in documents:`, combinedBaseFiles.slice(0, 10));
             
             for (const photoSet of selectedSets) {
                 if (photoSet.before && photoSet.after) {
@@ -607,16 +611,19 @@ export default function GalleryScreen({ navigation, route }) {
                     // Prioritize STACK over SIDE variant
                     const stackPrefix = `${beforePhoto.room}_${safeName}_COMBINED_BASE_STACK_`;
                     const sidePrefix = `${beforePhoto.room}_${safeName}_COMBINED_BASE_SIDE_`;
-                    
+
+                    console.log(`[GALLERY] 🔍 Searching for combined photo with prefixes:`, { stackPrefix, sidePrefix, room: beforePhoto.room, safeName, projectId, projectIdSuffix });
+
                     let newestUri = null;
                     let newestTs = -1;
-                    
+
                     // First, try to find STACK variant
                     const stackMatches = entries.filter(name => {
                         if (!name.startsWith(stackPrefix)) return false;
                         if (projectId && !name.includes(projectIdSuffix)) return false;
                         return true;
                     });
+                    console.log(`[GALLERY] 🔍 Stack matches: ${stackMatches.length}`, stackMatches.slice(0, 3));
                     
                     for (const filename of stackMatches) {
                         const ts = extractTimestamp(filename);

@@ -1856,9 +1856,13 @@ export default function CameraScreen({ route, navigation }) {
                   dimsLocal
                 );
 
+              const combinedFilename = `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectIdSuffix}.jpg`;
+              console.log(`[CameraScreen][Android] 🏷️ Combined filename will be: ${combinedFilename}`);
+              console.log(`[CameraScreen][Android] 🏷️ Room: "${activeBeforePhoto.room}", SafeName: "${safeName}", Layout: "${layout}"`);
+
               const combinedPhotoSavedUri = await savePhotoToDevice(
                 capUri,
-                `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectIdSuffix}.jpg`,
+                combinedFilename,
                 activeProjectId || null
               );
 
@@ -1965,9 +1969,12 @@ export default function CameraScreen({ route, navigation }) {
                   altDims
                 );
 
+                const altCombinedFilename = `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`;
+                console.log(`[CameraScreen][Android] 🏷️ Alt combined filename will be: ${altCombinedFilename}`);
+
                 const altCombinedPhotoSavedUri = await savePhotoToDevice(
                   altCapUri,
-                  `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`,
+                  altCombinedFilename,
                   activeProjectId || null
                 );
 

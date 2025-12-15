@@ -190,17 +190,35 @@ export default function PhotoEditorScreen({ route, navigation }) {
         
         const stack = findNewestFile(prefixStack);
         const side = findNewestFile(prefixSide);
-        
+
+        console.log('[PhotoEditor] 🔍 Searching for original combined photos:');
+        console.log('[PhotoEditor]   Room:', currentPhotoSet.before.room);
+        console.log('[PhotoEditor]   SafeName:', safeName);
+        console.log('[PhotoEditor]   ProjectId:', projectId);
+        console.log('[PhotoEditor]   Stack prefix:', prefixStack);
+        console.log('[PhotoEditor]   Side prefix:', prefixSide);
+
+        // Debug: List all combined base files
+        const combinedBaseFiles = entries.filter(name => name.includes('COMBINED_BASE'));
+        console.log('[PhotoEditor]   📁 All COMBINED_BASE files in documents:', combinedBaseFiles.length);
+        if (combinedBaseFiles.length > 0) {
+          console.log('[PhotoEditor]   Files:', combinedBaseFiles.slice(0, 5));
+        }
+
         if (stack) {
+          console.log('[PhotoEditor]   ✅ Found STACK:', stack);
         }
         if (side) {
+          console.log('[PhotoEditor]   ✅ Found SIDE:', side);
         }
-        
+
         if (!stack && !side) {
+          console.log('[PhotoEditor]   ⚠️ No original combined photos found');
         }
-        
+
         setOriginalBaseUris({ stack, side });
       } catch (e) {
+        console.error('[PhotoEditor] ❌ Error searching for original combined photos:', e);
       }
     })();
   }, [currentPhotoSet]);
