@@ -4,14 +4,14 @@
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
-import { Platform, Image } from 'react-native';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import googleDriveService from './googleDriveService';
 import googleAuthService from './googleAuthService';
 import proxyService from './proxyService';
 import { uploadPhotoToDropbox } from './dropboxUploadService';
-import backgroundLabelPreparationService from './backgroundLabelPreparationService';
-import { getCachedLabeledPhoto, calculateSettingsHash } from './labelCacheService';
+import { ensureLabelForPhoto } from './labelService';
+import iCloudService from './iCloudService';
 
 /**
  * Compress image if needed - NO LONGER NEEDED with Railway (no body size limits)
@@ -133,27 +133,40 @@ try {
     // If sessionId is provided, use proxy server (for both Google and Dropbox team uploads)
     // If no sessionId and Dropbox, use direct Dropbox upload
     if (accountType === 'apple') {
-      console.log('[UPLOAD_PHOTO] 🍎 Taking Apple/iCloud route');
-      // iCloud upload via proxy server
-      if (!sessionId) {
-        throw new Error('Missing proxy session ID for iCloud upload. Please connect your Apple account in Settings.');
+      console.log('[UPLOAD_PHOTO] 🍎 Taking Apple/iCloud route (direct upload)');
+      // Use direct iCloud upload via native file system
+      // This bypasses the proxy server and stores files directly in app's Documents folder
+
+      // Resolve the image URI to a file path
+      let resolvedUri = imageDataUrl;
+      if (imageDataUrl.startsWith('data:')) {
+        // Convert base64 data URL to temporary file
+        const base64Match = imageDataUrl.match(/^data:[^;]+;base64,(.+)$/);
+        if (base64Match) {
+          const base64 = base64Match[1];
+          const tempFileName = `${Date.now()}_${filename}`;
+          const tempFilePath = `${FileSystem.cacheDirectory}${tempFileName}`;
+          await FileSystem.writeAsStringAsync(tempFilePath, base64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          resolvedUri = tempFilePath;
+        }
       }
-      
-      // Use proxy server upload for iCloud
-      return await uploadPhotoToDriveDirect({
-        imageDataUrl,
+
+      // Upload directly to iCloud via native file system
+      return await iCloudService.uploadPhoto(
+        resolvedUri,
         filename,
         albumName,
-        room,
-        type,
-        format,
-        location,
-        cleanerName,
-        folderId: folderId || 'icloud_root', // iCloud uses container ID, default to root
-        flat,
-        sessionId,
-        accountType: 'apple'
-      });
+        {
+          room,
+          type,
+          format,
+          location,
+          cleanerName,
+          flat,
+        }
+      );
     }
     
     if (accountType === 'dropbox') {
@@ -512,102 +525,8 @@ export async function uploadPhotoAsTeamMember({
   }
 }
 
-/**
- * Ensure a photo has labels applied if enabled in settings
- * First checks the cache for already-prepared labels, then queues preparation if needed
- * @param {Object} photo - Photo object
- * @returns {Promise<string>} - URI of the labeled photo (or original if labeling disabled/failed)
- */
-async function ensureLabelForPhoto(photo) {
-  // Only apply to before/after photos (combined/mix usually handled elsewhere or don't need standard labels)
-  // Check both type and mode to be safe
-  const effectiveType = photo.type || photo.mode;
-  if (effectiveType !== 'before' && effectiveType !== 'after' && effectiveType !== 'combined' && effectiveType !== 'mix') {
-    return photo.uri;
-  }
-
-  try {
-    // First, check if labels are already cached from background preparation
-    // Settings are stored under 'app-settings' key (from SettingsContext)
-    const settingsJson = await AsyncStorage.getItem('app-settings');
-    const settings = settingsJson ? JSON.parse(settingsJson) : {};
-
-    // If labels are disabled, return original (default to true if not set)
-    if (settings.showLabels === false) {
-      console.log(`[UPLOAD] Labels disabled in settings, using original URI for ${photo.id}`);
-      return photo.uri;
-    }
-
-    console.log(`[UPLOAD] 🏷️ Labels enabled, checking cache for ${photo.id}...`);
-    const settingsHash = calculateSettingsHash(settings);
-    const photoWithMode = { ...photo, mode: effectiveType };
-
-    // Check cache first - this is where background-prepared labels are stored
-    const cachedUri = await getCachedLabeledPhoto(photoWithMode, settingsHash);
-    if (cachedUri) {
-      console.log(`[UPLOAD] ✅ Using cached labeled photo for ${photo.id}: ${cachedUri.substring(0, 50)}...`);
-      return cachedUri;
-    }
-
-    console.log(`[UPLOAD] ⚠️ No cached label found for ${photo.id}, queueing preparation...`);
-  } catch (error) {
-    console.warn('[UPLOAD] Error checking label cache:', error);
-  }
-
-  // If not cached, queue for preparation (fallback)
-  return new Promise((resolve) => {
-    // Timeout safety: if labeling takes too long (e.g. service not running), proceed with original
-    const timeoutId = setTimeout(() => {
-      console.warn(`[UPLOAD] Label preparation timed out for ${photo.id}, using original URI`);
-      resolve(photo.uri);
-    }, 30000); // 30 seconds timeout for large images
-
-    // Get image dimensions required for labeling service
-    Image.getSize(
-      photo.uri,
-      async (width, height) => {
-        // Get settings hash for cache key
-        let prepSettingsHash;
-        try {
-          const prepSettingsJson = await AsyncStorage.getItem('app-settings');
-          const prepSettings = prepSettingsJson ? JSON.parse(prepSettingsJson) : {};
-          prepSettingsHash = calculateSettingsHash(prepSettings);
-        } catch (e) {
-          console.warn('[UPLOAD] Failed to get settings hash for preparation:', e);
-        }
-
-        // Queue the preparation
-        backgroundLabelPreparationService.queuePreparation({
-          photo: {
-            ...photo,
-            // Ensure essential properties are present
-            id: photo.id || `temp_${Date.now()}`,
-            uri: photo.uri,
-            mode: effectiveType // Map 'type' to 'mode' for the service
-          },
-          width,
-          height,
-          settingsHash: prepSettingsHash,
-          // If labels are disabled in settings, the service resolves with original URI immediately
-          resolve: (labeledUri) => {
-            clearTimeout(timeoutId);
-            resolve(labeledUri);
-          },
-          reject: (error) => {
-            clearTimeout(timeoutId);
-            console.warn('[UPLOAD] Label preparation failed in service, using original:', error);
-            resolve(photo.uri); // Fallback to original on error
-          }
-        });
-      },
-      (error) => {
-        clearTimeout(timeoutId);
-        console.warn('[UPLOAD] Failed to get image dimensions for labeling:', error);
-        resolve(photo.uri);
-      }
-    );
-  });
-}
+// Re-export ensureLabelForPhoto for backward compatibility
+export { ensureLabelForPhoto };
 
 /**
  * Upload multiple photos in batches
@@ -654,6 +573,16 @@ export async function uploadPhotoBatch(photos, config) {
   console.log('[UPLOAD_BATCH] 📁 Folder ID:', folderId);
 
   // Route based on account type and session availability
+  // Apple/iCloud uses direct uploads via native file system (no proxy needed)
+  if (accountType === 'apple') {
+    console.log('[UPLOAD_BATCH] 🍎 Taking Apple/iCloud route (direct upload)');
+    return await iCloudService.uploadPhotoBatch(photos, albumName, {
+      location,
+      cleanerName,
+      flat
+    }, onProgress);
+  }
+
   // If sessionId is provided, use proxy server (for both Google and Dropbox team uploads)
   // If no sessionId and Dropbox, use direct Dropbox upload
   if (accountType === 'dropbox' && !sessionId) {

@@ -2175,7 +2175,7 @@ export default function GalleryScreen({ navigation, route }) {
       const shouldUseDirectDrive = userMode === 'individual' || 
         (isAuthenticated && (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') && !teamInfo);
       
-      // For iCloud accounts - use proxy server upload
+      // For iCloud accounts - use direct file system upload (no proxy server needed)
       if (selectedAccountType === 'apple') {
         try {
           const iCloudFolderId = await iCloudService.findOrCreateProofPixFolder();
@@ -2183,22 +2183,17 @@ export default function GalleryScreen({ navigation, route }) {
             Alert.alert('Error', 'Could not access iCloud Drive folder. Please sign in with Apple again.');
             return;
           }
-          // Initialize proxy session for iCloud uploads
-          const sessionResult = await initializeProxySession(iCloudFolderId, 'apple');
-          if (!sessionResult || !sessionResult.success || !sessionResult.sessionId) {
-            Alert.alert('Error', 'Failed to initialize iCloud session. Please try again.');
-            return;
-          }
-          // Use proxy server upload for iCloud
-          config = { 
-            folderId: iCloudFolderId, 
-            useDirectDrive: false, // Use proxy server for iCloud
-            sessionId: sessionResult.sessionId,
+          // iCloud uses direct file system uploads, no proxy session needed
+          config = {
+            folderId: iCloudFolderId,
+            useDirectDrive: true, // Use direct file system upload for iCloud
             accountType: 'apple'
+            // No sessionId needed - uploads go directly to app's Documents folder
           };
           uploadConfig = config; // Store for later use
+          console.log('[UPLOAD] iCloud direct upload configured:', config);
         } catch (error) {
-          console.error('Error setting up iCloud proxy upload:', error);
+          console.error('Error setting up iCloud upload:', error);
           Alert.alert('Error', `Failed to setup iCloud upload: ${error.message}`);
           return;
         }
@@ -2789,13 +2784,13 @@ export default function GalleryScreen({ navigation, route }) {
           return;
         }
 
-        // Use proxy server upload for iCloud (same as Google/Dropbox)
-        console.log('[UPLOAD] Starting iCloud upload via proxy server');
+        // Use direct file system upload for iCloud (no proxy server needed)
+        console.log('[UPLOAD] Starting iCloud upload via direct file system');
         const config = configOverride || {};
-        console.log('[UPLOAD] iCloud config:', { folderId: config?.folderId, sessionId: config?.sessionId });
+        console.log('[UPLOAD] iCloud config:', { folderId: config?.folderId, accountType: config?.accountType });
 
-        // Validate iCloud config
-        if (!config || !config.folderId || !config.sessionId) {
+        // Validate iCloud config - only need folderId for direct upload
+        if (!config || !config.folderId) {
           console.log('[UPLOAD] iCloud not configured, showing alert');
           Alert.alert(
             t('gallery.setupRequiredTitle'),
@@ -2804,8 +2799,8 @@ export default function GalleryScreen({ navigation, route }) {
           return;
         }
 
-        // Start background upload to iCloud via proxy server
-        console.log('[UPLOAD] Starting background upload to iCloud');
+        // Start background upload to iCloud via direct file system
+        console.log('[UPLOAD] Starting background upload to iCloud (direct)');
         const iCloudUploadId = startBackgroundUpload({
           items,
           config: {
@@ -2817,9 +2812,9 @@ export default function GalleryScreen({ navigation, route }) {
           userName,
           flat: !useFolderStructure,
           uploadType: 'standard',
-          useDirectDrive: false,
-          sessionId: config?.sessionId,
+          useDirectDrive: true, // Use direct file system upload
           accountType: 'apple'
+          // No sessionId needed - uploads go directly to app's Documents folder
         });
         console.log('[UPLOAD] iCloud upload started, ID:', iCloudUploadId);
         uploadPromises.push({ type: 'icloud', uploadId: iCloudUploadId });

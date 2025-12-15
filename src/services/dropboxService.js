@@ -240,7 +240,13 @@ class DropboxService {
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error('Error uploading file:', error);
+      const errorMessage = error.message || error.toString();
+      // Don't log rate limiting errors as ERROR since they'll be retried
+      if (errorMessage.includes('too_many_write_operations') || errorMessage.includes('too_many_requests')) {
+        console.log('[DROPBOX] ⏳ Rate limited (will retry):', errorMessage.substring(0, 50));
+      } else {
+        console.error('Error uploading file:', error);
+      }
       throw error;
     }
   }

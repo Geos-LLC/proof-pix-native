@@ -5,6 +5,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import dropboxService from './dropboxService';
+import { ensureLabelForPhoto } from './labelService';
 
 /**
  * Convert file URI to base64 data URL
@@ -156,8 +157,34 @@ export async function uploadPhotoToDropbox({
       fileUri = normalizeFileUri(imageDataUrl);
     }
 
-    // Upload file to Dropbox
-    const result = await dropboxService.uploadFile(filePath, fileUri, 'overwrite');
+    // Upload file to Dropbox with retry logic for rate limiting
+    let result;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    while (retryCount <= maxRetries) {
+      try {
+        result = await dropboxService.uploadFile(filePath, fileUri, 'overwrite');
+        break; // Success, exit retry loop
+      } catch (uploadError) {
+        const errorMessage = uploadError.message || uploadError.toString();
+
+        // Check if it's a rate limiting error
+        if (errorMessage.includes('too_many_write_operations') || errorMessage.includes('too_many_requests')) {
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            // Exponential backoff: 1s, 2s, 4s
+            const delay = Math.pow(2, retryCount - 1) * 1000;
+            console.log(`[DROPBOX] Rate limited, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            throw uploadError; // Max retries exceeded
+          }
+        } else {
+          throw uploadError; // Not a rate limiting error, throw immediately
+        }
+      }
+    }
 
     // Clean up temporary file if we created one
     if (imageDataUrl.startsWith('data:') && fileUri.startsWith(FileSystem.cacheDirectory)) {
@@ -211,7 +238,7 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
     albumName,
     location,
     cleanerName,
-    batchSize = photos.length, // Upload all photos in parallel by default
+    batchSize = 3, // Limit concurrent uploads to avoid Dropbox rate limiting (too_many_write_operations)
     onProgress,
     flat = false, // upload into project root (no subfolders)
   } = config;
@@ -219,6 +246,36 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
   const successful = [];
   const failed = [];
   const total = photos.length;
+
+  // PRE-PROCESS: Prepare all labels SEQUENTIALLY before starting uploads
+  // This ensures combined photos get both Before and After labels applied
+  console.log('[DROPBOX] 🏷️ Pre-processing labels for all photos SEQUENTIALLY...');
+  const labeledPhotos = [];
+  for (const photo of photos) {
+    const effectiveType = photo.mode || photo.type;
+
+    // Check if this photo needs labeling
+    const isCandidate = ((effectiveType === 'before' || effectiveType === 'after') &&
+        (!photo.format || photo.format === 'default')) ||
+        ((effectiveType === 'combined' || effectiveType === 'mix') &&
+        (photo.format === 'original-side' || photo.format === 'original-stack'));
+
+    if (isCandidate) {
+      console.log(`[DROPBOX] 🏷️ Pre-labeling: ${photo.filename || photo.id} (${effectiveType})`);
+      try {
+        const photoWithType = { ...photo, type: effectiveType };
+        const labeledUri = await ensureLabelForPhoto(photoWithType);
+        console.log(`[DROPBOX] ✅ Pre-labeled: ${photo.filename || photo.id}`);
+        labeledPhotos.push({ ...photo, uri: labeledUri, _preLabeledUri: labeledUri });
+      } catch (labelError) {
+        console.warn(`[DROPBOX] ⚠️ Pre-labeling failed for ${photo.filename}: ${labelError.message}`);
+        labeledPhotos.push(photo); // Use original if labeling fails
+      }
+    } else {
+      labeledPhotos.push(photo);
+    }
+  }
+  console.log('[DROPBOX] ✅ All labels pre-processed SEQUENTIALLY');
 
   // Pre-create all folders before parallel uploads to avoid rate limiting
   try {
@@ -230,7 +287,7 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
     if (!flat) {
       // Determine which subfolders we'll need
       const neededFolders = new Set();
-      photos.forEach(photo => {
+      labeledPhotos.forEach(photo => {
         const rawType = photo.mode || photo.type || 'mix';
         const isCombined = rawType === 'mix' || rawType === 'combined';
         const typeParam = isCombined ? 'combined' : rawType;
@@ -267,10 +324,10 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
     // Continue anyway - folders will be created during upload (with retry logic)
   }
 
-  // Split photos into batches
+  // Split photos into batches (using pre-labeled photos)
   const batches = [];
-  for (let i = 0; i < photos.length; i += batchSize) {
-    batches.push(photos.slice(i, i + batchSize));
+  for (let i = 0; i < labeledPhotos.length; i += batchSize) {
+    batches.push(labeledPhotos.slice(i, i + batchSize));
   }
 
   // Report initial progress
@@ -302,10 +359,13 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
 
       const isFlat = !!(flat || photo.flat === true || photo.flatOverride === true);
 
+      // Use the pre-labeled URI if available, otherwise use original
+      const photoUri = photo._preLabeledUri || photo.uri;
+
       // Create a promise that reports progress during upload
       // Skip folder creation since we pre-created all folders
       const uploadPromise = uploadPhotoToDropbox({
-        imageDataUrl: photo.uri,
+        imageDataUrl: photoUri,
         filename: photo.filename || `${photo.name}_${format !== 'default' ? format : typeParam}.jpg`,
         albumName,
         room: photo.room || 'general',
@@ -358,6 +418,11 @@ export async function uploadPhotoBatchToDropbox(photos, config) {
         });
       }
     });
+
+    // Add delay between batches to avoid Dropbox rate limiting
+    if (batchIndex < batches.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between batches
+    }
   }
 
   return {

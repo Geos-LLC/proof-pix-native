@@ -1100,6 +1100,12 @@ export function AdminProvider({ children }) {
    * @returns {Promise<{sessionId: string, success: boolean}|{success: false, error: string}>} - Proxy session result
    */
   const initializeProxySession = async (folderId, accountType = 'google') => {
+    // Apple/iCloud uses direct file system uploads, no proxy session needed
+    if (accountType === 'apple') {
+      console.log('[ADMIN] Apple/iCloud account - using direct upload, no proxy session needed');
+      return { success: true, sessionId: null, directUpload: true };
+    }
+
     // Prevent concurrent initialization calls
       if (isInitializingProxy) {
         console.log('[ADMIN] Proxy session initialization already in progress, waiting...');

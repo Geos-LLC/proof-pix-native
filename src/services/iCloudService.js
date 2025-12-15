@@ -9,6 +9,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
+import { ensureLabelForPhoto } from './labelService';
 
 const FOLDER_NAME = 'ProofPix-Uploads';
 
@@ -189,9 +190,10 @@ class ICloudService {
    * @param {Array} photos - Array of photo objects
    * @param {string} albumName - Album name
    * @param {object} metadata - Common metadata for all photos
+   * @param {Function} onProgress - Optional progress callback (current, total)
    * @returns {Promise<object>} Batch upload results
    */
-  async uploadPhotoBatch(photos, albumName, metadata = {}) {
+  async uploadPhotoBatch(photos, albumName, metadata = {}, onProgress = null) {
     const results = {
       successful: [],
       failed: []
@@ -199,11 +201,49 @@ class ICloudService {
 
     console.log(`[iCloud] Starting batch upload of ${photos.length} photos`);
 
+    // PRE-PROCESS: Prepare all labels SEQUENTIALLY before starting uploads
+    console.log('[iCloud] 🏷️ Pre-processing labels for all photos SEQUENTIALLY...');
+    const labeledPhotos = [];
     for (const photo of photos) {
+      const effectiveType = photo.mode || photo.type;
+
+      // Check if this photo needs labeling
+      const isCandidate = ((effectiveType === 'before' || effectiveType === 'after') &&
+          (!photo.format || photo.format === 'default')) ||
+          ((effectiveType === 'combined' || effectiveType === 'mix') &&
+          (photo.format === 'original-side' || photo.format === 'original-stack'));
+
+      if (isCandidate) {
+        console.log(`[iCloud] 🏷️ Pre-labeling: ${photo.filename || photo.id} (${effectiveType})`);
+        try {
+          const photoWithType = { ...photo, type: effectiveType };
+          const labeledUri = await ensureLabelForPhoto(photoWithType);
+          console.log(`[iCloud] ✅ Pre-labeled: ${photo.filename || photo.id}`);
+          labeledPhotos.push({ ...photo, uri: labeledUri, _preLabeledUri: labeledUri });
+        } catch (labelError) {
+          console.warn(`[iCloud] ⚠️ Pre-labeling failed for ${photo.filename}: ${labelError.message}`);
+          labeledPhotos.push(photo); // Use original if labeling fails
+        }
+      } else {
+        labeledPhotos.push(photo);
+      }
+    }
+    console.log('[iCloud] ✅ All labels pre-processed SEQUENTIALLY');
+
+    // Report initial progress
+    if (onProgress) {
+      onProgress(0, photos.length);
+    }
+
+    let completed = 0;
+    for (const photo of labeledPhotos) {
       try {
         const filename = photo.filename || `${photo.name}_${photo.mode}.jpg`;
+        // Use pre-labeled URI if available
+        const photoUri = photo._preLabeledUri || photo.uri;
+
         const result = await this.uploadPhoto(
-          photo.uri,
+          photoUri,
           filename,
           albumName,
           {
@@ -214,16 +254,27 @@ class ICloudService {
           }
         );
 
-        results.successful.push({ photo, result });
+        results.successful.push({ photo, result, success: true });
         console.log(`[iCloud] ✅ Uploaded: ${filename}`);
       } catch (error) {
-        results.failed.push({ photo, error });
+        results.failed.push({ photo, error, success: false });
         console.error(`[iCloud] ❌ Failed: ${photo.filename}`, error.message);
+      }
+
+      // Report progress
+      completed++;
+      if (onProgress) {
+        onProgress(completed, photos.length);
       }
     }
 
     console.log(`[iCloud] Batch complete: ${results.successful.length} succeeded, ${results.failed.length} failed`);
-    return results;
+    return {
+      ...results,
+      total: photos.length,
+      successCount: results.successful.length,
+      failureCount: results.failed.length
+    };
   }
 
   /**
