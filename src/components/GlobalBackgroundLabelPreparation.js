@@ -125,7 +125,7 @@ export default function GlobalBackgroundLabelPreparation() {
         // For combined photos uploading as 'Original', the mode might be 'combined' or 'mix'
         // We don't want a generic "BEFORE" or "AFTER" label on the whole image if it's not one of those.
         // If it's combined, we handle text per-part below.
-        labelText = ''; 
+        labelText = '';
       }
 
       // Map label size to font size
@@ -162,11 +162,11 @@ export default function GlobalBackgroundLabelPreparation() {
 
       if (preparingPhoto.isCombined && preparingPhoto.beforePhoto && preparingPhoto.afterPhoto) {
         console.log(`[BackgroundLabelPrep:${taskId}] 🔄 PATH 1: Combined photo labeling (separate before/after)`);
-        
+
         // 1. Determine layout (STACK or SIDE)
         const isStack = preparingPhoto.height > preparingPhoto.width;
         const layout = isStack ? 'STACK' : 'SIDE';
-        
+
         // 2. Prepare dimensions for native compositor
         const dimensions = {
           width: preparingPhoto.width,
@@ -176,7 +176,7 @@ export default function GlobalBackgroundLabelPreparation() {
           leftW: !isStack ? Math.round(preparingPhoto.width / 2) : null,
           rightW: !isStack ? Math.round(preparingPhoto.width / 2) : null,
         };
-        
+
         // 3. Prepare label configs
         const beforeLabelConfig = {
           ...labelConfig,
@@ -229,20 +229,20 @@ export default function GlobalBackgroundLabelPreparation() {
           dimensions
         );
         console.log(`[BackgroundLabelPrep:${taskId}] ✅ Combined photo created:`, labeledUri?.substring(0, 50));
-        
-      } else if (preparingPhoto.photo.mode === 'mix' || preparingPhoto.photo.mode === 'combined') {
+
+      } else if (!preparingPhoto.isCombined && (preparingPhoto.photo.mode === 'mix' || preparingPhoto.photo.mode === 'combined')) {
         // Handle "Original" combined upload where we don't have separate before/after objects
         // but we have a single image that needs labeling.
         // We will attempt to apply two labels to the single composite image.
 
         console.log(`[BackgroundLabelPrep:${taskId}] 🔄 PATH 2: Flattened combined photo (double labeling)`);
-        
+
         // 1. Infer layout from format or dimensions
         const format = preparingPhoto.photo.format || '';
         const width = preparingPhoto.width;
         const height = preparingPhoto.height;
         const isStack = format.includes('stack') || height > width;
-        
+
         // 2. Prepare label configs
         // For combined photos, we need to ensure labels appear in the correct halves:
         // - STACK (vertical): Before on TOP half, After on BOTTOM half
@@ -269,38 +269,38 @@ export default function GlobalBackgroundLabelPreparation() {
           afterPosition: userAfterPosition,
           isStack,
         });
-        
+
         // ADJUST POSITIONS FOR COMPOSITE
         // If it's Side-by-Side:
         // - After label needs to be shifted to the right half
         // - Before label should stay on the left half
-        
+
         // If it's Stacked:
         // - After label needs to be shifted to the bottom half
         // - Before label should stay on the top half
-        
+
         // Since native addLabelToImage only supports standard positions (corners), we use margins to shift.
         // We assume "top-left" means top-left of the *respective photo*.
-        
+
         // Apply FIRST label (Before)
         // If before label is 'top-right' or 'bottom-right' in Side-by-Side, it might overlap After photo.
         // We will constrain Before label to Left/Top half and After label to Right/Bottom half.
-        
+
         // Strategy:
         // 1. Add Before Label to the composite
         // 2. Take the result, Add After Label to it
-        
+
         // Modify configs to target specific quadrants
-        
+
         // Before Label: Should be in Top-Left, Bottom-Left (Side) OR Top-Left, Top-Right (Stack)
         // We force it? Or just apply standard positions and hope user config is sane?
         // User config is "top-left" relative to the PHOTO.
-        
+
         // Let's implement a smart offset based on layout.
-        
+
         const halfWidth = Math.round(width / 2);
         const halfHeight = Math.round(height / 2);
-        
+
         // Clone configs to avoid mutating originals
         const config1 = { ...beforeLabelConfig };
         const config2 = { ...afterLabelConfig };
@@ -471,7 +471,7 @@ export default function GlobalBackgroundLabelPreparation() {
 
       } else {
         // Standard single photo labeling
-        console.log(`[BackgroundLabelPrep:${taskId}] �� PATH 3: Standard single photo labeling`);
+        console.log(`[BackgroundLabelPrep:${taskId}] 🔄 PATH 3: Standard single photo labeling`);
         // Add label using native module
         labeledUri = await addLabelToImage(preparingPhoto.photo.uri, labelText, labelConfig);
         console.log(`[BackgroundLabelPrep:${taskId}] ✅ Label applied:`, labeledUri?.substring(0, 50));

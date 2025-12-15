@@ -88,8 +88,8 @@ class ImageCompositor: NSObject {
           }
         }
 
-        // Save to temp file
-        guard let imageData = composedImage.jpegData(compressionQuality: 0.95) else {
+        // Save to temp file with 85% quality to match Android
+        guard let imageData = composedImage.jpegData(compressionQuality: 0.85) else {
           reject("E_JPEG", "Failed to create JPEG data", nil)
           return
         }
@@ -312,10 +312,12 @@ class ImageCompositor: NSObject {
       print("[ImageCompositor] 📂 After URL decoding: \(urlString)")
     }
 
+    var loadedImage: UIImage? = nil
+
     // Try to load from file path
     if let image = UIImage(contentsOfFile: urlString) {
       print("[ImageCompositor] ✅ Loaded image from file path: \(urlString)")
-      return image
+      loadedImage = image
     } else {
       print("[ImageCompositor] ⚠️ Failed to load from file path: \(urlString)")
       // Check if file exists
@@ -325,30 +327,47 @@ class ImageCompositor: NSObject {
         // Try loading via Data as a fallback
         if let data = fileManager.contents(atPath: urlString), let image = UIImage(data: data) {
           print("[ImageCompositor] ✅ Loaded image via FileManager.contents")
-          return image
+          loadedImage = image
         }
       } else {
         print("[ImageCompositor] ❌ File DOES NOT EXIST at path: \(urlString)")
       }
     }
 
-    // Try to load from URL
-    if let url = URL(string: uriString), let data = try? Data(contentsOf: url) {
-      print("[ImageCompositor] ✅ Loaded image from URL: \(uriString)")
-      return UIImage(data: data)
-    } else {
-      print("[ImageCompositor] ⚠️ Failed to load from URL: \(uriString)")
-    }
-
-    // Final attempt: Try URL with file scheme directly
-    if let fileUrl = URL(string: uriString.hasPrefix("file://") ? uriString : "file://\(urlString)") {
-      if let data = try? Data(contentsOf: fileUrl), let image = UIImage(data: data) {
-        print("[ImageCompositor] ✅ Loaded image from file URL: \(fileUrl)")
-        return image
+    // Try to load from URL if file path didn't work
+    if loadedImage == nil {
+      if let url = URL(string: uriString), let data = try? Data(contentsOf: url) {
+        print("[ImageCompositor] ✅ Loaded image from URL: \(uriString)")
+        loadedImage = UIImage(data: data)
+      } else {
+        print("[ImageCompositor] ⚠️ Failed to load from URL: \(uriString)")
       }
     }
 
-    print("[ImageCompositor] ❌ All loading methods failed for: \(uriString)")
-    return nil
+    // Final attempt: Try URL with file scheme directly
+    if loadedImage == nil {
+      if let fileUrl = URL(string: uriString.hasPrefix("file://") ? uriString : "file://\(urlString)") {
+        if let data = try? Data(contentsOf: fileUrl), let image = UIImage(data: data) {
+          print("[ImageCompositor] ✅ Loaded image from file URL: \(fileUrl)")
+          loadedImage = image
+        }
+      }
+    }
+
+    if loadedImage == nil {
+      print("[ImageCompositor] ❌ All loading methods failed for: \(uriString)")
+      return nil
+    }
+
+    // Normalize image scale to 1.0 to ensure consistent rendering
+    // This prevents issues with images that have different embedded scale metadata
+    if let image = loadedImage, image.scale != 1.0 {
+      // Create a new image with scale 1.0
+      if let cgImage = image.cgImage {
+        return UIImage(cgImage: cgImage, scale: 1.0, orientation: image.imageOrientation)
+      }
+    }
+
+    return loadedImage
   }
 }

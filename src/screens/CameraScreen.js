@@ -1580,10 +1580,11 @@ export default function CameraScreen({ route, navigation }) {
           const isLetterboxLandscape = beforeOrientation === 'landscape' && cameraVM === 'landscape';
 
           // Determine layout FIRST before calculating dimensions
-          // Letterbox portrait (portrait phone + landscape camera): SIDE layout
-          // Letterbox landscape (landscape phone + landscape camera): STACK layout
-          // Landscape full (landscape phone + portrait/full camera): STACK layout
-          const layout = isLetterboxPortrait ? 'SIDE' : (isLandscapePair ? 'STACK' : 'SIDE');
+          // Layout is based on photo orientation (NOT phone orientation):
+          // - Portrait photos (height > width): STACK (vertical)
+          // - Landscape photos (width > height): SIDE (horizontal)
+          const isPortraitPhoto = aSize.h > aSize.w;
+          const layout = isPortraitPhoto ? 'STACK' : 'SIDE';
           const isStackLayout = layout === 'STACK';
 
           const sourceMaxWidth = Math.max(aSize.w, bSize.w);
