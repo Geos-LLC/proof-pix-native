@@ -62,6 +62,15 @@ export async function ensureLabelForPhoto(photo) {
     Image.getSize(
       photo.uri,
       async (width, height) => {
+        console.log(`[LABEL] 📐 Image dimensions for ${photo.id || photo.filename}:`, {
+          width,
+          height,
+          uri: photo.uri?.substring(0, 60) + '...',
+          type: effectiveType,
+          format: photo.format,
+          isStack: height > width,
+        });
+
         // Get settings hash for cache key
         let prepSettingsHash;
         try {
@@ -71,6 +80,16 @@ export async function ensureLabelForPhoto(photo) {
         } catch (e) {
           console.warn('[LABEL] Failed to get settings hash for preparation:', e);
         }
+
+        console.log(`[LABEL] 📋 Queueing preparation for ${effectiveType} photo:`, {
+          photoId: photo.id || `temp_${Date.now()}`,
+          mode: effectiveType,
+          format: photo.format,
+          width,
+          height,
+          halfHeight: Math.round(height / 2),
+          halfWidth: Math.round(width / 2),
+        });
 
         // Queue the preparation
         backgroundLabelPreparationService.queuePreparation({
