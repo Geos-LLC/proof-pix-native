@@ -28,8 +28,6 @@ import UploadIndicatorLine from '../components/UploadIndicatorLine';
 import RoomEditor from '../components/RoomEditor';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
-import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
-import { isTrialActive } from '../services/trialService';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 
 const { width } = Dimensions.get('window');
@@ -364,124 +362,18 @@ export default function HomeScreen({ navigation }) {
           
           if (newestUri) {
             uriMap[beforePhoto.name] = newestUri;
-            console.log(`[HomeScreen] ✅ Found combined base for "${beforePhoto.name}":`, newestUri.substring(newestUri.lastIndexOf('/') + 1));
-          } else {
-            // Debug: Show what we're searching for vs what exists
-            const matchingPrefix = entries.filter(name => name.startsWith(primaryPrefix));
-            console.log(`[HomeScreen] ⚠️ No combined base found for "${beforePhoto.name}"`, {
-              room: beforePhoto.room,
-              prefix: primaryPrefix,
-              projectIdSuffix,
-              matchingPrefixCount: matchingPrefix.length,
-              matchingPrefixFiles: matchingPrefix.slice(0, 3)
-            });
           }
         }
-
-        // Debug: List all COMBINED_BASE files
-        const allCombinedFiles = entries.filter(name => name.includes('COMBINED_BASE'));
-        console.log(`[HomeScreen] 📁 Found ${allCombinedFiles.length} COMBINED_BASE files total:`, allCombinedFiles.slice(0, 5));
-        console.log(`[HomeScreen] 📊 Combined base URIs loaded:`, Object.keys(uriMap).length);
-
+        
         if (!cancelled) {
           setCombinedBaseUris(uriMap);
         }
       } catch (e) {
-        console.error('[HomeScreen] ❌ Error loading combined base URIs:', e);
       }
       })();
     }, 50); // 50ms delay to allow screen to render before processing files
 
-    // Second check after 1.5s to catch combined photos that were being saved
-    const retryTimeoutId = setTimeout(() => {
-      if (cancelled) return;
-      (async () => {
-        try {
-          const dir = FileSystem.documentDirectory;
-          if (!dir || cancelled) return;
-
-          const beforePhotos = getBeforePhotos(currentRoom);
-          const afterPhotos = getAfterPhotos(currentRoom);
-          const uriMap = {};
-
-          const entries = await FileSystem.readDirectoryAsync(dir);
-          if (cancelled) return;
-
-          for (const beforePhoto of beforePhotos) {
-            const afterPhoto = afterPhotos.find(p => p.beforePhotoId === beforePhoto.id);
-            if (!afterPhoto) continue;
-
-            const safeName = (beforePhoto.name || 'Photo').replace(/\s+/g, '_');
-            const projectId = beforePhoto.projectId;
-            const projectIdSuffix = projectId ? `_P${projectId}` : '';
-
-            const extractTimestamp = (filename) => {
-              const match = filename.match(/_(\d+)(?:_P\d+)?\.(jpg|jpeg|png)$/i);
-              return match ? parseInt(match[1], 10) : 0;
-            };
-
-            const phoneOrientation = beforePhoto.orientation || 'portrait';
-            const cameraViewMode = beforePhoto.cameraViewMode || 'portrait';
-            const isLetterboxPortrait = phoneOrientation === 'portrait' && cameraViewMode === 'landscape';
-
-            const stackPrefix = `${beforePhoto.room}_${safeName}_COMBINED_BASE_STACK_`;
-            const sidePrefix = `${beforePhoto.room}_${safeName}_COMBINED_BASE_SIDE_`;
-
-            let newestUri = null;
-            let newestTs = -1;
-
-            const primaryPrefix = isLetterboxPortrait ? sidePrefix : stackPrefix;
-            const fallbackPrefix = isLetterboxPortrait ? stackPrefix : sidePrefix;
-
-            const primaryMatches = entries.filter(name => {
-              if (!name.startsWith(primaryPrefix)) return false;
-              if (projectId && !name.includes(projectIdSuffix)) return false;
-              return true;
-            });
-
-            for (const filename of primaryMatches) {
-              const ts = extractTimestamp(filename);
-              if (ts > newestTs) {
-                newestTs = ts;
-                newestUri = `${dir}${filename}`;
-              }
-            }
-
-            if (!newestUri) {
-              const fallbackMatches = entries.filter(name => {
-                if (!name.startsWith(fallbackPrefix)) return false;
-                if (projectId && !name.includes(projectIdSuffix)) return false;
-                return true;
-              });
-
-              for (const filename of fallbackMatches) {
-                const ts = extractTimestamp(filename);
-                if (ts > newestTs) {
-                  newestTs = ts;
-                  newestUri = `${dir}${filename}`;
-                }
-              }
-            }
-
-            if (newestUri) {
-              uriMap[beforePhoto.name] = newestUri;
-            }
-          }
-
-          if (!cancelled && Object.keys(uriMap).length > 0) {
-            console.log(`[HomeScreen] 🔄 Retry found ${Object.keys(uriMap).length} combined base URIs`);
-            setCombinedBaseUris(prev => ({ ...prev, ...uriMap }));
-          }
-        } catch (e) {
-          // Silently ignore retry errors
-        }
-      })();
-    }, 1500); // 1.5s retry to catch combined photos still being saved
-
-    return () => {
-      cancelled = true;
-      clearTimeout(retryTimeoutId);
-    };
+    return () => { cancelled = true; };
   }, [photos.length, currentRoom]);
 
   // Also reload when screen comes into focus (debounced to prevent freezes)
@@ -1112,12 +1004,6 @@ export default function HomeScreen({ navigation }) {
 
         // Use dynamic base image URI if available, fallback to combined photo URI
         const thumbnailUri = combinedBaseUris[beforePhoto.name] || combinedPhoto?.uri;
-
-        console.log(`[HomeScreen] 🖼️ Rendering photo "${beforePhoto.name}":`, {
-          hasCombinedBaseUri: !!combinedBaseUris[beforePhoto.name],
-          hasCombinedPhoto: !!combinedPhoto,
-          thumbnailUri: thumbnailUri ? thumbnailUri.substring(thumbnailUri.lastIndexOf('/') + 1) : 'none'
-        });
 
         if (thumbnailUri) {
           // Show the combined image - tap to retake after photo
@@ -1850,24 +1736,6 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                   onPress={async () => {
-                    // Check if user is on active trial - if so, skip IAP
-                    const onTrial = await isTrialActive();
-
-                    // On iOS, require in-app purchase for Pro plan (unless on trial)
-                    if (Platform.OS === 'ios' && !onTrial) {
-                      try {
-                        await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
-                      } catch (err) {
-                        if (err?.message === 'USER_CANCELLED') {
-                          return;
-                        }
-                        Alert.alert(
-                          t('common.error', { defaultValue: 'Error' }),
-                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-                        );
-                        return;
-                      }
-                    }
                     await updateUserPlan('pro');
                     handlePlanModalClose();
                   }}
@@ -1881,24 +1749,6 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                   onPress={async () => {
-                    // Check if user is on active trial - if so, skip IAP
-                    const onTrial = await isTrialActive();
-
-                    // On iOS, require in-app purchase for Business plan (unless on trial)
-                    if (Platform.OS === 'ios' && !onTrial) {
-                      try {
-                        await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
-                      } catch (err) {
-                        if (err?.message === 'USER_CANCELLED') {
-                          return;
-                        }
-                        Alert.alert(
-                          t('common.error', { defaultValue: 'Error' }),
-                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-                        );
-                        return;
-                      }
-                    }
                     await updateUserPlan('business');
                     handlePlanModalClose();
                   }}

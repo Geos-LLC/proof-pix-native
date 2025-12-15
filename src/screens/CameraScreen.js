@@ -36,7 +36,7 @@ import {
 import backgroundLabelPreparationService from '../services/backgroundLabelPreparationService';
 import { backgroundCombinedPhotoService } from '../components/GlobalBackgroundCombinedPhotoCreator';
 import { captureRef } from 'react-native-view-shot';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
 import { useFocusEffect } from '@react-navigation/native';
@@ -172,8 +172,6 @@ export default function CameraScreen({ route, navigation }) {
   }, [dimensions, cameraViewMode]);
 
   // Select best camera format
-  // IMPORTANT: Consider BOTH photo resolution AND video/preview resolution
-  // The preview stream uses video resolution, so low video resolution = blurry preview
   const format = useMemo(() => {
     if (!device?.formats) return undefined;
 
@@ -186,42 +184,29 @@ export default function CameraScreen({ route, navigation }) {
 
     let selected;
     if (matchingFormats.length > 0) {
-      // Sort by video pixels first (for sharp preview), then photo pixels
-      // Preview quality depends on video resolution, not photo resolution
+      // Sort by total pixels (highest first)
       const sorted = matchingFormats.sort((a, b) => {
-        const aVideoPixels = (a.videoWidth || 0) * (a.videoHeight || 0);
-        const bVideoPixels = (b.videoWidth || 0) * (b.videoHeight || 0);
-        // Prioritize high video resolution for sharp preview
-        if (aVideoPixels !== bVideoPixels) {
-          return bVideoPixels - aVideoPixels;
-        }
-        // Secondary: high photo resolution
-        const aPhotoPixels = a.photoWidth * a.photoHeight;
-        const bPhotoPixels = b.photoWidth * b.photoHeight;
-        return bPhotoPixels - aPhotoPixels;
+        const aPixels = a.photoWidth * a.photoHeight;
+        const bPixels = b.photoWidth * b.photoHeight;
+        return bPixels - aPixels;
       });
       selected = sorted[0];
     } else {
-      // Find closest ratio, prioritizing video resolution
+      // Find closest ratio
       const withDiff = device.formats.map(f => {
         const formatRatio = Math.max(f.photoWidth, f.photoHeight) / Math.min(f.photoWidth, f.photoHeight);
         return {
           format: f,
           diff: Math.abs(formatRatio - targetAspectRatio),
-          ratio: formatRatio,
-          videoPixels: (f.videoWidth || 0) * (f.videoHeight || 0)
+          ratio: formatRatio
         };
       });
 
       withDiff.sort((a, b) => {
         if (Math.abs(a.diff - b.diff) < 0.01) {
-          // Same aspect ratio - prioritize video resolution for sharp preview
-          if (a.videoPixels !== b.videoPixels) {
-            return b.videoPixels - a.videoPixels;
-          }
-          const aPhotoPixels = a.format.photoWidth * a.format.photoHeight;
-          const bPhotoPixels = b.format.photoWidth * b.format.photoHeight;
-          return bPhotoPixels - aPhotoPixels;
+          const aPixels = a.format.photoWidth * a.format.photoHeight;
+          const bPixels = b.format.photoWidth * b.format.photoHeight;
+          return bPixels - aPixels;
         }
         return a.diff - b.diff;
       });
@@ -231,7 +216,6 @@ export default function CameraScreen({ route, navigation }) {
 
     if (selected) {
       const ratio = Math.max(selected.photoWidth, selected.photoHeight) / Math.min(selected.photoWidth, selected.photoHeight);
-      console.log(`[CameraScreen] Selected format: photo=${selected.photoWidth}x${selected.photoHeight}, video=${selected.videoWidth || 'N/A'}x${selected.videoHeight || 'N/A'}, ratio=${ratio.toFixed(2)}`);
     }
 
     return selected;
@@ -1207,16 +1191,8 @@ export default function CameraScreen({ route, navigation }) {
   // Helper function to prepare labeled photo in background and save to cache
   // Now uses global service that stays mounted regardless of navigation
   const prepareLabeledPhotoInBackground = (photo, settingsHash, mode) => {
-    const queueId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-    console.log(`[CameraScreen:${queueId}] 📋 Queueing label preparation`, {
-      photoId: photo?.id,
-      mode,
-      settingsHash: settingsHash?.substring(0, 8),
-    });
-
     return new Promise((resolve, reject) => {
       if (!photo || !photo.uri || !photo.id) {
-        console.log(`[CameraScreen:${queueId}] ⚠️  Invalid photo, skipping`);
         resolve();
         return;
       }
@@ -1224,8 +1200,6 @@ export default function CameraScreen({ route, navigation }) {
       try {
         // Get image dimensions
         Image.getSize(photo.uri, (width, height) => {
-          console.log(`[CameraScreen:${queueId}] 📐 Got dimensions:`, { width, height });
-
           // Determine label position based on photo mode
           let labelPosition;
           if (mode === 'before') {
@@ -1236,7 +1210,6 @@ export default function CameraScreen({ route, navigation }) {
             labelPosition = 'top-left';
           }
 
-          console.log(`[CameraScreen:${queueId}] 🎯 Calling backgroundLabelPreparationService.queuePreparation...`);
           // Queue preparation in global service (stays mounted regardless of navigation)
           backgroundLabelPreparationService.queuePreparation({
             photo,
@@ -1248,13 +1221,10 @@ export default function CameraScreen({ route, navigation }) {
             resolve,
             reject,
           });
-          console.log(`[CameraScreen:${queueId}] ✅ Queued successfully`);
         }, (error) => {
-          console.error(`[CameraScreen:${queueId}] ❌ Image.getSize error:`, error);
           reject(error);
         });
       } catch (error) {
-        console.error(`[CameraScreen:${queueId}] ❌ Error:`, error);
         reject(error);
       }
     });
@@ -1580,11 +1550,10 @@ export default function CameraScreen({ route, navigation }) {
           const isLetterboxLandscape = beforeOrientation === 'landscape' && cameraVM === 'landscape';
 
           // Determine layout FIRST before calculating dimensions
-          // Layout is based on photo orientation (NOT phone orientation):
-          // - Portrait photos (height > width): STACK (vertical)
-          // - Landscape photos (width > height): SIDE (horizontal)
-          const isPortraitPhoto = aSize.h > aSize.w;
-          const layout = isPortraitPhoto ? 'STACK' : 'SIDE';
+          // Letterbox portrait (portrait phone + landscape camera): SIDE layout
+          // Letterbox landscape (landscape phone + landscape camera): STACK layout
+          // Landscape full (landscape phone + portrait/full camera): STACK layout
+          const layout = isLetterboxPortrait ? 'SIDE' : (isLandscapePair ? 'STACK' : 'SIDE');
           const isStackLayout = layout === 'STACK';
 
           const sourceMaxWidth = Math.max(aSize.w, bSize.w);
@@ -1856,13 +1825,9 @@ export default function CameraScreen({ route, navigation }) {
                   dimsLocal
                 );
 
-              const combinedFilename = `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectIdSuffix}.jpg`;
-              console.log(`[CameraScreen][Android] 🏷️ Combined filename will be: ${combinedFilename}`);
-              console.log(`[CameraScreen][Android] 🏷️ Room: "${activeBeforePhoto.room}", SafeName: "${safeName}", Layout: "${layout}"`);
-
               const combinedPhotoSavedUri = await savePhotoToDevice(
                 capUri,
-                combinedFilename,
+                `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectIdSuffix}.jpg`,
                 activeProjectId || null
               );
 
@@ -1969,12 +1934,9 @@ export default function CameraScreen({ route, navigation }) {
                   altDims
                 );
 
-                const altCombinedFilename = `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`;
-                console.log(`[CameraScreen][Android] 🏷️ Alt combined filename will be: ${altCombinedFilename}`);
-
                 const altCombinedPhotoSavedUri = await savePhotoToDevice(
                   altCapUri,
-                  altCombinedFilename,
+                  `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`,
                   activeProjectId || null
                 );
 
