@@ -363,21 +363,55 @@ export default function GlobalBackgroundLabelPreparation() {
 
         // Apply Label 1 (Before)
         console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 1: Applying BEFORE label to combined photo...`);
-        const intermediateUri = await addLabelToImage(
-          preparingPhoto.photo.uri,
-          t('common.before') || 'BEFORE',
-          config1
-        );
-        console.log(`[BackgroundLabelPrep:${taskId}] ✅ BEFORE label applied:`, intermediateUri?.substring(0, 50));
+        let intermediateUri;
+        try {
+          intermediateUri = await addLabelToImage(
+            preparingPhoto.photo.uri,
+            t('common.before') || 'BEFORE',
+            config1
+          );
+          console.log(`[BackgroundLabelPrep:${taskId}] ✅ BEFORE label applied:`, intermediateUri?.substring(0, 50));
+        } catch (beforeLabelError) {
+          console.error(`[BackgroundLabelPrep:${taskId}] ❌ BEFORE label FAILED:`, beforeLabelError);
+          // Return original if before label fails
+          throw new Error(`Before label failed: ${beforeLabelError.message}`);
+        }
+
+        // Validate intermediate result before proceeding
+        if (!intermediateUri) {
+          console.error(`[BackgroundLabelPrep:${taskId}] ❌ BEFORE label returned empty URI`);
+          throw new Error('Before label returned empty result');
+        }
+
+        // Small delay to ensure the intermediate file is fully written
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Apply Label 2 (After) to the result of step 1
         console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 2: Applying AFTER label to combined photo...`);
-        labeledUri = await addLabelToImage(
-          intermediateUri,
-          t('common.after') || 'AFTER',
-          config2
-        );
-        console.log(`[BackgroundLabelPrep:${taskId}] ✅ AFTER label applied:`, labeledUri?.substring(0, 50));
+        console.log(`[BackgroundLabelPrep:${taskId}] 📂 Intermediate URI for After label:`, intermediateUri);
+        console.log(`[BackgroundLabelPrep:${taskId}] 📝 After label config:`, JSON.stringify(config2));
+        try {
+          labeledUri = await addLabelToImage(
+            intermediateUri,
+            t('common.after') || 'AFTER',
+            config2
+          );
+          console.log(`[BackgroundLabelPrep:${taskId}] ✅ AFTER label applied:`, labeledUri?.substring(0, 50));
+        } catch (afterLabelError) {
+          console.error(`[BackgroundLabelPrep:${taskId}] ❌ AFTER label FAILED:`, afterLabelError);
+          console.error(`[BackgroundLabelPrep:${taskId}] ❌ AFTER label error name:`, afterLabelError?.name);
+          console.error(`[BackgroundLabelPrep:${taskId}] ❌ AFTER label error message:`, afterLabelError?.message);
+          console.error(`[BackgroundLabelPrep:${taskId}] ❌ AFTER label error stack:`, afterLabelError?.stack);
+          // If after label fails, still use the intermediate (with Before label only)
+          console.log(`[BackgroundLabelPrep:${taskId}] ⚠️ Using intermediate URI (Before label only) as fallback`);
+          labeledUri = intermediateUri;
+        }
+
+        // Validate final result
+        if (!labeledUri) {
+          console.error(`[BackgroundLabelPrep:${taskId}] ❌ Final labeled URI is empty, using original`);
+          labeledUri = preparingPhoto.photo.uri;
+        }
 
       } else {
         // Standard single photo labeling

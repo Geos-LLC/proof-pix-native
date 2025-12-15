@@ -1905,6 +1905,7 @@ export default function GalleryScreen({ navigation, route }) {
                   const pushItem = (name, tag) => {
                     if (!dir || !name) return;
                     combinedItems.push({
+                      id: `combined_${pair.before.id || pair.before.name}_${tag}_${Date.now()}`,
                       uri: `${dir}${name}`,
                       filename: `${pair.before.name}_original-${tag}.jpg`,
                       name: pair.before.name,
@@ -2007,6 +2008,7 @@ export default function GalleryScreen({ navigation, route }) {
                 const pushItem = (name, tag) => {
                   if (!dir || !name) return;
                   combinedItems.push({
+                    id: `combined_${pair.before.id || pair.before.name}_${tag}_${Date.now()}`,
                     uri: `${dir}${name}`,
                     filename: `${pair.before.name}_original-${tag}.jpg`,
                     name: pair.before.name,
@@ -2102,6 +2104,7 @@ export default function GalleryScreen({ navigation, route }) {
                   });
                   if (uri) {
                     combinedItems.push({
+                      id: `combined_${pair.before.id || pair.before.name}_${templateKey}_${Date.now()}`,
                       uri: uri,
                       filename: `${pair.before.name}_${templateKey}.jpg`,
                       name: pair.before.name,
@@ -2344,6 +2347,7 @@ export default function GalleryScreen({ navigation, route }) {
                 const pushItem = (name, tag) => {
                   if (!dir || !name) return;
                   combinedItems.push({
+                    id: `combined_${pair.before.id || pair.before.name}_${tag}_${Date.now()}`,
                     uri: `${dir}${name}`,
                     filename: `${pair.before.name}_original-${tag}.jpg`,
                     name: pair.before.name,
@@ -2446,6 +2450,7 @@ export default function GalleryScreen({ navigation, route }) {
               const pushItem = (name, tag) => {
                 if (!dir || !name) return;
                 combinedItems.push({
+                  id: `combined_${pair.before.id || pair.before.name}_${tag}_${Date.now()}`,
                   uri: `${dir}${name}`,
                   filename: `${pair.before.name}_original-${tag}.jpg`,
                   name: pair.before.name,
@@ -2541,6 +2546,7 @@ export default function GalleryScreen({ navigation, route }) {
                 });
                 if (uri) {
                   combinedItems.push({
+                    id: `combined_${pair.before.id || pair.before.name}_${templateKey}_${Date.now()}`,
                     uri: uri,
                     filename: `${pair.before.name}_${templateKey}.jpg`,
                     name: pair.before.name,

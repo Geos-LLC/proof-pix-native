@@ -273,23 +273,58 @@ class ImageCompositor: NSObject {
   }
 
   private func loadImage(from uriString: String) -> UIImage? {
+    print("[ImageCompositor] 📂 loadImage called with: \(uriString)")
     var urlString = uriString
 
     // Handle file:// URLs
     if urlString.hasPrefix("file://") {
       urlString = String(urlString.dropFirst(7))
+      print("[ImageCompositor] 📂 After stripping file://: \(urlString)")
+    }
+
+    // URL-decode the path in case it contains encoded characters
+    if let decodedPath = urlString.removingPercentEncoding {
+      urlString = decodedPath
+      print("[ImageCompositor] 📂 After URL decoding: \(urlString)")
     }
 
     // Try to load from file path
     if let image = UIImage(contentsOfFile: urlString) {
+      print("[ImageCompositor] ✅ Loaded image from file path: \(urlString)")
       return image
+    } else {
+      print("[ImageCompositor] ⚠️ Failed to load from file path: \(urlString)")
+      // Check if file exists
+      let fileManager = FileManager.default
+      if fileManager.fileExists(atPath: urlString) {
+        print("[ImageCompositor] 📂 File EXISTS at path but couldn't load as UIImage")
+        // Try loading via Data as a fallback
+        if let data = fileManager.contents(atPath: urlString), let image = UIImage(data: data) {
+          print("[ImageCompositor] ✅ Loaded image via FileManager.contents")
+          return image
+        }
+      } else {
+        print("[ImageCompositor] ❌ File DOES NOT EXIST at path: \(urlString)")
+      }
     }
 
     // Try to load from URL
     if let url = URL(string: uriString), let data = try? Data(contentsOf: url) {
+      print("[ImageCompositor] ✅ Loaded image from URL: \(uriString)")
       return UIImage(data: data)
+    } else {
+      print("[ImageCompositor] ⚠️ Failed to load from URL: \(uriString)")
     }
 
+    // Final attempt: Try URL with file scheme directly
+    if let fileUrl = URL(string: uriString.hasPrefix("file://") ? uriString : "file://\(urlString)") {
+      if let data = try? Data(contentsOf: fileUrl), let image = UIImage(data: data) {
+        print("[ImageCompositor] ✅ Loaded image from file URL: \(fileUrl)")
+        return image
+      }
+    }
+
+    print("[ImageCompositor] ❌ All loading methods failed for: \(uriString)")
     return nil
   }
 }

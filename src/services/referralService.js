@@ -6,8 +6,8 @@ const REFERRAL_STORAGE_KEY = '@user_referral_info';
 const REFERRAL_CODE_KEY = '@user_referral_code';
 const REFERRAL_ACCEPTED_KEY = '@referral_accepted';
 
-// API base URL
-const PROXY_SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL || 'https://proof-pix-proxy.vercel.app';
+// API base URL - Railway deployment (no body size limits)
+const PROXY_SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL || 'https://steadfast-blessing-production.up.railway.app';
 
 /**
  * Referral Service

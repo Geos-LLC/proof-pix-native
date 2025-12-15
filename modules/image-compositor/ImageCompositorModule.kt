@@ -261,6 +261,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
     }
 
     private fun loadBitmap(uriString: String): Bitmap? {
+        android.util.Log.d("ImageCompositor", "📂 loadBitmap called with: $uriString")
         return try {
             val uri = Uri.parse(uriString)
             val bitmap: Bitmap?
@@ -277,7 +278,11 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
             when {
                 uriString.startsWith("file://") -> {
                     val path = uriString.substring(7)
+                    android.util.Log.d("ImageCompositor", "📂 Loading from file path: $path")
+                    val file = java.io.File(path)
+                    android.util.Log.d("ImageCompositor", "📂 File exists: ${file.exists()}, size: ${file.length()}")
                     bitmap = BitmapFactory.decodeFile(path, options)
+                    android.util.Log.d("ImageCompositor", "📂 Bitmap loaded: ${bitmap != null}, size: ${bitmap?.width}x${bitmap?.height}")
 
                     // Read EXIF orientation
                     val exif = ExifInterface(path)

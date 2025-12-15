@@ -171,7 +171,96 @@ class GoogleDriveService {
   }
 
   /**
-   * Upload a file directly to Google Drive using multipart upload
+   * Upload a file from URI directly to Google Drive (bypasses Vercel 4.5MB limit)
+   * This method reads the file directly without base64 encoding, allowing large files
+   * @param {string} fileUri - File URI (file://...)
+   * @param {string} filename - File name
+   * @param {string} parentFolderId - Parent folder ID
+   * @param {string} mimeType - MIME type (default: image/jpeg)
+   * @returns {Promise<Object>} Upload result with fileId
+   */
+  async uploadFileFromUri(fileUri, filename, parentFolderId, mimeType = 'image/jpeg') {
+    try {
+      console.log('[GoogleDrive] 📤 Starting direct upload from URI:', { filename, fileUri: fileUri?.substring(0, 50) });
+
+      const { accessToken } = await googleAuthService.getTokens();
+
+      // Read file as base64 using FileSystem
+      const FileSystem = require('expo-file-system/legacy').default;
+      const base64Data = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
+
+      console.log('[GoogleDrive] 📦 File read, size:', (base64Data.length * 0.75 / 1024 / 1024).toFixed(2), 'MB');
+
+      // Decode base64 to binary
+      const binaryData = atob(base64Data);
+      const bytes = new Uint8Array(binaryData.length);
+      for (let i = 0; i < binaryData.length; i++) {
+        bytes[i] = binaryData.charCodeAt(i);
+      }
+
+      // Create multipart body
+      const boundary = '----ProofPixUploadBoundary' + Date.now();
+      const metadata = {
+        name: filename,
+        parents: [parentFolderId],
+      };
+
+      const metadataPart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`;
+      const filePart = `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`;
+      const endBoundary = `\r\n--${boundary}--\r\n`;
+
+      // Convert parts to ArrayBuffer
+      const encoder = new TextEncoder();
+      const metadataBytes = encoder.encode(metadataPart);
+      const filePartBytes = encoder.encode(filePart);
+      const endBytes = encoder.encode(endBoundary);
+
+      const totalLength = metadataBytes.length + filePartBytes.length + bytes.length + endBytes.length;
+      const body = new Uint8Array(totalLength);
+
+      let offset = 0;
+      body.set(metadataBytes, offset);
+      offset += metadataBytes.length;
+      body.set(filePartBytes, offset);
+      offset += filePartBytes.length;
+      body.set(bytes, offset);
+      offset += bytes.length;
+      body.set(endBytes, offset);
+
+      console.log('[GoogleDrive] 🚀 Uploading to Drive API...');
+      const uploadUrl = `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        },
+        body: body,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[GoogleDrive] ❌ Upload error:', errorText);
+        throw new Error(`Failed to upload file to Google Drive: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('[GoogleDrive] ✅ Upload successful, fileId:', result.id);
+
+      return {
+        success: true,
+        fileId: result.id,
+        fileName: filename,
+      };
+    } catch (error) {
+      console.error('[GoogleDrive] ❌ Error uploading file from URI:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload a file directly to Google Drive using multipart upload (legacy - base64)
    * @param {string} fileData - Base64 encoded file data
    * @param {string} filename - File name
    * @param {string} parentFolderId - Parent folder ID

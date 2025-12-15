@@ -10,7 +10,8 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 // Cache version - increment this to invalidate all cached photos
 // v2: Native image labeling implementation (replaces ViewShot)
 // v3: Added automatic cache validation on app startup
-const CACHE_VERSION = 3;
+// v4: Fixed combined photo double-labeling (Before + After), invalidate potentially incomplete cached photos
+const CACHE_VERSION = 4;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid

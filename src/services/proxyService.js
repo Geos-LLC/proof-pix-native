@@ -9,6 +9,9 @@ import googleAuthService from './googleAuthService';
 import dropboxAuthService from './dropboxAuthService';
 import appleAuthService from './appleAuthService';
 
+// DEBUG: Log the proxy URL being used
+console.log('[PROXY] 🌐 PROXY_SERVER_URL:', PROXY_SERVER_URL);
+
 class ProxyService {
   /**
    * Initialize an admin session on the proxy server

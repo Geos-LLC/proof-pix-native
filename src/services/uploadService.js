@@ -5,52 +5,24 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform, Image } from 'react-native';
-import * as ImageManipulator from 'expo-image-manipulator';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import googleDriveService from './googleDriveService';
 import googleAuthService from './googleAuthService';
 import proxyService from './proxyService';
 import { uploadPhotoToDropbox } from './dropboxUploadService';
 import backgroundLabelPreparationService from './backgroundLabelPreparationService';
+import { getCachedLabeledPhoto, calculateSettingsHash } from './labelCacheService';
 
 /**
- * Compress image if needed (Android only) to fit within serverless limits (4.5MB)
+ * Compress image if needed - NO LONGER NEEDED with Railway (no body size limits)
+ * Keeping function signature for compatibility but returning URI unchanged
  * @param {string} uri - Image URI
- * @returns {Promise<string>} - Compressed image URI
+ * @returns {Promise<string>} - Original image URI (no compression)
  */
 async function compressImageIfNeeded(uri) {
-  if (Platform.OS !== 'android') return uri; 
-
-  try {
-    const fileInfo = await FileSystem.getInfoAsync(uri);
-    // 3.5MB limit to leave room for Base64 overhead (x1.33) = ~4.6MB total
-    const MAX_SIZE = 3.5 * 1024 * 1024; 
-
-    if (fileInfo.exists && fileInfo.size > MAX_SIZE) {
-       console.log(`[UPLOAD] Image size ${(fileInfo.size / 1024 / 1024).toFixed(2)}MB exceeds safety limit, compressing lightly...`);
-       
-       // Very light compression (0.9) often reduces file size significantly without visible loss
-       let result = await ImageManipulator.manipulateAsync(
-         uri,
-         [],
-         { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-       );
-
-       let resultInfo = await FileSystem.getInfoAsync(result.uri);
-       
-       // If still huge, step down gradually
-       if (resultInfo.size > MAX_SIZE) {
-          console.log(`[UPLOAD] Still too large (${(resultInfo.size / 1024 / 1024).toFixed(2)}MB), using standard compression...`);
-          result = await ImageManipulator.manipulateAsync(
-             result.uri,
-             [], 
-             { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-          );
-       }
-       return result.uri;
-    }
-  } catch (error) {
-    console.warn('[UPLOAD] Compression check failed, proceeding with original:', error);
-  }
+  // Railway has no body size limits, so compression is no longer needed
+  // Images are already compressed at 85% quality by native labeling modules
+  console.log(`[UPLOAD] ✅ Using Railway proxy - no compression needed`);
   return uri;
 }
 
@@ -328,7 +300,7 @@ async function uploadPhotoToDriveDirect({
         }
 
         if (isSignedIn) {
-          console.log('[UPLOAD] User is signed in (Admin), attempting direct upload to Google Drive...');
+          console.log('[UPLOAD] 🎯 User is signed in (Admin), using DIRECT upload to Google Drive (bypasses Vercel)...');
 
           // 1. Get/Create Album Folder
           const albumFolderId = await googleDriveService.findOrCreateAlbumFolder(folderId, albumName);
@@ -352,10 +324,29 @@ async function uploadPhotoToDriveDirect({
              }
           }
 
-          // 3. Upload File Directly
-          const result = await googleDriveService.uploadFile(base64String, filename, targetFolderId);
+          // 3. Upload File Directly from URI (NO SIZE LIMIT - bypasses Vercel 4.5MB restriction)
+          // Determine the source URI
+          let sourceUri = imageDataUrl;
+          if (imageDataUrl.startsWith('data:')) {
+            // If it's a data URL, we need to convert it to a file first
+            // Create a temp file to upload
+            const tempFilename = `temp_upload_${Date.now()}.jpg`;
+            const tempUri = `${FileSystem.cacheDirectory}${tempFilename}`;
 
-          console.log('[UPLOAD] Direct upload successful:', result.fileId);
+            // Extract base64 from data URL
+            const base64Part = imageDataUrl.split('base64,')[1] || imageDataUrl;
+            await FileSystem.writeAsStringAsync(tempUri, base64Part, { encoding: 'base64' });
+            sourceUri = tempUri;
+            console.log('[UPLOAD] 📝 Converted data URL to temp file:', tempUri);
+          } else {
+            // It's already a file URI - normalize it
+            sourceUri = normalizeFileUri(imageDataUrl);
+          }
+
+          console.log('[UPLOAD] 📤 Uploading directly from file URI (no compression, no Vercel limit)...');
+          const result = await googleDriveService.uploadFileFromUri(sourceUri, filename, targetFolderId);
+
+          console.log('[UPLOAD] ✅ Direct upload successful:', result.fileId);
 
           return {
             success: true,
@@ -368,7 +359,7 @@ async function uploadPhotoToDriveDirect({
             location: location,
             cleanerName: cleanerName,
             folderPath: `${albumName}/${flat ? '' : subfolderPath}`,
-            message: 'Photo uploaded successfully via direct Drive API'
+            message: 'Photo uploaded successfully via direct Drive API (no size limit)'
           };
         }
       } catch (directError) {
@@ -523,7 +514,7 @@ export async function uploadPhotoAsTeamMember({
 
 /**
  * Ensure a photo has labels applied if enabled in settings
- * Uses the global background label preparation service
+ * First checks the cache for already-prepared labels, then queues preparation if needed
  * @param {Object} photo - Photo object
  * @returns {Promise<string>} - URI of the labeled photo (or original if labeling disabled/failed)
  */
@@ -535,25 +526,56 @@ async function ensureLabelForPhoto(photo) {
     return photo.uri;
   }
 
-  // For combined/mix photos, we only label if it's an "Original" combined format
-  // Normal combined photos are created via GlobalBackgroundCombinedPhotoCreator and already have labels if configured
-  // However, if we are uploading "original-side" or "original-stack", those might be raw composites without labels?
-  // Actually, GlobalBackgroundCombinedPhotoCreator creates "COMBINED_BASE" images which are raw composites without labels.
-  // Then the UI overlays labels.
-  // If we upload "original-side" or "original-stack", we are uploading the base image.
-  // So we DO need to label them here if the user wants labels on their "Original" uploads.
-  
+  try {
+    // First, check if labels are already cached from background preparation
+    // Settings are stored under 'app-settings' key (from SettingsContext)
+    const settingsJson = await AsyncStorage.getItem('app-settings');
+    const settings = settingsJson ? JSON.parse(settingsJson) : {};
+
+    // If labels are disabled, return original (default to true if not set)
+    if (settings.showLabels === false) {
+      console.log(`[UPLOAD] Labels disabled in settings, using original URI for ${photo.id}`);
+      return photo.uri;
+    }
+
+    console.log(`[UPLOAD] 🏷️ Labels enabled, checking cache for ${photo.id}...`);
+    const settingsHash = calculateSettingsHash(settings);
+    const photoWithMode = { ...photo, mode: effectiveType };
+
+    // Check cache first - this is where background-prepared labels are stored
+    const cachedUri = await getCachedLabeledPhoto(photoWithMode, settingsHash);
+    if (cachedUri) {
+      console.log(`[UPLOAD] ✅ Using cached labeled photo for ${photo.id}: ${cachedUri.substring(0, 50)}...`);
+      return cachedUri;
+    }
+
+    console.log(`[UPLOAD] ⚠️ No cached label found for ${photo.id}, queueing preparation...`);
+  } catch (error) {
+    console.warn('[UPLOAD] Error checking label cache:', error);
+  }
+
+  // If not cached, queue for preparation (fallback)
   return new Promise((resolve) => {
     // Timeout safety: if labeling takes too long (e.g. service not running), proceed with original
     const timeoutId = setTimeout(() => {
       console.warn(`[UPLOAD] Label preparation timed out for ${photo.id}, using original URI`);
       resolve(photo.uri);
-    }, 10000); // 10 seconds timeout
+    }, 30000); // 30 seconds timeout for large images
 
     // Get image dimensions required for labeling service
     Image.getSize(
       photo.uri,
-      (width, height) => {
+      async (width, height) => {
+        // Get settings hash for cache key
+        let prepSettingsHash;
+        try {
+          const prepSettingsJson = await AsyncStorage.getItem('app-settings');
+          const prepSettings = prepSettingsJson ? JSON.parse(prepSettingsJson) : {};
+          prepSettingsHash = calculateSettingsHash(prepSettings);
+        } catch (e) {
+          console.warn('[UPLOAD] Failed to get settings hash for preparation:', e);
+        }
+
         // Queue the preparation
         backgroundLabelPreparationService.queuePreparation({
           photo: {
@@ -565,6 +587,7 @@ async function ensureLabelForPhoto(photo) {
           },
           width,
           height,
+          settingsHash: prepSettingsHash,
           // If labels are disabled in settings, the service resolves with original URI immediately
           resolve: (labeledUri) => {
             clearTimeout(timeoutId);
@@ -668,10 +691,43 @@ export async function uploadPhotoBatch(photos, config) {
   let completed = 0;
   const total = photos.length;
 
-  // Split photos into batches
+  // PRE-PROCESS: Prepare all labels SEQUENTIALLY before starting uploads
+  // This ensures combined photos get both Before and After labels applied
+  // before any uploads begin, preventing race conditions.
+  // IMPORTANT: We process SEQUENTIALLY because the background label service
+  // processes one photo at a time. Parallel queueing can cause timeouts.
+  console.log('[UPLOAD] 🏷️ Pre-processing labels for all photos SEQUENTIALLY...');
+  const labeledPhotos = [];
+  for (const photo of photos) {
+    const effectiveType = photo.mode || photo.type;
+
+    // Check if this photo needs labeling
+    const isCandidate = ((effectiveType === 'before' || effectiveType === 'after') &&
+        (!photo.format || photo.format === 'default')) ||
+        ((effectiveType === 'combined' || effectiveType === 'mix') &&
+        (photo.format === 'original-side' || photo.format === 'original-stack'));
+
+    if (isCandidate) {
+      console.log(`[UPLOAD] 🏷️ Pre-labeling: ${photo.filename || photo.id} (${effectiveType})`);
+      try {
+        const photoWithType = { ...photo, type: effectiveType };
+        const labeledUri = await ensureLabelForPhoto(photoWithType);
+        console.log(`[UPLOAD] ✅ Pre-labeled: ${photo.filename || photo.id}`);
+        labeledPhotos.push({ ...photo, uri: labeledUri, _preLabeledUri: labeledUri });
+      } catch (labelError) {
+        console.warn(`[UPLOAD] ⚠️ Pre-labeling failed for ${photo.filename}: ${labelError.message}`);
+        labeledPhotos.push(photo); // Use original if labeling fails
+      }
+    } else {
+      labeledPhotos.push(photo);
+    }
+  }
+  console.log('[UPLOAD] ✅ All labels pre-processed SEQUENTIALLY');
+
+  // Split photos into batches (using pre-labeled photos)
   const batches = [];
-  for (let i = 0; i < photos.length; i += batchSize) {
-    batches.push(photos.slice(i, i + batchSize));
+  for (let i = 0; i < labeledPhotos.length; i += batchSize) {
+    batches.push(labeledPhotos.slice(i, i + batchSize));
   }
 
   // Report initial progress
@@ -691,31 +747,17 @@ export async function uploadPhotoBatch(photos, config) {
 
     // Process all photos in the batch concurrently
     const batchPromises = batch.map(async (photo, index) => {
+      const uploadId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      console.log(`[UPLOAD:${uploadId}] 🚀 Starting upload for: ${photo.filename || photo.id}`);
+
       if (abortSignal?.aborted) {
         return Promise.reject(new Error('Aborted'));
       }
 
-      // Pre-process: Apply labels if this is a raw "Original" photo (before/after)
-      // This ensures "Original" uploads respects the "Show Labels" setting
-      let photoUri = photo.uri;
-      try {
-         // Determine type from either property (some objects use 'mode', others 'type')
-         const effectiveType = photo.mode || photo.type;
-         
-         // Only attempt labeling for before/after types when using default/original format
-         const isCandidate = ((effectiveType === 'before' || effectiveType === 'after') && 
-             (!photo.format || photo.format === 'default')) ||
-             ((effectiveType === 'combined' || effectiveType === 'mix') &&
-             (photo.format === 'original-side' || photo.format === 'original-stack'));
-
-         if (isCandidate) {
-             // Ensure the photo object has the 'type' property set for the helper function
-             const photoWithType = { ...photo, type: effectiveType };
-             photoUri = await ensureLabelForPhoto(photoWithType);
-         }
-      } catch (labelError) {
-         console.warn('[UPLOAD] Labeling check failed:', labelError);
-      }
+      // Use the pre-labeled URI (set during sequential pre-processing above)
+      // If _preLabeledUri exists, it means labeling was successful
+      const photoUri = photo._preLabeledUri || photo.uri;
+      console.log(`[UPLOAD:${uploadId}] 📤 Using ${photo._preLabeledUri ? 'PRE-LABELED' : 'ORIGINAL'} URI: ${photoUri?.substring(0, 50)}...`);
 
       // Map photo mode; server expects 'combined' (not 'mix') for combined photos
       const rawType = photo.mode || photo.type || 'mix';
