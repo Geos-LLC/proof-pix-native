@@ -164,71 +164,108 @@ export default function GlobalBackgroundLabelPreparation() {
         console.log(`[BackgroundLabelPrep:${taskId}] 🔄 PATH 1: Combined photo labeling (separate before/after)`);
 
         // 1. Determine layout (STACK or SIDE)
-        const isStack = preparingPhoto.height > preparingPhoto.width;
+        const width = preparingPhoto.width;
+        const height = preparingPhoto.height;
+        const isStack = height > width;
         const layout = isStack ? 'STACK' : 'SIDE';
 
         // 2. Prepare dimensions for native compositor
         const dimensions = {
-          width: preparingPhoto.width,
-          height: preparingPhoto.height,
-          topH: isStack ? Math.round(preparingPhoto.height / 2) : null,
-          bottomH: isStack ? Math.round(preparingPhoto.height / 2) : null,
-          leftW: !isStack ? Math.round(preparingPhoto.width / 2) : null,
-          rightW: !isStack ? Math.round(preparingPhoto.width / 2) : null,
+          width: width,
+          height: height,
+          topH: isStack ? Math.round(height / 2) : null,
+          bottomH: isStack ? Math.round(height / 2) : null,
+          leftW: !isStack ? Math.round(width / 2) : null,
+          rightW: !isStack ? Math.round(width / 2) : null,
         };
 
-        // 3. Prepare label configs
+        // 3. First composite the UNLABELED photos
+        console.log(`[BackgroundLabelPrep:${taskId}] 🎨 Step 1: Compositing UNLABELED before/after photos...`);
+        const unlabeledCombinedUri = await compositeImages(
+          preparingPhoto.beforePhoto.uri,
+          preparingPhoto.afterPhoto.uri,
+          layout,
+          dimensions
+        );
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ Unlabeled combined photo created:`, unlabeledCombinedUri?.substring(0, 50));
+
+        // 4. Now add labels to the combined photo (same approach as PATH 2)
+        const halfWidth = Math.round(width / 2);
+        const halfHeight = Math.round(height / 2);
+        const scale = width / 1000.0;
+
+        // Before label config - no adjustments needed (positioned in top-left half)
         const beforeLabelConfig = {
           ...labelConfig,
           position: convertLabelPosition(beforeLabelPosition || 'left-top'),
         };
 
+        // After label config - needs position adjustments based on layout
+        const afterPosition = convertLabelPosition(afterLabelPosition || 'left-top');
+        const baseMarginH = labelMarginHorizontal || 20;
+        const baseMarginV = labelMarginVertical || 20;
+        const scaledBaseMarginH = Math.max(baseMarginH * scale, 10);
+        const scaledBaseMarginV = Math.max(baseMarginV * scale, 10);
+
         const afterLabelConfig = {
           ...labelConfig,
-          position: convertLabelPosition(afterLabelPosition || 'right-top'),
+          position: afterPosition,
         };
 
+        // Adjust After label position based on layout (same logic as PATH 2)
+        if (isStack) {
+          // STACK layout: After photo is in BOTTOM half
+          if (afterPosition.includes('top')) {
+            afterLabelConfig.marginVertical = Math.round(scaledBaseMarginV + halfHeight);
+            afterLabelConfig.absoluteMargins = true;
+          } else if (afterPosition.includes('middle')) {
+            afterLabelConfig.offsetY = Math.round(halfHeight / 2);
+          }
+        } else {
+          // SIDE layout: After photo is in RIGHT half
+          if (afterPosition.includes('left')) {
+            afterLabelConfig.marginHorizontal = Math.round(scaledBaseMarginH + halfWidth);
+            afterLabelConfig.absoluteMargins = true;
+          } else if (afterPosition.includes('center')) {
+            afterLabelConfig.offsetX = Math.round(halfWidth / 2);
+          }
+        }
+
         console.log(`[BackgroundLabelPrep:${taskId}] 📍 Combined Photo Label Configs:`, {
+          layout,
+          isStack,
           beforeConfig: {
             position: beforeLabelConfig.position,
-            rawPosition: beforeLabelPosition || 'left-top',
             marginH: beforeLabelConfig.marginHorizontal,
             marginV: beforeLabelConfig.marginVertical,
           },
           afterConfig: {
             position: afterLabelConfig.position,
-            rawPosition: afterLabelPosition || 'right-top',
             marginH: afterLabelConfig.marginHorizontal,
             marginV: afterLabelConfig.marginVertical,
+            offsetX: afterLabelConfig.offsetX || 0,
+            offsetY: afterLabelConfig.offsetY || 0,
+            absoluteMargins: afterLabelConfig.absoluteMargins || false,
           },
         });
 
-        // 4. Label before and after photos
-        console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 1: Labeling BEFORE photo...`);
-        const labeledBeforeUri = await addLabelToImage(
-          preparingPhoto.beforePhoto.uri,
+        // 5. Add BEFORE label to combined photo
+        console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 2: Adding BEFORE label to combined photo...`);
+        const withBeforeLabelUri = await addLabelToImage(
+          unlabeledCombinedUri,
           t('common.before') || 'BEFORE',
           beforeLabelConfig
         );
-        console.log(`[BackgroundLabelPrep:${taskId}] ✅ BEFORE labeled:`, labeledBeforeUri?.substring(0, 50));
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ BEFORE label added:`, withBeforeLabelUri?.substring(0, 50));
 
-        console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 2: Labeling AFTER photo...`);
-        const labeledAfterUri = await addLabelToImage(
-          preparingPhoto.afterPhoto.uri,
+        // 6. Add AFTER label to combined photo
+        console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 3: Adding AFTER label to combined photo...`);
+        labeledUri = await addLabelToImage(
+          withBeforeLabelUri,
           t('common.after') || 'AFTER',
           afterLabelConfig
         );
-        console.log(`[BackgroundLabelPrep:${taskId}] ✅ AFTER labeled:`, labeledAfterUri?.substring(0, 50));
-
-        // 5. Composite them
-        console.log(`[BackgroundLabelPrep:${taskId}] 🎨 Step 3: Compositing labeled images...`);
-        labeledUri = await compositeImages(
-          labeledBeforeUri,
-          labeledAfterUri,
-          layout,
-          dimensions
-        );
-        console.log(`[BackgroundLabelPrep:${taskId}] ✅ Combined photo created:`, labeledUri?.substring(0, 50));
+        console.log(`[BackgroundLabelPrep:${taskId}] ✅ AFTER label added:`, labeledUri?.substring(0, 50));
 
       } else if (!preparingPhoto.isCombined && (preparingPhoto.photo.mode === 'mix' || preparingPhoto.photo.mode === 'combined')) {
         // Handle "Original" combined upload where we don't have separate before/after objects
@@ -242,6 +279,16 @@ export default function GlobalBackgroundLabelPreparation() {
         const width = preparingPhoto.width;
         const height = preparingPhoto.height;
         const isStack = format.includes('stack') || height > width;
+
+        console.log(`[BackgroundLabelPrep:${taskId}] 📐 PATH 2 DIMENSIONS:`, {
+          photoUri: preparingPhoto.photo.uri?.substring(0, 60) + '...',
+          width,
+          height,
+          format,
+          isStack,
+          halfWidth: Math.round(width / 2),
+          halfHeight: Math.round(height / 2),
+        });
 
         // 2. Prepare label configs
         // For combined photos, we need to ensure labels appear in the correct halves:
@@ -371,6 +418,15 @@ export default function GlobalBackgroundLabelPreparation() {
             // which is also bottom of After half
 
             console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (STACK): position=${config2.position}, marginV=${config2.marginVertical}, offsetY=${config2.offsetY || 0}, absoluteMargins=${config2.absoluteMargins || false}`);
+            console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (STACK) calculation breakdown:`, {
+              height,
+              halfHeight,
+              baseMarginV,
+              scale,
+              scaledBaseMarginV,
+              calculatedMarginV: Math.round(scaledBaseMarginV + halfHeight),
+              actualMarginV: config2.marginVertical,
+            });
         } else {
             // SIDE layout: After photo is in RIGHT half
             // Swift position logic:

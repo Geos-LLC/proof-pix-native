@@ -152,6 +152,15 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
         labelConfig: ReadableMap,
         promise: Promise
     ) {
+        // Log raw input values immediately - these show in logcat
+        android.util.Log.e("ImageCompositor", "🏷️ ===== addLabelToImage CALLED =====")
+        android.util.Log.e("ImageCompositor", "  imageUri: ${imageUri.take(80)}...")
+        android.util.Log.e("ImageCompositor", "  labelText: $labelText")
+        android.util.Log.e("ImageCompositor", "  RAW labelConfig: ${labelConfig.toHashMap()}")
+
+        // Also log to System.out which sometimes shows in Metro bundler
+        println("[ImageCompositor] 🏷️ NATIVE addLabelToImage: text=$labelText, config=${labelConfig.toHashMap()}")
+
         // Run on background thread
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -255,17 +264,20 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                     labelY + labelHeight
                 )
 
-                android.util.Log.d("ImageCompositor", "📍 Label Position Calculation:")
-                android.util.Log.d("ImageCompositor", "  Image size: ${labeledBitmap.width} x ${labeledBitmap.height}")
-                android.util.Log.d("ImageCompositor", "  Position: $position")
-                android.util.Log.d("ImageCompositor", "  Text: $labelText")
-                android.util.Log.d("ImageCompositor", "  absoluteMargins: $absoluteMargins")
-                android.util.Log.d("ImageCompositor", "  Input marginH: $marginH, marginV: $marginV")
-                android.util.Log.d("ImageCompositor", "  offsetX: $offsetX, offsetY: $offsetY")
-                android.util.Log.d("ImageCompositor", "  Scaled fontSize: $scaledFontSize")
-                android.util.Log.d("ImageCompositor", "  Scaled marginH: $scaledMarginH, marginV: $scaledMarginV")
-                android.util.Log.d("ImageCompositor", "  Label size: $labelWidth x $labelHeight")
-                android.util.Log.d("ImageCompositor", "  Label rect: left=${labelRect.left}, top=${labelRect.top}, right=${labelRect.right}, bottom=${labelRect.bottom}")
+                // Use Log.e (error level) to ensure visibility in all log viewers
+                android.util.Log.e("ImageCompositor", "📍 ===== LABEL POSITION CALCULATION =====")
+                android.util.Log.e("ImageCompositor", "  Image size: ${labeledBitmap.width} x ${labeledBitmap.height}")
+                android.util.Log.e("ImageCompositor", "  Position: $position")
+                android.util.Log.e("ImageCompositor", "  Text: $labelText")
+                android.util.Log.e("ImageCompositor", "  absoluteMargins: $absoluteMargins")
+                android.util.Log.e("ImageCompositor", "  Input marginH: $marginH, marginV: $marginV")
+                android.util.Log.e("ImageCompositor", "  offsetX: $offsetX, offsetY: $offsetY")
+                android.util.Log.e("ImageCompositor", "  Scaled fontSize: $scaledFontSize")
+                android.util.Log.e("ImageCompositor", "  Scaled marginH: $scaledMarginH, marginV: $scaledMarginV")
+                android.util.Log.e("ImageCompositor", "  Label size: $labelWidth x $labelHeight")
+                android.util.Log.e("ImageCompositor", "  Label rect: left=${labelRect.left}, top=${labelRect.top}, right=${labelRect.right}, bottom=${labelRect.bottom}")
+                android.util.Log.e("ImageCompositor", "  halfHeight would be: ${labeledBitmap.height / 2}")
+                android.util.Log.e("ImageCompositor", "  ===== END CALCULATION =====")
 
                 // Draw label background with rounded corners
                 val backgroundPaint = Paint().apply {

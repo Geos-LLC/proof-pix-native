@@ -915,7 +915,16 @@ export default function GalleryScreen({ navigation, route }) {
 
                     console.log(`[GALLERY] Recreating combined photo with native compositor: layout=${layout}, dimensions=`, dimensions);
 
-                    // Add labels to before and after photos first
+                    // First, composite the unlabeled photos
+                    console.log(`[GALLERY] Step 1: Compositing unlabeled before/after photos for combined photo ${index + 1}`);
+                    const unlabeledCombinedUri = await compositeImages(
+                        beforePhoto.uri,
+                        afterPhoto.uri,
+                        layout,
+                        dimensions
+                    );
+
+                    // Now add labels to the combined photo (same approach as GlobalBackgroundLabelPreparation)
                     const labelSizeMap = {
                         small: 48,
                         medium: 56,
@@ -923,6 +932,12 @@ export default function GalleryScreen({ navigation, route }) {
                     };
                     const fontSize = labelSizeMap[labelSize] || 56;
 
+                    // Calculate half dimensions for label position offsets
+                    const halfWidth = Math.round(combinedDimensions.width / 2);
+                    const halfHeight = Math.round(combinedDimensions.height / 2);
+                    const scale = combinedDimensions.width / 1000.0;
+
+                    // Before label config - no adjustments needed (positioned in top-left half)
                     const beforeLabelConfig = {
                         position: convertLabelPosition(beforeLabelPosition || 'left-top'),
                         backgroundColor: labelBackgroundColor || '#FFD700',
@@ -933,8 +948,15 @@ export default function GalleryScreen({ navigation, route }) {
                         padding: 16,
                     };
 
+                    // After label config - needs position adjustments based on layout
+                    const afterPosition = convertLabelPosition(afterLabelPosition || 'right-top');
+                    const baseMarginH = labelMarginHorizontal || 20;
+                    const baseMarginV = labelMarginVertical || 20;
+                    const scaledBaseMarginH = Math.max(baseMarginH * scale, 10);
+                    const scaledBaseMarginV = Math.max(baseMarginV * scale, 10);
+
                     const afterLabelConfig = {
-                        position: convertLabelPosition(afterLabelPosition || 'right-top'),
+                        position: afterPosition,
                         backgroundColor: labelBackgroundColor || '#FFD700',
                         textColor: labelTextColor || '#000000',
                         fontSize: fontSize,
@@ -943,28 +965,50 @@ export default function GalleryScreen({ navigation, route }) {
                         padding: 16,
                     };
 
-                    console.log(`[GALLERY] Adding labels to before and after photos for combined photo ${index + 1}`);
+                    // Adjust After label position based on layout (same logic as GlobalBackgroundLabelPreparation)
+                    if (isStack) {
+                        // STACK layout: After photo is in BOTTOM half
+                        if (afterPosition.includes('top')) {
+                            // Top of After half = halfHeight + baseMargin from top
+                            afterLabelConfig.marginVertical = Math.round(scaledBaseMarginV + halfHeight);
+                            afterLabelConfig.absoluteMargins = true;
+                        } else if (afterPosition.includes('middle')) {
+                            // Middle of After half: offsetY = halfHeight / 2
+                            afterLabelConfig.offsetY = Math.round(halfHeight / 2);
+                        }
+                        // "bottom" positions don't need offset
+                    } else {
+                        // SIDE layout: After photo is in RIGHT half
+                        if (afterPosition.includes('left')) {
+                            // Left of After half = halfWidth + baseMargin from left
+                            afterLabelConfig.marginHorizontal = Math.round(scaledBaseMarginH + halfWidth);
+                            afterLabelConfig.absoluteMargins = true;
+                        } else if (afterPosition.includes('center')) {
+                            // Center of After half: offsetX = halfWidth / 2
+                            afterLabelConfig.offsetX = Math.round(halfWidth / 2);
+                        }
+                        // "right" positions don't need offset
+                    }
 
-                    const labeledBeforeUri = await addLabelToImage(
-                        beforePhoto.uri,
+                    console.log(`[GALLERY] Step 2: Adding BEFORE label to combined photo ${index + 1}`);
+                    const withBeforeLabelUri = await addLabelToImage(
+                        unlabeledCombinedUri,
                         getLabelTextForMode(PHOTO_MODES.BEFORE),
                         beforeLabelConfig
                     );
 
-                    const labeledAfterUri = await addLabelToImage(
-                        afterPhoto.uri,
+                    console.log(`[GALLERY] Step 3: Adding AFTER label to combined photo ${index + 1}, config:`, {
+                        position: afterLabelConfig.position,
+                        marginH: afterLabelConfig.marginHorizontal,
+                        marginV: afterLabelConfig.marginVertical,
+                        offsetX: afterLabelConfig.offsetX || 0,
+                        offsetY: afterLabelConfig.offsetY || 0,
+                        absoluteMargins: afterLabelConfig.absoluteMargins || false,
+                    });
+                    const combinedUri = await addLabelToImage(
+                        withBeforeLabelUri,
                         getLabelTextForMode(PHOTO_MODES.AFTER),
                         afterLabelConfig
-                    );
-
-                    console.log(`[GALLERY] Compositing labeled photos into combined photo ${index + 1}`);
-
-                    // Composite the labeled photos
-                    const combinedUri = await compositeImages(
-                        labeledBeforeUri,
-                        labeledAfterUri,
-                        layout,
-                        dimensions
                     );
 
                     console.log(`[GALLERY] ✅ Combined photo ${index + 1} created with native compositor: ${combinedUri}`);
