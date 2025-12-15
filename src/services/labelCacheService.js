@@ -11,7 +11,9 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 // v2: Native image labeling implementation (replaces ViewShot)
 // v3: Added automatic cache validation on app startup
 // v4: Fixed combined photo double-labeling (Before + After), invalidate potentially incomplete cached photos
-const CACHE_VERSION = 4;
+// v5: Fixed After label margin double-scaling issue on combined photos
+// v6: Added support for all 9 label positions and proper offset handling for combined photos
+const CACHE_VERSION = 6;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid

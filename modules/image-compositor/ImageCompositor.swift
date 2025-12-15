@@ -152,6 +152,8 @@ class ImageCompositor: NSObject {
         let marginH = labelConfig["marginHorizontal"] as? Int ?? 20
         let marginV = labelConfig["marginVertical"] as? Int ?? 20
         let padding = labelConfig["padding"] as? Int ?? 16
+        // When absoluteMargins is true, margins are already in absolute pixels (not scaled)
+        let absoluteMargins = labelConfig["absoluteMargins"] as? Bool ?? false
 
         let backgroundColor = self.hexToUIColor(hex: backgroundColorHex)
         let textColor = self.hexToUIColor(hex: textColorHex)
@@ -159,8 +161,9 @@ class ImageCompositor: NSObject {
         // Calculate scaled sizes based on image dimensions (assuming ~1000px as baseline)
         let scale = image.size.width / 1000.0
         let scaledFontSize = max(CGFloat(fontSize) * scale, 24.0)
-        let scaledMarginH = max(CGFloat(marginH) * scale, 10.0)
-        let scaledMarginV = max(CGFloat(marginV) * scale, 10.0)
+        // If absoluteMargins is true, use the margins as-is (they're already calculated for the actual image size)
+        let scaledMarginH = absoluteMargins ? CGFloat(marginH) : max(CGFloat(marginH) * scale, 10.0)
+        let scaledMarginV = absoluteMargins ? CGFloat(marginV) : max(CGFloat(marginV) * scale, 10.0)
         let scaledPadding = max(CGFloat(padding) * scale, 8.0)
 
         // Create text attributes
@@ -181,43 +184,52 @@ class ImageCompositor: NSObject {
         let labelWidth = textSize.width + (scaledPadding * 2)
         let labelHeight = textSize.height + (scaledPadding * 2)
 
-        // Calculate label position
+        // Calculate label position based on 9-position grid
+        // Positions: left-top, left-middle, left-bottom, center-top, center-middle, center-bottom, right-top, right-middle, right-bottom
+        // Also support legacy format: top-left, top-right, bottom-left, bottom-right
         let labelRect: CGRect
-        switch position {
-        case "top-right":
-          labelRect = CGRect(
-            x: image.size.width - scaledMarginH - labelWidth,
-            y: scaledMarginV,
-            width: labelWidth,
-            height: labelHeight
-          )
-        case "bottom-left":
-          labelRect = CGRect(
-            x: scaledMarginH,
-            y: image.size.height - scaledMarginV - labelHeight,
-            width: labelWidth,
-            height: labelHeight
-          )
-        case "bottom-right":
-          labelRect = CGRect(
-            x: image.size.width - scaledMarginH - labelWidth,
-            y: image.size.height - scaledMarginV - labelHeight,
-            width: labelWidth,
-            height: labelHeight
-          )
-        default: // top-left
-          labelRect = CGRect(
-            x: scaledMarginH,
-            y: scaledMarginV,
-            width: labelWidth,
-            height: labelHeight
-          )
+
+        // For combined photos, we may need to offset center/middle positions
+        // offsetX/offsetY shift the label from its natural position (used for After labels in combined photos)
+        let offsetX = labelConfig["offsetX"] as? Int ?? 0
+        let offsetY = labelConfig["offsetY"] as? Int ?? 0
+
+        // Determine horizontal position (x)
+        let labelX: CGFloat
+        if position.contains("left") {
+          labelX = scaledMarginH
+        } else if position.contains("right") {
+          labelX = image.size.width - scaledMarginH - labelWidth
+        } else {
+          // center - add offsetX to shift center position (e.g., to center of right half)
+          labelX = (image.size.width - labelWidth) / 2 + CGFloat(offsetX)
         }
+
+        // Determine vertical position (y)
+        let labelY: CGFloat
+        if position.contains("top") {
+          labelY = scaledMarginV
+        } else if position.contains("bottom") {
+          labelY = image.size.height - scaledMarginV - labelHeight
+        } else {
+          // middle - add offsetY to shift middle position (e.g., to middle of bottom half)
+          labelY = (image.size.height - labelHeight) / 2 + CGFloat(offsetY)
+        }
+
+        labelRect = CGRect(
+          x: labelX,
+          y: labelY,
+          width: labelWidth,
+          height: labelHeight
+        )
 
         print("[ImageCompositor] 📍 Label Position Calculation:")
         print("  Image size: \(image.size.width) x \(image.size.height)")
         print("  Position: \(position)")
         print("  Text: \(labelText)")
+        print("  absoluteMargins: \(absoluteMargins)")
+        print("  Input marginH: \(marginH), marginV: \(marginV)")
+        print("  offsetX: \(offsetX), offsetY: \(offsetY)")
         print("  Scaled fontSize: \(scaledFontSize)")
         print("  Scaled marginH: \(scaledMarginH), marginV: \(scaledMarginV)")
         print("  Label size: \(labelWidth) x \(labelHeight)")
