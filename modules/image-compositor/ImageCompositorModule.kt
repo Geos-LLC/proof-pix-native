@@ -159,6 +159,10 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
         if (labelConfig.hasKey("absoluteMargins")) {
             android.util.Log.e("ImageCompositor", "  absoluteMargins VALUE: ${labelConfig.getBoolean("absoluteMargins")}")
         }
+        android.util.Log.e("ImageCompositor", "  hasMarginHorizontal: ${labelConfig.hasKey("marginHorizontal")}")
+        if (labelConfig.hasKey("marginHorizontal")) {
+            android.util.Log.e("ImageCompositor", "  marginHorizontal VALUE: ${labelConfig.getDouble("marginHorizontal").toInt()}")
+        }
         android.util.Log.e("ImageCompositor", "  hasMarginVertical: ${labelConfig.hasKey("marginVertical")}")
         if (labelConfig.hasKey("marginVertical")) {
             // Use getDouble() because JS numbers are always passed as Double through RN bridge
@@ -277,10 +281,11 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 android.util.Log.e("ImageCompositor", "  Image: ${labeledBitmap.width} x ${labeledBitmap.height}")
                 android.util.Log.e("ImageCompositor", "  Position: $position")
                 android.util.Log.e("ImageCompositor", "  absoluteMargins: $absoluteMargins")
-                android.util.Log.e("ImageCompositor", "  Input marginV: $marginV")
-                android.util.Log.e("ImageCompositor", "  scaledMarginV: $scaledMarginV")
+                android.util.Log.e("ImageCompositor", "  Input marginH: $marginH, marginV: $marginV")
+                android.util.Log.e("ImageCompositor", "  scaledMarginH: $scaledMarginH, scaledMarginV: $scaledMarginV")
+                android.util.Log.e("ImageCompositor", "  FINAL labelX: $labelX (halfWidth=${labeledBitmap.width/2})")
                 android.util.Log.e("ImageCompositor", "  FINAL labelY: $labelY (halfHeight=${labeledBitmap.height/2})")
-                android.util.Log.e("ImageCompositor", "  labelRect.top: ${labelRect.top}")
+                android.util.Log.e("ImageCompositor", "  labelRect: left=${labelRect.left}, top=${labelRect.top}")
                 android.util.Log.e("ImageCompositor", "🔴🔴🔴 END NATIVE LABEL 🔴🔴🔴")
 
                 // Draw label background with rounded corners
