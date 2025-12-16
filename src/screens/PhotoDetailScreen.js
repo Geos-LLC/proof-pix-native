@@ -9,9 +9,7 @@ import {
   Dimensions,
   Share,
   ActivityIndicator,
-  ScrollView,
-  PixelRatio,
-  Platform
+  ScrollView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
@@ -92,19 +90,14 @@ export default function PhotoDetailScreen({ route, navigation }) {
             newDisplayUriMap[photoItem.id] = photoItem.uri;
 
             // Queue photo for lazy re-labeling (will be processed in background)
-            RNImage.getSize(photoItem.uri, (dpWidth, dpHeight) => {
-              // CRITICAL FIX: On Android, Image.getSize returns dimensions in density-independent pixels (dp),
-              // NOT actual pixels. The native module works with actual pixel dimensions.
-              const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
-              const width = Platform.OS === 'android' ? Math.round(dpWidth * pixelRatio) : dpWidth;
-              const height = Platform.OS === 'android' ? Math.round(dpHeight * pixelRatio) : dpHeight;
-
-              console.log(`[PhotoDetailScreen] Photo dimensions: dp=${dpWidth}x${dpHeight}, pixels=${width}x${height}, pixelRatio=${pixelRatio}`);
+            // NOTE: For file:// URIs, Image.getSize returns actual pixel dimensions directly (no PixelRatio needed)
+            RNImage.getSize(photoItem.uri, (width, height) => {
+              console.log(`[PhotoDetailScreen] Photo dimensions: ${width}x${height}`);
 
               backgroundLabelPreparationService.queuePreparation({
                 photo: photoItem,
-                width: width,
-                height: height,
+                width,
+                height,
                 settingsHash: settingsHash,
                 mode: photoItem.mode,
               });
