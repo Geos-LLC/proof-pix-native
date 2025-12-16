@@ -264,20 +264,17 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                     labelY + labelHeight
                 )
 
-                // Use Log.e (error level) to ensure visibility in all log viewers
-                android.util.Log.e("ImageCompositor", "📍 ===== LABEL POSITION CALCULATION =====")
-                android.util.Log.e("ImageCompositor", "  Image size: ${labeledBitmap.width} x ${labeledBitmap.height}")
-                android.util.Log.e("ImageCompositor", "  Position: $position")
+                // CRITICAL: Log position calculation to verify native code is receiving correct values
+                android.util.Log.e("ImageCompositor", "🔴🔴🔴 NATIVE LABEL POSITION 🔴🔴🔴")
                 android.util.Log.e("ImageCompositor", "  Text: $labelText")
+                android.util.Log.e("ImageCompositor", "  Image: ${labeledBitmap.width} x ${labeledBitmap.height}")
+                android.util.Log.e("ImageCompositor", "  Position: $position")
                 android.util.Log.e("ImageCompositor", "  absoluteMargins: $absoluteMargins")
-                android.util.Log.e("ImageCompositor", "  Input marginH: $marginH, marginV: $marginV")
-                android.util.Log.e("ImageCompositor", "  offsetX: $offsetX, offsetY: $offsetY")
-                android.util.Log.e("ImageCompositor", "  Scaled fontSize: $scaledFontSize")
-                android.util.Log.e("ImageCompositor", "  Scaled marginH: $scaledMarginH, marginV: $scaledMarginV")
-                android.util.Log.e("ImageCompositor", "  Label size: $labelWidth x $labelHeight")
-                android.util.Log.e("ImageCompositor", "  Label rect: left=${labelRect.left}, top=${labelRect.top}, right=${labelRect.right}, bottom=${labelRect.bottom}")
-                android.util.Log.e("ImageCompositor", "  halfHeight would be: ${labeledBitmap.height / 2}")
-                android.util.Log.e("ImageCompositor", "  ===== END CALCULATION =====")
+                android.util.Log.e("ImageCompositor", "  Input marginV: $marginV")
+                android.util.Log.e("ImageCompositor", "  scaledMarginV: $scaledMarginV")
+                android.util.Log.e("ImageCompositor", "  FINAL labelY: $labelY (halfHeight=${labeledBitmap.height/2})")
+                android.util.Log.e("ImageCompositor", "  labelRect.top: ${labelRect.top}")
+                android.util.Log.e("ImageCompositor", "🔴🔴🔴 END NATIVE LABEL 🔴🔴🔴")
 
                 // Draw label background with rounded corners
                 val backgroundPaint = Paint().apply {
