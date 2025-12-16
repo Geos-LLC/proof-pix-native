@@ -8,6 +8,51 @@ export const isNativeCompositorAvailable = () => {
 };
 
 /**
+ * Calculate offsetX/offsetY for After label positioning in combined photos.
+ * This is the single source of truth for After label offset calculations.
+ *
+ * For combined photos:
+ * - STACK layout: Before is TOP half, After is BOTTOM half
+ * - SIDE layout: Before is LEFT half, After is RIGHT half
+ *
+ * The After label needs to be shifted to appear in the correct half.
+ *
+ * @param {string} position - Label position (e.g., 'left-top', 'center-middle', 'right-bottom')
+ * @param {boolean} isStack - True for STACK layout, false for SIDE layout
+ * @param {number} halfWidth - Half the width of the combined image (for SIDE layout)
+ * @param {number} halfHeight - Half the height of the combined image (for STACK layout)
+ * @returns {object} - { offsetX: number, offsetY: number }
+ */
+export function calculateAfterLabelOffsets(position, isStack, halfWidth, halfHeight) {
+  let offsetX = 0;
+  let offsetY = 0;
+
+  if (isStack) {
+    // STACK layout: After photo is in BOTTOM half
+    if (position.includes('top')) {
+      // Shift label down by halfHeight to position at top of After (bottom) half
+      offsetY = halfHeight;
+    } else if (position.includes('middle')) {
+      // Shift center down by halfHeight/2 to center in After half
+      offsetY = Math.round(halfHeight / 2);
+    }
+    // "bottom" positions don't need offset - bottom of full image = bottom of After half
+  } else {
+    // SIDE layout: After photo is in RIGHT half
+    if (position.includes('left')) {
+      // Shift label right by halfWidth to position at left of After (right) half
+      offsetX = halfWidth;
+    } else if (position.includes('center')) {
+      // Shift center right by halfWidth/2 to center in After half
+      offsetX = Math.round(halfWidth / 2);
+    }
+    // "right" positions don't need offset - right of full image = right of After half
+  }
+
+  return { offsetX, offsetY };
+}
+
+/**
  * Composite two images side-by-side or stacked using native code
  * @param {string} beforeUri - URI of the before image
  * @param {string} afterUri - URI of the after image

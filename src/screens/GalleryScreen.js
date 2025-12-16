@@ -34,7 +34,7 @@ import dropboxAuthService from '../services/dropboxAuthService';
 import dropboxService from '../services/dropboxService';
 import { uploadPhotoBatchToDropbox } from '../services/dropboxUploadService';
 import { captureRef } from 'react-native-view-shot';
-import { addLabelToImage, compositeImages } from '../utils/imageCompositor';
+import { addLabelToImage, compositeImages, calculateAfterLabelOffsets } from '../utils/imageCompositor';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
@@ -952,6 +952,9 @@ export default function GalleryScreen({ navigation, route }) {
                     // The native code handles all margin scaling, keeping labels proportional.
                     const afterPosition = convertLabelPosition(afterLabelPosition || 'right-top');
 
+                    // Use shared function for offset calculation (single source of truth)
+                    const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPosition, isStack, halfWidth, halfHeight);
+
                     const afterLabelConfig = {
                         position: afterPosition,
                         backgroundColor: labelBackgroundColor || '#FFD700',
@@ -960,31 +963,9 @@ export default function GalleryScreen({ navigation, route }) {
                         marginHorizontal: labelMarginHorizontal || 20,
                         marginVertical: labelMarginVertical || 20,
                         padding: 16,
+                        offsetX,
+                        offsetY,
                     };
-
-                    // Adjust After label position based on layout using offsets
-                    // This keeps margins relative and lets native code scale everything proportionally
-                    if (isStack) {
-                        // STACK layout: After photo is in BOTTOM half
-                        if (afterPosition.includes('top')) {
-                            // Shift label down by halfHeight to position at top of After (bottom) half
-                            afterLabelConfig.offsetY = halfHeight;
-                        } else if (afterPosition.includes('middle')) {
-                            // Shift center down by halfHeight/2 to center in After half
-                            afterLabelConfig.offsetY = Math.round(halfHeight / 2);
-                        }
-                        // "bottom" positions don't need offset
-                    } else {
-                        // SIDE layout: After photo is in RIGHT half
-                        if (afterPosition.includes('left')) {
-                            // Shift label right by halfWidth to position at left of After (right) half
-                            afterLabelConfig.offsetX = halfWidth;
-                        } else if (afterPosition.includes('center')) {
-                            // Shift center right by halfWidth/2 to center in After half
-                            afterLabelConfig.offsetX = Math.round(halfWidth / 2);
-                        }
-                        // "right" positions don't need offset
-                    }
 
                     console.log(`[GALLERY] Step 2: Adding BEFORE label to combined photo ${index + 1}`);
                     const withBeforeLabelUri = await addLabelToImage(

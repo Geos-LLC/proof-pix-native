@@ -9,7 +9,7 @@ import backgroundLabelPreparationService from '../services/backgroundLabelPrepar
 import { saveCachedLabeledPhoto } from '../services/labelCacheService';
 import { PHOTO_MODES } from '../constants/rooms';
 import { useSettings } from '../context/SettingsContext';
-import { addLabelToImage, compositeImages } from '../utils/imageCompositor';
+import { addLabelToImage, compositeImages, calculateAfterLabelOffsets } from '../utils/imageCompositor';
 import { useTranslation } from 'react-i18next';
 
 export default function GlobalBackgroundLabelPreparation() {
@@ -202,38 +202,22 @@ export default function GlobalBackgroundLabelPreparation() {
 
         // After label config - needs position adjustments based on layout
         const afterPosition = convertLabelPosition(afterLabelPosition || 'left-top');
-        const baseMarginH = labelMarginHorizontal || 20;
-        const baseMarginV = labelMarginVertical || 20;
-        const scaledBaseMarginH = Math.max(baseMarginH * scale, 10);
-        const scaledBaseMarginV = Math.max(baseMarginV * scale, 10);
+
+        // Use shared function for offset calculation (single source of truth)
+        const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPosition, isStack, halfWidth, halfHeight);
 
         const afterLabelConfig = {
           ...labelConfig,
           position: afterPosition,
+          offsetX,
+          offsetY,
         };
-
-        // Adjust After label position based on layout (same logic as PATH 2)
-        if (isStack) {
-          // STACK layout: After photo is in BOTTOM half
-          if (afterPosition.includes('top')) {
-            afterLabelConfig.marginVertical = Math.round(scaledBaseMarginV + halfHeight);
-            afterLabelConfig.absoluteMargins = true;
-          } else if (afterPosition.includes('middle')) {
-            afterLabelConfig.offsetY = Math.round(halfHeight / 2);
-          }
-        } else {
-          // SIDE layout: After photo is in RIGHT half
-          if (afterPosition.includes('left')) {
-            afterLabelConfig.marginHorizontal = Math.round(scaledBaseMarginH + halfWidth);
-            afterLabelConfig.absoluteMargins = true;
-          } else if (afterPosition.includes('center')) {
-            afterLabelConfig.offsetX = Math.round(halfWidth / 2);
-          }
-        }
 
         console.log(`[BackgroundLabelPrep:${taskId}] 📍 Combined Photo Label Configs:`, {
           layout,
           isStack,
+          halfWidth,
+          halfHeight,
           beforeConfig: {
             position: beforeLabelConfig.position,
             marginH: beforeLabelConfig.marginHorizontal,
@@ -245,7 +229,6 @@ export default function GlobalBackgroundLabelPreparation() {
             marginV: afterLabelConfig.marginVertical,
             offsetX: afterLabelConfig.offsetX || 0,
             offsetY: afterLabelConfig.offsetY || 0,
-            absoluteMargins: afterLabelConfig.absoluteMargins || false,
           },
         });
 
@@ -397,52 +380,12 @@ export default function GlobalBackgroundLabelPreparation() {
         // --- BEFORE LABEL: No adjustment needed ---
         // Before label positions work correctly since the Before photo occupies the top-left area
 
-        // --- AFTER LABEL: Use offsetX/offsetY to shift to correct half ---
-        // The native code will still scale the base margins, we just add an offset
-        // to move the label from the Before half to the After half.
+        // --- AFTER LABEL: Use shared function for offset calculation (single source of truth) ---
+        const { offsetX, offsetY } = calculateAfterLabelOffsets(config2.position, isStack, halfWidth, halfHeight);
+        config2.offsetX = offsetX;
+        config2.offsetY = offsetY;
 
-        if (isStack) {
-            // STACK layout: After photo is in BOTTOM half
-            // We shift the label down by halfHeight pixels using offsetY
-            //
-            // For "top" position: native puts label at marginV from top, we add halfHeight to move to After half
-            // For "middle" position: native puts label in center, we add halfHeight/2 to center in After half
-            // For "bottom" position: no offset needed, bottom of full image = bottom of After half
-
-            if (config2.position.includes('top')) {
-                // Shift label down by halfHeight to position at top of After (bottom) half
-                config2.offsetY = halfHeight;
-                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 STACK TOP ADJUSTMENT: offsetY=${halfHeight}`);
-            } else if (config2.position.includes('middle')) {
-                // Shift center down by halfHeight/2 to center in After half
-                config2.offsetY = Math.round(halfHeight / 2);
-                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 STACK MIDDLE ADJUSTMENT: offsetY=${config2.offsetY}`);
-            }
-            // "bottom" positions don't need offset
-
-            console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (STACK): position=${config2.position}, offsetY=${config2.offsetY || 0}`);
-        } else {
-            // SIDE layout: After photo is in RIGHT half
-            // We shift the label right by halfWidth pixels using offsetX
-            //
-            // For "left" position: native puts label at marginH from left, we add halfWidth to move to After half
-            // For "center" position: native puts label in center, we add halfWidth/2 to center in After half
-            // For "right" position: no offset needed, right of full image = right of After half
-
-            if (config2.position.includes('left')) {
-                // Shift label right by halfWidth to position at left of After (right) half
-                config2.offsetX = halfWidth;
-                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 SIDE LEFT ADJUSTMENT: offsetX=${halfWidth}`);
-            } else if (config2.position.includes('center')) {
-                // Shift center right by halfWidth/2 to center in After half
-                config2.offsetX = Math.round(halfWidth / 2);
-                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 SIDE CENTER ADJUSTMENT: offsetX=${config2.offsetX}`);
-            }
-            // "right" positions don't need offset
-
-            console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (SIDE): position=${config2.position}, offsetX=${config2.offsetX || 0}`);
-        }
-
+        console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER label offsets: offsetX=${offsetX}, offsetY=${offsetY}`);
         console.log(`[BackgroundLabelPrep:${taskId}] 📐 Position adjustment COMPLETE:`, {
           layout: isStack ? 'STACK' : 'SIDE',
           halfWidth,

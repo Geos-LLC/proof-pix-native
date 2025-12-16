@@ -25,7 +25,11 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 //      at the same position as Before labels on combined photos.
 // v11: CRITICAL FIX - Android native code was using getInt() instead of getDouble().toInt() for reading
 //      offsetX/offsetY/fontSize/margins from JS config. This caused values to be read incorrectly or as 0.
-const CACHE_VERSION = 11;
+// v12: Fixed PATH 1 in GlobalBackgroundLabelPreparation to use offsetX/offsetY instead of absoluteMargins.
+//      All paths now consistently use the offset-based approach for After label positioning.
+// v13: Consolidated After label offset calculation into single shared function (calculateAfterLabelOffsets).
+//      All code paths now use one source of truth for offset logic.
+const CACHE_VERSION = 13;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid
