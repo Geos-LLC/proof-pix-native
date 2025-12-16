@@ -152,14 +152,19 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
         labelConfig: ReadableMap,
         promise: Promise
     ) {
-        // Log raw input values immediately - these show in logcat
-        android.util.Log.e("ImageCompositor", "🏷️ ===== addLabelToImage CALLED =====")
-        android.util.Log.e("ImageCompositor", "  imageUri: ${imageUri.take(80)}...")
+        // LOG IMMEDIATELY before any processing to verify we receive the config
+        android.util.Log.e("ImageCompositor", "🟢🟢🟢 NATIVE addLabelToImage ENTRY 🟢🟢🟢")
         android.util.Log.e("ImageCompositor", "  labelText: $labelText")
-        android.util.Log.e("ImageCompositor", "  RAW labelConfig: ${labelConfig.toHashMap()}")
-
-        // Also log to System.out which sometimes shows in Metro bundler
-        println("[ImageCompositor] 🏷️ NATIVE addLabelToImage: text=$labelText, config=${labelConfig.toHashMap()}")
+        android.util.Log.e("ImageCompositor", "  hasAbsoluteMargins: ${labelConfig.hasKey("absoluteMargins")}")
+        if (labelConfig.hasKey("absoluteMargins")) {
+            android.util.Log.e("ImageCompositor", "  absoluteMargins VALUE: ${labelConfig.getBoolean("absoluteMargins")}")
+        }
+        android.util.Log.e("ImageCompositor", "  hasMarginVertical: ${labelConfig.hasKey("marginVertical")}")
+        if (labelConfig.hasKey("marginVertical")) {
+            // Use getDouble() because JS numbers are always passed as Double through RN bridge
+            android.util.Log.e("ImageCompositor", "  marginVertical VALUE: ${labelConfig.getDouble("marginVertical").toInt()}")
+        }
+        android.util.Log.e("ImageCompositor", "🟢🟢🟢 END ENTRY LOG 🟢🟢🟢")
 
         // Run on background thread
         CoroutineScope(Dispatchers.IO).launch {
@@ -192,20 +197,22 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 val canvas = Canvas(labeledBitmap)
 
                 // Parse label configuration
+                // IMPORTANT: JavaScript numbers are always passed as Double through React Native bridge
+                // Using getDouble() and casting to Int is the correct approach (getInt() can truncate incorrectly)
                 val position = if (labelConfig.hasKey("position")) labelConfig.getString("position") else "top-left"
                 val backgroundColor = if (labelConfig.hasKey("backgroundColor"))
                     Color.parseColor(labelConfig.getString("backgroundColor")) else Color.parseColor("#FFD700")
                 val textColor = if (labelConfig.hasKey("textColor"))
                     Color.parseColor(labelConfig.getString("textColor")) else Color.BLACK
-                val fontSize = if (labelConfig.hasKey("fontSize")) labelConfig.getInt("fontSize") else 48
-                val marginH = if (labelConfig.hasKey("marginHorizontal")) labelConfig.getInt("marginHorizontal") else 20
-                val marginV = if (labelConfig.hasKey("marginVertical")) labelConfig.getInt("marginVertical") else 20
-                val padding = if (labelConfig.hasKey("padding")) labelConfig.getInt("padding") else 16
+                val fontSize = if (labelConfig.hasKey("fontSize")) labelConfig.getDouble("fontSize").toInt() else 48
+                val marginH = if (labelConfig.hasKey("marginHorizontal")) labelConfig.getDouble("marginHorizontal").toInt() else 20
+                val marginV = if (labelConfig.hasKey("marginVertical")) labelConfig.getDouble("marginVertical").toInt() else 20
+                val padding = if (labelConfig.hasKey("padding")) labelConfig.getDouble("padding").toInt() else 16
                 // When absoluteMargins is true, margins are already in absolute pixels (not scaled)
                 val absoluteMargins = if (labelConfig.hasKey("absoluteMargins")) labelConfig.getBoolean("absoluteMargins") else false
                 // Offsets for shifting label position (used for After labels in combined photos)
-                val offsetX = if (labelConfig.hasKey("offsetX")) labelConfig.getInt("offsetX") else 0
-                val offsetY = if (labelConfig.hasKey("offsetY")) labelConfig.getInt("offsetY") else 0
+                val offsetX = if (labelConfig.hasKey("offsetX")) labelConfig.getDouble("offsetX").toInt() else 0
+                val offsetY = if (labelConfig.hasKey("offsetY")) labelConfig.getDouble("offsetY").toInt() else 0
 
                 // Calculate scaled sizes based on image dimensions
                 // Scale font size and margins based on image width (assuming ~1000px as baseline)
