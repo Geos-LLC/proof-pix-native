@@ -352,6 +352,15 @@ export default function GlobalBackgroundLabelPreparation() {
         const config1 = { ...beforeLabelConfig };
         const config2 = { ...afterLabelConfig };
 
+        console.log(`[BackgroundLabelPrep:${taskId}] 🔍 DEBUG AFTER CONFIG INITIAL:`, {
+          config2Position: config2.position,
+          config2MarginH: config2.marginHorizontal,
+          config2MarginV: config2.marginVertical,
+          includesLeft: config2.position?.includes('left'),
+          includesRight: config2.position?.includes('right'),
+          includesCenter: config2.position?.includes('center'),
+        });
+
         console.log(`[BackgroundLabelPrep:${taskId}] 📐 Position adjustment START:`, {
           layout: isStack ? 'STACK' : 'SIDE',
           width,
@@ -406,7 +415,15 @@ export default function GlobalBackgroundLabelPreparation() {
 
             if (config2.position.includes('top')) {
                 // Top of After half = halfHeight + baseMargin from top
-                config2.marginVertical = Math.round(scaledBaseMarginV + halfHeight);
+                const newMarginV = Math.round(scaledBaseMarginV + halfHeight);
+                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 STACK TOP ADJUSTMENT:`, {
+                  positionBefore: config2.position,
+                  scaledBaseMarginV,
+                  halfHeight,
+                  newMarginV,
+                  calculationDetail: `${scaledBaseMarginV} + ${halfHeight} = ${scaledBaseMarginV + halfHeight} → rounded to ${newMarginV}`,
+                });
+                config2.marginVertical = newMarginV;
                 config2.absoluteMargins = true;
             } else if (config2.position.includes('middle')) {
                 // Middle of After half: Swift calculates center as (height - labelHeight) / 2
@@ -441,7 +458,15 @@ export default function GlobalBackgroundLabelPreparation() {
 
             if (config2.position.includes('left')) {
                 // Left of After half = halfWidth + baseMargin from left
-                config2.marginHorizontal = Math.round(scaledBaseMarginH + halfWidth);
+                const newMarginH = Math.round(scaledBaseMarginH + halfWidth);
+                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 SIDE LEFT ADJUSTMENT:`, {
+                  positionBefore: config2.position,
+                  scaledBaseMarginH,
+                  halfWidth,
+                  newMarginH,
+                  calculationDetail: `${scaledBaseMarginH} + ${halfWidth} = ${scaledBaseMarginH + halfWidth} → rounded to ${newMarginH}`,
+                });
+                config2.marginHorizontal = newMarginH;
                 config2.absoluteMargins = true;
             } else if (config2.position.includes('center')) {
                 // Center of After half: Swift calculates center as (width - labelWidth) / 2
@@ -502,6 +527,16 @@ export default function GlobalBackgroundLabelPreparation() {
         console.log(`[BackgroundLabelPrep:${taskId}] 🏷️  Step 2: Applying AFTER label to combined photo...`);
         console.log(`[BackgroundLabelPrep:${taskId}] 📂 Intermediate URI for After label:`, intermediateUri);
         console.log(`[BackgroundLabelPrep:${taskId}] 📝 After label config:`, JSON.stringify(config2));
+        console.log(`[BackgroundLabelPrep:${taskId}] 🔍 FINAL AFTER CONFIG BEFORE NATIVE CALL:`, {
+          position: config2.position,
+          marginHorizontal: config2.marginHorizontal,
+          marginVertical: config2.marginVertical,
+          absoluteMargins: config2.absoluteMargins,
+          offsetX: config2.offsetX,
+          offsetY: config2.offsetY,
+          isStack,
+          layout: isStack ? 'STACK' : 'SIDE',
+        });
         try {
           labeledUri = await addLabelToImage(
             intermediateUri,
