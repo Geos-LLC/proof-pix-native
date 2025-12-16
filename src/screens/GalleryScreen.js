@@ -17,7 +17,8 @@ import {
   TextInput,
   Share as RNShare,
   Platform,
-  InteractionManager
+  InteractionManager,
+  PixelRatio
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePhotos } from '../context/PhotoContext';
@@ -880,21 +881,34 @@ export default function GalleryScreen({ navigation, route }) {
             );
 
             console.log(`[GALLERY] Reconstructing combined photo: ${photo.name} (beforePhotoId: ${photo.beforePhotoId}) - Found before: ${!!beforePhoto}, after: ${!!afterPhoto}`);
-            
+
             if (beforePhoto && afterPhoto && showLabels) {
                 // Use native compositor to recreate combined photo with labels at full resolution
                 try {
+                    // CRITICAL FIX: On Android, Image.getSize returns dimensions in density-independent pixels (dp),
+                    // NOT actual pixels. The native module works with actual pixel dimensions.
+                    const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
+
                     // Get dimensions of before photo to determine layout
                     const beforeDimensions = await new Promise((resolve, reject) => {
                         Image.getSize(beforePhoto.uri,
-                            (width, height) => resolve({ width, height }),
+                            (dpWidth, dpHeight) => {
+                                const width = Platform.OS === 'android' ? Math.round(dpWidth * pixelRatio) : dpWidth;
+                                const height = Platform.OS === 'android' ? Math.round(dpHeight * pixelRatio) : dpHeight;
+                                resolve({ width, height });
+                            },
                             (error) => reject(error)
                         );
                     });
 
                     const combinedDimensions = await new Promise((resolve, reject) => {
                         Image.getSize(photo.uri,
-                            (width, height) => resolve({ width, height }),
+                            (dpWidth, dpHeight) => {
+                                const width = Platform.OS === 'android' ? Math.round(dpWidth * pixelRatio) : dpWidth;
+                                const height = Platform.OS === 'android' ? Math.round(dpHeight * pixelRatio) : dpHeight;
+                                console.log(`[GALLERY] Combined photo dimensions: dp=${dpWidth}x${dpHeight}, pixels=${width}x${height}, pixelRatio=${pixelRatio}`);
+                                resolve({ width, height });
+                            },
                             (error) => reject(error)
                         );
                     });

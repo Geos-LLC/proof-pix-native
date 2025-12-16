@@ -29,7 +29,11 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 //      All paths now consistently use the offset-based approach for After label positioning.
 // v13: Consolidated After label offset calculation into single shared function (calculateAfterLabelOffsets).
 //      All code paths now use one source of truth for offset logic.
-const CACHE_VERSION = 13;
+// v14: CRITICAL FIX - Added PixelRatio conversion in CameraScreen, GalleryScreen, PhotoDetailScreen.
+//      Image.getSize on Android returns dp (density-independent pixels), not actual pixels.
+//      Without multiplying by PixelRatio.get(), offsetX/offsetY values were wrong, causing After labels
+//      to appear in wrong positions. The fix in labelService.js was correct but not applied everywhere.
+const CACHE_VERSION = 14;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid

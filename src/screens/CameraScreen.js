@@ -14,7 +14,8 @@ import {
   Animated,
   StatusBar,
   Modal,
-  ActivityIndicator
+  ActivityIndicator,
+  PixelRatio
 } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import { compositeImages, isNativeCompositorAvailable } from '../utils/imageCompositor';
@@ -1163,7 +1164,16 @@ export default function CameraScreen({ route, navigation }) {
 
       try {
         // Get dimensions of combined photo
-        Image.getSize(combinedPhoto.uri, (width, height) => {
+        Image.getSize(combinedPhoto.uri, (dpWidth, dpHeight) => {
+          // CRITICAL FIX: On Android, Image.getSize returns dimensions in density-independent pixels (dp),
+          // NOT actual pixels. The native module works with actual pixel dimensions.
+          // We must convert dp to actual pixels for correct label positioning on combined photos.
+          const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
+          const width = Platform.OS === 'android' ? Math.round(dpWidth * pixelRatio) : dpWidth;
+          const height = Platform.OS === 'android' ? Math.round(dpHeight * pixelRatio) : dpHeight;
+
+          console.log(`[CameraScreen] Combined photo dimensions: dp=${dpWidth}x${dpHeight}, pixels=${width}x${height}, pixelRatio=${pixelRatio}`);
+
           // Queue preparation in global service (stays mounted regardless of navigation)
           backgroundLabelPreparationService.queuePreparation({
             photo: combinedPhoto,
@@ -1199,7 +1209,15 @@ export default function CameraScreen({ route, navigation }) {
 
       try {
         // Get image dimensions
-        Image.getSize(photo.uri, (width, height) => {
+        Image.getSize(photo.uri, (dpWidth, dpHeight) => {
+          // CRITICAL FIX: On Android, Image.getSize returns dimensions in density-independent pixels (dp),
+          // NOT actual pixels. The native module works with actual pixel dimensions.
+          const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
+          const width = Platform.OS === 'android' ? Math.round(dpWidth * pixelRatio) : dpWidth;
+          const height = Platform.OS === 'android' ? Math.round(dpHeight * pixelRatio) : dpHeight;
+
+          console.log(`[CameraScreen] Single photo dimensions: dp=${dpWidth}x${dpHeight}, pixels=${width}x${height}, pixelRatio=${pixelRatio}`);
+
           // Determine label position based on photo mode
           let labelPosition;
           if (mode === 'before') {
