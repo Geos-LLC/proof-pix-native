@@ -2,6 +2,11 @@ import { NativeModules, Platform } from 'react-native';
 
 const { ImageCompositor } = NativeModules;
 
+// Debug: Log available native modules
+console.log('[ImageCompositor] NativeModules available:', Object.keys(NativeModules).filter(k => k.toLowerCase().includes('image') || k.toLowerCase().includes('compositor')));
+console.log('[ImageCompositor] ImageCompositor module:', ImageCompositor);
+console.log('[ImageCompositor] ImageCompositor methods:', ImageCompositor ? Object.keys(ImageCompositor) : 'null');
+
 // Export for checking availability
 export const isNativeCompositorAvailable = () => {
   return ImageCompositor != null;
