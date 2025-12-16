@@ -13,7 +13,8 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 // v4: Fixed combined photo double-labeling (Before + After), invalidate potentially incomplete cached photos
 // v5: Fixed After label margin double-scaling issue on combined photos
 // v6: Added support for all 9 label positions and proper offset handling for combined photos
-const CACHE_VERSION = 6;
+// v7: Fixed After label position calculation for combined photos (absoluteMargins + correct offset)
+const CACHE_VERSION = 7;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid
