@@ -379,10 +379,6 @@ export default function GlobalBackgroundLabelPreparation() {
           },
         });
 
-        // Calculate the scale factor (same as Swift uses: image.width / 1000)
-        // We need this to properly scale the base margins before adding offsets
-        const scale = width / 1000.0;
-
         // For combined photos:
         // - STACK layout: Before is TOP half, After is BOTTOM half
         // - SIDE layout: Before is LEFT half, After is RIGHT half
@@ -391,102 +387,70 @@ export default function GlobalBackgroundLabelPreparation() {
         // Example with both labels at "left-top":
         // - STACK: Before at top-left of TOP half, After at top-left of BOTTOM half
         // - SIDE: Before at top-left of LEFT half, After at top-left of RIGHT half
+        //
+        // IMPORTANT: We use offsetX/offsetY to shift the After label to the correct half.
+        // This approach works correctly across all screen densities and device sizes because:
+        // 1. The native code handles all margin scaling based on image dimensions
+        // 2. We only provide pixel offsets to shift the label to the After half
+        // 3. The base margins remain relative and get scaled appropriately by native code
 
         // --- BEFORE LABEL: No adjustment needed ---
         // Before label positions work correctly since the Before photo occupies the top-left area
 
-        // --- AFTER LABEL: Needs offset based on position and layout ---
-        const baseMarginH = config2.marginHorizontal || 20;
-        const baseMarginV = config2.marginVertical || 20;
-        const scaledBaseMarginH = Math.max(baseMarginH * scale, 10);
-        const scaledBaseMarginV = Math.max(baseMarginV * scale, 10);
+        // --- AFTER LABEL: Use offsetX/offsetY to shift to correct half ---
+        // The native code will still scale the base margins, we just add an offset
+        // to move the label from the Before half to the After half.
 
         if (isStack) {
             // STACK layout: After photo is in BOTTOM half
-            // Swift position logic:
-            // - "top": y = marginV (from top of image)
-            // - "middle": y = (height - labelHeight) / 2 + offsetY (centered, with optional offset)
-            // - "bottom": y = height - marginV - labelHeight (from bottom of image)
+            // We shift the label down by halfHeight pixels using offsetY
             //
-            // We need:
-            // - "top" of After half: y = halfHeight + marginV → add halfHeight to marginV
-            // - "middle" of After half: use offsetY = halfHeight/2 to shift center down
-            // - "bottom" of After half: same as bottom of full image → no change needed
+            // For "top" position: native puts label at marginV from top, we add halfHeight to move to After half
+            // For "middle" position: native puts label in center, we add halfHeight/2 to center in After half
+            // For "bottom" position: no offset needed, bottom of full image = bottom of After half
 
             if (config2.position.includes('top')) {
-                // Top of After half = halfHeight + baseMargin from top
-                const newMarginV = Math.round(scaledBaseMarginV + halfHeight);
-                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 STACK TOP ADJUSTMENT:`, {
-                  positionBefore: config2.position,
-                  scaledBaseMarginV,
-                  halfHeight,
-                  newMarginV,
-                  calculationDetail: `${scaledBaseMarginV} + ${halfHeight} = ${scaledBaseMarginV + halfHeight} → rounded to ${newMarginV}`,
-                });
-                config2.marginVertical = newMarginV;
-                config2.absoluteMargins = true;
+                // Shift label down by halfHeight to position at top of After (bottom) half
+                config2.offsetY = halfHeight;
+                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 STACK TOP ADJUSTMENT: offsetY=${halfHeight}`);
             } else if (config2.position.includes('middle')) {
-                // Middle of After half: Swift calculates center as (height - labelHeight) / 2
-                // We want center of bottom half, which is halfHeight/2 below the full center
-                // So offsetY = halfHeight / 2
+                // Shift center down by halfHeight/2 to center in After half
                 config2.offsetY = Math.round(halfHeight / 2);
+                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 STACK MIDDLE ADJUSTMENT: offsetY=${config2.offsetY}`);
             }
-            // "bottom" positions don't need offset - Swift's calculation puts it at bottom of full image
-            // which is also bottom of After half
+            // "bottom" positions don't need offset
 
-            console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (STACK): position=${config2.position}, marginV=${config2.marginVertical}, offsetY=${config2.offsetY || 0}, absoluteMargins=${config2.absoluteMargins || false}`);
-            console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (STACK) calculation breakdown:`, {
-              height,
-              halfHeight,
-              baseMarginV,
-              scale,
-              scaledBaseMarginV,
-              calculatedMarginV: Math.round(scaledBaseMarginV + halfHeight),
-              actualMarginV: config2.marginVertical,
-            });
+            console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (STACK): position=${config2.position}, offsetY=${config2.offsetY || 0}`);
         } else {
             // SIDE layout: After photo is in RIGHT half
-            // Swift position logic:
-            // - "left": x = marginH (from left of image)
-            // - "center": x = (width - labelWidth) / 2 + offsetX (centered, with optional offset)
-            // - "right": x = width - marginH - labelWidth (from right of image)
+            // We shift the label right by halfWidth pixels using offsetX
             //
-            // We need:
-            // - "left" of After half: x = halfWidth + marginH → add halfWidth to marginH
-            // - "center" of After half: use offsetX = halfWidth/2 to shift center right
-            // - "right" of After half: same as right of full image → no change needed
+            // For "left" position: native puts label at marginH from left, we add halfWidth to move to After half
+            // For "center" position: native puts label in center, we add halfWidth/2 to center in After half
+            // For "right" position: no offset needed, right of full image = right of After half
 
             if (config2.position.includes('left')) {
-                // Left of After half = halfWidth + baseMargin from left
-                const newMarginH = Math.round(scaledBaseMarginH + halfWidth);
-                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 SIDE LEFT ADJUSTMENT:`, {
-                  positionBefore: config2.position,
-                  scaledBaseMarginH,
-                  halfWidth,
-                  newMarginH,
-                  calculationDetail: `${scaledBaseMarginH} + ${halfWidth} = ${scaledBaseMarginH + halfWidth} → rounded to ${newMarginH}`,
-                });
-                config2.marginHorizontal = newMarginH;
-                config2.absoluteMargins = true;
+                // Shift label right by halfWidth to position at left of After (right) half
+                config2.offsetX = halfWidth;
+                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 SIDE LEFT ADJUSTMENT: offsetX=${halfWidth}`);
             } else if (config2.position.includes('center')) {
-                // Center of After half: Swift calculates center as (width - labelWidth) / 2
-                // We want center of right half, which is halfWidth/2 to the right of full center
-                // So offsetX = halfWidth / 2
+                // Shift center right by halfWidth/2 to center in After half
                 config2.offsetX = Math.round(halfWidth / 2);
+                console.log(`[BackgroundLabelPrep:${taskId}] 🔧 SIDE CENTER ADJUSTMENT: offsetX=${config2.offsetX}`);
             }
-            // "right" positions don't need offset - Swift's calculation puts it at right of full image
-            // which is also right of After half
+            // "right" positions don't need offset
 
-            console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (SIDE): position=${config2.position}, marginH=${config2.marginHorizontal}, offsetX=${config2.offsetX || 0}, absoluteMargins=${config2.absoluteMargins || false}`);
+            console.log(`[BackgroundLabelPrep:${taskId}] 📐 AFTER (SIDE): position=${config2.position}, offsetX=${config2.offsetX || 0}`);
         }
 
         console.log(`[BackgroundLabelPrep:${taskId}] 📐 Position adjustment COMPLETE:`, {
-          scale,
+          layout: isStack ? 'STACK' : 'SIDE',
+          halfWidth,
+          halfHeight,
           config1After: {
             position: config1.position,
             marginH: config1.marginHorizontal,
             marginV: config1.marginVertical,
-            absoluteMargins: config1.absoluteMargins || false,
           },
           config2After: {
             position: config2.position,
@@ -494,7 +458,6 @@ export default function GlobalBackgroundLabelPreparation() {
             marginV: config2.marginVertical,
             offsetX: config2.offsetX || 0,
             offsetY: config2.offsetY || 0,
-            absoluteMargins: config2.absoluteMargins || false,
           },
         });
 

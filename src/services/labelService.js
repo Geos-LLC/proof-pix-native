@@ -4,7 +4,7 @@
  * Extracted to separate file to avoid circular dependencies
  */
 
-import { Image } from 'react-native';
+import { Image, PixelRatio, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import backgroundLabelPreparationService from './backgroundLabelPreparationService';
 import { getCachedLabeledPhoto, calculateSettingsHash } from './labelCacheService';
@@ -59,16 +59,43 @@ export async function ensureLabelForPhoto(photo) {
     }, 30000); // 30 seconds timeout for large images
 
     // Get image dimensions required for labeling service
+    console.log(`[LABEL] 🔍 BEFORE Image.getSize - photo.uri:`, photo.uri);
+    console.log(`[LABEL] 🔍 BEFORE Image.getSize - effectiveType:`, effectiveType);
+    console.log(`[LABEL] 🔍 BEFORE Image.getSize - format:`, photo.format);
     Image.getSize(
       photo.uri,
-      async (width, height) => {
+      async (dpWidth, dpHeight) => {
+        // CRITICAL FIX: On Android, Image.getSize returns dimensions in density-independent pixels (dp),
+        // NOT actual pixels. The native module works with actual pixel dimensions.
+        // We must convert dp to actual pixels for correct label positioning on combined photos.
+        //
+        // Example: A 2880x2560 pixel image on a 2x density device returns 1440x1280 from Image.getSize
+        // Without this fix, margin calculations are off by exactly the pixel ratio factor.
+        const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
+        const width = Platform.OS === 'android' ? Math.round(dpWidth * pixelRatio) : dpWidth;
+        const height = Platform.OS === 'android' ? Math.round(dpHeight * pixelRatio) : dpHeight;
+
         console.log(`[LABEL] 📐 Image dimensions for ${photo.id || photo.filename}:`, {
-          width,
-          height,
+          dpWidth,
+          dpHeight,
+          pixelRatio,
+          actualWidth: width,
+          actualHeight: height,
           uri: photo.uri?.substring(0, 60) + '...',
           type: effectiveType,
           format: photo.format,
           isStack: height > width,
+        });
+        console.log(`[LABEL] 🔍 CRITICAL DIMENSION CHECK (PIXEL-CORRECTED):`, {
+          dpWidth,
+          dpHeight,
+          actualWidth: width,
+          actualHeight: height,
+          halfWidth: Math.round(width / 2),
+          halfHeight: Math.round(height / 2),
+          isCombined: effectiveType === 'combined' || effectiveType === 'mix',
+          isOriginalFormat: photo.format?.includes('original'),
+          pixelRatio,
         });
 
         // Get settings hash for cache key
@@ -91,7 +118,7 @@ export async function ensureLabelForPhoto(photo) {
           halfWidth: Math.round(width / 2),
         });
 
-        // Queue the preparation
+        // Queue the preparation with ACTUAL PIXEL dimensions (not dp)
         backgroundLabelPreparationService.queuePreparation({
           photo: {
             ...photo,
@@ -100,8 +127,8 @@ export async function ensureLabelForPhoto(photo) {
             uri: photo.uri,
             mode: effectiveType // Map 'type' to 'mode' for the service
           },
-          width,
-          height,
+          width,  // Actual pixels, not dp
+          height, // Actual pixels, not dp
           settingsHash: prepSettingsHash,
           // If labels are disabled in settings, the service resolves with original URI immediately
           resolve: (labeledUri) => {

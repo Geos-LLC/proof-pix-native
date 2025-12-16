@@ -195,24 +195,28 @@ class ImageCompositor: NSObject {
         let offsetY = labelConfig["offsetY"] as? Int ?? 0
 
         // Determine horizontal position (x)
+        // offsetX is applied to ALL positions to support After label placement in combined photos
+        // For SIDE layout: After label needs offsetX = halfWidth to shift to right half
         let labelX: CGFloat
         if position.contains("left") {
-          labelX = scaledMarginH
+          labelX = scaledMarginH + CGFloat(offsetX)
         } else if position.contains("right") {
-          labelX = image.size.width - scaledMarginH - labelWidth
+          labelX = image.size.width - scaledMarginH - labelWidth + CGFloat(offsetX)
         } else {
-          // center - add offsetX to shift center position (e.g., to center of right half)
+          // center
           labelX = (image.size.width - labelWidth) / 2 + CGFloat(offsetX)
         }
 
         // Determine vertical position (y)
+        // offsetY is applied to ALL positions to support After label placement in combined photos
+        // For STACK layout: After label needs offsetY = halfHeight to shift to bottom half
         let labelY: CGFloat
         if position.contains("top") {
-          labelY = scaledMarginV
+          labelY = scaledMarginV + CGFloat(offsetY)
         } else if position.contains("bottom") {
-          labelY = image.size.height - scaledMarginV - labelHeight
+          labelY = image.size.height - scaledMarginV - labelHeight + CGFloat(offsetY)
         } else {
-          // middle - add offsetY to shift middle position (e.g., to middle of bottom half)
+          // middle
           labelY = (image.size.height - labelHeight) / 2 + CGFloat(offsetY)
         }
 

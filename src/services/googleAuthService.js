@@ -25,6 +25,10 @@ const STORAGE_KEYS = {
  * Gracefully handles Expo Go environment where native modules are not available
  */
 class GoogleAuthService {
+  constructor() {
+    this._configured = false;
+  }
+
   /**
    * Check if Google Sign-in is available (native module loaded)
    * @returns {boolean}
@@ -42,8 +46,18 @@ class GoogleAuthService {
       throw new Error('Google Sign-in is not available. Please ensure you are running a development build and the module is correctly linked.');
     }
   }
-  constructor() {
-    if (this.isAvailable()) {
+
+  /**
+   * Configure Google Sign-In (deferred to avoid startup crash)
+   * This is called lazily before any sign-in operation
+   * @private
+   */
+  ensureConfigured() {
+    if (this._configured || !this.isAvailable()) {
+      return;
+    }
+
+    try {
       // Configure with default scopes - these will be requested on sign-in
       // For iOS, scopes in configure() ensure the consent screen shows all permissions
       const defaultScopes = [
@@ -72,8 +86,19 @@ class GoogleAuthService {
 
       console.log(`[AUTH] Using webClientId: ${effectiveWebClientId}`);
 
+      // If no webClientId is available, configure without offlineAccess to prevent crash
+      // This allows basic sign-in but won't support server-side token exchange
       if (!effectiveWebClientId) {
-        console.warn('[AUTH] ⚠️ No web client ID configured. Google Sign-In may fail.');
+        console.warn('[AUTH] ⚠️ No web client ID configured. Configuring without offlineAccess.');
+        const configOptions = {
+          iosClientId: iosClientId,
+          scopes: defaultScopes,
+          offlineAccess: false, // Disable offline access when no webClientId
+        };
+        console.log('[AUTH] 📋 GoogleSignin.configure() called with (no webClientId):', JSON.stringify(configOptions, null, 2));
+        GoogleSignin.configure(configOptions);
+        this._configured = true;
+        return;
       }
 
       const configOptions = {
@@ -86,6 +111,11 @@ class GoogleAuthService {
 
       console.log('[AUTH] 📋 GoogleSignin.configure() called with:', JSON.stringify(configOptions, null, 2));
       GoogleSignin.configure(configOptions);
+      this._configured = true;
+    } catch (error) {
+      console.error('[AUTH] ❌ Error configuring Google Sign-In:', error);
+      // Mark as configured to avoid repeated failures
+      this._configured = true;
     }
   }
 
@@ -95,6 +125,7 @@ class GoogleAuthService {
    */
   async signInAsAdmin() {
     this.checkAvailability();
+    this.ensureConfigured();
     const scopes = [
       'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/userinfo.profile',
@@ -113,6 +144,7 @@ class GoogleAuthService {
    */
   async signInAsIndividual() {
     this.checkAvailability();
+    this.ensureConfigured();
     // Use full 'drive' scope instead of 'drive.file' to ensure we can search and create folders
     // 'drive.file' only works for files created by the app, which might not work for folder operations
     const scopes = [
@@ -267,6 +299,7 @@ class GoogleAuthService {
     if (!this.isAvailable()) {
       return false;
     }
+    this.ensureConfigured();
     return await GoogleSignin.isSignedIn();
   }
 
@@ -277,6 +310,7 @@ class GoogleAuthService {
    */
   async signInSilently() {
     this.checkAvailability();
+    this.ensureConfigured();
     try {
       const userInfo = await GoogleSignin.signInSilently();
       return userInfo;
@@ -292,6 +326,7 @@ class GoogleAuthService {
    */
   async getUserInfo() {
     this.checkAvailability();
+    this.ensureConfigured();
     try {
       const currentUser = await GoogleSignin.getCurrentUser();
       return currentUser ? currentUser.user : null;
@@ -308,6 +343,7 @@ class GoogleAuthService {
    */
   async signOut() {
     this.checkAvailability();
+    this.ensureConfigured();
     try {
       // Only sign out locally - do NOT revoke access
       // Revoking would invalidate the refresh token used by team members
@@ -332,7 +368,8 @@ class GoogleAuthService {
    */
   async signOutAndRevoke() {
     this.checkAvailability();
-    
+    this.ensureConfigured();
+
     // Check if user is signed in before attempting revoke
     let isSignedIn = false;
     try {
@@ -412,6 +449,7 @@ class GoogleAuthService {
     if (!this.isAvailable()) {
       return null;
     }
+    this.ensureConfigured();
     try {
       const userInfo = await GoogleSignin.getCurrentUser();
       return userInfo ? userInfo.user : null;
@@ -426,6 +464,7 @@ class GoogleAuthService {
    */
   async getTokens() {
     this.checkAvailability();
+    this.ensureConfigured();
     try {
       const tokens = await GoogleSignin.getTokens();
       return {
@@ -445,6 +484,7 @@ class GoogleAuthService {
    */
   async makeAuthenticatedRequest(url, options = {}) {
     this.checkAvailability();
+    this.ensureConfigured();
     try {
       // Try to get tokens - this will throw an error if user is not signed in
       let accessToken;

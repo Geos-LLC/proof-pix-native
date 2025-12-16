@@ -168,6 +168,14 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
             // Use getDouble() because JS numbers are always passed as Double through RN bridge
             android.util.Log.e("ImageCompositor", "  marginVertical VALUE: ${labelConfig.getDouble("marginVertical").toInt()}")
         }
+        android.util.Log.e("ImageCompositor", "  hasOffsetX: ${labelConfig.hasKey("offsetX")}")
+        if (labelConfig.hasKey("offsetX")) {
+            android.util.Log.e("ImageCompositor", "  offsetX VALUE: ${labelConfig.getDouble("offsetX").toInt()}")
+        }
+        android.util.Log.e("ImageCompositor", "  hasOffsetY: ${labelConfig.hasKey("offsetY")}")
+        if (labelConfig.hasKey("offsetY")) {
+            android.util.Log.e("ImageCompositor", "  offsetY VALUE: ${labelConfig.getDouble("offsetY").toInt()}")
+        }
         android.util.Log.e("ImageCompositor", "🟢🟢🟢 END ENTRY LOG 🟢🟢🟢")
 
         // Run on background thread
@@ -249,21 +257,25 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 val pos = position ?: "left-top"
 
                 // Determine horizontal position (x)
+                // offsetX is applied to ALL positions to support After label placement in combined photos
+                // For SIDE layout: After label needs offsetX = halfWidth to shift to right half
                 val labelX: Float = when {
-                    pos.contains("left") -> scaledMarginH.toFloat()
-                    pos.contains("right") -> labeledBitmap.width - scaledMarginH - labelWidth.toFloat()
+                    pos.contains("left") -> scaledMarginH.toFloat() + offsetX
+                    pos.contains("right") -> labeledBitmap.width - scaledMarginH - labelWidth.toFloat() + offsetX
                     else -> {
-                        // center - add offsetX to shift center position (e.g., to center of right half)
+                        // center
                         (labeledBitmap.width - labelWidth) / 2f + offsetX
                     }
                 }
 
                 // Determine vertical position (y)
+                // offsetY is applied to ALL positions to support After label placement in combined photos
+                // For STACK layout: After label needs offsetY = halfHeight to shift to bottom half
                 val labelY: Float = when {
-                    pos.contains("top") -> scaledMarginV.toFloat()
-                    pos.contains("bottom") -> labeledBitmap.height - scaledMarginV - labelHeight.toFloat()
+                    pos.contains("top") -> scaledMarginV.toFloat() + offsetY
+                    pos.contains("bottom") -> labeledBitmap.height - scaledMarginV - labelHeight.toFloat() + offsetY
                     else -> {
-                        // middle - add offsetY to shift middle position (e.g., to middle of bottom half)
+                        // middle
                         (labeledBitmap.height - labelHeight) / 2f + offsetY
                     }
                 }
@@ -283,6 +295,7 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 android.util.Log.e("ImageCompositor", "  absoluteMargins: $absoluteMargins")
                 android.util.Log.e("ImageCompositor", "  Input marginH: $marginH, marginV: $marginV")
                 android.util.Log.e("ImageCompositor", "  scaledMarginH: $scaledMarginH, scaledMarginV: $scaledMarginV")
+                android.util.Log.e("ImageCompositor", "  offsetX: $offsetX, offsetY: $offsetY")
                 android.util.Log.e("ImageCompositor", "  FINAL labelX: $labelX (halfWidth=${labeledBitmap.width/2})")
                 android.util.Log.e("ImageCompositor", "  FINAL labelY: $labelY (halfHeight=${labeledBitmap.height/2})")
                 android.util.Log.e("ImageCompositor", "  labelRect: left=${labelRect.left}, top=${labelRect.top}")

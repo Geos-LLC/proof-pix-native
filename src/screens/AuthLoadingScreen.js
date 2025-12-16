@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform, Text } from 'react-native';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 
@@ -7,6 +7,19 @@ export default function AuthLoadingScreen({ navigation }) {
   const { userName, userPlan, updateUserPlan, loading: settingsLoading } = useSettings();
   const { isLoading: adminLoading } = useAdmin();
   const [iapChecked, setIapChecked] = useState(false);
+  const [debugStatus, setDebugStatus] = useState('Initializing...');
+
+  // Debug logging on mount
+  useEffect(() => {
+    console.log('[AuthLoading] Component mounted');
+    console.log('[AuthLoading] Initial state - settingsLoading:', settingsLoading, 'adminLoading:', adminLoading);
+  }, []);
+
+  // Log state changes
+  useEffect(() => {
+    console.log('[AuthLoading] State update - settingsLoading:', settingsLoading, 'adminLoading:', adminLoading, 'iapChecked:', iapChecked);
+    setDebugStatus(`Settings: ${settingsLoading ? 'loading' : 'ready'}, Admin: ${adminLoading ? 'loading' : 'ready'}, IAP: ${iapChecked ? 'checked' : 'pending'}`);
+  }, [settingsLoading, adminLoading, iapChecked]);
 
   // Auto-restore IAP subscriptions on app launch (iOS only)
   // IMPORTANT: Disabled in development mode to prevent constant password prompts
@@ -112,6 +125,9 @@ export default function AuthLoadingScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" />
+      {__DEV__ && (
+        <Text style={styles.debugText}>{debugStatus}</Text>
+      )}
     </View>
   );
 }
@@ -122,5 +138,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#fff',
+  },
+  debugText: {
+    marginTop: 20,
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
 });

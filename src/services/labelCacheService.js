@@ -14,7 +14,18 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 // v5: Fixed After label margin double-scaling issue on combined photos
 // v6: Added support for all 9 label positions and proper offset handling for combined photos
 // v7: Fixed After label position calculation for combined photos (absoluteMargins + correct offset)
-const CACHE_VERSION = 7;
+// v8: CRITICAL FIX - Image.getSize on Android returns dp (density-independent pixels), not actual pixels.
+//     The native module works with actual pixels, so we now multiply by PixelRatio.get() on Android.
+//     This was causing After labels to appear at ~half the correct position on combined photos.
+// v9: Switched to offset-based approach for After label positioning. No more absoluteMargins or pre-scaled margins.
+//     Native code handles all margin scaling, we only provide pixel offsets to shift label to After half.
+//     This keeps label sizes consistent across different devices and screen densities.
+// v10: Fixed native code (Android & iOS) to apply offsetX/offsetY for ALL position types (left/right/top/bottom).
+//      Previously offsets were only applied for center/middle positions, causing After labels to appear
+//      at the same position as Before labels on combined photos.
+// v11: CRITICAL FIX - Android native code was using getInt() instead of getDouble().toInt() for reading
+//      offsetX/offsetY/fontSize/margins from JS config. This caused values to be read incorrectly or as 0.
+const CACHE_VERSION = 11;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid

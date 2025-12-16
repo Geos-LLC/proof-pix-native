@@ -18,7 +18,8 @@
       "Bash(gradlew signingReport:*)",
       "Bash(git show:*)",
       "Bash(git checkout:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(git merge-base:*)"
     ],
     "deny": [],
     "ask": []

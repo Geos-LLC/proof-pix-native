@@ -1,5 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, StyleSheet, Text, ActivityIndicator, AppState } from 'react-native';
+import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox } from 'react-native';
+
+// Log app startup
+console.log('[App] ====== APP STARTING ======');
+console.log('[App] Platform detected, beginning imports...');
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -14,9 +18,14 @@ import { RobotoMono_700Bold } from '@expo-google-fonts/roboto-mono';
 import { Lato_700Bold } from '@expo-google-fonts/lato';
 import { Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 import { Oswald_600SemiBold } from '@expo-google-fonts/oswald';
+console.log('[App] Importing Firebase...');
 import firebase from '@react-native-firebase/app';
 import analytics from '@react-native-firebase/analytics';
+console.log('[App] Firebase imported successfully');
+
+console.log('[App] Initializing i18n...');
 import './src/i18n/i18n'; // Initialize i18n
+console.log('[App] i18n initialized');
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
@@ -39,7 +48,51 @@ import VisionCameraTest from './src/screens/VisionCameraTest';
 import GlobalBackgroundLabelPreparation from './src/components/GlobalBackgroundLabelPreparation';
 import GlobalBackgroundCombinedPhotoCreator from './src/components/GlobalBackgroundCombinedPhotoCreator';
 
+console.log('[App] All imports completed successfully');
+
 const Stack = createNativeStackNavigator();
+
+// Error Boundary for debugging - shows errors on screen in both dev and prod
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('[ErrorBoundary] Caught error:', error);
+    console.error('[ErrorBoundary] Error info:', errorInfo);
+    this.setState({ errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', padding: 20 }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#f00', marginBottom: 10 }}>
+            App Error
+          </Text>
+          <Text style={{ fontSize: 14, color: '#333', textAlign: 'center', marginBottom: 10 }}>
+            {this.state.error?.toString()}
+          </Text>
+          <Text style={{ fontSize: 10, color: '#666', textAlign: 'center' }}>
+            {this.state.errorInfo?.componentStack?.slice(0, 500)}
+          </Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Wrap entire app with ErrorBoundary at the top level
+const AppWithErrorBoundary = ({ children }) => (
+  <ErrorBoundary>{children}</ErrorBoundary>
+);
 
 // Navigator component that uses settings
 function AppNavigator() {
@@ -211,12 +264,14 @@ const linking = {
 let globalCheckTrialNotifications = null;
 
 export default function App() {
+  console.log('[App] App component rendering...');
   const navigationRef = useRef();
   const routeNameRef = useRef();
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
   const [trialNotification, setTrialNotification] = useState(null);
   const [showTrialModal, setShowTrialModal] = useState(false);
 
+  console.log('[App] Loading fonts...');
   const [fontsLoaded] = useFonts({
     Montserrat_700Bold,
     PlayfairDisplay_700Bold,
@@ -409,11 +464,12 @@ export default function App() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <SafeAreaProvider>
-        <SettingsProvider>
-          <AdminProvider>
-            <PhotoProvider>
+    <ErrorBoundary>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <SafeAreaProvider>
+          <SettingsProvider>
+            <AdminProvider>
+              <PhotoProvider>
               <NavigationContainer
                 ref={navigationRef}
                 linking={linking}
@@ -487,17 +543,18 @@ export default function App() {
           </AdminProvider>
         </SettingsProvider>
         
-        {/* Trial Notification Modal */}
-        <TrialNotificationModal
-          visible={showTrialModal}
-          notification={trialNotification}
-          onClose={handleTrialModalClose}
-          onUpgrade={handleTrialUpgrade}
-          onRefer={handleTrialRefer}
-          onCTA={handleTrialCTA}
-        />
-      </SafeAreaProvider>
-    </View>
+          {/* Trial Notification Modal */}
+          <TrialNotificationModal
+            visible={showTrialModal}
+            notification={trialNotification}
+            onClose={handleTrialModalClose}
+            onUpgrade={handleTrialUpgrade}
+            onRefer={handleTrialRefer}
+            onCTA={handleTrialCTA}
+          />
+        </SafeAreaProvider>
+      </View>
+    </ErrorBoundary>
   );
 }
 

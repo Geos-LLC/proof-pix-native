@@ -935,7 +935,6 @@ export default function GalleryScreen({ navigation, route }) {
                     // Calculate half dimensions for label position offsets
                     const halfWidth = Math.round(combinedDimensions.width / 2);
                     const halfHeight = Math.round(combinedDimensions.height / 2);
-                    const scale = combinedDimensions.width / 1000.0;
 
                     // Before label config - no adjustments needed (positioned in top-left half)
                     const beforeLabelConfig = {
@@ -949,11 +948,9 @@ export default function GalleryScreen({ navigation, route }) {
                     };
 
                     // After label config - needs position adjustments based on layout
+                    // We use offsetX/offsetY to shift the After label to the correct half.
+                    // The native code handles all margin scaling, keeping labels proportional.
                     const afterPosition = convertLabelPosition(afterLabelPosition || 'right-top');
-                    const baseMarginH = labelMarginHorizontal || 20;
-                    const baseMarginV = labelMarginVertical || 20;
-                    const scaledBaseMarginH = Math.max(baseMarginH * scale, 10);
-                    const scaledBaseMarginV = Math.max(baseMarginV * scale, 10);
 
                     const afterLabelConfig = {
                         position: afterPosition,
@@ -965,26 +962,25 @@ export default function GalleryScreen({ navigation, route }) {
                         padding: 16,
                     };
 
-                    // Adjust After label position based on layout (same logic as GlobalBackgroundLabelPreparation)
+                    // Adjust After label position based on layout using offsets
+                    // This keeps margins relative and lets native code scale everything proportionally
                     if (isStack) {
                         // STACK layout: After photo is in BOTTOM half
                         if (afterPosition.includes('top')) {
-                            // Top of After half = halfHeight + baseMargin from top
-                            afterLabelConfig.marginVertical = Math.round(scaledBaseMarginV + halfHeight);
-                            afterLabelConfig.absoluteMargins = true;
+                            // Shift label down by halfHeight to position at top of After (bottom) half
+                            afterLabelConfig.offsetY = halfHeight;
                         } else if (afterPosition.includes('middle')) {
-                            // Middle of After half: offsetY = halfHeight / 2
+                            // Shift center down by halfHeight/2 to center in After half
                             afterLabelConfig.offsetY = Math.round(halfHeight / 2);
                         }
                         // "bottom" positions don't need offset
                     } else {
                         // SIDE layout: After photo is in RIGHT half
                         if (afterPosition.includes('left')) {
-                            // Left of After half = halfWidth + baseMargin from left
-                            afterLabelConfig.marginHorizontal = Math.round(scaledBaseMarginH + halfWidth);
-                            afterLabelConfig.absoluteMargins = true;
+                            // Shift label right by halfWidth to position at left of After (right) half
+                            afterLabelConfig.offsetX = halfWidth;
                         } else if (afterPosition.includes('center')) {
-                            // Center of After half: offsetX = halfWidth / 2
+                            // Shift center right by halfWidth/2 to center in After half
                             afterLabelConfig.offsetX = Math.round(halfWidth / 2);
                         }
                         // "right" positions don't need offset
