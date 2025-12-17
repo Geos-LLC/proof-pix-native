@@ -104,6 +104,14 @@ export default function CameraScreen({ route, navigation }) {
   const cameraScale = useRef(new Animated.Value(1)).current;
   const cameraTranslateY = useRef(new Animated.Value(0)).current;
   const galleryOpacity = useRef(new Animated.Value(0)).current;
+  // Photo capture animation state
+  const [captureAnimationUri, setCaptureAnimationUri] = useState(null);
+  const captureAnimScale = useRef(new Animated.Value(1)).current;
+  const captureAnimTranslateX = useRef(new Animated.Value(0)).current;
+  const captureAnimTranslateY = useRef(new Animated.Value(0)).current;
+  const captureAnimOpacity = useRef(new Animated.Value(1)).current;
+  const thumbnailRef = useRef(null);
+  const cameraContainerRef = useRef(null);
   const currentRoomRef = useRef(room);
   const dimensionsRef = useRef(dimensions);
   const showCarouselRef = useRef(showCarousel);
@@ -1157,6 +1165,9 @@ export default function CameraScreen({ route, navigation }) {
       });
       const photoUri = `file://${photo.path}`;
 
+      // Start capture animation (runs in parallel with photo processing)
+      runCaptureAnimation(photoUri);
+
       if (mode === 'before') {
         await handleBeforePhoto(photoUri);
       } else if (mode === 'after') {
@@ -1168,6 +1179,79 @@ export default function CameraScreen({ route, navigation }) {
       setIsCapturing(false);
     }
   };
+
+  // Animate captured photo flying to thumbnail
+  const runCaptureAnimation = useCallback((photoUri) => {
+    // Reset animation values
+    captureAnimScale.setValue(1);
+    captureAnimTranslateX.setValue(0);
+    captureAnimTranslateY.setValue(0);
+    captureAnimOpacity.setValue(1);
+
+    // Set the captured photo URI to show the overlay
+    setCaptureAnimationUri(photoUri);
+
+    const screenWidth = dimensions.width;
+    const screenHeight = dimensions.height;
+
+    // The animated image starts centered on screen (due to justifyContent/alignItems center)
+    // Thumbnail is in bottom controls area: left side, near bottom of screen
+    // Bottom controls: paddingBottom: 20, mainControlRow has 3 equal buttonContainers
+    // Thumbnail position: left 1/6 of screen (center of left 1/3), bottom ~60px from screen bottom
+
+    // Thumbnail dimensions from styles
+    const thumbnailWidth = cameraViewMode === 'landscape' ? 100 : 56;
+    const thumbnailHeight = cameraViewMode === 'landscape' ? 75 : 84;
+
+    // The overlay image is 100% width and 70% height, centered
+    // Starting center: (screenWidth/2, screenHeight/2)
+    const startCenterX = screenWidth / 2;
+    const startCenterY = screenHeight / 2;
+
+    // Target thumbnail center position
+    // Left buttonContainer is at ~screenWidth/6 from left edge
+    // Bottom controls are ~100px from bottom (paddingBottom 20 + button height 84)
+    const thumbnailCenterX = screenWidth / 6;
+    const thumbnailCenterY = screenHeight - 60 - (thumbnailHeight / 2); // ~60px from bottom edge
+
+    // Calculate required translation (target - start)
+    const targetX = thumbnailCenterX - startCenterX;
+    const targetY = thumbnailCenterY - startCenterY;
+
+    // Scale: from full size to thumbnail size
+    const imageHeight = screenHeight * 0.7; // 70% as per style
+    const targetScale = thumbnailHeight / imageHeight;
+
+    // Run the animation
+    Animated.parallel([
+      Animated.timing(captureAnimScale, {
+        toValue: targetScale,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.timing(captureAnimTranslateX, {
+        toValue: targetX,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.timing(captureAnimTranslateY, {
+        toValue: targetY,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.delay(250),
+        Animated.timing(captureAnimOpacity, {
+          toValue: 0,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start(() => {
+      // Clear the animation URI when done
+      setCaptureAnimationUri(null);
+    });
+  }, [dimensions, cameraViewMode, captureAnimScale, captureAnimTranslateX, captureAnimTranslateY, captureAnimOpacity]);
 
   // Helper function to prepare combined photo with labels in background
   // Now uses global service that stays mounted regardless of navigation
@@ -2948,6 +3032,31 @@ export default function CameraScreen({ route, navigation }) {
         {renderOverlayMode()}
         {renderLabelView()}
       </Animated.View>
+
+      {/* Photo capture animation overlay */}
+      {captureAnimationUri && (
+        <Animated.View
+          style={[
+            styles.captureAnimationOverlay,
+            {
+              opacity: captureAnimOpacity,
+              transform: [
+                { translateX: captureAnimTranslateX },
+                { translateY: captureAnimTranslateY },
+                { scale: captureAnimScale },
+              ],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <Image
+            source={{ uri: captureAnimationUri }}
+            style={styles.captureAnimationImage}
+            resizeMode="cover"
+          />
+        </Animated.View>
+      )}
+
       {/* Background label preparation is now handled by GlobalBackgroundLabelPreparation component */}
       {/* No local Modals needed - the global component stays mounted regardless of navigation */}
     </View>
@@ -3865,5 +3974,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Photo capture animation styles
+  captureAnimationOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2000,
+    elevation: 2000,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  captureAnimationImage: {
+    width: '100%',
+    height: '70%',
+    borderRadius: 8,
   },
 });
