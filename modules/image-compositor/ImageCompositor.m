@@ -20,4 +20,10 @@ RCT_EXTERN_METHOD(addLabelToImage:(NSString *)imageUri
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(addWatermarkToImage:(NSString *)imageUri
+                  watermarkText:(NSString *)watermarkText
+                  watermarkConfig:(NSDictionary *)watermarkConfig
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

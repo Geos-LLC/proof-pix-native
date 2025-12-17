@@ -195,3 +195,49 @@ export async function addLabelToImage(imageUri, labelText, labelConfig = {}) {
     throw error;
   }
 }
+
+/**
+ * Add a watermark to an image at full resolution using native code
+ * @param {string} imageUri - URI of the source image
+ * @param {string} watermarkText - Text to display as watermark
+ * @param {object} watermarkConfig - Watermark configuration
+ * @param {string} watermarkConfig.color - Watermark text color in hex format (e.g., '#FFD700')
+ * @param {number} watermarkConfig.opacity - Opacity of the watermark (0.0 to 1.0)
+ * @param {number} watermarkConfig.fontSize - Base font size (will be scaled based on image dimensions)
+ * @returns {Promise<string>} - URI of the watermarked image
+ */
+export async function addWatermarkToImage(imageUri, watermarkText, watermarkConfig = {}) {
+  const callId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  console.log(`[ImageCompositor:${callId}] 💧 addWatermarkToImage CALLED`, {
+    imageUri: imageUri?.substring(0, 50) + '...',
+    watermarkText,
+    color: watermarkConfig.color,
+    opacity: watermarkConfig.opacity,
+  });
+
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+    console.warn(`[ImageCompositor:${callId}] ❌ Unsupported platform:`, Platform.OS);
+    throw new Error('Watermark addition is only supported on native mobile platforms');
+  }
+
+  if (!ImageCompositor || !ImageCompositor.addWatermarkToImage) {
+    console.error(`[ImageCompositor:${callId}] ❌ addWatermarkToImage method not found.`);
+    throw new Error('ImageCompositor.addWatermarkToImage is not available');
+  }
+
+  try {
+    console.log(`[ImageCompositor:${callId}] 📤 Sending watermark to native module...`, {
+      platform: Platform.OS,
+      watermarkText,
+      watermarkConfig,
+    });
+
+    const resultUri = await ImageCompositor.addWatermarkToImage(imageUri, watermarkText, watermarkConfig);
+
+    console.log(`[ImageCompositor:${callId}] ✅ SUCCESS - resultUri:`, resultUri?.substring(0, 50) + '...');
+    return resultUri;
+  } catch (error) {
+    console.error(`[ImageCompositor:${callId}] ❌ ERROR:`, error);
+    throw error;
+  }
+}

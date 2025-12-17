@@ -336,6 +336,107 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    @ReactMethod
+    fun addWatermarkToImage(
+        imageUri: String,
+        watermarkText: String,
+        watermarkConfig: ReadableMap,
+        promise: Promise
+    ) {
+        android.util.Log.d("ImageCompositor", "💧 addWatermarkToImage called")
+        android.util.Log.d("ImageCompositor", "  watermarkText: $watermarkText")
+
+        // Run on background thread
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Load original bitmap
+                var bitmap = loadBitmap(imageUri)
+                if (bitmap == null) {
+                    promise.reject("LOAD_ERROR", "Failed to load image for watermarking")
+                    return@launch
+                }
+
+                // Downscale if image is too large
+                val originalWidth = bitmap.width
+                val originalHeight = bitmap.height
+                if (originalWidth > maxImageDimension || originalHeight > maxImageDimension) {
+                    android.util.Log.d("ImageCompositor", "⚠️ Image too large ($originalWidth x $originalHeight), downscaling...")
+                    val scaleFactor = min(maxImageDimension.toFloat() / originalWidth, maxImageDimension.toFloat() / originalHeight)
+                    val newWidth = (originalWidth * scaleFactor).toInt()
+                    val newHeight = (originalHeight * scaleFactor).toInt()
+                    val scaledBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+                    bitmap.recycle()
+                    bitmap = scaledBitmap
+                    android.util.Log.d("ImageCompositor", "✅ Downscaled to: ${bitmap.width} x ${bitmap.height}")
+                }
+
+                // Create a mutable copy to draw on
+                val watermarkedBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+                bitmap.recycle()
+
+                val canvas = Canvas(watermarkedBitmap)
+
+                // Parse watermark configuration
+                val colorStr = if (watermarkConfig.hasKey("color")) watermarkConfig.getString("color") else "#FFD700"
+                val textColor = try {
+                    Color.parseColor(colorStr)
+                } catch (e: Exception) {
+                    Color.parseColor("#FFD700")
+                }
+                val opacity = if (watermarkConfig.hasKey("opacity")) watermarkConfig.getDouble("opacity").toFloat() else 0.5f
+                val baseFontSize = if (watermarkConfig.hasKey("fontSize")) watermarkConfig.getDouble("fontSize").toInt() else 32
+
+                // Calculate scaled font size based on image width
+                val scale = watermarkedBitmap.width / 1000f
+                val scaledFontSize = (baseFontSize * scale).coerceAtLeast(16f)
+
+                // Setup text paint with opacity
+                val textPaint = Paint().apply {
+                    color = textColor
+                    alpha = (255 * opacity).toInt()
+                    textSize = scaledFontSize
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    isAntiAlias = true
+                }
+
+                // Measure text
+                val textBounds = Rect()
+                textPaint.getTextBounds(watermarkText, 0, watermarkText.length, textBounds)
+
+                // Position at bottom-right corner with margin
+                val margin = (20 * scale).toInt().coerceAtLeast(10)
+                val textX = watermarkedBitmap.width - textBounds.width() - margin.toFloat() - textBounds.left
+                val textY = watermarkedBitmap.height - margin.toFloat() - textBounds.bottom
+
+                android.util.Log.d("ImageCompositor", "💧 Watermark position: x=$textX, y=$textY, fontSize=$scaledFontSize, opacity=$opacity")
+
+                // Draw watermark text (no background, just text with opacity)
+                canvas.drawText(watermarkText, textX, textY, textPaint)
+
+                // Save to file
+                val cacheDir = reactApplicationContext.cacheDir
+                val outputFile = File(cacheDir, "watermarked_${System.currentTimeMillis()}.jpg")
+
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(outputFile).use { out ->
+                        watermarkedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                    }
+                }
+
+                watermarkedBitmap.recycle()
+
+                android.util.Log.d("ImageCompositor", "💧 Watermark applied successfully: ${outputFile.absolutePath}")
+
+                // Return file URI
+                promise.resolve("file://${outputFile.absolutePath}")
+
+            } catch (e: Exception) {
+                android.util.Log.e("ImageCompositor", "❌ Watermark error: ${e.message}")
+                promise.reject("WATERMARK_ERROR", "Failed to add watermark to image: ${e.message}", e)
+            }
+        }
+    }
+
     private fun loadBitmap(uriString: String): Bitmap? {
         android.util.Log.d("ImageCompositor", "📂 loadBitmap called with: $uriString")
         return try {

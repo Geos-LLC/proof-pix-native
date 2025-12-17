@@ -5,7 +5,7 @@ export default {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
     owner: "sayapingeorge",
-    version: process.env.VERSION || "1.2.1",
+    version: process.env.VERSION || "1.2.2",
     orientation: "default",
     icon: "./assets/PP_logo.png",
     userInterfaceStyle: "light",
@@ -26,7 +26,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "11",
+      buildNumber: "1",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -59,7 +59,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 25,
+      versionCode: 1,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",

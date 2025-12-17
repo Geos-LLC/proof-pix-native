@@ -9,8 +9,10 @@ import backgroundLabelPreparationService from '../services/backgroundLabelPrepar
 import { saveCachedLabeledPhoto } from '../services/labelCacheService';
 import { PHOTO_MODES } from '../constants/rooms';
 import { useSettings } from '../context/SettingsContext';
-import { addLabelToImage, compositeImages, calculateAfterLabelOffsets } from '../utils/imageCompositor';
+import { addLabelToImage, compositeImages, calculateAfterLabelOffsets, addWatermarkToImage } from '../utils/imageCompositor';
 import { useTranslation } from 'react-i18next';
+
+const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.com';
 
 export default function GlobalBackgroundLabelPreparation() {
   const [preparingPhoto, setPreparingPhoto] = useState(null);
@@ -24,6 +26,11 @@ export default function GlobalBackgroundLabelPreparation() {
     labelSize,
     labelMarginHorizontal,
     labelMarginVertical,
+    showWatermark,
+    customWatermarkEnabled,
+    watermarkText,
+    watermarkColor,
+    watermarkOpacity,
   } = useSettings();
   const { t } = useTranslation();
 
@@ -476,6 +483,44 @@ export default function GlobalBackgroundLabelPreparation() {
         console.log(`[BackgroundLabelPrep:${taskId}] ✅ Label applied:`, labeledUri?.substring(0, 50));
       }
 
+      // Apply watermark if enabled
+      if (showWatermark && labeledUri) {
+        console.log(`[BackgroundLabelPrep:${taskId}] 💧 Applying watermark...`);
+        try {
+          // Determine watermark text based on custom watermark setting
+          const wmText = customWatermarkEnabled ? (watermarkText || DEFAULT_WATERMARK_TEXT) : DEFAULT_WATERMARK_TEXT;
+
+          // Get watermark color - use custom color or fall back to label background color
+          const wmColor = customWatermarkEnabled ? (watermarkColor || labelBackgroundColor || '#FFD700') : (labelBackgroundColor || '#FFD700');
+
+          // Get watermark opacity
+          const wmOpacity = typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5;
+
+          const watermarkConfig = {
+            color: wmColor,
+            opacity: wmOpacity,
+            fontSize: 32, // Base font size for watermark (will be scaled by native code)
+          };
+
+          console.log(`[BackgroundLabelPrep:${taskId}] 💧 Watermark config:`, {
+            text: wmText,
+            ...watermarkConfig,
+          });
+
+          const watermarkedUri = await addWatermarkToImage(labeledUri, wmText, watermarkConfig);
+
+          if (watermarkedUri) {
+            labeledUri = watermarkedUri;
+            console.log(`[BackgroundLabelPrep:${taskId}] ✅ Watermark applied:`, labeledUri?.substring(0, 50));
+          }
+        } catch (watermarkError) {
+          console.error(`[BackgroundLabelPrep:${taskId}] ⚠️ Watermark failed, using labeled image without watermark:`, watermarkError);
+          // Continue with labeled image without watermark
+        }
+      } else {
+        console.log(`[BackgroundLabelPrep:${taskId}] ⏭️ Watermark skipped (showWatermark=${showWatermark}, labeledUri exists=${!!labeledUri})`);
+      }
+
       console.log(`[BackgroundLabelPrep:${taskId}] 💾 Saving to cache...`);
 
       // Save to cache
@@ -524,7 +569,7 @@ export default function GlobalBackgroundLabelPreparation() {
       setPreparingPhoto(null);
       setIsProcessing(false);
     }
-  }, [preparingPhoto, isProcessing, showLabels, beforeLabelPosition, afterLabelPosition, labelBackgroundColor, labelTextColor, labelSize, labelMarginHorizontal, labelMarginVertical, t]);
+  }, [preparingPhoto, isProcessing, showLabels, beforeLabelPosition, afterLabelPosition, labelBackgroundColor, labelTextColor, labelSize, labelMarginHorizontal, labelMarginVertical, showWatermark, customWatermarkEnabled, watermarkText, watermarkColor, watermarkOpacity, t]);
 
   // Process photo when preparingPhoto changes
   useEffect(() => {

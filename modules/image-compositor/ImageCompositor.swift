@@ -286,6 +286,102 @@ class ImageCompositor: NSObject {
     }
   }
 
+  @objc
+  func addWatermarkToImage(
+    _ imageUri: String,
+    watermarkText: String,
+    watermarkConfig: NSDictionary,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      do {
+        // Load image
+        guard var image = self.loadImage(from: imageUri) else {
+          reject("LOAD_ERROR", "Failed to load image", nil)
+          return
+        }
+
+        // Downscale if image is too large to prevent memory issues
+        let originalSize = image.size
+        if originalSize.width > self.maxImageDimension || originalSize.height > self.maxImageDimension {
+          print("[ImageCompositor] ⚠️ Image too large (\(originalSize.width) x \(originalSize.height)), downscaling...")
+          let scaleFactor = min(self.maxImageDimension / originalSize.width, self.maxImageDimension / originalSize.height)
+          let newSize = CGSize(width: originalSize.width * scaleFactor, height: originalSize.height * scaleFactor)
+
+          let renderer = UIGraphicsImageRenderer(size: newSize)
+          image = renderer.image { context in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+          }
+          print("[ImageCompositor] ✅ Downscaled to: \(image.size.width) x \(image.size.height)")
+        }
+
+        // Parse watermark configuration
+        let textColorHex = watermarkConfig["textColor"] as? String ?? "#FFD700"
+        let opacity = watermarkConfig["opacity"] as? CGFloat ?? 0.5
+        let fontSize = watermarkConfig["fontSize"] as? Int ?? 14
+        let marginH = watermarkConfig["marginHorizontal"] as? Int ?? 10
+        let marginV = watermarkConfig["marginVertical"] as? Int ?? 10
+
+        let textColor = self.hexToUIColor(hex: textColorHex).withAlphaComponent(opacity)
+
+        // Calculate scaled sizes based on image dimensions
+        let scale = image.size.width / 1000.0
+        let scaledFontSize = max(CGFloat(fontSize) * scale, 12.0)
+        let scaledMarginH = max(CGFloat(marginH) * scale, 10.0)
+        let scaledMarginV = max(CGFloat(marginV) * scale, 10.0)
+
+        // Create text attributes
+        let font = UIFont.boldSystemFont(ofSize: scaledFontSize)
+        let textAttributes: [NSAttributedString.Key: Any] = [
+          .font: font,
+          .foregroundColor: textColor
+        ]
+
+        // Measure text
+        let textSize = (watermarkText as NSString).size(withAttributes: textAttributes)
+
+        // Position at bottom-right corner
+        let textX = image.size.width - scaledMarginH - textSize.width
+        let textY = image.size.height - scaledMarginV - textSize.height
+
+        print("[ImageCompositor] 🔵 Watermark position: x=\(textX), y=\(textY), text='\(watermarkText)'")
+
+        // Use UIGraphicsImageRenderer
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+
+        let watermarkedImage = renderer.image { context in
+          // Draw original image
+          image.draw(at: .zero)
+
+          // Draw watermark text (no background, just text with opacity)
+          let textRect = CGRect(x: textX, y: textY, width: textSize.width, height: textSize.height)
+          (watermarkText as NSString).draw(in: textRect, withAttributes: textAttributes)
+        }
+
+        // Save to temp file
+        guard let imageData = watermarkedImage.jpegData(compressionQuality: 0.85) else {
+          reject("E_JPEG", "Failed to create JPEG data", nil)
+          return
+        }
+
+        let tempDir = NSTemporaryDirectory()
+        let filename = "watermarked_\(Int(Date().timeIntervalSince1970 * 1000)).jpg"
+        let filepath = (tempDir as NSString).appendingPathComponent(filename)
+        let fileURL = URL(fileURLWithPath: filepath)
+
+        try imageData.write(to: fileURL)
+
+        resolve(fileURL.absoluteString)
+
+      } catch {
+        reject("WATERMARK_ERROR", "Failed to add watermark to image: \(error.localizedDescription)", error)
+      }
+    }
+  }
+
   private func hexToUIColor(hex: String) -> UIColor {
     var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
     hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")

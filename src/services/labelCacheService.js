@@ -63,7 +63,10 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 //      calculation now accounts for this downscaling. When image dimensions exceed 4096, the offsets
 //      are scaled down proportionally to match what the native module will actually see.
 //      Example: 5760x3864 image → native scales to 4096x2746 (factor 0.711) → offsets scaled too.
-const CACHE_VERSION = 21;
+// v22: Added watermark support to uploaded photos. Watermark settings (showWatermark, customWatermarkEnabled,
+//      watermarkText, watermarkColor, watermarkOpacity) are now included in the settings hash so cached
+//      photos are properly invalidated when watermark settings change.
+const CACHE_VERSION = 22;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid
@@ -79,6 +82,11 @@ export const calculateSettingsHash = (settings) => {
     labelFontFamily,
     labelMarginVertical,
     labelMarginHorizontal,
+    showWatermark,
+    customWatermarkEnabled,
+    watermarkText,
+    watermarkColor,
+    watermarkOpacity,
   } = settings;
 
   // Create a string representation of all settings including cache version
@@ -93,6 +101,12 @@ export const calculateSettingsHash = (settings) => {
     labelFontFamily: labelFontFamily || 'system',
     labelMarginVertical: labelMarginVertical || 10,
     labelMarginHorizontal: labelMarginHorizontal || 10,
+    // Watermark settings
+    showWatermark: showWatermark ?? true,
+    customWatermarkEnabled: customWatermarkEnabled || false,
+    watermarkText: customWatermarkEnabled ? (watermarkText || 'Created with ProofPix.com') : 'Created with ProofPix.com',
+    watermarkColor: watermarkColor || '#FFD700',
+    watermarkOpacity: typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5,
   };
 
   const settingsString = JSON.stringify(settingsObj);

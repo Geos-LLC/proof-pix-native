@@ -98,7 +98,7 @@ export const SettingsProvider = ({ children }) => {
   const [labelMarginHorizontal, setLabelMarginHorizontal] = useState(10); // Left/right margin
   const [userName, setUserName] = useState('');
   const [location, setLocation] = useState('tampa'); // Default to Tampa
-  const [useFolderStructure, setUseFolderStructure] = useState(true);
+  const [useFolderStructure, setUseFolderStructure] = useState(false); // Default OFF - flat structure
   const [enabledFolders, setEnabledFolders] = useState({ before: true, after: true, combined: true });
   const [labelLanguage, setLabelLanguage] = useState('en');
   const [sectionLanguage, setSectionLanguage] = useState('en');
@@ -160,7 +160,7 @@ export const SettingsProvider = ({ children }) => {
         setLabelMarginHorizontal(settings.labelMarginHorizontal ?? 10);
         setUserName(settings.userName ?? '');
         setLocation(settings.location ?? 'tampa');
-        setUseFolderStructure(settings.useFolderStructure ?? true);
+        setUseFolderStructure(settings.useFolderStructure ?? false); // Default OFF - flat structure
         if (settings.enabledFolders) {
           const categories = settings.enabledFolders;
           if (typeof categories.before === 'boolean' && typeof categories.after === 'boolean' && typeof categories.combined === 'boolean') {
