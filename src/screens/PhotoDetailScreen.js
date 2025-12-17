@@ -9,7 +9,9 @@ import {
   Dimensions,
   Share,
   ActivityIndicator,
-  ScrollView
+  ScrollView,
+  Platform,
+  PixelRatio
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
@@ -90,7 +92,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
             newDisplayUriMap[photoItem.id] = photoItem.uri;
 
             // Queue photo for lazy re-labeling (will be processed in background)
-            // NOTE: For file:// URIs, Image.getSize returns actual pixel dimensions directly (no PixelRatio needed)
+            // Image.getSize returns actual file pixel dimensions for local file:// URIs.
+            // No PixelRatio conversion needed - native module loads the same file and gets the same dimensions.
             RNImage.getSize(photoItem.uri, (width, height) => {
               console.log(`[PhotoDetailScreen] Photo dimensions: ${width}x${height}`);
 

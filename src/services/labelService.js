@@ -64,35 +64,32 @@ export async function ensureLabelForPhoto(photo) {
     console.log(`[LABEL] 🔍 BEFORE Image.getSize - format:`, photo.format);
     Image.getSize(
       photo.uri,
-      async (rawWidth, rawHeight) => {
-        // NOTE: Image.getSize behavior on Android depends on URI type:
-        // - For file:// URIs (local files): returns ACTUAL pixel dimensions
-        // - For content:// or remote URIs: may return dp (density-independent pixels)
-        //
-        // Since we're working with local camera photos (file:// URIs), Image.getSize
-        // returns the actual pixel dimensions directly. No PixelRatio conversion needed.
-        // The native ImageCompositor module also reads the actual file and gets actual pixels.
-        //
-        // DO NOT apply PixelRatio conversion - this would incorrectly scale the dimensions
-        // and cause After label offsets to be wrong.
-        const width = rawWidth;
-        const height = rawHeight;
+      async (width, height) => {
+        // CRITICAL: On Android, Image.getSize returns dp (density-independent pixels), NOT actual file pixels.
+        // The native labeling module (BitmapFactory) loads the image at actual pixel dimensions.
+        // We must multiply by PixelRatio to match what the native module sees.
+        const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
+        const actualWidth = Math.round(width * pixelRatio);
+        const actualHeight = Math.round(height * pixelRatio);
 
         console.log(`[LABEL] 📐 Image dimensions for ${photo.id || photo.filename}:`, {
-          rawWidth,
-          rawHeight,
-          width,
-          height,
+          dpWidth: width,
+          dpHeight: height,
+          pixelRatio,
+          actualWidth,
+          actualHeight,
           uri: photo.uri?.substring(0, 60) + '...',
           type: effectiveType,
           format: photo.format,
-          isStack: height > width,
+          isStack: actualHeight > actualWidth,
         });
         console.log(`[LABEL] 🔍 DIMENSION CHECK:`, {
-          width,
-          height,
-          halfWidth: Math.round(width / 2),
-          halfHeight: Math.round(height / 2),
+          dpWidth: width,
+          dpHeight: height,
+          actualWidth,
+          actualHeight,
+          halfWidth: Math.round(actualWidth / 2),
+          halfHeight: Math.round(actualHeight / 2),
           isCombined: effectiveType === 'combined' || effectiveType === 'mix',
           isOriginalFormat: photo.format?.includes('original'),
         });
@@ -111,13 +108,13 @@ export async function ensureLabelForPhoto(photo) {
           photoId: photo.id || `temp_${Date.now()}`,
           mode: effectiveType,
           format: photo.format,
-          width,
-          height,
-          halfHeight: Math.round(height / 2),
-          halfWidth: Math.round(width / 2),
+          actualWidth,
+          actualHeight,
+          halfHeight: Math.round(actualHeight / 2),
+          halfWidth: Math.round(actualWidth / 2),
         });
 
-        // Queue the preparation with ACTUAL PIXEL dimensions (not dp)
+        // Queue the preparation with ACTUAL PIXEL dimensions (converted from dp on Android)
         backgroundLabelPreparationService.queuePreparation({
           photo: {
             ...photo,
@@ -126,8 +123,8 @@ export async function ensureLabelForPhoto(photo) {
             uri: photo.uri,
             mode: effectiveType // Map 'type' to 'mode' for the service
           },
-          width,  // Actual pixels, not dp
-          height, // Actual pixels, not dp
+          width: actualWidth,  // Actual pixels (dp * pixelRatio on Android)
+          height: actualHeight, // Actual pixels (dp * pixelRatio on Android)
           settingsHash: prepSettingsHash,
           // If labels are disabled in settings, the service resolves with original URI immediately
           resolve: (labeledUri) => {

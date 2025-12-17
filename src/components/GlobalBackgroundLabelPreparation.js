@@ -204,7 +204,8 @@ export default function GlobalBackgroundLabelPreparation() {
         const afterPosition = convertLabelPosition(afterLabelPosition || 'left-top');
 
         // Use shared function for offset calculation (single source of truth)
-        const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPosition, isStack, halfWidth, halfHeight);
+        // CRITICAL: Pass full dimensions so the function can account for native 4096px downscaling
+        const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPosition, isStack, halfWidth, halfHeight, width, height);
 
         const afterLabelConfig = {
           ...labelConfig,
@@ -381,7 +382,8 @@ export default function GlobalBackgroundLabelPreparation() {
         // Before label positions work correctly since the Before photo occupies the top-left area
 
         // --- AFTER LABEL: Use shared function for offset calculation (single source of truth) ---
-        const { offsetX, offsetY } = calculateAfterLabelOffsets(config2.position, isStack, halfWidth, halfHeight);
+        // CRITICAL: Pass full dimensions so the function can account for native 4096px downscaling
+        const { offsetX, offsetY } = calculateAfterLabelOffsets(config2.position, isStack, halfWidth, halfHeight, width, height);
         config2.offsetX = offsetX;
         config2.offsetY = offsetY;
 

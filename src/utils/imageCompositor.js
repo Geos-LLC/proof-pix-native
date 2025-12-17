@@ -12,9 +12,30 @@ export const isNativeCompositorAvailable = () => {
   return ImageCompositor != null;
 };
 
+// Maximum dimension for images in native module (must match native code)
+const MAX_IMAGE_DIMENSION = 4096;
+
+/**
+ * Calculate the scale factor that the native module will apply to an image.
+ * The native module downscales images larger than MAX_IMAGE_DIMENSION.
+ *
+ * @param {number} width - Full image width
+ * @param {number} height - Full image height
+ * @returns {number} - Scale factor (1.0 if no downscaling needed)
+ */
+export function calculateNativeDownscaleFactor(width, height) {
+  if (width <= MAX_IMAGE_DIMENSION && height <= MAX_IMAGE_DIMENSION) {
+    return 1.0;
+  }
+  return Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+}
+
 /**
  * Calculate offsetX/offsetY for After label positioning in combined photos.
  * This is the single source of truth for After label offset calculations.
+ *
+ * CRITICAL: The native module downscales images larger than 4096 pixels.
+ * We must scale our offsets to match the downscaled dimensions.
  *
  * For combined photos:
  * - STACK layout: Before is TOP half, After is BOTTOM half
@@ -26,30 +47,43 @@ export const isNativeCompositorAvailable = () => {
  * @param {boolean} isStack - True for STACK layout, false for SIDE layout
  * @param {number} halfWidth - Half the width of the combined image (for SIDE layout)
  * @param {number} halfHeight - Half the height of the combined image (for STACK layout)
+ * @param {number} fullWidth - Full image width (optional, for downscale calculation)
+ * @param {number} fullHeight - Full image height (optional, for downscale calculation)
  * @returns {object} - { offsetX: number, offsetY: number }
  */
-export function calculateAfterLabelOffsets(position, isStack, halfWidth, halfHeight) {
+export function calculateAfterLabelOffsets(position, isStack, halfWidth, halfHeight, fullWidth = 0, fullHeight = 0) {
   let offsetX = 0;
   let offsetY = 0;
+
+  // Calculate the downscale factor the native module will apply
+  const scaleFactor = (fullWidth > 0 && fullHeight > 0)
+    ? calculateNativeDownscaleFactor(fullWidth, fullHeight)
+    : 1.0;
+
+  // Scale the half dimensions to match what the native module will see
+  const scaledHalfWidth = Math.round(halfWidth * scaleFactor);
+  const scaledHalfHeight = Math.round(halfHeight * scaleFactor);
+
+  console.log(`[calculateAfterLabelOffsets] position=${position}, isStack=${isStack}, fullDims=${fullWidth}x${fullHeight}, scaleFactor=${scaleFactor}, halfWidth=${halfWidth}→${scaledHalfWidth}, halfHeight=${halfHeight}→${scaledHalfHeight}`);
 
   if (isStack) {
     // STACK layout: After photo is in BOTTOM half
     if (position.includes('top')) {
-      // Shift label down by halfHeight to position at top of After (bottom) half
-      offsetY = halfHeight;
+      // Shift label down by scaledHalfHeight to position at top of After (bottom) half
+      offsetY = scaledHalfHeight;
     } else if (position.includes('middle')) {
-      // Shift center down by halfHeight/2 to center in After half
-      offsetY = Math.round(halfHeight / 2);
+      // Shift center down by scaledHalfHeight/2 to center in After half
+      offsetY = Math.round(scaledHalfHeight / 2);
     }
     // "bottom" positions don't need offset - bottom of full image = bottom of After half
   } else {
     // SIDE layout: After photo is in RIGHT half
     if (position.includes('left')) {
-      // Shift label right by halfWidth to position at left of After (right) half
-      offsetX = halfWidth;
+      // Shift label right by scaledHalfWidth to position at left of After (right) half
+      offsetX = scaledHalfWidth;
     } else if (position.includes('center')) {
-      // Shift center right by halfWidth/2 to center in After half
-      offsetX = Math.round(halfWidth / 2);
+      // Shift center right by scaledHalfWidth/2 to center in After half
+      offsetX = Math.round(scaledHalfWidth / 2);
     }
     // "right" positions don't need offset - right of full image = right of After half
   }

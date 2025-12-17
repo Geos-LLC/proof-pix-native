@@ -17,6 +17,7 @@ import {
   TextInput,
   Share as RNShare,
   Platform,
+  PixelRatio,
   InteractionManager
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -885,7 +886,8 @@ export default function GalleryScreen({ navigation, route }) {
                 // Use native compositor to recreate combined photo with labels at full resolution
                 try {
                     // Get dimensions of before photo to determine layout
-                    // NOTE: For file:// URIs, Image.getSize returns actual pixel dimensions directly (no PixelRatio needed)
+                    // Image.getSize returns actual file pixel dimensions for local file:// URIs.
+                    // No PixelRatio conversion needed - native module loads the same file and gets the same dimensions.
                     const beforeDimensions = await new Promise((resolve, reject) => {
                         Image.getSize(beforePhoto.uri,
                             (width, height) => resolve({ width, height }),
@@ -957,7 +959,8 @@ export default function GalleryScreen({ navigation, route }) {
                     const afterPosition = convertLabelPosition(afterLabelPosition || 'right-top');
 
                     // Use shared function for offset calculation (single source of truth)
-                    const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPosition, isStack, halfWidth, halfHeight);
+                    // CRITICAL: Pass full dimensions so the function can account for native 4096px downscaling
+                    const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPosition, isStack, halfWidth, halfHeight, combinedDimensions.width, combinedDimensions.height);
 
                     const afterLabelConfig = {
                         position: afterPosition,

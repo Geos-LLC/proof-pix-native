@@ -35,7 +35,35 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 //      Applying PixelRatio was DOUBLING the dimensions, causing offsetX/offsetY to be 1.4x too large.
 //      The native module works with actual file pixels, and Image.getSize returns actual file pixels
 //      for local files. No conversion is needed.
-const CACHE_VERSION = 15;
+// v16: RE-ADDED PixelRatio conversion for Android only. Native logs confirmed Image.getSize returns
+//      dp (density-independent pixels) on Android, not actual file pixels. Example: native module sees
+//      3840x2576, but Image.getSize returns 1920x1288 (exactly 2x smaller = PixelRatio of 2.0).
+//      Without this conversion, After label offsets are half of what they should be.
+// v17: Extended PixelRatio fix to CameraScreen.js for combined photos. The prepareCombinedPhotoInBackground
+//      and prepareLabeledPhotoInBackground functions were not applying PixelRatio conversion, causing
+//      After label offsets to be calculated from dp dimensions instead of actual pixels.
+// v18: REMOVED all PixelRatio conversion. Native logcat shows Image.getSize actually returns the SAME
+//      dimensions the native module sees when loading the file. The previous PixelRatio conversion was
+//      causing offsets to be ~2.8x too large (e.g., offsetX=2025 when native image was 2880 wide,
+//      so halfWidth should be 1440, not 2025). Offset values must match actual file dimensions.
+// v19: ROOT CAUSE FIX - The issue was that combined photos were being CREATED at dp dimensions (small),
+//      then labeling would read the actual file dimensions (small) and calculate correct offsets for
+//      the small file, but users expected full-resolution combined photos. The fix:
+//      - Apply PixelRatio when CREATING combined photos (CameraScreen.js getSize helper) so they're
+//        created at full resolution
+//      - Do NOT apply PixelRatio when reading existing files for labeling, since Image.getSize
+//        returns actual file dimensions (which are now full resolution)
+// v20: CONFIRMED: Image.getSize on Android ALWAYS returns dp, not actual pixels. The native module
+//      (BitmapFactory) loads images at actual pixel dimensions. This mismatch was causing After labels
+//      to be placed at ~1/PixelRatio of the correct offset. Fixed by applying PixelRatio conversion
+//      in labelService.js when passing dimensions to the background preparation service.
+//      Combined photos are now created at full resolution (v19 fix), and labeling offsets are now
+//      calculated at full resolution to match what the native module sees.
+// v21: CRITICAL FIX - Native module downscales images larger than 4096px before labeling. The offset
+//      calculation now accounts for this downscaling. When image dimensions exceed 4096, the offsets
+//      are scaled down proportionally to match what the native module will actually see.
+//      Example: 5760x3864 image → native scales to 4096x2746 (factor 0.711) → offsets scaled too.
+const CACHE_VERSION = 21;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid

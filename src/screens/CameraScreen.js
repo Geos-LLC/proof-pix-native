@@ -10,6 +10,7 @@ import {
   Dimensions,
   ScrollView,
   Platform,
+  PixelRatio,
   PanResponder,
   Animated,
   StatusBar,
@@ -1163,7 +1164,8 @@ export default function CameraScreen({ route, navigation }) {
 
       try {
         // Get dimensions of combined photo
-        // NOTE: For file:// URIs, Image.getSize returns actual pixel dimensions directly (no PixelRatio needed)
+        // Image.getSize returns actual file pixel dimensions for local file:// URIs.
+        // No PixelRatio conversion needed - native module loads the same file and gets the same dimensions.
         Image.getSize(combinedPhoto.uri, (width, height) => {
           console.log(`[CameraScreen] Combined photo dimensions: ${width}x${height}`);
 
@@ -1202,7 +1204,8 @@ export default function CameraScreen({ route, navigation }) {
 
       try {
         // Get image dimensions
-        // NOTE: For file:// URIs, Image.getSize returns actual pixel dimensions directly (no PixelRatio needed)
+        // Image.getSize returns actual file pixel dimensions for local file:// URIs.
+        // No PixelRatio conversion needed - native module loads the same file and gets the same dimensions.
         Image.getSize(photo.uri, (width, height) => {
           console.log(`[CameraScreen] Single photo dimensions: ${width}x${height}`);
 
@@ -1541,11 +1544,19 @@ export default function CameraScreen({ route, navigation }) {
         (async () => {
           try {
             // Measure original sizes
+            // On Android, Image.getSize returns dp (density-independent pixels), not actual file pixels.
+            // We must multiply by PixelRatio to get actual pixel dimensions for creating full-resolution combined photos.
+            // The native compositor will then create a combined photo at these full dimensions.
+            const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
             const getSize = (u) => new Promise((resolve) => {
-              Image.getSize(u, (w, h) => resolve({ w, h }), () => resolve({ w: 1080, h: 1920 }));
+              Image.getSize(u, (w, h) => resolve({
+                w: Math.round(w * pixelRatio),
+                h: Math.round(h * pixelRatio)
+              }), () => resolve({ w: 1080, h: 1920 }));
             });
             const aSize = await getSize(activeBeforePhoto.uri);
             const bSize = await getSize(savedUri);
+            console.log(`[CameraScreen] Combined photo source sizes: before=${aSize.w}x${aSize.h}, after=${bSize.w}x${bSize.h}`);
           const beforeOrientation = activeBeforePhoto.orientation || 'portrait';
           const cameraVM = activeBeforePhoto.cameraViewMode || 'portrait';
           const isLandscapePair = beforeOrientation === 'landscape' || cameraVM === 'landscape';
