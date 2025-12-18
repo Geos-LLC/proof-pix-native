@@ -220,8 +220,17 @@ export async function addWatermarkToImage(imageUri, watermarkText, watermarkConf
     throw new Error('Watermark addition is only supported on native mobile platforms');
   }
 
-  if (!ImageCompositor || !ImageCompositor.addWatermarkToImage) {
-    console.error(`[ImageCompositor:${callId}] ❌ addWatermarkToImage method not found.`);
+  if (!ImageCompositor) {
+    console.error(`[ImageCompositor:${callId}] ❌ ImageCompositor module not found.`);
+    throw new Error('ImageCompositor module is not available');
+  }
+
+  // Log all available methods for debugging
+  console.log(`[ImageCompositor:${callId}] 🔍 Available methods:`, Object.keys(ImageCompositor));
+  console.log(`[ImageCompositor:${callId}] 🔍 addWatermarkToImage type:`, typeof ImageCompositor.addWatermarkToImage);
+
+  if (typeof ImageCompositor.addWatermarkToImage !== 'function') {
+    console.error(`[ImageCompositor:${callId}] ❌ addWatermarkToImage not a function. Available:`, Object.keys(ImageCompositor));
     throw new Error('ImageCompositor.addWatermarkToImage is not available');
   }
 

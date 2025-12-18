@@ -61,9 +61,16 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                     return@launch
                 }
 
+                val widthInt = width
+                val heightInt = height
+                val topHInt = topH ?: (heightInt / 2)
+                val bottomHInt = bottomH ?: (heightInt / 2)
+                val leftWInt = leftW ?: (widthInt / 2)
+                val rightWInt = rightW ?: (widthInt / 2)
+
                 // Limit canvas size to prevent memory issues
-                var canvasWidth = width
-                var canvasHeight = height
+                var canvasWidth = widthInt
+                var canvasHeight = heightInt
                 var scaleFactor = 1.0f
 
                 if (canvasWidth > maxImageDimension || canvasHeight > maxImageDimension) {
@@ -85,8 +92,8 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 when (layout.uppercase()) {
                     "STACK" -> {
                         // Vertical stack layout
-                        val topHeight = ((topH ?: (height / 2)) * scaleFactor).toInt()
-                        val bottomHeight = ((bottomH ?: (height / 2)) * scaleFactor).toInt()
+                        val topHeight = (topHInt * scaleFactor).toInt()
+                        val bottomHeight = (bottomHInt * scaleFactor).toInt()
 
                         // Draw before photo on top
                         val beforeScaled = Bitmap.createScaledBitmap(beforeBitmap, canvasWidth, topHeight, true)
@@ -100,8 +107,8 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                     }
                     "SIDE" -> {
                         // Side-by-side layout
-                        val leftWidth = ((leftW ?: (width / 2)) * scaleFactor).toInt()
-                        val rightWidth = ((rightW ?: (width / 2)) * scaleFactor).toInt()
+                        val leftWidth = (leftWInt * scaleFactor).toInt()
+                        val rightWidth = (rightWInt * scaleFactor).toInt()
 
                         // Draw before photo on left
                         val beforeScaled = Bitmap.createScaledBitmap(beforeBitmap, leftWidth, canvasHeight, true)
