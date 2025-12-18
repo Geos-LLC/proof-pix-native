@@ -170,7 +170,7 @@ export default function PlanSelectionScreen({ navigation }) {
               InteractionManager.runAfterInteractions(() => {
                 console.log('[PlanSelection] ✅ Navigating after successful purchase');
                 isMounted.current = false;
-                navigation.navigate('GoogleSignUp', { plan });
+                navigation.navigate('Home');
                 resolve();
               });
             });
@@ -208,7 +208,7 @@ export default function PlanSelectionScreen({ navigation }) {
                   InteractionManager.runAfterInteractions(() => {
                     console.log('[PlanSelection] All interactions complete, navigating...');
                     isMounted.current = false;
-                    navigation.navigate('GoogleSignUp', { plan });
+                    navigation.navigate('Home');
                     resolve();
                   });
                 });
@@ -237,7 +237,7 @@ export default function PlanSelectionScreen({ navigation }) {
                     InteractionManager.runAfterInteractions(() => {
                       console.log('[PlanSelection] All interactions complete, navigating...');
                       isMounted.current = false;
-                      navigation.navigate('GoogleSignUp', { plan });
+                      navigation.navigate('Home');
                       resolve();
                     });
                   });
@@ -291,8 +291,8 @@ export default function PlanSelectionScreen({ navigation }) {
       console.log('[PlanSelection] 🔵 updateUserPlan completed');
     }
 
-      console.log('[PlanSelection] 🟢 About to navigate to GoogleSignUp, trialJustStarted:', trialJustStarted);
-      
+      console.log('[PlanSelection] 🟢 About to navigate to LabelLanguageSetup');
+
       // Use InteractionManager to wait for all animations/interactions to complete
       // This prevents React errors during navigation
       // Wrap in a Promise to ensure we wait for navigation to complete
@@ -300,9 +300,9 @@ export default function PlanSelectionScreen({ navigation }) {
         InteractionManager.runAfterInteractions(() => {
           console.log('[PlanSelection] 🔵 All interactions complete, setting isMounted to false');
           isMounted.current = false;
-          
-          console.log('[PlanSelection] 🟢 Navigating to GoogleSignUp...');
-          navigation.navigate('GoogleSignUp', { plan, trialJustStarted: trialJustStarted });
+
+          console.log('[PlanSelection] 🟢 Navigating to LabelLanguageSetup...');
+          navigation.navigate('Home');
           console.log('[PlanSelection] 🟢 Navigation called, proceedWithPlanSelection END');
           resolve();
         });
@@ -450,12 +450,12 @@ ${results.error ? `Error: ${results.error}` : ''}
         
         setIsRestoringPurchases(false);
         
-        // Navigate to account setup with the restored plan
-        console.log('[PlanSelection] Navigating to account setup with restored plan');
+        // Navigate to next screen with the restored plan
+        console.log('[PlanSelection] Navigating to LabelLanguageSetup with restored plan');
         return new Promise((resolve) => {
           InteractionManager.runAfterInteractions(() => {
             isMounted.current = false;
-            navigation.navigate('GoogleSignUp', { plan: restoredPlan });
+            navigation.navigate('Home');
             resolve();
           });
         });

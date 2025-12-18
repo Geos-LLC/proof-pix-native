@@ -43,12 +43,15 @@ const LANGUAGES = [
 export default function FirstLoadScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const { individualSignIn } = useAdmin();
-  const { updateUserInfo, updateUserPlan, userPlan } = useSettings();
+  const { updateUserInfo, updateUserPlan, userPlan, updateLabelLanguage, updateSectionLanguage } = useSettings();
   const [userName, setUserName] = useState('');
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [referralModalVisible, setReferralModalVisible] = useState(false);
   const [referralCodeInput, setReferralCodeInput] = useState('');
   const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [languageInfoModalVisible, setLanguageInfoModalVisible] = useState(false);
+  const [selectedLanguageName, setSelectedLanguageName] = useState('');
+  const [pendingNavigation, setPendingNavigation] = useState(null); // 'planSelection' or 'referral'
   const scrollViewRef = useRef(null);
   const nameInputRef = useRef(null);
   const inputContainerRef = useRef(null);
@@ -90,6 +93,9 @@ export default function FirstLoadScreen({ navigation, route }) {
 
   const changeLanguage = (languageCode) => {
     i18n.changeLanguage(languageCode);
+    // Also apply the same language to labels and sections
+    updateLabelLanguage(languageCode);
+    updateSectionLanguage(languageCode);
     // Analytics: track app language change on first load
     try {
       logLanguageChange(languageCode);
@@ -122,20 +128,42 @@ export default function FirstLoadScreen({ navigation, route }) {
     if (!validateName()) return;
     await updateUserInfo(userName.trim());
 
+    // Apply current language to labels and sections
+    const currentLang = i18n.language || 'en';
+    updateLabelLanguage(currentLang);
+    updateSectionLanguage(currentLang);
+
+    // Set the language name for the popup
+    const selectedLang = LANGUAGES.find(lang => lang.code === currentLang) || LANGUAGES[0];
+    setSelectedLanguageName(selectedLang.name);
+
     // Check if user has a paid subscription (anything other than 'starter')
     const hasPaidSubscription = userPlan && userPlan !== 'starter';
 
-    // Only show referral code modal if:
-    // 1. User can't start a trial (trial already used/expired)
-    // 2. AND user doesn't have a paid subscription
+    // Determine where to navigate after language info popup
     const canTrial = await canStartTrial();
     if (!canTrial && !hasPaidSubscription) {
-      // No trial available and no subscription - show referral code modal
+      // No trial available and no subscription - will show referral code modal after
+      setPendingNavigation('referral');
+    } else {
+      // Trial available OR has subscription - will go to plan selection after
+      setPendingNavigation('planSelection');
+    }
+
+    // Show language info popup first
+    setLanguageInfoModalVisible(true);
+  };
+
+  const handleLanguageInfoClose = () => {
+    setLanguageInfoModalVisible(false);
+
+    // Navigate based on pending action
+    if (pendingNavigation === 'referral') {
       setReferralModalVisible(true);
     } else {
-      // Trial available OR has subscription - skip referral modal and go directly to plan selection
       navigation.navigate('PlanSelection');
     }
+    setPendingNavigation(null);
   };
 
   const handleContinueWithoutReferral = () => {
@@ -241,31 +269,38 @@ export default function FirstLoadScreen({ navigation, route }) {
 
       <View>
         <TouchableOpacity
-          style={[styles.selectionButton, styles.teamButton]}
-          onPress={handleSelectTeam}
-        >
-          <Text style={[styles.selectionButtonText, styles.teamButtonText]}>{t('firstLoad.joinTeam')}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={{marginTop: 16}}>
-        <TouchableOpacity
           style={[styles.selectionButton, styles.individualButton]}
           onPress={handleSelectIndividual}
         >
-          <Text style={[styles.selectionButtonText, styles.individualButtonText]}>{t('firstLoad.useIndividual')}</Text>
+          <Text style={[styles.selectionButtonText, styles.individualButtonText]}>
+            {t('firstLoad.startUsingApp', { defaultValue: 'Start using the app' })}
+          </Text>
         </TouchableOpacity>
-        <Text style={styles.selectionSubtext}>{t('firstLoad.individualSubtext')}</Text>
+
+        <TouchableOpacity
+          style={styles.teamLinkButton}
+          onPress={handleSelectTeam}
+        >
+          <Text style={styles.teamLinkText}>
+            {t('firstLoad.invitedToTeam', { defaultValue: 'I was invited to a team' })}
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={{marginTop: 16}}>
+      <View style={{marginTop: 20}}>
         <TouchableOpacity
-          style={[styles.selectionButton, styles.languageButton]}
+          style={styles.languageRow}
           onPress={() => setLanguageModalVisible(true)}
         >
-          <Text style={[styles.selectionButtonText, styles.languageButtonText]}>
-            {t('firstLoad.chooseAppLanguage')}
+          <Text style={styles.languageRowLabel}>
+            {t('firstLoad.language', { defaultValue: 'Language' })}
           </Text>
+          <View style={styles.languageValueContainer}>
+            <Text style={styles.languageRowFlag}>{getCurrentLanguage().flag}</Text>
+            <Text style={styles.languageRowValue}>
+              {getCurrentLanguage().name}
+            </Text>
+          </View>
         </TouchableOpacity>
       </View>
     </View>
@@ -448,6 +483,57 @@ export default function FirstLoadScreen({ navigation, route }) {
           </View>
         </View>
       </Modal>
+
+      {/* Language Info Modal - Custom styled */}
+      <Modal
+        visible={languageInfoModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleLanguageInfoClose}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.languageInfoModalContent}>
+            <Text style={styles.languageInfoIcon}>{getCurrentLanguage().flag}</Text>
+            <Text style={styles.languageInfoTitle}>
+              {t('firstLoad.languageAppliedTitle', { defaultValue: 'Language Applied' })}
+            </Text>
+            <Text style={styles.languageInfoMessage}>
+              {t('firstLoad.languageAppliedIntro', {
+                language: selectedLanguageName,
+                defaultValue: `${selectedLanguageName} has been set for:`
+              })}
+            </Text>
+            <View style={styles.languageInfoBullets}>
+              <Text style={styles.languageInfoBulletItem}>
+                • {t('firstLoad.languageBulletApp', { defaultValue: 'App' })}
+              </Text>
+              <Text style={styles.languageInfoBulletItem}>
+                • {t('firstLoad.languageBulletLabels', { defaultValue: 'Photo labels' })}
+              </Text>
+              <Text style={styles.languageInfoBulletItem}>
+                • {t('firstLoad.languageBulletSections', { defaultValue: 'Section names' })}
+              </Text>
+            </View>
+            <Text style={styles.languageInfoSubtext}>
+              {t('firstLoad.languageChangeHint', {
+                defaultValue: 'You can change these separately in '
+              })}
+              <Text style={styles.languageInfoSettingsHighlight}>
+                {t('settings.title', { defaultValue: 'Settings' })}
+              </Text>
+              {t('firstLoad.languageChangeHintEnd', { defaultValue: ' later.' })}
+            </Text>
+            <TouchableOpacity
+              style={styles.languageInfoButton}
+              onPress={handleLanguageInfoClose}
+            >
+              <Text style={styles.languageInfoButtonText}>
+                {t('common.gotIt', { defaultValue: 'Got it' })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -548,6 +634,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
+  teamLinkButton: {
+    marginTop: 60,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  teamLinkText: {
+    fontSize: 15,
+    color: '#333',
+    textDecorationLine: 'underline',
+    fontFamily: FONTS.QUICKSAND_MEDIUM,
+  },
   backLink: {
     marginBottom: 20,
     alignSelf: 'flex-start',
@@ -592,12 +689,42 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
-  languageButton: {
-    backgroundColor: '#28a745',
-    borderColor: '#1e7e34',
+  languageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    minHeight: 52,
   },
-  languageButtonText: {
+  languageRowLabel: {
+    fontSize: 18,
+    color: '#000',
+    fontWeight: 'bold',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+  },
+  languageValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginLeft: 8,
+  },
+  languageRowArrow: {
+    fontSize: 12,
     color: '#fff',
+    marginHorizontal: 8,
+  },
+  languageRowFlag: {
+    fontSize: 20,
+    marginRight: 6,
+  },
+  languageRowValue: {
+    fontSize: 18,
+    color: '#000',
+    fontFamily: FONTS.QUICKSAND_REGULAR,
   },
   modalOverlay: {
     flex: 1,
@@ -757,6 +884,89 @@ const styles = StyleSheet.create({
   successButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
+    color: '#000',
+  },
+  // Language Info Modal Styles
+  languageInfoModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 28,
+    width: width * 0.85,
+    maxWidth: 380,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  languageInfoIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  languageInfoIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#F2C31B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  languageInfoIcon: {
+    fontSize: 36,
+  },
+  languageInfoTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: '#000',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  languageInfoMessage: {
+    fontSize: 16,
+    fontFamily: FONTS.QUICKSAND_MEDIUM,
+    color: '#333',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  languageInfoBullets: {
+    alignSelf: 'flex-start',
+    marginLeft: 40,
+    marginBottom: 12,
+  },
+  languageInfoBulletItem: {
+    fontSize: 16,
+    fontFamily: FONTS.QUICKSAND_MEDIUM,
+    color: '#333',
+    lineHeight: 26,
+  },
+  languageInfoSubtext: {
+    fontSize: 14,
+    fontFamily: FONTS.QUICKSAND_REGULAR,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  languageInfoSettingsHighlight: {
+    color: '#F2C31B',
+    fontWeight: '600',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+  },
+  languageInfoButton: {
+    backgroundColor: '#F2C31B',
+    paddingVertical: 14,
+    paddingHorizontal: 48,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  languageInfoButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: FONTS.QUICKSAND_BOLD,
     color: '#000',
   },
 });

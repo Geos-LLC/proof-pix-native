@@ -105,9 +105,9 @@ export default function AuthLoadingScreen({ navigation }) {
         
         if (hasPaidPlan) {
           // User has an active subscription (from auto-restore) but needs to set up account
-          // Skip plan selection and go directly to account setup
-          console.log('[AuthLoading] Active subscription detected, skipping to account setup');
-          navigation.replace('GoogleSignUp', { plan: userPlan });
+          // Skip plan selection and go directly to Home
+          console.log('[AuthLoading] Active subscription detected, skipping to Home');
+          navigation.replace('Home');
         } else {
           // New user or free plan - show onboarding flow
           navigation.replace('FirstLoad');
