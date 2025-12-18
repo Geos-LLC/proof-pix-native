@@ -20,6 +20,7 @@ import { useSettings } from '../context/SettingsContext';
 import { COLORS } from '../constants/rooms';
 import { logLanguageChange } from '../utils/analytics';
 import { FONTS } from '../constants/fonts';
+import { canStartTrial } from '../services/trialService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -42,7 +43,7 @@ const LANGUAGES = [
 export default function FirstLoadScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const { individualSignIn } = useAdmin();
-  const { updateUserInfo, updateUserPlan } = useSettings();
+  const { updateUserInfo, updateUserPlan, userPlan } = useSettings();
   const [userName, setUserName] = useState('');
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [referralModalVisible, setReferralModalVisible] = useState(false);
@@ -120,8 +121,21 @@ export default function FirstLoadScreen({ navigation, route }) {
   const handleSelectIndividual = async () => {
     if (!validateName()) return;
     await updateUserInfo(userName.trim());
-    // Show referral code modal before navigating to plan selection
-    setReferralModalVisible(true);
+
+    // Check if user has a paid subscription (anything other than 'starter')
+    const hasPaidSubscription = userPlan && userPlan !== 'starter';
+
+    // Only show referral code modal if:
+    // 1. User can't start a trial (trial already used/expired)
+    // 2. AND user doesn't have a paid subscription
+    const canTrial = await canStartTrial();
+    if (!canTrial && !hasPaidSubscription) {
+      // No trial available and no subscription - show referral code modal
+      setReferralModalVisible(true);
+    } else {
+      // Trial available OR has subscription - skip referral modal and go directly to plan selection
+      navigation.navigate('PlanSelection');
+    }
   };
 
   const handleContinueWithoutReferral = () => {

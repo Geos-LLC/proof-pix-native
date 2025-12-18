@@ -40,6 +40,7 @@ import InviteManager from '../components/InviteManager';
 import {
   getOrCreateReferralCode,
   getReferralInfo,
+  acceptReferral,
 } from '../services/referralService';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import proxyService from '../services/proxyService';
@@ -61,6 +62,7 @@ import {
   logFeatureGateAction,
 } from '../utils/analytics';
 import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions } from '../services/iapService';
+import * as Application from 'expo-application';
 
 const getFontOptions = (t) => [
   {
@@ -782,6 +784,8 @@ export default function SettingsScreen({ navigation, route }) {
     rewardsEarned: 0,
     totalMonthsEarned: 0,
   });
+  const [referralCodeInput, setReferralCodeInput] = useState('');
+  const [isApplyingReferral, setIsApplyingReferral] = useState(false);
   const [isSigningInDropbox, setIsSigningInDropbox] = useState(false);
   const [isDropboxAuthenticated, setIsDropboxAuthenticated] = useState(false);
   const [dropboxUserInfo, setDropboxUserInfo] = useState(null);
@@ -1927,6 +1931,35 @@ export default function SettingsScreen({ navigation, route }) {
 
   const handleSaveUserInfo = async () => {
     await updateUserInfo(name, location);
+  };
+
+  const handleApplyReferralCode = async () => {
+    const code = referralCodeInput.trim().toUpperCase();
+    if (!code) {
+      Alert.alert(
+        t('referral.errorTitle', { defaultValue: 'Error' }),
+        t('referral.emptyCodeError', { defaultValue: 'Please enter a referral code' })
+      );
+      return;
+    }
+
+    setIsApplyingReferral(true);
+    try {
+      await acceptReferral(code);
+      Alert.alert(
+        t('referral.successTitle', { defaultValue: 'Success' }),
+        t('referral.codeAppliedSuccess', { defaultValue: 'Referral code applied successfully!' })
+      );
+      setReferralCodeInput('');
+    } catch (error) {
+      console.error('[Settings] Error applying referral code:', error);
+      Alert.alert(
+        t('referral.errorTitle', { defaultValue: 'Error' }),
+        t('referral.codeAppliedError', { defaultValue: 'Failed to apply referral code. Please try again.' })
+      );
+    } finally {
+      setIsApplyingReferral(false);
+    }
   };
 
   const handleLeaveTeam = () => {
@@ -4593,9 +4626,34 @@ export default function SettingsScreen({ navigation, route }) {
         </View>
         )}
 
-        {/* Referral Program */}
+        {/* Referrals */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('referral.settingsSectionTitle', { defaultValue: 'Invite Friends' })}</Text>
+          <Text style={styles.sectionTitle}>{t('referral.settingsSectionTitle', { defaultValue: 'Referrals' })}</Text>
+
+          {/* Referral Code Input */}
+          <View style={styles.referralCodeContainer}>
+            <TextInput
+              style={styles.referralCodeInput}
+              value={referralCodeInput}
+              onChangeText={setReferralCodeInput}
+              placeholder={t('referral.enterCodePlaceholder', { defaultValue: 'Enter referral code' })}
+              placeholderTextColor={COLORS.GRAY}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={[styles.referralApplyButton, isApplyingReferral && styles.referralApplyButtonDisabled]}
+              onPress={handleApplyReferralCode}
+              disabled={isApplyingReferral}
+            >
+              <Text style={styles.referralApplyButtonText}>
+                {isApplyingReferral
+                  ? t('referral.applyingButton', { defaultValue: 'Applying...' })
+                  : t('referral.applyButton', { defaultValue: 'Apply' })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.referralStatsContainer}>
             <View style={styles.referralStatItem}>
               <Text style={styles.referralStatLabel}>
@@ -4741,6 +4799,13 @@ export default function SettingsScreen({ navigation, route }) {
               )}
             </>
           )}
+        </View>
+
+        {/* App Version Info */}
+        <View style={styles.versionContainer}>
+          <Text style={styles.versionText}>
+            v{Application.nativeApplicationVersion} ({Application.nativeBuildVersion})
+          </Text>
         </View>
 
         </ScrollView>
@@ -5989,6 +6054,23 @@ export default function SettingsScreen({ navigation, route }) {
                         }}
                       >
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Reset Trial</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#D32F2F' }]}
+                        onPress={async () => {
+                          const success = await TrialTestUtils.expireTrialForReferralTest();
+                          if (success) {
+                            Alert.alert(
+                              'Trial Expired',
+                              'Trial set to expired state. Go to FirstLoad screen (reset app data or use Reset Trial first, then restart) to test the referral popup.\n\nNote: The referral popup only shows if:\n1. Trial is expired\n2. No paid subscription\n3. No referral code already applied'
+                            );
+                          } else {
+                            Alert.alert('Error', 'Failed to expire trial.');
+                          }
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Expire Trial (Test Referral)</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -8447,6 +8529,39 @@ const sliderStyles = StyleSheet.create({
       color: '#000000',
       fontFamily: FONTS.QUICKSAND_BOLD,
     },
+    referralCodeContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+      gap: 10,
+    },
+    referralCodeInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: '#e0e0e0',
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
+      fontFamily: FONTS.QUICKSAND_REGULAR,
+      color: COLORS.TEXT,
+      backgroundColor: '#f9f9f9',
+    },
+    referralApplyButton: {
+      backgroundColor: '#28a745',
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      borderRadius: 8,
+    },
+    referralApplyButtonDisabled: {
+      backgroundColor: '#9ed3ab',
+    },
+    referralApplyButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '600',
+      fontFamily: FONTS.QUICKSAND_BOLD,
+    },
     referralStatsContainer: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -9232,5 +9347,15 @@ const sliderStyles = StyleSheet.create({
       color: '#666',
       marginHorizontal: 8,
       fontFamily: FONTS.QUICKSAND_BOLD,
+    },
+    versionContainer: {
+      alignItems: 'center',
+      paddingVertical: 20,
+      marginTop: 10,
+    },
+    versionText: {
+      fontSize: 12,
+      color: '#999',
+      fontFamily: FONTS.QUICKSAND_REGULAR,
     },
   });

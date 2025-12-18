@@ -139,6 +139,35 @@ export const clearTrial = async () => {
 };
 
 /**
+ * Set trial as expired (for testing referral popup)
+ * This simulates a user whose trial has ended and has no subscription
+ */
+export const expireTrialForReferralTest = async () => {
+  try {
+    const now = new Date();
+    const endDate = new Date(now);
+    endDate.setDate(endDate.getDate() - 5); // 5 days ago (expired)
+
+    const trialInfo = {
+      active: false, // Trial is no longer active
+      used: true,    // Trial has been used
+      startDate: new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000).toISOString(),
+      endDate: endDate.toISOString(),
+      plan: 'business',
+    };
+
+    await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(trialInfo));
+    // Also clear any existing referral acceptance so popup can show
+    await AsyncStorage.removeItem('@referral_accepted');
+    console.log('[TrialTest] Trial expired for referral popup test');
+    return true;
+  } catch (error) {
+    console.error('[TrialTest] Error expiring trial:', error);
+    return false;
+  }
+};
+
+/**
  * Get current trial info for debugging
  * @returns {Promise<Object|null>}
  */
