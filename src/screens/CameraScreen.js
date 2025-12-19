@@ -414,16 +414,83 @@ export default function CameraScreen({ route, navigation }) {
     setIsFullScreen(false);
   };
 
-  // Handle thumbnail tap to show gallery
+  // Handle thumbnail tap to toggle gallery (open/close)
   const handleThumbnailPress = () => {
-    if (showGalleryRef.current) return;
+    // If enlarged gallery is open, close it and return to full screen
+    if (showEnlargedGalleryRef.current) {
+      setEnlargedGalleryPhoto(null);
+      setShowEnlargedGallery(false);
+      setShowGallery(false);
 
-    // Set animating flag
+      isGalleryAnimatingRef.current = true;
+      setIsGalleryAnimating(true);
+
+      Animated.parallel([
+        Animated.spring(cameraScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 10
+        }),
+        Animated.spring(cameraTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 10
+        }),
+        Animated.timing(galleryOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true
+        })
+      ]).start(() => {
+        setTimeout(() => {
+          isGalleryAnimatingRef.current = false;
+          setIsGalleryAnimating(false);
+        }, 100);
+      });
+      return;
+    }
+
+    // If gallery is open, close it
+    if (showGalleryRef.current) {
+      isGalleryAnimatingRef.current = true;
+      setIsGalleryAnimating(true);
+      setShowGallery(false);
+
+      Animated.parallel([
+        Animated.spring(cameraScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 10
+        }),
+        Animated.spring(cameraTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 10
+        }),
+        Animated.timing(galleryOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true
+        })
+      ]).start(() => {
+        setTimeout(() => {
+          isGalleryAnimatingRef.current = false;
+          setIsGalleryAnimating(false);
+        }, 100);
+      });
+      return;
+    }
+
+    // Open gallery
     isGalleryAnimatingRef.current = true;
     setIsGalleryAnimating(true);
     setShowGallery(true);
 
-    const galleryHeight = dimensions.height * 0.4;
+    const galleryHeight = dimensions.height * 0.41;
     const cameraHeight = dimensions.height - galleryHeight;
 
     const containerAspect = dimensions.width / cameraHeight;
@@ -431,7 +498,8 @@ export default function CameraScreen({ route, navigation }) {
     const baseScale = cameraHeight / dimensions.height;
     const zoomFactor = cameraAspect / containerAspect;
     const scale = baseScale * zoomFactor;
-    const translateY = -galleryHeight / 2;
+    // No translation needed - gallery overlays bottom, camera just scales
+    const translateY = 0;
 
     Animated.parallel([
       Animated.spring(cameraScale, {
@@ -842,9 +910,9 @@ export default function CameraScreen({ route, navigation }) {
               setIsGalleryAnimating(true);
               setShowGallery(true);
               
-              const galleryHeight = dimensions.height * 0.4;
+              const galleryHeight = dimensions.height * 0.41;
               const cameraHeight = dimensions.height - galleryHeight;
-              
+
               // Scale to fill width, cropping top/bottom
               // Container: width × cameraHeight (60% of screen)
               // Camera: 4:3 aspect ratio
@@ -854,7 +922,8 @@ export default function CameraScreen({ route, navigation }) {
               const baseScale = cameraHeight / dimensions.height; // 0.6
               const zoomFactor = cameraAspect / containerAspect; // Zoom to fill width
               const scale = baseScale * zoomFactor; // Final scale
-              const translateY = -galleryHeight / 2;
+              // No translation needed - gallery overlays bottom, camera just scales
+              const translateY = 0;
               Animated.parallel([
                 Animated.spring(cameraScale, {
                   toValue: scale,
@@ -2430,11 +2499,10 @@ export default function CameraScreen({ route, navigation }) {
           <View style={styles.mainControlRow}>
             {/* Left container - Thumbnail */}
             <View style={styles.buttonContainer}>
-              {!showGallery && !showEnlargedGallery && (() => {
+              {(() => {
                 const activePhoto = getActiveBeforePhoto();
-                
+
                 if (activePhoto) {
-                  const photoOrientation = activePhoto.orientation || 'portrait';
                   return (
                     <TouchableOpacity
                       style={[
@@ -2455,13 +2523,15 @@ export default function CameraScreen({ route, navigation }) {
                     </TouchableOpacity>
                   );
                 } else {
-                  // Show empty placeholder
+                  // Show empty placeholder - also opens gallery on press
                   return (
-                    <View
+                    <TouchableOpacity
                       style={[
                         styles.thumbnailViewerContainer,
                         cameraViewMode === 'landscape' ? styles.thumbnailLandscape : styles.thumbnailPortrait
                       ]}
+                      activeOpacity={0.7}
+                      onPress={handleThumbnailPress}
                     />
                   );
                 }
@@ -2535,7 +2605,7 @@ export default function CameraScreen({ route, navigation }) {
             styles.bottomGallery,
             {
               opacity: galleryOpacity,
-              height: dimensions.height * 0.4
+              height: dimensions.height * 0.41
             }
           ]}
         >
@@ -2662,7 +2732,7 @@ export default function CameraScreen({ route, navigation }) {
             style={[
               styles.enlargedGalleryContainer,
               {
-                height: dimensions.height * 0.4
+                height: dimensions.height * 0.41
               }
             ]}
             {...enlargedGalleryPanResponder.panHandlers}
@@ -2758,9 +2828,9 @@ export default function CameraScreen({ route, navigation }) {
                       // Upper half: width × (height × 0.6)
                       // Camera aspect ratio: width / (height × 0.6)
                       const cameraAspect = dimensions.width / (dimensions.height * 0.6);
-                      
+
                       // Lower container height is 40% of screen
-                      const containerHeight = dimensions.height * 0.4;
+                      const containerHeight = dimensions.height * 0.41;
                       
                       // Calculate width to fit height while maintaining camera aspect
                       const photoWidth = containerHeight * cameraAspect;
@@ -3546,8 +3616,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.PRIMARY
   },
   thumbnailLandscape: {
-    width: 100,
-    height: 75  // Landscape orientation - wider than tall
+    width: 84,
+    height: 56  // Landscape orientation - same size as portrait, rotated
   },
   thumbnailPortrait: {
     width: 56,
@@ -4080,11 +4150,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   doneButton: {
+    width: 84,
+    height: 56,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 22,
+    borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
   },
   doneButtonText: {
