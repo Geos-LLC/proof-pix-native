@@ -62,7 +62,15 @@ export default function FirstLoadScreen({ navigation, route }) {
 
   // Check for invite code in clipboard (for users who copied code from landing page)
   // If found, automatically navigate to JoinTeam screen
+  // Skip this check if user explicitly chose to use app individually
   useEffect(() => {
+    const skipClipboardCheck = route?.params?.skipClipboardCheck;
+
+    if (skipClipboardCheck) {
+      console.log('[FirstLoad] Skipping clipboard check - user chose individual mode');
+      return;
+    }
+
     const checkClipboardForInvite = async () => {
       console.log('[FirstLoad] Checking clipboard for invite code...');
       try {
@@ -87,7 +95,7 @@ export default function FirstLoadScreen({ navigation, route }) {
     // Small delay to ensure screen is ready
     const timer = setTimeout(checkClipboardForInvite, 500);
     return () => clearTimeout(timer);
-  }, []);
+  }, [route?.params?.skipClipboardCheck]);
 
   // Check for referral code from route params or deep link
   useEffect(() => {
@@ -148,8 +156,7 @@ export default function FirstLoadScreen({ navigation, route }) {
   };
 
   const handleSelectTeam = async () => {
-    if (!validateName()) return;
-    await updateUserInfo(userName.trim());
+    // No name validation required - user will enter name on JoinTeam screen
     await updateUserPlan('team');
     navigation.navigate('JoinTeam');
   };

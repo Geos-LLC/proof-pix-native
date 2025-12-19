@@ -55,7 +55,7 @@ export default {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/PP_logo.png",
+        foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
