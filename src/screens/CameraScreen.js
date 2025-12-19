@@ -62,7 +62,6 @@ export default function CameraScreen({ route, navigation }) {
   const [room, setRoom] = useState(initialRoom);
   const [facing, setFacing] = useState('back');
   const [enableTorch, setEnableTorch] = useState(false);
-  const [enableSound, setEnableSound] = useState(false); // Default shutter sound OFF
   const [aspectRatio, setAspectRatio] = useState('4:3'); // '4:3' or '2:3'
   const [selectedBeforePhoto, setSelectedBeforePhoto] = useState(beforePhoto);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -132,6 +131,8 @@ export default function CameraScreen({ route, navigation }) {
     labelTextColor,
     labelSize,
     labelFontFamily,
+    shutterSoundEnabled,
+    toggleShutterSoundEnabled,
   } = useSettings();
 
   // Vision Camera setup - default to ultra-wide (0.5x)
@@ -411,6 +412,51 @@ export default function CameraScreen({ route, navigation }) {
     }
     // Hide full screen
     setIsFullScreen(false);
+  };
+
+  // Handle thumbnail tap to show gallery
+  const handleThumbnailPress = () => {
+    if (showGalleryRef.current) return;
+
+    // Set animating flag
+    isGalleryAnimatingRef.current = true;
+    setIsGalleryAnimating(true);
+    setShowGallery(true);
+
+    const galleryHeight = dimensions.height * 0.4;
+    const cameraHeight = dimensions.height - galleryHeight;
+
+    const containerAspect = dimensions.width / cameraHeight;
+    const cameraAspect = 4 / 3;
+    const baseScale = cameraHeight / dimensions.height;
+    const zoomFactor = cameraAspect / containerAspect;
+    const scale = baseScale * zoomFactor;
+    const translateY = -galleryHeight / 2;
+
+    Animated.parallel([
+      Animated.spring(cameraScale, {
+        toValue: scale,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 10
+      }),
+      Animated.spring(cameraTranslateY, {
+        toValue: translateY,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 10
+      }),
+      Animated.timing(galleryOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true
+      })
+    ]).start(() => {
+      setTimeout(() => {
+        isGalleryAnimatingRef.current = false;
+        setIsGalleryAnimating(false);
+      }, 100);
+    });
   };
 
   // PanResponder for swipe-to-dismiss carousel (swipe DOWN)
@@ -1161,7 +1207,7 @@ export default function CameraScreen({ route, navigation }) {
         qualityPrioritization: 'quality',
         // Only request flash if the current device reports flash support
         flash: enableTorch && supportsFlash ? 'on' : 'off',
-        enableShutterSound: enableSound
+        enableShutterSound: shutterSoundEnabled
       });
       const photoUri = `file://${photo.path}`;
 
@@ -2306,15 +2352,33 @@ export default function CameraScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* Sound toggle button - between room name and close button */}
+        {/* Torch toggle button - left of sound button */}
+        {facing === 'back' && (
+          <TouchableOpacity
+            style={styles.torchButton}
+            onPress={() => {
+              if (!supportsTorch) {
+                Alert.alert(
+                  'Flash Not Available',
+                  'The selected camera lens does not support flash on this device. Try switching to the 1x camera.'
+                );
+                return;
+              }
+              setEnableTorch(!enableTorch);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.torchButtonText}>{enableTorch ? '💡' : '🔦'}</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Sound toggle button - between torch and close button */}
         <TouchableOpacity
           style={styles.soundButton}
-          onPress={() => {
-            setEnableSound(!enableSound);
-          }}
+          onPress={toggleShutterSoundEnabled}
           activeOpacity={0.7}
         >
-          <Text style={styles.soundButtonText}>{enableSound ? '🔔' : '🔕'}</Text>
+          <Text style={styles.soundButtonText}>{shutterSoundEnabled ? '🔔' : '🔕'}</Text>
         </TouchableOpacity>
 
         {/* Close button - fixed to screen */}
@@ -2372,54 +2436,63 @@ export default function CameraScreen({ route, navigation }) {
                 if (activePhoto) {
                   const photoOrientation = activePhoto.orientation || 'portrait';
                   return (
-                <TouchableOpacity
-                      style={[
-                        styles.thumbnailViewerContainer,
-                        cameraViewMode === 'landscape' ? styles.thumbnailLandscape : styles.thumbnailPortrait
-                      ]}
-                  activeOpacity={1}
-                  onPress={() => {
-                    const newMode = cameraViewMode === 'portrait' ? 'landscape' : 'portrait';
-                    setCameraViewMode(newMode);
-                  }}
-                      onPressIn={handleThumbnailPressIn}
-                      onPressOut={handleThumbnailPressOut}
-                >
-                  <Image
-                        source={{ uri: activePhoto.uri }}
-                    style={styles.thumbnailViewerImage}
-                    resizeMode="cover"
-                  />
-                  <Text style={styles.thumbnailViewerLabel}>👁</Text>
-                </TouchableOpacity>
-                  );
-                } else {
-                  // Show empty placeholder - allow switching camera view mode
-                  return (
                     <TouchableOpacity
                       style={[
                         styles.thumbnailViewerContainer,
                         cameraViewMode === 'landscape' ? styles.thumbnailLandscape : styles.thumbnailPortrait
                       ]}
-                      activeOpacity={0.7}
-                      onPress={() => {
-                        const newMode = cameraViewMode === 'portrait' ? 'landscape' : 'portrait';
-                        setCameraViewMode(newMode);
-                      }}
+                      activeOpacity={1}
+                      onPress={handleThumbnailPress}
+                      onPressIn={handleThumbnailPressIn}
+                      onPressOut={handleThumbnailPressOut}
+                    >
+                      <Image
+                        source={{ uri: activePhoto.uri }}
+                        style={styles.thumbnailViewerImage}
+                        resizeMode="cover"
+                      />
+                      <Text style={styles.thumbnailViewerLabel}>👁</Text>
+                    </TouchableOpacity>
+                  );
+                } else {
+                  // Show empty placeholder
+                  return (
+                    <View
+                      style={[
+                        styles.thumbnailViewerContainer,
+                        cameraViewMode === 'landscape' ? styles.thumbnailLandscape : styles.thumbnailPortrait
+                      ]}
                     />
                   );
                 }
               })()}
             </View>
 
-            {/* Center container - Capture button */}
-            <View style={styles.buttonContainer}>
+            {/* Center container - Capture button with aspect ratio selector */}
+            <View style={[styles.buttonContainer, styles.captureButtonContainer]}>
+              {/* Aspect ratio selector - only in before mode */}
+              {mode === 'before' && (
+                <View style={styles.aspectRatioSelector}>
+                  <TouchableOpacity
+                    style={[styles.zoomButton, cameraViewMode === 'portrait' && styles.zoomButtonActive]}
+                    onPress={() => setCameraViewMode('portrait')}
+                  >
+                    <Text style={styles.zoomButtonText}>9:16</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.zoomButton, cameraViewMode === 'landscape' && styles.zoomButtonActive]}
+                    onPress={() => setCameraViewMode('landscape')}
+                  >
+                    <Text style={styles.zoomButtonText}>3:4</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               <TouchableOpacity
                 style={[
-                  styles.captureButton, 
+                  styles.captureButton,
                   (isOrientationMismatch() || isCapturing) && styles.captureButtonDisabled,
                   isProcessingAfter && styles.captureButtonProcessing
-                ]} 
+                ]}
                 onPress={takePicture}
                 disabled={isOrientationMismatch() || isCapturing}
               >
@@ -2441,31 +2514,15 @@ export default function CameraScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
 
-            {/* Right container - Flashlight */}
+            {/* Right container - Done button */}
             <View style={styles.buttonContainer}>
-              {facing === 'back' ? (
-                <TouchableOpacity
-                  style={styles.flashlightButton}
-                  onPress={() => {
-                    // If this lens reports no torch support, show a one-time explanation instead of crashing.
-                    if (!supportsTorch) {
-                      Alert.alert(
-                        'Flash Not Available',
-                        'The selected camera lens does not support flash on this device. Try switching to the 1x camera.'
-                      );
-                      return;
-                    }
-                    setEnableTorch(!enableTorch);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.flashlightButtonText}>
-                    {enableTorch ? '💡' : '⚫'}
-                  </Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.flashlightButton} />
-              )}
+              <TouchableOpacity
+                style={styles.doneButton}
+                onPress={() => navigation.navigate('Home')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.doneButtonText}>Done</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -3209,13 +3266,31 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6
   },
+  torchButton: {
+    position: 'absolute',
+    top: 50,
+    right: 116,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    elevation: 1000,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)'
+  },
+  torchButtonText: {
+    fontSize: 20
+  },
   soundButton: {
     position: 'absolute',
     top: 50,
-    right: 80, // Positioned between room indicator and close button
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    right: 68,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -3225,15 +3300,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.3)'
   },
   soundButtonText: {
-    fontSize: 24
+    fontSize: 20
   },
   closeButtonTopRight: {
     position: 'absolute',
     top: 50,
     right: 20,
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -3309,6 +3384,35 @@ const styles = StyleSheet.create({
     color: COLORS.PRIMARY,
     fontSize: 14,
     fontWeight: '600'
+  },
+  captureButtonContainer: {
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  aspectRatioSelector: {
+    position: 'absolute',
+    bottom: 90,
+    flexDirection: 'row',
+    gap: 10
+  },
+  aspectRatioButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 60,
+    alignItems: 'center'
+  },
+  aspectRatioButtonActive: {
+    backgroundColor: COLORS.PRIMARY
+  },
+  aspectRatioText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  aspectRatioTextActive: {
+    color: '#000'
   },
   captureButton: {
     width: 80,
@@ -3437,7 +3541,7 @@ const styles = StyleSheet.create({
   thumbnailViewerContainer: {
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderWidth: 2,
     borderColor: COLORS.PRIMARY
   },
@@ -3974,6 +4078,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  doneButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 22,
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  doneButtonText: {
+    color: COLORS.PRIMARY,
+    fontSize: 16,
+    fontWeight: '600',
+    flexShrink: 0,
   },
   // Photo capture animation styles
   captureAnimationOverlay: {

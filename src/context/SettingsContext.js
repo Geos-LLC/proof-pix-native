@@ -105,6 +105,7 @@ export const SettingsProvider = ({ children }) => {
   const [customRooms, setCustomRooms] = useState(null); // null means use default rooms
   const [userPlan, setUserPlan] = useState('starter'); // Add userPlan state
   const [cleaningServiceEnabled, setCleaningServiceEnabled] = useState(true);
+  const [shutterSoundEnabled, setShutterSoundEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
 
   // Load settings on mount
@@ -175,6 +176,11 @@ export const SettingsProvider = ({ children }) => {
             ? settings.cleaningServiceEnabled
             : true
         );
+        setShutterSoundEnabled(
+          typeof settings.shutterSoundEnabled === 'boolean'
+            ? settings.shutterSoundEnabled
+            : true
+        );
       }
       
       // EMERGENCY: Clear all corrupted custom rooms data
@@ -217,6 +223,7 @@ export const SettingsProvider = ({ children }) => {
         sectionLanguage,
         userPlan,
         cleaningServiceEnabled,
+        shutterSoundEnabled,
         ...newSettings
       };
       await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -391,6 +398,12 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ cleaningServiceEnabled: newValue });
   };
 
+  const toggleShutterSoundEnabled = async () => {
+    const newValue = !shutterSoundEnabled;
+    setShutterSoundEnabled(newValue);
+    await saveSettings({ shutterSoundEnabled: newValue });
+  };
+
   const toggleUseFolderStructure = async () => {
     const newValue = !useFolderStructure;
     setUseFolderStructure(newValue);
@@ -470,6 +483,7 @@ export const SettingsProvider = ({ children }) => {
       setCustomRooms(null);
       setUserPlan('starter'); // Reset plan on user data reset
       setCleaningServiceEnabled(true);
+      setShutterSoundEnabled(true);
       await saveSettings({ 
         showLabels: true,
         showWatermark: true,
@@ -495,6 +509,7 @@ export const SettingsProvider = ({ children }) => {
         labelLanguage: 'en',
         userPlan: 'starter',
         cleaningServiceEnabled: true,
+        shutterSoundEnabled: true,
       });
     } catch (error) {
 
@@ -560,6 +575,8 @@ export const SettingsProvider = ({ children }) => {
     updateUserPlan, // Expose updateUserPlan
     cleaningServiceEnabled,
     toggleCleaningServiceEnabled,
+    shutterSoundEnabled,
+    toggleShutterSoundEnabled,
     reloadSettings, // Expose reloadSettings
   };
 
