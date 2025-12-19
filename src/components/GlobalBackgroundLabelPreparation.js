@@ -12,7 +12,7 @@ import { useSettings } from '../context/SettingsContext';
 import { addLabelToImage, compositeImages, calculateAfterLabelOffsets, addWatermarkToImage } from '../utils/imageCompositor';
 import { useTranslation } from 'react-i18next';
 
-const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.com';
+const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
 
 export default function GlobalBackgroundLabelPreparation() {
   const [preparingPhoto, setPreparingPhoto] = useState(null);

@@ -2,12 +2,12 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { useSettings } from '../context/SettingsContext';
 
-const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.com';
+const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
 const DEFAULT_LABEL_BACKGROUND = '#FFD700';
 const DEFAULT_WATERMARK_OPACITY = 0.5;
 
 /**
- * Watermark component that displays "Created with ProofPix.com" with a clickable link
+ * Watermark component that displays "Created with ProofPix.app" with a clickable link
  * Positioned at the bottom-right corner of photos
  * Uses same styling as PhotoLabel with 80% opacity
  */

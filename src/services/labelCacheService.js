@@ -104,7 +104,7 @@ export const calculateSettingsHash = (settings) => {
     // Watermark settings
     showWatermark: showWatermark ?? true,
     customWatermarkEnabled: customWatermarkEnabled || false,
-    watermarkText: customWatermarkEnabled ? (watermarkText || 'Created with ProofPix.com') : 'Created with ProofPix.com',
+    watermarkText: customWatermarkEnabled ? (watermarkText || 'Created with ProofPix.app') : 'Created with ProofPix.app',
     watermarkColor: watermarkColor || '#FFD700',
     watermarkOpacity: typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5,
   };
