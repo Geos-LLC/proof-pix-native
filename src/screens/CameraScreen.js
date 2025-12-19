@@ -2298,23 +2298,8 @@ export default function CameraScreen({ route, navigation }) {
       style={styles.container}
       {...cameraViewPanResponder.panHandlers}
     >
-      {/* Animated camera view 
-          Gesture handling:
-          - When gallery is shown: swipe down closes gallery (returns to full camera)
-          - When gallery is NOT shown: swipe down closes camera (navigates to main), swipe up shows gallery, horizontal swipes switch rooms
-      */}
-      <Animated.View
-                style={[
-          styles.cameraWrapper,
-          {
-            transform: [
-              { scaleX: cameraScale },
-              { scaleY: cameraScale },
-              { translateY: cameraTranslateY }
-            ]
-          }
-        ]}
-      >
+      {/* Camera view content - scale transform is applied by parent Animated.View */}
+      <View style={styles.cameraWrapper}>
         {/* Orientation mismatch warning */}
         {(() => {
           const mismatch = isOrientationMismatch();
@@ -2414,7 +2399,7 @@ export default function CameraScreen({ route, navigation }) {
             </View>
           )}
         </View>
-      </Animated.View>
+      </View>
 
 
       {/* Fixed UI Layer - doesn't rotate with device */}

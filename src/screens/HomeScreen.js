@@ -13,7 +13,8 @@ import {
   Alert,
   TextInput,
   Share,
-  ActivityIndicator
+  ActivityIndicator,
+  Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,6 +23,7 @@ import { usePhotos } from '../context/PhotoContext';
 import { ROOMS, COLORS, PHOTO_MODES } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
+import PhotoLabel from '../components/PhotoLabel';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
 import { createAlbumName } from '../services/uploadService';
@@ -54,7 +56,7 @@ export default function HomeScreen({ navigation }) {
   const [selectedProjects, setSelectedProjects] = useState(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const { projects, getPhotosByProject, deleteProject, setActiveProject, activeProjectId, createProject, renameProject, photos } = usePhotos();
-  const { userName, location, getRooms, userPlan, cleaningServiceEnabled, sectionLanguage, updateUserPlan } = useSettings();
+  const { userName, location, getRooms, userPlan, cleaningServiceEnabled, sectionLanguage, updateUserPlan, showLabels, toggleLabels, beforeLabelPosition, afterLabelPosition } = useSettings();
   const { exceedsLimit } = useFeaturePermissions();
   const { uploadStatus, cancelUpload, cancelAllUploads } = useBackgroundUpload();
   const [newProjectVisible, setNewProjectVisible] = useState(false);
@@ -1441,6 +1443,12 @@ export default function HomeScreen({ navigation }) {
                   style={styles.fullScreenHalfImage}
                   resizeMode="cover"
                 />
+                {showLabels && (
+                  <PhotoLabel
+                    label="common.before"
+                    position={beforeLabelPosition || 'top-left'}
+                  />
+                )}
               </View>
               <View style={styles.fullScreenHalf}>
                 <Image
@@ -1448,9 +1456,38 @@ export default function HomeScreen({ navigation }) {
                   style={styles.fullScreenHalfImage}
                   resizeMode="cover"
                 />
+                {showLabels && (
+                  <PhotoLabel
+                    label="common.after"
+                    position={afterLabelPosition || 'top-right'}
+                  />
+                )}
               </View>
             </View>
           </TouchableWithoutFeedback>
+          {/* Labels toggle - centered above photo */}
+          <View style={styles.fullScreenLabelsToggleContainer}>
+            <View style={styles.fullScreenLabelsToggle}>
+              <Text style={styles.fullScreenLabelsText}>{t('settings.showLabels')}</Text>
+              <Switch
+                value={showLabels}
+                onValueChange={toggleLabels}
+                trackColor={{ false: '#767577', true: COLORS.PRIMARY }}
+                thumbColor={showLabels ? '#fff' : '#f4f3f4'}
+              />
+            </View>
+            {showLabels && (
+              <TouchableOpacity
+                style={styles.fullScreenCustomizeButton}
+                onPress={() => {
+                  handleLongPressEnd();
+                  navigation.navigate('LabelCustomization');
+                }}
+              >
+                <Text style={styles.fullScreenCustomizeText}>{t('settings.customize')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {/* Delete button - top right */}
           <TouchableOpacity
             style={styles.fullScreenDeleteButton}
@@ -2280,6 +2317,39 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4
+  },
+  fullScreenLabelsToggleContainer: {
+    position: 'absolute',
+    top: '15%',
+    alignSelf: 'center',
+    alignItems: 'center',
+    zIndex: 1002
+  },
+  fullScreenLabelsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
+  fullScreenLabelsText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 8
+  },
+  fullScreenCustomizeButton: {
+    marginTop: 8,
+    backgroundColor: COLORS.PRIMARY,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20
+  },
+  fullScreenCustomizeText: {
+    color: COLORS.TEXT,
+    fontSize: 14,
+    fontWeight: '600'
   },
   fullScreenDeleteButton: {
     position: 'absolute',
