@@ -5,7 +5,7 @@ export default {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
     owner: "sayapingeorge",
-    version: process.env.VERSION || "1.2.2",
+    version: process.env.VERSION || "1.2.3",
     orientation: "default",
     icon: "./assets/PP_logo.png",
     userInterfaceStyle: "light",

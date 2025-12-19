@@ -1411,7 +1411,7 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.fullScreenActionButtonText}>{t('common.close')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.fullScreenActionButton}
+              style={styles.fullScreenRetakeButton}
               onPress={() => {
                 handleLongPressEnd();
                 navigation.navigate('Camera', {
@@ -1421,7 +1421,7 @@ export default function HomeScreen({ navigation }) {
                 });
               }}
             >
-              <Text style={styles.fullScreenActionButtonText}>{t('home.retake')}</Text>
+              <Text style={styles.fullScreenRetakeButtonText}>{t('home.retake')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1527,7 +1527,7 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.fullScreenActionButtonText}>{t('common.close')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.fullScreenActionButton}
+              style={styles.fullScreenShareButton}
               disabled={sharing}
               onPress={() => {
                 const combinedPhoto = getCombinedPhotos(fullScreenPhotoSet.before.room).find(
@@ -1540,9 +1540,9 @@ export default function HomeScreen({ navigation }) {
               }}
             >
               {sharing ? (
-                <ActivityIndicator size="small" color={COLORS.TEXT} />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Text style={styles.fullScreenActionButtonText}>{t('gallery.share')}</Text>
+                <Text style={styles.fullScreenShareButtonText}>{t('gallery.share')}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1826,7 +1826,6 @@ export default function HomeScreen({ navigation }) {
         }}
         initialRooms={customRooms}
         editRoom={contextMenuRoom}
-        mode={roomEditorMode}
       />
 
       {/* Plan Selection Modal */}
@@ -2387,6 +2386,42 @@ const styles = StyleSheet.create({
   },
   fullScreenActionButtonText: {
     color: COLORS.TEXT,
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  fullScreenShareButton: {
+    flex: 1,
+    backgroundColor: '#0077CC',
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5
+  },
+  fullScreenShareButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  fullScreenRetakeButton: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: COLORS.PRIMARY,
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5
+  },
+  fullScreenRetakeButtonText: {
+    color: COLORS.PRIMARY,
     fontSize: 18,
     fontWeight: 'bold'
   },
