@@ -100,7 +100,10 @@
     "deleteFolder": "Delete Folder",
     "deleteFolderConfirm": "Are you sure you want to delete {{name}}?",
     "addFolder": "Add Folder",
-    "duplicateFolder": "Duplicate Folder"
+    "duplicateFolder": "Duplicate Folder",
+    "takeAfter": "Take After",
+    "retake": "Retake",
+    "preview": "Preview"
   },
   "projects": {
     "title": "Projects",

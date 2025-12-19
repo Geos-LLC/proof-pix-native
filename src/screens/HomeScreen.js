@@ -11,7 +11,9 @@ import {
   PanResponder,
   Modal,
   Alert,
-  TextInput
+  TextInput,
+  Share,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -71,6 +73,7 @@ export default function HomeScreen({ navigation }) {
   const selectedProjectsForDeleteRef = useRef(new Set());
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
+  const [sharing, setSharing] = useState(false);
 
   // Get rooms from settings (custom or default)
   const { customRooms, saveCustomRooms, resetCustomRooms } = useSettings();
@@ -631,6 +634,42 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  // Share combined photo
+  const shareCombinedPhoto = async (thumbnailUri, photoName, roomId) => {
+    try {
+      setSharing(true);
+
+      // Copy the combined image to cache directory for sharing
+      const tempFileName = `${roomId}_${photoName}_combined_${Date.now()}.jpg`;
+      const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
+      await FileSystem.copyAsync({ from: thumbnailUri, to: tempUri });
+
+      // Share the image
+      const shareOptions = {
+        title: `${t('common.before')}/${t('common.after')} - ${photoName}`,
+        url: tempUri,
+        type: 'image/jpeg'
+      };
+
+      await Share.share(shareOptions);
+
+      // Clean up temporary file after sharing
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(tempUri);
+        if (fileInfo.exists) {
+          await FileSystem.deleteAsync(tempUri, { idempotent: true });
+        }
+      } catch (cleanupError) {
+        console.error('[HomeScreen] Cleanup error:', cleanupError);
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Share error:', error);
+      Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
+    } finally {
+      setSharing(false);
+    }
+  };
+
   // PanResponder for room switching - recreate when rooms change
   const panResponder = useMemo(() => {
     // );
@@ -1006,58 +1045,47 @@ export default function HomeScreen({ navigation }) {
         const thumbnailUri = combinedBaseUris[beforePhoto.name] || combinedPhoto?.uri;
 
         if (thumbnailUri) {
-          // Show the combined image - tap to retake after photo
+          // Show the combined image - with Retake and Preview buttons
           gridItems.push(
-            <TouchableOpacity
+            <View
               key={beforePhoto.id}
               style={styles.photoItem}
-              delayPressIn={50}
-              onPress={() => {
-                if (!longPressTriggered.current && !isSwiping.current) {
-                  tapCount.current += 1;
-                  const now = Date.now();
-                  if (tapCount.current === 1) {
-                    // First tap - wait for potential second tap
-                    lastTap.current = now;
-                    setTimeout(() => {
-                      if (tapCount.current === 1 && lastTap.current) {
-                        // Single tap confirmed
-                        navigation.navigate('Camera', {
-                          mode: 'after',
-                          beforePhoto,
-                          afterPhoto,
-                          combinedPhoto,
-                          room: currentRoom
-                        });
-                      }
-                      tapCount.current = 0;
-                      lastTap.current = null;
-                    }, 300);
-                  } else if (tapCount.current === 2) {
-                    // Double tap confirmed
-                    handleDoubleTap(combinedPhoto, beforePhoto, afterPhoto);
-                    tapCount.current = 0;
-                    lastTap.current = null;
-                  }
-                }
-              }}
-              onPressIn={() => handleLongPressStart(combinedPhoto)}
-              onPressOut={handleLongPressEnd}
-              >
+            >
               <CroppedThumbnail
                 imageUri={thumbnailUri}
                 aspectRatio={beforePhoto.aspectRatio || '4:3'}
                 orientation={beforePhoto.orientation || 'portrait'}
                 size={PHOTO_SIZE}
               />
-              <View style={styles.photoOverlay}>
-                <Text style={styles.photoName}>
-                  {cleaningServiceEnabled
-                    ? `${t(`rooms.${currentRoom}`, { lng: sectionLanguage, defaultValue: currentRoom })} ${index + 1}`
-                    : `${t('settings.section', { lng: sectionLanguage })} ${index + 1}`}
-                </Text>
+              <View style={styles.thumbnailButtonsOverlay}>
+                <TouchableOpacity
+                  style={styles.thumbnailButton}
+                  onPress={() => {
+                    if (!isSwiping.current) {
+                      navigation.navigate('Camera', {
+                        mode: 'after',
+                        beforePhoto,
+                        afterPhoto,
+                        combinedPhoto,
+                        room: currentRoom
+                      });
+                    }
+                  }}
+                >
+                  <Text style={styles.thumbnailButtonText}>{t('home.retake')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.thumbnailButton}
+                  onPress={() => {
+                    if (!isSwiping.current) {
+                      handleDoubleTap(combinedPhoto, beforePhoto, afterPhoto);
+                    }
+                  }}
+                >
+                  <Text style={styles.thumbnailButtonText}>{t('home.preview')}</Text>
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
+            </View>
           );
         } else {
           // Has after photo but no combined yet - show split preview, tap to retake after
@@ -1126,39 +1154,9 @@ export default function HomeScreen({ navigation }) {
       } else {
         // Show before photo only - waiting for after
         gridItems.push(
-          <TouchableOpacity
+          <View
             key={beforePhoto.id}
             style={[styles.photoItem, styles.photoItemPending]}
-            delayPressIn={50}
-            onPress={() => {
-              if (!longPressTriggered.current && !isSwiping.current) {
-                tapCount.current += 1;
-                const now = Date.now();
-                if (tapCount.current === 1) {
-                  // First tap - wait for potential second tap
-                  lastTap.current = now;
-                  setTimeout(() => {
-                    if (tapCount.current === 1 && lastTap.current) {
-                      // Single tap confirmed
-                      navigation.navigate('Camera', {
-                        mode: 'after',
-                        beforePhoto,
-                        room: currentRoom
-                      });
-                    }
-                    tapCount.current = 0;
-                    lastTap.current = null;
-                  }, 300);
-                } else if (tapCount.current === 2) {
-                  // Double tap confirmed
-                  handleDoubleTap(beforePhoto);
-                  tapCount.current = 0;
-                  lastTap.current = null;
-                }
-              }
-            }}
-            onPressIn={() => handleLongPressStart(beforePhoto)}
-            onPressOut={handleLongPressEnd}
           >
             <CroppedThumbnail
               imageUri={beforePhoto.uri}
@@ -1166,14 +1164,33 @@ export default function HomeScreen({ navigation }) {
               orientation={beforePhoto.orientation || 'portrait'}
               size={PHOTO_SIZE}
             />
-            <View style={styles.photoOverlay}>
-              <Text style={styles.photoName}>
-                {cleaningServiceEnabled
-                  ? `${t(`rooms.${currentRoom}`, { lng: sectionLanguage, defaultValue: currentRoom })} ${index + 1}`
-                  : `${t('settings.section', { lng: sectionLanguage })} ${index + 1}`}
-              </Text>
+            <View style={styles.thumbnailButtonsOverlay}>
+              <TouchableOpacity
+                style={styles.thumbnailButton}
+                onPress={() => {
+                  if (!isSwiping.current) {
+                    navigation.navigate('Camera', {
+                      mode: 'after',
+                      beforePhoto,
+                      room: currentRoom
+                    });
+                  }
+                }}
+              >
+                <Text style={styles.thumbnailButtonText}>{t('home.takeAfter')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.thumbnailButton}
+                onPress={() => {
+                  if (!isSwiping.current) {
+                    handleDoubleTap(beforePhoto);
+                  }
+                }}
+              >
+                <Text style={styles.thumbnailButtonText}>{t('home.preview')}</Text>
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          </View>
         );
       }
     });
@@ -1353,22 +1370,58 @@ export default function HomeScreen({ navigation }) {
               resizeMode="contain"
             />
           </TouchableWithoutFeedback>
-          {fullScreenPhotos.length > 1 ? (
+          {/* Delete button - top right */}
+          <TouchableOpacity
+            style={styles.fullScreenDeleteButton}
+            onPress={() => {
+              Alert.alert(
+                t('home.deletePhotoSet'),
+                t('home.deletePhotoSetConfirm', { name: fullScreenPhoto.name }),
+                [
+                  { text: t('common.cancel'), style: 'cancel' },
+                  {
+                    text: t('common.delete'),
+                    style: 'destructive',
+                    onPress: () => {
+                      deletePhotoSet(fullScreenPhoto.id);
+                      handleLongPressEnd();
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <Text style={styles.fullScreenDeleteIcon}>🗑️</Text>
+          </TouchableOpacity>
+          {fullScreenPhotos.length > 1 && (
             <View style={styles.fullScreenNavigation}>
               <Text style={styles.fullScreenCounter}>
                 {fullScreenIndex + 1} / {fullScreenPhotos.length}
               </Text>
-              <Text style={styles.fullScreenHint}>
-                ← → {t('home.navigate')} • ↑ ↓ {t('home.close')}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.fullScreenNavigation}>
-              <Text style={styles.fullScreenHint}>
-                ↑ ↓ {t('home.close')}
-              </Text>
             </View>
           )}
+          {/* Bottom action buttons */}
+          <View style={styles.fullScreenBottomButtons}>
+            <TouchableOpacity
+              style={styles.fullScreenActionButton}
+              onPress={handleLongPressEnd}
+            >
+              <Text style={styles.fullScreenActionButtonText}>{t('common.close')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.fullScreenActionButton}
+              onPress={() => {
+                handleLongPressEnd();
+                navigation.navigate('Camera', {
+                  mode: fullScreenPhoto.mode === 'before' ? 'after' : 'before',
+                  beforePhoto: fullScreenPhoto.mode === 'before' ? fullScreenPhoto : null,
+                  room: currentRoom
+                });
+              }}
+            >
+              <Text style={styles.fullScreenActionButtonText}>{t('home.retake')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -1379,7 +1432,7 @@ export default function HomeScreen({ navigation }) {
             <View style={[
               styles.fullScreenCombinedPreview,
               (fullScreenPhotoSet.before.orientation === 'landscape' || fullScreenPhotoSet.before.cameraViewMode === 'landscape')
-                ? styles.fullScreenStacked 
+                ? styles.fullScreenStacked
                 : styles.fullScreenSideBySide
             ]}>
               <View style={styles.fullScreenHalf}>
@@ -1398,22 +1451,64 @@ export default function HomeScreen({ navigation }) {
               </View>
             </View>
           </TouchableWithoutFeedback>
-          {fullScreenPhotos.length > 1 ? (
+          {/* Delete button - top right */}
+          <TouchableOpacity
+            style={styles.fullScreenDeleteButton}
+            onPress={() => {
+              Alert.alert(
+                t('home.deletePhotoSet'),
+                t('home.deletePhotoSetConfirm', { name: fullScreenPhotoSet.before.name }),
+                [
+                  { text: t('common.cancel'), style: 'cancel' },
+                  {
+                    text: t('common.delete'),
+                    style: 'destructive',
+                    onPress: () => {
+                      deletePhotoSet(fullScreenPhotoSet.before.id);
+                      handleLongPressEnd();
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <Text style={styles.fullScreenDeleteIcon}>🗑️</Text>
+          </TouchableOpacity>
+          {fullScreenPhotos.length > 1 && (
             <View style={styles.fullScreenNavigation}>
               <Text style={styles.fullScreenCounter}>
                 {fullScreenIndex + 1} / {fullScreenPhotos.length}
               </Text>
-              <Text style={styles.fullScreenHint}>
-                ← → {t('home.navigate')} • ↑ ↓ {t('home.close')}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.fullScreenNavigation}>
-              <Text style={styles.fullScreenHint}>
-                ↑ ↓ {t('home.close')}
-              </Text>
             </View>
           )}
+          {/* Bottom action buttons */}
+          <View style={styles.fullScreenBottomButtons}>
+            <TouchableOpacity
+              style={styles.fullScreenActionButton}
+              onPress={handleLongPressEnd}
+            >
+              <Text style={styles.fullScreenActionButtonText}>{t('common.close')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.fullScreenActionButton}
+              disabled={sharing}
+              onPress={() => {
+                const combinedPhoto = getCombinedPhotos(fullScreenPhotoSet.before.room).find(
+                  (p) => p.name === fullScreenPhotoSet.before.name
+                );
+                const thumbnailUri = combinedBaseUris[fullScreenPhotoSet.before.name] || combinedPhoto?.uri;
+                if (thumbnailUri) {
+                  shareCombinedPhoto(thumbnailUri, fullScreenPhotoSet.before.name, fullScreenPhotoSet.before.room);
+                }
+              }}
+            >
+              {sharing ? (
+                <ActivityIndicator size="small" color={COLORS.TEXT} />
+              ) : (
+                <Text style={styles.fullScreenActionButtonText}>{t('gallery.share')}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -2014,6 +2109,30 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8
   },
+  thumbnailButtonsOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
+  },
+  thumbnailButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  thumbnailButtonText: {
+    color: COLORS.PRIMARY,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   photoName: {
     color: 'white',
     fontSize: 12,
@@ -2161,6 +2280,45 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4
+  },
+  fullScreenDeleteButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    padding: 10,
+    zIndex: 1002
+  },
+  fullScreenDeleteIcon: {
+    fontSize: 24
+  },
+  fullScreenBottomButtons: {
+    position: 'absolute',
+    bottom: 50,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    zIndex: 1002
+  },
+  fullScreenActionButton: {
+    flex: 1,
+    backgroundColor: COLORS.PRIMARY,
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5
+  },
+  fullScreenActionButtonText: {
+    color: COLORS.TEXT,
+    fontSize: 18,
+    fontWeight: 'bold'
   },
   // Open Project modal styles
   optionsModalOverlay: {
