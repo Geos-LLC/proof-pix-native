@@ -26,6 +26,7 @@ import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
+import { useAdmin } from '../context/AdminContext';
 import { createAlbumName } from '../services/uploadService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import UploadIndicatorLine from '../components/UploadIndicatorLine';
@@ -57,6 +58,8 @@ export default function HomeScreen({ navigation }) {
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const { projects, getPhotosByProject, deleteProject, setActiveProject, activeProjectId, createProject, renameProject, photos } = usePhotos();
   const { userName, location, getRooms, userPlan, cleaningServiceEnabled, sectionLanguage, updateUserPlan, showLabels, toggleLabels, beforeLabelPosition, afterLabelPosition } = useSettings();
+  const { userMode } = useAdmin();
+  const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
   const { exceedsLimit } = useFeaturePermissions();
   const { uploadStatus, cancelUpload, cancelAllUploads } = useBackgroundUpload();
   const [newProjectVisible, setNewProjectVisible] = useState(false);
@@ -777,7 +780,8 @@ export default function HomeScreen({ navigation }) {
     
     // Check if starter tier user already has a project
     // Starter users can only have 1 project
-    if (exceedsLimit('maxProjects', projects.length)) {
+    // Skip limit check for team members
+    if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
       setShowPlanModal(true);
       return;
     }
@@ -801,7 +805,8 @@ export default function HomeScreen({ navigation }) {
 
   const handleCreateProject = async () => {
     // Double-check: if limit exceeded, show plan modal
-    if (exceedsLimit('maxProjects', projects.length)) {
+    // Skip limit check for team members
+    if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
       setNewProjectVisible(false);
       setShowPlanModal(true);
       return;
