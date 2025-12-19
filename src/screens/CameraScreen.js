@@ -40,7 +40,7 @@ import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 const initialDimensions = Dimensions.get('window');
 const initialWidth = initialDimensions.width;
@@ -160,6 +160,7 @@ export default function CameraScreen({ route, navigation }) {
   }, []);
 
   const { hasPermission, requestPermission } = useCameraPermission();
+  const isFocused = useIsFocused();
   const [zoom, setZoom] = useState(1.0);
 
   // Calculate target aspect ratio for format selection
@@ -2238,7 +2239,7 @@ export default function CameraScreen({ route, navigation }) {
                     style={styles.camera}
                     device={device}
                     format={format}
-                    isActive={true}
+                    isActive={isFocused}
                     photo={true}
                     zoom={zoom}
                     enableZoomGesture={false}
@@ -2272,7 +2273,7 @@ export default function CameraScreen({ route, navigation }) {
                   style={styles.camera}
                   device={device}
                   format={format}
-                  isActive={true}
+                  isActive={isFocused}
                   photo={true}
                   zoom={zoom}
                   enableZoomGesture={false}
