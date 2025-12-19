@@ -261,8 +261,12 @@ export default function CameraScreen({ route, navigation }) {
       // After mode: show selectedBeforePhoto if set, otherwise beforePhoto if it matches current room
       return selectedBeforePhoto || (beforePhoto?.room === room ? beforePhoto : null);
     } else {
-      // Before mode: show selectedBeforePhoto only if it matches current room
-      return selectedBeforePhoto?.room === room ? selectedBeforePhoto : null;
+      // Before mode: show selectedBeforePhoto if matches room, otherwise show last photo from gallery
+      if (selectedBeforePhoto?.room === room) {
+        return selectedBeforePhoto;
+      }
+      const photos = getBeforePhotos(room);
+      return photos.length > 0 ? photos[photos.length - 1] : null;
     }
   };
 
@@ -2450,17 +2454,6 @@ export default function CameraScreen({ route, navigation }) {
           <Text style={styles.soundButtonText}>{shutterSoundEnabled ? '🔔' : '🔕'}</Text>
         </TouchableOpacity>
 
-        {/* Close button - fixed to screen */}
-        <TouchableOpacity
-          style={styles.closeButtonTopRight}
-          onPress={() => {
-            navigation.goBack();
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.closeButtonText}>✕</Text>
-        </TouchableOpacity>
-
         {/* Camera zoom controls - fixed to screen */}
         <View style={styles.zoomControls}>
           <View style={styles.zoomButtons}>
@@ -3339,17 +3332,15 @@ const styles = StyleSheet.create({
   torchButton: {
     position: 'absolute',
     top: 50,
-    right: 116,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    right: 90,
     backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
-    elevation: 1000,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)'
+    elevation: 1000
   },
   torchButtonText: {
     fontSize: 20
@@ -3357,35 +3348,18 @@ const styles = StyleSheet.create({
   soundButton: {
     position: 'absolute',
     top: 50,
-    right: 68,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    right: 20,
     backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
-    elevation: 1000,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)'
+    elevation: 1000
   },
   soundButtonText: {
     fontSize: 20
-  },
-  closeButtonTopRight: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    elevation: 1000,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)'
   },
   closeButton: {
     width: 44,
@@ -3616,12 +3590,12 @@ const styles = StyleSheet.create({
     borderColor: COLORS.PRIMARY
   },
   thumbnailLandscape: {
-    width: 84,
-    height: 56  // Landscape orientation - same size as portrait, rotated
+    width: 68,
+    height: 68  // Square, same size as capture button inner
   },
   thumbnailPortrait: {
-    width: 56,
-    height: 84  // Portrait orientation - taller than wide (3:4 ratio approx)
+    width: 68,
+    height: 68  // Square, same size as capture button inner
   },
   thumbnailViewerImage: {
     width: '100%',
@@ -4150,13 +4124,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   doneButton: {
-    width: 84,
-    height: 56,
+    width: 68,
+    height: 68,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+    borderWidth: 2,
+    borderColor: COLORS.PRIMARY
   },
   doneButtonText: {
     color: COLORS.PRIMARY,
