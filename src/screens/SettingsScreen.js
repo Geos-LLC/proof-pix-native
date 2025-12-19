@@ -752,7 +752,9 @@ export default function SettingsScreen({ navigation, route }) {
   useEffect(() => {
     let isMounted = true;
     const checkStoredIndividual = async () => {
-      if (!isTeamMember) {
+      // Only allow switch back for authenticated admins previewing team view
+      // Regular team members who joined via invite code should not see this option
+      if (!isTeamMember || !isAuthenticated) {
         if (isMounted) {
           setCanSwitchBack(false);
         }
@@ -776,7 +778,7 @@ export default function SettingsScreen({ navigation, route }) {
     return () => {
       isMounted = false;
     };
-  }, [isTeamMember]);
+  }, [isTeamMember, isAuthenticated]);
   const [showRoomEditor, setShowRoomEditor] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [referralInfo, setReferralInfo] = useState({
@@ -799,15 +801,9 @@ export default function SettingsScreen({ navigation, route }) {
   const [editingTeamName, setEditingTeamName] = useState(false);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
-  const [labelLanguageModalVisible, setLabelLanguageModalVisible] = useState(false);
-  const [sectionLanguageModalVisible, setSectionLanguageModalVisible] = useState(false);
 
   const appLanguageScrollViewRef = useRef(null);
   const appLanguageLayouts = useRef({});
-  const labelLanguageScrollViewRef = useRef(null);
-  const labelLanguageLayouts = useRef({});
-  const sectionLanguageScrollViewRef = useRef(null);
-  const sectionLanguageLayouts = useRef({});
   const watermarkTextInputRef = useRef(null);
   const watermarkLinkInputRef = useRef(null);
   const mainScrollViewRef = useRef(null);
@@ -2341,30 +2337,6 @@ export default function SettingsScreen({ navigation, route }) {
     }
   }, [languageModalVisible]);
 
-  useEffect(() => {
-    if (labelLanguageModalVisible) {
-      const currentLanguageCode = labelLanguage;
-      const yOffset = labelLanguageLayouts.current[currentLanguageCode];
-      if (yOffset !== undefined && labelLanguageScrollViewRef.current) {
-        setTimeout(() => {
-          labelLanguageScrollViewRef.current.scrollTo({ y: yOffset, animated: false });
-        }, 100);
-      }
-    }
-  }, [labelLanguageModalVisible, labelLanguage]);
-
-  useEffect(() => {
-    if (sectionLanguageModalVisible) {
-      const currentLanguageCode = sectionLanguage;
-      const yOffset = sectionLanguageLayouts.current[currentLanguageCode];
-      if (yOffset !== undefined && sectionLanguageScrollViewRef.current) {
-        setTimeout(() => {
-          sectionLanguageScrollViewRef.current.scrollTo({ y: yOffset, animated: false });
-        }, 100);
-      }
-    }
-  }, [sectionLanguageModalVisible, sectionLanguage]);
-
   // Handle navigation to specific sections - using useEffect to watch route params
   useEffect(() => {
     const params = route?.params;
@@ -2592,31 +2564,6 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
           </TouchableOpacity>
 
-          {/* Label Language */}
-          <TouchableOpacity
-            style={styles.settingButton}
-            onPress={() => setLabelLanguageModalVisible(true)}
-          >
-            <Text style={styles.settingText}>{t('settings.labelLanguage')}</Text>
-            <View style={styles.languageSelector}>
-              <Text style={styles.languageFlag}>{getLabelLanguage().flag}</Text>
-              <Text style={styles.languageName}>{getLabelLanguage().name}</Text>
-              <Text style={styles.languageChangeText}>›</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Section Language */}
-          <TouchableOpacity
-            style={styles.settingButton}
-            onPress={() => setSectionLanguageModalVisible(true)}
-          >
-            <Text style={styles.settingText}>{t('settings.sectionLanguage')}</Text>
-            <View style={styles.languageSelector}>
-              <Text style={styles.languageFlag}>{getSectionLanguage().flag}</Text>
-              <Text style={styles.languageName}>{getSectionLanguage().name}</Text>
-              <Text style={styles.languageChangeText}>›</Text>
-            </View>
-          </TouchableOpacity>
         </View>
 
         {userMode !== 'team_member' && (
@@ -5367,116 +5314,6 @@ export default function SettingsScreen({ navigation, route }) {
               <TouchableOpacity
                 style={styles.closeModalButton}
                 onPress={() => setLanguageModalVisible(false)}
-              >
-                <Text style={styles.closeModalButtonText}>{t('common.close')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </RNModal>
-
-        {/* Label Language Modal */}
-          <RNModal
-          visible={labelLanguageModalVisible}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setLabelLanguageModalVisible(false)}
-        >
-          <View style={styles.languageModalOverlay}>
-            <View style={styles.languageModalContent}>
-              <Text style={styles.modalTitle}>{t('settings.labelLanguage')}</Text>
-              <ScrollView 
-                ref={labelLanguageScrollViewRef}
-                style={styles.languageScrollView} 
-                showsVerticalScrollIndicator={true}
-              >
-                {LANGUAGES.map((language) => (
-                  <TouchableOpacity
-                    key={language.code}
-                    onLayout={(event) => {
-                      const layout = event.nativeEvent.layout;
-                      labelLanguageLayouts.current[language.code] = layout.y;
-                    }}
-                    style={[
-                      styles.languageOption,
-                      labelLanguage === language.code && styles.languageOptionActive
-                    ]}
-                    onPress={() => {
-                      updateLabelLanguage(language.code);
-                      setLabelLanguageModalVisible(false);
-                    }}
-                  >
-                    <Text style={styles.languageFlag}>{language.flag}</Text>
-                    <Text style={[
-                      styles.languageOptionText,
-                      labelLanguage === language.code && styles.languageOptionTextActive
-                    ]}>
-                      {language.name}
-                    </Text>
-                    {labelLanguage === language.code && (
-                      <Text style={styles.checkmark}>✓</Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity
-                style={styles.closeModalButton}
-                onPress={() => setLabelLanguageModalVisible(false)}
-              >
-                <Text style={styles.closeModalButtonText}>{t('common.close')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </RNModal>
-
-        {/* Section Language Modal */}
-          <RNModal
-          visible={sectionLanguageModalVisible}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setSectionLanguageModalVisible(false)}
-        >
-          <View style={styles.languageModalOverlay}>
-            <View style={styles.languageModalContent}>
-              <Text style={styles.modalTitle}>{t('settings.sectionLanguage')}</Text>
-              <ScrollView
-                ref={sectionLanguageScrollViewRef}
-                style={styles.languageScrollView}
-                showsVerticalScrollIndicator={true}
-              >
-                {LANGUAGES.map((language) => (
-                  <TouchableOpacity
-                    key={language.code}
-                    onLayout={(event) => {
-                      const layout = event.nativeEvent.layout;
-                      sectionLanguageLayouts.current[language.code] = layout.y;
-                    }}
-                    style={[
-                      styles.languageOption,
-                      sectionLanguage === language.code && styles.languageOptionActive
-                    ]}
-                    onPress={() => {
-                      updateSectionLanguage(language.code);
-                      setSectionLanguageModalVisible(false);
-                    }}
-                  >
-                    <Text style={styles.languageFlag}>{language.flag}</Text>
-                    <Text
-                      style={[
-                        styles.languageOptionText,
-                        sectionLanguage === language.code && styles.languageOptionTextActive
-                      ]}
-                    >
-                      {language.name}
-                    </Text>
-                    {sectionLanguage === language.code && (
-                      <Text style={styles.checkmark}>✓</Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TouchableOpacity
-                style={styles.closeModalButton}
-                onPress={() => setSectionLanguageModalVisible(false)}
               >
                 <Text style={styles.closeModalButtonText}>{t('common.close')}</Text>
               </TouchableOpacity>
