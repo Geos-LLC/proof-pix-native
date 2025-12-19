@@ -100,8 +100,6 @@ export default function CameraScreen({ route, navigation }) {
   const galleryScrollRef = useRef(null);
   const carouselTranslateY = useRef(new Animated.Value(0)).current;
   const enlargedGalleryTranslateY = useRef(new Animated.Value(0)).current;
-  const cameraScale = useRef(new Animated.Value(1)).current;
-  const cameraTranslateY = useRef(new Animated.Value(0)).current;
   const galleryOpacity = useRef(new Animated.Value(0)).current;
   // Photo capture animation state
   const [captureAnimationUri, setCaptureAnimationUri] = useState(null);
@@ -429,29 +427,13 @@ export default function CameraScreen({ route, navigation }) {
       isGalleryAnimatingRef.current = true;
       setIsGalleryAnimating(true);
 
-      Animated.parallel([
-        Animated.spring(cameraScale, {
-          toValue: 1,
-          useNativeDriver: true,
-          tension: 50,
-          friction: 10
-        }),
-        Animated.spring(cameraTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          tension: 50,
-          friction: 10
-        }),
-        Animated.timing(galleryOpacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true
-        })
-      ]).start(() => {
-        setTimeout(() => {
-          isGalleryAnimatingRef.current = false;
-          setIsGalleryAnimating(false);
-        }, 100);
+      Animated.timing(galleryOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true
+      }).start(() => {
+        isGalleryAnimatingRef.current = false;
+        setIsGalleryAnimating(false);
       });
       return;
     }
@@ -462,29 +444,13 @@ export default function CameraScreen({ route, navigation }) {
       setIsGalleryAnimating(true);
       setShowGallery(false);
 
-      Animated.parallel([
-        Animated.spring(cameraScale, {
-          toValue: 1,
-          useNativeDriver: true,
-          tension: 50,
-          friction: 10
-        }),
-        Animated.spring(cameraTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          tension: 50,
-          friction: 10
-        }),
-        Animated.timing(galleryOpacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true
-        })
-      ]).start(() => {
-        setTimeout(() => {
-          isGalleryAnimatingRef.current = false;
-          setIsGalleryAnimating(false);
-        }, 100);
+      Animated.timing(galleryOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true
+      }).start(() => {
+        isGalleryAnimatingRef.current = false;
+        setIsGalleryAnimating(false);
       });
       return;
     }
@@ -494,40 +460,14 @@ export default function CameraScreen({ route, navigation }) {
     setIsGalleryAnimating(true);
     setShowGallery(true);
 
-    const galleryHeight = dimensions.height * 0.41;
-    const cameraHeight = dimensions.height - galleryHeight;
-
-    const containerAspect = dimensions.width / cameraHeight;
-    const cameraAspect = 4 / 3;
-    const baseScale = cameraHeight / dimensions.height;
-    const zoomFactor = cameraAspect / containerAspect;
-    const scale = baseScale * zoomFactor;
-    // No translation needed - gallery overlays bottom, camera just scales
-    const translateY = 0;
-
-    Animated.parallel([
-      Animated.spring(cameraScale, {
-        toValue: scale,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 10
-      }),
-      Animated.spring(cameraTranslateY, {
-        toValue: translateY,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 10
-      }),
-      Animated.timing(galleryOpacity, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true
-      })
-    ]).start(() => {
-      setTimeout(() => {
-        isGalleryAnimatingRef.current = false;
-        setIsGalleryAnimating(false);
-      }, 100);
+    // Just show gallery with opacity animation - no scaling needed
+    Animated.timing(galleryOpacity, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true
+    }).start(() => {
+      isGalleryAnimatingRef.current = false;
+      setIsGalleryAnimating(false);
     });
   };
 
@@ -804,40 +744,23 @@ export default function CameraScreen({ route, navigation }) {
           // Vertical swipe down - close gallery (reduced threshold for better responsiveness)
           if (Math.abs(dy) > Math.abs(dx) && dy > 20) {
             // Stop any ongoing animations immediately
-            cameraScale.stopAnimation();
-            cameraTranslateY.stopAnimation();
             galleryOpacity.stopAnimation();
-            
+
             // Set animating flag to block new gestures
             isGalleryAnimatingRef.current = true;
             setIsGalleryAnimating(true);
-            
+
             // Update state immediately before animation
             setShowGallery(false);
-            Animated.parallel([
-              Animated.spring(cameraScale, {
-                toValue: 1,
-                useNativeDriver: true,
-                tension: 50,
-                friction: 10
-              }),
-              Animated.spring(cameraTranslateY, {
-                toValue: 0,
-                useNativeDriver: true,
-                tension: 50,
-                friction: 10
-              }),
-              Animated.timing(galleryOpacity, {
-                toValue: 0,
-                duration: 200,
-                useNativeDriver: true
-              })
-            ]).start(() => {
-              // Explicitly reset values to ensure they're at default
-              cameraScale.setValue(1);
-              cameraTranslateY.setValue(0);
+
+            // Only animate gallery opacity - no camera scaling
+            Animated.timing(galleryOpacity, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: true
+            }).start(() => {
               galleryOpacity.setValue(0);
-              
+
               // Add small delay before allowing next gesture
               setTimeout(() => {
                 isGalleryAnimatingRef.current = false;
@@ -913,40 +836,13 @@ export default function CameraScreen({ route, navigation }) {
               isGalleryAnimatingRef.current = true;
               setIsGalleryAnimating(true);
               setShowGallery(true);
-              
-              const galleryHeight = dimensions.height * 0.41;
-              const cameraHeight = dimensions.height - galleryHeight;
 
-              // Scale to fill width, cropping top/bottom
-              // Container: width × cameraHeight (60% of screen)
-              // Camera: 4:3 aspect ratio
-              // To fill width: scale = baseScale × (cameraAspect / containerAspect)
-              const containerAspect = dimensions.width / cameraHeight; // W/H of visible area
-              const cameraAspect = 4 / 3; // Camera is 4:3 (W/H)
-              const baseScale = cameraHeight / dimensions.height; // 0.6
-              const zoomFactor = cameraAspect / containerAspect; // Zoom to fill width
-              const scale = baseScale * zoomFactor; // Final scale
-              // No translation needed - gallery overlays bottom, camera just scales
-              const translateY = 0;
-              Animated.parallel([
-                Animated.spring(cameraScale, {
-                  toValue: scale,
-                  useNativeDriver: true,
-                  tension: 50,
-                  friction: 10
-                }),
-                Animated.spring(cameraTranslateY, {
-                  toValue: translateY,
-                  useNativeDriver: true,
-                  tension: 50,
-                  friction: 10
-                }),
-                Animated.timing(galleryOpacity, {
-                  toValue: 1,
-                  duration: 300,
-                  useNativeDriver: true
-                })
-              ]).start(() => {
+              // Only animate gallery opacity - no camera scaling
+              Animated.timing(galleryOpacity, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true
+              }).start(() => {
                 setTimeout(() => {
                   isGalleryAnimatingRef.current = false;
                   setIsGalleryAnimating(false);
@@ -3143,22 +3039,11 @@ export default function CameraScreen({ route, navigation }) {
   return (
     <View style={styles.container} onLayout={(event) => setLayout(event.nativeEvent.layout)}>
      
-      {/* Animated container for camera and gallery - allows sliding up/down */}
-      <Animated.View
-        style={[
-          styles.cameraWrapper,
-          {
-            transform: [
-              { scaleX: cameraScale },
-              { scaleY: cameraScale },
-              { translateY: cameraTranslateY }
-            ]
-          }
-        ]}
-      >
+      {/* Container for camera - no scaling, just full screen */}
+      <View style={styles.cameraWrapper}>
         {renderOverlayMode()}
         {renderLabelView()}
-      </Animated.View>
+      </View>
 
       {/* Photo capture animation overlay */}
       {captureAnimationUri && (
