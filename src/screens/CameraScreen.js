@@ -1316,22 +1316,44 @@ export default function CameraScreen({ route, navigation }) {
     // The animated image starts centered on screen (due to justifyContent/alignItems center)
     // Thumbnail is in bottom controls area: left side, near bottom of screen
     // Bottom controls: paddingBottom: 20, mainControlRow has 3 equal buttonContainers
-    // Thumbnail position: left 1/6 of screen (center of left 1/3), bottom ~60px from screen bottom
 
-    // Thumbnail dimensions from styles
-    const thumbnailWidth = cameraViewMode === 'landscape' ? 100 : 56;
-    const thumbnailHeight = cameraViewMode === 'landscape' ? 75 : 84;
+    // Thumbnail dimensions (now 68x68 square)
+    const thumbnailSize = 68;
 
     // The overlay image is 100% width and 70% height, centered
     // Starting center: (screenWidth/2, screenHeight/2)
     const startCenterX = screenWidth / 2;
     const startCenterY = screenHeight / 2;
 
-    // Target thumbnail center position
-    // Left buttonContainer is at ~screenWidth/6 from left edge
-    // Bottom controls are ~100px from bottom (paddingBottom 20 + button height 84)
-    const thumbnailCenterX = screenWidth / 6;
-    const thumbnailCenterY = screenHeight - 60 - (thumbnailHeight / 2); // ~60px from bottom edge
+    let thumbnailCenterX, thumbnailCenterY;
+
+    if (deviceOrientation === 'landscape') {
+      // In landscape mode, the UI layer is counter-rotated to keep buttons fixed.
+      // The animation overlay is NOT rotated, so we need to calculate where
+      // the thumbnail appears in actual screen coordinates.
+      //
+      // specificOrientation: 3 = LANDSCAPE_LEFT (phone rotated counter-clockwise)
+      //   - UI rotated +90deg, buttons appear on RIGHT side of screen
+      //   - Thumbnail (first in row) appears at BOTTOM-RIGHT of screen
+      //
+      // specificOrientation: 4 = LANDSCAPE_RIGHT (phone rotated clockwise)
+      //   - UI rotated -90deg, buttons appear on LEFT side of screen
+      //   - Thumbnail (first in row) appears at TOP-LEFT of screen
+      //
+      if (specificOrientation === 4) {
+        // LANDSCAPE_RIGHT: thumbnail is at BOTTOM-RIGHT
+        thumbnailCenterX = screenWidth - 60 - (thumbnailSize / 2);
+        thumbnailCenterY = screenHeight - 60 - (thumbnailSize / 2);
+      } else {
+        // LANDSCAPE_LEFT: thumbnail is at TOP-LEFT
+        thumbnailCenterX = 60 + (thumbnailSize / 2);
+        thumbnailCenterY = 60 + (thumbnailSize / 2);
+      }
+    } else {
+      // Portrait mode: thumbnail is always on the left
+      thumbnailCenterX = screenWidth / 6;
+      thumbnailCenterY = screenHeight - 60 - (thumbnailSize / 2);
+    }
 
     // Calculate required translation (target - start)
     const targetX = thumbnailCenterX - startCenterX;
@@ -1339,7 +1361,7 @@ export default function CameraScreen({ route, navigation }) {
 
     // Scale: from full size to thumbnail size
     const imageHeight = screenHeight * 0.7; // 70% as per style
-    const targetScale = thumbnailHeight / imageHeight;
+    const targetScale = thumbnailSize / imageHeight;
 
     // Run the animation
     Animated.parallel([
@@ -1370,7 +1392,7 @@ export default function CameraScreen({ route, navigation }) {
       // Clear the animation URI when done
       setCaptureAnimationUri(null);
     });
-  }, [dimensions, cameraViewMode, captureAnimScale, captureAnimTranslateX, captureAnimTranslateY, captureAnimOpacity]);
+  }, [dimensions, cameraViewMode, deviceOrientation, specificOrientation, captureAnimScale, captureAnimTranslateX, captureAnimTranslateY, captureAnimOpacity]);
 
   // Helper function to prepare combined photo with labels in background
   // Now uses global service that stays mounted regardless of navigation
