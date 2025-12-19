@@ -7,6 +7,7 @@ import { generateInviteToken } from '../utils/tokens';
 import proxyService from '../services/proxyService';
 import { PROXY_SERVER_URL } from '../config/proxy';
 import { COLORS } from '../constants/rooms';
+import { generateInviteLink, generateShareContent, generateInviteCode } from '../utils/inviteLinkGenerator';
 
 /**
  * A component for admins to manage their team invites.
@@ -20,6 +21,7 @@ export default function InviteManager({ navigation }) {
     addInviteToken,
     removeInviteToken,
     joinTeam,
+    teamName,
   } = useAdmin();
   
   const { updateUserInfo, reloadSettings } = useSettings();
@@ -203,47 +205,34 @@ export default function InviteManager({ navigation }) {
     }
   };
 
-  const handleCopyToken = (token) => {
-    // Copy token with sessionId for proxy server (proxy URL is in config)
-    const inviteData = `${token}|${proxySessionId}`;
-    Clipboard.setString(inviteData);
-    Alert.alert('Copied!', 'Invite code copied to clipboard. Share this code with your team member.');
+  const handleCopyLink = (token) => {
+    // Generate the smart invite link
+    const inviteLink = generateInviteLink(token, proxySessionId);
+    Clipboard.setString(inviteLink);
+    Alert.alert('Link Copied!', 'Invite link copied to clipboard. Share this link with your team member - it will guide them to download and join automatically.');
+  };
+
+  const handleCopyCode = (token) => {
+    // Copy just the invite code for manual entry
+    const inviteCode = generateInviteCode(token, proxySessionId);
+    Clipboard.setString(inviteCode);
+    Alert.alert('Code Copied!', 'Invite code copied to clipboard. Team member can paste this in "Join Team" screen.');
   };
 
   const handleShareInvite = async (token) => {
     try {
-      // Create invite code with token and sessionId for proxy server
-      const inviteData = `${token}|${proxySessionId}`;
+      // Generate the smart share content with invite link
+      const shareContent = generateShareContent(token, proxySessionId, teamName);
 
-      // Get App Store links from environment variables
-      const iosAppStoreLink = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/proofpix';
-      const androidPlayStoreLink = process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.proofpix';
-
-      // Share the instructions message first
+      // Share the message with the invite link
       await Share.share({
-        message: `Join my ProofPix team!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\nAfter installing, open the app, go to "Join Team" and paste the invite code I'll send you next.`,
-        title: 'ProofPix Team Invite'
+        message: shareContent.message,
+        title: shareContent.title
       });
-
-      // After first share completes, ask user if they want to share the code
-      Alert.alert(
-        'Share Invite Code?',
-        'Now share the invite code as a separate message so your team member can easily copy it.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Share Code',
-            onPress: async () => {
-              await Share.share({
-                message: inviteData,
-                title: 'ProofPix Invite Code'
-              });
-            }
-          }
-        ]
-      );
     } catch (error) {
-      Alert.alert('Error', 'Could not share the invite.');
+      if (error.message !== 'User did not share') {
+        Alert.alert('Error', 'Could not share the invite.');
+      }
     }
   };
 
@@ -278,24 +267,29 @@ export default function InviteManager({ navigation }) {
   const renderInviteItem = ({ item }) => (
     <View style={styles.inviteItem}>
       <View style={styles.tokenContainer}>
-        <Text style={styles.tokenLabel}>Code:</Text>
+        <Text style={styles.tokenLabel}>Invite Token:</Text>
         <Text style={styles.inviteToken} selectable>{item}</Text>
       </View>
       <View style={styles.buttonGroup}>
-        <TouchableOpacity onPress={() => handleCopyToken(item)} style={styles.actionButton}>
-          <Text style={styles.copyButton}>Copy</Text>
+        <TouchableOpacity onPress={() => handleCopyLink(item)} style={styles.actionButton}>
+          <Text style={styles.copyButton}>Copy Link</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => handleShareInvite(item)} style={styles.actionButton}>
           <Text style={styles.shareButton}>Share</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleTestInvite(item)} style={styles.actionButton}>
-          <Text style={styles.testButton}>Test</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => handleDeleteInvite(item)}
           style={[styles.actionButton, styles.deleteButtonContainer]}
         >
           <Text style={styles.deleteButton}>✕</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.secondaryButtonGroup}>
+        <TouchableOpacity onPress={() => handleCopyCode(item)} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>Copy Code Only</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleTestInvite(item)} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>Test</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -563,6 +557,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     gap: 8,
+  },
+  secondaryButtonGroup: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  secondaryButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  secondaryButtonText: {
+    color: '#666',
+    fontSize: 12,
+    fontWeight: '500',
   },
   actionButton: {
     flex: 1,

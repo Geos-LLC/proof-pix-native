@@ -11,7 +11,8 @@ import {
   TextInput,
   Modal,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Clipboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -58,6 +59,35 @@ export default function FirstLoadScreen({ navigation, route }) {
   const formContainerRef = useRef(null);
   const [inputYPosition, setInputYPosition] = useState(0);
   const [formYPosition, setFormYPosition] = useState(0);
+
+  // Check for invite code in clipboard (for users who copied code from landing page)
+  // If found, automatically navigate to JoinTeam screen
+  useEffect(() => {
+    const checkClipboardForInvite = async () => {
+      console.log('[FirstLoad] Checking clipboard for invite code...');
+      try {
+        const clipboardContent = await Clipboard.getString();
+        console.log('[FirstLoad] Clipboard content:', clipboardContent ? clipboardContent.substring(0, 50) + '...' : 'empty');
+        // Check if clipboard contains an invite code pattern: TOKEN|SESSIONID
+        // Token is typically 22 chars base64, sessionId is 32 chars hex
+        if (clipboardContent && clipboardContent.includes('|')) {
+          const parts = clipboardContent.trim().split('|');
+          console.log('[FirstLoad] Found | separator, parts:', parts.length, 'part1 length:', parts[0]?.length, 'part2 length:', parts[1]?.length);
+          if (parts.length === 2 && parts[0].length > 10 && parts[1].length > 20) {
+            console.log('[FirstLoad] Invite code detected in clipboard, navigating to JoinTeam');
+            // Automatically navigate to JoinTeam with the invite code
+            navigation.replace('JoinTeam', { invite: clipboardContent.trim() });
+          }
+        }
+      } catch (error) {
+        console.log('[FirstLoad] Could not check clipboard:', error.message);
+      }
+    };
+
+    // Small delay to ensure screen is ready
+    const timer = setTimeout(checkClipboardForInvite, 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Check for referral code from route params or deep link
   useEffect(() => {

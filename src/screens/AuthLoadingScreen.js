@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, Platform, Text } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform, Text, Clipboard } from 'react-native';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 
@@ -95,14 +95,33 @@ export default function AuthLoadingScreen({ navigation }) {
   }, [settingsLoading, userPlan]);
 
   useEffect(() => {
-    const navigate = () => {
+    const navigate = async () => {
       // If userName is set, user has completed initial setup
       if (userName && userName.trim() !== '') {
         navigation.replace('Home');
       } else {
+        // Check clipboard for invite code BEFORE deciding where to navigate
+        try {
+          const clipboardContent = await Clipboard.getString();
+          console.log('[AuthLoading] Checking clipboard for invite code...');
+
+          if (clipboardContent && clipboardContent.includes('|')) {
+            const parts = clipboardContent.trim().split('|');
+            // Check if it matches invite code pattern: TOKEN|SESSIONID
+            if (parts.length === 2 && parts[0].length > 10 && parts[1].length > 20) {
+              console.log('[AuthLoading] Invite code detected in clipboard, navigating to JoinTeam');
+              navigation.replace('JoinTeam', { invite: clipboardContent.trim() });
+              return;
+            }
+          }
+        } catch (error) {
+          console.log('[AuthLoading] Could not check clipboard:', error?.message);
+        }
+
+        // No invite code found - continue with normal flow
         // User needs to set up - check if they have an active subscription
         const hasPaidPlan = userPlan && userPlan !== 'starter';
-        
+
         if (hasPaidPlan) {
           // User has an active subscription (from auto-restore) but needs to set up account
           // Skip plan selection and go directly to Home

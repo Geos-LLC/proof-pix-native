@@ -45,6 +45,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import proxyService from '../services/proxyService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { generateInviteLink, generateShareContent, generateInviteCode } from '../utils/inviteLinkGenerator';
 import Modal from 'react-native-modal';
 import ColorPicker from 'react-native-wheel-color-picker';
 import { useTranslation } from 'react-i18next';
@@ -1231,67 +1232,34 @@ export default function SettingsScreen({ navigation, route }) {
   };
 
   const handleCopyToken = (token) => {
-    // Copy token with sessionId for proxy server
-    const inviteData = `${token}|${proxySessionId}`;
-    Clipboard.setString(inviteData);
+    // Copy the smart invite link
+    const inviteLink = generateInviteLink(token, proxySessionId);
+    Clipboard.setString(inviteLink);
     Alert.alert(
-      t('settings.inviteCopiedTitle', { defaultValue: 'Copied!' }),
+      t('settings.inviteCopiedTitle', { defaultValue: 'Link Copied!' }),
       t('settings.inviteCopiedMessage', {
-        defaultValue: 'Invite code copied to clipboard. Share this code with your team member.',
+        defaultValue: 'Invite link copied to clipboard. Share this link with your team member - it will guide them to download and join automatically.',
       })
     );
   };
 
   const handleShareInvite = async (token) => {
     try {
-      // Create invite code with token and sessionId for proxy server
-      const inviteData = `${token}|${proxySessionId}`;
+      // Generate the smart share content with invite link
+      const shareContent = generateShareContent(token, proxySessionId, teamName);
 
-      // Get App Store links from environment variables
-      const iosAppStoreLink =
-        process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/proofpix';
-      const androidPlayStoreLink =
-        process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL ||
-        'https://play.google.com/store/apps/details?id=com.proofpix';
-
-      // Share the instructions message first
+      // Share the message with the invite link
       await Share.share({
-        message: t('settings.shareInviteIntroMessage', {
-          iosLink: iosAppStoreLink,
-          androidLink: androidPlayStoreLink,
-          defaultValue:
-            'Join my ProofPix team!\n\n📱 Download ProofPix:\niOS: {{iosLink}}\nAndroid: {{androidLink}}\n\nAfter installing, open the app, go to "Join Team" and paste the invite code I\'ll send you next.',
-        }),
-        title: t('settings.shareInviteIntroTitle', { defaultValue: 'ProofPix Team Invite' }),
+        message: shareContent.message,
+        title: shareContent.title,
       });
-
-      // After first share completes, ask user if they want to share the code
-      Alert.alert(
-        t('settings.shareInviteCodeTitle', { defaultValue: 'Share Invite Code?' }),
-        t('settings.shareInviteCodeMessage', {
-          defaultValue:
-            'Now share the invite code as a separate message so your team member can easily copy it.',
-        }),
-        [
-          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
-          {
-            text: t('settings.shareInviteCodeButton', { defaultValue: 'Share Code' }),
-            onPress: async () => {
-              await Share.share({
-                message: inviteData,
-                title: t('settings.shareInviteCodeTitleShort', {
-                  defaultValue: 'ProofPix Invite Code',
-                }),
-              });
-            },
-          },
-        ]
-      );
     } catch (error) {
-      Alert.alert(
-        t('common.error', { defaultValue: 'Error' }),
-        t('settings.shareInviteError', { defaultValue: 'Could not share the invite.' })
-      );
+      if (error.message !== 'User did not share') {
+        Alert.alert(
+          t('common.error', { defaultValue: 'Error' }),
+          t('settings.shareInviteError', { defaultValue: 'Could not share the invite.' })
+        );
+      }
     }
   };
 
@@ -3838,6 +3806,8 @@ export default function SettingsScreen({ navigation, route }) {
                     useEffect(() => {
                       if (textRef.current && containerWidth.current !== null) {
                         const timeout = setTimeout(() => {
+                          // Check if ref is still valid before measuring
+                          if (!textRef.current) return;
                           textRef.current.measure((x, y, width, height, pageX, pageY) => {
                             if (width > containerWidth.current - 40) {
                               setNeedsScrolling(true);
@@ -5577,6 +5547,8 @@ export default function SettingsScreen({ navigation, route }) {
                           useEffect(() => {
                             if (textRef.current && containerWidth.current !== null) {
                               const timeout = setTimeout(() => {
+                                // Check if ref is still valid before measuring
+                                if (!textRef.current) return;
                                 textRef.current.measure((x, y, width, height, pageX, pageY) => {
                                   if (width > containerWidth.current - 40) {
                                     setNeedsScrolling(true);
