@@ -5,15 +5,55 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_PROXY_URL": "https://steadfast-blessing-production.up.railway.app",
+        "EXPO_PUBLIC_WATERMARK_URL": "https://geos-ai.com/",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "366423185-r9t2c8bcroqaiii2e6jvokmnovjbog0v.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "366423185-oboi1er7n69rgrbqtkf5il8j6tsm4don.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "366423185-iru8jpgqfgmtp8j61095fqp3fm0kpai0.apps.googleusercontent.com",
+        "EXPO_PUBLIC_DROPBOX_APP_KEY": "78ht1k015widero",
+        "EXPO_PUBLIC_EMAILJS_SERVICE_ID": "service_3krrjqe",
+        "EXPO_PUBLIC_EMAILJS_TEMPLATE_ID": "template_ytpnidr",
+        "EXPO_PUBLIC_EMAILJS_PUBLIC_KEY": "RrCIuTQfiMgOC8e9N",
+        "EXPO_PUBLIC_IOS_APP_STORE_URL": "https://apps.apple.com/app/6754261444",
+        "EXPO_PUBLIC_ANDROID_PLAY_STORE_URL": "https://play.google.com/store/apps/details?id=com.proofpix.app"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_PROXY_URL": "https://steadfast-blessing-production.up.railway.app",
+        "EXPO_PUBLIC_WATERMARK_URL": "https://geos-ai.com/",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "366423185-r9t2c8bcroqaiii2e6jvokmnovjbog0v.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "366423185-oboi1er7n69rgrbqtkf5il8j6tsm4don.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "366423185-iru8jpgqfgmtp8j61095fqp3fm0kpai0.apps.googleusercontent.com",
+        "EXPO_PUBLIC_DROPBOX_APP_KEY": "78ht1k015widero",
+        "EXPO_PUBLIC_EMAILJS_SERVICE_ID": "service_3krrjqe",
+        "EXPO_PUBLIC_EMAILJS_TEMPLATE_ID": "template_ytpnidr",
+        "EXPO_PUBLIC_EMAILJS_PUBLIC_KEY": "RrCIuTQfiMgOC8e9N",
+        "EXPO_PUBLIC_IOS_APP_STORE_URL": "https://apps.apple.com/app/6754261444",
+        "EXPO_PUBLIC_ANDROID_PLAY_STORE_URL": "https://play.google.com/store/apps/details?id=com.proofpix.app"
       }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_PROXY_URL": "https://steadfast-blessing-production.up.railway.app",
+        "EXPO_PUBLIC_WATERMARK_URL": "https://geos-ai.com/",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "366423185-r9t2c8bcroqaiii2e6jvokmnovjbog0v.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "366423185-oboi1er7n69rgrbqtkf5il8j6tsm4don.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "366423185-iru8jpgqfgmtp8j61095fqp3fm0kpai0.apps.googleusercontent.com",
+        "EXPO_PUBLIC_DROPBOX_APP_KEY": "78ht1k015widero",
+        "EXPO_PUBLIC_EMAILJS_SERVICE_ID": "service_3krrjqe",
+        "EXPO_PUBLIC_EMAILJS_TEMPLATE_ID": "template_ytpnidr",
+        "EXPO_PUBLIC_EMAILJS_PUBLIC_KEY": "RrCIuTQfiMgOC8e9N",
+        "EXPO_PUBLIC_IOS_APP_STORE_URL": "https://apps.apple.com/app/6754261444",
+        "EXPO_PUBLIC_ANDROID_PLAY_STORE_URL": "https://play.google.com/store/apps/details?id=com.proofpix.app"
+      }
+    }
   },
   "submit": {
     "production": {
