@@ -19,9 +19,16 @@ import { Lato_700Bold } from '@expo-google-fonts/lato';
 import { Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 import { Oswald_600SemiBold } from '@expo-google-fonts/oswald';
 console.log('[App] Importing Firebase...');
-import firebase from '@react-native-firebase/app';
-import analytics from '@react-native-firebase/analytics';
-console.log('[App] Firebase imported successfully');
+let firebase = null;
+let analytics = null;
+try {
+  firebase = require('@react-native-firebase/app').default;
+  analytics = require('@react-native-firebase/analytics').default;
+  console.log('[App] Firebase imported successfully');
+} catch (error) {
+  console.warn('[App] Firebase native modules not available:', error.message);
+  console.warn('[App] This usually means the app needs to be rebuilt with: npx expo run:android');
+}
 
 console.log('[App] Initializing i18n...');
 import './src/i18n/i18n'; // Initialize i18n
@@ -285,6 +292,12 @@ export default function App() {
     // Initialize Firebase and Analytics
     const initializeFirebase = async () => {
       try {
+        if (!firebase || !analytics) {
+          console.warn('[Firebase] Firebase modules not available - app needs to be rebuilt');
+          setFirebaseInitialized(true);
+          return;
+        }
+
         // Check if Firebase is already initialized
         if (!firebase.apps.length) {
           console.log('[Firebase] No apps initialized, waiting for auto-init...');
@@ -481,7 +494,7 @@ export default function App() {
                   const previousRouteName = routeNameRef.current;
                   const currentRouteName = navigationRef.current.getCurrentRoute().name;
 
-                  if (previousRouteName !== currentRouteName && firebaseInitialized) {
+                  if (previousRouteName !== currentRouteName && firebaseInitialized && analytics) {
                     // Log screen view to Firebase Analytics
                     try {
                       await analytics().logEvent('screen_view', {

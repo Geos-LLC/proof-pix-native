@@ -1,5 +1,19 @@
-import { getApp, getApps } from '@react-native-firebase/app';
-import { getAnalytics, logEvent as firebaseLogEvent, setUserId as firebaseSetUserId, setUserProperty, setAnalyticsCollectionEnabled } from '@react-native-firebase/analytics';
+// Firebase imports - wrapped to handle missing native modules
+let getApp, getApps, getAnalytics, firebaseLogEvent, firebaseSetUserId, setUserProperty, setAnalyticsCollectionEnabled;
+try {
+  const appModule = require('@react-native-firebase/app');
+  const analyticsModule = require('@react-native-firebase/analytics');
+  getApp = appModule.getApp;
+  getApps = appModule.getApps;
+  getAnalytics = analyticsModule.getAnalytics;
+  firebaseLogEvent = analyticsModule.logEvent;
+  firebaseSetUserId = analyticsModule.setUserId;
+  setUserProperty = analyticsModule.setUserProperty;
+  setAnalyticsCollectionEnabled = analyticsModule.setAnalyticsCollectionEnabled;
+} catch (error) {
+  console.warn('[Analytics] Firebase native modules not available:', error.message);
+  console.warn('[Analytics] Analytics functions will be no-ops. Rebuild app to enable Firebase.');
+}
 
 /**
  * Analytics utility for Firebase Analytics
@@ -9,6 +23,9 @@ import { getAnalytics, logEvent as firebaseLogEvent, setUserId as firebaseSetUse
 // Get analytics instance
 let analyticsInstance = null;
 const getAnalyticsInstance = () => {
+  if (!getAnalytics) {
+    return null;
+  }
   if (!analyticsInstance) {
     try {
       analyticsInstance = getAnalytics();
@@ -23,6 +40,9 @@ const getAnalyticsInstance = () => {
  * Check if Firebase is initialized
  */
 const isFirebaseReady = () => {
+  if (!getApps) {
+    return false;
+  }
   try {
     return getApps().length > 0;
   } catch (error) {
