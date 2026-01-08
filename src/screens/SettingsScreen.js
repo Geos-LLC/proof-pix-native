@@ -1791,36 +1791,98 @@ export default function SettingsScreen({ navigation, route }) {
         const dropboxUserInfo = dropboxAuthService.getUserInfo();
         userName = dropboxUserInfo?.name || adminUserInfo?.name;
       } else {
-        // For Google: check serverAuthCode and find/create folder
-        const googleAuthService = await import('../services/googleAuthService');
-        const serverAuthCode = await googleAuthService.default.getServerAuthCode();
-        if (!serverAuthCode) {
-          setIsSigningIn(false);
-          Alert.alert(
-            'Reconnect Required',
-            'To set up team features, you need to reconnect with Google Drive to refresh your authorization.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Reconnect Now',
-                onPress: async () => {
-                  try {
-                    await signOut();
-                    setTimeout(() => {
+        // For Google: check if we already have a proxy session first
+        // If we have a session, we don't need serverAuthCode (it's already been used and cleared)
+        const hasExistingSession = proxySessionId || await AsyncStorage.getItem('@proxy_session_id');
+        
+        if (!hasExistingSession) {
+          // Only require serverAuthCode if we're setting up for the first time (no existing session)
+          const googleAuthService = await import('../services/googleAuthService');
+          
+          // First check if user is signed in to Google
+          const isSignedIn = await googleAuthService.default.isSignedIn();
+          if (!isSignedIn) {
+            setIsSigningIn(false);
+            Alert.alert(
+              'Google Sign-In Required',
+              'Please connect your Google account first before setting up team features.',
+              [{ text: 'OK', style: 'cancel' }]
+            );
+            return;
+          }
+
+          // Check for serverAuthCode only if we don't have a session yet
+          // serverAuthCode is a one-time code that gets cleared after successful setup
+          let serverAuthCode = await googleAuthService.default.getServerAuthCode();
+          
+          // If user is signed in but doesn't have serverAuthCode, we need to get a new one
+          // This happens because serverAuthCode is only returned on fresh sign-ins with offlineAccess
+          if (!serverAuthCode && isSignedIn) {
+            console.log('[SETUP] User is signed in but no serverAuthCode. Need to refresh authorization to get a new code.');
+            setIsSigningIn(false);
+            Alert.alert(
+              'Authorization Refresh Needed',
+              'To set up team features, we need to refresh your Google authorization. This will sign you in again with the same account to generate a new authorization code.\n\nThis is safe and won\'t disconnect your account - it just refreshes the permissions.',
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => {} },
+                {
+                  text: 'Refresh Authorization',
+                  onPress: async () => {
+                    try {
+                      setIsSigningIn(true);
+                      // Sign in again to get a new serverAuthCode
+                      // This will use the same account but generate a new authorization code
+                      console.log('[SETUP] Attempting to refresh authorization...');
+                      const signInResult = await googleAuthService.default.signInAsAdmin();
+                      if (signInResult && signInResult.userInfo) {
+                        // Check for serverAuthCode again after sign-in
+                        serverAuthCode = await googleAuthService.default.getServerAuthCode();
+                        if (serverAuthCode) {
+                          console.log('[SETUP] ✅ Successfully obtained new serverAuthCode, continuing setup...');
+                          // Recursively call handleSetupTeam to continue with the new serverAuthCode
+                          // We'll skip the checks since we now have the code
+                          handleSetupTeam();
+                        } else {
+                          console.error('[SETUP] ⚠️ Still no serverAuthCode after sign-in');
+                          setIsSigningIn(false);
+                          Alert.alert(
+                            'Authorization Failed',
+                            'We were unable to get a new authorization code. Please ensure you grant offline access when signing in, or try disconnecting and reconnecting your Google account.',
+                            [{ text: 'OK' }]
+                          );
+                        }
+                      } else {
+                        setIsSigningIn(false);
+                        Alert.alert(
+                          'Sign-In Failed',
+                          signInResult?.error || 'Failed to refresh authorization. Please try again.',
+                          [{ text: 'OK' }]
+                        );
+                      }
+                    } catch (refreshError) {
+                      console.error('[SETUP] Error refreshing authorization:', refreshError);
+                      setIsSigningIn(false);
                       Alert.alert(
-                        'Ready to Reconnect',
-                        'Please tap "Connect with Google Drive" below to sign in again and complete team setup.'
+                        'Error',
+                        'Failed to refresh authorization: ' + (refreshError.message || 'Unknown error'),
+                        [{ text: 'OK' }]
                       );
-                    }, 500);
-                  } catch (signOutError) {
-                    console.error('[SETUP] Error signing out for reconnect:', signOutError);
-                    Alert.alert('Error', 'Failed to disconnect. Please try manually disconnecting from Settings.');
+                    }
                   }
                 }
-              }
-            ]
-          );
-          return;
+              ]
+            );
+            return;
+          } else if (!serverAuthCode) {
+            // User is not signed in
+            setIsSigningIn(false);
+            Alert.alert(
+              'Google Sign-In Required',
+              'Please connect your Google account first before setting up team features.',
+              [{ text: 'OK', style: 'cancel' }]
+            );
+            return;
+          }
         }
 
         // Step 1: Find or create the Google Drive folder
@@ -1830,9 +1892,20 @@ export default function SettingsScreen({ navigation, route }) {
       }
 
       // Step 2: Initialize proxy session (this creates the session and stores refresh token/access token)
+      // This will use existing session if available, or create new one if needed
       const sessionResult = await initializeProxySession(folderIdOrPath, currentAccountType);
       if (!sessionResult || !sessionResult.sessionId) {
-        throw new Error('Failed to initialize proxy session');
+        // If we got a skippable error (like GOOGLE_NOT_CONNECTED), handle it gracefully
+        if (sessionResult?.skippable) {
+          setIsSigningIn(false);
+          Alert.alert(
+            'Setup Incomplete',
+            'Team setup requires a valid Google connection. Please ensure you are signed in to Google Drive.',
+            [{ text: 'OK', style: 'cancel' }]
+          );
+          return;
+        }
+        throw new Error(sessionResult?.error || 'Failed to initialize proxy session');
       }
 
       // Step 3: Set default team name if not already set

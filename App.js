@@ -19,11 +19,16 @@ import { Lato_700Bold } from '@expo-google-fonts/lato';
 import { Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 import { Oswald_600SemiBold } from '@expo-google-fonts/oswald';
 console.log('[App] Importing Firebase...');
-let firebase = null;
-let analytics = null;
+let getApp, getApps, getAnalytics, logEvent, setAnalyticsCollectionEnabled;
 try {
-  firebase = require('@react-native-firebase/app').default;
-  analytics = require('@react-native-firebase/analytics').default;
+  const appModule = require('@react-native-firebase/app');
+  const analyticsModule = require('@react-native-firebase/analytics');
+  // Use modular API instead of default export
+  getApp = appModule.getApp;
+  getApps = appModule.getApps;
+  getAnalytics = analyticsModule.getAnalytics;
+  logEvent = analyticsModule.logEvent;
+  setAnalyticsCollectionEnabled = analyticsModule.setAnalyticsCollectionEnabled;
   console.log('[App] Firebase imported successfully');
 } catch (error) {
   console.warn('[App] Firebase native modules not available:', error.message);
@@ -292,23 +297,26 @@ export default function App() {
     // Initialize Firebase and Analytics
     const initializeFirebase = async () => {
       try {
-        if (!firebase || !analytics) {
+        if (!getApp || !getAnalytics || !setAnalyticsCollectionEnabled) {
           console.warn('[Firebase] Firebase modules not available - app needs to be rebuilt');
           setFirebaseInitialized(true);
           return;
         }
 
-        // Check if Firebase is already initialized
-        if (!firebase.apps.length) {
+        // Check if Firebase is already initialized using modular API
+        const apps = getApps();
+        if (apps.length === 0) {
           console.log('[Firebase] No apps initialized, waiting for auto-init...');
         } else {
-          console.log('[Firebase] App already initialized:', firebase.app().name);
+          const app = getApp();
+          console.log('[Firebase] App already initialized:', app.name);
         }
 
         // Enable analytics collection ONLY for non-debug builds
         // (__DEV__ is true in React Native debug/dev builds)
         const enableAnalytics = !__DEV__;
-        await analytics().setAnalyticsCollectionEnabled(enableAnalytics);
+        const analytics = getAnalytics();
+        await setAnalyticsCollectionEnabled(analytics, enableAnalytics);
         setFirebaseInitialized(true);
       } catch (error) {
         console.error('[Firebase] Initialization error:', error);
@@ -494,10 +502,11 @@ export default function App() {
                   const previousRouteName = routeNameRef.current;
                   const currentRouteName = navigationRef.current.getCurrentRoute().name;
 
-                  if (previousRouteName !== currentRouteName && firebaseInitialized && analytics) {
+                  if (previousRouteName !== currentRouteName && firebaseInitialized && getAnalytics && logEvent) {
                     // Log screen view to Firebase Analytics
                     try {
-                      await analytics().logEvent('screen_view', {
+                      const analytics = getAnalytics();
+                      await logEvent(analytics, 'screen_view', {
                         screen_name: currentRouteName,
                         screen_class: currentRouteName,
                       });

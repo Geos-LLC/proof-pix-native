@@ -62,10 +62,12 @@ export const logEvent = async (eventName, params = {}) => {
 
   try {
     const analytics = getAnalyticsInstance();
-    if (analytics) {
+    if (analytics && firebaseLogEvent) {
+      // Use modular API: logEvent(analytics, eventName, params)
       await firebaseLogEvent(analytics, eventName, params);
     }
   } catch (error) {
+    // Silently fail - analytics errors shouldn't break the app
   }
 };
 

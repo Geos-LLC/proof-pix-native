@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 // Try to import GoogleSignin, but handle gracefully if not available (Expo Go)
 let GoogleSignin = null;
@@ -66,15 +67,28 @@ class GoogleAuthService {
         'https://www.googleapis.com/auth/drive', // Include Drive scope here for iOS
       ];
 
-      const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-      const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
-      const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+      // Try multiple sources for environment variables:
+      // 1. process.env (works in Expo with EXPO_PUBLIC_ prefix at build time)
+      // 2. Constants.expoConfig.extra (for variables set in app.config.js - available at runtime)
+      // Priority: Constants.expoConfig.extra > process.env
+      const getEnvVar = (key) => {
+        // First try Constants.expoConfig.extra (runtime access)
+        if (Constants.expoConfig?.extra?.[key]) {
+          return Constants.expoConfig.extra[key];
+        }
+        // Fallback to process.env (build-time)
+        return process.env[key] || null;
+      };
+
+      const webClientId = getEnvVar('EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID');
+      const androidClientId = getEnvVar('EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID');
+      const iosClientId = getEnvVar('EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID');
 
       console.log('[AUTH] 🔍 --- Google Sign-In Configuration Debug ---');
       console.log(`[AUTH] Platform: ${Platform.OS}`);
-      console.log(`[AUTH] Web Client ID (Env): ${webClientId}`);
-      console.log(`[AUTH] Android Client ID (Env): ${androidClientId}`);
-      console.log(`[AUTH] iOS Client ID (Env): ${iosClientId}`);
+      console.log(`[AUTH] Web Client ID: ${webClientId || 'NOT FOUND'}`);
+      console.log(`[AUTH] Android Client ID: ${androidClientId || 'NOT FOUND'}`);
+      console.log(`[AUTH] iOS Client ID: ${iosClientId || 'NOT FOUND'}`);
       console.log(`[AUTH] Default Scopes: ${JSON.stringify(defaultScopes)}`);
       console.log('[AUTH] -----------------------------------');
 
@@ -300,13 +314,30 @@ class GoogleAuthService {
       return false;
     }
     this.ensureConfigured();
-    return await GoogleSignin.isSignedIn();
+    
+    // Try isSignedIn() method first
+    if (GoogleSignin.isSignedIn && typeof GoogleSignin.isSignedIn === 'function') {
+      try {
+        return await GoogleSignin.isSignedIn();
+      } catch (error) {
+        console.warn('[AUTH] isSignedIn() failed, trying getCurrentUser() instead:', error.message);
+      }
+    }
+    
+    // Fallback: check if getCurrentUser returns a user
+    try {
+      const currentUser = await GoogleSignin.getCurrentUser();
+      return currentUser !== null;
+    } catch (error) {
+      console.warn('[AUTH] getCurrentUser() failed:', error.message);
+      return false;
+    }
   }
 
   /**
    * Silently restore Google Sign-In session
    * This should be called on app startup to restore the SDK session
-   * @returns {Promise<void>}
+   * @returns {Promise<object|null>} Returns userInfo if successful, null if user not signed in
    */
   async signInSilently() {
     this.checkAvailability();
@@ -315,8 +346,20 @@ class GoogleAuthService {
       const userInfo = await GoogleSignin.signInSilently();
       return userInfo;
     } catch (error) {
-      console.error('[AUTH] signInSilently() failed:', error.message);
-      throw error;
+      // INTERNAL_ERROR or SIGN_IN_REQUIRED are expected if user isn't signed in
+      // Don't log as error - this is a normal case
+      if (error.code === 'SIGN_IN_REQUIRED' || error.message?.includes('SIGN_IN_REQUIRED')) {
+        console.log('[AUTH] signInSilently() - User not signed in (expected)');
+        return null;
+      }
+      // INTERNAL_ERROR can also mean user isn't signed in
+      if (error.code === 'INTERNAL_ERROR' || error.message?.includes('INTERNAL_ERROR')) {
+        console.log('[AUTH] signInSilently() - No active session (user may need to sign in)');
+        return null;
+      }
+      // For other errors, log as warning but don't throw
+      console.warn('[AUTH] signInSilently() failed:', error.message || error.code);
+      return null;
     }
   }
 

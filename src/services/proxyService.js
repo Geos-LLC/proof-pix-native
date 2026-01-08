@@ -4,6 +4,7 @@
  */
 
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { PROXY_SERVER_URL } from '../config/proxy';
 import googleAuthService from './googleAuthService';
 import dropboxAuthService from './dropboxAuthService';
@@ -69,11 +70,27 @@ class ProxyService {
         // IMPORTANT: Always use Web Client ID for server-side token exchange
         // The serverAuthCode is generated using Web Client ID, which has a client secret
         // Android Client ID doesn't have a secret and can't be used for server-side exchange
-        const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+        
+        // Try multiple sources for environment variables (same as googleAuthService):
+        // 1. Constants.expoConfig.extra (runtime access - from app.config.js)
+        // 2. process.env (build-time)
+        const getEnvVar = (key) => {
+          // First try Constants.expoConfig.extra (runtime access)
+          if (Constants.expoConfig?.extra?.[key]) {
+            return Constants.expoConfig.extra[key];
+          }
+          // Fallback to process.env (build-time)
+          return process.env[key] || null;
+        };
+
+        const webClientId = getEnvVar('EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID');
         const clientId = webClientId;
 
         if (!clientId) {
-          throw new Error('Missing Client ID. Please check EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID or EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in environment variables.');
+          console.error('[PROXY] Missing Client ID. Checked:');
+          console.error('[PROXY] - Constants.expoConfig.extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:', Constants.expoConfig?.extra?.['EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID']);
+          console.error('[PROXY] - process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:', process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
+          throw new Error('Missing Client ID. Please check EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in app.config.js or environment variables.');
         }
 
         console.log('[PROXY] Using client ID for token exchange:', clientId);
