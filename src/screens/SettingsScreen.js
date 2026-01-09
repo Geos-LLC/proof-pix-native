@@ -390,30 +390,70 @@ export default function SettingsScreen({ navigation, route }) {
   }, [currentRoom]);
 
   const devTapCountRef = useRef(0);
+  const devTapTimeoutRef = useRef(null);
 
   const handleTitleTap = useCallback(() => {
-    // Only enable secret tap gesture in development builds
-    if (!__DEV__) {
-      return;
-    }
-
+    // Enable secret tap gesture (works in both dev and production for flexibility)
+    
     // If already unlocked, no need to count further taps
     if (devToolsUnlocked) {
       return;
     }
 
-    devTapCountRef.current += 1;
+    // Clear any existing timeout
+    if (devTapTimeoutRef.current) {
+      clearTimeout(devTapTimeoutRef.current);
+    }
 
+    // Increment tap count
+    devTapCountRef.current += 1;
+    console.log(`[DEV] Tap count: ${devTapCountRef.current}/8`);
+
+    // If we've reached 8 taps, unlock developer tools
     if (devTapCountRef.current >= 8) {
       devTapCountRef.current = 0;
       setDevToolsUnlocked(true);
+      
+      // Store in AsyncStorage so it persists across app restarts
+      AsyncStorage.setItem('@dev_tools_unlocked', 'true').catch(() => {});
+      
+      if (devTapTimeoutRef.current) {
+        clearTimeout(devTapTimeoutRef.current);
+        devTapTimeoutRef.current = null;
+      }
+      
       try {
         Alert.alert('Developer Tools', 'Test tools have been unlocked.');
       } catch (e) {
         // Alert may fail in some edge cases; not critical
       }
+    } else {
+      // Reset counter after 2 seconds of no taps
+      devTapTimeoutRef.current = setTimeout(() => {
+        console.log('[DEV] Tap timeout - resetting counter');
+        devTapCountRef.current = 0;
+        devTapTimeoutRef.current = null;
+      }, 2000);
     }
   }, [devToolsUnlocked]);
+
+  // Load persisted developer mode state on mount
+  useEffect(() => {
+    AsyncStorage.getItem('@dev_tools_unlocked')
+      .then((value) => {
+        if (value === 'true') {
+          setDevToolsUnlocked(true);
+        }
+      })
+      .catch(() => {});
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (devTapTimeoutRef.current) {
+        clearTimeout(devTapTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Horizontal swipe between rooms, similar to HomeScreen
   const roomPanResponder = useMemo(
@@ -1820,34 +1860,39 @@ export default function SettingsScreen({ navigation, route }) {
           if (!serverAuthCode && isSignedIn) {
             console.log('[SETUP] User is signed in but no serverAuthCode. Need to refresh authorization to get a new code.');
             setIsSigningIn(false);
+            
             Alert.alert(
               'Authorization Refresh Needed',
               'To set up team features, we need to refresh your Google authorization. This will sign you in again with the same account to generate a new authorization code.\n\nThis is safe and won\'t disconnect your account - it just refreshes the permissions.',
               [
-                { text: 'Cancel', style: 'cancel', onPress: () => {} },
+                { 
+                  text: 'Cancel', 
+                  style: 'cancel'
+                },
                 {
                   text: 'Refresh Authorization',
                   onPress: async () => {
                     try {
                       setIsSigningIn(true);
                       // Sign in again to get a new serverAuthCode
-                      // This will use the same account but generate a new authorization code
                       console.log('[SETUP] Attempting to refresh authorization...');
                       const signInResult = await googleAuthService.default.signInAsAdmin();
                       if (signInResult && signInResult.userInfo) {
                         // Check for serverAuthCode again after sign-in
-                        serverAuthCode = await googleAuthService.default.getServerAuthCode();
-                        if (serverAuthCode) {
+                        const newServerAuthCode = await googleAuthService.default.getServerAuthCode();
+                        if (newServerAuthCode) {
                           console.log('[SETUP] ✅ Successfully obtained new serverAuthCode, continuing setup...');
-                          // Recursively call handleSetupTeam to continue with the new serverAuthCode
-                          // We'll skip the checks since we now have the code
-                          handleSetupTeam();
+                          // Continue with setup by calling handleSetupTeam again
+                          // This time it will have serverAuthCode and skip the check
+                          setTimeout(() => {
+                            handleSetupTeam();
+                          }, 100);
                         } else {
                           console.error('[SETUP] ⚠️ Still no serverAuthCode after sign-in');
                           setIsSigningIn(false);
                           Alert.alert(
                             'Authorization Failed',
-                            'We were unable to get a new authorization code. Please ensure you grant offline access when signing in, or try disconnecting and reconnecting your Google account.',
+                            'We were unable to get a new authorization code. This usually means:\n\n1. Offline access was not granted during sign-in\n2. Web Client ID is not configured properly\n\nPlease try disconnecting and reconnecting your Google account, ensuring you grant all requested permissions.',
                             [{ text: 'OK' }]
                           );
                         }
@@ -1872,7 +1917,7 @@ export default function SettingsScreen({ navigation, route }) {
                 }
               ]
             );
-            return;
+            return; // Exit early, will continue via recursive call if refresh succeeds
           } else if (!serverAuthCode) {
             // User is not signed in
             setIsSigningIn(false);
@@ -1886,8 +1931,13 @@ export default function SettingsScreen({ navigation, route }) {
         }
 
         // Step 1: Find or create the Google Drive folder
+        console.log('[SETUP] Finding or creating Google Drive folder...');
         folderIdOrPath = await googleDriveService.findOrCreateProofPixFolder();
+        if (!folderIdOrPath) {
+          throw new Error('Failed to create Google Drive folder');
+        }
         await saveFolderId(folderIdOrPath);
+        console.log('[SETUP] ✅ Folder ready:', folderIdOrPath);
         userName = adminUserInfo?.name;
       }
 
@@ -4745,8 +4795,8 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
           )}
 
-          {/* Developer Tools - Only in Development and after secret tap unlock */}
-          {__DEV__ && devToolsUnlocked && (
+          {/* Developer Tools - After secret tap unlock (8 taps on title) */}
+          {devToolsUnlocked && (
             <>
               <View style={styles.divider} />
               <TouchableOpacity
@@ -5799,8 +5849,8 @@ export default function SettingsScreen({ navigation, route }) {
           </View>
         </Modal>
 
-        {/* Test Tools Modal - Only in Development */}
-        {__DEV__ && (
+        {/* Test Tools Modal - Available after 8-tap unlock */}
+        {devToolsUnlocked && (
           <Modal
             isVisible={showTestToolsModal}
             onBackdropPress={() => setShowTestToolsModal(false)}
