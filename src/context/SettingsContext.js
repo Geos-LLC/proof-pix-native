@@ -458,6 +458,8 @@ export const SettingsProvider = ({ children }) => {
     try {
       await AsyncStorage.removeItem(SETTINGS_KEY);
       await AsyncStorage.removeItem(CUSTOM_ROOMS_KEY);
+      // Clear developer tools unlock state when resetting data
+      await AsyncStorage.removeItem('@dev_tools_unlocked');
       setUserName('');
       setLocation('tampa');
       setShowLabels(true);

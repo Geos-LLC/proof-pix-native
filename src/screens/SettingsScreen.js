@@ -2120,6 +2120,13 @@ export default function SettingsScreen({ navigation, route }) {
 
             try {
               await resetUserData();
+              // Reset developer tools unlock state
+              setDevToolsUnlocked(false);
+              devTapCountRef.current = 0;
+              if (devTapTimeoutRef.current) {
+                clearTimeout(devTapTimeoutRef.current);
+                devTapTimeoutRef.current = null;
+              }
             } finally {
               navigation.reset({
                 index: 0,

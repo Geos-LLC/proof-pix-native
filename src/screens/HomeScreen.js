@@ -14,7 +14,8 @@ import {
   TextInput,
   Share,
   ActivityIndicator,
-  Switch
+  Switch,
+  InteractionManager
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -1859,8 +1860,16 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'starter' && styles.planButtonSelected]}
                   onPress={async () => {
-                    await updateUserPlan('starter');
-                    handlePlanModalClose();
+                    try {
+                      await updateUserPlan('starter');
+                      // Use InteractionManager to ensure state updates complete before closing modal
+                      InteractionManager.runAfterInteractions(() => {
+                        handlePlanModalClose();
+                      });
+                    } catch (error) {
+                      console.error('[HomeScreen] Error updating plan:', error);
+                      handlePlanModalClose();
+                    }
                   }}
                 >
                   <Text style={[styles.planButtonText, userPlan === 'starter' && styles.planButtonTextSelected]}>{t('planModal.starter')}</Text>
@@ -1872,8 +1881,16 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
                   onPress={async () => {
-                    await updateUserPlan('pro');
-                    handlePlanModalClose();
+                    try {
+                      await updateUserPlan('pro');
+                      // Use InteractionManager to ensure state updates complete before closing modal
+                      InteractionManager.runAfterInteractions(() => {
+                        handlePlanModalClose();
+                      });
+                    } catch (error) {
+                      console.error('[HomeScreen] Error updating plan:', error);
+                      handlePlanModalClose();
+                    }
                   }}
                 >
                   <Text style={[styles.planButtonText, userPlan === 'pro' && styles.planButtonTextSelected]}>{t('planModal.pro')}</Text>
@@ -1885,8 +1902,16 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                   onPress={async () => {
-                    await updateUserPlan('business');
-                    handlePlanModalClose();
+                    try {
+                      await updateUserPlan('business');
+                      // Use InteractionManager to ensure state updates complete before closing modal
+                      InteractionManager.runAfterInteractions(() => {
+                        handlePlanModalClose();
+                      });
+                    } catch (error) {
+                      console.error('[HomeScreen] Error updating plan:', error);
+                      handlePlanModalClose();
+                    }
                   }}
                 >
                   <Text style={[styles.planButtonText, userPlan === 'business' && styles.planButtonTextSelected]}>{t('planModal.business')}</Text>
