@@ -309,7 +309,7 @@ export default function SettingsScreen({ navigation, route }) {
     toggleCleaningServiceEnabled,
   } = useSettings();
 
-  const { canUse, exceedsLimit, getLimit } = useFeaturePermissions();
+  const { canUse, exceedsLimit, getLimit, effectivePlan } = useFeaturePermissions();
   const { t, i18n } = useTranslation();
 
   // Memoize translated options
@@ -2797,11 +2797,28 @@ export default function SettingsScreen({ navigation, route }) {
                 <Switch
                   value={customWatermarkEnabled}
                   onValueChange={(value) => {
-                    // Allow starter users to turn on/off watermark switch
+                    // Check if user has access to customize watermark
+                    const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                    console.log('[Settings] Watermark toggle - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+                    
+                    if (value && !hasAccess) {
+                      // Show alert explaining why they can't use this feature instead of plan modal
+                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                      Alert.alert(
+                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                        t('settings.watermarkNotAvailableMessage', { 
+                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                          plan: planName
+                        }),
+                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                      );
+                      return;
+                    }
                     toggleWatermark(value);
                   }}
                   trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
                   thumbColor="white"
+                  disabled={!canUse(FEATURES.CUSTOM_WATERMARKS)}
                 />
               </View>
               {customWatermarkEnabled && (

@@ -18,6 +18,8 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+import { RoomIcon } from '../utils/roomIcons';
 import { compositeImages, isNativeCompositorAvailable } from '../utils/imageCompositor';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
@@ -2322,7 +2324,11 @@ export default function CameraScreen({ route, navigation }) {
       ]} pointerEvents="box-none">
         {/* Room name indicator - fixed to screen */}
         <View style={styles.roomIndicator}>
-          <Text style={styles.roomIndicatorIcon}>{getCurrentRoomInfo().icon}</Text>
+          <RoomIcon 
+            roomId={room} 
+            size={20} 
+            color={COLORS.PRIMARY} 
+          />
           <View style={styles.roomIndicatorTextContainer}>
             <Text style={styles.roomIndicatorText}>{getCurrentRoomInfo().name}</Text>
             <Text style={styles.roomIndicatorMode}>{mode.toUpperCase()}</Text>
@@ -2345,7 +2351,11 @@ export default function CameraScreen({ route, navigation }) {
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.torchButtonText}>{enableTorch ? '💡' : '🔦'}</Text>
+            <Ionicons 
+              name={enableTorch ? "flash" : "flash-outline"} 
+              size={24} 
+              color={enableTorch ? COLORS.PRIMARY : "#FFF"} 
+            />
           </TouchableOpacity>
         )}
 
@@ -2355,7 +2365,11 @@ export default function CameraScreen({ route, navigation }) {
           onPress={toggleShutterSoundEnabled}
           activeOpacity={0.7}
         >
-          <Text style={styles.soundButtonText}>{shutterSoundEnabled ? '🔔' : '🔕'}</Text>
+          <Ionicons 
+            name={shutterSoundEnabled ? "volume-high" : "volume-mute"} 
+            size={24} 
+            color={shutterSoundEnabled ? COLORS.PRIMARY : "#FFF"} 
+          />
         </TouchableOpacity>
 
         {/* Camera zoom controls - fixed to screen */}
@@ -2416,7 +2430,7 @@ export default function CameraScreen({ route, navigation }) {
                         style={styles.thumbnailViewerImage}
                         resizeMode="cover"
                       />
-                      <Text style={styles.thumbnailViewerLabel}>👁</Text>
+                      <Ionicons name="eye-outline" size={20} color={COLORS.PRIMARY} />
                     </TouchableOpacity>
                   );
                 } else {
@@ -2665,7 +2679,7 @@ export default function CameraScreen({ route, navigation }) {
                 }
               }}
             >
-              <Text style={styles.enlargedGalleryDeleteText}>🗑️</Text>
+              <Ionicons name="trash-outline" size={24} color="#EF4444" />
       </TouchableOpacity>
             <ScrollView
               ref={enlargedGalleryScrollRef}
@@ -2900,7 +2914,7 @@ export default function CameraScreen({ route, navigation }) {
                   setShowCarousel(false);
                 }}
               >
-                <Text style={styles.carouselCloseButtonText}>✕</Text>
+                <Ionicons name="close" size={28} color="#FFF" />
               </TouchableOpacity>
             </Animated.View>
           </View>
@@ -3190,15 +3204,19 @@ const styles = StyleSheet.create({
     left: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 25,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 28,
     zIndex: 1000,
     elevation: 1000,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: COLORS.PRIMARY,
-    gap: 8
+    gap: 10,
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
   },
   roomIndicatorIcon: {
     fontSize: 20
@@ -3226,33 +3244,39 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 50,
     right: 90,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 25,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
-    elevation: 1000
-  },
-  torchButtonText: {
-    fontSize: 20
+    elevation: 1000,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   soundButton: {
     position: 'absolute',
     top: 50,
     right: 20,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 25,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
-    elevation: 1000
-  },
-  soundButtonText: {
-    fontSize: 20
+    elevation: 1000,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   closeButton: {
     width: 44,
@@ -3357,7 +3381,14 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     backgroundColor: 'white',
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 4,
+    borderColor: 'rgba(255,255,255,0.3)'
   },
   captureButtonDisabled: {
     opacity: 0.5,
@@ -3659,9 +3690,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
     shadowRadius: 4,
-    elevation: 5
-  },
-  carouselCloseButtonText: {
+    elevation: 5,
     color: COLORS.TEXT,
     fontSize: 24,
     fontWeight: 'bold'
@@ -3823,11 +3852,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 260
   },
-  enlargedGalleryCloseText: {
-    color: COLORS.PRIMARY,
-    fontSize: 24,
-    fontWeight: 'bold'
-  },
   enlargedGalleryDeleteButton: {
     position: 'absolute',
     top: 10,
@@ -3841,10 +3865,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 260
-  },
-  enlargedGalleryDeleteText: {
-    color: COLORS.PRIMARY,
-    fontSize: 20
   },
   enlargedGallerySlide: {
     flex: 1,
@@ -3957,14 +3977,14 @@ const styles = StyleSheet.create({
   },
   letterboxCamera: {
     width: '100%',
-    aspectRatio: 4 / 3, // Portrait device: full width, black bars top/bottom
+    aspectRatio: 1.333, // Portrait device: full width, black bars top/bottom (4/3 = 1.333)
     position: 'relative',
     overflow: 'hidden'
   },
   letterboxCameraLandscape: {
     width: undefined,
     height: '100%',
-    aspectRatio: 4 / 3, // Landscape device: full height, black bars left/right
+    aspectRatio: 1.333, // Landscape device: full height, black bars left/right (4/3 = 1.333)
   },
   camera: {
     flex: 1,
@@ -3975,7 +3995,7 @@ const styles = StyleSheet.create({
   hiddenLabelView: {
     position: 'absolute',
     top: -10000,
-    left: 0
+    left: 0,
   },
   hiddenLabelImage: {
     width: '100%',
@@ -3983,7 +4003,7 @@ const styles = StyleSheet.create({
   },
   androidCameraWrapper: {
     width: '100%',
-    aspectRatio: 9/16,
+    aspectRatio: 0.5625, // 9/16 = 0.5625
     overflow: 'hidden',
     alignSelf: 'center',
   },

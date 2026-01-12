@@ -20,6 +20,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
+import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+import { RoomIcon } from '../utils/roomIcons';
 import { usePhotos } from '../context/PhotoContext';
 import { ROOMS, COLORS, PHOTO_MODES } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
@@ -787,7 +789,7 @@ export default function HomeScreen({ navigation }) {
       return;
     }
     
-    const base = createAlbumName(userName) || `Project`;
+    const base = createAlbumName(userName, new Date(), null, location) || `Project`;
     const normalize = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[^a-z0-9_\- ]/gi, '_');
     const existing = projects.map(p => p.name);
     const existingNorm = new Set(existing.map(normalize));
@@ -983,7 +985,13 @@ export default function HomeScreen({ navigation }) {
             onPress={() => setCurrentRoom(room.id)}
             onLongPress={(event) => handleRoomLongPress(room, event)}
           >
-            <Text style={[styles.roomIcon, { fontSize: isActive ? 28 : 22 }]}>{room.icon}</Text>
+            <View style={{ marginBottom: 4 }}>
+              <RoomIcon 
+                roomId={room.id} 
+                size={isActive ? 28 : 22} 
+                color={isActive ? COLORS.TEXT : '#999'} 
+              />
+            </View>
             {isActive && (
               <Text
                 style={[
@@ -1026,9 +1034,11 @@ export default function HomeScreen({ navigation }) {
               });
             }}
           >
-            <Text style={styles.addPhotoIcon}>
-              {rooms.find((r) => r.id === currentRoom)?.icon || '📷'}
-            </Text>
+            <RoomIcon 
+              roomId={currentRoom} 
+              size={56} 
+              color={COLORS.PRIMARY} 
+            />
             <Text style={styles.addPhotoText}>
               {!activeProjectId ? t('home.selectProject') : t('camera.takePhoto')}
             </Text>
@@ -1242,13 +1252,13 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.headerRight}>
             <TouchableOpacity style={styles.iconButton} onPress={() => setOpenProjectVisible(true)}>
-                <Text style={styles.iconText}>📤</Text>
+                <Ionicons name="cloud-upload-outline" size={22} color={COLORS.TEXT} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Gallery', { openManage: true })}>
-                <Text style={styles.iconText}>🗂️</Text>
+                <Ionicons name="folder-outline" size={22} color={COLORS.TEXT} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Settings')}>
-                <Text style={styles.iconText}>⚙️</Text>
+                <Ionicons name="settings-outline" size={22} color={COLORS.TEXT} />
             </TouchableOpacity>
         </View>
       </View>
@@ -1311,7 +1321,7 @@ export default function HomeScreen({ navigation }) {
                     }
                   }}
                 >
-                  <Text style={styles.projectEditIconText}>✓</Text>
+                  <Ionicons name="checkmark" size={20} color="#22C55E" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.projectEditIconButton}
@@ -1320,7 +1330,7 @@ export default function HomeScreen({ navigation }) {
                     setEditedProjectName('');
                   }}
                 >
-                  <Text style={styles.projectEditIconText}>✕</Text>
+                  <Ionicons name="close" size={20} color="#EF4444" />
                 </TouchableOpacity>
               </View>
             );
@@ -1338,7 +1348,7 @@ export default function HomeScreen({ navigation }) {
                   setIsEditingProjectName(true);
                 }}
               >
-                <Text style={styles.projectEditIconText}>✏️</Text>
+                <Feather name="edit-2" size={16} color="#999" />
               </TouchableOpacity>
             </View>
           );
@@ -1399,7 +1409,7 @@ export default function HomeScreen({ navigation }) {
               );
             }}
           >
-            <Text style={styles.fullScreenDeleteIcon}>🗑️</Text>
+            <Ionicons name="trash-outline" size={28} color="#EF4444" />
           </TouchableOpacity>
           {fullScreenPhotos.length > 1 && (
             <View style={styles.fullScreenNavigation}>
@@ -1515,7 +1525,7 @@ export default function HomeScreen({ navigation }) {
               );
             }}
           >
-            <Text style={styles.fullScreenDeleteIcon}>🗑️</Text>
+            <Ionicons name="trash-outline" size={28} color="#EF4444" />
           </TouchableOpacity>
           {fullScreenPhotos.length > 1 && (
             <View style={styles.fullScreenNavigation}>
@@ -1630,11 +1640,17 @@ export default function HomeScreen({ navigation }) {
                   onPress={handleDeleteSelectedProjects}
                   disabled={selectedProjects.size === 0}
                 >
+                  <Ionicons 
+                    name="trash-outline" 
+                    size={18} 
+                    color={selectedProjects.size > 0 ? '#CC0000' : '#999'} 
+                    style={{ marginRight: 6 }} 
+                  />
                   <Text style={[
                     styles.actionBtnText,
                     { color: selectedProjects.size > 0 ? '#CC0000' : '#999' }
                   ]}>
-                    🗑️ {t('home.deleteSelected')} ({selectedProjects.size})
+                    {t('home.deleteSelected')} ({selectedProjects.size})
                   </Text>
                 </TouchableOpacity>
 
@@ -1689,8 +1705,9 @@ export default function HomeScreen({ navigation }) {
                   ]}
                   onPress={handleDisabledDeleteClick}
                 >
+                  <Ionicons name="trash-outline" size={18} color="#999" style={{ marginRight: 6 }} />
                   <Text style={[styles.actionBtnText, { color: '#999' }]}>
-                    🗑️ {t('home.deleteSelected')} (0)
+                    {t('home.deleteSelected')} (0)
                   </Text>
                 </TouchableOpacity>
 
@@ -1993,42 +2010,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 10,
-    width: width
+    width: width,
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0'
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   appName: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: COLORS.TEXT,
+    letterSpacing: -0.5,
   },
   tierName: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    color: COLORS.GRAY,
-    marginLeft: 8,
+    color: '#666',
+    marginLeft: 10,
     alignSelf: 'flex-end',
     paddingBottom: 2,
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'white',
-    borderWidth: 2,
-    borderColor: COLORS.BORDER,
+    borderWidth: 1.5,
+    borderColor: '#E8E8E8',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 10,
-  },
-  iconText: {
-    fontSize: 20
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   title: {
     fontSize: FONTS.XXLARGE,
@@ -2038,14 +2071,19 @@ const styles = StyleSheet.create({
   },
   projectNameContainer: {
     paddingHorizontal: 20,
-    marginTop: -6,
-    marginBottom: 6
+    paddingVertical: 12,
+    marginTop: 0,
+    marginBottom: 8,
+    backgroundColor: '#FAFAFA',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0'
   },
   projectNameText: {
-    fontSize: 16,
-    color: COLORS.TEXT,
+    fontSize: 15,
+    color: '#666',
     fontWeight: '500',
     flexShrink: 1,
+    letterSpacing: 0.2,
   },
   projectNameRow: {
     flexDirection: 'row',
@@ -2054,13 +2092,14 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   projectEditIconButton: {
-    marginLeft: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+    marginLeft: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   projectEditIconText: {
-    fontSize: 14,
-    color: COLORS.GRAY,
+    fontSize: 16,
+    color: '#999',
   },
   projectEditRow: {
     flexDirection: 'row',
@@ -2081,14 +2120,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.PRIMARY,
     marginHorizontal: 20,
     marginBottom: 20,
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 18,
+    borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5
+    shadowRadius: 8,
+    elevation: 6,
+    borderWidth: 0
   },
   allPhotosButtonText: {
     color: COLORS.TEXT,
@@ -2112,26 +2152,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 8,
-    maxHeight: 80
+    maxHeight: 90,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0'
   },
   roomTab: {
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     marginHorizontal: 4,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: 'white',
-    minWidth: 60,
-    minHeight: 60
+    minWidth: 70,
+    minHeight: 70,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1.5,
+    borderColor: '#F0F0F0'
   },
   roomTabActive: {
-    backgroundColor: COLORS.PRIMARY
-  },
-  roomIcon: {
-    fontSize: 24,
-    marginBottom: 4
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: COLORS.PRIMARY,
+    shadowColor: COLORS.PRIMARY,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+    transform: [{ scale: 1.05 }]
   },
   roomTabText: {
     fontSize: 12,
@@ -2143,7 +2195,8 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 20
+    padding: 16,
+    backgroundColor: COLORS.BACKGROUND
   },
   photoGrid: {
     flexDirection: 'row',
@@ -2154,11 +2207,16 @@ const styles = StyleSheet.create({
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
     marginBottom: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: COLORS.BORDER
+    borderWidth: 1.5,
+    borderColor: '#E8E8E8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3
   },
   photoItemPending: {
     borderWidth: 3,
@@ -2184,20 +2242,29 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 20,
+    gap: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   thumbnailButton: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 80,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 28,
+    minWidth: 120,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1.5,
+    borderColor: COLORS.PRIMARY,
   },
   thumbnailButtonText: {
-    color: COLORS.PRIMARY,
-    fontSize: 14,
-    fontWeight: '600',
+    color: COLORS.TEXT,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   photoName: {
     color: 'white',
@@ -2228,29 +2295,36 @@ const styles = StyleSheet.create({
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
     marginBottom: 16,
-    borderRadius: 12,
-    backgroundColor: '#f0f0f0',
-    borderWidth: 2,
-    borderColor: '#ccc',
+    borderRadius: 20,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 2.5,
+    borderColor: COLORS.PRIMARY,
     borderStyle: 'dashed',
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
   },
   addPhotoIcon: {
-    fontSize: 48,
-    marginBottom: 8
+    fontSize: 56,
+    marginBottom: 12,
+    opacity: 0.7
   },
   addPhotoText: {
-    color: COLORS.GRAY,
-    fontSize: 14,
+    color: '#666',
+    fontSize: 15,
     fontWeight: '600',
-    textAlign: 'center'
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
   emptyStateContainer: {
     flex: 1,
     justifyContent: 'flex-start',
     alignItems: 'center',
-    paddingTop: '33%'
+    paddingTop: '30%'
   },
   splitPreview: {
     width: '100%',
@@ -2516,6 +2590,9 @@ const styles = StyleSheet.create({
     fontWeight: '500'
   },
   actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center'

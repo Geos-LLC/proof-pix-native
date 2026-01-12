@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_AFTER_LABEL_POSITION } from '../constants/rooms';
+import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_AFTER_LABEL_POSITION, DEFAULT_WATERMARK_POSITION } from '../constants/rooms';
 
 const SETTINGS_KEY = 'app-settings';
 const CUSTOM_ROOMS_KEY = 'custom-rooms';
@@ -86,6 +86,8 @@ export const SettingsProvider = ({ children }) => {
   const [watermarkLink, setWatermarkLink] = useState(DEFAULT_WATERMARK_LINK);
   const [watermarkColor, setWatermarkColor] = useState(DEFAULT_LABEL_BACKGROUND);
   const [watermarkOpacity, setWatermarkOpacity] = useState(DEFAULT_WATERMARK_OPACITY);
+  const [watermarkPosition, setWatermarkPosition] = useState(DEFAULT_WATERMARK_POSITION);
+  const [watermarkFontFamily, setWatermarkFontFamily] = useState('system'); // Default system font
   const [labelBackgroundColor, setLabelBackgroundColor] = useState(DEFAULT_LABEL_BACKGROUND);
   const [labelTextColor, setLabelTextColor] = useState(DEFAULT_LABEL_TEXT);
   const [labelSize, setLabelSize] = useState(DEFAULT_LABEL_SIZE);
@@ -145,6 +147,8 @@ export const SettingsProvider = ({ children }) => {
             ? settings.watermarkOpacity
             : DEFAULT_WATERMARK_OPACITY
         );
+        setWatermarkPosition(settings.watermarkPosition ?? DEFAULT_WATERMARK_POSITION);
+        setWatermarkFontFamily(normalizeFontKey(settings.watermarkFontFamily));
         setLabelBackgroundColor(
           normalizeColorHex(settings.labelBackgroundColor, DEFAULT_LABEL_BACKGROUND)
         );
@@ -320,6 +324,17 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ watermarkOpacity: clamped });
   };
 
+  const updateWatermarkPosition = async (position) => {
+    setWatermarkPosition(position);
+    await saveSettings({ watermarkPosition: position });
+  };
+
+  const updateWatermarkFontFamily = async (font) => {
+    const normalized = normalizeFontKey(font);
+    setWatermarkFontFamily(normalized);
+    await saveSettings({ watermarkFontFamily: normalized });
+  };
+
   const updateLabelBackgroundColor = async (color) => {
     const normalized = normalizeColorHex(color, DEFAULT_LABEL_BACKGROUND);
     setLabelBackgroundColor(normalized);
@@ -469,6 +484,8 @@ export const SettingsProvider = ({ children }) => {
       setWatermarkLink(DEFAULT_WATERMARK_LINK);
       setWatermarkColor(DEFAULT_LABEL_BACKGROUND);
       setWatermarkOpacity(DEFAULT_WATERMARK_OPACITY);
+      setWatermarkPosition(DEFAULT_WATERMARK_POSITION);
+      setWatermarkFontFamily('system');
       setLabelBackgroundColor(DEFAULT_LABEL_BACKGROUND);
       setLabelTextColor(DEFAULT_LABEL_TEXT);
       setLabelSize(DEFAULT_LABEL_SIZE);
@@ -494,6 +511,8 @@ export const SettingsProvider = ({ children }) => {
         watermarkLink: DEFAULT_WATERMARK_LINK,
         watermarkColor: DEFAULT_LABEL_BACKGROUND,
         watermarkOpacity: DEFAULT_WATERMARK_OPACITY,
+        watermarkPosition: DEFAULT_WATERMARK_POSITION,
+        watermarkFontFamily: 'system',
         labelBackgroundColor: DEFAULT_LABEL_BACKGROUND,
         labelTextColor: DEFAULT_LABEL_TEXT,
         labelFontFamily: 'system',
@@ -536,6 +555,10 @@ export const SettingsProvider = ({ children }) => {
     updateWatermarkLink,
     updateWatermarkColor,
     updateWatermarkOpacity,
+    watermarkPosition,
+    watermarkFontFamily,
+    updateWatermarkPosition,
+    updateWatermarkFontFamily,
     labelBackgroundColor,
     labelTextColor,
     labelFontFamily,

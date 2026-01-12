@@ -57,6 +57,9 @@ import LabelLanguageSetupScreen from './src/screens/LabelLanguageSetupScreen';
 import SectionLanguageSetupScreen from './src/screens/SectionLanguageSetupScreen';
 import AuthLoadingScreen from './src/screens/AuthLoadingScreen';
 import VisionCameraTest from './src/screens/VisionCameraTest';
+import WelcomeSetupScreen from './src/screens/WelcomeSetupScreen';
+import UserInfoSetupScreen from './src/screens/UserInfoSetupScreen';
+import PermissionsSetupScreen from './src/screens/PermissionsSetupScreen';
 import GlobalBackgroundLabelPreparation from './src/components/GlobalBackgroundLabelPreparation';
 import GlobalBackgroundCombinedPhotoCreator from './src/components/GlobalBackgroundCombinedPhotoCreator';
 
@@ -125,6 +128,27 @@ function AppNavigator() {
         component={FirstLoadScreen}
         options={{
           animation: 'none'
+        }}
+      />
+      <Stack.Screen
+        name="WelcomeSetup"
+        component={WelcomeSetupScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
+        name="UserInfoSetup"
+        component={UserInfoSetupScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
+        name="PermissionsSetup"
+        component={PermissionsSetupScreen}
+        options={{
+          animation: 'slide_from_right'
         }}
       />
       <Stack.Screen 

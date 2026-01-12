@@ -128,8 +128,8 @@ export default function AuthLoadingScreen({ navigation }) {
           console.log('[AuthLoading] Active subscription detected, skipping to Home');
           navigation.replace('Home');
         } else {
-          // New user or free plan - show onboarding flow
-          navigation.replace('FirstLoad');
+          // New user or free plan - show new setup flow
+          navigation.replace('WelcomeSetup');
         }
       }
     };

@@ -183,12 +183,25 @@ export const TIER_ROLES = {
  * @returns {boolean} - True if feature is available for the tier
  */
 export const hasFeature = (feature, tier) => {
-  if (!tier || !TIER_ROLES[tier]) {
+  if (!tier) {
+    console.log('[hasFeature] No tier provided:', { feature, tier });
     return false;
   }
   
-  const role = TIER_ROLES[tier];
-  return role.features.includes(feature);
+  // Normalize tier to lowercase for case-insensitive matching
+  const normalizedTier = String(tier).toLowerCase();
+  
+  if (!TIER_ROLES[normalizedTier]) {
+    console.log('[hasFeature] Tier not found in TIER_ROLES:', { feature, tier, normalizedTier, availableTiers: Object.keys(TIER_ROLES) });
+    return false;
+  }
+  
+  const role = TIER_ROLES[normalizedTier];
+  const hasAccess = role.features.includes(feature);
+  if (!hasAccess) {
+    console.log('[hasFeature] Feature not in tier features:', { feature, tier, normalizedTier, tierFeatures: role.features });
+  }
+  return hasAccess;
 };
 
 /**
@@ -198,11 +211,18 @@ export const hasFeature = (feature, tier) => {
  * @returns {number} - The limit value (-1 means unlimited)
  */
 export const getLimit = (limitType, tier) => {
-  if (!tier || !TIER_ROLES[tier]) {
+  if (!tier) {
     return 0;
   }
   
-  const role = TIER_ROLES[tier];
+  // Normalize tier to lowercase for case-insensitive matching
+  const normalizedTier = String(tier).toLowerCase();
+  
+  if (!TIER_ROLES[normalizedTier]) {
+    return 0;
+  }
+  
+  const role = TIER_ROLES[normalizedTier];
   return role.limits[limitType] ?? 0;
 };
 
@@ -222,11 +242,18 @@ export const isUnlimited = (limitType, tier) => {
  * @returns {Array<string>} - Array of feature constants
  */
 export const getTierFeatures = (tier) => {
-  if (!tier || !TIER_ROLES[tier]) {
+  if (!tier) {
     return [];
   }
   
-  return TIER_ROLES[tier].features;
+  // Normalize tier to lowercase for case-insensitive matching
+  const normalizedTier = String(tier).toLowerCase();
+  
+  if (!TIER_ROLES[normalizedTier]) {
+    return [];
+  }
+  
+  return TIER_ROLES[normalizedTier].features;
 };
 
 /**
@@ -235,11 +262,18 @@ export const getTierFeatures = (tier) => {
  * @returns {Object|null} - Role object with name, features, and limits
  */
 export const getTierRole = (tier) => {
-  if (!tier || !TIER_ROLES[tier]) {
+  if (!tier) {
     return null;
   }
   
-  return TIER_ROLES[tier];
+  // Normalize tier to lowercase for case-insensitive matching
+  const normalizedTier = String(tier).toLowerCase();
+  
+  if (!TIER_ROLES[normalizedTier]) {
+    return null;
+  }
+  
+  return TIER_ROLES[normalizedTier];
 };
 
 /**

@@ -145,9 +145,13 @@ export default function LabelCustomizationScreen({ navigation }) {
     updateWatermarkLink,
     updateWatermarkColor,
     updateWatermarkOpacity,
+    watermarkPosition,
+    watermarkFontFamily,
+    updateWatermarkPosition,
+    updateWatermarkFontFamily,
   } = useSettings();
 
-  const { canUse } = useFeaturePermissions();
+  const { canUse, effectivePlan } = useFeaturePermissions();
 
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [colorModalType, setColorModalType] = useState(null);
@@ -157,6 +161,7 @@ export default function LabelCustomizationScreen({ navigation }) {
   const [hexModalValue, setHexModalValue] = useState('');
   const [hexModalError, setHexModalError] = useState(null);
   const [fontModalVisible, setFontModalVisible] = useState(false);
+  const [watermarkFontModalVisible, setWatermarkFontModalVisible] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [sliderResetKey, setSliderResetKey] = useState(0);
@@ -238,8 +243,18 @@ export default function LabelCustomizationScreen({ navigation }) {
     console.log('[ColorPicker] openColorModal called with type:', type);
     // Check if user has access
     if (type === 'watermark') {
-      if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-        setShowPlanModal(true);
+      const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+      console.log('[LabelCustomization] Color modal (watermark) - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+      if (!hasAccess) {
+        const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+        Alert.alert(
+          t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+          t('settings.watermarkNotAvailableMessage', { 
+            defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+            plan: planName
+          }),
+          [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+        );
         return;
       }
     } else {
@@ -536,10 +551,28 @@ export default function LabelCustomizationScreen({ navigation }) {
           <Switch
             value={customWatermarkEnabled}
             onValueChange={(value) => {
+              // Check if user has access to customize watermark
+              const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+              console.log('[LabelCustomization] Watermark toggle - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'value:', value);
+              
+              if (value && !hasAccess) {
+                // Show alert explaining why they can't use this feature (instead of plan modal)
+                const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                Alert.alert(
+                  t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                  t('settings.watermarkNotAvailableMessage', { 
+                    defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                    plan: planName
+                  }),
+                  [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                );
+                return;
+              }
               toggleWatermark(value);
             }}
             trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
             thumbColor="white"
+            disabled={!canUse(FEATURES.CUSTOM_WATERMARKS) && !customWatermarkEnabled}
           />
         </View>
         {customWatermarkEnabled && (
@@ -556,10 +589,20 @@ export default function LabelCustomizationScreen({ navigation }) {
                 value={showWatermark}
                 onValueChange={(value) => {
                   // Check if user has access to customize watermark
-                  if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-                    // Starter users cannot turn off watermark - show tier popup
+                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                  console.log('[LabelCustomization] Add watermark toggle - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'value:', value);
+                  if (!hasAccess) {
+                    // Starter users cannot turn off watermark - show alert
                     if (value === false) {
-                      setShowPlanModal(true);
+                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                      Alert.alert(
+                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                        t('settings.watermarkNotAvailableMessage', { 
+                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                          plan: planName
+                        }),
+                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                      );
                       return;
                     }
                   }
@@ -574,8 +617,18 @@ export default function LabelCustomizationScreen({ navigation }) {
               <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkText')}</Text>
               <Pressable
                 onPress={() => {
-                  if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-                    setShowPlanModal(true);
+                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                  console.log('[LabelCustomization] Watermark text press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+                  if (!hasAccess) {
+                    const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                    Alert.alert(
+                      t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                      t('settings.watermarkNotAvailableMessage', { 
+                        defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                        plan: planName
+                      }),
+                      [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                    );
                   } else {
                     // Focus the input if user has access
                     if (watermarkTextInputRef.current) {
@@ -591,8 +644,18 @@ export default function LabelCustomizationScreen({ navigation }) {
                   onChangeText={updateWatermarkText}
                   onFocus={() => {
                     // Check if user has access to customize watermark
-                    if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-                      setShowPlanModal(true);
+                    const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                    console.log('[LabelCustomization] Watermark text focus - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+                    if (!hasAccess) {
+                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                      Alert.alert(
+                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                        t('settings.watermarkNotAvailableMessage', { 
+                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                          plan: planName
+                        }),
+                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                      );
                       // Blur the input to prevent typing
                       if (watermarkTextInputRef.current) {
                         watermarkTextInputRef.current.blur();
@@ -610,8 +673,18 @@ export default function LabelCustomizationScreen({ navigation }) {
               <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkLink')}</Text>
               <Pressable
                 onPress={() => {
-                  if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-                    setShowPlanModal(true);
+                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                  console.log('[LabelCustomization] Watermark link press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+                  if (!hasAccess) {
+                    const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                    Alert.alert(
+                      t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                      t('settings.watermarkNotAvailableMessage', { 
+                        defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                        plan: planName
+                      }),
+                      [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                    );
                   } else {
                     // Focus the input if user has access
                     if (watermarkLinkInputRef.current) {
@@ -627,8 +700,18 @@ export default function LabelCustomizationScreen({ navigation }) {
                   onChangeText={updateWatermarkLink}
                   onFocus={() => {
                     // Check if user has access to customize watermark
-                    if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-                      setShowPlanModal(true);
+                    const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                    console.log('[LabelCustomization] Watermark link focus - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+                    if (!hasAccess) {
+                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                      Alert.alert(
+                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                        t('settings.watermarkNotAvailableMessage', { 
+                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                          plan: planName
+                        }),
+                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                      );
                       // Blur the input to prevent typing
                       if (watermarkLinkInputRef.current) {
                         watermarkLinkInputRef.current.blur();
@@ -654,8 +737,18 @@ export default function LabelCustomizationScreen({ navigation }) {
                 style={styles.watermarkColorButton}
                 onPress={() => {
                   // Check if user has access to customize watermark
-                  if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-                    setShowPlanModal(true);
+                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                  console.log('[LabelCustomization] Watermark color press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+                  if (!hasAccess) {
+                    const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                    Alert.alert(
+                      t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                      t('settings.watermarkNotAvailableMessage', { 
+                        defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                        plan: planName
+                      }),
+                      [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                    );
                     return;
                   }
                   openColorModal('watermark');
@@ -686,8 +779,18 @@ export default function LabelCustomizationScreen({ navigation }) {
                   }}
                   onSlidingComplete={(value) => {
                     // Check if user has access to customize watermark when dragging ends
-                    if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-                      setShowPlanModal(true);
+                    const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                    console.log('[LabelCustomization] Watermark opacity slide - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+                    if (!hasAccess) {
+                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                      Alert.alert(
+                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                        t('settings.watermarkNotAvailableMessage', { 
+                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                          plan: planName
+                        }),
+                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                      );
                       // Reset to original value
                       setWatermarkOpacityPreview(watermarkOpacity);
                       return;
@@ -704,6 +807,149 @@ export default function LabelCustomizationScreen({ navigation }) {
                 </Text>
               </View>
             </View>
+
+            {/* Watermark Position */}
+            <View style={styles.watermarkField}>
+              <Text style={styles.watermarkFieldLabel}>{t('labelCustomization.watermarkPosition', { defaultValue: 'Watermark Position' })}</Text>
+              <View style={styles.positionGrid}>
+                <View style={styles.gridRow}>
+                  {['left-top', 'center-top', 'right-top'].map((key) => {
+                    const pos = getLabelPositions(10, 10)[key];
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          styles.positionGridCell,
+                          watermarkPosition === key && styles.positionGridCellSelected,
+                        ]}
+                        onPress={() => {
+                          const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                          console.log('[LabelCustomization] Watermark position press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'position:', key);
+                          if (!hasAccess) {
+                            const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                            Alert.alert(
+                              t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                              t('settings.watermarkNotAvailableMessage', { 
+                                defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                                plan: planName
+                              }),
+                              [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                            );
+                            return;
+                          }
+                          updateWatermarkPosition(key);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.positionGridText}>{pos.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={styles.gridRow}>
+                  {['left-middle', 'center-middle', 'right-middle'].map((key) => {
+                    const pos = getLabelPositions(10, 10)[key];
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          styles.positionGridCell,
+                          watermarkPosition === key && styles.positionGridCellSelected,
+                        ]}
+                        onPress={() => {
+                          const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                          console.log('[LabelCustomization] Watermark position press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'position:', key);
+                          if (!hasAccess) {
+                            const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                            Alert.alert(
+                              t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                              t('settings.watermarkNotAvailableMessage', { 
+                                defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                                plan: planName
+                              }),
+                              [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                            );
+                            return;
+                          }
+                          updateWatermarkPosition(key);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.positionGridText}>{pos.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={styles.gridRow}>
+                  {['left-bottom', 'center-bottom', 'right-bottom'].map((key) => {
+                    const pos = getLabelPositions(10, 10)[key];
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          styles.positionGridCell,
+                          watermarkPosition === key && styles.positionGridCellSelected,
+                        ]}
+                        onPress={() => {
+                          const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                          console.log('[LabelCustomization] Watermark position press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'position:', key);
+                          if (!hasAccess) {
+                            const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                            Alert.alert(
+                              t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                              t('settings.watermarkNotAvailableMessage', { 
+                                defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                                plan: planName
+                              }),
+                              [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                            );
+                            return;
+                          }
+                          updateWatermarkPosition(key);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.positionGridText}>{pos.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+
+            {/* Watermark Font */}
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.watermarkFieldLabel}>{t('labelCustomization.watermarkFont', { defaultValue: 'Watermark Font' })}</Text>
+                <Text style={styles.settingDescription}>
+                  {FONT_OPTIONS.find(opt => opt.key === watermarkFontFamily)?.label || FONT_OPTIONS[0]?.label}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.fontSelectorButton}
+                onPress={() => {
+                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
+                  console.log('[LabelCustomization] Watermark font press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
+                  if (!hasAccess) {
+                    const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
+                    Alert.alert(
+                      t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
+                      t('settings.watermarkNotAvailableMessage', { 
+                        defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
+                        plan: planName
+                      }),
+                      [{ text: t('common.ok', { defaultValue: 'OK' }) }]
+                    );
+                    return;
+                  }
+                  // Store that this is for watermark font
+                  setWatermarkFontModalVisible(true);
+                }}
+              >
+                <Text style={styles.fontSelectorButtonText}>{t('labelCustomization.chooseFont')}</Text>
+              </TouchableOpacity>
+            </View>
+
             <Text style={styles.watermarkHelperText}>
               {t('settings.watermarkHelperText')}
             </Text>
@@ -1108,6 +1354,51 @@ export default function LabelCustomizationScreen({ navigation }) {
         </View>
       </RNModal>
 
+      {/* Watermark Font Modal */}
+      <RNModal visible={watermarkFontModalVisible} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={() => setWatermarkFontModalVisible(false)}>
+          <View style={styles.modalBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={styles.fontModalContainer}>
+          <View style={styles.fontModalHeader}>
+            <Text style={styles.fontModalTitle}>{t('labelCustomization.watermarkFont', { defaultValue: 'Watermark Font' })}</Text>
+            <TouchableOpacity onPress={() => setWatermarkFontModalVisible(false)}>
+              <Text style={styles.fontModalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.fontList}>
+            {FONT_OPTIONS.map((option) => {
+              const isSelected = watermarkFontFamily === option.key;
+              return (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[
+                    styles.fontOption,
+                    isSelected && styles.fontOptionSelected,
+                  ]}
+                  onPress={() => {
+                    updateWatermarkFontFamily(option.key);
+                    setWatermarkFontModalVisible(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.fontOptionLabel,
+                      option.fontFamily && { fontFamily: option.fontFamily },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {isSelected && (
+                    <Text style={styles.fontOptionCheck}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </RNModal>
+
       {/* Plan Selection Modal */}
       <RNModal
         visible={showPlanModal}
@@ -1456,6 +1747,30 @@ const styles = StyleSheet.create({
   gridCellSelected: {
     backgroundColor: COLORS.PRIMARY,
     borderColor: COLORS.PRIMARY,
+  },
+  positionGrid: {
+    marginTop: 12,
+    gap: 4,
+  },
+  positionGridCell: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  positionGridCellSelected: {
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: COLORS.PRIMARY,
+  },
+  positionGridText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.TEXT,
   },
   positionPreviewContainer: {
     marginVertical: 8,

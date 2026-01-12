@@ -46,6 +46,7 @@ import { filterNewPhotos, markPhotosAsUploaded } from '../services/uploadTracker
 import Share from 'react-native-share';
 import JSZip from 'jszip';
 import { useTranslation } from 'react-i18next';
+import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import {
   calculateSettingsHash,
   getCachedLabeledPhoto,
@@ -2102,7 +2103,7 @@ export default function GalleryScreen({ navigation, route }) {
         // Create album name using the same format as Pro/Business/Enterprise tiers
         // This includes a numeric identifier (HHMMSS) to distinguish folders created on the same day
         const teamUserName = userName || 'Team Member';
-        const albumName = createAlbumName(teamUserName, new Date());
+        const albumName = createAlbumName(teamUserName, new Date(), null, location);
         
         startBackgroundUpload({
           items: itemsToUpload,
@@ -2199,7 +2200,7 @@ export default function GalleryScreen({ navigation, route }) {
       // Generate album name - use project's uploadId if available, otherwise generate new one
       const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
       const projectUploadId = activeProject?.uploadId || null;
-      const albumName = createAlbumName(userName, new Date(), projectUploadId);
+      const albumName = createAlbumName(userName, new Date(), projectUploadId, location);
       
       // Scope uploads to the active project if one is selected, or use selected photos
       let sourcePhotos;
@@ -3076,7 +3077,7 @@ export default function GalleryScreen({ navigation, route }) {
           {currentSelectionMode && (
             <View style={[styles.photoCheckboxContainer, styles.photoCheckboxGrid, isSelected && styles.photoCheckboxSelected]}>
               {isSelected && (
-                <Text style={styles.photoCheckmark}>✓</Text>
+                <Ionicons name="checkmark" size={18} color="white" />
               )}
             </View>
           )}
@@ -3396,7 +3397,7 @@ export default function GalleryScreen({ navigation, route }) {
       return (
         <View key={room.id} style={styles.roomSection}>
           <View style={styles.roomHeader}>
-            <Text style={styles.roomIcon}>{room.icon}</Text>
+            <RoomIcon roomId={room.id} size={24} color={COLORS.TEXT} style={{ marginRight: 8 }} />
             <Text style={styles.roomName}>
               {t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })}
             </Text>
@@ -3443,7 +3444,7 @@ export default function GalleryScreen({ navigation, route }) {
       return (
         <View key={room.id} style={styles.roomSection}>
           <View style={styles.roomHeader}>
-            <Text style={styles.roomIcon}>{room.icon}</Text>
+            <RoomIcon roomId={room.id} size={24} color={COLORS.TEXT} style={{ marginRight: 8 }} />
             <Text style={styles.roomName}>
               {t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })}
             </Text>
@@ -3495,7 +3496,7 @@ export default function GalleryScreen({ navigation, route }) {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backButtonText}>←</Text>
+          <Ionicons name="arrow-back" size={28} color={COLORS.PRIMARY} />
         </TouchableOpacity>
         <Text style={styles.title}>{t('gallery.title')}</Text>
         <View style={{ width: 40 }} />
@@ -3514,8 +3515,9 @@ export default function GalleryScreen({ navigation, route }) {
               setShowOnlySelected(false);
             }}
           >
+            <Ionicons name="close-circle" size={18} color="white" style={{ marginRight: 6 }} />
             <Text style={[styles.selectButtonText, { color: 'white' }]}>
-              ✕ Show All
+              Show All
             </Text>
           </TouchableOpacity>
         )}
@@ -3706,8 +3708,9 @@ export default function GalleryScreen({ navigation, route }) {
           style={[styles.deleteAllButtonBottom, { backgroundColor: '#F2C31B', marginTop: 20, marginBottom: 30 }]}
           onPress={() => setManageVisible(true)}
         >
+          <Ionicons name="share-outline" size={20} color="#000" style={{ marginRight: 8 }} />
           <Text style={[styles.deleteAllButtonBottomText, { color: '#000' }]}>
-            📤 {t('gallery.shareProject')}
+            {t('gallery.shareProject')}
           </Text>
         </TouchableOpacity>
       )}
@@ -4120,7 +4123,7 @@ export default function GalleryScreen({ navigation, route }) {
                   !isAuthenticated && styles.checkboxDisabled
                 ]}>
                   {uploadDestinations.google && (
-                    <Text style={styles.checkmark}>✓</Text>
+                    <Ionicons name="checkmark" size={16} color="white" />
                   )}
                 </View>
                 <View style={styles.checkboxLabelContainer}>
@@ -4132,7 +4135,7 @@ export default function GalleryScreen({ navigation, route }) {
                   </Text>
                   {isAuthenticated && (
                     <View style={styles.connectedIndicatorInline}>
-                      <Text style={styles.connectedCheckmarkInline}>✓</Text>
+                      <Ionicons name="checkmark" size={12} color="white" />
                     </View>
                   )}
                 </View>
@@ -4185,7 +4188,7 @@ export default function GalleryScreen({ navigation, route }) {
                   !isDropboxConnected && styles.checkboxDisabled
                 ]}>
                   {uploadDestinations.dropbox && (
-                    <Text style={styles.checkmark}>✓</Text>
+                    <Ionicons name="checkmark" size={16} color="white" />
                   )}
                 </View>
                 <View style={styles.checkboxLabelContainer}>
@@ -4197,7 +4200,7 @@ export default function GalleryScreen({ navigation, route }) {
                   </Text>
                   {isDropboxConnected && (
                     <View style={styles.connectedIndicatorInlineDropbox}>
-                      <Text style={styles.connectedCheckmarkInline}>✓</Text>
+                      <Ionicons name="checkmark" size={12} color="white" />
                     </View>
                   )}
                 </View>
@@ -4379,8 +4382,9 @@ export default function GalleryScreen({ navigation, route }) {
                         handleShareSelected();
                       }}
                     >
+                      <Ionicons name="share-outline" size={20} color="#0077CC" style={{ marginRight: 8 }} />
                       <Text style={[styles.actionBtnText, styles.actionInfoText]}>
-                        🔗 Share Selected ({selectedPhotos.size})
+                        Share Selected ({selectedPhotos.size})
                       </Text>
                     </TouchableOpacity>
 
@@ -4392,8 +4396,9 @@ export default function GalleryScreen({ navigation, route }) {
                         handleDeleteSelected();
                       }}
                     >
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" style={{ marginRight: 8 }} />
                       <Text style={[styles.actionBtnText, styles.actionDestructiveText]}>
-                        🗑️ Delete Selected ({selectedPhotos.size})
+                        Delete Selected ({selectedPhotos.size})
                       </Text>
                     </TouchableOpacity>
 
@@ -4405,8 +4410,9 @@ export default function GalleryScreen({ navigation, route }) {
                         handlePreviewSelected();
                       }}
                     >
+                      <Ionicons name="eye-outline" size={20} color="white" style={{ marginRight: 8 }} />
                       <Text style={[styles.actionBtnText, { color: 'white' }]}>
-                        👁️ Preview Selected ({selectedPhotos.size})
+                        Preview Selected ({selectedPhotos.size})
                       </Text>
                     </TouchableOpacity>
 
@@ -4422,8 +4428,9 @@ export default function GalleryScreen({ navigation, route }) {
                         setShowOnlySelected(false); // Clear filter when deselecting
                       }}
                     >
+                      <Ionicons name="close-circle-outline" size={20} color="white" style={{ marginRight: 8 }} />
                       <Text style={[styles.actionBtnText, { color: 'white' }]}>
-                        ✕ Deselect
+                        Deselect
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -4439,8 +4446,9 @@ export default function GalleryScreen({ navigation, route }) {
                         handleUploadPhotos();
                       }}
                     >
+                      <Ionicons name="cloud-upload-outline" size={20} color="#000" style={{ marginRight: 8 }} />
                       <Text style={[styles.actionBtnText, styles.actionPrimaryText]}>
-                        📤 {t('gallery.uploadAll')}
+                        {t('gallery.uploadAll')}
                       </Text>
                     </TouchableOpacity>
 
@@ -4452,8 +4460,9 @@ export default function GalleryScreen({ navigation, route }) {
                         handleShareProject();
                       }}
                     >
+                      <Ionicons name="share-outline" size={20} color="#0077CC" style={{ marginRight: 8 }} />
                       <Text style={[styles.actionBtnText, styles.actionInfoText]}>
-                        🔗 {t('gallery.shareAll')}
+                        {t('gallery.shareAll')}
                       </Text>
                     </TouchableOpacity>
 
@@ -4465,8 +4474,9 @@ export default function GalleryScreen({ navigation, route }) {
                         setShowDeleteAllConfirm(true);
                       }}
                     >
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" style={{ marginRight: 8 }} />
                       <Text style={[styles.actionBtnText, styles.actionDestructiveText]}>
-                        🗑️ {t('gallery.deleteAll')}
+                        {t('gallery.deleteAll')}
                       </Text>
                     </TouchableOpacity>
 
@@ -4480,8 +4490,9 @@ export default function GalleryScreen({ navigation, route }) {
                         setIsSelectionMode(true);
                       }}
                     >
+                      <Ionicons name="checkmark-circle-outline" size={20} color="white" style={{ marginRight: 8 }} />
                       <Text style={[styles.actionBtnText, { color: 'white' }]}>
-                        ✓ {t('gallery.selectPhotos')}
+                        {t('gallery.selectPhotos')}
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -4685,7 +4696,7 @@ export default function GalleryScreen({ navigation, route }) {
                   shareAsArchive && styles.checkboxChecked
                 ]}>
                   {shareAsArchive && (
-                    <Text style={styles.checkmark}>✓</Text>
+                    <Ionicons name="checkmark" size={16} color="white" />
                   )}
                 </View>
                 <View style={styles.checkboxLabelContainer}>
@@ -4980,7 +4991,12 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER
+    borderBottomColor: '#F0F0F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3
   },
   backButton: {
     width: 60
@@ -4991,9 +5007,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold'
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: COLORS.TEXT
+    color: COLORS.TEXT,
+    letterSpacing: -0.5
   },
   projectNameContainer: {
     flexDirection: 'row',
@@ -5087,19 +5104,28 @@ const styles = StyleSheet.create({
     numberOfLines: 1
   },
   filterButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
     backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E0E0E0'
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1
   },
   filterButtonActive: {
     backgroundColor: '#E3F2FD',
     borderColor: '#2196F3',
-    borderWidth: 2
+    borderWidth: 2.5,
+    shadowColor: '#2196F3',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3
   },
   filterButtonText: {
     fontSize: 9,
@@ -5130,10 +5156,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: COLORS.PRIMARY
   },
-  roomIcon: {
-    fontSize: 24,
-    marginRight: 8
-  },
   roomName: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -5152,9 +5174,14 @@ const styles = StyleSheet.create({
   photoCard: {
     width: COLUMN_WIDTH,
     height: COLUMN_WIDTH,
-    borderRadius: 8,
-    borderWidth: 3,
+    borderRadius: 12,
+    borderWidth: 2.5,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
     backgroundColor: 'white',
     marginRight: 8,
     position: 'relative'

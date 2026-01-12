@@ -206,12 +206,16 @@ export const canStartTrial = async () => {
  */
 export const getEffectivePlan = async (currentPlan) => {
   const trialActive = await isTrialActive();
+  console.log('[getEffectivePlan] Called with currentPlan:', currentPlan, 'trialActive:', trialActive);
   if (trialActive) {
     const trialInfo = await getTrialInfo();
+    console.log('[getEffectivePlan] Trial is active, trialInfo:', trialInfo);
     if (trialInfo?.plan) {
+      console.log('[getEffectivePlan] Returning trial plan:', trialInfo.plan);
       return trialInfo.plan; // Return the plan tier from trial
     }
   }
+  console.log('[getEffectivePlan] No active trial, returning currentPlan:', currentPlan);
   return currentPlan;
 };
 

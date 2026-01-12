@@ -797,14 +797,16 @@ export async function uploadPhotoBatch(photos, config) {
 }
 
 /**
- * Create an album name from user info and date
+ * Create an album name from user info, location, and date
  * @param {string} userName - User/cleaner name
  * @param {Date} date - Date object (defaults to now)
- * @returns {string} - Album name (e.g., "John - Dec 21, 2024")
+ * @param {string|number|null} projectUploadId - Project upload ID for re-uploads (optional)
+ * @param {string} location - Location name (optional, e.g., "Tampa")
+ * @returns {string} - Album name (e.g., "John - Tampa - Dec 21, 2024 - 1430")
  */
 /**
  * Generate a unique project identifier (timestamp-based)
- * Format: HHMM (e.g., "1430" for 2:30 PM)
+ * Format: HHMMSS (e.g., "143025" for 2:30:25 PM)
  */
 function generateProjectId(date = new Date()) {
   const hours = date.getHours().toString().padStart(2, '0');
@@ -813,7 +815,7 @@ function generateProjectId(date = new Date()) {
   return `${hours}${minutes}${seconds}`;
 }
 
-export function createAlbumName(userName, date = new Date(), projectUploadId = null) {
+export function createAlbumName(userName, date = new Date(), projectUploadId = null, location = null) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const month = months[date.getMonth()];
   const day = date.getDate();
@@ -823,7 +825,15 @@ export function createAlbumName(userName, date = new Date(), projectUploadId = n
   // Otherwise generate one based on current time (for new projects or no project)
   const uniqueId = projectUploadId || generateProjectId(date);
   
-  return `${userName} - ${month} ${day}, ${year} - ${uniqueId}`;
+  // Build album name with location if provided
+  const parts = [userName];
+  if (location) {
+    parts.push(location);
+  }
+  parts.push(`${month} ${day}, ${year}`);
+  parts.push(uniqueId);
+  
+  return parts.join(' - ');
 }
 
 /**

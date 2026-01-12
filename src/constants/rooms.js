@@ -150,6 +150,7 @@ export const LABEL_POSITIONS = {
 export const DEFAULT_LABEL_POSITION = 'left-top';
 export const DEFAULT_BEFORE_LABEL_POSITION = 'left-top';
 export const DEFAULT_AFTER_LABEL_POSITION = 'right-top';
+export const DEFAULT_WATERMARK_POSITION = 'right-bottom';
 
 // Function to get label positions with custom margins
 export const getLabelPositions = (marginVertical = 10, marginHorizontal = 10) => {

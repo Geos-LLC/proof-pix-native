@@ -99,7 +99,7 @@ proof-pix-native/
 
 - **Metadata**: Photo metadata (room, name, timestamps) stored in AsyncStorage
 - **Images**: Full-resolution images saved to device photo library in "ProofPix" album
-- **Organization**: Photos organized by room and timestamp
+- **Organization**: Photos organized by location, room, and timestamp. Album/folder names include location (e.g., "John - Tampa - Dec 21, 2024")
 
 ## Building for Production
 

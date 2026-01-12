@@ -33,12 +33,14 @@ export const useFeaturePermissions = () => {
   // Update effective plan when userPlan changes or on mount
   useEffect(() => {
     const updateEffectivePlan = async () => {
+      console.log('[useFeaturePermissions] useEffect running, userPlan:', userPlan);
       // Check trial expiration first (this will mark it inactive if expired)
       const { isTrialActive } = await import('../services/trialService');
       await isTrialActive();
       
       // Then get the effective plan
       const effective = await getEffectivePlan(userPlan);
+      console.log('[useFeaturePermissions] getEffectivePlan returned:', effective, 'for userPlan:', userPlan);
       setEffectivePlan(effective);
     };
     updateEffectivePlan();
@@ -50,7 +52,12 @@ export const useFeaturePermissions = () => {
    * @returns {boolean}
    */
   const canUse = (feature) => {
-    return hasFeature(feature, effectivePlan);
+    // Use effectivePlan, but if it's stale or doesn't match userPlan (and no trial), use userPlan directly
+    // This is a safety measure to ensure permissions work even if effectivePlan hasn't updated yet
+    const planToCheck = effectivePlan && effectivePlan !== 'starter' ? effectivePlan : userPlan;
+    const result = hasFeature(feature, planToCheck);
+    console.log('[useFeaturePermissions] canUse check:', { feature, userPlan, effectivePlan, planToCheck, result });
+    return result;
   };
 
   /**
