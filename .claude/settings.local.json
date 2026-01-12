@@ -21,7 +21,14 @@
       "Bash(git merge:*)",
       "Bash(git merge-base:*)",
       "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" log --oneline -20)",
-      "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" show c13d4af --stat)"
+      "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" show c13d4af --stat)",
+      "Bash(git -C \"c:\\\\Users\\\\HP\\\\Desktop\\\\Projects\\\\Active\\\\Running\\\\ProofPix\\\\proof-pix-native\" log --oneline -1 development)",
+      "Bash(for branch in main feature/android feature/combined feature/ios feature/ios-iap feature/photo-creation-with-google-fix)",
+      "Bash(done)",
+      "Bash(git -C \"c:\\\\Users\\\\HP\\\\Desktop\\\\Projects\\\\Active\\\\Running\\\\ProofPix\\\\proof-pix-native\" stash:*)",
+      "Bash(git -C \"c:\\\\Users\\\\HP\\\\Desktop\\\\Projects\\\\Active\\\\Running\\\\ProofPix\\\\proof-pix-native\" checkout main)",
+      "Bash(git -C \"c:\\\\Users\\\\HP\\\\Desktop\\\\Projects\\\\Active\\\\Running\\\\ProofPix\\\\proof-pix-native\" merge --ff-only development)",
+      "Bash(git -C \"c:\\\\Users\\\\HP\\\\Desktop\\\\Projects\\\\Active\\\\Running\\\\ProofPix\\\\proof-pix-native\" stash pop)"
     ],
     "deny": [],
     "ask": []
