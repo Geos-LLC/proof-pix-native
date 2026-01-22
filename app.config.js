@@ -5,7 +5,7 @@ export default {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
     owner: "goscha01",
-    version: process.env.VERSION || "1.3.1",
+    version: process.env.VERSION || "1.3.3",
     orientation: "default",
     icon: "./assets/PP_logo.png",
     userInterfaceStyle: "light",
@@ -26,7 +26,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "3",
+      buildNumber: "14",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
