@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   Share,
-  Clipboard,
   Alert,
   SafeAreaView,
   Modal,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { logReferralEvent } from '../utils/analytics';
@@ -25,6 +25,7 @@ import {
   getReferralStatsFromServer,
   getUserId,
 } from '../services/referralService';
+import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
 
@@ -172,12 +173,12 @@ export default function ReferralScreen({ navigation }) {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.backButtonText}>←</Text>
+            <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
           </TouchableOpacity>
           <Text style={styles.title}>
             {t('referral.screenTitle', { defaultValue: 'Invite Friends' })}
           </Text>
-          <View style={{ width: 60 }} />
+          <View style={{ width: 40 }} />
         </View>
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>
@@ -198,110 +199,113 @@ export default function ReferralScreen({ navigation }) {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backButtonText}>←</Text>
+          <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
         </TouchableOpacity>
         <Text style={styles.title}>
           {t('referral.screenTitle', { defaultValue: 'Invite Friends' })}
         </Text>
-        <View style={{ width: 60 }} />
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* Rewards Info */}
-        <View style={styles.rewardsSection}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={[styles.sectionTitle, styles.earnFreeMonthsTitle]}>
+        {/* Earn Free Months Section */}
+        <View style={styles.earnFreeSection}>
+          <View style={styles.earnFreeContent}>
+            <Text style={styles.earnFreeTitle}>
               {t('referral.earnFreeMonthsTitle', { defaultValue: 'Earn Free Months!' })}
             </Text>
-            <TouchableOpacity
-              style={styles.infoButton}
-              onPress={() => setShowInfoModal(true)}
-            >
-              <Text style={styles.infoIcon}>ℹ️</Text>
-            </TouchableOpacity>
+            <View style={styles.rewardsList}>
+              <Text style={styles.rewardText}>
+                1 Friend = 1 Month Free!
+              </Text>
+              <Text style={styles.rewardText}>
+                2 Friend = 2 Months Free
+              </Text>
+              <Text style={styles.rewardText}>
+                3+ Friends = 3 Months Free
+              </Text>
+            </View>
           </View>
-          <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>
-              {t('referral.rewardLine1', { defaultValue: '1 friend → +1 month free' })}
-            </Text>
-          </View>
-          <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>
-              {t('referral.rewardLine2', { defaultValue: '2 friends → +2 months free' })}
-            </Text>
-          </View>
-          <View style={styles.rewardItem}>
-            <Text style={styles.rewardText}>
-              {t('referral.rewardLine3', { defaultValue: '3+ friends → +3 months free' })}
-            </Text>
+          {/* Illustration placeholder - can be replaced with actual image */}
+          <View style={styles.illustrationContainer}>
+            <Ionicons name="megaphone" size={60} color={COLORS.TEXT} />
           </View>
         </View>
 
-        {/* Referral Code */}
+        {/* Referral Code Section */}
         <View style={styles.codeSection}>
           <Text style={styles.codeLabel}>
-            {t('referral.codeLabel', { defaultValue: 'Your Referral Code' })}
+            {t('referral.codeLabel', { defaultValue: 'Referral Code' })}
           </Text>
-          <View style={styles.codeContainer}>
+          <View style={styles.codeBox}>
             <Text style={styles.codeText}>{referralCode}</Text>
             <TouchableOpacity
-              style={styles.copyButton}
+              style={styles.copyIconButton}
+              onPress={async () => {
+                await Clipboard.setString(referralCode);
+                Alert.alert('Copied!', 'Referral code copied to clipboard.');
+              }}
+            >
+              <Ionicons name="copy-outline" size={20} color={COLORS.TEXT} />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.copyLinkButton}
               onPress={handleCopyLink}
             >
-              <Text style={styles.copyButtonText}>
+              <Text style={styles.copyLinkButtonText}>
                 {t('referral.copyLinkButton', { defaultValue: 'Copy Link' })}
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.shareCodeButton}
+              onPress={() => handleShare('general')}
+            >
+              <Text style={styles.shareCodeButtonText}>
+                {t('referral.shareCodeButton', { defaultValue: 'Share Code' })}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Share Code Button */}
-        <View style={styles.shareSection}>
-          <TouchableOpacity
-            style={styles.shareCodeButton}
-            onPress={() => handleShare('general')}
-          >
-            <Text style={styles.shareCodeButtonText}>
-              {t('referral.shareCodeButton', { defaultValue: 'Share Code' })}
+        {/* Progress Cards */}
+        <View style={styles.progressCards}>
+          <View style={styles.progressCard}>
+            <Ionicons name="people" size={24} color={COLORS.TEXT} />
+            <Text style={styles.progressCardValue}>
+              {completedCount} out of {Math.max(completedCount, 1)}
             </Text>
-          </TouchableOpacity>
+            <Text style={styles.progressCardLabel}>
+              {t('referral.statFriendsJoined', { defaultValue: 'Friends Joined' })}
+            </Text>
+          </View>
+          <View style={styles.progressCard}>
+            <Ionicons name="trophy" size={24} color={COLORS.TEXT} />
+            <Text style={styles.progressCardValue}>
+              {monthsEarned} {monthsEarned === 1 ? 'Month' : 'Months'}
+            </Text>
+            <Text style={styles.progressCardLabel}>
+              {t('referral.statMonthsEarned', { defaultValue: 'Months earned' })}
+            </Text>
+          </View>
         </View>
 
-        {/* Progress Tracker */}
-        <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>
-            {t('referral.progressTitle', { defaultValue: 'Your Progress' })}
+        {/* Progress Bar */}
+        <View style={styles.progressBarSection}>
+          <View style={styles.progressBar}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${Math.min((completedCount / 3) * 100, 100)}%` },
+              ]}
+            />
+          </View>
+          <Text style={styles.progressText}>
+            {completedCount} of 3 friends invited
           </Text>
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBar}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { width: `${Math.min((completedCount / 3) * 100, 100)}%` },
-                ]}
-              />
-            </View>
-            <Text style={styles.progressText}>
-              {t('referral.progressText', {
-                completed: completedCount,
-                defaultValue: `${completedCount} of 3 friends invited`
-              })}
-            </Text>
-          </View>
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{completedCount}</Text>
-              <Text style={styles.statLabel}>
-                {t('referral.statFriendsJoined', { defaultValue: 'Friends Joined' })}
-              </Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{monthsEarned}</Text>
-              <Text style={styles.statLabel}>
-                {t('referral.statMonthsEarned', { defaultValue: 'Months Earned' })}
-              </Text>
-            </View>
-          </View>
         </View>
 
       </ScrollView>
@@ -310,52 +314,69 @@ export default function ReferralScreen({ navigation }) {
       <Modal
         visible={showInfoModal}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setShowInfoModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowInfoModal(false)}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            {/* Drag Handle */}
+            <View style={styles.dragHandle} />
+            
+            {/* Header */}
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>How It Works</Text>
+              {/* Close Button - Top Left */}
               <TouchableOpacity
                 style={styles.modalCloseButton}
                 onPress={() => setShowInfoModal(false)}
               >
-                <Text style={styles.modalCloseText}>✕</Text>
+                <View style={styles.closeButtonCircle}>
+                  <Ionicons name="close" size={20} color="#666666" />
+                </View>
               </TouchableOpacity>
+              
+              {/* Title - Centered */}
+              <Text style={styles.modalTitle}>How It Works</Text>
+              
+              {/* Spacer to balance the close button */}
+              <View style={styles.headerSpacer} />
             </View>
-            <Text style={styles.modalText}>
-              Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 1–3 months of free access. The more friends you invite, the more free months you get.
-            </Text>
             
-            <View style={styles.modalNote}>
-              <Text style={styles.modalNoteText}>
-                ⚠️ Important: Your friend must complete the app setup (name, plan selection, and account connection) for the referral to count and for you to earn rewards.
+            {/* Content */}
+            <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
+              <Text style={styles.modalText}>
+                Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 1–3 months of free access. The more friends you invite, the more free months you get.
               </Text>
-            </View>
+              
+              <View style={styles.modalNote}>
+                <Text style={styles.modalNoteText}>
+                  ⚠️ Important: Your friend must complete the app setup (name, plan selection, and account connection) for the referral to count and for you to earn rewards.
+                </Text>
+              </View>
+              
+              <Text style={styles.modalSubtitle}>Benefits</Text>
+              <View style={styles.modalBenefitItem}>
+                <Text style={styles.modalBenefitIcon}>✓</Text>
+                <Text style={styles.modalBenefitText}>Easy to Share: Send a unique referral link via WhatsApp, email, SMS, or social media.</Text>
+              </View>
+              <View style={styles.modalBenefitItem}>
+                <Text style={styles.modalBenefitIcon}>✓</Text>
+                <Text style={styles.modalBenefitText}>Automatic Tracking: Your invite is tracked automatically, so rewards are applied instantly.</Text>
+              </View>
+              <View style={styles.modalBenefitItem}>
+                <Text style={styles.modalBenefitIcon}>✓</Text>
+                <Text style={styles.modalBenefitText}>No Extra Cost: Rewards are free and only require your friends to set up the app.</Text>
+              </View>
+            </ScrollView>
             
-            <Text style={styles.modalSubtitle}>Benefits</Text>
-            <View style={styles.modalBenefitItem}>
-              <Text style={styles.modalBenefitIcon}>✓</Text>
-              <Text style={styles.modalBenefitText}>Easy to Share: Send a unique referral link via WhatsApp, email, SMS, or social media.</Text>
-            </View>
-            <View style={styles.modalBenefitItem}>
-              <Text style={styles.modalBenefitIcon}>✓</Text>
-              <Text style={styles.modalBenefitText}>Automatic Tracking: Your invite is tracked automatically, so rewards are applied instantly.</Text>
-            </View>
-            <View style={styles.modalBenefitItem}>
-              <Text style={styles.modalBenefitIcon}>✓</Text>
-              <Text style={styles.modalBenefitText}>No Extra Cost: Rewards are free and only require your friends to set up the app.</Text>
-            </View>
-            
+            {/* Action Button */}
             <TouchableOpacity
               style={styles.modalButton}
               onPress={() => setShowInfoModal(false)}
             >
               <Text style={styles.modalButtonText}>Got it</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -370,26 +391,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER,
+    borderBottomColor: '#E5E5E5',
     backgroundColor: '#FFFFFF',
   },
   backButton: {
-    width: 60,
-    alignItems: 'flex-start',
-  },
-  backButtonText: {
-    fontSize: 24,
-    color: COLORS.PRIMARY,
-    fontWeight: 'bold',
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    letterSpacing: -0.3,
   },
   headerTitleContainer: {
     flex: 1,
@@ -422,151 +441,132 @@ const styles = StyleSheet.create({
     color: COLORS.TEXT,
     fontSize: 16,
   },
-  headlineSection: {
-    marginBottom: 24,
-    backgroundColor: '#FFFFFF',
-  },
-  headline: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    marginBottom: 12,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  description: {
-    fontSize: 16,
-    color: COLORS.TEXT,
-    lineHeight: 24,
-  },
-  benefitsSection: {
-    marginBottom: 24,
-    backgroundColor: '#FFFFFF',
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    flex: 1,
-  },
-  earnFreeMonthsTitle: {
-    color: '#4CAF50',
-  },
-  sectionTitleRow: {
+  earnFreeSection: {
+    marginBottom: 32,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  infoButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  infoIcon: {
-    fontSize: 20,
-    color: COLORS.PRIMARY,
-  },
-  benefitItem: {
-    flexDirection: 'row',
-    marginBottom: 12,
     alignItems: 'flex-start',
   },
-  benefitIcon: {
-    fontSize: 18,
-    color: COLORS.PRIMARY,
-    marginRight: 12,
-    marginTop: 2,
-  },
-  benefitText: {
+  earnFreeContent: {
     flex: 1,
-    fontSize: 14,
-    color: COLORS.TEXT,
-    lineHeight: 20,
+    marginRight: 16,
   },
-  rewardsSection: {
-    marginBottom: 24,
-    backgroundColor: '#F5F5F5',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
+  earnFreeTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 16,
+    letterSpacing: -0.5,
   },
-  rewardItem: {
-    marginBottom: 8,
+  rewardsList: {
+    gap: 8,
   },
   rewardText: {
     fontSize: 16,
-    color: COLORS.TEXT,
-    fontWeight: '500',
-    backgroundColor: 'transparent',
+    color: '#000000',
+    fontWeight: '600',
+    marginBottom: 8,
+    letterSpacing: -0.2,
+  },
+  illustrationContainer: {
+    width: 100,
+    height: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   codeSection: {
-    marginBottom: 24,
-    backgroundColor: '#FFFFFF',
+    marginBottom: 32,
   },
   codeLabel: {
     fontSize: 16,
-    color: COLORS.TEXT,
-    marginBottom: 8,
-    fontWeight: '500',
+    color: '#000000',
+    marginBottom: 12,
+    fontWeight: '600',
+    letterSpacing: -0.2,
   },
-  codeContainer: {
+  codeBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    padding: 16,
-    borderRadius: 12,
     justifyContent: 'space-between',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: '#E0E0E0',
   },
   codeText: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.PRIMARY,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontWeight: '700',
+    color: '#000000',
     letterSpacing: 2,
+    fontFamily: FONTS.QUICKSAND_BOLD,
   },
-  copyButton: {
-    backgroundColor: COLORS.PRIMARY,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+  copyIconButton: {
+    padding: 8,
   },
-  copyButtonText: {
-    color: '#000',
-    fontWeight: 'bold',
-    fontSize: 14,
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  shareSection: {
-    marginBottom: 24,
+  copyLinkButton: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#000000',
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyLinkButtonText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '600',
   },
   shareCodeButton: {
-    backgroundColor: COLORS.PRIMARY,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    flex: 1,
+    backgroundColor: '#000000',
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   shareCodeButtonText: {
-    color: '#000',
-    fontSize: 18,
-    fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  progressSection: {
-    marginTop: 8,
+  progressCards: {
+    flexDirection: 'row',
+    gap: 12,
     marginBottom: 24,
-    backgroundColor: '#F5F5F5',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
   },
-  progressBarContainer: {
-    marginBottom: 16,
+  progressCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressCardValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    textAlign: 'center',
+  },
+  progressCardLabel: {
+    fontSize: 12,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  progressBarSection: {
+    marginBottom: 24,
   },
   progressBar: {
     height: 8,
@@ -577,31 +577,13 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: COLORS.PRIMARY,
+    backgroundColor: '#4CAF50',
     borderRadius: 4,
   },
   progressText: {
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: '#666666',
     textAlign: 'center',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: COLORS.PRIMARY,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: COLORS.TEXT,
-    marginTop: 4,
   },
   ctaButton: {
     backgroundColor: COLORS.PRIMARY,
@@ -620,35 +602,64 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    width: '85%',
-    maxWidth: 400,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    paddingBottom: 20,
+    width: '100%',
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E5E5',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 16,
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    position: 'relative',
   },
   modalCloseButton: {
-    padding: 4,
+    position: 'absolute',
+    left: 20,
+    top: 0,
+    zIndex: 1,
   },
-  modalCloseText: {
-    fontSize: 24,
-    color: COLORS.TEXT,
-    fontWeight: 'bold',
+  closeButtonCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    textAlign: 'center',
+    flex: 1,
+    fontFamily: FONTS.QUICKSAND_BOLD,
+  },
+  headerSpacer: {
+    width: 32,
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   modalText: {
     fontSize: 16,
@@ -695,16 +706,18 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   modalButton: {
-    backgroundColor: COLORS.PRIMARY,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    paddingVertical: 16,
+    marginHorizontal: 20,
+    marginTop: 20,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   modalButtonText: {
-    color: '#000',
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     fontFamily: FONTS.QUICKSAND_BOLD,
   },
 });

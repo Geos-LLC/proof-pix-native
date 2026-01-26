@@ -5,7 +5,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
+  Pressable,
+  ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { useTranslation } from 'react-i18next';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -70,15 +73,34 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={handleClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.body}>
-            <Text style={styles.title}>
+      <Pressable style={styles.modalOverlay} onPress={handleClose}>
+        <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+          {/* Drag Handle */}
+          <View style={styles.dragHandle} />
+          
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            {/* Close Button - Top Left */}
+            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+              <View style={styles.closeButtonCircle}>
+                <Ionicons name="close" size={20} color="#666666" />
+              </View>
+            </TouchableOpacity>
+            
+            {/* Title - Centered */}
+            <Text style={styles.modalTitle}>
               {failed.length === 0 ? t('gallery.uploadCompleteTitle') : t('gallery.uploadPartialTitle')}
             </Text>
+            
+            {/* Spacer to balance the close button */}
+            <View style={styles.headerSpacer} />
+          </View>
+          
+          {/* Body */}
+          <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.body}>
             <Text style={styles.message}>{getCompletionMessage()}</Text>
             
             {successful.length > 0 && (
@@ -102,8 +124,9 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
                 </Text>
               </View>
             )}
-          </View>
-
+          </ScrollView>
+          
+          {/* Footer Buttons */}
           <View style={styles.footer}>
             <TouchableOpacity
               style={[styles.button, styles.primaryButton, { backgroundColor: getStatusColor() }]}
@@ -123,8 +146,8 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
 
       <DeleteConfirmationModal
         visible={showDeleteConfirm}
@@ -144,37 +167,62 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    paddingBottom: 20,
     width: '100%',
-    maxWidth: 400,
-    maxHeight: '80%',
   },
-  header: {
+  dragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E5E5',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 24,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
     paddingBottom: 16,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    position: 'relative',
   },
-  icon: {
-    fontSize: 48,
-    marginBottom: 12,
+  closeButton: {
+    position: 'absolute',
+    left: 20,
+    top: 0,
+    zIndex: 1,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
+  closeButtonCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
     textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
+  },
+  bodyScroll: {
+    flex: 1,
   },
   body: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    paddingHorizontal: 20,
     paddingBottom: 16,
   },
   message: {
@@ -202,7 +250,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   footer: {
-    padding: 24,
+    paddingHorizontal: 20,
     paddingTop: 16,
     gap: 12,
   },

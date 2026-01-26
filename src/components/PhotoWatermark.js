@@ -34,6 +34,8 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress }) 
     watermarkPosition,
     watermarkFontFamily,
     labelBackgroundColor,
+    labelMarginVertical,
+    labelMarginHorizontal,
   } = useSettings();
 
   const fallbackUrl = process.env.EXPO_PUBLIC_WATERMARK_URL || 'https://geos-ai.com/';
@@ -66,17 +68,20 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress }) 
     return null;
   }
 
-  const activeColor = customWatermarkEnabled
-    ? watermarkColor || labelBackgroundColor || DEFAULT_LABEL_BACKGROUND
-    : labelBackgroundColor || DEFAULT_LABEL_BACKGROUND;
+  // Always use watermarkColor if it exists, otherwise fall back to labelBackgroundColor
+  // The customWatermarkEnabled flag only controls text/link, not color
+  const activeColor = watermarkColor || labelBackgroundColor || DEFAULT_LABEL_BACKGROUND;
 
-  const activeOpacity =
-    customWatermarkEnabled && typeof watermarkOpacity === 'number'
-      ? watermarkOpacity
-      : DEFAULT_WATERMARK_OPACITY;
+  // Always use watermarkOpacity if it's set, otherwise use default
+  // The customWatermarkEnabled flag only controls text/link, not opacity
+  const activeOpacity = typeof watermarkOpacity === 'number' 
+    ? watermarkOpacity 
+    : DEFAULT_WATERMARK_OPACITY;
 
-  // Get position styles
-  const positions = getLabelPositions(10, 10); // Use default margins for watermark
+  // Get position styles - use label margins for consistency (or default to 10 if not set)
+  const marginV = labelMarginVertical ?? 10;
+  const marginH = labelMarginHorizontal ?? 10;
+  const positions = getLabelPositions(marginV, marginH);
   const positionKey = watermarkPosition || 'right-bottom';
   const positionStyle = positions[positionKey] || positions['right-bottom'];
   const { name, horizontalAlign, verticalAlign, ...positionCoordinates } = positionStyle;

@@ -7,7 +7,9 @@ import {
   Modal,
   ScrollView,
   Dimensions,
+  Pressable,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/rooms';
 import { useTranslation } from 'react-i18next';
@@ -166,15 +168,34 @@ const DeleteConfirmationModal = ({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={handleCancel}
       statusBarTranslucent={true}
       hardwareAccelerated={true}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+      <Pressable style={styles.modalOverlay} onPress={handleCancel}>
+        <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+          {/* Drag Handle */}
+          <View style={styles.dragHandle} />
+          
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            {/* Close Button - Top Left */}
+            <TouchableOpacity onPress={handleCancel} style={styles.closeButton}>
+              <View style={styles.closeButtonCircle}>
+                <Ionicons name="close" size={20} color="#666666" />
+              </View>
+            </TouchableOpacity>
+            
+            {/* Title - Centered */}
+            <Text style={styles.modalTitle}>{title}</Text>
+            
+            {/* Spacer to balance the close button */}
+            <View style={styles.headerSpacer} />
+          </View>
+          
+          {/* Body */}
           <View style={styles.body}>
-            <Text style={styles.title}>{title}</Text>
             <Text style={styles.message}>{message}</Text>
             
             <View style={styles.checkboxContainer}>
@@ -200,6 +221,7 @@ const DeleteConfirmationModal = ({
             </View>
           </View>
 
+          {/* Footer Buttons */}
           <View style={styles.footer}>
             <TouchableOpacity
               style={[styles.button, styles.cancelButton]}
@@ -219,8 +241,8 @@ const DeleteConfirmationModal = ({
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
 
       {/* Delete Warning Modal - Shown for non-starter users on first use */}
       {showDeleteWarning && (
@@ -353,34 +375,64 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
     zIndex: 9999,
     elevation: 9999,
-    position: 'relative',
   },
   modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    paddingBottom: 20,
     width: '100%',
-    maxWidth: 400,
-    overflow: 'hidden',
     zIndex: 10000,
     elevation: 10000,
-    // Lower z-index than plan modal so plan modal appears on top
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E5E5',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    position: 'relative',
+  },
+  closeButton: {
+    position: 'absolute',
+    left: 20,
+    top: 0,
+    zIndex: 1,
+  },
+  closeButtonCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
   },
   body: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    paddingHorizontal: 20,
     paddingBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    textAlign: 'center',
-    marginBottom: 12,
   },
   message: {
     fontSize: 16,
@@ -564,7 +616,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    padding: 24,
+    paddingHorizontal: 20,
     paddingTop: 16,
     gap: 12,
   },
@@ -584,10 +636,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   deleteButton: {
-    backgroundColor: '#FFE6E6',
+    backgroundColor: '#000000',
   },
   deleteButtonText: {
-    color: '#CC0000',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },

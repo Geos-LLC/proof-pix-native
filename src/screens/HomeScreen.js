@@ -39,7 +39,7 @@ import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 
 const { width } = Dimensions.get('window');
-const PHOTO_SIZE = (width - 60) / 2; // 2 columns with padding
+const PHOTO_SIZE = (width - 60) / 2;
 
 export default function HomeScreen({ navigation }) {
   const { t } = useTranslation();
@@ -53,9 +53,9 @@ export default function HomeScreen({ navigation }) {
   } = usePhotos();
 
   const [fullScreenPhoto, setFullScreenPhoto] = useState(null);
-  const [fullScreenPhotoSet, setFullScreenPhotoSet] = useState(null); // For combined preview
-  const [fullScreenIndex, setFullScreenIndex] = useState(0); // Index for swipe navigation
-  const [fullScreenPhotos, setFullScreenPhotos] = useState([]); // All photos for swipe navigation
+  const [fullScreenPhotoSet, setFullScreenPhotoSet] = useState(null);
+  const [fullScreenIndex, setFullScreenIndex] = useState(0);
+  const [fullScreenPhotos, setFullScreenPhotos] = useState([]);
   const [openProjectVisible, setOpenProjectVisible] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -70,10 +70,10 @@ export default function HomeScreen({ navigation }) {
   const [contextMenuRoom, setContextMenuRoom] = useState(null);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
-  const [roomEditorMode, setRoomEditorMode] = useState('customize'); // 'customize' or 'add'
+  const [roomEditorMode, setRoomEditorMode] = useState('customize');
   const [newProjectName, setNewProjectName] = useState('');
   const [pendingCameraAfterCreate, setPendingCameraAfterCreate] = useState(false);
-  const [combinedBaseUris, setCombinedBaseUris] = useState({}); // Cache for combined base image URIs
+  const [combinedBaseUris, setCombinedBaseUris] = useState({});
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [showDeleteProjectsConfirm, setShowDeleteProjectsConfirm] = useState(false);
@@ -83,27 +83,13 @@ export default function HomeScreen({ navigation }) {
   const [editedProjectName, setEditedProjectName] = useState('');
   const [sharing, setSharing] = useState(false);
 
-  // Get rooms from settings (custom or default)
   const { customRooms, saveCustomRooms, resetCustomRooms } = useSettings();
-  
-  // Make rooms reactive to customRooms changes using useState and useEffect
   const [rooms, setRooms] = useState(() => getRooms());
   
   useEffect(() => {
-    // 
     const newRooms = getRooms();
-    //  || 'null', 'newRooms:', newRooms.map(r => r.name));
     setRooms(newRooms);
   }, [customRooms]);
-
-  // Debug logging
-  // useEffect(() => {
-  //   );
-  // }, [rooms]);
-
-  // useEffect(() => {
-  //    || 'null');
-  // }, [customRooms]);
 
   const handleRoomLongPress = (room, event) => {
     setContextMenuRoom(room);
@@ -118,12 +104,8 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleDuplicateFolder = async (room) => {
-    // Generate duplicate name
     const generateDuplicateName = (baseName, existingRooms) => {
-      // Extract base name without numbers (e.g., "Kitchen 2" -> "Kitchen")
       const baseNameWithoutNumber = baseName.replace(/\s+\d+$/, '');
-      
-      // Find the highest number for this base name
       let maxNumber = 1;
       existingRooms.forEach(room => {
         const match = room.name.match(new RegExp(`^${baseNameWithoutNumber}\\s+(\\d+)$`));
@@ -134,11 +116,9 @@ export default function HomeScreen({ navigation }) {
           }
         }
       });
-      
       return `${baseNameWithoutNumber} ${maxNumber + 1}`;
     };
 
-    // Create the duplicate immediately
     const duplicateName = generateDuplicateName(room.name, rooms);
     const newRoom = {
       id: `room_${Date.now()}`,
@@ -146,11 +126,8 @@ export default function HomeScreen({ navigation }) {
       icon: room.icon
     };
     
-    // Find the base name to determine where to insert the duplicate
     const baseNameWithoutNumber = room.name.replace(/\s+\d+$/, '');
-    
-    // Find the last room with the same base name to insert after it
-    let insertIndex = rooms.length; // Default to end
+    let insertIndex = rooms.length;
     for (let i = rooms.length - 1; i >= 0; i--) {
       const roomName = rooms[i].name;
       if (roomName.startsWith(baseNameWithoutNumber)) {
@@ -161,19 +138,14 @@ export default function HomeScreen({ navigation }) {
     
     const updatedRooms = [...rooms];
     updatedRooms.splice(insertIndex, 0, newRoom);
-    // Save the duplicate to custom rooms immediately
     await saveCustomRooms(updatedRooms);
-    // Switch to the new duplicated room immediately
     setCurrentRoom(newRoom.id);
-    
-    // Open the room editor in edit mode for the new duplicate
     setContextMenuRoom(newRoom);
     setRoomEditorMode('edit');
     setShowRoomEditor(true);
   };
 
   const handleDeleteFolder = (room) => {
-    // Check if it's a default room
     const isDefaultRoom = ROOMS.some(defaultRoom => defaultRoom.id === room.id);
     
     if (isDefaultRoom) {
@@ -196,21 +168,17 @@ export default function HomeScreen({ navigation }) {
           onPress: () => {
             if (customRooms) {
               const updatedRooms = customRooms.filter(r => r.id !== room.id);
-              
-              // Determine which room to switch to after deletion
               const currentIndex = rooms.findIndex(r => r.id === room.id);
               const isDeletingCurrentRoom = currentRoom.id === room.id;
               let newCurrentRoom;
               if (updatedRooms.length > 0) {
                 if (isDeletingCurrentRoom) {
-                  // If deleting the current room, go to the room to the left (or last if deleting first)
                   if (currentIndex > 0) {
                     newCurrentRoom = updatedRooms[currentIndex - 1];
                   } else {
                     newCurrentRoom = updatedRooms[updatedRooms.length - 1];
                   }
                 } else {
-                  // If not deleting current room, keep the current room
                   newCurrentRoom = rooms.find(r => r.id === currentRoom.id);
                 }
                 saveCustomRooms(updatedRooms);
@@ -219,7 +187,6 @@ export default function HomeScreen({ navigation }) {
                 }
               } else {
                 resetCustomRooms();
-                // Reset to first default room
                 setCurrentRoom(ROOMS[0].id);
               }
             }
@@ -229,17 +196,9 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  // Force re-render when rooms change
-  useEffect(() => {
-    // This will trigger a re-render when rooms change
-  }, [rooms]);
+  useEffect(() => {}, [rooms]);
+  useEffect(() => {}, [customRooms]);
 
-  // Force re-render when customRooms change
-  useEffect(() => {
-    // This will trigger a re-render when customRooms change
-  }, [customRooms]);
-
-  // Validate currentRoom when rooms change
   useEffect(() => {
     if (rooms && rooms.length > 0) {
       const currentRoomExists = rooms.some(room => room.id === currentRoom);
@@ -249,30 +208,21 @@ export default function HomeScreen({ navigation }) {
     }
   }, [rooms, currentRoom]);
 
-  // Note: Data reloading is handled by AppState listener in PhotoContext
-  // No need for useFocusEffect here to prevent infinite loops
+  useEffect(() => {}, [photos]);
 
-  // Force re-render when photos change (e.g., after project deletion)
-  useEffect(() => {
-    // This will trigger a re-render when photos change
-  }, [photos]);
-
-  // Ensure active project is valid after projects change
   useEffect(() => {
     if (activeProjectId && projects.length > 0) {
       const activeProjectExists = projects.some(p => p.id === activeProjectId);
       if (!activeProjectExists) {
-        // Active project no longer exists, select the first available project
         setActiveProject(projects[0].id);
       }
     } else if (projects.length > 0 && !activeProjectId) {
-      // No active project but projects exist, select the first one
       setActiveProject(projects[0].id);
     } else if (projects.length === 0 && activeProjectId) {
-      // No projects exist but activeProjectId is set, clear it
       setActiveProject(null);
     }
   }, [projects, activeProjectId]);
+
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const touchStartPos = useRef(null);
@@ -285,16 +235,11 @@ export default function HomeScreen({ navigation }) {
   const afterPhotos = getAfterPhotos(currentRoom);
   const currentRoomRef = useRef(currentRoom);
 
-  // Force re-render when photos change
-  useEffect(() => {
-    // This will trigger a re-render when photos change
-  }, [photos]);
+  useEffect(() => {}, [photos]);
 
-  // Load combined base images for thumbnails (efficiently)
   useEffect(() => {
     let cancelled = false;
 
-    // Defer execution to prevent blocking UI when navigating to this screen
     setTimeout(() => {
       (async () => {
         try {
@@ -305,7 +250,6 @@ export default function HomeScreen({ navigation }) {
           const afterPhotos = getAfterPhotos(currentRoom);
           const uriMap = {};
 
-          // Read directory once
           const entries = await FileSystem.readDirectoryAsync(dir);
           if (cancelled) return;
         
@@ -322,9 +266,6 @@ export default function HomeScreen({ navigation }) {
             return match ? parseInt(match[1], 10) : 0;
           };
 
-          // Determine primary layout based on orientation
-          // Letterbox portrait (portrait phone + landscape camera): SIDE is primary
-          // Letterbox landscape & true landscape: STACK is primary
           const phoneOrientation = beforePhoto.orientation || 'portrait';
           const cameraViewMode = beforePhoto.cameraViewMode || 'portrait';
           const isLetterboxPortrait = phoneOrientation === 'portrait' && cameraViewMode === 'landscape';
@@ -335,11 +276,9 @@ export default function HomeScreen({ navigation }) {
           let newestUri = null;
           let newestTs = -1;
 
-          // For letterbox portrait: prioritize SIDE, otherwise prioritize STACK
           const primaryPrefix = isLetterboxPortrait ? sidePrefix : stackPrefix;
           const fallbackPrefix = isLetterboxPortrait ? stackPrefix : sidePrefix;
 
-          // First, try to find primary variant
           const primaryMatches = entries.filter(name => {
             if (!name.startsWith(primaryPrefix)) return false;
             if (projectId && !name.includes(projectIdSuffix)) return false;
@@ -354,7 +293,6 @@ export default function HomeScreen({ navigation }) {
             }
           }
 
-          // Only use fallback if no primary found
           if (!newestUri) {
             const fallbackMatches = entries.filter(name => {
               if (!name.startsWith(fallbackPrefix)) return false;
@@ -382,12 +320,11 @@ export default function HomeScreen({ navigation }) {
       } catch (e) {
       }
       })();
-    }, 50); // 50ms delay to allow screen to render before processing files
+    }, 50);
 
     return () => { cancelled = true; };
   }, [photos.length, currentRoom]);
 
-  // Also reload when screen comes into focus (debounced to prevent freezes)
   useFocusEffect(
     React.useCallback(() => {
       let cancelled = false;
@@ -416,9 +353,6 @@ export default function HomeScreen({ navigation }) {
                 return match ? parseInt(match[1], 10) : 0;
               };
 
-              // Determine primary layout based on orientation
-              // Letterbox portrait (portrait phone + landscape camera): SIDE is primary
-              // Letterbox landscape & true landscape: STACK is primary
               const phoneOrientation = beforePhoto.orientation || 'portrait';
               const cameraViewMode = beforePhoto.cameraViewMode || 'portrait';
               const isLetterboxPortrait = phoneOrientation === 'portrait' && cameraViewMode === 'landscape';
@@ -429,11 +363,9 @@ export default function HomeScreen({ navigation }) {
               let newestUri = null;
               let newestTs = -1;
 
-              // For letterbox portrait: prioritize SIDE, otherwise prioritize STACK
               const primaryPrefix = isLetterboxPortrait ? sidePrefix : stackPrefix;
               const fallbackPrefix = isLetterboxPortrait ? stackPrefix : sidePrefix;
 
-              // First, try to find primary variant
               const primaryMatches = entries.filter(name => {
                 if (!name.startsWith(primaryPrefix)) return false;
                 if (projectId && !name.includes(projectIdSuffix)) return false;
@@ -448,7 +380,6 @@ export default function HomeScreen({ navigation }) {
                 }
               }
 
-              // Only use fallback if no primary found
               if (!newestUri) {
                 const fallbackMatches = entries.filter(name => {
                   if (!name.startsWith(fallbackPrefix)) return false;
@@ -476,7 +407,7 @@ export default function HomeScreen({ navigation }) {
           } catch (e) {
           }
         })();
-      }, 600); // Long debounce to avoid interfering with other screens
+      }, 600);
       
       return () => {
         cancelled = true;
@@ -485,38 +416,14 @@ export default function HomeScreen({ navigation }) {
     }, [currentRoom, getBeforePhotos, getAfterPhotos])
   );
 
-  // Get circular room order with current room in center
-  const getCircularRooms = () => {
-    const currentIndex = rooms.findIndex(r => r.id === currentRoom);
-    const result = [];
-    
-    // Show 3 items before, current, and 3 items after (total 7 visible)
-    for (let i = -3; i <= 3; i++) {
-      let index = (currentIndex + i + rooms.length) % rooms.length;
-      result.push({ ...rooms[index], offset: i });
-    }
-    
-    return result;
-  };
-
-  const circularRooms = getCircularRooms();
-
-  // Debug logging for circular rooms
-  // useEffect(() => {
-  //   );
-  // }, [circularRooms]);
-
-  // Update ref when currentRoom changes
   useEffect(() => {
     currentRoomRef.current = currentRoom;
   }, [currentRoom]);
 
-  // Long press handlers for full-screen photo
   const handleLongPressStart = (photo, beforePhoto = null, afterPhoto = null) => {
     longPressTriggered.current = false;
     longPressTimer.current = setTimeout(() => {
       longPressTriggered.current = true;
-      
       const photoSet = beforePhoto || photo;
       if (!photoSet) return;
       
@@ -530,14 +437,13 @@ export default function HomeScreen({ navigation }) {
             style: 'destructive', 
             onPress: () => {
               deletePhotoSet(photoSet.id);
-              // analyticsService.logEvent('PhotoSet_Delete', { photoName: photoSet.name, from: 'HomeScreen' });
               longPressTriggered.current = false;
             }
           }
         ],
         { cancelable: true, onDismiss: () => longPressTriggered.current = false }
       );
-    }, 500); // 500ms for long press
+    }, 500);
   };
 
   const handleLongPressEnd = () => {
@@ -547,31 +453,24 @@ export default function HomeScreen({ navigation }) {
       longPressTimer.current = null;
     }
 
-    // Close any open full-screen previews
     setFullScreenPhoto(null);
     setFullScreenPhotoSet(null);
     
-    // Only delay reset if it was actually a long press to prevent single-tap from firing
     if (wasLongPress) {
       setTimeout(() => {
         longPressTriggered.current = false;
       }, 100); 
     } else {
-      // On a quick tap, reset immediately so that onPress can fire
       longPressTriggered.current = false;
     }
   };
 
-  // Handle double tap - show full screen with swipe navigation
   const handleDoubleTap = (photo, beforePhoto = null, afterPhoto = null) => {
-    // Double tap detected - show full screen with swipe navigation
     const allPhotos = [];
-    
-    // Get all photos for the current room
     const beforePhotos = getBeforePhotos(currentRoom);
     const afterPhotos = getAfterPhotos(currentRoom);
     const combinedPhotos = getCombinedPhotos(currentRoom);
-    // Create a map of before photos to their corresponding after photos
+
     const beforeToAfterMap = new Map();
     afterPhotos.forEach(afterPhoto => {
       if (afterPhoto.beforePhotoId) {
@@ -579,28 +478,20 @@ export default function HomeScreen({ navigation }) {
       }
     });
     
-    // Add photos in the order they appear on the main screen
     beforePhotos.forEach(beforePhoto => {
       const afterPhoto = beforeToAfterMap.get(beforePhoto.id);
-      
       if (afterPhoto) {
-        // Check if there's a combined photo for this pair
         const combinedPhoto = combinedPhotos.find(p => p.name === beforePhoto.name);
-        
         if (combinedPhoto) {
-          // Show combined photo
           allPhotos.push({ ...combinedPhoto, type: 'combined', beforePhoto, afterPhoto });
         } else {
-          // Show split preview (before + after)
           allPhotos.push({ ...beforePhoto, type: 'split', beforePhoto, afterPhoto });
         }
       } else {
-        // Show before-only photo
         allPhotos.push({ ...beforePhoto, type: 'before' });
       }
     });
     
-    // Find the index of the tapped photo
     let photoIndex = 0;
     if (photo) {
       photoIndex = allPhotos.findIndex(p => p.id === photo.id);
@@ -618,7 +509,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Handle swipe navigation in full screen
   const handleSwipeNavigation = (direction) => {
     if (fullScreenPhotos.length === 0) {
       return;
@@ -632,7 +522,6 @@ export default function HomeScreen({ navigation }) {
     }
     setFullScreenIndex(newIndex);
     const newPhoto = fullScreenPhotos[newIndex];
-    // Set the appropriate view based on photo type
     if (newPhoto.type === 'combined' || newPhoto.type === 'split') {
       setFullScreenPhotoSet({ before: newPhoto.beforePhoto, after: newPhoto.afterPhoto });
       setFullScreenPhoto(null);
@@ -642,17 +531,13 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Share combined photo
   const shareCombinedPhoto = async (thumbnailUri, photoName, roomId) => {
     try {
       setSharing(true);
-
-      // Copy the combined image to cache directory for sharing
       const tempFileName = `${roomId}_${photoName}_combined_${Date.now()}.jpg`;
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
       await FileSystem.copyAsync({ from: thumbnailUri, to: tempUri });
 
-      // Share the image
       const shareOptions = {
         title: `${t('common.before')}/${t('common.after')} - ${photoName}`,
         url: tempUri,
@@ -661,7 +546,6 @@ export default function HomeScreen({ navigation }) {
 
       await Share.share(shareOptions);
 
-      // Clean up temporary file after sharing
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
         if (fileInfo.exists) {
@@ -678,23 +562,18 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // PanResponder for room switching - recreate when rooms change
   const panResponder = useMemo(() => {
-    // );
     return PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Activate for horizontal swipes
         const isHorizontalSwipe = Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 30;
         if (isHorizontalSwipe) {
           isSwiping.current = true;
-          return true; // Capture the gesture
+          return true;
         }
         return false;
       },
-      onPanResponderGrant: () => {
-        // Gesture started
-      },
+      onPanResponderGrant: () => {},
       onPanResponderRelease: (evt, gestureState) => {
         const swipeThreshold = 50;
         const currentIndex = rooms.findIndex(r => r.id === currentRoomRef.current);
@@ -703,16 +582,13 @@ export default function HomeScreen({ navigation }) {
         }
         
         if (gestureState.dx > swipeThreshold) {
-          // Swipe right - go to previous room (circular)
           const newIndex = currentIndex > 0 ? currentIndex - 1 : rooms.length - 1;
           setCurrentRoom(rooms[newIndex].id);
         } else if (gestureState.dx < -swipeThreshold) {
-          // Swipe left - go to next room (circular)
           const newIndex = currentIndex < rooms.length - 1 ? currentIndex + 1 : 0;
           setCurrentRoom(rooms[newIndex].id);
         }
         
-        // Reset swipe flag after a short delay
         setTimeout(() => {
           isSwiping.current = false;
         }, 100);
@@ -720,7 +596,6 @@ export default function HomeScreen({ navigation }) {
     });
   }, [rooms]);
 
-  // PanResponder for full screen swipe navigation
   const fullScreenPanResponder = useMemo(() => {
     return PanResponder.create({
       onStartShouldSetPanResponder: () => {
@@ -728,15 +603,12 @@ export default function HomeScreen({ navigation }) {
         return false;
       },
       onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Only activate if we're in full screen mode
         if (fullScreenPhoto || fullScreenPhotoSet) {
           const isHorizontalSwipe = Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 30;
           const isVerticalSwipe = Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && Math.abs(gestureState.dy) > 30;
           if (isHorizontalSwipe && fullScreenPhotos.length > 1 && !swipeStartX.current) {
             swipeStartX.current = gestureState.dx;
           }
-          
-          // Activate for both horizontal (carousel) and vertical (close) swipes
           const shouldActivate = isHorizontalSwipe || isVerticalSwipe;
           return shouldActivate;
         }
@@ -744,14 +616,12 @@ export default function HomeScreen({ navigation }) {
       },
       onPanResponderRelease: (evt, gestureState) => {
         const swipeThreshold = 50;
-        // Check for horizontal swipes (carousel navigation)
         if (gestureState.dx > swipeThreshold && fullScreenPhotos.length > 1) {
           handleSwipeNavigation('right');
         } else if (gestureState.dx < -swipeThreshold && fullScreenPhotos.length > 1) {
           handleSwipeNavigation('left');
         }
         
-        // Check for vertical swipes (close preview)
         if (Math.abs(gestureState.dy) > swipeThreshold) {
           handleLongPressEnd();
         }
@@ -761,12 +631,7 @@ export default function HomeScreen({ navigation }) {
     });
   }, [fullScreenPhoto, fullScreenPhotoSet, fullScreenPhotos.length, handleSwipeNavigation, handleLongPressEnd]);
 
-  // Debug: Log when PanResponder is created
-  // 
-
-  useEffect(() => {
-    // No-op: projects come from context
-  }, [openProjectVisible]);
+  useEffect(() => {}, [openProjectVisible]);
 
   const openNewProjectModal = (navigateToCamera = false) => {
     if (!userName || userName.trim() === '') {
@@ -781,9 +646,6 @@ export default function HomeScreen({ navigation }) {
       return;
     }
     
-    // Check if starter tier user already has a project
-    // Starter users can only have 1 project
-    // Skip limit check for team members
     if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
       setShowPlanModal(true);
       return;
@@ -807,8 +669,6 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleCreateProject = async () => {
-    // Double-check: if limit exceeded, show plan modal
-    // Skip limit check for team members
     if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
       setNewProjectVisible(false);
       setShowPlanModal(true);
@@ -832,7 +692,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Multi-selection handlers
   const handleProjectLongPress = (projectId) => {
     setIsMultiSelectMode(true);
     setSelectedProjects(new Set([projectId]));
@@ -850,7 +709,6 @@ export default function HomeScreen({ navigation }) {
         return newSet;
       });
     } else {
-      // Allow switching between projects
       setActiveProject(projectId);
       setOpenProjectVisible(false);
     }
@@ -860,76 +718,48 @@ export default function HomeScreen({ navigation }) {
     if (selectedProjects.size === 0) {
       return;
     }
-    
-    // Store selected projects in ref before opening modal
     selectedProjectsForDeleteRef.current = new Set(selectedProjects);
-    
-    // Close manage projects modal first to avoid modal overlap issues
     setOpenProjectVisible(false);
-    
-    // Open delete confirmation modal after a short delay to ensure manage modal is closed
     setTimeout(() => {
       setShowDeleteProjectsConfirm(true);
     }, 300);
   };
 
   const handleDeleteSelectedProjectsConfirmed = async (deleteFromStorageParam) => {
-    console.log('[HomeScreen] ✅ Delete confirmation clicked');
-    console.log('[HomeScreen] deleteFromStorageParam:', deleteFromStorageParam);
-    
     try {
       const shouldDeleteFromStorage = deleteFromStorageParam !== undefined ? deleteFromStorageParam : true;
-      console.log('[HomeScreen] Should delete from storage:', shouldDeleteFromStorage);
       
-      // Use stored selected projects from ref (set when modal opened)
       const projectsToDelete = Array.from(selectedProjectsForDeleteRef.current);
       const wasActiveProjectSelected = projectsToDelete.includes(activeProjectId);
-      
-      // Store project IDs to delete before starting deletion
       const projectIdsToDelete = projectsToDelete;
-      
-      // Store deleted IDs in ref for useEffect to handle
       deletedProjectIdsRef.current = projectIdsToDelete;
       
-      // Close modal immediately to prevent UI freeze
       setShowDeleteProjectsConfirm(false);
       setSelectedProjects(new Set());
       setIsMultiSelectMode(false);
-      selectedProjectsForDeleteRef.current = new Set(); // Clear the ref
+      selectedProjectsForDeleteRef.current = new Set();
       
-      // Delete projects sequentially
       for (let i = 0; i < projectIdsToDelete.length; i++) {
         const projectId = projectIdsToDelete[i];
         try {
           await deleteProject(projectId, { deleteFromStorage: shouldDeleteFromStorage });
         } catch (error) {
-          console.error(`[HomeScreen] ❌ Failed to delete project ${projectId}:`, error);
-          // Continue with other deletions even if one fails
+          console.error(`[HomeScreen] Failed to delete project ${projectId}:`, error);
         }
       }
-      
-      // Handle active project selection if active project was deleted
-      if (wasActiveProjectSelected && deletedProjectIdsRef.current.length > 0) {
-        // The useEffect below will handle setting the new active project
-        // after projects state updates
-      }
     } catch (error) {
-      console.error('[HomeScreen] ❌ Error deleting selected projects:', error);
+      console.error('[HomeScreen] Error deleting selected projects:', error);
       Alert.alert(t('common.error'), 'Failed to delete some projects. Please try again.');
       deletedProjectIdsRef.current = [];
     }
   };
 
-  // Handle active project selection after projects are deleted
   useEffect(() => {
     if (deletedProjectIdsRef.current.length > 0) {
       const deletedIds = [...deletedProjectIdsRef.current];
-      // Clear the ref first to prevent re-running
       deletedProjectIdsRef.current = [];
       
-      // Check if current active project was deleted
       if (activeProjectId && deletedIds.includes(activeProjectId)) {
-        // Find first remaining project
         const remainingProjects = projects.filter(p => !deletedIds.includes(p.id));
         if (remainingProjects.length > 0) {
           setActiveProject(remainingProjects[0].id);
@@ -937,7 +767,6 @@ export default function HomeScreen({ navigation }) {
           setActiveProject(null);
         }
       } else if (!activeProjectId && projects.length > 0) {
-        // If no active project but projects exist, set the first one
         setActiveProject(projects[0].id);
       }
     }
@@ -948,7 +777,6 @@ export default function HomeScreen({ navigation }) {
     setSelectedProjects(new Set());
   };
 
-  // Handle plan modal close - delete confirmation stays open (no need to reopen)
   const handlePlanModalClose = () => {
     setShowPlanModal(false);
   };
@@ -963,64 +791,62 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  const renderRoomTabs = () => (
-    <View style={styles.roomTabsContainer}>
-      {circularRooms.map((room, index) => {
-        const isActive = room.offset === 0; // Center item is active
-        const distance = Math.abs(room.offset);
-        const scale = isActive ? 1 : Math.max(0.65, 1 - (distance * 0.15));
-        const opacity = isActive ? 1 : Math.max(0.4, 1 - (distance * 0.2));
-        
-        return (
-          <TouchableOpacity
-            key={`${room.id}-${index}`}
-            style={[
-              styles.roomTab,
-              isActive && styles.roomTabActive,
-              {
-                transform: [{ scale }],
-                opacity
-              }
-            ]}
-            onPress={() => setCurrentRoom(room.id)}
-            onLongPress={(event) => handleRoomLongPress(room, event)}
-          >
-            <View style={{ marginBottom: 4 }}>
-              <RoomIcon 
-                roomId={room.id} 
-                size={isActive ? 28 : 22} 
-                color={isActive ? COLORS.TEXT : '#999'} 
-              />
-            </View>
-            {isActive && (
-              <Text
+  const renderRoomTabs = () => {
+    return (
+      <View style={styles.roomTabsContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.roomTabsScrollContent}
+          style={styles.roomTabsScrollView}
+          nestedScrollEnabled={true}
+          directionalLockEnabled={true}
+          scrollEnabled={true}
+          bounces={false}
+        >
+          {rooms.map((room) => {
+            const isActive = room.id === currentRoom;
+            return (
+              <TouchableOpacity
+                key={room.id}
                 style={[
-                  styles.roomTabText,
-                  styles.roomTabTextActive
+                  styles.roomTab,
+                  isActive && styles.roomTabActive
                 ]}
+                onPress={() => setCurrentRoom(room.id)}
+                onLongPress={(event) => handleRoomLongPress(room, event)}
               >
-                {cleaningServiceEnabled
-                  ? t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })
-                  : `${t('settings.section', { lng: sectionLanguage })} ${index + 1}`}
-              </Text>
-            )}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
+                <RoomIcon 
+                  roomId={room.id} 
+                  size={32} 
+                  color={isActive ? '#000' : '#666'} 
+                />
+                <Text style={[
+                  styles.roomTabText,
+                  isActive && styles.roomTabTextActive
+                ]}>
+                  {cleaningServiceEnabled
+                    ? t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })
+                    : room.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  };
 
   const renderPhotoGrid = () => {
     const gridItems = [];
     const combinedPhotos = getCombinedPhotos(currentRoom);
     const hasPhotos = beforePhotos.length > 0;
 
-    // If no photos OR no active project, show centered take photo button
     if (!hasPhotos || !activeProjectId) {
       return (
         <View style={styles.emptyStateContainer}>
           <TouchableOpacity
-            style={styles.addPhotoItem}
+            style={styles.addPhotoItemCenter}
             delayPressIn={50}
             onPress={() => {
               if (isSwiping.current) return;
@@ -1036,10 +862,10 @@ export default function HomeScreen({ navigation }) {
           >
             <RoomIcon 
               roomId={currentRoom} 
-              size={56} 
+              size={64} 
               color={COLORS.PRIMARY} 
             />
-            <Text style={styles.addPhotoText}>
+            <Text style={styles.addPhotoTextCenter}>
               {!activeProjectId ? t('home.selectProject') : t('camera.takePhoto')}
             </Text>
           </TouchableOpacity>
@@ -1047,23 +873,18 @@ export default function HomeScreen({ navigation }) {
       );
     }
 
-    // Add before photos
     beforePhotos.forEach((beforePhoto, index) => {
       const afterPhoto = afterPhotos.find(
         (p) => p.beforePhotoId === beforePhoto.id
       );
 
       if (afterPhoto) {
-        // Check if combined photo exists
         const combinedPhoto = combinedPhotos.find(
           (p) => p.name === beforePhoto.name
         );
-
-        // Use dynamic base image URI if available, fallback to combined photo URI
         const thumbnailUri = combinedBaseUris[beforePhoto.name] || combinedPhoto?.uri;
 
         if (thumbnailUri) {
-          // Show the combined image - with Retake and Preview buttons
           gridItems.push(
             <View
               key={beforePhoto.id}
@@ -1075,9 +896,14 @@ export default function HomeScreen({ navigation }) {
                 orientation={beforePhoto.orientation || 'portrait'}
                 size={PHOTO_SIZE}
               />
+              <View style={styles.photoOverlayBadge}>
+                <View style={styles.checkmarkBadge}>
+                  <Ionicons name="checkmark" size={16} color="#FFF" />
+                </View>
+              </View>
               <View style={styles.thumbnailButtonsOverlay}>
                 <TouchableOpacity
-                  style={styles.thumbnailButton}
+                  style={styles.retakeButton}
                   onPress={() => {
                     if (!isSwiping.current) {
                       navigation.navigate('Camera', {
@@ -1090,34 +916,34 @@ export default function HomeScreen({ navigation }) {
                     }
                   }}
                 >
-                  <Text style={styles.thumbnailButtonText}>{t('home.retake')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.thumbnailButton}
-                  onPress={() => {
-                    if (!isSwiping.current) {
-                      handleDoubleTap(combinedPhoto, beforePhoto, afterPhoto);
-                    }
-                  }}
-                >
-                  <Text style={styles.thumbnailButtonText}>{t('home.preview')}</Text>
+                  <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.retakeButtonText}>{t('home.retake')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
           );
         } else {
-          // Has after photo but no combined yet - show split preview, tap to retake after
-          const phoneOrientation = beforePhoto.orientation || 'portrait';
-          const cameraViewMode = beforePhoto.cameraViewMode || 'portrait';
+          // Determine layout based on aspect ratio
+          const beforeAspectRatio = beforePhoto.aspectRatio || '4:3';
+          const parseAspectRatio = (ratio) => {
+            if (typeof ratio === 'string') {
+              const parts = ratio.split(':');
+              if (parts.length === 2) {
+                const w = parseFloat(parts[0]);
+                const h = parseFloat(parts[1]);
+                if (w && h) return w / h;
+              }
+              return 1.0; // Default to square if parsing fails
+            }
+            return ratio || 1.0;
+          };
           
-          // A photo is "letterbox" if the phone is portrait but the camera view was landscape.
-          const isLetterbox = beforePhoto.templateType === 'letterbox' || (phoneOrientation === 'portrait' && cameraViewMode === 'landscape');
-          // A photo is "true landscape" if the phone itself was held horizontally.
-          const isTrueLandscape = phoneOrientation === 'landscape';
-          const isLetterboxLandscape = isLetterbox && isTrueLandscape;
-
-          // For thumbnails: landscape letterbox uses stack, portrait letterbox uses side-by-side
-          const useStackedLayout = isTrueLandscape && !isLetterbox ? true : isLetterboxLandscape;
+          const beforeRatio = parseAspectRatio(beforeAspectRatio);
+          // Square images: ratio close to 1:1 (between 0.85 and 1.15)
+          // Portrait/long images: ratio < 0.85 (taller than wide, like 3:4 = 0.75, 9:16 = 0.5625)
+          const isSquare = beforeRatio >= 0.85 && beforeRatio <= 1.15;
+          // For square images, stack vertically (one up, one down); for portrait/long images, show side-by-side
+          const useStackedLayout = isSquare;
 
           gridItems.push(
             <TouchableOpacity
@@ -1129,11 +955,9 @@ export default function HomeScreen({ navigation }) {
                   tapCount.current += 1;
                   const now = Date.now();
                   if (tapCount.current === 1) {
-                    // First tap - wait for potential second tap
                     lastTap.current = now;
                     setTimeout(() => {
                       if (tapCount.current === 1 && lastTap.current) {
-                        // Single tap confirmed
                         navigation.navigate('Camera', {
                           mode: 'after',
                           beforePhoto,
@@ -1145,7 +969,6 @@ export default function HomeScreen({ navigation }) {
                       lastTap.current = null;
                     }, 300);
                   } else if (tapCount.current === 2) {
-                    // Double tap confirmed
                     handleDoubleTap(null, beforePhoto, afterPhoto);
                     tapCount.current = 0;
                     lastTap.current = null;
@@ -1159,22 +982,37 @@ export default function HomeScreen({ navigation }) {
                 <Image source={{ uri: beforePhoto.uri }} style={styles.halfPreviewImage} resizeMode="cover" />
                 <Image source={{ uri: afterPhoto.uri }} style={styles.halfPreviewImage} resizeMode="cover" />
               </View>
-              <View style={styles.photoOverlay}>
-                <Text style={styles.photoName}>
-                  {cleaningServiceEnabled
-                    ? `${t(`rooms.${currentRoom}`, { lng: sectionLanguage, defaultValue: currentRoom })} ${index + 1}`
-                    : `${t('settings.section', { lng: sectionLanguage })} ${index + 1}`}
-                </Text>
+              <View style={styles.photoOverlayBadge}>
+                <View style={styles.checkmarkBadge}>
+                  <Ionicons name="checkmark" size={14} color="#FFF" />
+                </View>
+              </View>
+              <View style={styles.thumbnailButtonsOverlay}>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={() => {
+                    if (!isSwiping.current) {
+                      navigation.navigate('Camera', {
+                        mode: 'after',
+                        beforePhoto,
+                        afterPhoto,
+                        room: currentRoom
+                      });
+                    }
+                  }}
+                >
+                  <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.retakeButtonText}>{t('home.retake')}</Text>
+                </TouchableOpacity>
               </View>
             </TouchableOpacity>
           );
         }
       } else {
-        // Show before photo only - waiting for after
         gridItems.push(
           <View
             key={beforePhoto.id}
-            style={[styles.photoItem, styles.photoItemPending]}
+            style={[styles.photoItem]}
           >
             <CroppedThumbnail
               imageUri={beforePhoto.uri}
@@ -1184,7 +1022,7 @@ export default function HomeScreen({ navigation }) {
             />
             <View style={styles.thumbnailButtonsOverlay}>
               <TouchableOpacity
-                style={styles.thumbnailButton}
+                style={styles.takeAfterButton}
                 onPress={() => {
                   if (!isSwiping.current) {
                     navigation.navigate('Camera', {
@@ -1195,32 +1033,160 @@ export default function HomeScreen({ navigation }) {
                   }
                 }}
               >
-                <Text style={styles.thumbnailButtonText}>{t('home.takeAfter')}</Text>
+                <Ionicons name="camera" size={18} color="#000" />
+                <Text style={styles.takeAfterButtonText}>{t('home.takeAfter')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.thumbnailButton}
-                onPress={() => {
-                  if (!isSwiping.current) {
-                    handleDoubleTap(beforePhoto);
-                  }
-                }}
-              >
-                <Text style={styles.thumbnailButtonText}>{t('home.preview')}</Text>
-              </TouchableOpacity>
+            </View>
+            <View style={styles.photoOverlayBadge}>
+              <View style={styles.clockBadge}>
+                <Ionicons name="time-outline" size={16} color="#666" />
+              </View>
             </View>
           </View>
         );
       }
     });
 
-    // Add "Take Photo" card
-    gridItems.push(
+    return <View style={styles.photoGrid}>{gridItems}</View>;
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Image
+            source={require('../../assets/PP_logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+          <Text style={styles.appName}>ProofPix</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <View style={styles.planButtonsContainer}>
+            <TouchableOpacity 
+              style={[
+                styles.starterButton,
+                userPlan === 'starter' && styles.planButtonSelected,
+                userPlan === 'starter' && styles.planButtonSelectedBackground
+              ]} 
+              onPress={() => setShowPlanModal(true)}
+            >
+              <Text style={[
+                styles.starterButtonText,
+                userPlan === 'starter' && styles.planButtonSelectedText
+              ]}>Starter</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.upgradeButton,
+                userPlan !== 'starter' && styles.planButtonSelected,
+                userPlan !== 'starter' && styles.planButtonSelectedBackground
+              ]} 
+              onPress={() => setShowPlanModal(true)}
+            >
+              <Ionicons 
+                name="star" 
+                size={16} 
+                color={userPlan !== 'starter' ? '#FFFFFF' : '#666'} 
+                style={styles.upgradeButtonIcon} 
+              />
+              <Text style={[
+                styles.upgradeButtonText,
+                userPlan !== 'starter' && styles.planButtonSelectedText
+              ]}>Upgrade</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.projectNameContainer}>
+        <View style={styles.projectInfoRow}>
+          <View style={styles.projectInfoLeft}>
+            <Text style={styles.projectLabel}>Project</Text>
+            {(() => {
+              const activeProject = projects.find(p => p.id === activeProjectId);
+              const displayName = activeProject?.name || t('projects.noProjects');
+
+              if (!activeProject) {
+                return (
+                  <Text style={styles.projectNameText} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                );
+              }
+
+              if (isEditingProjectName) {
+                return (
+                  <TextInput
+                    style={styles.projectNameInput}
+                    value={editedProjectName}
+                    onChangeText={setEditedProjectName}
+                    placeholder={t('projects.projectNamePlaceholder', { defaultValue: 'Project name' })}
+                    autoFocus
+                    returnKeyType="done"
+                    onSubmitEditing={async () => {
+                      const trimmed = editedProjectName.trim();
+                      if (!trimmed || trimmed === activeProject.name) {
+                        setIsEditingProjectName(false);
+                        setEditedProjectName('');
+                        return;
+                      }
+                      try {
+                        await renameProject(activeProject.id, trimmed);
+                      } catch (e) {
+                      } finally {
+                        setIsEditingProjectName(false);
+                        setEditedProjectName('');
+                      }
+                    }}
+                  />
+                );
+              }
+
+              return (
+                <TouchableOpacity
+                  onPress={() => {
+                    setEditedProjectName(displayName);
+                    setIsEditingProjectName(true);
+                  }}
+                  style={styles.projectNameTouchable}
+                >
+                  <Text style={styles.projectNameText} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })()}
+          </View>
+          <TouchableOpacity
+            style={styles.projectMenuButton}
+            onPress={() => setOpenProjectVisible(true)}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color="#333" />
+          </TouchableOpacity>
+        </View>
+        <UploadIndicatorLine 
+          uploadStatus={uploadStatus}
+          onPress={() => {
+            navigation.navigate('Gallery', { showUploadDetails: true });
+          }}
+        />
+      </View>
+
+      {renderRoomTabs()}
+
+      <View style={styles.content} {...panResponder.panHandlers}>
+        <ScrollView 
+          contentContainerStyle={{ paddingBottom: 120 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderPhotoGrid()}
+        </ScrollView>
+      </View>
+
       <TouchableOpacity
-        key="add-photo"
-        style={styles.addPhotoItem}
-        delayPressIn={100}
+        style={styles.fab}
         onPress={() => {
-          if (isSwiping.current) return;
           if (!activeProjectId) {
             openNewProjectModal(true);
             return;
@@ -1231,154 +1197,39 @@ export default function HomeScreen({ navigation }) {
           });
         }}
       >
-        <Text style={styles.addPhotoIcon}>
-          {rooms.find((r) => r.id === currentRoom)?.icon || '📷'}
-        </Text>
-        <Text style={styles.addPhotoText}>{t('camera.takePhoto')}</Text>
-      </TouchableOpacity>
-    );
-
-    return <View style={styles.photoGrid}>{gridItems}</View>;
-  };
-
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* Background Upload Status - Removed old indicator */}
-
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-            <Text style={styles.appName}>ProofPix</Text>
-            <Text style={styles.tierName}>({userPlan === 'Team Member' || userPlan === 'team' ? 'team' : userPlan.charAt(0).toUpperCase() + userPlan.slice(1)})</Text>
-        </View>
-        <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconButton} onPress={() => setOpenProjectVisible(true)}>
-                <Ionicons name="cloud-upload-outline" size={22} color={COLORS.TEXT} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Gallery', { openManage: true })}>
-                <Ionicons name="folder-outline" size={22} color={COLORS.TEXT} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Settings')}>
-                <Ionicons name="settings-outline" size={22} color={COLORS.TEXT} />
-            </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Active project name (tiny line under header) with inline edit */}
-      <View style={styles.projectNameContainer}>
-        {(() => {
-          const activeProject = projects.find(p => p.id === activeProjectId);
-          const displayName = activeProject?.name || t('projects.noProjects');
-
-          if (!activeProject) {
-            return (
-              <Text style={styles.projectNameText}>
-                {displayName}
-              </Text>
-            );
-          }
-
-          if (isEditingProjectName) {
-            return (
-              <View style={styles.projectEditRow}>
-                <TextInput
-                  style={styles.projectNameInput}
-                  value={editedProjectName}
-                  onChangeText={setEditedProjectName}
-                  placeholder={t('projects.projectNamePlaceholder', { defaultValue: 'Project name' })}
-                  autoFocus
-                  returnKeyType="done"
-                  onSubmitEditing={async () => {
-                    const trimmed = editedProjectName.trim();
-                    if (!trimmed || trimmed === activeProject.name) {
-                      setIsEditingProjectName(false);
-                      setEditedProjectName('');
-                      return;
-                    }
-                    try {
-                      await renameProject(activeProject.id, trimmed);
-                    } catch (e) {
-                    } finally {
-                      setIsEditingProjectName(false);
-                      setEditedProjectName('');
-                    }
-                  }}
-                />
-                <TouchableOpacity
-                  style={styles.projectEditIconButton}
-                  onPress={async () => {
-                    const trimmed = editedProjectName.trim();
-                    if (!trimmed || trimmed === activeProject.name) {
-                      setIsEditingProjectName(false);
-                      setEditedProjectName('');
-                      return;
-                    }
-                    try {
-                      await renameProject(activeProject.id, trimmed);
-                    } catch (e) {
-                    } finally {
-                      setIsEditingProjectName(false);
-                      setEditedProjectName('');
-                    }
-                  }}
-                >
-                  <Ionicons name="checkmark" size={20} color="#22C55E" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.projectEditIconButton}
-                  onPress={() => {
-                    setIsEditingProjectName(false);
-                    setEditedProjectName('');
-                  }}
-                >
-                  <Ionicons name="close" size={20} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            );
-          }
-
-          return (
-            <View style={styles.projectNameRow}>
-              <Text style={styles.projectNameText} numberOfLines={1}>
-                {displayName}
-              </Text>
-              <TouchableOpacity
-                style={styles.projectEditIconButton}
-                onPress={() => {
-                  setEditedProjectName(displayName);
-                  setIsEditingProjectName(true);
-                }}
-              >
-                <Feather name="edit-2" size={16} color="#999" />
-              </TouchableOpacity>
-            </View>
-          );
-        })()}
-        <UploadIndicatorLine 
-          uploadStatus={uploadStatus}
-          onPress={() => {
-            // Navigate to GalleryScreen to show upload details
-            navigation.navigate('Gallery', { showUploadDetails: true });
-          }}
-        />
-      </View>
-
-      {renderRoomTabs()}
-
-      <View style={styles.content} {...panResponder.panHandlers}>
-        <ScrollView>
-          {renderPhotoGrid()}
-        </ScrollView>
-      </View>
-
-      {/* Manage Projects button - always visible */}
-      <TouchableOpacity
-        style={[styles.allPhotosButtonBottom, { backgroundColor: '#F2C31B' }]}
-        onPress={() => setOpenProjectVisible(true)}
-      >
-        <Text style={[styles.allPhotosButtonText, { color: '#000' }]}>{t('home.manageProjects')}</Text>
+        <Ionicons name="camera" size={32} color="#000" />
       </TouchableOpacity>
 
-      {/* Full-screen photo view - single photo */}
+      <View style={styles.bottomNavPill}>
+        <TouchableOpacity 
+          style={[styles.navItem, styles.navItemActive]}
+        >
+          <Ionicons name="home-outline" size={24} color="#000000" />
+          <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('Projects')}
+        >
+          <Ionicons name="folder-outline" size={24} color="#666666" />
+          <Text style={styles.navItemText}>Projects</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('Gallery')}
+        >
+          <Ionicons name="images-outline" size={24} color="#666666" />
+          <Text style={styles.navItemText}>Gallery</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.navigate('Settings')}
+        >
+          <Ionicons name="settings-outline" size={24} color="#666666" />
+          <Text style={styles.navItemText}>Settings</Text>
+        </TouchableOpacity>
+      </View>
+
       {fullScreenPhoto && (
         <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
           <TouchableWithoutFeedback onPress={handleLongPressEnd}>
@@ -1388,7 +1239,6 @@ export default function HomeScreen({ navigation }) {
               resizeMode="contain"
             />
           </TouchableWithoutFeedback>
-          {/* Delete button - top right */}
           <TouchableOpacity
             style={styles.fullScreenDeleteButton}
             onPress={() => {
@@ -1418,7 +1268,6 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
           )}
-          {/* Bottom action buttons */}
           <View style={styles.fullScreenBottomButtons}>
             <TouchableOpacity
               style={styles.fullScreenActionButton}
@@ -1443,7 +1292,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* Full-screen combined photo view - 1:1 square with before/after */}
       {fullScreenPhotoSet && (
         <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
           <TouchableWithoutFeedback onPress={handleLongPressEnd}>
@@ -1481,7 +1329,6 @@ export default function HomeScreen({ navigation }) {
               </View>
             </View>
           </TouchableWithoutFeedback>
-          {/* Labels toggle - centered above photo */}
           <View style={styles.fullScreenLabelsToggleContainer}>
             <View style={styles.fullScreenLabelsToggle}>
               <Text style={styles.fullScreenLabelsText}>{t('settings.showLabels')}</Text>
@@ -1504,7 +1351,6 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             )}
           </View>
-          {/* Delete button - top right */}
           <TouchableOpacity
             style={styles.fullScreenDeleteButton}
             onPress={() => {
@@ -1534,7 +1380,6 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
           )}
-          {/* Bottom action buttons */}
           <View style={styles.fullScreenBottomButtons}>
             <TouchableOpacity
               style={styles.fullScreenActionButton}
@@ -1565,7 +1410,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* Manage Projects Modal */}
       <Modal
         visible={openProjectVisible}
         transparent={true}
@@ -1742,7 +1586,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-      {/* New Project Naming Modal */}
+
       <Modal
         visible={newProjectVisible}
         transparent={true}
@@ -1780,7 +1624,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Custom Context Menu */}
       <Modal visible={showContextMenu} transparent={true} animationType="fade">
         <TouchableWithoutFeedback onPress={() => setShowContextMenu(false)}>
           <View style={styles.contextMenuOverlay}>
@@ -1834,15 +1677,10 @@ export default function HomeScreen({ navigation }) {
           setRoomEditorMode('customize');
         }}
         onSave={(rooms) => {
-          // 
           saveCustomRooms(rooms);
-          
-          // If we were editing a specific room, stay on that room after saving
           if (contextMenuRoom) {
-            // 
             setCurrentRoom(contextMenuRoom.id);
           }
-          
           setShowRoomEditor(false);
           setContextMenuRoom(null);
           setRoomEditorMode('customize');
@@ -1851,14 +1689,11 @@ export default function HomeScreen({ navigation }) {
         editRoom={contextMenuRoom}
       />
 
-      {/* Plan Selection Modal */}
       <Modal
         visible={showPlanModal}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => {
-          handlePlanModalClose();
-        }}
+        onRequestClose={handlePlanModalClose}
       >
         <View style={styles.planModalOverlay}>
           <View style={styles.planModalContent}>
@@ -1879,12 +1714,10 @@ export default function HomeScreen({ navigation }) {
                   onPress={async () => {
                     try {
                       await updateUserPlan('starter');
-                      // Use InteractionManager to ensure state updates complete before closing modal
                       InteractionManager.runAfterInteractions(() => {
                         handlePlanModalClose();
                       });
                     } catch (error) {
-                      console.error('[HomeScreen] Error updating plan:', error);
                       handlePlanModalClose();
                     }
                   }}
@@ -1900,12 +1733,10 @@ export default function HomeScreen({ navigation }) {
                   onPress={async () => {
                     try {
                       await updateUserPlan('pro');
-                      // Use InteractionManager to ensure state updates complete before closing modal
                       InteractionManager.runAfterInteractions(() => {
                         handlePlanModalClose();
                       });
                     } catch (error) {
-                      console.error('[HomeScreen] Error updating plan:', error);
                       handlePlanModalClose();
                     }
                   }}
@@ -1921,12 +1752,10 @@ export default function HomeScreen({ navigation }) {
                   onPress={async () => {
                     try {
                       await updateUserPlan('business');
-                      // Use InteractionManager to ensure state updates complete before closing modal
                       InteractionManager.runAfterInteractions(() => {
                         handlePlanModalClose();
                       });
                     } catch (error) {
-                      console.error('[HomeScreen] Error updating plan:', error);
                       handlePlanModalClose();
                     }
                   }}
@@ -1940,10 +1769,6 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity
                   style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
                   onPress={() => {
-                    // If reopening delete confirm, don't do it here since we're going to enterprise modal
-                    if (reopenDeleteConfirmRef.current) {
-                      reopenDeleteConfirmRef.current = false;
-                    }
                     setShowPlanModal(false);
                     setShowEnterpriseModal(true);
                   }}
@@ -1957,18 +1782,15 @@ export default function HomeScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Enterprise Contact Form Modal */}
       <EnterpriseContactModal
         visible={showEnterpriseModal}
         onClose={() => setShowEnterpriseModal(false)}
       />
 
-      {/* Delete Selected Projects Confirmation Modal */}
       <DeleteConfirmationModal
         visible={showDeleteProjectsConfirm}
         title={t('projects.deleteProjects')}
         message={showDeleteProjectsConfirm ? (() => {
-          // Use ref to get selected projects (stored when modal opened)
           const selectedIds = Array.from(selectedProjectsForDeleteRef.current);
           const projectNames = selectedIds.map(id => 
             projects.find(p => p.id === id)?.name
@@ -1978,8 +1800,7 @@ export default function HomeScreen({ navigation }) {
         onConfirm={handleDeleteSelectedProjectsConfirmed}
         onCancel={() => {
           setShowDeleteProjectsConfirm(false);
-          selectedProjectsForDeleteRef.current = new Set(); // Clear ref on cancel
-          // Reopen manage projects modal if it was open before
+          selectedProjectsForDeleteRef.current = new Set();
           setTimeout(() => {
             setOpenProjectVisible(true);
           }, 100);
@@ -1987,7 +1808,6 @@ export default function HomeScreen({ navigation }) {
         deleteFromStorageDefault={true}
         userPlan={userPlan}
         onShowPlanModal={() => {
-          // Show plan modal on top of delete confirmation (don't close delete confirmation)
           setShowPlanModal(true);
         }}
         planModalVisible={showPlanModal}
@@ -2002,112 +1822,131 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.BACKGROUND
+    backgroundColor: '#FFFFFF'
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 10,
-    width: width,
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0'
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  appName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    letterSpacing: -0.5,
+  logoImage: {
+    width: 40,
+    height: 40,
+    marginRight: 12,
   },
-  tierName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-    marginLeft: 10,
-    alignSelf: 'flex-end',
-    paddingBottom: 2,
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: 'hidden',
+  appName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000000',
+    letterSpacing: -0.3,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'white',
-    borderWidth: 1.5,
-    borderColor: '#E8E8E8',
-    justifyContent: 'center',
+  planButtonsContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: COLORS.PRIMARY,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
-  title: {
-    fontSize: FONTS.XXLARGE,
-    fontWeight: FONTS.BOLD,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    color: COLORS.TEXT
+  starterButton: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRightWidth: 0,
+    borderRightColor: COLORS.PRIMARY,
+  },
+  starterButtonText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  upgradeButton: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  upgradeButtonIcon: {
+    marginRight: 6,
+  },
+  upgradeButtonText: {
+    color: '#666666',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  planButtonSelected: {
+    borderRadius: 20,
+    borderColor: COLORS.PRIMARY,
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  planButtonSelectedBackground: {
+    backgroundColor: COLORS.PRIMARY,
+    borderRadius: 20,
+  },
+  planButtonSelectedText: {
+    color: '#FFFFFF',
   },
   projectNameContainer: {
     paddingHorizontal: 20,
-    paddingVertical: 12,
-    marginTop: 0,
-    marginBottom: 8,
-    backgroundColor: '#FAFAFA',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0'
+    paddingVertical: 16,
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 16,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  projectInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  projectInfoLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  projectLabel: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '400',
+    marginBottom: 6,
+    letterSpacing: 0.1,
   },
   projectNameText: {
-    fontSize: 15,
-    color: '#666',
-    fontWeight: '500',
-    flexShrink: 1,
-    letterSpacing: 0.2,
+    fontSize: 20,
+    color: '#000',
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    lineHeight: 26,
   },
-  projectNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+  projectNameTouchable: {
+    flex: 1,
   },
-  projectEditIconButton: {
-    marginLeft: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  projectEditIconText: {
-    fontSize: 16,
-    color: '#999',
-  },
-  projectEditRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
+  projectMenuButton: {
+    padding: 8,
+    marginTop: 20,
   },
   projectNameInput: {
-    flex: 1,
     borderWidth: 1,
     borderColor: COLORS.BORDER,
     borderRadius: 8,
@@ -2116,87 +1955,116 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.TEXT,
   },
-  allPhotosButtonBottom: {
+  fab: {
+    position: 'absolute',
+    bottom: 90,
+    right: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: COLORS.PRIMARY,
-    marginHorizontal: 20,
-    marginBottom: 20,
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-    shadowColor: COLORS.PRIMARY,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-    borderWidth: 0
-  },
-  allPhotosButtonText: {
-    color: COLORS.TEXT,
-    fontWeight: 'bold',
-    fontSize: 16
-  },
-  settingsButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'white',
-    borderWidth: 2,
-    borderColor: COLORS.BORDER,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 100,
   },
-  settingsButtonText: {
-    fontSize: 20
+  bottomNavPill: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: 'white',
+    borderRadius: 32,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 90,
+  },
+  navItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  navItemActive: {
+    backgroundColor: '#F0F0F0',
+  },
+  navItemText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#666666',
+    marginTop: 4,
+  },
+  navItemTextActive: {
+    color: '#000000',
+    fontWeight: '600',
   },
   roomTabsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    maxHeight: 90,
     backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0'
+    paddingVertical: 16,
+  },
+  roomTabsScrollView: {
+    flex: 0,
+  },
+  roomTabsScrollContent: {
+    paddingHorizontal: 16,
+    paddingRight: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   roomTab: {
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginHorizontal: 4,
-    borderRadius: 16,
-    backgroundColor: 'white',
-    minWidth: 70,
-    minHeight: 70,
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    marginRight: 12,
+    width: 100,
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderWidth: 1.5,
-    borderColor: '#F0F0F0'
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   roomTabActive: {
-    backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY,
+    backgroundColor: '#FDF5D0',
+    borderColor: '#FDF5D0',
     shadowColor: COLORS.PRIMARY,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-    transform: [{ scale: 1.05 }]
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   roomTabText: {
     fontSize: 12,
-    color: COLORS.GRAY
+    color: '#666',
+    fontWeight: '500',
+    marginTop: 8,
+    textAlign: 'center',
   },
   roomTabTextActive: {
-    color: COLORS.TEXT,
-    fontWeight: '600'
+    color: '#000',
+    fontWeight: '600',
   },
   content: {
     flex: 1,
-    padding: 16,
-    backgroundColor: COLORS.BACKGROUND
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    backgroundColor: '#FFFFFF',
   },
   photoGrid: {
     flexDirection: 'row',
@@ -2207,148 +2075,138 @@ const styles = StyleSheet.create({
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
     marginBottom: 16,
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: 'white',
-    borderWidth: 1.5,
-    borderColor: '#E8E8E8',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4
   },
-  photoItemPending: {
-    borderWidth: 3,
-    borderColor: COLORS.PRIMARY
-  },
-  photoImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover'
-  },
-  photoOverlay: {
+  photoOverlayBadge: {
     position: 'absolute',
-    bottom: 8,
-    left: 8,
-    right: 8
+    top: 8,
+    right: 8,
+    zIndex: 10,
+  },
+  checkmarkBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#22C55E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  clockBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   thumbnailButtonsOverlay: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-  },
-  thumbnailButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 28,
-    minWidth: 120,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 1.5,
-    borderColor: COLORS.PRIMARY,
-  },
-  thumbnailButtonText: {
-    color: COLORS.TEXT,
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  photoName: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4
-  },
-  pendingText: {
-    color: COLORS.PRIMARY,
-    fontSize: 10,
-    marginTop: 4
+    bottom: 8,
+    left: 8,
+    right: 8,
+    alignItems: 'flex-start',
   },
   retakeButton: {
-    marginTop: 6,
-    backgroundColor: COLORS.PRIMARY,
-    padding: 4,
-    borderRadius: 6,
-    alignItems: 'center'
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   retakeButtonText: {
-    color: COLORS.TEXT,
-    fontSize: 10,
-    fontWeight: 'bold'
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
-  addPhotoItem: {
-    width: PHOTO_SIZE,
-    height: PHOTO_SIZE,
-    marginBottom: 16,
+  takeAfterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.PRIMARY,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     borderRadius: 20,
-    backgroundColor: '#FAFAFA',
-    borderWidth: 2.5,
-    borderColor: COLORS.PRIMARY,
+    gap: 8,
+    alignSelf: 'center',
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  takeAfterButtonText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  addPhotoItemCenter: {
+    width: 200,
+    height: 200,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: COLORS.PRIMARY,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
-  addPhotoIcon: {
-    fontSize: 56,
-    marginBottom: 12,
-    opacity: 0.7
-  },
-  addPhotoText: {
+  addPhotoTextCenter: {
     color: '#666',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
-    letterSpacing: 0.3,
+    marginTop: 12,
   },
   emptyStateContainer: {
     flex: 1,
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: '30%'
+    paddingTop: 40,
   },
   splitPreview: {
     width: '100%',
     height: '100%',
-    position: 'relative'
   },
   stackedPreview: {
     flexDirection: 'column',
-    borderTopWidth: 2,
-    borderTopColor: COLORS.PRIMARY,
-    borderBottomWidth: 2,
-    borderBottomColor: COLORS.PRIMARY
   },
   sideBySidePreview: {
     flexDirection: 'row',
-    borderLeftWidth: 2,
-    borderLeftColor: COLORS.PRIMARY,
-    borderRightWidth: 2,
-    borderRightColor: COLORS.PRIMARY
   },
   halfPreviewImage: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: COLORS.PRIMARY
+    width: '100%',
+    height: '100%',
   },
   fullScreenPhotoContainer: {
     position: 'absolute',
@@ -2392,9 +2250,7 @@ const styles = StyleSheet.create({
   fullScreenNavigation: {
     position: 'absolute',
     top: 60,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
+    alignSelf: 'center',
     zIndex: 1001
   },
   fullScreenCounter: {
@@ -2405,21 +2261,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4
-  },
-  fullScreenHint: {
-    color: 'white',
-    fontSize: 12,
-    marginTop: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4
   },
   fullScreenLabelsToggleContainer: {
     position: 'absolute',
@@ -2450,7 +2291,7 @@ const styles = StyleSheet.create({
     borderRadius: 20
   },
   fullScreenCustomizeText: {
-    color: COLORS.TEXT,
+    color: '#000',
     fontSize: 14,
     fontWeight: '600'
   },
@@ -2463,16 +2304,12 @@ const styles = StyleSheet.create({
     padding: 10,
     zIndex: 1002
   },
-  fullScreenDeleteIcon: {
-    fontSize: 24
-  },
   fullScreenBottomButtons: {
     position: 'absolute',
     bottom: 50,
     left: 20,
     right: 20,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     gap: 12,
     zIndex: 1002
   },
@@ -2489,9 +2326,9 @@ const styles = StyleSheet.create({
     elevation: 5
   },
   fullScreenActionButtonText: {
-    color: COLORS.TEXT,
-    fontSize: 18,
-    fontWeight: 'bold'
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '700'
   },
   fullScreenShareButton: {
     flex: 1,
@@ -2507,8 +2344,8 @@ const styles = StyleSheet.create({
   },
   fullScreenShareButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold'
+    fontSize: 16,
+    fontWeight: '700'
   },
   fullScreenRetakeButton: {
     flex: 1,
@@ -2526,10 +2363,9 @@ const styles = StyleSheet.create({
   },
   fullScreenRetakeButtonText: {
     color: COLORS.PRIMARY,
-    fontSize: 18,
-    fontWeight: 'bold'
+    fontSize: 16,
+    fontWeight: '700'
   },
-  // Open Project modal styles
   optionsModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -2546,27 +2382,27 @@ const styles = StyleSheet.create({
   optionsTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.TEXT,
-    marginBottom: 12,
+    color: '#000',
+    marginBottom: 16,
     textAlign: 'center'
   },
   projectList: {
     maxHeight: 280
   },
   projectItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     borderRadius: 12,
     backgroundColor: '#F7F7F7',
-    marginBottom: 8
+    marginBottom: 10
   },
   projectItemContent: {
     flexDirection: 'row',
     alignItems: 'center'
   },
   checkbox: {
-    width: 20,
-    height: 20,
+    width: 22,
+    height: 22,
     borderRadius: 4,
     borderWidth: 2,
     borderColor: '#DDD',
@@ -2585,8 +2421,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold'
   },
   projectItemText: {
-    color: COLORS.TEXT,
-    fontSize: 16,
+    color: '#000',
+    fontSize: 15,
     fontWeight: '500'
   },
   actionBtn: {
@@ -2595,10 +2431,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 12,
-    alignItems: 'center'
   },
   actionBtnText: {
-    color: COLORS.TEXT,
+    color: '#000',
+    fontSize: 15,
     fontWeight: '600'
   },
   actionPrimary: {
@@ -2616,10 +2452,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     minWidth: 180,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 8,
@@ -2642,19 +2475,17 @@ const styles = StyleSheet.create({
   },
   contextMenuText: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: '#000',
     fontWeight: '500',
   },
   contextMenuTextDanger: {
     color: '#FF4444',
   },
-  // Plan Modal Styles
   planModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
     zIndex: 10001,
-    elevation: 10001
   },
   planModalContent: {
     backgroundColor: 'white',
@@ -2662,8 +2493,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     maxHeight: '80%',
     paddingBottom: 20,
-    zIndex: 10002,
-    elevation: 10002
   },
   planModalHeader: {
     flexDirection: 'row',
@@ -2671,12 +2500,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER
+    borderBottomColor: '#E8E8E8'
   },
   planModalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.TEXT
+    fontWeight: '700',
+    color: '#000'
   },
   planModalCloseButton: {
     width: 30,
@@ -2686,7 +2515,7 @@ const styles = StyleSheet.create({
   },
   planModalCloseText: {
     fontSize: 24,
-    color: COLORS.GRAY
+    color: '#999'
   },
   planModalScrollView: {
     paddingHorizontal: 20,
@@ -2705,18 +2534,17 @@ const styles = StyleSheet.create({
   },
   planButtonSelected: {
     backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY
   },
   planButtonText: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.PRIMARY
   },
   planButtonTextSelected: {
     color: '#000000'
   },
   planSubtext: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666',
     textAlign: 'center',
     marginTop: 8,

@@ -209,6 +209,8 @@ export const SettingsProvider = ({ children }) => {
         watermarkLink,
         watermarkColor,
         watermarkOpacity,
+        watermarkPosition,
+        watermarkFontFamily,
         labelBackgroundColor,
         labelTextColor,
         labelFontFamily,

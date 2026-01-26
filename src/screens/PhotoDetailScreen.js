@@ -529,10 +529,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
             setImageSize({ width, height });
           }}
         />
-        {/* Show watermark if enabled */}
-        {shouldShowWatermark && (
-          <PhotoWatermark style={getWatermarkStyle()} />
-        )}
+        {/* Show watermark if enabled - PhotoWatermark handles its own positioning from settings */}
+        {shouldShowWatermark && <PhotoWatermark />}
 
         {/* Checkbox overlay in selection mode */}
         {isSelectionMode && (
@@ -640,8 +638,6 @@ export default function PhotoDetailScreen({ route, navigation }) {
             return (
               <PhotoWatermark
                 style={{
-                  bottom: 10 * scaleFactor,
-                  right: 10 * scaleFactor,
                   paddingHorizontal: 10 * scaleFactor,
                   paddingVertical: 4 * scaleFactor,
                   borderRadius: 4 * scaleFactor

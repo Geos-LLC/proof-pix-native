@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, Image, Modal, Dimensions, Clipboard } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, Image, Modal, Dimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +31,7 @@ const LANGUAGES = [
 export default function JoinTeamScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const { updateUserInfo, updateLabelLanguage, updateSectionLanguage } = useSettings();
+  const insets = useSafeAreaInsets();
   // Check if invite code came from deep link or route params
   const inviteFromParams = route?.params?.invite || '';
   const [inviteCode, setInviteCode] = useState(inviteFromParams);
@@ -150,18 +154,61 @@ export default function JoinTeamScreen({ navigation, route }) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('../../assets/PP_logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <Text style={styles.appTitle}>ProofPix</Text>
-            <Text style={styles.appSubtitle}>{t('joinTeam.subtitle', { defaultValue: 'Enter the invite code your team admin shared with you' })}</Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <Image
+                source={require('../../assets/PP_logo.png')}
+                style={styles.headerLogo}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.headerTitle}>ProofPix</Text>
+            <TouchableOpacity
+              style={styles.languageSelector}
+              onPress={() => setLanguageModalVisible(true)}
+            >
+              <Text style={styles.languageFlag}>{getCurrentLanguage().flag}</Text>
+              <Ionicons name="chevron-down" size={16} color={COLORS.TEXT} />
+            </TouchableOpacity>
           </View>
 
+          {/* Team Icon */}
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatarIcon}>
+              <Ionicons name="people" size={48} color="#666" />
+            </View>
+          </View>
+
+          {/* Title */}
+          <Text style={styles.mainTitle}>
+            {t('joinTeam.title', { defaultValue: 'Join a Team' })}
+          </Text>
+          <Text style={styles.subtitle}>
+            {t('joinTeam.subtitle', { defaultValue: 'Enter the invite code your team admin shared with you.' })}
+          </Text>
+
+          {/* Form */}
           <View style={styles.formContainer}>
-            <Text style={styles.inputLabel}>{t('firstLoad.yourName', { defaultValue: 'Your Name' })}</Text>
+            <Text style={styles.inputLabel}>{t('joinTeam.invitationCode', { defaultValue: 'Invitation Code' })}</Text>
+            <TextInput
+              ref={inviteCodeRef}
+              style={styles.input}
+              placeholder={t('joinTeam.enterInviteCode', { defaultValue: 'Enter invite code' })}
+              placeholderTextColor="#999"
+              value={inviteCode}
+              onChangeText={setInviteCode}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+              onSubmitEditing={() => {
+                // Focus name input if available
+              }}
+            />
+
+            <Text style={[styles.inputLabel, { marginTop: 16 }]}>
+              {t('firstLoad.yourName', { defaultValue: 'Your Name' })}
+            </Text>
             <TextInput
               style={styles.input}
               placeholder={t('firstLoad.enterYourName', { defaultValue: 'Enter your name' })}
@@ -174,41 +221,29 @@ export default function JoinTeamScreen({ navigation, route }) {
             />
 
             <TouchableOpacity
-              style={styles.joinButton}
+              style={[styles.joinButton, (!userName.trim() || !inviteCode.trim()) && styles.joinButtonDisabled]}
               onPress={handleJoinTeam}
-              disabled={isLoading}
+              disabled={isLoading || !userName.trim() || !inviteCode.trim()}
+              activeOpacity={0.8}
             >
               <Text style={styles.joinButtonText}>
-                {isLoading ? t('joinTeam.joining', { defaultValue: 'Joining...' }) : t('joinTeam.joinTeam', { defaultValue: 'Join Team' })}
+                {isLoading ? t('joinTeam.joining', { defaultValue: 'Joining...' }) : t('joinTeam.join', { defaultValue: 'Join' })}
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.inviteCodeSection}>
-              <TouchableOpacity onPress={handleEditInviteCode} style={styles.inviteCodeIconButton}>
-                <Text style={styles.inviteCodeIcon}>✏️</Text>
-              </TouchableOpacity>
-              <TextInput
-                ref={inviteCodeRef}
-                style={styles.inviteCodeInput}
-                placeholder={t('joinTeam.enterInviteCode', { defaultValue: 'Enter invite code' })}
-                placeholderTextColor="#666"
-                value={inviteCode}
-                onChangeText={setInviteCode}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="done"
-                onSubmitEditing={handleJoinTeam}
-                multiline={false}
-                selectTextOnFocus={true}
-              />
+            {/* OR Separator */}
+            <View style={styles.orContainer}>
+              <View style={styles.orLine} />
+              <Text style={styles.orText}>OR</Text>
+              <View style={styles.orLine} />
             </View>
 
             <TouchableOpacity
-              style={styles.useOnMyOwnButton}
+              style={styles.joinIndividualButton}
               onPress={handleUseOnMyOwn}
             >
-              <Text style={styles.useOnMyOwnText}>
-                {t('joinTeam.useOnMyOwn', { defaultValue: 'Use the app on my own' })}
+              <Text style={styles.joinIndividualText}>
+                {t('joinTeam.joinIndividual', { defaultValue: 'Join as Individual' })}
               </Text>
             </TouchableOpacity>
 
@@ -232,49 +267,60 @@ export default function JoinTeamScreen({ navigation, route }) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Language Selection Modal */}
+      {/* Language Selection Modal - Bottom Sheet Style */}
       <Modal
         visible={languageModalVisible}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setLanguageModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{t('firstLoad.selectLanguage', { defaultValue: 'Select Language' })}</Text>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setLanguageModalVisible(false)}
+        >
+          <View style={styles.modalContentBottomSheet}>
+            {/* Handle Bar */}
+            <View style={styles.modalHandle} />
+            
+            {/* Header */}
+            <View style={styles.modalHeaderBottomSheet}>
+              <TouchableOpacity
+                style={styles.modalCloseButtonTop}
+                onPress={() => setLanguageModalVisible(false)}
+              >
+                <Ionicons name="close" size={24} color={COLORS.TEXT} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitleBottomSheet}>
+                {t('firstLoad.changeLanguage', { defaultValue: 'Change Language' })}
+              </Text>
+              <View style={styles.modalCloseButtonTop} />
+            </View>
 
+            {/* Language List */}
             <ScrollView style={styles.languageScrollView} showsVerticalScrollIndicator={true}>
               {LANGUAGES.map((language) => (
                 <TouchableOpacity
                   key={language.code}
-                  style={[
-                    styles.languageOption,
-                    i18n.language === language.code && styles.languageOptionActive
-                  ]}
+                  style={styles.languageOptionBottomSheet}
                   onPress={() => changeLanguage(language.code)}
                 >
-                  <Text style={styles.languageFlag}>{language.flag}</Text>
-                  <Text style={[
-                    styles.languageOptionText,
-                    i18n.language === language.code && styles.languageOptionTextActive
-                  ]}>
+                  <View style={styles.flagCircle}>
+                    <Text style={styles.languageFlagBottomSheet}>{language.flag}</Text>
+                  </View>
+                  <Text style={styles.languageOptionTextBottomSheet}>
                     {language.name}
                   </Text>
                   {i18n.language === language.code && (
-                    <Text style={styles.checkmark}>✓</Text>
+                    <View style={styles.checkmarkCircle}>
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                    </View>
                   )}
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
-            <TouchableOpacity
-              style={styles.closeModalButton}
-              onPress={() => setLanguageModalVisible(false)}
-            >
-              <Text style={styles.closeModalButtonText}>{t('common.close', { defaultValue: 'Close' })}</Text>
-            </TouchableOpacity>
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -283,91 +329,152 @@ export default function JoinTeamScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2C31B',
+    backgroundColor: '#FFFFFF',
   },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'flex-start',
-    paddingHorizontal: 30,
-    paddingVertical: 30,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E1E1',
   },
-  formContainer: {
-    width: '100%',
+  headerLeft: {
+    width: 80,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#000000',
+  headerLogo: {
+    width: 40,
+    height: 40,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: COLORS.TEXT,
+    flex: 1,
+    textAlign: 'center',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+  },
+  languageSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    width: 80,
+    justifyContent: 'flex-end',
+  },
+  languageFlag: {
+    fontSize: 20,
+    marginRight: 4,
+  },
+  avatarContainer: {
+    alignItems: 'center',
+    marginTop: 40,
+    marginBottom: 24,
+  },
+  avatarIcon: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#E8DFD0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mainTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: COLORS.TEXT,
     textAlign: 'center',
     marginBottom: 12,
-    marginTop: 20,
+    paddingHorizontal: 20,
   },
   subtitle: {
     fontSize: 16,
-    color: '#333',
-    marginBottom: 24,
+    fontFamily: FONTS.QUICKSAND_REGULAR,
+    color: '#666666',
     textAlign: 'center',
+    marginBottom: 32,
+    paddingHorizontal: 20,
+    lineHeight: 22,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 40,
+  },
+  formContainer: {
+    width: '100%',
+    paddingHorizontal: 24,
   },
   inputLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#000000',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: COLORS.TEXT,
     marginBottom: 8,
   },
   input: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: COLORS.BORDER,
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
     fontSize: 16,
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
     color: COLORS.TEXT,
+    fontFamily: FONTS.QUICKSAND_REGULAR,
     marginBottom: 16,
   },
   joinButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
+    backgroundColor: '#000000',
     borderRadius: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 32,
     alignItems: 'center',
     marginTop: 8,
   },
+  joinButtonDisabled: {
+    backgroundColor: '#E0E0E0',
+    opacity: 0.6,
+  },
   joinButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+    fontFamily: FONTS.QUICKSAND_BOLD,
   },
-  inviteCodeSection: {
-    marginTop: 16,
+  orContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    marginVertical: 24,
   },
-  inviteCodeIconButton: {
-    padding: 4,
-  },
-  inviteCodeIcon: {
-    fontSize: 16,
-  },
-  inviteCodeInput: {
-    fontSize: 14,
-    color: '#000',
-    textAlign: 'left',
-    padding: 8,
+  orLine: {
     flex: 1,
-    maxWidth: 280,
-    backgroundColor: 'transparent',
+    height: 1,
+    backgroundColor: COLORS.BORDER,
   },
-  useOnMyOwnButton: {
-    marginTop: 24,
-    padding: 12,
+  orText: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: FONTS.QUICKSAND_MEDIUM,
+    color: COLORS.TEXT,
+    marginHorizontal: 16,
+  },
+  joinIndividualButton: {
     alignItems: 'center',
+    paddingVertical: 12,
   },
-  useOnMyOwnText: {
+  joinIndividualText: {
     fontSize: 16,
-    color: '#000',
-    fontWeight: '500',
+    color: COLORS.TEXT,
     textDecorationLine: 'underline',
+    fontFamily: FONTS.QUICKSAND_MEDIUM,
   },
   languageSection: {
     marginTop: 16,
@@ -431,67 +538,84 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContentBottomSheet: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 12,
+    paddingBottom: 40,
+    maxHeight: height * 0.8,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#D1D1D1',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalHeaderBottomSheet: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E1E1',
+  },
+  modalCloseButtonTop: {
+    width: 32,
+    height: 32,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
-    width: width * 0.85,
-    maxWidth: 400,
-    maxHeight: height * 0.7,
-  },
-  modalTitle: {
-    fontSize: 20,
+  modalTitleBottomSheet: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#000',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: COLORS.TEXT,
+    flex: 1,
     textAlign: 'center',
-    marginBottom: 20,
   },
   languageScrollView: {
-    maxHeight: height * 0.45,
+    maxHeight: height * 0.6,
   },
-  languageOption: {
+  languageOptionBottomSheet: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  flagCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+    overflow: 'hidden',
   },
-  languageOptionActive: {
-    backgroundColor: '#F2C31B',
+  languageFlagBottomSheet: {
+    fontSize: 28,
   },
-  languageFlag: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  languageOptionText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  languageOptionTextActive: {
-    color: '#000',
-  },
-  checkmark: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  closeModalButton: {
-    marginTop: 16,
-    backgroundColor: '#F2F2F2',
-    paddingVertical: 14,
+  checkmarkCircle: {
+    width: 24,
+    height: 24,
     borderRadius: 12,
+    backgroundColor: COLORS.PRIMARY,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  closeModalButtonText: {
+  languageOptionTextBottomSheet: {
+    flex: 1,
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: '400',
+    fontFamily: FONTS.QUICKSAND_REGULAR,
+    color: COLORS.TEXT,
   },
 });

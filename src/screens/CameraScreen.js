@@ -2322,17 +2322,14 @@ export default function CameraScreen({ route, navigation }) {
           top: (dimensions.height - dimensions.width) / 2
         }
       ]} pointerEvents="box-none">
-        {/* Room name indicator - fixed to screen */}
-        <View style={styles.roomIndicator}>
-          <RoomIcon 
-            roomId={room} 
-            size={20} 
-            color={COLORS.PRIMARY} 
-          />
-          <View style={styles.roomIndicatorTextContainer}>
-            <Text style={styles.roomIndicatorText}>{getCurrentRoomInfo().name}</Text>
-            <Text style={styles.roomIndicatorMode}>{mode.toUpperCase()}</Text>
-          </View>
+        {/* Room name and mode buttons - fixed to screen */}
+        <View style={styles.roomModeContainer}>
+          <TouchableOpacity style={styles.roomButton}>
+            <Text style={styles.roomButtonText}>{getCurrentRoomInfo().name}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.modeButton}>
+            <Text style={styles.modeButtonText}>{mode.toUpperCase()}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Torch toggle button - left of sound button */}
@@ -2353,8 +2350,8 @@ export default function CameraScreen({ route, navigation }) {
           >
             <Ionicons 
               name={enableTorch ? "flash" : "flash-outline"} 
-              size={24} 
-              color={enableTorch ? COLORS.PRIMARY : "#FFF"} 
+              size={22} 
+              color={enableTorch ? COLORS.PRIMARY : "#FFFFFF"} 
             />
           </TouchableOpacity>
         )}
@@ -2367,43 +2364,11 @@ export default function CameraScreen({ route, navigation }) {
         >
           <Ionicons 
             name={shutterSoundEnabled ? "volume-high" : "volume-mute"} 
-            size={24} 
-            color={shutterSoundEnabled ? COLORS.PRIMARY : "#FFF"} 
+            size={22} 
+            color={shutterSoundEnabled ? COLORS.PRIMARY : "#FFFFFF"} 
           />
         </TouchableOpacity>
 
-        {/* Camera zoom controls - fixed to screen */}
-        <View style={styles.zoomControls}>
-          <View style={styles.zoomButtons}>
-            <TouchableOpacity
-              style={[styles.zoomButton, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonActive]}
-              onPress={() => {
-                setCameraType('ultra-wide-angle-camera');
-                setZoom(1.0);
-              }}
-            >
-              <Text style={styles.zoomButtonText}>0.5x</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.zoomButton, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonActive]}
-              onPress={() => {
-                setCameraType('wide-angle-camera');
-                setZoom(1.0);
-              }}
-            >
-              <Text style={styles.zoomButtonText}>1x</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.zoomButton, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonActive]}
-              onPress={() => {
-                setCameraType('wide-angle-camera');
-                setZoom(2.0);
-              }}
-            >
-              <Text style={styles.zoomButtonText}>2x</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         <View style={styles.bottomControls}>
           {/* Main control row */}
@@ -2449,25 +2414,59 @@ export default function CameraScreen({ route, navigation }) {
               })()}
             </View>
 
-            {/* Center container - Capture button with aspect ratio selector */}
+            {/* Center container - Capture button with controls above */}
             <View style={[styles.buttonContainer, styles.captureButtonContainer]}>
-              {/* Aspect ratio selector - only in before mode */}
-              {mode === 'before' && (
-                <View style={styles.aspectRatioSelector}>
+              {/* Controls row above capture button */}
+              <View style={styles.controlsRowAboveCapture}>
+                {/* Aspect ratio selector - only in before mode */}
+                {mode === 'before' && (
+                  <View style={styles.aspectRatioSelector}>
+                    <TouchableOpacity
+                      style={[styles.aspectRatioButtonBottom, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomActive]}
+                      onPress={() => setCameraViewMode('portrait')}
+                    >
+                      <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomTextActive]}>9:16</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.aspectRatioButtonBottom, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomActive]}
+                      onPress={() => setCameraViewMode('landscape')}
+                    >
+                      <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomTextActive]}>3:4</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {/* Zoom controls - positioned to the right of aspect ratio */}
+                <View style={styles.zoomControlsBottom}>
                   <TouchableOpacity
-                    style={[styles.zoomButton, cameraViewMode === 'portrait' && styles.zoomButtonActive]}
-                    onPress={() => setCameraViewMode('portrait')}
+                    style={[styles.zoomButtonBottom, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonBottomActive]}
+                    onPress={() => {
+                      setCameraType('ultra-wide-angle-camera');
+                      setZoom(1.0);
+                    }}
                   >
-                    <Text style={styles.zoomButtonText}>9:16</Text>
+                    <Text style={[styles.zoomButtonBottomText, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonBottomTextActive]}>0.5X</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.zoomButton, cameraViewMode === 'landscape' && styles.zoomButtonActive]}
-                    onPress={() => setCameraViewMode('landscape')}
+                    style={[styles.zoomButtonBottom, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonBottomActive]}
+                    onPress={() => {
+                      setCameraType('wide-angle-camera');
+                      setZoom(1.0);
+                    }}
                   >
-                    <Text style={styles.zoomButtonText}>3:4</Text>
+                    <Text style={[styles.zoomButtonBottomText, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonBottomTextActive]}>1X</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.zoomButtonBottom, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonBottomActive]}
+                    onPress={() => {
+                      setCameraType('wide-angle-camera');
+                      setZoom(2.0);
+                    }}
+                  >
+                    <Text style={[styles.zoomButtonBottomText, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonBottomTextActive]}>2X</Text>
                   </TouchableOpacity>
                 </View>
-              )}
+              </View>
+              {/* Capture button */}
               <TouchableOpacity
                 style={[
                   styles.captureButton,
@@ -2486,7 +2485,6 @@ export default function CameraScreen({ route, navigation }) {
                   </View>
                 ) : (
                   <>
-                    <View style={[styles.captureButtonInner, isOrientationMismatch() && styles.captureButtonInnerDisabled]} />
                     {isOrientationMismatch() && (
                       <Text style={styles.captureButtonWarning}>🔄</Text>
                     )}
@@ -2495,14 +2493,14 @@ export default function CameraScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
 
-            {/* Right container - Done button */}
+            {/* Right container - Checkmark button */}
             <View style={styles.buttonContainer}>
               <TouchableOpacity
-                style={styles.doneButton}
+                style={styles.checkmarkButton}
                 onPress={() => navigation.navigate('Home')}
                 activeOpacity={0.7}
               >
-                <Text style={styles.doneButtonText}>Done</Text>
+                <Ionicons name="checkmark" size={28} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </View>
@@ -2999,8 +2997,6 @@ export default function CameraScreen({ route, navigation }) {
               {shouldShowWatermark && (
                 <PhotoWatermark
                   style={{
-                    bottom: 10 * scaleFactor,
-                    right: 10 * scaleFactor,
                     paddingHorizontal: 10 * scaleFactor,
                     paddingVertical: 4 * scaleFactor,
                     borderRadius: 4 * scaleFactor
@@ -3198,85 +3194,69 @@ const styles = StyleSheet.create({
     zIndex: 260,
     elevation: 260
   },
-  roomIndicator: {
+  roomModeContainer: {
     position: 'absolute',
     top: 50,
     left: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 28,
+    gap: 8,
     zIndex: 1000,
     elevation: 1000,
-    borderWidth: 2.5,
-    borderColor: COLORS.PRIMARY,
-    gap: 10,
-    shadowColor: COLORS.PRIMARY,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
   },
-  roomIndicatorIcon: {
-    fontSize: 20
+  roomButton: {
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  roomIndicatorTextContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  roomIndicatorText: {
-    color: COLORS.PRIMARY,
-    fontSize: 16,
-    fontWeight: 'bold'
-  },
-  roomIndicatorMode: {
-    color: '#fff',
-    fontSize: 12,
+  roomButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '600',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6
+  },
+  modeButton: {
+    backgroundColor: COLORS.PRIMARY,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  modeButtonText: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '700',
   },
   torchButton: {
     position: 'absolute',
     top: 50,
     right: 90,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
     elevation: 1000,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
   },
   soundButton: {
     position: 'absolute',
     top: 50,
     right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
     elevation: 1000,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
   },
   closeButton: {
     width: 44,
@@ -3330,10 +3310,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10
   },
   buttonContainer: {
-    flex: 1,
+    flex: 0,
     alignItems: 'center',
-    justifyContent: 'center',
-    height: 84  // Match tallest button height
+    justifyContent: 'flex-end',
+    minHeight: 120
   },
   modeInfo: {
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -3348,13 +3328,47 @@ const styles = StyleSheet.create({
   },
   captureButtonContainer: {
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'flex-end',
+    flex: 1,
+    maxWidth: 200
+  },
+  controlsRowAboveCapture: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    width: '100%',
+    paddingHorizontal: 0,
+    gap: 20,
   },
   aspectRatioSelector: {
-    position: 'absolute',
-    bottom: 90,
     flexDirection: 'row',
-    gap: 10
+    gap: 8,
+    alignItems: 'center',
+  },
+  aspectRatioButtonBottom: {
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 55,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  aspectRatioButtonBottomActive: {
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: COLORS.PRIMARY,
+  },
+  aspectRatioButtonBottomText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  aspectRatioButtonBottomTextActive: {
+    color: '#000000',
+    fontWeight: '700',
   },
   aspectRatioButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
@@ -3379,16 +3393,16 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'white',
+    backgroundColor: COLORS.PRIMARY,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: COLORS.PRIMARY,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
     borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.3)'
+    borderColor: '#FFFFFF'
   },
   captureButtonDisabled: {
     opacity: 0.5,
@@ -3414,7 +3428,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: COLORS.PRIMARY
+    backgroundColor: 'transparent'
   },
   captureButtonInnerDisabled: {
     backgroundColor: '#999'
@@ -3507,23 +3521,26 @@ const styles = StyleSheet.create({
   },
   // Thumbnail viewer styles (overlay mode - left side of shutter button)
   thumbnailViewerContainer: {
-    borderRadius: 8,
+    borderRadius: 34,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderWidth: 2,
-    borderColor: COLORS.PRIMARY
+    borderColor: '#FFFFFF'
   },
   thumbnailLandscape: {
     width: 68,
-    height: 68  // Square, same size as capture button inner
+    height: 68,
+    borderRadius: 34
   },
   thumbnailPortrait: {
     width: 68,
-    height: 68  // Square, same size as capture button inner
+    height: 68,
+    borderRadius: 34
   },
   thumbnailViewerImage: {
     width: '100%',
-    height: '100%'
+    height: '100%',
+    borderRadius: 32
   },
   thumbnailViewerLabel: {
     position: 'absolute',
@@ -4007,51 +4024,49 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignSelf: 'center',
   },
-  zoomControls: {
-    position: 'absolute',
-    top: 100, // Moved up since we removed the label
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 100,
-    margin: 10,
-  },
-  zoomButtons: {
+  zoomControlsBottom: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  zoomButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 60,
+    gap: 8,
     alignItems: 'center',
   },
-  zoomButtonActive: {
-    backgroundColor: COLORS.PRIMARY,
+  zoomButtonBottom: {
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 55,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  zoomButtonText: {
-    color: '#fff',
+  zoomButtonBottomActive: {
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: COLORS.PRIMARY,
+  },
+  zoomButtonBottomText: {
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
-  doneButton: {
-    width: 68,
-    height: 68,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    borderWidth: 2,
-    borderColor: COLORS.PRIMARY
+  zoomButtonBottomTextActive: {
+    color: '#000000',
+    fontWeight: '700',
   },
-  doneButtonText: {
-    color: COLORS.PRIMARY,
-    fontSize: 16,
-    fontWeight: '600',
-    flexShrink: 0,
+  checkmarkButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.PRIMARY,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   // Photo capture animation styles
   captureAnimationOverlay: {

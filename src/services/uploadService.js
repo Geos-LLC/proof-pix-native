@@ -821,17 +821,15 @@ export function createAlbumName(userName, date = new Date(), projectUploadId = n
   const day = date.getDate();
   const year = date.getFullYear();
 
-  // If projectUploadId is provided, use it (for re-uploads to same project)
-  // Otherwise generate one based on current time (for new projects or no project)
-  const uniqueId = projectUploadId || generateProjectId(date);
-  
-  // Build album name with location if provided
+  // Build album name: name - date - location
   const parts = [userName];
+  parts.push(`${month} ${day}, ${year}`);
   if (location) {
     parts.push(location);
   }
-  parts.push(`${month} ${day}, ${year}`);
-  parts.push(uniqueId);
+  
+  // Note: projectUploadId is kept for backward compatibility but not included in folder name
+  // The folder name is now: "Name - Date - Location" (project name format)
   
   return parts.join(' - ');
 }

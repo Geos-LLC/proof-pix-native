@@ -5,13 +5,33 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Platform,
   Alert,
   Linking,
   InteractionManager,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// Fallback component for LinearGradient if native module isn't available
+const GradientView = ({ colors, start, end, style, children, fallbackColor }) => {
+  // Check if LinearGradient is available (not undefined/null)
+  if (LinearGradient && typeof LinearGradient === 'function') {
+    return (
+      <LinearGradient colors={colors} start={start} end={end} style={style}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  
+  // Fallback to solid color if LinearGradient isn't available
+  return (
+    <View style={[style, { backgroundColor: fallbackColor || colors[colors.length - 1] }]}>
+      {children}
+    </View>
+  );
+};
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
@@ -489,20 +509,156 @@ ${results.error ? `Error: ${results.error}` : ''}
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableOpacity
-        style={[styles.backButton, { top: insets.top + 10, left: insets.left + 10 }]}
-        onPress={handleGoBack}
-      >
-        <Text style={styles.backButtonText}>←</Text>
-      </TouchableOpacity>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleGoBack}
+        >
+          <Ionicons name="arrow-back" size={28} color="#000000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('firstLoad.choosePlan', { defaultValue: 'Choose a plan' })}</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={true}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.formContainer}>
-          <Text style={styles.welcomeText}>{t('firstLoad.choosePlan')}</Text>
+        {/* Trial Banner */}
+        {trialAvailable && (
+          <View style={styles.trialBanner}>
+            <Text style={styles.trialBannerText}>
+              {trialDays}-Day FREE Trial Available!
+            </Text>
+          </View>
+        )}
+
+          {/* Plan Cards */}
+          <TouchableOpacity 
+            style={styles.planCardWrapper}
+            onPress={() => handleSelectPlan('starter')}
+            activeOpacity={0.8}
+          >
+            <GradientView
+              colors={['#FFF9E6', '#FFFFFF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.planCard}
+              fallbackColor="#FFFFFF"
+            >
+              <View style={styles.planCardHeader}>
+                <Text style={styles.planCardTitle}>{t('firstLoad.starter', { defaultValue: 'Starter' })}</Text>
+                <GradientView
+                  colors={['#FFFFFF', '#4CAF50']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.priceBadge}
+                  fallbackColor="#4CAF50"
+                >
+                  <Text style={styles.priceBadgeText}>FREE</Text>
+                </GradientView>
+              </View>
+              <Text style={styles.planCardDescription}>
+                {t('firstLoad.starterDesc', { defaultValue: 'Free forever. Easily manage your first project and create stunning before/after photos ready for social sharing.' })}
+              </Text>
+            </GradientView>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.planCardWrapper, styles.recommendedCard]}
+            onPress={() => handleSelectPlan('pro')}
+            activeOpacity={0.8}
+          >
+            <GradientView
+              colors={['#FFF9E6', '#FFFFFF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.planCard}
+              fallbackColor="#FFFFFF"
+            >
+              <View style={styles.planCardHeader}>
+                <Text style={styles.planCardTitle}>{t('firstLoad.pro', { defaultValue: 'Pro' })}</Text>
+                <GradientView
+                  colors={['#FFFFFF', '#4CAF50']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.priceBadge}
+                  fallbackColor="#4CAF50"
+                >
+                  <Text style={styles.priceBadgeText}>$8.99/month</Text>
+                </GradientView>
+              </View>
+              <Text style={styles.planCardDescription}>
+                {t('firstLoad.proDesc', { defaultValue: 'Everything in Starter &\nFor professionals. Cloud sync + bulk upload.' })}
+              </Text>
+              <View style={styles.recommendedBadge}>
+                <Text style={styles.recommendedIcon}>👍</Text>
+                <Text style={styles.recommendedText}>Recommended</Text>
+              </View>
+            </GradientView>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.planCardWrapper}
+            onPress={() => handleSelectPlan('business')}
+            activeOpacity={0.8}
+          >
+            <GradientView
+              colors={['#FFF9E6', '#FFFFFF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.planCard}
+              fallbackColor="#FFFFFF"
+            >
+              <View style={styles.planCardHeader}>
+                <Text style={styles.planCardTitle}>{t('firstLoad.business', { defaultValue: 'Business' })}</Text>
+                <GradientView
+                  colors={['#FFFFFF', '#4CAF50']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.priceBadge}
+                  fallbackColor="#4CAF50"
+                >
+                  <Text style={styles.priceBadgeText}>$24.99/month</Text>
+                </GradientView>
+              </View>
+              <Text style={styles.planCardDescription}>
+                Everything in Pro &{'\n'}For small teams up to 5 members. $5.99 per additional team member.
+              </Text>
+            </GradientView>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.planCardWrapper}
+            onPress={() => handleSelectPlan('enterprise')}
+            activeOpacity={0.8}
+          >
+            <GradientView
+              colors={['#FFF9E6', '#FFFFFF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.planCard}
+              fallbackColor="#FFFFFF"
+            >
+              <View style={styles.planCardHeader}>
+                <Text style={styles.planCardTitle}>{t('firstLoad.enterprise', { defaultValue: 'Enterprise' })}</Text>
+                <GradientView
+                  colors={['#FFFFFF', '#4CAF50']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.priceBadge}
+                  fallbackColor="#4CAF50"
+                >
+                  <Text style={styles.priceBadgeText}>Starts at $69.99/month</Text>
+                </GradientView>
+              </View>
+              <Text style={styles.planCardDescription}>
+                Everything in Business &{'\n'}For growing organizations with 15 team members and more
+              </Text>
+            </GradientView>
+          </TouchableOpacity>
 
           {/* Restore Purchases - iOS only */}
           {Platform.OS === 'ios' && (
@@ -511,78 +667,12 @@ ${results.error ? `Error: ${results.error}` : ''}
               onPress={handleRestorePurchases}
               disabled={isRestoringPurchases}
             >
+              <Ionicons name="refresh" size={22} color="#000000" style={styles.restoreIcon} />
               <Text style={styles.restorePurchasesText}>
-                {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
+                {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchase' })}
               </Text>
             </TouchableOpacity>
           )}
-
-          {trialAvailable && (
-            <TouchableOpacity
-              style={styles.trialBanner}
-              onPress={handleFreeTrialClick}
-            >
-              <Text style={styles.trialBannerText}>
-                🎉 {trialDays}-Day Free Trial Available!
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          <View style={styles.planContainer}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.planButton]}
-              onPress={() => handleSelectPlan('starter')}
-            >
-              <Text style={[styles.selectionButtonText, styles.planButtonText]}>
-                {t('firstLoad.starter')}
-              </Text>
-              <Text style={styles.planPrice}>Free</Text>
-            </TouchableOpacity>
-            <Text style={styles.planSubtext}>{t('firstLoad.starterDesc')}</Text>
-          </View>
-
-          <View style={styles.planContainer}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.planButton]}
-              onPress={() => handleSelectPlan('pro')}
-            >
-              <Text style={[styles.selectionButtonText, styles.planButtonText]}>
-                {t('firstLoad.pro')}
-              </Text>
-              <Text style={styles.planPrice}>$8.99/month</Text>
-            </TouchableOpacity>
-            <Text style={styles.planSubtext}>{t('firstLoad.proDesc')}</Text>
-          </View>
-
-          <View style={styles.planContainer}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.planButton]}
-              onPress={() => handleSelectPlan('business')}
-            >
-              <Text style={[styles.selectionButtonText, styles.planButtonText]}>
-                {t('firstLoad.business')}
-              </Text>
-              <Text style={styles.planPrice}>$24.99/month</Text>
-            </TouchableOpacity>
-            <Text style={styles.planSubtext}>
-              For small teams up to 5 members. $5.99 per additional team member
-            </Text>
-          </View>
-
-          <View style={styles.planContainer}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.planButton]}
-              onPress={() => handleSelectPlan('enterprise')}
-            >
-              <Text style={[styles.selectionButtonText, styles.planButtonText]}>
-                {t('firstLoad.enterprise')}
-              </Text>
-              <Text style={styles.planPrice}>Starts at $69.99/month</Text>
-            </TouchableOpacity>
-            <Text style={styles.planSubtext}>
-              For growing organisations with 15 team members and more
-            </Text>
-          </View>
 
           {/* Terms and Privacy Policy Links */}
           <View style={styles.legalLinksContainer}>
@@ -595,7 +685,7 @@ ${results.error ? `Error: ${results.error}` : ''}
               </Text>
             </TouchableOpacity>
 
-            <Text style={styles.legalLinkSeparator}>•</Text>
+            <Text style={styles.legalLinkSeparator}>●</Text>
 
             <TouchableOpacity
               onPress={() => Linking.openURL('https://sayapingeorge.wixsite.com/geos/privacy-policy')}
@@ -606,7 +696,6 @@ ${results.error ? `Error: ${results.error}` : ''}
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
       </ScrollView>
 
       {/* Enterprise Contact Form Modal */}
@@ -651,132 +740,172 @@ ${results.error ? `Error: ${results.error}` : ''}
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.PRIMARY,
+    backgroundColor: '#F5C13E', // Yellow background from Figma
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 20,
   },
   backButton: {
-    position: 'absolute',
-    zIndex: 10,
-    padding: 10,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 24,
   },
-  backButtonText: {
-    color: COLORS.TEXT,
-    fontSize: 24,
-    fontWeight: 'bold',
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: '#000000',
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  headerSpacer: {
+    width: 48, // Same as back button to keep title centered
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 20,
-    paddingTop: 60,
     paddingBottom: 40,
   },
-  formContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  welcomeText: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    textAlign: 'center',
-    marginBottom: 10,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  planContainer: {
-    marginBottom: 20,
-    width: '100%',
-  },
-  selectionButton: {
-    backgroundColor: COLORS.PRIMARY,
-    borderWidth: 2,
-    borderColor: COLORS.PRIMARY,
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  selectionButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000000',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  planButton: {
-    backgroundColor: '#fff',
-    borderColor: '#ddd',
-  },
-  planButtonText: {
-    color: '#333',
-  },
-  planPrice: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4CAF50',
-    marginTop: 4,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  planSubtext: {
-    fontSize: 14,
-    color: '#333',
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 10,
-  },
   trialBanner: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-    width: '100%',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    borderRadius: 100, // Fully rounded pill shape
+    marginBottom: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2,
+    borderWidth: 2,
+    borderColor: '#000000',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
     shadowRadius: 4,
+    elevation: 3,
   },
   trialBannerText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: '#000000',
+    fontSize: 17,
+    fontWeight: '700',
     textAlign: 'center',
     fontFamily: FONTS.QUICKSAND_BOLD,
   },
-  trialBadge: {
+  planCardWrapper: {
+    marginBottom: 16,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#000000',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+    elevation: 4,
+    overflow: 'hidden', // Important for gradient to respect border radius
+  },
+  planCard: {
+    borderRadius: 18, // Slightly smaller than wrapper to avoid border artifacts
+    padding: 24,
+  },
+  recommendedCard: {
+    // Wrapper style for recommended card if needed
+  },
+  planCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  planCardTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: '#000000',
+  },
+  priceBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#4CAF50',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  priceBadgeText: {
     fontSize: 14,
-    color: '#4CAF50',
-    fontWeight: '600',
+    fontWeight: '700',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: '#FFFFFF',
+  },
+  planCardDescription: {
+    fontSize: 15,
+    fontFamily: FONTS.QUICKSAND_REGULAR,
+    color: '#000000',
+    lineHeight: 22,
+    fontWeight: '500',
+  },
+  recommendedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  recommendedIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  recommendedText: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: '#000000',
   },
   restorePurchasesButton: {
-    marginTop: 2,
-    marginBottom: 15,
-    paddingVertical: 8,
-    paddingHorizontal: 20,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 18,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  restoreIcon: {
+    marginRight: 10,
   },
   restorePurchasesText: {
-    fontSize: 13,
-    color: '#666',
+    fontSize: 16,
+    color: '#000000',
     textAlign: 'center',
-    textDecorationLine: 'underline',
     fontFamily: FONTS.QUICKSAND_BOLD,
+    fontWeight: '600',
   },
   legalLinksContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 15,
+    marginTop: 20,
     marginBottom: 20,
     paddingHorizontal: 20,
     flexWrap: 'wrap',
@@ -787,15 +916,16 @@ const styles = StyleSheet.create({
   },
   legalLinkText: {
     fontSize: 12,
-    color: '#666',
+    color: '#000000',
     textAlign: 'center',
     textDecorationLine: 'underline',
     fontFamily: FONTS.QUICKSAND_BOLD,
+    fontWeight: '600',
   },
   legalLinkSeparator: {
     fontSize: 12,
-    color: '#666',
-    marginHorizontal: 8,
+    color: '#000000',
+    marginHorizontal: 10,
     fontFamily: FONTS.QUICKSAND_BOLD,
   },
 });

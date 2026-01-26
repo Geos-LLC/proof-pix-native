@@ -1,25 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, Platform, Text, Clipboard } from 'react-native';
+import { View, StyleSheet, Platform, Text, Image } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
+import { COLORS } from '../constants/rooms';
+import { FONTS } from '../constants/fonts';
 
 export default function AuthLoadingScreen({ navigation }) {
   const { userName, userPlan, updateUserPlan, loading: settingsLoading } = useSettings();
   const { isLoading: adminLoading } = useAdmin();
   const [iapChecked, setIapChecked] = useState(false);
-  const [debugStatus, setDebugStatus] = useState('Initializing...');
-
-  // Debug logging on mount
-  useEffect(() => {
-    console.log('[AuthLoading] Component mounted');
-    console.log('[AuthLoading] Initial state - settingsLoading:', settingsLoading, 'adminLoading:', adminLoading);
-  }, []);
-
-  // Log state changes
-  useEffect(() => {
-    console.log('[AuthLoading] State update - settingsLoading:', settingsLoading, 'adminLoading:', adminLoading, 'iapChecked:', iapChecked);
-    setDebugStatus(`Settings: ${settingsLoading ? 'loading' : 'ready'}, Admin: ${adminLoading ? 'loading' : 'ready'}, IAP: ${iapChecked ? 'checked' : 'pending'}`);
-  }, [settingsLoading, adminLoading, iapChecked]);
 
   // Auto-restore IAP subscriptions on app launch (iOS only)
   // IMPORTANT: Disabled in development mode to prevent constant password prompts
@@ -128,8 +118,8 @@ export default function AuthLoadingScreen({ navigation }) {
           console.log('[AuthLoading] Active subscription detected, skipping to Home');
           navigation.replace('Home');
         } else {
-          // New user or free plan - show new setup flow
-          navigation.replace('WelcomeSetup');
+          // New user or free plan - show FirstLoad screen (Let's start with your name)
+          navigation.replace('FirstLoad');
         }
       }
     };
@@ -143,10 +133,21 @@ export default function AuthLoadingScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" />
-      {__DEV__ && (
-        <Text style={styles.debugText}>{debugStatus}</Text>
-      )}
+      {/* Decorative circles */}
+      <View style={styles.decorativeCircle1} />
+      <View style={styles.decorativeCircle2} />
+      
+      {/* Logo */}
+      <View style={styles.logoContainer}>
+        <Image
+          source={require('../../assets/PP_logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+      </View>
+      
+      {/* App Name */}
+      <Text style={styles.appTitle}>ProofPix</Text>
     </View>
   );
 }
@@ -156,13 +157,40 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.PRIMARY, // #F2C31B yellow
   },
-  debugText: {
-    marginTop: 20,
-    fontSize: 12,
-    color: '#666',
+  decorativeCircle1: {
+    position: 'absolute',
+    top: -100,
+    left: -100,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(242, 195, 27, 0.3)', // Semi-transparent darker yellow
+  },
+  decorativeCircle2: {
+    position: 'absolute',
+    bottom: -100,
+    right: -100,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(242, 195, 27, 0.3)', // Semi-transparent darker yellow
+  },
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  logo: {
+    width: 120,
+    height: 120,
+  },
+  appTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    fontFamily: FONTS.QUICKSAND_BOLD,
+    color: '#000000',
     textAlign: 'center',
-    paddingHorizontal: 20,
   },
 });

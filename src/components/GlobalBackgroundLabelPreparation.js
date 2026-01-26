@@ -13,6 +13,7 @@ import { addLabelToImage, compositeImages, calculateAfterLabelOffsets, addWaterm
 import { useTranslation } from 'react-i18next';
 
 const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
+const DEFAULT_WATERMARK_OPACITY = 0.5;
 
 export default function GlobalBackgroundLabelPreparation() {
   const [preparingPhoto, setPreparingPhoto] = useState(null);
@@ -31,6 +32,8 @@ export default function GlobalBackgroundLabelPreparation() {
     watermarkText,
     watermarkColor,
     watermarkOpacity,
+    watermarkPosition,
+    watermarkFontFamily,
   } = useSettings();
   const { t } = useTranslation();
 
@@ -490,16 +493,20 @@ export default function GlobalBackgroundLabelPreparation() {
           // Determine watermark text based on custom watermark setting
           const wmText = customWatermarkEnabled ? (watermarkText || DEFAULT_WATERMARK_TEXT) : DEFAULT_WATERMARK_TEXT;
 
-          // Get watermark color - use custom color or fall back to label background color
-          const wmColor = customWatermarkEnabled ? (watermarkColor || labelBackgroundColor || '#FFD700') : (labelBackgroundColor || '#FFD700');
+          // Always use watermarkColor if it exists, otherwise fall back to label background color
+          // The customWatermarkEnabled flag only controls text/link, not color
+          const wmColor = watermarkColor || labelBackgroundColor || '#FFD700';
 
-          // Get watermark opacity
-          const wmOpacity = typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5;
+          // Always use watermarkOpacity if it's set, otherwise use default
+          // The customWatermarkEnabled flag only controls text/link, not opacity
+          const wmOpacity = typeof watermarkOpacity === 'number' ? watermarkOpacity : DEFAULT_WATERMARK_OPACITY;
 
           const watermarkConfig = {
             color: wmColor,
             opacity: wmOpacity,
             fontSize: 32, // Base font size for watermark (will be scaled by native code)
+            position: watermarkPosition || 'right-bottom', // Pass position to native module
+            fontFamily: watermarkFontFamily || 'system', // Pass font family to native module
           };
 
           console.log(`[BackgroundLabelPrep:${taskId}] 💧 Watermark config:`, {

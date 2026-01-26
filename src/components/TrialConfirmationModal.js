@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Modal,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
@@ -36,31 +37,40 @@ export default function TrialConfirmationModal({ visible, planName, onUseTrial, 
     >
       <View style={styles.overlay}>
         <View style={styles.modal}>
+          {/* Close Button */}
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onCancel}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={24} color="#666666" />
+          </TouchableOpacity>
+
           <View style={styles.header}>
-            <Text style={styles.title}>Start Free Trial? 🎉</Text>
+            <Text style={styles.title}>START FREE TRIAL</Text>
           </View>
-          
+
           <View style={styles.content}>
             <Text style={styles.message}>
-              You're eligible for a {trialDays}-day free trial of {planName} features. Would you like to start your free trial now?
+              You're eligible for a {trialDays}-days free trial of {planName.toLowerCase()} features. Would you like to start your free trial now?
             </Text>
           </View>
 
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[styles.button, styles.primaryButton]}
-              onPress={onUseTrial}
+              style={[styles.button, styles.skipButton]}
+              onPress={onCancel}
             >
-              <Text style={[styles.buttonText, styles.primaryButtonText]}>
-                Start Free Trial
+              <Text style={[styles.buttonText, styles.skipButtonText]}>
+                Skip
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.button, styles.secondaryButton]}
-              onPress={onCancel}
+              style={[styles.button, styles.startButton]}
+              onPress={onUseTrial}
             >
-              <Text style={[styles.buttonText, styles.secondaryButtonText]}>
-                Continue Without Trial
+              <Text style={[styles.buttonText, styles.startButtonText]}>
+                Start
               </Text>
             </TouchableOpacity>
           </View>
@@ -80,60 +90,78 @@ const styles = StyleSheet.create({
   },
   modal: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 340,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    zIndex: 1,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
-    padding: 20,
-    paddingBottom: 12,
+    paddingTop: 48,
+    paddingHorizontal: 20,
+    paddingBottom: 8,
   },
   title: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
     color: COLORS.TEXT,
     fontFamily: FONTS.QUICKSAND_BOLD,
     textAlign: 'center',
+    letterSpacing: 0.5,
   },
   content: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
   },
   message: {
-    fontSize: 16,
-    color: COLORS.TEXT,
-    lineHeight: 24,
+    fontSize: 15,
+    color: '#666666',
+    lineHeight: 22,
     textAlign: 'center',
+    fontFamily: FONTS.QUICKSAND_REGULAR,
   },
   actions: {
-    padding: 20,
-    paddingTop: 0,
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingBottom: 24,
     gap: 12,
   },
   button: {
-    borderRadius: 12,
+    flex: 1,
+    borderRadius: 25,
     paddingVertical: 14,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryButton: {
-    backgroundColor: '#4CAF50',
+  skipButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
   },
-  secondaryButton: {
-    backgroundColor: '#F5F5F5',
+  startButton: {
+    backgroundColor: '#000000',
   },
   buttonText: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     fontFamily: FONTS.QUICKSAND_BOLD,
   },
-  primaryButtonText: {
-    color: '#FFFFFF',
-  },
-  secondaryButtonText: {
+  skipButtonText: {
     color: COLORS.TEXT,
+  },
+  startButtonText: {
+    color: '#FFFFFF',
   },
 });
 

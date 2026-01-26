@@ -2,15 +2,14 @@ import React from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 
 export const CroppedThumbnail = ({ imageUri, aspectRatio = '4:3', orientation = 'portrait', size = 120 }) => {
-  // Show full photo centered in square container with bars
+  // Show full photo covering the entire container
   return (
     <View style={[styles.thumbnailContainer, { width: size, height: size }]}>
-      {/* Full image centered with flexbox */}
       <Image 
         key={imageUri}
         source={{ uri: imageUri }} 
         style={{ width: size, height: size }} 
-        resizeMode="contain" 
+        resizeMode="cover" 
       />
     </View>
   );

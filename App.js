@@ -46,7 +46,10 @@ import PhotoEditorScreen from './src/screens/PhotoEditorScreen';
 import GalleryScreen from './src/screens/GalleryScreen';
 import PhotoDetailScreen from './src/screens/PhotoDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import ContactUsScreen from './src/screens/ContactUsScreen';
+import ProjectsScreen from './src/screens/ProjectsScreen';
 import LabelCustomizationScreen from './src/screens/LabelCustomizationScreen';
+import WatermarkCustomizationScreen from './src/screens/WatermarkCustomizationScreen';
 import FirstLoadScreen from './src/screens/FirstLoadScreen';
 import PlanSelectionScreen from './src/screens/PlanSelectionScreen';
 import InviteScreen from './src/screens/InviteScreen';
@@ -194,6 +197,13 @@ function AppNavigator() {
           animationDuration: 300
         }}
       />
+      <Stack.Screen
+        name="Projects"
+        component={ProjectsScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
       <Stack.Screen 
         name="PhotoDetail" 
         component={PhotoDetailScreen}
@@ -210,8 +220,22 @@ function AppNavigator() {
         }}
       />
       <Stack.Screen
+        name="ContactUs"
+        component={ContactUsScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
         name="LabelCustomization"
         component={LabelCustomizationScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
+        name="WatermarkCustomization"
+        component={WatermarkCustomizationScreen}
         options={{
           animation: 'slide_from_right'
         }}
