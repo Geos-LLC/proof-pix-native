@@ -13,7 +13,7 @@ import { COLORS } from '../constants/rooms';
 import { useTranslation } from 'react-i18next';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 
-const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearCompleted, onDeleteProject, userPlan, onShowPlanModal, planModalVisible }) => {
+const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearCompleted, onDeleteProject }) => {
   const { t } = useTranslation();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
@@ -43,14 +43,6 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
 
   const handleDeleteCancel = () => {
     setShowDeleteConfirm(false);
-  };
-
-  // Override onShowPlanModal - don't close delete confirmation, just show plan modal on top
-  const handleShowPlanModal = () => {
-    // Don't close delete confirmation - let plan modal float on top
-    if (onShowPlanModal) {
-      onShowPlanModal();
-    }
   };
 
   const getCompletionMessage = () => {
@@ -156,8 +148,6 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
         onConfirm={handleDeleteConfirm}
         onCancel={handleDeleteCancel}
         deleteFromStorageDefault={true}
-        userPlan={userPlan}
-        onShowPlanModal={handleShowPlanModal}
       />
     </Modal>
   );

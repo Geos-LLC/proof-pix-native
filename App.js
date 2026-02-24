@@ -7,6 +7,7 @@ console.log('[App] Platform detected, beginning imports...');
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { PhotoProvider } from './src/context/PhotoContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import { AdminProvider } from './src/context/AdminContext';
@@ -18,18 +19,41 @@ import { RobotoMono_700Bold } from '@expo-google-fonts/roboto-mono';
 import { Lato_700Bold } from '@expo-google-fonts/lato';
 import { Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 import { Oswald_600SemiBold } from '@expo-google-fonts/oswald';
+import {
+  Alexandria_100Thin,
+  Alexandria_200ExtraLight,
+  Alexandria_300Light,
+  Alexandria_400Regular,
+  Alexandria_500Medium,
+  Alexandria_600SemiBold,
+  Alexandria_700Bold,
+  Alexandria_800ExtraBold,
+  Alexandria_900Black,
+} from '@expo-google-fonts/alexandria';
+import {
+  Quicksand_300Light,
+  Quicksand_400Regular,
+  Quicksand_500Medium,
+  Quicksand_600SemiBold,
+  Quicksand_700Bold,
+} from '@expo-google-fonts/quicksand';
 console.log('[App] Importing Firebase...');
 let getApp, getApps, getAnalytics, logEvent, setAnalyticsCollectionEnabled;
 try {
-  const appModule = require('@react-native-firebase/app');
-  const analyticsModule = require('@react-native-firebase/analytics');
-  // Use modular API instead of default export
-  getApp = appModule.getApp;
-  getApps = appModule.getApps;
-  getAnalytics = analyticsModule.getAnalytics;
-  logEvent = analyticsModule.logEvent;
-  setAnalyticsCollectionEnabled = analyticsModule.setAnalyticsCollectionEnabled;
-  console.log('[App] Firebase imported successfully');
+  // Do not attempt to load native Firebase modules in Expo Go; they aren't present there.
+  if (Constants?.appOwnership !== 'expo') {
+    const appModule = require('@react-native-firebase/app');
+    const analyticsModule = require('@react-native-firebase/analytics');
+    // Use modular API instead of default export
+    getApp = appModule.getApp;
+    getApps = appModule.getApps;
+    getAnalytics = analyticsModule.getAnalytics;
+    logEvent = analyticsModule.logEvent;
+    setAnalyticsCollectionEnabled = analyticsModule.setAnalyticsCollectionEnabled;
+    console.log('[App] Firebase imported successfully');
+  } else {
+    console.log('[App] Skipping Firebase import in Expo Go (analytics disabled).');
+  }
 } catch (error) {
   console.warn('[App] Firebase native modules not available:', error.message);
   console.warn('[App] This usually means the app needs to be rebuilt with: npx expo run:android');
@@ -41,7 +65,7 @@ console.log('[App] i18n initialized');
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
-import CameraScreen from './src/screens/CameraScreen';
+// Camera-related screens are loaded lazily below to avoid importing react-native-vision-camera in Expo Go
 import PhotoEditorScreen from './src/screens/PhotoEditorScreen';
 import GalleryScreen from './src/screens/GalleryScreen';
 import PhotoDetailScreen from './src/screens/PhotoDetailScreen';
@@ -59,16 +83,45 @@ import GoogleSignUpScreen from './src/screens/GoogleSignUpScreen';
 import LabelLanguageSetupScreen from './src/screens/LabelLanguageSetupScreen';
 import SectionLanguageSetupScreen from './src/screens/SectionLanguageSetupScreen';
 import AuthLoadingScreen from './src/screens/AuthLoadingScreen';
-import VisionCameraTest from './src/screens/VisionCameraTest';
 import WelcomeSetupScreen from './src/screens/WelcomeSetupScreen';
 import UserInfoSetupScreen from './src/screens/UserInfoSetupScreen';
 import PermissionsSetupScreen from './src/screens/PermissionsSetupScreen';
 import GlobalBackgroundLabelPreparation from './src/components/GlobalBackgroundLabelPreparation';
 import GlobalBackgroundCombinedPhotoCreator from './src/components/GlobalBackgroundCombinedPhotoCreator';
+import UploadIndicatorLine from './src/components/UploadIndicatorLine';
+import { useBackgroundUpload } from './src/hooks/useBackgroundUpload';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 console.log('[App] All imports completed successfully');
 
 const Stack = createNativeStackNavigator();
+const isExpoGo = Constants?.appOwnership === 'expo';
+
+// Simple placeholder screen to disable camera when running in Expo Go
+function CameraDisabledScreen() {
+  return (
+    <SafeAreaProvider>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, backgroundColor: '#000' }}>
+        <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>
+          Camera disabled in Expo Go
+        </Text>
+        <Text style={{ color: '#ccc', fontSize: 14, textAlign: 'center' }}>
+          The full camera experience uses react-native-vision-camera, which is not supported in Expo Go.
+          Build a development client (expo run:ios / expo run:android) to use the camera, or continue testing other features here.
+        </Text>
+      </View>
+    </SafeAreaProvider>
+  );
+}
+
+// In Expo Go, use placeholder (vision-camera not supported). In dev/client builds, use real CameraScreen.
+let CameraScreenModule = null;
+const CameraScreenComponent = (props) => {
+  if (isExpoGo) return <CameraDisabledScreen />;
+  if (!CameraScreenModule) CameraScreenModule = require('./src/screens/CameraScreen').default;
+  return <CameraScreenModule {...props} />;
+};
+const VisionCameraTestComponent = CameraDisabledScreen;
 
 // Error Boundary for debugging - shows errors on screen in both dev and prod
 class ErrorBoundary extends React.Component {
@@ -170,7 +223,7 @@ function AppNavigator() {
       />
       <Stack.Screen 
         name="Camera" 
-        component={CameraScreen}
+        component={CameraScreenComponent}
         options={{
           presentation: 'card',
           animation: 'slide_from_bottom',
@@ -184,17 +237,14 @@ function AppNavigator() {
         name="PhotoEditor" 
         component={PhotoEditorScreen}
         options={{
-          presentation: 'modal',
-          animation: 'fade'
+          animation: 'slide_from_right'
         }}
       />
       <Stack.Screen
         name="Gallery"
         component={GalleryScreen}
         options={{
-          presentation: 'fullScreenModal',
-          animation: 'slide_from_bottom',
-          animationDuration: 300
+          animation: 'slide_from_right'
         }}
       />
       <Stack.Screen
@@ -208,8 +258,7 @@ function AppNavigator() {
         name="PhotoDetail" 
         component={PhotoDetailScreen}
         options={{
-          presentation: 'modal',
-          animation: 'fade'
+          animation: 'slide_from_right'
         }}
       />
       <Stack.Screen
@@ -244,8 +293,7 @@ function AppNavigator() {
         name="Invite"
         component={InviteScreen}
         options={{
-          presentation: 'modal',
-          animation: 'fade'
+          animation: 'slide_from_right'
         }}
       />
       <Stack.Screen
@@ -286,11 +334,9 @@ function AppNavigator() {
       />
       <Stack.Screen
         name="VisionCameraTest"
-        component={VisionCameraTest}
+        component={VisionCameraTestComponent}
         options={{
-          presentation: 'fullScreenModal',
-          animation: 'slide_from_bottom',
-          contentStyle: { backgroundColor: '#000' }
+          animation: 'slide_from_right'
         }}
       />
     </Stack.Navigator>
@@ -320,6 +366,32 @@ const linking = {
   },
 };
 
+// Global upload indicator - shows on ALL screens when upload/labeling is active
+function GlobalUploadIndicator({ navigationRef }) {
+  const { uploadStatus } = useBackgroundUpload();
+  const insets = useSafeAreaInsets();
+
+  const hasActivity = uploadStatus.activeUploads.length > 0 || uploadStatus.queueLength > 0;
+  if (!hasActivity) return null;
+
+  return (
+    <View style={{
+      position: 'absolute',
+      top: insets.top,
+      left: 0,
+      right: 0,
+      zIndex: 9999,
+    }}>
+      <UploadIndicatorLine
+        uploadStatus={uploadStatus}
+        onPress={() => {
+          navigationRef.current?.navigate('Gallery', { showUploadDetails: true });
+        }}
+      />
+    </View>
+  );
+}
+
 // Global function to trigger trial notification check (for use after plan selection)
 let globalCheckTrialNotifications = null;
 
@@ -339,6 +411,20 @@ export default function App() {
     Lato_700Bold,
     Poppins_600SemiBold,
     Oswald_600SemiBold,
+    Alexandria_100Thin,
+    Alexandria_200ExtraLight,
+    Alexandria_300Light,
+    Alexandria_400Regular,
+    Alexandria_500Medium,
+    Alexandria_600SemiBold,
+    Alexandria_700Bold,
+    Alexandria_800ExtraBold,
+    Alexandria_900Black,
+    Quicksand_300Light,
+    Quicksand_400Regular,
+    Quicksand_500Medium,
+    Quicksand_600SemiBold,
+    Quicksand_700Bold,
   });
 
   useEffect(() => {
@@ -609,6 +695,8 @@ export default function App() {
               {/* Global background components - stay mounted regardless of navigation */}
               <GlobalBackgroundLabelPreparation />
               <GlobalBackgroundCombinedPhotoCreator />
+              {/* Global upload progress indicator - shows on ALL screens */}
+              <GlobalUploadIndicator navigationRef={navigationRef} />
             </PhotoProvider>
           </AdminProvider>
         </SettingsProvider>

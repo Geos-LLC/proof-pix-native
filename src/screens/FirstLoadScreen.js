@@ -27,6 +27,23 @@ import { canStartTrial } from '../services/trialService';
 
 const { width, height } = Dimensions.get('window');
 
+// Static map so Metro can bundle all flag assets at build time (dynamic require() is not supported).
+const FLAG_IMAGES = {
+  en: require('../../assets/flags/usa.png'),
+  es: require('../../assets/flags/spain.png'),
+  fr: require('../../assets/flags/france.png'),
+  de: require('../../assets/flags/germany.png'),
+  ru: require('../../assets/flags/russia.png'),
+  be: require('../../assets/flags/belarus.png'),
+  zh: require('../../assets/flags/china.png'),
+  tl: require('../../assets/flags/philipines.png'),
+  ar: require('../../assets/flags/saudi.png'),
+  ko: require('../../assets/flags/korea.png'),
+  pt: require('../../assets/flags/portugal.png'),
+  uk: require('../../assets/flags/ukraine.png'),
+  vi: require('../../assets/flags/vietnam.png'),
+};
+
 const LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
   { code: 'es', name: 'Español', flag: '🇪🇸' },
@@ -34,12 +51,12 @@ const LANGUAGES = [
   { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
   { code: 'ru', name: 'Русский', flag: '🇷🇺' },
   { code: 'be', name: 'Беларуская', flag: '🇧🇾' },
-  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
   { code: 'zh', name: '中文', flag: '🇨🇳' },
   { code: 'tl', name: 'Tagalog', flag: '🇵🇭' },
   { code: 'ar', name: 'العربية', flag: '🇸🇦' },
   { code: 'ko', name: '한국어', flag: '🇰🇷' },
   { code: 'pt', name: 'Português', flag: '🇵🇹' },
+  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
   { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
 ];
 
@@ -54,7 +71,7 @@ export default function FirstLoadScreen({ navigation, route }) {
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [languageInfoModalVisible, setLanguageInfoModalVisible] = useState(false);
   const [selectedLanguageName, setSelectedLanguageName] = useState('');
-  const [pendingNavigation, setPendingNavigation] = useState(null); // 'planSelection' or 'referral'
+  const [pendingNavigation, setPendingNavigation] = useState(null);
   const scrollViewRef = useRef(null);
   const nameInputRef = useRef(null);
   const inputContainerRef = useRef(null);
@@ -62,9 +79,6 @@ export default function FirstLoadScreen({ navigation, route }) {
   const [inputYPosition, setInputYPosition] = useState(0);
   const [formYPosition, setFormYPosition] = useState(0);
 
-  // Check for invite code in clipboard (for users who copied code from landing page)
-  // If found, automatically navigate to JoinTeam screen
-  // Skip this check if user explicitly chose to use app individually
   useEffect(() => {
     const skipClipboardCheck = route?.params?.skipClipboardCheck;
 
@@ -78,14 +92,11 @@ export default function FirstLoadScreen({ navigation, route }) {
       try {
         const clipboardContent = await Clipboard.getString();
         console.log('[FirstLoad] Clipboard content:', clipboardContent ? clipboardContent.substring(0, 50) + '...' : 'empty');
-        // Check if clipboard contains an invite code pattern: TOKEN|SESSIONID
-        // Token is typically 22 chars base64, sessionId is 32 chars hex
         if (clipboardContent && clipboardContent.includes('|')) {
           const parts = clipboardContent.trim().split('|');
           console.log('[FirstLoad] Found | separator, parts:', parts.length, 'part1 length:', parts[0]?.length, 'part2 length:', parts[1]?.length);
           if (parts.length === 2 && parts[0].length > 10 && parts[1].length > 20) {
             console.log('[FirstLoad] Invite code detected in clipboard, navigating to JoinTeam');
-            // Automatically navigate to JoinTeam with the invite code
             navigation.replace('JoinTeam', { invite: clipboardContent.trim() });
           }
         }
@@ -94,18 +105,15 @@ export default function FirstLoadScreen({ navigation, route }) {
       }
     };
 
-    // Small delay to ensure screen is ready
     const timer = setTimeout(checkClipboardForInvite, 500);
     return () => clearTimeout(timer);
   }, [route?.params?.skipClipboardCheck]);
 
-  // Check for referral code from route params or deep link
   useEffect(() => {
     const checkReferralCode = async () => {
       const { trackReferralInstallation } = await import('../services/referralService');
       const referralCode = route?.params?.code;
       if (referralCode) {
-        // Track installation on server (also stores locally)
         const result = await trackReferralInstallation(referralCode);
         if (result && result.success) {
           console.log('[FirstLoad] Referral tracked on server:', result.data.referralId);
@@ -133,10 +141,8 @@ export default function FirstLoadScreen({ navigation, route }) {
 
   const changeLanguage = (languageCode) => {
     i18n.changeLanguage(languageCode);
-    // Also apply the same language to labels and sections
     updateLabelLanguage(languageCode);
     updateSectionLanguage(languageCode);
-    // Analytics: track app language change on first load
     try {
       logLanguageChange(languageCode);
     } catch (e) {
@@ -158,7 +164,6 @@ export default function FirstLoadScreen({ navigation, route }) {
   };
 
   const handleSelectTeam = async () => {
-    // No name validation required - user will enter name on JoinTeam screen
     await updateUserPlan('team');
     navigation.navigate('JoinTeam');
   };
@@ -167,36 +172,28 @@ export default function FirstLoadScreen({ navigation, route }) {
     if (!validateName()) return;
     await updateUserInfo(userName.trim());
 
-    // Apply current language to labels and sections
     const currentLang = i18n.language || 'en';
     updateLabelLanguage(currentLang);
     updateSectionLanguage(currentLang);
 
-    // Set the language name for the popup
     const selectedLang = LANGUAGES.find(lang => lang.code === currentLang) || LANGUAGES[0];
     setSelectedLanguageName(selectedLang.name);
 
-    // Check if user has a paid subscription (anything other than 'starter')
     const hasPaidSubscription = userPlan && userPlan !== 'starter';
 
-    // Determine where to navigate after language info popup
     const canTrial = await canStartTrial();
     if (!canTrial && !hasPaidSubscription) {
-      // No trial available and no subscription - will show referral code modal after
       setPendingNavigation('referral');
     } else {
-      // Trial available OR has subscription - will go to plan selection after
       setPendingNavigation('planSelection');
     }
 
-    // Show language info popup first
     setLanguageInfoModalVisible(true);
   };
 
   const handleLanguageInfoClose = () => {
     setLanguageInfoModalVisible(false);
 
-    // Navigate based on pending action
     if (pendingNavigation === 'referral') {
       setReferralModalVisible(true);
     } else {
@@ -217,14 +214,11 @@ export default function FirstLoadScreen({ navigation, route }) {
 
       if (result && result.success) {
         console.log('[FirstLoad] Referral tracked on server:', result.data.referralId);
-
-        // Show success modal
         setReferralModalVisible(false);
         setReferralCodeInput('');
         setSuccessModalVisible(true);
         return;
       } else {
-        // Handle specific error messages
         let errorMessage = t('referral.invalidCodeMessage', {
           defaultValue: 'Invalid referral code. Please check and try again.'
         });
@@ -267,102 +261,42 @@ export default function FirstLoadScreen({ navigation, route }) {
   };
 
   const handleNameInputFocus = () => {
-    // Scroll to show the input field and buttons when keyboard appears
-    // Calculate total Y position: formContainer Y + inputContainer Y
     const totalY = formYPosition + inputYPosition;
     setTimeout(() => {
       if (scrollViewRef.current) {
         scrollViewRef.current.scrollTo({
-          y: Math.max(0, totalY - 150), // Offset to ensure buttons are visible above keyboard
+          y: Math.max(0, totalY - 150),
           animated: true
         });
       }
     }, 300);
   };
 
-
-  const renderInitialSelection = () => (
-    <View 
-      ref={formContainerRef}
-      style={styles.formContainer}
-      onLayout={handleFormContainerLayout}
-    >
-      <View 
-        ref={inputContainerRef} 
-        style={styles.inputContainer}
-        onLayout={handleInputContainerLayout}
-      >
-        <Text style={styles.inputLabel}>{t('firstLoad.yourName')}</Text>
-        <TextInput
-          ref={nameInputRef}
-          style={styles.textInput}
-          value={userName}
-          onChangeText={setUserName}
-          placeholder={t('firstLoad.enterYourName')}
-          placeholderTextColor="#999"
-          autoCapitalize="words"
-          autoCorrect={false}
-          onFocus={handleNameInputFocus}
-        />
-      </View>
-
-      <View>
-        <TouchableOpacity
-          style={[styles.selectionButton, styles.individualButton]}
-          onPress={handleSelectIndividual}
-        >
-          <Text style={[styles.selectionButtonText, styles.individualButtonText]}>
-            {t('firstLoad.startUsingApp', { defaultValue: 'Start using the app' })}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.teamLinkButton}
-          onPress={handleSelectTeam}
-        >
-          <Text style={styles.teamLinkText}>
-            {t('firstLoad.invitedToTeam', { defaultValue: 'I was invited to a team' })}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={{marginTop: 20}}>
-        <TouchableOpacity
-          style={styles.languageRow}
-          onPress={() => setLanguageModalVisible(true)}
-        >
-          <Text style={styles.languageRowLabel}>
-            {t('firstLoad.language', { defaultValue: 'Language' })}
-          </Text>
-          <View style={styles.languageValueContainer}>
-            <Text style={styles.languageRowFlag}>{getCurrentLanguage().flag}</Text>
-            <Text style={styles.languageRowValue}>
-              {getCurrentLanguage().name}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Image
-            source={require('../../assets/PP_logo.png')}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
+        <View style={styles.headerLeftContent}>
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../../assets/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </View>
+          <Text style={styles.headerTitle}>ProofPix</Text>
         </View>
-        <Text style={styles.headerTitle}>ProofPix</Text>
+        
         <TouchableOpacity
           style={styles.languageSelector}
           onPress={() => setLanguageModalVisible(true)}
         >
-          <Text style={styles.languageFlag}>{getCurrentLanguage().flag}</Text>
-          <Ionicons name="chevron-down" size={16} color={COLORS.TEXT} />
+          <Image
+            source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
+            style={styles.languageFlagImage}
+            resizeMode="cover"
+          />
+          <Ionicons name="chevron-down" style={{padding:2}} size={18} color="#200E32" />
         </TouchableOpacity>
       </View>
 
@@ -379,9 +313,11 @@ export default function FirstLoadScreen({ navigation, route }) {
         >
           {/* User Avatar Icon */}
           <View style={styles.avatarContainer}>
-            <View style={styles.avatarIcon}>
-              <Ionicons name="person" size={48} color="#666" />
-            </View>
+          <Image
+              source={require('../../assets/joinuser.png')}
+              resizeMode="contain"
+              style={{width: 97, height: 97}}
+            />
           </View>
 
           {/* Title */}
@@ -391,25 +327,28 @@ export default function FirstLoadScreen({ navigation, route }) {
 
           {/* Name Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>{t('firstLoad.yourName', { defaultValue: 'Your Name' })}</Text>
-            <TextInput
-              ref={nameInputRef}
-              style={styles.textInput}
-              value={userName}
-              onChangeText={setUserName}
-              placeholder={t('firstLoad.enterYourName', { defaultValue: 'Enter your name' })}
-              placeholderTextColor="#999"
-              autoCapitalize="words"
-              autoCorrect={false}
-              onFocus={handleNameInputFocus}
-            />
+            <View style={styles.inputBox}>
+              <Text style={styles.inputLabel}>
+                {t('firstLoad.yourName', { defaultValue: 'Your Name' })}
+              </Text>
+              <TextInput
+                ref={nameInputRef}
+                style={styles.textInput}
+                value={userName}
+                onChangeText={setUserName}
+                placeholder={'Alex Bond'}
+                placeholderTextColor="#000"
+                autoCapitalize="words"
+                autoCorrect={false}
+                onFocus={handleNameInputFocus}
+              />
+            </View>
           </View>
 
           {/* Save & Continue Button */}
           <TouchableOpacity
-            style={[styles.saveButton, !userName.trim() && styles.saveButtonDisabled]}
+            style={styles.saveButton}
             onPress={handleSelectIndividual}
-            disabled={!userName.trim()}
             activeOpacity={0.8}
           >
             <Text style={styles.saveButtonText}>
@@ -476,7 +415,11 @@ export default function FirstLoadScreen({ navigation, route }) {
                   onPress={() => changeLanguage(language.code)}
                 >
                   <View style={styles.flagCircle}>
-                    <Text style={styles.languageFlagBottomSheet}>{language.flag}</Text>
+                  <Image
+            source={FLAG_IMAGES[language.code] || FLAG_IMAGES.en}
+            style={styles.languageFlagImages}
+            resizeMode="cover"
+          />
                   </View>
                   <Text style={styles.languageOptionTextBottomSheet}>
                     {language.name}
@@ -498,83 +441,79 @@ export default function FirstLoadScreen({ navigation, route }) {
         visible={referralModalVisible}
         transparent={true}
         animationType="slide"
-        onRequestClose={handleContinueWithoutReferral}
+        onRequestClose={() => setReferralModalVisible(false)}
       >
-        <Pressable style={styles.modalOverlay} onPress={handleContinueWithoutReferral}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={{ flex: 1, justifyContent: 'flex-end' }}
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setReferralModalVisible(false)}
+        >
+          <Pressable 
+            style={styles.referralModalContent}
+            onPress={(e) => e.stopPropagation()}
           >
-            <Pressable style={styles.modalContentBottomSheet} onPress={(e) => e.stopPropagation()}>
-              {/* Drag Handle */}
-              <View style={styles.modalHandle} />
-              
-              {/* Header */}
-              <View style={styles.modalHeaderBottomSheet}>
-                <TouchableOpacity
-                  style={styles.closeButton}
-                  onPress={handleContinueWithoutReferral}
-                >
-                  <View style={styles.closeButtonCircle}>
-                    <Ionicons name="close" size={20} color="#666666" />
-                  </View>
-                </TouchableOpacity>
-                <Text style={styles.modalTitleBottomSheet}>
-                  {t('referral.haveCodeTitle', { defaultValue: 'Have a Referral Code?' })}
-                </Text>
-                <View style={styles.headerSpacer} />
-              </View>
-
-              {/* Content */}
-              <ScrollView 
-                style={styles.referralScrollView} 
-                contentContainerStyle={styles.referralContent}
-                keyboardShouldPersistTaps="handled"
+            {/* Handle Bar */}
+            <View style={styles.modalHandle} />
+            
+            {/* Header */}
+            <View style={styles.modalHeaderBottomSheet}>
+              <TouchableOpacity
+                style={styles.modalCloseButtonTop}
+                onPress={() => setReferralModalVisible(false)}
               >
-                <Text style={styles.modalSubtitle}>
-                  {t('referral.haveCodeSubtitle', {
-                    defaultValue: "Enter your friend's referral code to get 45 days free trial! Your friend also gets 1 month free."
-                  })}
-                </Text>
+                <Ionicons name="close" size={24} color={COLORS.TEXT} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitleBottomSheet}>
+                {t('referral.enterCodeTitle', { defaultValue: 'Have a Referral Code?' })}
+              </Text>
+              <View style={styles.modalCloseButtonTop} />
+            </View>
 
-                <View style={styles.referralInputContainer}>
-                  <TextInput
-                    style={styles.referralInput}
-                    value={referralCodeInput}
-                    onChangeText={setReferralCodeInput}
-                    placeholder={t('referral.codePlaceholder', { defaultValue: 'Enter code (e.g., ABC123)' })}
-                    placeholderTextColor="#999"
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    maxLength={10}
-                  />
-                </View>
-              </ScrollView>
-
-              {/* Action Buttons */}
-              <View style={styles.referralButtonsContainer}>
-                <TouchableOpacity
-                  style={styles.referralSubmitButton}
-                  onPress={handleReferralSubmitAndContinue}
-                >
-                  <Text style={styles.referralSubmitButtonText}>
-                    {referralCodeInput.trim()
-                      ? t('referral.applyAndContinue', { defaultValue: 'Apply & Continue' })
-                      : t('referral.continue', { defaultValue: 'Continue' })}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.skipButton}
-                  onPress={handleContinueWithoutReferral}
-                >
-                  <Text style={styles.skipButtonText}>
-                    {t('referral.skip', { defaultValue: 'Skip' })}
-                  </Text>
-                </TouchableOpacity>
+            {/* Content */}
+            <ScrollView 
+              style={styles.referralScrollView}
+              contentContainerStyle={styles.referralContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.modalSubtitle}>
+                {t('referral.enterCodeSubtitle', { 
+                  defaultValue: 'Enter a referral code from a friend to get 45 days free trial!' 
+                })}
+              </Text>
+              
+              <View style={styles.referralInputContainer}>
+                <TextInput
+                  style={styles.referralInput}
+                  value={referralCodeInput}
+                  onChangeText={(text) => setReferralCodeInput(text.toUpperCase())}
+                  placeholder={t('referral.codePlaceholder', { defaultValue: 'ENTER CODE' })}
+                  placeholderTextColor="#999"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                />
               </View>
-            </Pressable>
-          </KeyboardAvoidingView>
+            </ScrollView>
+
+            {/* Buttons - Fixed at bottom */}
+            <View style={styles.referralButtonsContainer}>
+              <TouchableOpacity
+                style={styles.referralSubmitButton}
+                onPress={handleReferralSubmitAndContinue}
+              >
+                <Text style={styles.referralSubmitButtonText}>
+                  {t('referral.applyAndContinue', { defaultValue: 'Apply & Continue' })}
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={handleContinueWithoutReferral}
+              >
+                <Text style={styles.skipButtonText}>
+                  {t('referral.skipForNow', { defaultValue: 'Skip for now' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -592,24 +531,18 @@ export default function FirstLoadScreen({ navigation, route }) {
           <View style={styles.successModalContent}>
             <Text style={styles.successIcon}>🎉</Text>
             <Text style={styles.successTitle}>
-              {t('trial.extendedTitle', { defaultValue: 'Congratulations!' })}
+              {t('referral.successTitle', { defaultValue: 'Code Applied!' })}
             </Text>
             <Text style={styles.successMessage}>
-              {t('trial.extendedLine1', {
-                days: 45,
-                defaultValue: 'You get 45 days free trial'
-              })}
-            </Text>
-            <Text style={styles.successMessage}>
-              {t('trial.extendedLine2', {
-                friendDays: 30,
-                defaultValue: 'Your friend gets additional 30 days free!'
-              })}
+              {t('referral.successMessage', { defaultValue: 'You now have' })}
+              {' '}
+              <Text style={styles.highlightText}>
+                {t('referral.successDays', { defaultValue: '45 days free trial!' })}
+              </Text>
             </Text>
             <Text style={styles.successSubtext}>
-              {t('trial.extendedSubtext', { defaultValue: 'Welcome to your extended free trial' })}
+              {t('referral.successSubtext', { defaultValue: 'Your friend will also receive 1 month free when you subscribe.' })}
             </Text>
-
             <TouchableOpacity
               style={styles.successButton}
               onPress={() => {
@@ -618,7 +551,7 @@ export default function FirstLoadScreen({ navigation, route }) {
               }}
             >
               <Text style={styles.successButtonText}>
-                {t('trial.extendedButton', { defaultValue: 'Got it' })}
+                {t('referral.continue', { defaultValue: 'Continue' })}
               </Text>
             </TouchableOpacity>
           </View>
@@ -632,71 +565,79 @@ export default function FirstLoadScreen({ navigation, route }) {
         animationType="slide"
         onRequestClose={handleLanguageInfoClose}
       >
-        <Pressable style={styles.modalOverlay} onPress={handleLanguageInfoClose}>
-          <Pressable style={styles.modalContentBottomSheet} onPress={(e) => e.stopPropagation()}>
-            {/* Drag Handle */}
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={handleLanguageInfoClose}
+        >
+          <Pressable 
+            style={styles.languageInfoModalContent}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Handle Bar */}
             <View style={styles.modalHandle} />
             
             {/* Header */}
             <View style={styles.modalHeaderBottomSheet}>
               <TouchableOpacity
-                style={styles.closeButton}
+                style={[styles.modalCloseButtonTop, styles.closeButtonCircle]}
                 onPress={handleLanguageInfoClose}
               >
-                <View style={styles.closeButtonCircle}>
-                  <Ionicons name="close" size={20} color="#666666" />
-                </View>
+                <Ionicons name="close" size={20} color={COLORS.TEXT} />
               </TouchableOpacity>
               <Text style={styles.modalTitleBottomSheet}>
-                {t('firstLoad.languageAppliedTitle', { defaultValue: 'Language Applied' })}
+                {t('firstLoad.languageInfoTitle', { defaultValue: 'Language Settings' })}
               </Text>
-              <View style={styles.headerSpacer} />
+              <View style={styles.modalCloseButtonTop} />
             </View>
 
             {/* Content */}
             <ScrollView 
-              style={styles.languageInfoScrollView} 
+              style={styles.languageInfoScrollView}
               contentContainerStyle={styles.languageInfoContent}
-              showsVerticalScrollIndicator={true}
             >
               <View style={styles.languageInfoIconContainer}>
-                <Text style={styles.languageInfoIcon}>{getCurrentLanguage().flag}</Text>
+                <Text style={styles.languageInfoIcon}>🌍</Text>
               </View>
+              
               <Text style={styles.languageInfoMessage}>
-                {t('firstLoad.languageAppliedIntro', {
-                  language: selectedLanguageName,
-                  defaultValue: `${selectedLanguageName} has been set for:`
+                {t('firstLoad.languageInfoMessage', { 
+                  defaultValue: `You've selected ${selectedLanguageName}. This will be applied to:`,
+                  language: selectedLanguageName
                 })}
               </Text>
+
               <View style={styles.languageInfoBullets}>
                 <Text style={styles.languageInfoBulletItem}>
-                  • {t('firstLoad.languageBulletApp', { defaultValue: 'App' })}
+                  • {t('firstLoad.languageInfoBullet1', { defaultValue: 'App interface' })}
                 </Text>
                 <Text style={styles.languageInfoBulletItem}>
-                  • {t('firstLoad.languageBulletLabels', { defaultValue: 'Photo labels' })}
+                  • {t('firstLoad.languageInfoBullet2', { defaultValue: 'Photo labels' })}
                 </Text>
                 <Text style={styles.languageInfoBulletItem}>
-                  • {t('firstLoad.languageBulletSections', { defaultValue: 'Section names' })}
+                  • {t('firstLoad.languageInfoBullet3', { defaultValue: 'Section names' })}
                 </Text>
               </View>
+
               <Text style={styles.languageInfoSubtext}>
-                {t('firstLoad.languageChangeHint', {
-                  defaultValue: 'You can change these separately in '
+                {t('firstLoad.languageInfoSubtext', { 
+                  defaultValue: 'You can change these separately in' 
                 })}
+                {' '}
                 <Text style={styles.languageInfoSettingsHighlight}>
-                  {t('settings.title', { defaultValue: 'Settings' })}
+                  {t('firstLoad.settings', { defaultValue: 'Settings' })}
                 </Text>
-                {t('firstLoad.languageChangeHintEnd', { defaultValue: ' later.' })}
+                {' '}
+                {t('firstLoad.languageInfoSubtext2', { defaultValue: 'anytime.' })}
               </Text>
             </ScrollView>
 
-            {/* Action Button */}
+            {/* Continue Button */}
             <TouchableOpacity
               style={styles.languageInfoButton}
               onPress={handleLanguageInfoClose}
             >
               <Text style={styles.languageInfoButtonText}>
-                {t('common.gotIt', { defaultValue: 'Got it' })}
+                {t('common.gotIt', { defaultValue: 'Got it!' })}
               </Text>
             </TouchableOpacity>
           </Pressable>
@@ -709,267 +650,185 @@ export default function FirstLoadScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF'
+    backgroundColor: '#F6F8FA',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E1E1E1',
+    paddingTop: 8,
+    paddingBottom: 8,
   },
-  headerLeft: {
-    width: 80,
-    alignItems: 'flex-start',
+  headerLeftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    width: 50,
+    height: 50,
+    marginRight: 8,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerLogo: {
-    width: 40,
-    height: 40,
+  logoImage: {
+    width: 50,
+    height: 50,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 25,
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    color: COLORS.TEXT,
-    flex: 1,
-    textAlign: 'center',
-    position: 'absolute',
-    left: 0,
-    right: 0,
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    letterSpacing: -0.11,
   },
   languageSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    width: 80,
-    justifyContent: 'flex-end',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+    borderRadius: 62,
+    paddingHorizontal: 1,
+    paddingVertical: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.09,
+    shadowRadius: 15,
+    elevation: 3,
   },
   languageFlag: {
-    fontSize: 20,
+    fontSize: 24,
     marginRight: 4,
   },
-  avatarContainer: {
-    alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 32,
+  languageFlagImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginRight: 4,
   },
-  avatarIcon: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#E8DFD0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mainTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    color: COLORS.TEXT,
-    textAlign: 'center',
-    marginBottom: 32,
-    paddingHorizontal: 20,
+  languageFlagImages: {
+    width: 40,
+    height: 40,
   },
   keyboardAvoidingView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  inputContainer: {
+  avatarContainer: {
+    alignItems: 'center',
+    marginTop: 20,
     marginBottom: 24,
   },
+  avatarIcon: {
+    width: 97,
+    height: 97,
+    borderRadius: 48.5,
+    backgroundColor: 'rgba(255, 199, 0, 0.13)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarHead: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#000000',
+    marginBottom: 4,
+  },
+  avatarBody: {
+    width: 36,
+    height: 20,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: '#000000',
+    opacity: 0.5,
+  },
+  mainTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontWeight: '800',
+    fontSize: 23,
+    lineHeight: 29,
+    letterSpacing: -0.2,
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  inputContainer: {
+    marginBottom: 18,
+  },
+  inputBox: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D5D5D5',
+    borderRadius: 11,
+    paddingHorizontal: 12,
+    paddingTop: 5,
+    paddingBottom: 7,
+  },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    color: COLORS.TEXT,
-    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: '500',
+    fontFamily: FONTS.ALEXANDRIA,
+    color: '#000000',
+    opacity: 0.65,
+    marginBottom: 4,
   },
   textInput: {
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    fontSize: 16,
-    backgroundColor: '#FFFFFF',
-    color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_REGULAR,
+    fontSize: 15,
+    fontWeight: 'bold',
+    fontFamily: FONTS.ALEXANDRIA,
+    color: '#000000',
+    padding: 0,
+    margin: 0,
   },
   saveButton: {
     backgroundColor: '#000000',
-    borderRadius: 12,
-    paddingVertical: 18,
-    paddingHorizontal: 32,
+    borderRadius: 100,
+    paddingVertical: 12,
     alignItems: 'center',
-    marginBottom: 24,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#E0E0E0',
-    opacity: 0.6,
   },
   saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontSize: 20,
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
     color: '#FFFFFF',
   },
   orContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginTop: 27,
+    marginBottom: 10,
+    paddingHorizontal: 40,
+    marginHorizontal: 70,
   },
   orLine: {
     flex: 1,
     height: 1,
-    backgroundColor: COLORS.BORDER,
+    backgroundColor: '#000000',
+    opacity: 0.2,
   },
   orText: {
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_MEDIUM,
-    color: COLORS.TEXT,
-    marginHorizontal: 16,
-  },
-  teamLinkButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  teamLinkText: {
-    fontSize: 16,
-    color: COLORS.TEXT,
-    textDecorationLine: 'underline',
-    fontFamily: FONTS.QUICKSAND_MEDIUM,
-  },
-  selectionButton: {
-    borderRadius: 12,
-    padding: 20,
-    borderWidth: 2,
-  },
-  teamButton: {
-    backgroundColor: '#007bff',
-    borderColor: '#0056b3',
-  },
-  individualButton: {
-    backgroundColor: '#333',
-    borderColor: '#000',
-  },
-  selectionButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  teamButtonText: {
-    color: '#fff',
-  },
-  individualButtonText: {
-    color: '#fff',
-  },
-  selectionSubtext: {
-    fontSize: 14,
-    color: '#333',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  teamLinkButton: {
-    marginTop: 60,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  teamLinkText: {
-    fontSize: 15,
-    color: '#333',
-    textDecorationLine: 'underline',
-    fontFamily: FONTS.QUICKSAND_MEDIUM,
-  },
-  backLink: {
-    marginBottom: 20,
-    alignSelf: 'flex-start',
-  },
-  backLinkText: {
-    fontSize: 16,
-    color: '#000',
-    fontWeight: '600',
-  },
-  planContainer: {
-    marginBottom: 20,
-  },
-  planButton: {
-    backgroundColor: '#fff',
-    borderColor: '#ddd',
-  },
-  planButtonText: {
-    color: '#333',
-  },
-  planSubtext: {
-    fontSize: 14,
-    color: '#333',
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 10,
-  },
-  planCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-  },
-  planTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-  },
-  planDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  languageRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    minHeight: 52,
-  },
-  languageRowLabel: {
-    fontSize: 18,
-    color: '#000',
-    fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  languageValueContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginLeft: 8,
-  },
-  languageRowArrow: {
-    fontSize: 12,
-    color: '#fff',
+    fontSize: 13,
+    fontWeight: '300',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
     marginHorizontal: 8,
+    textTransform: 'uppercase',
   },
-  languageRowFlag: {
-    fontSize: 20,
-    marginRight: 6,
+  teamLinkButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
   },
-  languageRowValue: {
+  teamLinkText: {
     fontSize: 18,
-    color: '#000',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textDecorationLine: 'underline',
+    letterSpacing: 0.3,
   },
   modalOverlay: {
     flex: 1,
@@ -980,7 +839,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    minHeight: '80%',
     maxHeight: '90%',
+    paddingBottom: 20,
+    width: '100%',
+  },
+  referralModalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '55%',
+    paddingBottom: 20,
+    width: '100%',
+  },
+  languageInfoModalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '50%',
     paddingBottom: 20,
     width: '100%',
   },
@@ -1019,7 +895,7 @@ const styles = StyleSheet.create({
   modalTitleBottomSheet: {
     fontSize: 18,
     fontWeight: '700',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     flex: 1,
     textAlign: 'center',
@@ -1034,7 +910,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   languageScrollView: {
-    maxHeight: height * 0.6,
+    maxHeight: height * 0.8,
   },
   languageOptionBottomSheet: {
     flexDirection: 'row',
@@ -1069,7 +945,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '400',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
   },
   closeModalButton: {
@@ -1124,7 +1000,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   skipButton: {
     paddingVertical: 12,
@@ -1142,6 +1018,7 @@ const styles = StyleSheet.create({
     width: width * 0.85,
     maxWidth: 400,
     alignItems: 'center',
+    alignSelf: 'center',
   },
   successIcon: {
     fontSize: 64,
@@ -1185,7 +1062,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#000',
   },
-  // Language Info Modal Styles - Bottom Sheet
   closeButtonCircle: {
     width: 32,
     height: 32,
@@ -1213,7 +1089,8 @@ const styles = StyleSheet.create({
   },
   languageInfoMessage: {
     fontSize: 16,
-    fontFamily: FONTS.QUICKSAND_MEDIUM,
+    fontWeight: '500',
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     textAlign: 'center',
     lineHeight: 24,
@@ -1226,13 +1103,15 @@ const styles = StyleSheet.create({
   },
   languageInfoBulletItem: {
     fontSize: 16,
-    fontFamily: FONTS.QUICKSAND_MEDIUM,
+    fontWeight: '500',
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     lineHeight: 26,
   },
   languageInfoSubtext: {
     fontSize: 14,
-    fontFamily: FONTS.QUICKSAND_REGULAR,
+    fontWeight: '400',
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#666',
     textAlign: 'center',
     marginBottom: 8,
@@ -1241,7 +1120,7 @@ const styles = StyleSheet.create({
   languageInfoSettingsHighlight: {
     color: COLORS.PRIMARY,
     fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   languageInfoButton: {
     backgroundColor: '#000000',
@@ -1256,6 +1135,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
 });

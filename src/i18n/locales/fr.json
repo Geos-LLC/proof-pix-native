@@ -654,7 +654,7 @@
     "statMonthsEarned": "Mois Gagnés",
 
     "shareIntroTitle": "Parrainage ProofPix",
-    "shareIntroMessage": "Rejoignez ProofPix et organisez-vous !\\n\\n📱 Téléchargez ProofPix :\\niOS : {{iosLink}}\\nAndroid : {{androidLink}}\\n\\nAprès l'installation, utilisez mon code de parrainage pour commencer !",
+    "shareIntroMessage": "Rejoignez ProofPix et organisez-vous !\n\n📱 Téléchargez ProofPix :\niOS : {{iosLink}}\nAndroid : {{androidLink}}\n\nAprès l'installation, utilisez mon code de parrainage pour commencer !",
     "shareCodePromptTitle": "Partager le Code de Parrainage ?",
     "shareCodePromptMessage": "Maintenant, partagez votre code de parrainage en tant que message séparé pour qu'ils puissent le copier facilement.",
     "shareErrorMessage": "Échec du partage du lien de parrainage. Veuillez réessayer.",

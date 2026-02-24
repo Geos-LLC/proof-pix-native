@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAdmin } from '../context/AdminContext';
+import { FONTS } from '../constants/fonts';
 
 export default function InviteScreen({ route, navigation }) {
   const { token, sessionId } = route.params || {};
@@ -40,18 +42,18 @@ export default function InviteScreen({ route, navigation }) {
 
   if (isLoading) {
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <ActivityIndicator size="large" color="#007bff" />
         <Text style={styles.loadingText}>Joining team...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <Text style={styles.errorText}>{error}</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -67,11 +69,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   loadingText: {
+    fontFamily: FONTS.ALEXANDRIA,
     marginTop: 10,
     fontSize: 16,
     color: '#333',
   },
   errorText: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',

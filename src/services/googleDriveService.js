@@ -1,9 +1,16 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import googleAuthService from './googleAuthService';
 
 const FOLDER_NAME = 'ProofPix-Uploads';
 const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
 
 class GoogleDriveService {
+  constructor() {
+    // In-flight folder creation cache to prevent race conditions
+    // when parallel uploads try to create the same subfolder simultaneously
+    this._inflightFolders = new Map();
+  }
+
   /**
    * Finds or creates a "ProofPix-Uploads" category in the user's Google Drive.
    * @returns {Promise<string|null>} The ID of the category, or null if an error occurs.
@@ -89,11 +96,25 @@ class GoogleDriveService {
    * @returns {Promise<string>} The ID of the album folder
    */
   async findOrCreateAlbumFolder(parentFolderId, albumName) {
+    const cacheKey = `album:${parentFolderId}:${albumName}`;
+    if (this._inflightFolders.has(cacheKey)) {
+      return this._inflightFolders.get(cacheKey);
+    }
+    const promise = this._doFindOrCreateAlbumFolder(parentFolderId, albumName);
+    this._inflightFolders.set(cacheKey, promise);
     try {
-      // Search for existing folder
+      return await promise;
+    } finally {
+      this._inflightFolders.delete(cacheKey);
+    }
+  }
+
+  async _doFindOrCreateAlbumFolder(parentFolderId, albumName) {
+    try {
+      // Search for existing folder with exact name
       const query = `mimeType='application/vnd.google-apps.folder' and name='${albumName}' and '${parentFolderId}' in parents and trashed=false`;
       const url = `${DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id)`;
-      
+
       const searchResponse = await googleAuthService.makeAuthenticatedRequest(url);
       if (searchResponse.ok) {
         const searchData = await searchResponse.json();
@@ -127,17 +148,63 @@ class GoogleDriveService {
   }
 
   /**
+   * Find a unique album name by checking existing folders on Drive.
+   * If "Name" exists, returns "Name (2)", "Name (3)", etc.
+   * Call ONCE per upload batch, then use the result for all photos in that batch.
+   */
+  async findUniqueAlbumName(parentFolderId, baseName) {
+    try {
+      const escapedName = baseName.replace(/'/g, "\\'");
+      const query = `mimeType='application/vnd.google-apps.folder' and name contains '${escapedName}' and '${parentFolderId}' in parents and trashed=false`;
+      const url = `${DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(name)`;
+
+      const response = await googleAuthService.makeAuthenticatedRequest(url);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.files && data.files.length > 0) {
+          const existingNames = new Set(data.files.map(f => f.name));
+          if (existingNames.has(baseName)) {
+            let i = 2;
+            while (existingNames.has(`${baseName} (${i})`)) i++;
+            const uniqueName = `${baseName} (${i})`;
+            console.log('[GDRIVE] Album name taken, using:', uniqueName);
+            return uniqueName;
+          }
+        }
+      }
+      return baseName;
+    } catch (error) {
+      console.warn('[GDRIVE] Error checking unique album name, using original:', error.message);
+      return baseName;
+    }
+  }
+
+  /**
    * Find or create a subfolder (e.g., before/after/combined) within an album folder
    * @param {string} albumFolderId - Album folder ID
    * @param {string} subfolderName - Subfolder name (before, after, combined, or formats/format)
    * @returns {Promise<string>} The ID of the subfolder
    */
   async findOrCreateSubfolder(albumFolderId, subfolderName) {
+    const cacheKey = `sub:${albumFolderId}:${subfolderName}`;
+    if (this._inflightFolders.has(cacheKey)) {
+      return this._inflightFolders.get(cacheKey);
+    }
+    const promise = this._doFindOrCreateSubfolder(albumFolderId, subfolderName);
+    this._inflightFolders.set(cacheKey, promise);
+    try {
+      return await promise;
+    } finally {
+      this._inflightFolders.delete(cacheKey);
+    }
+  }
+
+  async _doFindOrCreateSubfolder(albumFolderId, subfolderName) {
     try {
       // Search for existing folder
       const query = `mimeType='application/vnd.google-apps.folder' and name='${subfolderName}' and '${albumFolderId}' in parents and trashed=false`;
       const url = `${DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id)`;
-      
+
       const searchResponse = await googleAuthService.makeAuthenticatedRequest(url);
       if (searchResponse.ok) {
         const searchData = await searchResponse.json();
@@ -181,12 +248,18 @@ class GoogleDriveService {
    */
   async uploadFileFromUri(fileUri, filename, parentFolderId, mimeType = 'image/jpeg') {
     try {
-      console.log('[GoogleDrive] 📤 Starting direct upload from URI:', { filename, fileUri: fileUri?.substring(0, 50) });
+      console.log('[GoogleDrive] 📤 Starting direct upload from URI:', { filename, fileUri: fileUri?.substring(0, 80) });
+
+      // Verify file exists before attempting to read
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists) {
+        throw new Error(`File does not exist: ${fileUri?.substring(0, 100)}`);
+      }
+      console.log('[GoogleDrive] File exists, size:', ((fileInfo.size || 0) / 1024 / 1024).toFixed(2), 'MB');
 
       const { accessToken } = await googleAuthService.getTokens();
 
       // Read file as base64 using FileSystem
-      const FileSystem = require('expo-file-system/legacy').default;
       const base64Data = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
 
       console.log('[GoogleDrive] 📦 File read, size:', (base64Data.length * 0.75 / 1024 / 1024).toFixed(2), 'MB');

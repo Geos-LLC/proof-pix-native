@@ -45,19 +45,54 @@ const SIZE_OPTIONS = [
   { key: 'large', label: 'Before', fontSize: 18, padding: 14 },
 ];
 
-// Generate color grid for color picker
+// Helper to convert HSL to Hex
+const hslToHex = (hue, sat, light) => {
+  const h = hue / 360;
+  const s = sat / 100;
+  const l = light / 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+  const m = l - c / 2;
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (h < 0.1667) {
+    r = c; g = x; b = 0;
+  } else if (h < 0.3333) {
+    r = x; g = c; b = 0;
+  } else if (h < 0.5) {
+    r = 0; g = c; b = x;
+  } else if (h < 0.6667) {
+    r = 0; g = x; b = c;
+  } else if (h < 0.8333) {
+    r = x; g = 0; b = c;
+  } else {
+    r = c; g = 0; b = x;
+  }
+
+  const rHex = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+  const gHex = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+  const bHex = Math.round((b + m) * 255).toString(16).padStart(2, '0');
+
+  return '#' + rHex.toUpperCase() + gHex.toUpperCase() + bHex.toUpperCase();
+};
+
+// Generate color grid for color picker (now generates hex directly)
 const generateColorGrid = () => {
   const colors = [];
   const hues = 12;
   const shades = 10;
-  
+
   for (let s = 0; s < shades; s++) {
     const row = [];
     for (let h = 0; h < hues; h++) {
       const hue = (h * 30);
       const saturation = s === 0 ? 0 : 100;
       const lightness = s === 0 ? 100 - (h * 8) : 100 - (s * 10);
-      row.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+      row.push(hslToHex(hue, saturation, lightness));
     }
     colors.push(row);
   }
@@ -139,19 +174,82 @@ export default function CustomizeLabelsScreen({ navigation }) {
     setColorModalType(type);
     if (type === 'bg') {
       setTempColor(labelBackgroundColor);
+    } else if (type === 'watermark') {
+      setTempColor(watermarkColor || '#666666');
     } else {
       setTempColor(labelTextColor);
     }
     setColorModalVisible(true);
   };
 
+  // Convert HSL/RGB to hex color (kept for backward compatibility)
+  const convertToHex = (color) => {
+    if (!color) return '#666666';
+
+    // If already hex, return as is
+    if (color.startsWith('#')) {
+      return color;
+    }
+
+    // Handle HSL colors
+    if (color.startsWith('hsl')) {
+      const match = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+      if (match) {
+        const h = parseInt(match[1]) / 360;
+        const s = parseInt(match[2]) / 100;
+        const l = parseInt(match[3]) / 100;
+
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+        const m = l - c / 2;
+
+        let r, g, b;
+
+        if (h < 0.1667) {
+          r = c; g = x; b = 0;
+        } else if (h < 0.3333) {
+          r = x; g = c; b = 0;
+        } else if (h < 0.5) {
+          r = 0; g = c; b = x;
+        } else if (h < 0.6667) {
+          r = 0; g = x; b = c;
+        } else if (h < 0.8333) {
+          r = x; g = 0; b = c;
+        } else {
+          r = c; g = 0; b = x;
+        }
+
+        r = Math.round((r + m) * 255);
+        g = Math.round((g + m) * 255);
+        b = Math.round((b + m) * 255);
+
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+      }
+    }
+
+    // Handle RGB colors
+    if (color.startsWith('rgb')) {
+      const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (match) {
+        const r = parseInt(match[1]);
+        const g = parseInt(match[2]);
+        const b = parseInt(match[3]);
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+      }
+    }
+
+    // Default fallback
+    return color;
+  };
+
   const applyColor = async () => {
+    const hexColor = convertToHex(tempColor);
     if (colorModalType === 'bg') {
-      await updateLabelBackgroundColor(tempColor);
+      await updateLabelBackgroundColor(hexColor);
     } else if (colorModalType === 'text') {
-      await updateLabelTextColor(tempColor);
+      await updateLabelTextColor(hexColor);
     } else if (colorModalType === 'watermark') {
-      await updateWatermarkColor(tempColor);
+      await updateWatermarkColor(hexColor);
     }
     setColorModalVisible(false);
   };
@@ -320,7 +418,56 @@ export default function CustomizeLabelsScreen({ navigation }) {
           />
         </View>
 
-      
+        {/* Watermark Section */}
+        <Text style={styles.sectionTitle}>Watermark</Text>
+
+        <TextInput
+          style={styles.input}
+          value={watermarkText}
+          onChangeText={updateWatermarkText}
+          placeholder="Watermark Text"
+          placeholderTextColor={COLORS.GRAY}
+        />
+
+        <TextInput
+          style={styles.input}
+          value={watermarkLink}
+          onChangeText={updateWatermarkLink}
+          placeholder="Watermark Link"
+          placeholderTextColor={COLORS.GRAY}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+        />
+
+        {/* Watermark Controls */}
+        <View style={styles.controlsRow}>
+          <ControlButton
+            icon="contrast-outline"
+            label="Opacity"
+            onPress={() => setWatermarkOpacityModalVisible(true)}
+          />
+          <ControlButton
+            icon="text"
+            label="Font"
+            onPress={() => setWatermarkFontModalVisible(true)}
+          />
+          <ColorControlButton
+            color={watermarkColor || '#666666'}
+            label="Color"
+            onPress={() => {
+              setColorModalType('watermark');
+              setTempColor(watermarkColor || '#666666');
+              setColorModalVisible(true);
+            }}
+          />
+          <ControlButton
+            icon="move"
+            label="Position"
+            onPress={() => setWatermarkPositionModalVisible(true)}
+          />
+        </View>
+
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -360,8 +507,10 @@ export default function CustomizeLabelsScreen({ navigation }) {
         visible={colorModalVisible}
         onClose={() => setColorModalVisible(false)}
         title={
-          colorModalType === 'bg' 
-            ? 'Background Color' 
+          colorModalType === 'bg'
+            ? 'Background Color'
+            : colorModalType === 'watermark'
+            ? 'Watermark Color'
             : 'Text Color'
         }
         headerExtra={

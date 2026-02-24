@@ -1,10 +1,10 @@
 export const ROOMS = [
-  { id: 'kitchen', name: 'Kitchen', icon: '🍳' },
-  { id: 'bathroom', name: 'Bathroom', icon: '🛁' },
-  { id: 'bedroom', name: 'Bedroom', icon: '🛏️' },
-  { id: 'living-room', name: 'Living Room', icon: '🛋️' },
-  { id: 'dining-room', name: 'Dining Room', icon: '🍽️' },
-  { id: 'office', name: 'Office', icon: '💼' }
+  { id: 'bathroom', name: 'Bathroom', icon: '🛁',  image: require('../../assets/project_icons/bath.png') },
+  { id: 'bedroom', name: 'Bedroom', icon: '🛏️', image: require('../../assets/project_icons/bed.png') },
+  { id: 'kitchen', name: 'Kitchen', icon: '🍳', image: require('../../assets/project_icons/chef.png') },
+  { id: 'living-room', name: 'Living Room', icon: '🛋️', image: require('../../assets/project_icons/sofa.png') },
+  { id: 'dining-room', name: 'Dining Room', icon: '🍽️', image: require('../../assets/project_icons/chef.png') },
+  { id: 'office', name: 'Office', icon: '💼', image: require('../../assets/project_icons/briefcase.png') }
 ];
 
 export const PHOTO_MODES = {

@@ -9,6 +9,7 @@ import {
   Alert,
   SafeAreaView,
   Modal,
+  Pressable,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
@@ -82,8 +83,8 @@ export default function ReferralScreen({ navigation }) {
 
   const handleShare = async (method) => {
     try {
-      const iosAppStoreLink = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/proofpix';
-      const androidPlayStoreLink = process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.proofpix';
+      const iosAppStoreLink = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/6754261444';
+      const androidPlayStoreLink = process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.proofpix.app';
 
       await addReferralInvite(method);
 
@@ -420,7 +421,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.PRIMARY,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     textAlign: 'center',
   },
   content: {
@@ -500,7 +501,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#000000',
     letterSpacing: 2,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   copyIconButton: {
     padding: 8,
@@ -597,7 +598,7 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 18,
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   modalOverlay: {
     flex: 1,
@@ -649,7 +650,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     textAlign: 'center',
     flex: 1,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   headerSpacer: {
     width: 32,
@@ -686,7 +687,7 @@ const styles = StyleSheet.create({
     color: COLORS.TEXT,
     marginBottom: 12,
     marginTop: 8,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   modalBenefitItem: {
     flexDirection: 'row',
@@ -718,7 +719,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
 });
 

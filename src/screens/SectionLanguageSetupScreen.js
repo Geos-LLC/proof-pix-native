@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
     color: COLORS.TEXT,
     textAlign: 'center',
     marginBottom: 12,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   carouselContainer: {
     marginTop: 8,
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.TEXT,
     marginBottom: 12,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   languageSelectorButton: {
     borderRadius: 12,
@@ -477,7 +477,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.TEXT,
     marginBottom: 12,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   switchRow: {
     flexDirection: 'row',
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   customizeButton: {
     backgroundColor: '#000000',
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFFFFF',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   continueButton: {
     backgroundColor: COLORS.PRIMARY,
@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#000000',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   languageScrollView: {
     maxHeight: 300,
@@ -587,7 +587,7 @@ const styles = StyleSheet.create({
     color: COLORS.TEXT,
     marginBottom: 20,
     textAlign: 'center',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   closeModalButton: {
     marginTop: 16,

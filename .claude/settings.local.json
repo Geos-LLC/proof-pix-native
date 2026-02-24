@@ -21,7 +21,14 @@
       "Bash(git merge:*)",
       "Bash(git merge-base:*)",
       "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" log --oneline -20)",
-      "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" show c13d4af --stat)"
+      "Bash(git -C \"c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-native\" show c13d4af --stat)",
+      "Bash(ls \"c:\\\\Users\\\\HomePC\\\\Desktop\\\\proof-pix-native\\\\src\\\\services\"\" 2>/dev/null || echo \"Services dir may not exist \")",
+      "Bash(dir:*)",
+      "Bash(node scripts/check_missing.js:*)",
+      "Bash(node scripts/dump_missing.js:*)",
+      "Bash(npx:*)",
+      "Bash(node -c:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

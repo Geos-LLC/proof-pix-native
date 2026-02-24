@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useContext, useCallback, useMemo } from 'react';
+﻿import React, { useState, useRef, useEffect, useContext, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -27,12 +27,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
 import { savePhotoToDevice } from '../services/storage';
+import { createAlbumName } from '../services/uploadService';
+import { getLocationName } from '../config/locations';
 import { COLORS, PHOTO_MODES, getLabelPositions } from '../constants/rooms';
+import { FONTS } from '../constants/fonts';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
 import {
   calculateSettingsHash,
-  getCachedLabeledPhoto,
   saveCachedLabeledPhoto,
   ensureCacheDir,
 } from '../services/labelCacheService';
@@ -118,14 +120,14 @@ export default function CameraScreen({ route, navigation }) {
   const showEnlargedGalleryRef = useRef(showEnlargedGallery);
   const enlargedGalleryPhotoRef = useRef(enlargedGalleryPhoto);
   const isGalleryAnimatingRef = useRef(false);
-  const { addPhoto, getBeforePhotos, getUnpairedBeforePhotos, deletePhoto, setCurrentRoom, activeProjectId } = usePhotos();
-  const { 
-    showLabels, 
-    shouldShowWatermark, 
-    getRooms, 
-    beforeLabelPosition, 
-    afterLabelPosition, 
-    labelMarginVertical, 
+  const { addPhoto, getBeforePhotos, getUnpairedBeforePhotos, deletePhoto, setCurrentRoom, activeProjectId, createProject, setActiveProject, projects } = usePhotos();
+  const {
+    showLabels,
+    shouldShowWatermark,
+    getRooms,
+    beforeLabelPosition,
+    afterLabelPosition,
+    labelMarginVertical,
     labelMarginHorizontal,
     labelBackgroundColor,
     labelTextColor,
@@ -133,6 +135,8 @@ export default function CameraScreen({ route, navigation }) {
     labelFontFamily,
     shutterSoundEnabled,
     toggleShutterSoundEnabled,
+    userName,
+    location,
   } = useSettings();
 
   // Vision Camera setup - default to ultra-wide (0.5x)
@@ -1175,6 +1179,21 @@ export default function CameraScreen({ route, navigation }) {
     try {
       setIsCapturing(true);
 
+      // Auto-create a project on first photo if none exists
+      if (!activeProjectId && projects.length === 0) {
+        try {
+          const locationDisplay = getLocationName(location);
+          const name = createAlbumName((userName || '').trim() || 'Project', new Date(), null, locationDisplay);
+          const safeName = name.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
+          const proj = await createProject(safeName);
+          if (proj?.id) {
+            await setActiveProject(proj.id);
+          }
+        } catch (e) {
+          console.error('[CameraScreen] Failed to auto-create project:', e);
+        }
+      }
+
       const photo = await cameraRef.current.takePhoto({
         qualityPrioritization: 'quality',
         // Only request flash if the current device reports flash support
@@ -1318,6 +1337,7 @@ export default function CameraScreen({ route, navigation }) {
             height,
             settingsHash,
             isLetterbox,
+            combinedLayout: combinedPhoto.combinedLayout,
             beforeLabelPosition: beforeLabelPosition || 'top-left',
             afterLabelPosition: afterLabelPosition || 'top-right',
             isCombined: true,
@@ -1522,39 +1542,24 @@ export default function CameraScreen({ route, navigation }) {
       // Prepare labeled photo in background immediately after before photo is captured
       // This ensures it's ready when user clicks share, making sharing instant
       // Run this in background (don't await) so it doesn't block the UI
-      if (showLabels) {
-        // Start background preparation immediately (no delay needed)
-        // Use Promise.resolve().then() to run async code without blocking
-        Promise.resolve().then(async () => {
-          try {
-            // Calculate settings hash
-            const settingsHash = calculateSettingsHash({
-              showLabels,
-              beforeLabelPosition,
-              afterLabelPosition,
-              labelBackgroundColor: labelBackgroundColor || null,
-              labelTextColor: labelTextColor || null,
-              labelSize: labelSize || null,
-              labelFontFamily: labelFontFamily || null,
-              labelMarginVertical,
-              labelMarginHorizontal,
-            });
-
-            // Prepare before photo with label (don't await - just queue it)
-            if (!newPhoto || !newPhoto.id || !newPhoto.uri) {
-            } else {
-              const cachedBefore = await getCachedLabeledPhoto(newPhoto, settingsHash);
-              if (!cachedBefore) {
-                try {
-                  // Don't await - just queue it for background processing
-                  prepareLabeledPhotoInBackground(newPhoto, settingsHash, 'before');
-                } catch (error) {
-                }
-              }
-            }
-          } catch (error) {
-          }
-        });
+      if (showLabels && newPhoto && newPhoto.id && newPhoto.uri) {
+        // Queue immediately - no cache check (photo was just taken, can't be cached)
+        try {
+          const settingsHash = calculateSettingsHash({
+            showLabels,
+            beforeLabelPosition,
+            afterLabelPosition,
+            labelBackgroundColor: labelBackgroundColor || null,
+            labelTextColor: labelTextColor || null,
+            labelSize: labelSize || null,
+            labelFontFamily: labelFontFamily || null,
+            labelMarginVertical,
+            labelMarginHorizontal,
+          });
+          prepareLabeledPhotoInBackground(newPhoto, settingsHash, 'before');
+        } catch (error) {
+          console.warn('[CameraScreen] Failed to queue before label preparation:', error);
+        }
       }
 
       // Stay in before mode to allow taking more photos
@@ -1566,7 +1571,7 @@ export default function CameraScreen({ route, navigation }) {
 
   const handleAfterPhoto = async (uri) => {
     const startTime = Date.now();
-    console.log('[DEBUG] 🎬 handleAfterPhoto started');
+    console.log('[DEBUG] [start] handleAfterPhoto started');
     try {
       // Get the active before photo
       const activeBeforePhoto = getActiveBeforePhoto();
@@ -1581,12 +1586,12 @@ export default function CameraScreen({ route, navigation }) {
       if (existingAfterPhoto) {
         const deleteStart = Date.now();
         await deletePhoto(existingAfterPhoto.id);
-        console.log(`[DEBUG] ⏱️ Delete existing after photo: ${Date.now() - deleteStart}ms`);
+        console.log(`[DEBUG] â±ï¸ Delete existing after photo: ${Date.now() - deleteStart}ms`);
       }
       if (existingCombinedPhoto) {
         const deleteStart = Date.now();
         await deletePhoto(existingCombinedPhoto.id);
-        console.log(`[DEBUG] ⏱️ Delete existing combined photo: ${Date.now() - deleteStart}ms`);
+        console.log(`[DEBUG] â±ï¸ Delete existing combined photo: ${Date.now() - deleteStart}ms`);
       }
 
       // Crop after photo to match before photo's camera view mode
@@ -1639,43 +1644,28 @@ export default function CameraScreen({ route, navigation }) {
         setIsProcessingAfter(false);
       }, 300); // Short delay just for visual feedback
 
-      // Prepare labeled photo in background immediately after after photo is captured
+      // Prepare labeled photo in background IMMEDIATELY after after photo is captured
       // This ensures it's ready when user clicks share, making sharing instant
       // Run this in background (don't await) so it doesn't block the UI
-      if (showLabels) {
-        // Defer to next tick to prevent blocking UI
-        setTimeout(() => {
-          (async () => {
-            try {
-              // Calculate settings hash
-              const settingsHash = calculateSettingsHash({
-              showLabels,
-              beforeLabelPosition,
-              afterLabelPosition,
-              labelBackgroundColor: labelBackgroundColor || null,
-              labelTextColor: labelTextColor || null,
-              labelSize: labelSize || null,
-              labelFontFamily: labelFontFamily || null,
-              labelMarginVertical,
-              labelMarginHorizontal,
-            });
-
-            // Prepare after photo with label (don't await - just queue it)
-            if (!newAfterPhoto || !newAfterPhoto.id || !newAfterPhoto.uri) {
-            } else {
-              const cachedAfter = await getCachedLabeledPhoto(newAfterPhoto, settingsHash);
-              if (!cachedAfter) {
-                try {
-                  // Don't await - just queue it for background processing
-                  prepareLabeledPhotoInBackground(newAfterPhoto, settingsHash, 'after');
-                } catch (error) {
-                }
-              }
-            }
-          } catch (error) {
-          }
-          })();
-        }, 100); // 100ms delay to give UI time to become responsive
+      if (showLabels && newAfterPhoto && newAfterPhoto.id && newAfterPhoto.uri) {
+        // Queue immediately - no setTimeout, no cache check (photo was just taken, can't be cached)
+        try {
+          const settingsHash = calculateSettingsHash({
+            showLabels,
+            beforeLabelPosition,
+            afterLabelPosition,
+            labelBackgroundColor: labelBackgroundColor || null,
+            labelTextColor: labelTextColor || null,
+            labelSize: labelSize || null,
+            labelFontFamily: labelFontFamily || null,
+            labelMarginVertical,
+            labelMarginHorizontal,
+          });
+          // Don't await - just queue it for background processing
+          prepareLabeledPhotoInBackground(newAfterPhoto, settingsHash, 'after');
+        } catch (error) {
+          console.warn('[CameraScreen] Failed to queue label preparation:', error);
+        }
       }
 
       // Create combined photo in background (non-blocking)
@@ -1713,30 +1703,20 @@ export default function CameraScreen({ route, navigation }) {
           const layout = isLetterboxPortrait ? 'SIDE' : (isLandscapePair ? 'STACK' : 'SIDE');
           const isStackLayout = layout === 'STACK';
 
+          // Force 1:1 square output for Instagram/social media compatibility
           const sourceMaxWidth = Math.max(aSize.w, bSize.w);
-          const combinedWidthCandidate = aSize.w + bSize.w;
-          const targetWidthBase = Math.max(sourceMaxWidth, 2048);
-          const totalW = Math.min(
-            isStackLayout ? targetWidthBase : Math.max(targetWidthBase, combinedWidthCandidate),
-            8192
-          );
+          const totalW = Math.min(Math.max(sourceMaxWidth, 2048), 4096);
+          const totalH = totalW; // 1:1 square
 
           let dimsLocal;
           if (isStackLayout) {
-            // STACK: heights sum based on width
-            const r1h = aSize.h / aSize.w; // height per unit width
-            const r2h = bSize.h / bSize.w;
-            const totalH = Math.max(400, Math.round(totalW * (r1h + r2h)));
-            const topH = Math.round(totalW * r1h);
+            // STACK: split height equally between top and bottom
+            const topH = Math.round(totalH / 2);
             const bottomH = totalH - topH;
             dimsLocal = { width: totalW, height: totalH, topH, bottomH };
           } else {
-            // SIDE-BY-SIDE: widths split based on height-normalized ratios
-            const r1w = aSize.w / aSize.h;
-            const r2w = bSize.w / bSize.h;
-            const denom = (r1w + r2w) || 1;
-            const totalH = Math.max(400, Math.round(totalW / denom));
-            const leftW = Math.round(totalW * (r1w / denom));
+            // SIDE-BY-SIDE: split width equally between left and right
+            const leftW = Math.round(totalW / 2);
             const rightW = totalW - leftW;
             dimsLocal = { width: totalW, height: totalH, leftW, rightW };
           }
@@ -1752,7 +1732,7 @@ export default function CameraScreen({ route, navigation }) {
           if (Platform.OS === 'ios') {
             // iOS: use native image compositor
             try {
-              console.log('[CameraScreen] 🧩 compositeImages start', Platform.OS, {
+              console.log('[CameraScreen] [layout] compositeImages start', Platform.OS, {
                 beforeUri: activeBeforePhoto.uri,
                 afterUri: savedUri,
                 layout,
@@ -1770,34 +1750,34 @@ export default function CameraScreen({ route, navigation }) {
                 layout,
                 dimsLocal
               );
-              console.log('[CameraScreen] ✅ compositeImages success', Platform.OS, layout, capUri);
+              console.log('[CameraScreen] [OK] compositeImages success', Platform.OS, layout, capUri);
 
               const combinedPhotoSavedUri = await savePhotoToDevice(
                 capUri,
                 `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${baseType}_${Date.now()}${projectIdSuffix}.jpg`,
                 activeProjectId || null
               );
-              console.log('[CameraScreen] 💾 Primary combined base saved', Platform.OS, layout, combinedPhotoSavedUri);
-              
-              // Prepare labeled combined photo in background (non-blocking)
-              if (showLabels && combinedPhotoSavedUri) {
-                // Use Promise.resolve().then() to run async code without blocking
-                Promise.resolve().then(async () => {
+              console.log('[CameraScreen] Primary combined base saved', Platform.OS, layout, combinedPhotoSavedUri);
+
+              // Store combined photo in context so upload can use it directly (no filesystem scanning needed)
+              if (combinedPhotoSavedUri) {
+                const combinedPhotoId = `combined_${activeBeforePhoto.id}`;
+                const combinedPhoto = {
+                  id: combinedPhotoId,
+                  mode: PHOTO_MODES.COMBINED,
+                  uri: combinedPhotoSavedUri,
+                  name: activeBeforePhoto.name,
+                  room: activeBeforePhoto.room,
+                  projectId: activeProjectId,
+                  beforePhotoId: activeBeforePhoto.id,
+                  combinedLayout: layout,
+                  timestamp: Date.now(),
+                };
+                await addPhoto(combinedPhoto);
+
+                // Prepare labeled combined photo in background (non-blocking)
+                if (showLabels) {
                   try {
-                    // Create a combined photo object for cache lookup/preparation
-                    // The ID format matches what GalleryScreen uses: combined_<beforePhotoId>
-                    const combinedPhotoId = `combined_${activeBeforePhoto.id}`;
-                    const combinedPhoto = {
-                      id: combinedPhotoId,
-                      mode: PHOTO_MODES.COMBINED,
-                      uri: combinedPhotoSavedUri,
-                      name: activeBeforePhoto.name,
-                      room: activeBeforePhoto.room,
-                      projectId: activeProjectId,
-                      beforePhotoId: activeBeforePhoto.id,
-                    };
-                    
-                    // Calculate settings hash
                     const settingsHash = calculateSettingsHash({
                       showLabels,
                       beforeLabelPosition,
@@ -1809,32 +1789,25 @@ export default function CameraScreen({ route, navigation }) {
                       labelMarginVertical,
                       labelMarginHorizontal,
                     });
-                    
-                    // Check if already cached
-                    const cachedCombined = await getCachedLabeledPhoto(combinedPhoto, settingsHash);
-                    if (!cachedCombined) {
-                      try {
-                        // Prepare combined photo with labels in background (don't await - just queue it)
-                        prepareCombinedPhotoInBackground(
-                          combinedPhoto,
-                          activeBeforePhoto,
-                          newAfterPhoto,
-                          settingsHash,
-                          isLetterboxMode
-                        );
-                      } catch (error) {
-                      }
-                    }
+                    // Queue immediately - no cache check (combined was just created)
+                    prepareCombinedPhotoInBackground(
+                      combinedPhoto,
+                      activeBeforePhoto,
+                      newAfterPhoto,
+                      settingsHash,
+                      isLetterboxMode
+                    );
                   } catch (error) {
+                    console.warn('[CameraScreen] Failed to queue combined label preparation:', error);
                   }
-                });
+                }
               }
 
               // For landscape pairs, also create the alternate layout (STACK <-> SIDE)
               if (shouldCreateBothLayouts) {
                 try {
                   const alternateLayout = layout === 'STACK' ? 'SIDE' : 'STACK';
-                  console.log(`[CameraScreen] 🧩 Creating ${alternateLayout} layout (alternate to ${layout})`);
+                  console.log(`[CameraScreen] [layout] Creating ${alternateLayout} layout (alternate to ${layout})`);
 
                   let alternateDims;
                   if (alternateLayout === 'SIDE') {
@@ -1856,23 +1829,23 @@ export default function CameraScreen({ route, navigation }) {
                     alternateDims = { width: totalW, height: totalH, topH, bottomH };
                   }
 
-                  console.log(`[CameraScreen] 🧩 ${alternateLayout} layout dims:`, alternateDims);
+                  console.log(`[CameraScreen] [layout] ${alternateLayout} layout dims:`, alternateDims);
                   const capUriLB = await compositeImages(
                     activeBeforePhoto.uri,
                     savedUri,
                     alternateLayout,
                     alternateDims
                   );
-                  console.log(`[CameraScreen] ✅ ${alternateLayout} layout composite success:`, capUriLB);
+                  console.log(`[CameraScreen] [OK] ${alternateLayout} layout composite success:`, capUriLB);
 
                   const altSavedUri = await savePhotoToDevice(
                     capUriLB,
                     `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`,
                     activeProjectId || null
                   );
-                  console.log(`[CameraScreen] 💾 ${alternateLayout} layout saved:`, altSavedUri);
+                  console.log(`[CameraScreen] [saved] ${alternateLayout} layout saved:`, altSavedUri);
                 } catch (eLB) {
-                  console.error(`[CameraScreen] ❌ Failed to create ${alternateLayout || 'alternate'} layout:`, eLB);
+                  console.error(`[CameraScreen] âŒ Failed to create ${alternateLayout || 'alternate'} layout:`, eLB);
                   console.error(`[CameraScreen] ${alternateLayout || 'alternate'} layout error details:`, {
                     message: eLB.message,
                     stack: eLB.stack,
@@ -1882,7 +1855,7 @@ export default function CameraScreen({ route, navigation }) {
                 }
               }
             } catch (captureError) {
-              console.error('[CameraScreen] ❌ Combined photo creation failed:', captureError);
+              console.error('[CameraScreen] âŒ Combined photo creation failed:', captureError);
               console.error('[CameraScreen] Error details:', {
                 message: captureError.message,
                 stack: captureError.stack,
@@ -1988,27 +1961,27 @@ export default function CameraScreen({ route, navigation }) {
                 activeProjectId || null
               );
 
-              console.log(`[CameraScreen][Android] ✅ ${layout} combined photo saved:`, combinedPhotoSavedUri);
+              console.log(`[CameraScreen][Android] ${layout} combined photo saved:`, combinedPhotoSavedUri);
 
-              // Prepare labeled combined photo in background (non-blocking)
-              if (showLabels && combinedPhotoSavedUri) {
-                // Use Promise.resolve().then() to run async code without blocking
-                Promise.resolve().then(async () => {
+              // Store combined photo in context so upload can use it directly (no filesystem scanning needed)
+              if (combinedPhotoSavedUri) {
+                const combinedPhotoId = `combined_${activeBeforePhoto.id}`;
+                const combinedPhoto = {
+                  id: combinedPhotoId,
+                  mode: PHOTO_MODES.COMBINED,
+                  uri: combinedPhotoSavedUri,
+                  name: activeBeforePhoto.name,
+                  room: activeBeforePhoto.room,
+                  projectId: activeProjectId,
+                  beforePhotoId: activeBeforePhoto.id,
+                  combinedLayout: layout,
+                  timestamp: Date.now(),
+                };
+                await addPhoto(combinedPhoto);
+
+                // Prepare labeled combined photo in background (non-blocking)
+                if (showLabels) {
                   try {
-                    // Create a combined photo object for cache lookup/preparation
-                    // The ID format matches what GalleryScreen uses: combined_<beforePhotoId>
-                    const combinedPhotoId = `combined_${activeBeforePhoto.id}`;
-                    const combinedPhoto = {
-                      id: combinedPhotoId,
-                      mode: PHOTO_MODES.COMBINED,
-                      uri: combinedPhotoSavedUri,
-                      name: activeBeforePhoto.name,
-                      room: activeBeforePhoto.room,
-                      projectId: activeProjectId,
-                      beforePhotoId: activeBeforePhoto.id,
-                    };
-                    
-                    // Calculate settings hash
                     const settingsHash = calculateSettingsHash({
                       showLabels,
                       beforeLabelPosition,
@@ -2020,27 +1993,18 @@ export default function CameraScreen({ route, navigation }) {
                       labelMarginVertical,
                       labelMarginHorizontal,
                     });
-                    
-                    // Check if already cached
-                    const cachedCombined = await getCachedLabeledPhoto(combinedPhoto, settingsHash);
-                    if (!cachedCombined) {
-                      try {
-                        // Prepare combined photo with labels in background (don't await - just queue it)
-                        prepareCombinedPhotoInBackground(
-                          combinedPhoto,
-                          activeBeforePhoto,
-                          newAfterPhoto,
-                          settingsHash,
-                          isLetterboxMode
-                        );
-                      } catch (error) {
-                        console.error('[CameraScreen][Android] Error queuing combined photo prep:', error);
-                      }
-                    }
+                    // Queue immediately - no cache check (combined was just created)
+                    prepareCombinedPhotoInBackground(
+                      combinedPhoto,
+                      activeBeforePhoto,
+                      newAfterPhoto,
+                      settingsHash,
+                      isLetterboxMode
+                    );
                   } catch (error) {
-                    console.error('[CameraScreen][Android] Error in background prep block:', error);
+                    console.warn('[CameraScreen][Android] Failed to queue combined label preparation:', error);
                   }
-                });
+                }
               }
 
               // For letterbox modes, also create the alternate layout (STACK <-> SIDE)
@@ -2097,10 +2061,10 @@ export default function CameraScreen({ route, navigation }) {
                   activeProjectId || null
                 );
 
-                console.log(`[CameraScreen][Android] ✅ ${alternateLayout} combined photo saved:`, altCombinedPhotoSavedUri);
+                console.log(`[CameraScreen][Android] [OK] ${alternateLayout} combined photo saved:`, altCombinedPhotoSavedUri);
               }
               } catch (compositeError) {
-                console.error('[CameraScreen][Android] ❌ Combined photo creation failed:', compositeError);
+                console.error('[CameraScreen][Android] âŒ Combined photo creation failed:', compositeError);
                 console.error('[CameraScreen][Android] Error details:', {
                   message: compositeError.message,
                   stack: compositeError.stack,
@@ -2141,7 +2105,7 @@ export default function CameraScreen({ route, navigation }) {
                 if (navigation.canGoBack()) {
                   navigation.goBack();
                 } else {
-                  navigation.navigate('Home');
+                  navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
                 }
               }
             }
@@ -2151,7 +2115,7 @@ export default function CameraScreen({ route, navigation }) {
         // Auto-advance to next unpaired photo (immediate)
         setSelectedBeforePhoto(nextUnpaired[0]);
       }
-      console.log('[DEBUG] ✅ handleAfterPhoto completed');
+      console.log('[DEBUG] [OK] handleAfterPhoto completed');
     } catch (error) {
       Alert.alert('Error', 'Failed to save photo');
     }
@@ -2322,17 +2286,32 @@ export default function CameraScreen({ route, navigation }) {
           top: (dimensions.height - dimensions.width) / 2
         }
       ]} pointerEvents="box-none">
-        {/* Room name and mode buttons - fixed to screen */}
+        {/* Room name and mode - single segmented pill (Kitchen | Before) */}
         <View style={styles.roomModeContainer}>
-          <TouchableOpacity style={styles.roomButton}>
-            <Text style={styles.roomButtonText}>{getCurrentRoomInfo().name}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.modeButton}>
-            <Text style={styles.modeButtonText}>{mode.toUpperCase()}</Text>
-          </TouchableOpacity>
+          <View style={styles.roomModePillWrapper}>
+            <TouchableOpacity style={styles.roomButton} activeOpacity={0.8}>
+              <Text style={styles.roomButtonText}>{getCurrentRoomInfo().name}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modeButton} activeOpacity={0.8}>
+              <Text style={styles.modeButtonText}>{mode.charAt(0).toUpperCase() + mode.slice(1)}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Torch toggle button - left of sound button */}
+        {/* Sound toggle button - left of flash button */}
+        <TouchableOpacity
+          style={styles.soundButton}
+          onPress={toggleShutterSoundEnabled}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={shutterSoundEnabled ? "volume-high-outline" : "volume-mute-outline"}
+            size={20}
+            color="#FFFFFF"
+          />
+        </TouchableOpacity>
+
+        {/* Torch toggle button - rightmost */}
         {facing === 'back' && (
           <TouchableOpacity
             style={styles.torchButton}
@@ -2348,26 +2327,13 @@ export default function CameraScreen({ route, navigation }) {
             }}
             activeOpacity={0.7}
           >
-            <Ionicons 
-              name={enableTorch ? "flash" : "flash-outline"} 
-              size={22} 
-              color={enableTorch ? COLORS.PRIMARY : "#FFFFFF"} 
+            <Ionicons
+              name={enableTorch ? "flash" : "flash-outline"}
+              size={20}
+              color="#FFFFFF"
             />
           </TouchableOpacity>
         )}
-
-        {/* Sound toggle button - between torch and close button */}
-        <TouchableOpacity
-          style={styles.soundButton}
-          onPress={toggleShutterSoundEnabled}
-          activeOpacity={0.7}
-        >
-          <Ionicons 
-            name={shutterSoundEnabled ? "volume-high" : "volume-mute"} 
-            size={22} 
-            color={shutterSoundEnabled ? COLORS.PRIMARY : "#FFFFFF"} 
-          />
-        </TouchableOpacity>
 
 
         <View style={styles.bottomControls}>
@@ -2390,12 +2356,13 @@ export default function CameraScreen({ route, navigation }) {
                       onPressIn={handleThumbnailPressIn}
                       onPressOut={handleThumbnailPressOut}
                     >
-                      <Image
-                        source={{ uri: activePhoto.uri }}
-                        style={styles.thumbnailViewerImage}
-                        resizeMode="cover"
-                      />
-                      <Ionicons name="eye-outline" size={20} color={COLORS.PRIMARY} />
+                      <View style={styles.thumbnailInnerRing}>
+                        <Image
+                          source={{ uri: activePhoto.uri }}
+                          style={styles.thumbnailViewerImage}
+                          resizeMode="cover"
+                        />
+                      </View>
                     </TouchableOpacity>
                   );
                 } else {
@@ -2408,7 +2375,9 @@ export default function CameraScreen({ route, navigation }) {
                       ]}
                       activeOpacity={0.7}
                       onPress={handleThumbnailPress}
-                    />
+                    >
+                      <View style={styles.thumbnailInnerRing} />
+                    </TouchableOpacity>
                   );
                 }
               })()}
@@ -2483,12 +2452,10 @@ export default function CameraScreen({ route, navigation }) {
                     <ActivityIndicator size="small" color={COLORS.PRIMARY} />
                     <Text style={styles.captureButtonProcessingText}>Processing...</Text>
                   </View>
+                ) : isOrientationMismatch() ? (
+                  <Text style={styles.captureButtonWarning}>🔄</Text>
                 ) : (
-                  <>
-                    {isOrientationMismatch() && (
-                      <Text style={styles.captureButtonWarning}>🔄</Text>
-                    )}
-                  </>
+                  <View style={styles.captureButtonInnerCircle} />
                 )}
               </TouchableOpacity>
             </View>
@@ -2497,10 +2464,10 @@ export default function CameraScreen({ route, navigation }) {
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={styles.checkmarkButton}
-                onPress={() => navigation.navigate('Home')}
+                onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
                 activeOpacity={0.7}
               >
-                <Ionicons name="checkmark" size={28} color="#FFFFFF" />
+                <Ionicons name="checkmark" size={32} color="#000000" />
               </TouchableOpacity>
             </View>
           </View>
@@ -2655,7 +2622,7 @@ export default function CameraScreen({ route, navigation }) {
                 setShowEnlargedGallery(false);
               }}
             >
-              <Text style={styles.enlargedGalleryCloseText}>✕</Text>
+              <Text style={styles.enlargedGalleryCloseText}>X</Text>
             </TouchableOpacity>
 
             {/* Delete button - top left */}
@@ -2734,8 +2701,8 @@ export default function CameraScreen({ route, navigation }) {
                   <View style={[styles.enlargedGallerySlide, { width: dimensions.width }]}>
                     {(() => {
                       // Match the camera's aspect ratio from the upper half
-                      // Upper half: width × (height × 0.6)
-                      // Camera aspect ratio: width / (height × 0.6)
+                      // Upper half: width x (height x 0.6)
+                      // Camera aspect ratio: width / (height x 0.6)
                       const cameraAspect = dimensions.width / (dimensions.height * 0.6);
 
                       // Lower container height is 40% of screen
@@ -2841,7 +2808,7 @@ export default function CameraScreen({ route, navigation }) {
             </ScrollView>
             <View style={styles.fullScreenInfo} pointerEvents="none">
               <Text style={styles.fullScreenName}>{photos[fullScreenIndex]?.name}</Text>
-              <Text style={styles.fullScreenHint}>Release to return • Swipe to navigate</Text>
+              <Text style={styles.fullScreenHint}>Release to return - Swipe to navigate</Text>
             </View>
           </View>
         );
@@ -3118,18 +3085,21 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   orientationWarningText: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.TEXT,
     marginBottom: 8
   },
   orientationWarningHint: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
     color: COLORS.TEXT,
     textAlign: 'center',
     opacity: 0.8
   },
   message: {
+    fontFamily: FONTS.ALEXANDRIA,
     textAlign: 'center',
     paddingBottom: 10,
     color: 'white',
@@ -3142,6 +3112,7 @@ const styles = StyleSheet.create({
     margin: 20
   },
   permissionButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     textAlign: 'center',
     fontWeight: 'bold'
@@ -3197,66 +3168,79 @@ const styles = StyleSheet.create({
   roomModeContainer: {
     position: 'absolute',
     top: 50,
-    left: 20,
+    left: 15,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     zIndex: 1000,
     elevation: 1000,
   },
-  roomButton: {
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+  roomModePillWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 30,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: COLORS.PRIMARY,
+    overflow: 'hidden',
+    height: 32,
+    paddingLeft: 14,
+    paddingRight: 4,
+  },
+  roomButton: {
+    backgroundColor: 'transparent',
+    paddingRight: 8,
+    justifyContent: 'center',
   },
   roomButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '590',
+    letterSpacing: -0.11,
   },
   modeButton: {
     backgroundColor: COLORS.PRIMARY,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 30,
+    justifyContent: 'center',
+    height: 25,
   },
   modeButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#000000',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 13.7,
+    fontWeight: '590',
+    textAlign: 'center',
   },
   torchButton: {
     position: 'absolute',
     top: 50,
-    right: 90,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    right: 15,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
     elevation: 1000,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#FFFFFF',
   },
   soundButton: {
     position: 'absolute',
     top: 50,
-    right: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    right: 60,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
     elevation: 1000,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#FFFFFF',
   },
   closeButton: {
     width: 44,
@@ -3303,17 +3287,17 @@ const styles = StyleSheet.create({
   },
   mainControlRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
     width: '100%',
     position: 'relative',
-    paddingHorizontal: 10
+    paddingHorizontal: 20,
   },
   buttonContainer: {
-    flex: 0,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    minHeight: 120
+    minHeight: 100,
+    width: 70,
   },
   modeInfo: {
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -3330,52 +3314,56 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     flex: 1,
-    maxWidth: 200
   },
   controlsRowAboveCapture: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    width: '100%',
-    paddingHorizontal: 0,
+    justifyContent: 'space-between',
+    marginBottom: 18,
     gap: 20,
   },
   aspectRatioSelector: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 5,
     alignItems: 'center',
   },
   aspectRatioButtonBottom: {
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    alignContent: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 20,
     minWidth: 55,
+    height: 23,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   aspectRatioButtonBottomActive: {
     backgroundColor: COLORS.PRIMARY,
     borderColor: COLORS.PRIMARY,
+    borderWidth: 1,
   },
   aspectRatioButtonBottomText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
+    textAlign: 'center',
   },
   aspectRatioButtonBottomTextActive: {
-    color: '#000000',
-    fontWeight: '700',
+    fontFamily: FONTS.ALEXANDRIA,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   aspectRatioButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+     alignContent: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 20,
-    minWidth: 60,
+    minWidth: 55,
     alignItems: 'center'
   },
   aspectRatioButtonActive: {
@@ -3383,35 +3371,36 @@ const styles = StyleSheet.create({
   },
   aspectRatioText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600'
   },
   aspectRatioTextActive: {
     color: '#000'
   },
   captureButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.PRIMARY,
+    width: 69,
+    height: 69,
+    borderRadius: 34.5,
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: COLORS.PRIMARY,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 4,
-    borderColor: '#FFFFFF'
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  captureButtonInnerCircle: {
+    width: 53,
+    height: 53,
+    borderRadius: 26.5,
+    backgroundColor: '#FFFFFF',
   },
   captureButtonDisabled: {
     opacity: 0.5,
-    backgroundColor: '#ccc'
+    backgroundColor: '#333',
   },
   captureButtonProcessing: {
-    backgroundColor: 'rgba(255, 193, 7, 0.3)', // Amber/yellow tint to show processing
-    borderWidth: 2,
-    borderColor: COLORS.PRIMARY
+    backgroundColor: '#000',
+    borderWidth: 4,
+    borderColor: COLORS.PRIMARY,
   },
   captureButtonProcessingContent: {
     alignItems: 'center',
@@ -3419,6 +3408,7 @@ const styles = StyleSheet.create({
     gap: 4
   },
   captureButtonProcessingText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.PRIMARY,
     fontSize: 10,
     fontWeight: '600',
@@ -3503,7 +3493,7 @@ const styles = StyleSheet.create({
   },
   aspectRatioText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600'
   },
   aspectRatioTextActive: {
@@ -3519,28 +3509,40 @@ const styles = StyleSheet.create({
     right: 2,
     fontSize: 10
   },
-  // Thumbnail viewer styles (overlay mode - left side of shutter button)
+  // Thumbnail viewer: white outer border (matches Figma design)
   thumbnailViewerContainer: {
-    borderRadius: 34,
+    width: 69,
+    height: 69,
+    borderRadius: 34.5,
     overflow: 'hidden',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: '#000',
     borderWidth: 2,
-    borderColor: '#FFFFFF'
+    borderColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  thumbnailInnerRing: {
+    width: 59,
+    height: 59,
+    borderRadius: 29.5,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   thumbnailLandscape: {
-    width: 68,
-    height: 68,
-    borderRadius: 34
+    width: 69,
+    height: 69,
+    borderRadius: 34.5,
   },
   thumbnailPortrait: {
-    width: 68,
-    height: 68,
-    borderRadius: 34
+    width: 69,
+    height: 69,
+    borderRadius: 34.5,
   },
   thumbnailViewerImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 32
+    width: 59,
+    height: 59,
+    borderRadius: 29.5,
   },
   thumbnailViewerLabel: {
     position: 'absolute',
@@ -3793,6 +3795,7 @@ const styles = StyleSheet.create({
     elevation: 150
   },
   galleryTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.PRIMARY,
     fontSize: 14,
     fontWeight: 'bold',
@@ -3821,6 +3824,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#333'
   },
   galleryItemName: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: 'white',
     fontSize: 11,
     fontWeight: '600',
@@ -3836,6 +3840,7 @@ const styles = StyleSheet.create({
     paddingVertical: 40
   },
   galleryEmptyText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.GRAY,
     fontSize: 14,
     fontStyle: 'italic'
@@ -4026,47 +4031,48 @@ const styles = StyleSheet.create({
   },
   zoomControlsBottom: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 5,
     alignItems: 'center',
   },
   zoomButtonBottom: {
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+     alignContent: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 20,
     minWidth: 55,
+    height: 23,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   zoomButtonBottomActive: {
     backgroundColor: COLORS.PRIMARY,
     borderColor: COLORS.PRIMARY,
+    borderWidth: 1,
   },
   zoomButtonBottomText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
+    textAlign: 'center',
   },
   zoomButtonBottomTextActive: {
-    color: '#000000',
-    fontWeight: '700',
+    fontFamily: FONTS.ALEXANDRIA,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   checkmarkButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 69,
+    height: 69,
+    padding:3,
+    borderRadius: 34.5,
     backgroundColor: COLORS.PRIMARY,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    shadowColor: COLORS.PRIMARY,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    borderWidth: 0,
   },
   // Photo capture animation styles
   captureAnimationOverlay: {

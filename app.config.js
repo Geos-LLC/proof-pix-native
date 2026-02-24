@@ -4,8 +4,13 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    owner: "sayapingeorge",
-    version: process.env.VERSION || "1.2.4",
+    version: process.env.VERSION || "1.4.2",
+    runtimeVersion: {
+      policy: "appVersion"
+    },
+    updates: {
+      url: "https://u.expo.dev/56b6bd0e-b696-4b6c-bcc4-14714465dd9f"
+    },
     orientation: "default",
     icon: "./assets/PP_logo.png",
     userInterfaceStyle: "light",
@@ -17,16 +22,12 @@ export default {
       resizeMode: "contain",
       backgroundColor: "#F2C31B"
     },
-    fonts: [
-      "./assets/fonts/Quicksand-Light.ttf",
-      "./assets/fonts/Quicksand-Regular.ttf",
-      "./assets/fonts/Quicksand-Medium.ttf",
-      "./assets/fonts/Quicksand-Bold.ttf"
-    ],
+    // Fonts: we load at runtime via useFonts() in App.js using @expo-google-fonts/* packages.
+    // To embed local fonts (dev build only), add: ["expo-font", { fonts: ["./assets/fonts/MyFont.otf"] }] to plugins.
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "2",
+      buildNumber: "22",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -59,7 +60,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 11,
+      versionCode: 25,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
@@ -83,13 +84,6 @@ export default {
     },
     plugins: [
       [
-        "react-native-vision-camera",
-        {
-          cameraPermissionText: "ProofPix needs access to your camera to take before and after photos.",
-          enableMicrophonePermission: false
-        }
-      ],
-      [
         "expo-media-library",
         {
           photosPermission: "Allow ProofPix to access your photos.",
@@ -98,12 +92,6 @@ export default {
         }
       ],
       "expo-screen-orientation",
-      [
-        '@react-native-google-signin/google-signin',
-        {
-          iosUrlScheme: 'com.googleusercontent.apps.366423185-oboi1er7n69rgrbqtkf5il8j6tsm4don'
-        }
-      ],
       [
         "expo-build-properties",
         {
@@ -129,12 +117,18 @@ export default {
         }
       ],
       "expo-font",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.366423185-oboi1er7n69rgrbqtkf5il8j6tsm4don"
+        }
+      ],
       "./plugins/withImageCompositor.js",
       "./plugins/withMediaStoreSaver.js"
     ],
     extra: {
       eas: {
-        projectId: "3e7ed884-bb3a-4191-bcb0-188386d7e977"
+        projectId: "56b6bd0e-b696-4b6c-bcc4-14714465dd9f"
       },
       // Environment variables accessible in your app
       googleServiceAccountPath: process.env.GOOGLE_SERVICE_ACCOUNT_PATH,

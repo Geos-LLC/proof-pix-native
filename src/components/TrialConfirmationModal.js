@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     textAlign: 'center',
     letterSpacing: 0.5,
   },
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
     color: '#666666',
     lineHeight: 22,
     textAlign: 'center',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   actions: {
     flexDirection: 'row',
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   skipButtonText: {
     color: COLORS.TEXT,

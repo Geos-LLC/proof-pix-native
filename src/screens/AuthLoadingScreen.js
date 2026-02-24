@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Platform, Text, Image } from 'react-native';
+import { View, StyleSheet, Platform, Text, Image, Dimensions, StatusBar } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function AuthLoadingScreen({ navigation }) {
   const { userName, userPlan, updateUserPlan, loading: settingsLoading } = useSettings();
@@ -126,17 +128,25 @@ export default function AuthLoadingScreen({ navigation }) {
 
     // Wait for settings, admin, and IAP check to complete
     if (!settingsLoading && !adminLoading && iapChecked) {
-      // Introduce a short delay to ensure the loading screen is visible
-      setTimeout(navigate, 500);
+      // Show splash screen for a visible duration before navigating
+      setTimeout(navigate, 5000);
     }
   }, [settingsLoading, adminLoading, iapChecked, userName, userPlan, navigation]);
 
   return (
     <View style={styles.container}>
-      {/* Decorative circles */}
-      <View style={styles.decorativeCircle1} />
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.PRIMARY} />
+
+      {/* Top-left decorative image */}
+      <Image
+        source={require('../../assets/right.png')}
+        style={styles.decorativeImage}
+        resizeMode="contain"
+      />
+
+      {/* Bottom-right decorative circle (outline only) */}
       <View style={styles.decorativeCircle2} />
-      
+
       {/* Logo */}
       <View style={styles.logoContainer}>
         <Image
@@ -145,51 +155,53 @@ export default function AuthLoadingScreen({ navigation }) {
           resizeMode="contain"
         />
       </View>
-      
+
       {/* App Name */}
       <Text style={styles.appTitle}>ProofPix</Text>
     </View>
   );
 }
 
+const CIRCLE_SIZE = SCREEN_W * 0.65;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.PRIMARY, // #F2C31B yellow
+    backgroundColor: COLORS.PRIMARY,
   },
-  decorativeCircle1: {
+  decorativeImage: {
     position: 'absolute',
-    top: -100,
-    left: -100,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: 'rgba(242, 195, 27, 0.3)', // Semi-transparent darker yellow
+    top: '50',
+    left: -CIRCLE_SIZE * 0.2,
+    width: CIRCLE_SIZE,
+    height: CIRCLE_SIZE,
   },
   decorativeCircle2: {
     position: 'absolute',
-    bottom: -100,
-    right: -100,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: 'rgba(242, 195, 27, 0.3)', // Semi-transparent darker yellow
+    bottom: -CIRCLE_SIZE * 0.3,
+    right: -CIRCLE_SIZE * 0.3,
+    width: CIRCLE_SIZE,
+    height: CIRCLE_SIZE,
+    borderRadius: CIRCLE_SIZE / 2,
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: 'rgba(180, 150, 10, 0.35)',
   },
   logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   logo: {
-    width: 120,
-    height: 120,
+    width: 140,
+    height: 140,
   },
   appTitle: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#000000',
     textAlign: 'center',
   },

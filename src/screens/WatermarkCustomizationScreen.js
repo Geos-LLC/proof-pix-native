@@ -45,19 +45,54 @@ const SIZE_OPTIONS = [
   { key: 'large', label: 'Before', fontSize: 18, padding: 14 },
 ];
 
-// Generate color grid for color picker
+// Helper to convert HSL to Hex
+const hslToHex = (hue, sat, light) => {
+  const h = hue / 360;
+  const s = sat / 100;
+  const l = light / 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+  const m = l - c / 2;
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (h < 0.1667) {
+    r = c; g = x; b = 0;
+  } else if (h < 0.3333) {
+    r = x; g = c; b = 0;
+  } else if (h < 0.5) {
+    r = 0; g = c; b = x;
+  } else if (h < 0.6667) {
+    r = 0; g = x; b = c;
+  } else if (h < 0.8333) {
+    r = x; g = 0; b = c;
+  } else {
+    r = c; g = 0; b = x;
+  }
+
+  const rHex = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+  const gHex = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+  const bHex = Math.round((b + m) * 255).toString(16).padStart(2, '0');
+
+  return '#' + rHex.toUpperCase() + gHex.toUpperCase() + bHex.toUpperCase();
+};
+
+// Generate color grid for color picker (now generates hex directly)
 const generateColorGrid = () => {
   const colors = [];
   const hues = 12;
   const shades = 10;
-  
+
   for (let s = 0; s < shades; s++) {
     const row = [];
     for (let h = 0; h < hues; h++) {
       const hue = (h * 30);
       const saturation = s === 0 ? 0 : 100;
       const lightness = s === 0 ? 100 - (h * 8) : 100 - (s * 10);
-      row.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+      row.push(hslToHex(hue, saturation, lightness));
     }
     colors.push(row);
   }
@@ -87,6 +122,7 @@ export default function WatermarkCustomizationScreen({ navigation }) {
     labelTextColor,
     labelCornerStyle,
     labelSize,
+    labelFontFamily,
     beforeLabelPosition,
     afterLabelPosition,
     updateWatermarkOpacity,
@@ -95,14 +131,30 @@ export default function WatermarkCustomizationScreen({ navigation }) {
     updateWatermarkColor,
     updateWatermarkPosition,
     updateWatermarkFontFamily,
+    updateLabelBackgroundColor,
+    updateLabelTextColor,
+    updateLabelCornerStyle,
+    updateLabelSize,
+    updateLabelFontFamily,
+    updateBeforeLabelPosition,
+    updateAfterLabelPosition,
+    updateLabelMarginVertical,
+    updateLabelMarginHorizontal,
   } = useSettings();
 
-  // Modal states
+  // Modal states - Watermark
   const [fontModalVisible, setFontModalVisible] = useState(false);
   const [colorModalVisible, setColorModalVisible] = useState(false);
+  const [colorModalType, setColorModalType] = useState('watermark'); // 'watermark', 'labelBg', 'labelText'
   const [positionModalVisible, setPositionModalVisible] = useState(false);
   const [opacityModalVisible, setOpacityModalVisible] = useState(false);
   const [watermarkOpacityPreview, setWatermarkOpacityPreview] = useState(watermarkOpacity || 0.5);
+
+  // Modal states - Label
+  const [labelFontModalVisible, setLabelFontModalVisible] = useState(false);
+  const [labelPositionModalVisible, setLabelPositionModalVisible] = useState(false);
+  const [labelSizeModalVisible, setLabelSizeModalVisible] = useState(false);
+  const [labelMarginModalVisible, setLabelMarginModalVisible] = useState(false);
 
   // Color picker state
   const [tempColor, setTempColor] = useState('#EAB308');
@@ -119,10 +171,17 @@ export default function WatermarkCustomizationScreen({ navigation }) {
   const watermarkTextRef = useRef(null);
   const watermarkLinkRef = useRef(null);
 
-  const openColorModal = useCallback(() => {
-    setTempColor(watermarkColor || '#666666');
+  const openColorModal = useCallback((type = 'watermark') => {
+    setColorModalType(type);
+    if (type === 'labelBg') {
+      setTempColor(labelBackgroundColor || '#EAB308');
+    } else if (type === 'labelText') {
+      setTempColor(labelTextColor || '#000000');
+    } else {
+      setTempColor(watermarkColor || '#666666');
+    }
     setColorModalVisible(true);
-  }, [watermarkColor]);
+  }, [watermarkColor, labelBackgroundColor, labelTextColor]);
 
   // Convert HSL/RGB to hex color
   const convertToHex = (color) => {
@@ -147,15 +206,15 @@ export default function WatermarkCustomizationScreen({ navigation }) {
         
         let r, g, b;
         
-        if (h < 1/6) {
+        if (h < 0.1667) {
           r = c; g = x; b = 0;
-        } else if (h < 2/6) {
+        } else if (h < 0.3333) {
           r = x; g = c; b = 0;
-        } else if (h < 3/6) {
+        } else if (h < 0.5) {
           r = 0; g = c; b = x;
-        } else if (h < 4/6) {
+        } else if (h < 0.6667) {
           r = 0; g = x; b = c;
-        } else if (h < 5/6) {
+        } else if (h < 0.8333) {
           r = x; g = 0; b = c;
         } else {
           r = c; g = 0; b = x;
@@ -186,9 +245,15 @@ export default function WatermarkCustomizationScreen({ navigation }) {
 
   const applyColor = useCallback(async () => {
     const hexColor = convertToHex(tempColor);
-    await updateWatermarkColor(hexColor);
+    if (colorModalType === 'labelBg') {
+      await updateLabelBackgroundColor(hexColor);
+    } else if (colorModalType === 'labelText') {
+      await updateLabelTextColor(hexColor);
+    } else {
+      await updateWatermarkColor(hexColor);
+    }
     setColorModalVisible(false);
-  }, [tempColor, updateWatermarkColor]);
+  }, [tempColor, colorModalType, updateWatermarkColor, updateLabelBackgroundColor, updateLabelTextColor]);
 
   // Helper function to get position styles for preview with margin
   const getPositionStyle = (position, marginV, marginH) => {
@@ -439,7 +504,7 @@ export default function WatermarkCustomizationScreen({ navigation }) {
               color={watermarkColor}
               label="Text Color"
               selected={true}
-              onPress={openColorModal}
+              onPress={() => openColorModal('watermark')}
             />
             <ControlButton
               icon="move"
@@ -448,6 +513,56 @@ export default function WatermarkCustomizationScreen({ navigation }) {
                 console.log('Watermark Position button pressed');
                 setPositionModalVisible(true);
               }}
+            />
+          </View>
+
+          {/* Label Section */}
+          <Text style={styles.sectionTitle}>Label</Text>
+
+          {/* Label Controls Row 1 */}
+          <View style={styles.controlsRow}>
+            <ControlButton
+              icon="ellipse-outline"
+              label="Style"
+              selected={labelCornerStyle === 'rounded'}
+              onPress={async () => {
+                const newStyle = labelCornerStyle === 'rounded' ? 'square' : 'rounded';
+                await updateLabelCornerStyle(newStyle);
+              }}
+            />
+            <ControlButton
+              icon="text"
+              label="Font"
+              onPress={() => setLabelFontModalVisible(true)}
+            />
+            <ControlButton
+              icon="resize"
+              label="Size"
+              onPress={() => setLabelSizeModalVisible(true)}
+            />
+            <ColorControlButton
+              color={labelBackgroundColor}
+              label="BG Color"
+              onPress={() => openColorModal('labelBg')}
+            />
+            <ColorControlButton
+              color={labelTextColor}
+              label="Text Color"
+              onPress={() => openColorModal('labelText')}
+            />
+          </View>
+
+          {/* Label Controls Row 2 */}
+          <View style={styles.controlsRow}>
+            <ControlButton
+              icon="move"
+              label="Position"
+              onPress={() => setLabelPositionModalVisible(true)}
+            />
+            <ControlButton
+              icon="resize-outline"
+              label="Margin"
+              onPress={() => setLabelMarginModalVisible(true)}
             />
           </View>
         </ScrollView>
@@ -623,6 +738,162 @@ export default function WatermarkCustomizationScreen({ navigation }) {
             max={1}
             step={0.01}
           />
+        </View>
+      </BottomModal>
+
+      {/* Label Font Modal */}
+      <BottomModal
+        visible={labelFontModalVisible}
+        onClose={() => setLabelFontModalVisible(false)}
+        title="Label Font"
+      >
+        {FONT_OPTIONS.map((font) => {
+          const isSelected = labelFontFamily === font.key;
+          return (
+            <TouchableOpacity
+              key={font.key}
+              style={[
+                styles.listItem,
+                isSelected && styles.listItemSelected
+              ]}
+              onPress={async () => {
+                await updateLabelFontFamily(font.key);
+                setLabelFontModalVisible(false);
+              }}
+            >
+              <Text style={styles.listItemText}>{font.label}</Text>
+              {isSelected && (
+                <Text style={styles.checkmark}>✓</Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </BottomModal>
+
+      {/* Label Size Modal */}
+      <BottomModal
+        visible={labelSizeModalVisible}
+        onClose={() => setLabelSizeModalVisible(false)}
+        title="Label Size"
+      >
+        <View style={styles.sizeContainer}>
+          {SIZE_OPTIONS.map((size) => (
+            <TouchableOpacity
+              key={size.key}
+              style={[
+                styles.sizeButton,
+                {
+                  padding: size.padding,
+                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
+                },
+                labelSize === size.key && styles.sizeButtonSelected
+              ]}
+              onPress={async () => {
+                await updateLabelSize(size.key);
+                setLabelSizeModalVisible(false);
+              }}
+            >
+              <Text style={[
+                styles.sizeButtonText,
+                { fontSize: size.fontSize },
+                labelSize === size.key && styles.sizeButtonTextSelected
+              ]}>{size.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </BottomModal>
+
+      {/* Label Position Modal */}
+      <BottomModal
+        visible={labelPositionModalVisible}
+        onClose={() => setLabelPositionModalVisible(false)}
+        title="Label Position"
+      >
+        <View style={styles.positionContainer}>
+          <View style={styles.positionGrid}>
+            {/* Before Grid */}
+            <View style={styles.positionHalf}>
+              <Text style={styles.positionLabel}>Before</Text>
+              {[
+                ['left-top', 'center-top', 'right-top'],
+                ['left-middle', 'center-middle', 'right-middle'],
+                ['left-bottom', 'center-bottom', 'right-bottom']
+              ].map((row, rowIdx) => (
+                <View key={rowIdx} style={styles.positionRow}>
+                  {row.map(pos => (
+                    <TouchableOpacity
+                      key={pos}
+                      style={[
+                        styles.positionCellSmall,
+                        beforeLabelPosition === pos && styles.positionCellSelected
+                      ]}
+                      onPress={async () => await updateBeforeLabelPosition(pos)}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+
+            {/* After Grid */}
+            <View style={styles.positionHalf}>
+              <Text style={styles.positionLabel}>After</Text>
+              {[
+                ['left-top', 'center-top', 'right-top'],
+                ['left-middle', 'center-middle', 'right-middle'],
+                ['left-bottom', 'center-bottom', 'right-bottom']
+              ].map((row, rowIdx) => (
+                <View key={rowIdx} style={styles.positionRow}>
+                  {row.map(pos => (
+                    <TouchableOpacity
+                      key={pos}
+                      style={[
+                        styles.positionCellSmall,
+                        afterLabelPosition === pos && styles.positionCellSelected
+                      ]}
+                      onPress={async () => await updateAfterLabelPosition(pos)}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+      </BottomModal>
+
+      {/* Label Margin Modal */}
+      <BottomModal
+        visible={labelMarginModalVisible}
+        onClose={() => setLabelMarginModalVisible(false)}
+        title="Label Margin"
+      >
+        <View style={styles.marginContainer}>
+          <View style={styles.marginSection}>
+            <Text style={styles.marginLabel}>
+              Vertical (Top/Bottom) : {labelMarginVertical}px
+            </Text>
+            <SliderInput
+              value={labelMarginVertical}
+              onValueChange={updateLabelMarginVertical}
+              min={0}
+              max={50}
+              step={1}
+              showValue={false}
+            />
+          </View>
+
+          <View style={styles.marginSection}>
+            <Text style={styles.marginLabel}>
+              Horizontal (Left/Right) : {labelMarginHorizontal}px
+            </Text>
+            <SliderInput
+              value={labelMarginHorizontal}
+              onValueChange={updateLabelMarginHorizontal}
+              min={0}
+              max={50}
+              step={1}
+              showValue={false}
+            />
+          </View>
         </View>
       </BottomModal>
     </SafeAreaView>
@@ -975,6 +1246,60 @@ const styles = StyleSheet.create({
     borderColor: '#000',
     backgroundColor: COLORS.PRIMARY,
     borderWidth: 2,
+  },
+  positionHalf: {
+    flex: 1,
+    minWidth: 0,
+  },
+  positionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.TEXT,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  positionCellSmall: {
+    width: 40,
+    height: 40,
+    borderWidth: 2,
+    borderColor: COLORS.BORDER,
+    borderRadius: 6,
+    backgroundColor: COLORS.BORDER,
+  },
+  // Size Modal Styles
+  sizeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    padding: 24,
+    gap: 16,
+  },
+  sizeButton: {
+    backgroundColor: COLORS.BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sizeButtonSelected: {
+    backgroundColor: COLORS.PRIMARY,
+  },
+  sizeButtonText: {
+    fontWeight: '600',
+    color: '#666',
+  },
+  sizeButtonTextSelected: {
+    color: '#000',
+  },
+  // Margin Modal Styles
+  marginContainer: {
+    padding: 24,
+  },
+  marginSection: {
+    marginBottom: 24,
+  },
+  marginLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
   },
   // Opacity Modal Styles
   opacityContainer: {

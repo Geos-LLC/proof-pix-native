@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -23,9 +23,10 @@ import {
   Linking,
   Image,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Slider from '@react-native-community/slider';
 import * as Clipboard from 'expo-clipboard';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS, getLabelPositions } from '../constants/rooms';
@@ -67,49 +68,15 @@ import {
 } from '../utils/analytics';
 import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions } from '../services/iapService';
 import * as Application from 'expo-application';
+import * as ExpoLocation from 'expo-location';
+import { LOCATIONS, getLocationName } from '../config/locations';
 
 const getFontOptions = (t) => [
   {
-    key: 'system',
-    label: t('labelCustomization.fontModal.systemDefault'),
+    key: 'alexandria',
+    label: 'Alexandria',
     description: t('labelCustomization.fontModal.systemDefaultDescription'),
-    fontFamily: null,
-  },
-  {
-    key: 'montserratBold',
-    label: t('labelCustomization.fontModal.montserratBold'),
-    description: t('labelCustomization.fontModal.montserratBoldDescription'),
-    fontFamily: 'Montserrat_700Bold',
-  },
-  {
-    key: 'latoBold',
-    label: t('labelCustomization.fontModal.latoBold'),
-    description: t('labelCustomization.fontModal.latoBoldDescription'),
-    fontFamily: 'Lato_700Bold',
-  },
-  {
-    key: 'playfairBold',
-    label: t('labelCustomization.fontModal.playfairDisplay'),
-    description: t('labelCustomization.fontModal.playfairDisplayDescription'),
-    fontFamily: 'PlayfairDisplay_700Bold',
-  },
-  {
-    key: 'poppinsSemiBold',
-    label: t('labelCustomization.fontModal.poppinsSemiBold'),
-    description: t('labelCustomization.fontModal.poppinsSemiBoldDescription'),
-    fontFamily: 'Poppins_600SemiBold',
-  },
-  {
-    key: 'robotoMonoBold',
-    label: t('labelCustomization.fontModal.robotoMono'),
-    description: t('labelCustomization.fontModal.robotoMonoDescription'),
-    fontFamily: 'RobotoMono_700Bold',
-  },
-  {
-    key: 'oswaldSemiBold',
-    label: t('labelCustomization.fontModal.oswaldSemiBold'),
-    description: t('labelCustomization.fontModal.oswaldSemiBoldDescription'),
-    fontFamily: 'Oswald_600SemiBold',
+    fontFamily: 'Alexandria_400Regular',
   },
 ];
 
@@ -119,6 +86,23 @@ const getLabelSizeOptions = (t) => [
   { key: 'large', label: t('labelCustomization.large') },
 ];
 
+// Static map so Metro can bundle all flag assets (same as FirstLoadScreen).
+const FLAG_IMAGES = {
+  en: require('../../assets/flags/usa.png'),
+  es: require('../../assets/flags/spain.png'),
+  fr: require('../../assets/flags/france.png'),
+  de: require('../../assets/flags/germany.png'),
+  ru: require('../../assets/flags/russia.png'),
+  be: require('../../assets/flags/belarus.png'),
+  zh: require('../../assets/flags/china.png'),
+  tl: require('../../assets/flags/philipines.png'),
+  ar: require('../../assets/flags/saudi.png'),
+  ko: require('../../assets/flags/korea.png'),
+  pt: require('../../assets/flags/portugal.png'),
+  uk: require('../../assets/flags/ukraine.png'),
+  vi: require('../../assets/flags/vietnam.png'),
+};
+
 const LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
   { code: 'es', name: 'Español', flag: '🇪🇸' },
@@ -126,12 +110,12 @@ const LANGUAGES = [
   { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
   { code: 'ru', name: 'Русский', flag: '🇷🇺' },
   { code: 'be', name: 'Беларуская', flag: '🇧🇾' },
-  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
   { code: 'zh', name: '中文', flag: '🇨🇳' },
   { code: 'tl', name: 'Tagalog', flag: '🇵🇭' },
   { code: 'ar', name: 'العربية', flag: '🇸🇦' },
   { code: 'ko', name: '한국어', flag: '🇰🇷' },
   { code: 'pt', name: 'Português', flag: '🇵🇹' },
+  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
   { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
 ];
 
@@ -158,7 +142,21 @@ const LABEL_SIZE_STYLE_MAP = {
     minWidth: 104,
   },
 };
-
+const GradientView = ({ colors, start, end, style, children, fallbackColor }) => {
+  if (LinearGradient && typeof LinearGradient === 'function') {
+    return (
+      <LinearGradient colors={colors} start={start} end={end} style={style}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  
+  return (
+    <View style={[style, { backgroundColor: fallbackColor || colors[colors.length - 1] }]}>
+      {children}
+    </View>
+  );
+};
 const getLabelCornerOptions = (t) => [
   { key: 'rounded', label: t('labelCustomization.cornerOptions.rounded') },
   { key: 'square', label: t('labelCustomization.cornerOptions.straight') },
@@ -318,6 +316,7 @@ export default function SettingsScreen({ navigation, route }) {
 
   const { canUse, exceedsLimit, getLimit, effectivePlan } = useFeaturePermissions();
   const { t, i18n } = useTranslation();
+  const insets = useSafeAreaInsets();
 
   // Memoize translated options
   const FONT_OPTIONS = useMemo(() => getFontOptions(t), [t]);
@@ -540,7 +539,9 @@ export default function SettingsScreen({ navigation, route }) {
                 ]}
                 onPress={() => setCurrentRoom(room.id)}
               >
-                <RoomIcon roomId={room.id} size={24} color={isActive ? "#000" : "#666666"} />
+                <Image 
+                source={rooms.find(r => r.id === room.id)?.image} 
+                style={{ width: 24, height: 24 }} />
                 <Text style={[
                   styles.roomListItemText,
                   isActive && styles.roomListItemTextActive
@@ -810,7 +811,9 @@ export default function SettingsScreen({ navigation, route }) {
   }, [isEnterprisePlan, activeEnterpriseAccount, adminUserInfo, isDropboxAuthenticatedForDisplay, dropboxUserInfoChecked, userPlan, isAuthenticated]);
 
   const [name, setName] = useState(userName);
-  
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [useCurrentLocationLoading, setUseCurrentLocationLoading] = useState(false);
+
   // Update name when userName changes (e.g., when switching back from team mode)
   useEffect(() => {
     setName(userName);
@@ -1253,16 +1256,9 @@ export default function SettingsScreen({ navigation, route }) {
           console.log('[TEST_JOIN] Step 8: Starting navigation');
           // Navigate to Home screen to show team member mode
           if (navigation) {
-            console.log('[TEST_JOIN] Navigation object exists, calling goBack()');
-            // Use goBack first to close Settings, then navigate to Home
-            // This ensures we're not navigating from a modal context
-            navigation.goBack();
-            console.log('[TEST_JOIN] goBack() called, waiting 200ms before navigate');
-            setTimeout(() => {
-              console.log('[TEST_JOIN] Step 9: Calling navigate("Home")');
-              navigation.navigate('Home');
-              console.log('[TEST_JOIN] Step 9 complete: navigate("Home") called');
-            }, 200);
+            console.log('[TEST_JOIN] Navigation object exists, resetting to Home');
+            navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+            console.log('[TEST_JOIN] navigation.reset called');
           } else {
             console.log('[TEST_JOIN] ERROR: Navigation object is null!');
           }
@@ -2045,6 +2041,49 @@ export default function SettingsScreen({ navigation, route }) {
     await updateUserInfo(name, location);
   };
 
+  const handleUseCurrentLocation = useCallback(async () => {
+    setUseCurrentLocationLoading(true);
+    try {
+      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          t('settings.locationPermissionTitle', { defaultValue: 'Location access' }),
+          t('settings.locationPermissionMessage', { defaultValue: 'Permission to use location is required to set folder location from GPS.' }),
+          [{ text: 'OK', style: 'cancel' }]
+        );
+        return;
+      }
+      const position = await ExpoLocation.getCurrentPositionAsync({
+        accuracy: ExpoLocation.Accuracy.Balanced,
+      });
+      const [address] = await ExpoLocation.reverseGeocodeAsync({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+      const cityName = address?.city || address?.region || address?.subregion || address?.country || 'Unknown';
+      const matchedLocation = LOCATIONS.find(
+        (loc) => loc.name.toLowerCase() === cityName.toLowerCase()
+      );
+      const locationToSave = matchedLocation ? matchedLocation.id : cityName;
+      await updateUserInfo(undefined, locationToSave);
+      setShowLocationDropdown(false);
+      Alert.alert(
+        t('settings.locationUpdated', { defaultValue: 'Location updated' }),
+        t('settings.locationUpdatedMessage', { defaultValue: 'Folder location set to: ' }) + getLocationName(locationToSave),
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('[Settings] Use current location error:', error);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('settings.locationError', { defaultValue: 'Could not get current location. Please try again or select a location manually.' }),
+        [{ text: 'OK', style: 'cancel' }]
+      );
+    } finally {
+      setUseCurrentLocationLoading(false);
+    }
+  }, [t, updateUserInfo]);
+
   const handleApplyReferralCode = async () => {
     const code = referralCodeInput.trim().toUpperCase();
     if (!code) {
@@ -2649,13 +2688,19 @@ export default function SettingsScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{t('settings.title')}</Text>
+        <TouchableOpacity onPress={handleTitleTap} activeOpacity={1} style={styles.titleTouchable} hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}>
+          <Text style={styles.title}>{t('settings.title')}</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerLanguageSelector}
           onPress={() => setLanguageModalVisible(true)}
         >
-          <Text style={styles.headerLanguageFlag}>{getCurrentLanguage().flag}</Text>
-          <Ionicons name="chevron-down" size={16} color={COLORS.TEXT} />
+          <Image
+            source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
+            style={styles.headerLanguageFlagImage}
+            resizeMode="cover"
+          />
+          <Ionicons name="chevron-down" size={18} color="#200E32" style={{ padding: 2 }} />
         </TouchableOpacity>
       </View>
 
@@ -2673,30 +2718,43 @@ export default function SettingsScreen({ navigation, route }) {
           <View style={styles.userAccountHeader}>
             <View style={styles.userAccountLeft}>
               <View style={styles.userAvatar}>
-                <Ionicons name="person" size={32} color="#4A4A4A" />
+               <Image 
+               source={require('../../assets/icons/user.png')}
+               style={{ width: 50, height: 50 }}
+               />
               </View>
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>{userName || 'User'}</Text>
                 <Text style={styles.accountType}>
-                  {userMode === 'team_member' ? 'Team account' : 'Individual account'}
+                  {userMode === 'team_member' ? t('settings.teamAccount', { defaultValue: 'Team account' }) : t('settings.individualAccount', { defaultValue: 'Individual account' })}
                 </Text>
               </View>
             </View>
             <TouchableOpacity style={styles.editButton}>
-              <Ionicons name="pencil-outline" size={20} color="#1E3A8A" />
+              <Image 
+              source={require('../../assets/icons/pen.png')}
+              style={{ width: 25, height: 25 }}
+              />
             </TouchableOpacity>
           </View>
           
           <View style={styles.planInfo}>
             <View style={styles.planNameRow}>
               <Text style={styles.planName}>
-                {userPlan ? `${userPlan.charAt(0).toUpperCase() + userPlan.slice(1)} Plan` : 'Starter Plan'}
+                {t('settings.planName', { plan: userPlan ? t(`settings.plans.${userPlan}`, { defaultValue: userPlan.charAt(0).toUpperCase() + userPlan.slice(1) }) : t('settings.plans.starter', { defaultValue: 'Starter' }), defaultValue: `${userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter'} Plan` })}
                 {trialActive && trialPlan && ` (${t('settings.trial', { defaultValue: 'Trial' })})`}
               </Text>
               {trialActive && (
-                <View style={styles.freeBadge}>
-                  <Text style={styles.freeBadgeText}>FREE</Text>
-                </View>
+                  <View style={styles.priceContainer}>
+                <GradientView
+                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.priceBadgeGradient}
+                  fallbackColor="rgba(11, 131, 33, 0.14)"
+                />
+                <Text style={styles.priceText}>{t('settings.free', { defaultValue: 'FREE' })}</Text>
+              </View>
               )}
             </View>
             
@@ -2711,7 +2769,7 @@ export default function SettingsScreen({ navigation, route }) {
                   />
                 </View>
                 <Text style={styles.trialDaysText}>
-                  {trialDaysRemaining} {trialDaysRemaining === 1 ? 'day' : 'days'} remaining
+                  {t('settings.trialDaysRemaining', { days: trialDaysRemaining, defaultValue: `${trialDaysRemaining} days remaining` })}
                 </Text>
               </View>
             )}
@@ -2721,44 +2779,81 @@ export default function SettingsScreen({ navigation, route }) {
             style={styles.upgradeButton}
             onPress={() => setShowPlanModal(true)}
           >
-            <Text style={styles.upgradeButtonText}>Upgrade</Text>
+            <Text style={styles.upgradeButtonText}>{t('settings.upgrade', { defaultValue: 'Upgrade' })}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Language Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
+        {/* Folder location - manual pick + Use current location (GPS) */}
+        {userMode !== 'team_member' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('settings.folderLocation', { defaultValue: 'Folder location' })}</Text>
+            <Text style={styles.sectionDescription}>
+              {t('settings.folderLocationDescription', { defaultValue: 'Location used in project and upload folder names.' })}
+            </Text>
+            <TouchableOpacity
+              style={styles.locationPicker}
+              onPress={() => setShowLocationDropdown((v) => !v)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.locationPickerText} numberOfLines={1}>
+                {getLocationName(location)}
+              </Text>
+              <Ionicons name={showLocationDropdown ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.GRAY} style={styles.locationPickerArrow} />
+            </TouchableOpacity>
+            {showLocationDropdown && (
+              <View style={styles.locationDropdown}>
+                <TouchableOpacity
+                  style={[styles.locationOption, styles.locationOptionUseCurrent]}
+                  onPress={handleUseCurrentLocation}
+                  disabled={useCurrentLocationLoading}
+                >
+                  {useCurrentLocationLoading ? (
+                    <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginRight: 8 }} />
+                  ) : (
+                    <Ionicons name="locate" size={20} color={COLORS.PRIMARY} style={{ marginRight: 8 }} />
+                  )}
+                  <Text style={styles.locationOptionText}>
+                    {t('settings.useCurrentLocation', { defaultValue: 'Use current location' })}
+                  </Text>
+                </TouchableOpacity>
+                {LOCATIONS.map((loc) => (
+                  <TouchableOpacity
+                    key={loc.id}
+                    style={[styles.locationOption, location === loc.id && styles.locationOptionSelected]}
+                    onPress={async () => {
+                      await updateUserInfo(undefined, loc.id);
+                      setShowLocationDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.locationOptionText, location === loc.id && styles.locationOptionTextSelected]}>
+                      {loc.name}
+                    </Text>
+                    {location === loc.id && (
+                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={styles.locationOptionCheck} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
-          {/* App Language */}
-          <TouchableOpacity
-            style={[styles.settingButton, { marginBottom: 8 }]}
-            onPress={() => setLanguageModalVisible(true)}
-          >
-            <Text style={styles.settingText}>{t('settings.appLanguage')}</Text>
-            <View style={styles.languageSelector}>
-              <Text style={styles.languageFlag}>{getCurrentLanguage().flag}</Text>
-              <Text style={styles.languageName}>{getCurrentLanguage().name}</Text>
-              <Text style={styles.languageChangeText}>›</Text>
-            </View>
-          </TouchableOpacity>
-
-        </View>
-
+    
         {userMode !== 'team_member' && (
           <>
             {/* Label Customization */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Labels</Text>
+              <Text style={styles.sectionTitle}>{t('settings.labels', { defaultValue: 'Labels' })}</Text>
               <Text style={styles.sectionDescription}>
-                Customize the appearance of before/after labels on your photos.
+                {t('settings.labelCustomizationDescription', { defaultValue: 'Customize the appearance of before/after labels on your photos.' })}
               </Text>
 
               {/* Labels Toggle */}
-              <View style={styles.settingRow}>
+              <View style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Labels</Text>
+                  <Text style={styles.settingLabel}>{t('settings.showLabels', { defaultValue: 'Labels' })}</Text>
                   <Text style={styles.settingDescription}>
-                    Show BEFORE/AFTER labels on photos
+                    {t('settings.showLabelsDescription', { defaultValue: 'Show BEFORE/AFTER labels on photos' })}
                   </Text>
                 </View>
                 <Switch
@@ -2771,15 +2866,15 @@ export default function SettingsScreen({ navigation, route }) {
 
               {/* Customize Labels Option */}
               <TouchableOpacity
-                style={styles.settingRow}
+                style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}
                 onPress={() => {
                   navigation.navigate('LabelCustomization');
                 }}
               >
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Customize Labels</Text>
+                  <Text style={styles.settingLabel}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
                   <Text style={styles.settingDescription}>
-                    Customize the labels on photos
+                    {t('settings.customizeLabelsDescription', { defaultValue: 'Customize the labels on photos' })}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#666666" />
@@ -2821,11 +2916,11 @@ export default function SettingsScreen({ navigation, route }) {
                 }}
               >
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Customize Watermark</Text>
+                  <Text style={styles.settingLabel}>{t('settings.customizeWatermark', { defaultValue: 'Customize Watermark' })}</Text>
                   <Text style={styles.settingDescription}>
                     {customWatermarkEnabled
-                      ? t('settings.watermarkCustomDescription')
-                      : 'Using default watermark (Powered by ProofPix)'}
+                      ? t('settings.watermarkCustomDescription', { defaultValue: 'Using custom watermark' })
+                      : t('settings.watermarkDefaultDescription', { defaultValue: 'Using default watermark (Powered by ProofPix)' })}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#666666" />
@@ -3135,16 +3230,16 @@ export default function SettingsScreen({ navigation, route }) {
 
             {/* Sections */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Sections</Text>
+              <Text style={styles.sectionTitle}>{t('settings.folderCustomization_short', { defaultValue: 'Sections' })}</Text>
               <Text style={styles.sectionDescription}>
-                Customize the names and default status of your project sections.
+                {t('settings.folderCustomizationDescription', { defaultValue: 'Customize the names and default status of your project sections.' })}
               </Text>
 
               <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Cleaning Service</Text>
+                  <Text style={styles.settingLabel}>{t('settings.cleaningService', { defaultValue: 'Cleaning Service' })}</Text>
                   <Text style={styles.settingDescription}>
-                    Show real room names (Kitchen, Bathroom etc.)
+                    {t('settings.cleaningServiceDescription', { defaultValue: 'Show real room names (Kitchen, Bathroom etc.)' })}
                   </Text>
                 </View>
                 <Switch
@@ -3159,15 +3254,15 @@ export default function SettingsScreen({ navigation, route }) {
 
               {/* Customize Sections Option */}
               <TouchableOpacity
-                style={styles.settingRow}
+                style={[styles.settingRow, {borderTopWidth: 1, borderTopColor: 'rgba(0, 0, 0, 0.1)'}]}
                 onPress={() => {
                   setShowRoomEditor(true);
                 }}
               >
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Customize Sections</Text>
+                  <Text style={styles.settingLabel}>{t('settings.customizeSections', { defaultValue: 'Customize Sections' })}</Text>
                   <Text style={styles.settingDescription}>
-                    Add/edit/remove sections
+                    {t('settings.customizeSectionsDescription', { defaultValue: 'Add/edit/remove sections' })}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#666666" />
@@ -3176,16 +3271,16 @@ export default function SettingsScreen({ navigation, route }) {
 
             {/* Upload Structure */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Upload Structure</Text>
+              <Text style={styles.sectionTitle}>{t('settings.uploadStructure', { defaultValue: 'Upload Structure' })}</Text>
               <Text style={styles.sectionDescription}>
-                Customize the names and default status of your project sections.
+                {t('settings.uploadStructureDescription', { defaultValue: 'Configure how photos are organized in cloud storage.' })}
               </Text>
 
-              <View style={styles.settingRow}>
+              <View style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Use 'Before/After/Combined' folder structure</Text>
+                  <Text style={styles.settingLabel}>{t('settings.useFolderStructure', { defaultValue: "Use 'Before/After/Combined' folder structure" })}</Text>
                   <Text style={styles.settingDescription}>
-                    Auto create subfolders for different photos states.
+                    {t('settings.useFolderStructureDescription', { defaultValue: 'Auto create subfolders for different photo states.' })}
                   </Text>
                 </View>
                 <Switch
@@ -3196,47 +3291,48 @@ export default function SettingsScreen({ navigation, route }) {
                 />
               </View>
 
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>'Before' Folder</Text>
-                  <Text style={styles.settingDescription}>Enable the folder for original photos.</Text>
-                </View>
-                <Switch
-                  value={enabledFolders.before}
-                  onValueChange={(v) => updateEnabledFolders({ before: v })}
-                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                  thumbColor="white"
-                  disabled={!useFolderStructure}
-                />
-              </View>
+              {useFolderStructure && (
+                <>
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingLabel}>{t('settings.beforeFolder', { defaultValue: "'Before' Folder" })}</Text>
+                      <Text style={styles.settingDescription}>{t('settings.beforeFolderDescription', { defaultValue: 'Enable the folder for original photos.' })}</Text>
+                    </View>
+                    <Switch
+                      value={enabledFolders.before}
+                      onValueChange={(v) => updateEnabledFolders({ before: v })}
+                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+                      thumbColor="white"
+                    />
+                  </View>
 
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>'After' Folder</Text>
-                  <Text style={styles.settingDescription}>Upload after photos to this folder.</Text>
-                </View>
-                <Switch
-                  value={enabledFolders.after}
-                  onValueChange={(v) => updateEnabledFolders({ after: v })}
-                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                  thumbColor="white"
-                  disabled={!useFolderStructure}
-                />
-              </View>
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingLabel}>{t('settings.afterFolder', { defaultValue: "'After' Folder" })}</Text>
+                      <Text style={styles.settingDescription}>{t('settings.afterFolderDescription', { defaultValue: 'Upload after photos to this folder.' })}</Text>
+                    </View>
+                    <Switch
+                      value={enabledFolders.after}
+                      onValueChange={(v) => updateEnabledFolders({ after: v })}
+                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+                      thumbColor="white"
+                    />
+                  </View>
 
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>'Combined' Folder</Text>
-                  <Text style={styles.settingDescription}>Upload combined photos to this folder.</Text>
-                </View>
-                <Switch
-                  value={enabledFolders.combined}
-                  onValueChange={(v) => updateEnabledFolders({ combined: v })}
-                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                  thumbColor="white"
-                  disabled={!useFolderStructure}
-                />
-              </View>
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingLabel}>{t('settings.combinedFolder', { defaultValue: "'Combined' Folder" })}</Text>
+                      <Text style={styles.settingDescription}>{t('settings.combinedFolderDescription', { defaultValue: 'Upload combined photos to this folder.' })}</Text>
+                    </View>
+                    <Switch
+                      value={enabledFolders.combined}
+                      onValueChange={(v) => updateEnabledFolders({ combined: v })}
+                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+                      thumbColor="white"
+                    />
+                  </View>
+                </>
+              )}
             </View>
           </>
         )}
@@ -3249,8 +3345,8 @@ export default function SettingsScreen({ navigation, route }) {
             highlightCloudSection && styles.highlightedSection,
           ]}
         >
-          <Text style={styles.sectionTitle}>Cloud & Team Sync</Text>
-          <Text style={styles.sectionDescription}>Team Plan Feature</Text>
+          <Text style={styles.sectionTitle}>{t('settings.cloudTeamSync', { defaultValue: 'Cloud & Team Sync' })}</Text>
+          <Text style={styles.sectionDescription}>{t('settings.teamPlanFeature', { defaultValue: 'Team Plan Feature' })}</Text>
           
           {userMode === 'team_member' ? (
             <>
@@ -3613,6 +3709,67 @@ export default function SettingsScreen({ navigation, route }) {
                       </TouchableOpacity>
                     )}
                     
+                    {/* Connect to iCloud/Apple Button - iOS only */}
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity
+                        style={[
+                          styles.cloudServiceButton,
+                          (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn) && styles.cloudServiceButtonDisabled
+                        ]}
+                        onPress={async () => {
+                          if (!canUse(FEATURES.GOOGLE_DRIVE_SYNC)) {
+                            setShowPlanModal(true);
+                            return;
+                          }
+
+                          setIsSigningIn(true);
+                          try {
+                            if (userPlan === 'pro') {
+                              await appleIndividualSignIn();
+                            } else {
+                              await appleAdminSignIn();
+                            }
+
+                            try {
+                              const folderId = await iCloudService.findOrCreateProofPixFolder();
+                              console.log('[iCloud] Folder ready:', folderId);
+                            } catch (folderError) {
+                              console.error('[iCloud] Folder creation error:', folderError);
+                            }
+
+                            Alert.alert(
+                              t('settings.appleConnected', { defaultValue: 'Connected to iCloud' }),
+                              t('settings.appleConnectedMessage', { defaultValue: 'Your account has been connected successfully.' }),
+                              [{ text: t('common.ok') }]
+                            );
+                          } catch (error) {
+                            console.error('[APPLE] Sign-in error:', error);
+                            Alert.alert(
+                              t('common.error'),
+                              error.message || t('settings.appleSignInError', { defaultValue: 'Failed to connect with Apple. Please try again.' })
+                            );
+                          } finally {
+                            setIsSigningIn(false);
+                          }
+                        }}
+                        disabled={!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn}
+                      >
+                        {isSigningIn ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <View style={styles.cloudButtonContent}>
+                            <Ionicons name="logo-apple" size={20} color="#000" />
+                            <Text style={[
+                              styles.cloudButtonText,
+                              !canUse(FEATURES.GOOGLE_DRIVE_SYNC) && styles.cloudButtonTextDisabled
+                            ]}>
+                              Apple
+                            </Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    )}
+
                     {/* Connect to Dropbox Button */}
                     {(() => {
                       const shouldShow = (userPlan === 'pro' || userPlan === 'business')
@@ -3797,71 +3954,11 @@ export default function SettingsScreen({ navigation, route }) {
                       </TouchableOpacity>
                     )}
 
-                    {/* Connect to iCloud/Apple Button - iOS only */}
-                    {Platform.OS === 'ios' && (
-                      <TouchableOpacity
-                        style={[
-                          styles.cloudServiceButton,
-                          (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn) && styles.cloudServiceButtonDisabled
-                        ]}
-                        onPress={async () => {
-                          if (!canUse(FEATURES.GOOGLE_DRIVE_SYNC)) {
-                            setShowPlanModal(true);
-                            return;
-                          }
-
-                          setIsSigningIn(true);
-                          try {
-                            if (userPlan === 'pro') {
-                              await appleIndividualSignIn();
-                            } else {
-                              await appleAdminSignIn();
-                            }
-
-                            try {
-                              const folderId = await iCloudService.findOrCreateProofPixFolder();
-                              console.log('[iCloud] Folder ready:', folderId);
-                            } catch (folderError) {
-                              console.error('[iCloud] Folder creation error:', folderError);
-                            }
-
-                            Alert.alert(
-                              t('settings.appleConnected', { defaultValue: 'Connected to iCloud' }),
-                              t('settings.appleConnectedMessage', { defaultValue: 'Your account has been connected successfully.' }),
-                              [{ text: t('common.ok') }]
-                            );
-                          } catch (error) {
-                            console.error('[APPLE] Sign-in error:', error);
-                            Alert.alert(
-                              t('common.error'),
-                              error.message || t('settings.appleSignInError', { defaultValue: 'Failed to connect with Apple. Please try again.' })
-                            );
-                          } finally {
-                            setIsSigningIn(false);
-                          }
-                        }}
-                        disabled={!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn}
-                      >
-                        {isSigningIn ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <View style={styles.cloudButtonContent}>
-                            <Ionicons name="logo-apple" size={20} color="#000" />
-                            <Text style={[
-                              styles.cloudButtonText,
-                              !canUse(FEATURES.GOOGLE_DRIVE_SYNC) && styles.cloudButtonTextDisabled
-                            ]}>
-                              Apple
-                            </Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    )}
                   </View>
 
                   {/* Team Management Row */}
                   <View style={styles.teamManagementRow}>
-                    {/* Set up Team Button */}
+                    {/* Set up Team / Manage Team Button */}
                     <TouchableOpacity
                       style={[
                         styles.teamButton,
@@ -3873,6 +3970,10 @@ export default function SettingsScreen({ navigation, route }) {
                         const isBusiness = userPlan === 'business';
                         const isEnterprise = userPlan === 'enterprise';
 
+                        // Check if team is already connected
+                        const teamConnected = proxySessionId && userMode === 'admin' && (isBusiness || isEnterprise);
+                        console.log('[SET_UP_TEAM] Button pressed, teamConnected:', teamConnected, 'proxySessionId:', proxySessionId, 'userMode:', userMode);
+
                         if (isStarter) {
                           setShowPlanModal(true);
                           return;
@@ -3883,6 +3984,28 @@ export default function SettingsScreen({ navigation, route }) {
                             t('settings.featureUnavailable'),
                             t('settings.teamSetupFeature')
                           );
+                          return;
+                        }
+
+                        // If team is already connected, open Manage Team modal
+                        if (teamConnected) {
+                          console.log('[SET_UP_TEAM] Team already connected, opening manage modal');
+                          setTeamNameInput(teamName || '');
+                          setLoadingTeamMembers(true);
+                          try {
+                            const result = await proxyService.getTeamMembers(proxySessionId);
+                            if (result.success && result.teamMembers) {
+                              setTeamMembersList(result.teamMembers);
+                            } else {
+                              setTeamMembersList([]);
+                            }
+                          } catch (error) {
+                            console.error('[SETTINGS] Failed to fetch team members:', error);
+                            setTeamMembersList([]);
+                          } finally {
+                            setLoadingTeamMembers(false);
+                            setShowManageTeamModal(true);
+                          }
                           return;
                         }
 
@@ -3917,12 +4040,15 @@ export default function SettingsScreen({ navigation, route }) {
                       }}
                       disabled={isSigningIn}
                     >
-                      <Ionicons name="people" size={20} color={((!userPlan || userPlan === 'starter') || userPlan === 'pro') ? "#999" : "#000"} />
+                      <Image source={require('../../assets/icons/team.png')} style={{ width: 20, height: 20 }} />
                       <Text style={[
                         styles.teamButtonText,
                         ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.teamButtonTextDisabled
                       ]}>
-                        Set up Team
+                        {proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise')
+                          ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
+                          : t('settings.setUpTeam', { defaultValue: 'Set up Team' })
+                        }
                       </Text>
                     </TouchableOpacity>
                     
@@ -3941,8 +4067,8 @@ export default function SettingsScreen({ navigation, route }) {
                       }}
                       disabled={isSigningIn}
                     >
-                      <Ionicons name="trophy" size={20} color={((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business') ? "#999" : "#000"} />
-                      <Text style={[
+                      <Image source={require('../../assets/icons/cup.png')} style={{ width: 20, height: 20 }} />
+                       <Text style={[
                         styles.teamButtonText,
                         ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business') && styles.teamButtonTextDisabled
                       ]}>
@@ -3950,20 +4076,9 @@ export default function SettingsScreen({ navigation, route }) {
                       </Text>
                     </TouchableOpacity>
                   </View>
-                    
-                    {!isGoogleSignInAvailable && (canUse(FEATURES.GOOGLE_DRIVE_SYNC) || canUse(FEATURES.TEAM_INVITES)) && (
-                      <View style={styles.expoGoWarning}>
-                        <Text style={styles.expoGoWarningText}>
-                          {t('settings.expoGoWarning')}
-                        </Text>
-                        <Text style={styles.expoGoWarningSubtext}>
-                          {t('settings.expoGoWarningCommand')}
-                        </Text>
-                      </View>
-                    )}
-                  </>
-                )}
-              </>
+                </>
+              )}
+            </>
           ) : displayedActiveAccount ? (
             <>
               {(() => {
@@ -4028,7 +4143,7 @@ export default function SettingsScreen({ navigation, route }) {
                         return (
                           <View style={styles.accountIconContainer}>
                             <View style={[styles.accountIcon, styles.appleIcon]}>
-                              <Text style={styles.accountIconText}>🍎</Text>
+                            <Image source={require('../../assets/icons/apple.png')} style={{ width: 20, height: 20 }} />
                             </View>
                           </View>
                         );
@@ -4037,7 +4152,7 @@ export default function SettingsScreen({ navigation, route }) {
                         return (
                           <View style={styles.accountIconContainer}>
                             <View style={[styles.accountIcon, styles.googleIcon]}>
-                              <Text style={styles.accountIconText}>G</Text>
+                              <Image source={require('../../assets/Google.png')} style={{ width: 20, height: 20 }} />
                             </View>
                           </View>
                         );
@@ -4254,19 +4369,34 @@ export default function SettingsScreen({ navigation, route }) {
                             isSigningIn && styles.buttonDisabled
                           ]}
                           onPress={async () => {
+                            // Re-compute isTeamConnected using fresh values to avoid stale closure
+                            const currentIsTeamConnected = proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise');
+
+                            console.log('[MANAGE_TEAM] Button pressed!');
+                            console.log('[MANAGE_TEAM] userPlan:', userPlan);
+                            console.log('[MANAGE_TEAM] isTeamConnected (closure):', isTeamConnected);
+                            console.log('[MANAGE_TEAM] currentIsTeamConnected (fresh):', currentIsTeamConnected);
+                            console.log('[MANAGE_TEAM] proxySessionId:', proxySessionId);
+                            console.log('[MANAGE_TEAM] userMode:', userMode);
+
                             // Show tier selection modal for Starter/Pro users
                             if (userPlan === 'starter' || userPlan === 'pro') {
+                              console.log('[MANAGE_TEAM] Showing plan modal for starter/pro');
                               setShowPlanModal(true);
                               return;
                             }
 
                             // If team is connected, open Manage Team modal
-                            if (isTeamConnected) {
+                            // Use fresh computed value to ensure we have the latest state
+                            if (currentIsTeamConnected) {
+                              console.log('[MANAGE_TEAM] Team is connected, opening manage modal');
                               // Fetch team members before opening modal
                               setTeamNameInput(teamName || ''); // Initialize with current team name
                               setLoadingTeamMembers(true);
                               try {
+                                console.log('[MANAGE_TEAM] Fetching team members...');
                                 const result = await proxyService.getTeamMembers(proxySessionId);
+                                console.log('[MANAGE_TEAM] Team members result:', result);
                                 if (result.success && result.teamMembers) {
                                   setTeamMembersList(result.teamMembers);
                                 } else {
@@ -4276,11 +4406,14 @@ export default function SettingsScreen({ navigation, route }) {
                                 console.error('[SETTINGS] Failed to fetch team members:', error);
                                 setTeamMembersList([]);
                               } finally {
+                                console.log('[MANAGE_TEAM] Opening manage team modal NOW');
                                 setLoadingTeamMembers(false);
                                 setShowManageTeamModal(true);
                               }
                               return;
                             }
+
+                            console.log('[MANAGE_TEAM] Team not connected, proceeding with setup');
                             
                             // If team is not connected, proceed with setup
                             const isPro = userPlan === 'pro';
@@ -4860,30 +4993,34 @@ export default function SettingsScreen({ navigation, route }) {
 
         {/* Invite Friends */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Invite Friends</Text>
+          <Text style={styles.sectionTitle}>{t('settings.inviteFriends', { defaultValue: 'Invite Friends' })}</Text>
           <Text style={styles.sectionDescription}>
-            Earn rewards for inviting friends
+            {t('settings.inviteFriendsDescription', { defaultValue: 'Earn rewards for inviting friends' })}
           </Text>
 
           {/* Stats Cards */}
           <View style={styles.referralStatsContainer}>
             <View style={styles.referralStatCard}>
-              <Ionicons name="people" size={24} color={COLORS.TEXT} />
+              <Image source={require('../../assets/icons/team.png')} style={{height:25, width: 25}}/>
+              <View >
               <Text style={styles.referralStatValue}>
-                {referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0} out of 3
+                {t('settings.outOf', { current: referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0, total: 3, defaultValue: `${referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0} out of 3` })}
               </Text>
               <Text style={styles.referralStatLabel}>
-                Friends Joined
+                {t('settings.friendsJoined', { defaultValue: 'Friends Joined' })}
               </Text>
+              </View>
             </View>
             <View style={styles.referralStatCard}>
-              <Ionicons name="trophy" size={24} color={COLORS.TEXT} />
+              <Image source={require('../../assets/icons/cup.png')} style={{height:25, width: 25}}/>
+              <View>
               <Text style={styles.referralStatValue}>
-                {referralInfo.totalMonthsEarned || 0} Months
+                {t('settings.monthsCount', { count: referralInfo.totalMonthsEarned || 0, defaultValue: `${referralInfo.totalMonthsEarned || 0} Months` })}
               </Text>
               <Text style={styles.referralStatLabel}>
-                Months earned
+                {t('settings.monthsEarned', { defaultValue: 'Months earned' })}
               </Text>
+              </View>
             </View>
           </View>
 
@@ -4893,7 +5030,7 @@ export default function SettingsScreen({ navigation, route }) {
             onPress={() => navigation.navigate('Referral')}
           >
             <Text style={styles.inviteFriendsButtonText}>
-              Invite Friends
+              {t('settings.inviteFriends', { defaultValue: 'Invite Friends' })}
             </Text>
           </TouchableOpacity>
 
@@ -4903,7 +5040,7 @@ export default function SettingsScreen({ navigation, route }) {
               style={styles.referralCodeInput}
               value={referralCodeInput}
               onChangeText={setReferralCodeInput}
-              placeholder="Enter referral code"
+              placeholder={t('settings.enterReferralCode', { defaultValue: 'Enter referral code' })}
               placeholderTextColor={COLORS.GRAY}
               autoCapitalize="characters"
               autoCorrect={false}
@@ -4914,32 +5051,13 @@ export default function SettingsScreen({ navigation, route }) {
               disabled={isApplyingReferral}
             >
               <Text style={styles.referralApplyButtonText}>
-                {isApplyingReferral ? 'Applying...' : 'Apply'}
+                {isApplyingReferral ? t('settings.applying', { defaultValue: 'Applying...' }) : t('settings.apply', { defaultValue: 'Apply' })}
               </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Account & Data */}
-        <View 
-          ref={accountDataSectionRef}
-          style={styles.section}
-        >
-          <Text style={styles.sectionTitle}>{t('settings.accountData')}</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t('settings.userName')}</Text>
-            <TextInput
-              style={[styles.input, isTeamMember && styles.inputDisabled]}
-              value={name}
-              onChangeText={setName}
-              placeholder={t('settings.enterYourName')}
-              placeholderTextColor={COLORS.GRAY}
-              onBlur={handleSaveUserInfo}
-              editable={!isTeamMember}
-            />
-          </View>
-        </View>
+        
 
         {/* Contact Us Section */}
         <View style={styles.section}>
@@ -4948,9 +5066,9 @@ export default function SettingsScreen({ navigation, route }) {
             onPress={() => navigation.navigate('ContactUs')}
           >
             <View style={styles.contactUsContent}>
-              <Text style={styles.sectionTitle}>Contact us</Text>
+              <Text style={styles.sectionTitle}>{t('settings.contactUs', { defaultValue: 'Contact us' })}</Text>
               <Text style={styles.sectionDescription}>
-                Have question or need help?
+                {t('settings.contactUsDescription', { defaultValue: 'Have question or need help?' })}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={COLORS.GRAY} />
@@ -4959,15 +5077,15 @@ export default function SettingsScreen({ navigation, route }) {
 
         {/* Data Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Data</Text>
+          <Text style={styles.sectionTitle}>{t('settings.data', { defaultValue: 'Data' })}</Text>
           <Text style={styles.sectionDescription}>
-            This will clear all projects, photos and settings
+            {t('settings.dataDescription', { defaultValue: 'This will clear all projects, photos and settings' })}
           </Text>
           <TouchableOpacity
             style={styles.resetDataButton}
             onPress={handleResetUserData}
           >
-            <Text style={styles.resetDataButtonText}>Reset User Data</Text>
+            <Text style={styles.resetDataButtonText}>{t('settings.resetUserData', { defaultValue: 'Reset User Data' })}</Text>
           </TouchableOpacity>
 
           {showDeleteFromStorageHint && (
@@ -5038,9 +5156,8 @@ export default function SettingsScreen({ navigation, route }) {
         {/* App Version Info */}
         <View style={styles.versionContainer}>
           <View style={styles.proofPixBranding}>
-            <View style={styles.proofPixLogo}>
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-            </View>
+             <Image source={require('../../assets/logo.png')} style={{ width: 50, height: 50
+             }} resizeMode="contain"/>
             <Text style={styles.proofPixText}>ProofPix</Text>
           </View>
           <Text style={styles.versionText}>
@@ -5051,37 +5168,36 @@ export default function SettingsScreen({ navigation, route }) {
         </ScrollView>
 
         <View style={styles.bottomNavPill}>
-          <TouchableOpacity 
-            style={styles.navItem}
-            onPress={() => navigation.navigate('Home')}
-          >
-            <Ionicons name="home-outline" size={24} color="#666666" />
-            <Text style={styles.navItemText}>Home</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.navItem}
-            onPress={() => navigation.navigate('Projects')}
-          >
-            <Ionicons name="folder-outline" size={24} color="#666666" />
-            <Text style={styles.navItemText}>Projects</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.navItem}
-            onPress={() => navigation.navigate('Gallery')}
-          >
-            <Ionicons name="images" size={24} color="#666666" />
-            <Text style={styles.navItemText}>Gallery</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.navItem, styles.navItemActive]}
-          >
-            <Ionicons name="settings-outline" size={24} color="#000000" />
-            <Text style={[styles.navItemText, styles.navItemTextActive]}>Settings</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+        >
+          <Image source={require('../../assets/icons/home.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Projects' }] })}
+        >
+          <Image source={require('../../assets/icons/projects.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Projects</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] })}
+        >
+          <Image source={require('../../assets/icons/gallery.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Gallery</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          onPress={handleTitleTap}
+          style={[styles.navItem, styles.navItemActive]}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Image source={require('../../assets/icons/settings.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Settings</Text>
+        </TouchableOpacity>
+      </View>
 
         <RoomEditor
           visible={showRoomEditor}
@@ -5352,13 +5468,15 @@ export default function SettingsScreen({ navigation, route }) {
         <RNModal
           visible={showPlanModal}
           animationType="slide"
+          presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
           onRequestClose={() => setShowPlanModal(false)}
         >
-          <SafeAreaView style={styles.planModalContainer}>
+          <View style={[styles.planModalContainer, { paddingTop: Platform.OS === 'ios' ? 12 : insets.top }]}>
             <View style={styles.planModalHeader}>
               <TouchableOpacity
                 onPress={() => setShowPlanModal(false)}
                 style={styles.planModalBackButton}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
                 <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
               </TouchableOpacity>
@@ -5369,7 +5487,13 @@ export default function SettingsScreen({ navigation, route }) {
             <View style={styles.planModalBody}>
               <ScrollView style={styles.planModalScrollView} contentContainerStyle={styles.planModalContent}>
                 {/* Starter Plan Card */}
-                <View style={styles.planCard}>
+                <TouchableOpacity
+                  style={[styles.planCard, userPlan === 'starter' && styles.planCardSelected]}
+                  onPress={async () => {
+                    await updateUserPlan('starter');
+                    setShowPlanModal(false);
+                  }}
+                >
                   <View style={styles.planCardHeader}>
                     <Text style={styles.planCardTitle}>Starter</Text>
                     <View style={styles.planBadgeFree}>
@@ -5379,16 +5503,11 @@ export default function SettingsScreen({ navigation, route }) {
                   <Text style={styles.planCardDescription}>
                     Free forever. Easily manage your first project and create stunning before/after photos ready for social sharing.
                   </Text>
-                  {userPlan === 'starter' && (
-                    <View style={styles.currentPlanButton}>
-                      <Text style={styles.currentPlanButtonText}>Current Plan</Text>
-                    </View>
-                  )}
-                </View>
+                </TouchableOpacity>
 
                 {/* Pro Plan Card */}
                 <TouchableOpacity
-                  style={[styles.planCard, styles.planCardRecommended]}
+                  style={[styles.planCard, userPlan === 'pro' && styles.planCardSelected]}
                   onPress={async () => {
                     try {
                       // Clear team data when switching to Pro
@@ -5481,7 +5600,7 @@ export default function SettingsScreen({ navigation, route }) {
 
                 {/* Business Plan Card */}
                 <TouchableOpacity
-                  style={styles.planCard}
+                  style={[styles.planCard, userPlan === 'business' && styles.planCardSelected]}
                   onPress={async () => {
                     try {
                       // Check if user is on active trial - if so, skip IAP
@@ -5563,7 +5682,7 @@ export default function SettingsScreen({ navigation, route }) {
 
                 {/* Enterprise Plan Card */}
                 <TouchableOpacity
-                  style={styles.planCard}
+                  style={[styles.planCard, userPlan === 'enterprise' && styles.planCardSelected]}
                   onPress={async () => {
                     try {
                       // Check if user is on active trial - if so, skip IAP
@@ -5645,16 +5764,9 @@ export default function SettingsScreen({ navigation, route }) {
                   </Text>
                 </TouchableOpacity>
 
-                {/* Get More Button */}
-                <TouchableOpacity
-                  style={styles.getMoreButton}
-                  onPress={() => setShowPlanModal(false)}
-                >
-                  <Text style={styles.getMoreButtonText}>Get More</Text>
-                </TouchableOpacity>
               </ScrollView>
             </View>
-          </SafeAreaView>
+          </View>
         </RNModal>
 
         {/* Language Selection Modal - Bottom Sheet Style */}
@@ -5695,11 +5807,17 @@ export default function SettingsScreen({ navigation, route }) {
                     style={styles.languageOptionBottomSheet}
                     onPress={() => {
                       i18n.changeLanguage(language.code);
+                      updateLabelLanguage(language.code);
+                      updateSectionLanguage(language.code);
                       setLanguageModalVisible(false);
                     }}
                   >
                     <View style={styles.flagCircle}>
-                      <Text style={styles.languageFlagBottomSheet}>{language.flag}</Text>
+                      <Image
+                        source={FLAG_IMAGES[language.code] || FLAG_IMAGES.en}
+                        style={styles.languageFlagImages}
+                        resizeMode="cover"
+                      />
                     </View>
                     <Text style={styles.languageOptionTextBottomSheet}>
                       {language.name}
@@ -5822,7 +5940,7 @@ export default function SettingsScreen({ navigation, route }) {
                               return (
                                 <View style={styles.accountIconContainer}>
                                   <View style={[styles.accountIcon, styles.appleIcon]}>
-                                    <Text style={styles.accountIconText}>🍎</Text>
+                                    <Image source={require('../../assets/icons/apple.png')} style={{ width: 20, height: 20 }} />
                                   </View>
                                 </View>
                               );
@@ -7014,13 +7132,32 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.TEXT,
       letterSpacing: -0.5,
     },
+    titleTouchable: {
+      alignSelf: 'flex-start',
+    },
     headerLanguageSelector: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#ECECEC',
+      borderRadius: 62,
+      paddingHorizontal: 1,
+      paddingVertical: 1,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.09,
+      shadowRadius: 15,
+      elevation: 3,
     },
     headerLanguageFlag: {
       fontSize: 20,
+    },
+    headerLanguageFlagImage: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      marginRight: 4,
     },
     content: {
       flex: 1
@@ -7039,16 +7176,16 @@ const sliderStyles = StyleSheet.create({
       elevation: 3,
     },
     sectionTitle: {
-      fontSize: 18,
+      fontSize: 22,
       fontWeight: '700',
       color: COLORS.TEXT,
-      marginBottom: 8,
+      marginBottom: 2,
     },
     inputGroup: {
       marginBottom: 16
     },
     label: {
-      fontSize: 14,
+      fontSize: 12,
       fontWeight: '600',
       color: COLORS.TEXT,
       marginBottom: 8
@@ -7094,7 +7231,15 @@ const sliderStyles = StyleSheet.create({
     },
     locationOption: {
       padding: 12,
-      backgroundColor: 'white'
+      paddingRight: 40,
+      backgroundColor: 'white',
+      position: 'relative'
+    },
+    locationOptionUseCurrent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      borderBottomColor: COLORS.BORDER,
     },
     locationOptionSelected: {
       backgroundColor: '#f7f7f7'
@@ -7112,9 +7257,9 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.PRIMARY
     },
     sectionDescription: {
-      fontSize: 14,
-      color: '#666666',
-      marginBottom: 16,
+      fontSize: 12,
+      color: 'grey',
+      marginBottom: 2,
       lineHeight: 20,
     },
     userAccountCard: {
@@ -7133,7 +7278,7 @@ const sliderStyles = StyleSheet.create({
     userAccountHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       marginBottom: 16,
     },
     userAccountLeft: {
@@ -7142,10 +7287,7 @@ const sliderStyles = StyleSheet.create({
       flex: 1,
     },
     userAvatar: {
-      width: 64,
-      height: 64,
       borderRadius: 32,
-      backgroundColor: '#FFD700',
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 12,
@@ -7154,15 +7296,15 @@ const sliderStyles = StyleSheet.create({
       flex: 1,
     },
     userName: {
-      fontSize: 18,
+      fontSize: 22,
       fontWeight: '700',
       color: COLORS.TEXT,
       marginBottom: 4,
     },
     accountType: {
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: '500',
-      color: '#666666',
+      color: 'rgba(0, 0, 0, 0.6)',
     },
     editButton: {
       padding: 8,
@@ -7177,7 +7319,7 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 12,
     },
     planName: {
-      fontSize: 16,
+      fontSize: 20,
       fontWeight: '700',
       color: COLORS.TEXT,
       flex: 1,
@@ -7193,14 +7335,22 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 8,
     },
     trialProgressFill: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
       height: '100%',
       backgroundColor: '#4CAF50',
       borderRadius: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 0 }, // 👈 key part
+      shadowOpacity: 0.25,
+      shadowRadius: 6,
+      elevation: 6,
     },
     trialDaysText: {
       fontSize: 14,
       fontWeight: '500',
-      color: '#666666',
+      color: 'grey',
     },
     freeBadge: {
       backgroundColor: '#90EE90',
@@ -7215,10 +7365,10 @@ const sliderStyles = StyleSheet.create({
     },
     upgradeButton: {
       backgroundColor: '#000000',
-      borderRadius: 12,
+      borderRadius: 32,
       paddingVertical: 16,
       alignItems: 'center',
-      marginTop: 16,
+      marginTop: 5,
     },
     upgradeButtonText: {
       color: '#FFFFFF',
@@ -7247,7 +7397,8 @@ const sliderStyles = StyleSheet.create({
     },
     settingLabel: {
       color: COLORS.TEXT,
-      fontWeight: '600'
+      fontWeight: '600',
+      fontSize: 15,
     },
     settingDescription: {
       color: COLORS.GRAY,
@@ -7670,6 +7821,10 @@ const sliderStyles = StyleSheet.create({
       shadowRadius: 6,
       elevation: 4,
     },
+    planCardSelected: {
+      borderWidth: 2.5,
+      borderColor: COLORS.PRIMARY,
+    },
     planCardHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -7838,7 +7993,7 @@ const sliderStyles = StyleSheet.create({
     expoGoWarningSubtext: {
       color: '#856404',
       fontSize: 12,
-      fontFamily: 'monospace'
+      fontFamily: FONTS.ALEXANDRIA
     },
     adminNote: {
       color: COLORS.GRAY,
@@ -7917,7 +8072,7 @@ const sliderStyles = StyleSheet.create({
     tokenValue: {
       fontSize: 13,
       color: COLORS.TEXT,
-      fontFamily: 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     teamWarningText: {
       color: COLORS.GRAY,
@@ -8209,11 +8364,14 @@ const sliderStyles = StyleSheet.create({
     },
     cloudServicesRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: 12,
       marginBottom: 12,
     },
     cloudServiceButton: {
-      flex: 1,
+      flexGrow: 1,
+      flexShrink: 0,
+      flexBasis: '40%',
       backgroundColor: 'white',
       borderRadius: 12,
       paddingVertical: 14,
@@ -8969,6 +9127,11 @@ const sliderStyles = StyleSheet.create({
     languageFlag: {
       fontSize: 20,
     },
+    languageFlagImage: {
+      width: 28,
+      height: 28,
+      marginRight: 8,
+    },
     languageName: {
       fontSize: 16,
       color: COLORS.TEXT_MUTED,
@@ -8987,6 +9150,7 @@ const sliderStyles = StyleSheet.create({
       backgroundColor: 'white',
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
+      minHeight: '80%',
       maxHeight: '90%',
       paddingBottom: 20,
       width: '100%',
@@ -9017,13 +9181,13 @@ const sliderStyles = StyleSheet.create({
     modalTitleBottomSheet: {
       fontSize: 18,
       fontWeight: '700',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
       color: COLORS.TEXT,
       flex: 1,
       textAlign: 'center',
     },
     languageScrollViewBottomSheet: {
-      maxHeight: Dimensions.get('window').height * 0.6,
+      maxHeight: Dimensions.get('window').height * 0.8,
     },
     languageOptionBottomSheet: {
       flexDirection: 'row',
@@ -9046,6 +9210,10 @@ const sliderStyles = StyleSheet.create({
     languageFlagBottomSheet: {
       fontSize: 28,
     },
+    languageFlagImages: {
+      width: 40,
+      height: 40,
+    },
     checkmarkCircle: {
       width: 24,
       height: 24,
@@ -9058,7 +9226,7 @@ const sliderStyles = StyleSheet.create({
       flex: 1,
       fontSize: 16,
       fontWeight: '400',
-      fontFamily: FONTS.QUICKSAND_REGULAR,
+      fontFamily: FONTS.ALEXANDRIA,
       color: COLORS.TEXT,
     },
     settingButton: {
@@ -9113,6 +9281,7 @@ const sliderStyles = StyleSheet.create({
     },
     roomListContainer: {
       marginVertical: 12,
+     
     },
     roomListScrollContent: {
       paddingRight: 20,
@@ -9122,13 +9291,12 @@ const sliderStyles = StyleSheet.create({
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      borderRadius: 24,
+      padding: 3,
+      borderRadius: 10,
       backgroundColor: 'white',
-      borderWidth: 2,
-      borderColor: '#E0E0E0',
-      minWidth: 80,
+      borderWidth: 1,
+      borderColor: 'rgba(0, 0, 0, 0.1)',
+      minWidth: 65,
       gap: 6,
     },
     roomListItemActive: {
@@ -9163,7 +9331,7 @@ const sliderStyles = StyleSheet.create({
       fontSize: 16,
       fontWeight: '600',
       color: '#856404',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     testSection: {
       marginTop: 20,
@@ -9179,7 +9347,7 @@ const sliderStyles = StyleSheet.create({
       fontWeight: 'bold',
       color: COLORS.TEXT,
       marginBottom: 12,
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     testButtons: {
       flexDirection: 'row',
@@ -9200,7 +9368,7 @@ const sliderStyles = StyleSheet.create({
       fontSize: 16,
       fontWeight: '600',
       color: '#000000',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     referralStatsContainer: {
       flexDirection: 'row',
@@ -9211,10 +9379,12 @@ const sliderStyles = StyleSheet.create({
     referralStatCard: {
       flex: 1,
       backgroundColor: 'white',
-      borderRadius: 20,
+      borderRadius: 10,
       borderWidth: 1,
+      flexDirection: 'row',
       borderColor: '#E0E0E0',
-      padding: 16,
+      padding: 3,
+      justifyContent: 'center',
       alignItems: 'center',
       gap: 10,
     },
@@ -9225,14 +9395,14 @@ const sliderStyles = StyleSheet.create({
       marginTop: 4,
     },
     referralStatValue: {
-      fontSize: 20,
+      fontSize: 17,
       color: COLORS.TEXT,
       fontWeight: '600',
       textAlign: 'center',
     },
     inviteFriendsButton: {
       backgroundColor: '#000000',
-      borderRadius: 20,
+      borderRadius: 32,
       paddingVertical: 16,
       paddingHorizontal: 20,
       alignItems: 'center',
@@ -9241,31 +9411,34 @@ const sliderStyles = StyleSheet.create({
     },
     inviteFriendsButtonText: {
       color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '600',
+      fontSize: 18,
+      fontWeight: '700',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     referralCodeContainer: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      borderRadius: 28,
+      padding: 2,
     },
     referralCodeInput: {
       flex: 1,
-      borderWidth: 1,
-      borderColor: '#E0E0E0',
       borderRadius: 20,
       paddingHorizontal: 16,
-      paddingVertical: 14,
-      fontSize: 14,
-      fontFamily: FONTS.QUICKSAND_REGULAR,
+      paddingVertical: 12,
+      fontSize: 17,
+      fontFamily: FONTS.ALEXANDRIA,
       color: COLORS.TEXT,
       backgroundColor: 'white',
     },
     referralApplyButton: {
       backgroundColor: '#000000',
-      paddingHorizontal: 20,
+      paddingHorizontal: 28,
       paddingVertical: 14,
-      borderRadius: 20,
+      borderRadius: 28,
       minWidth: 70,
     },
     referralApplyButtonDisabled: {
@@ -9274,9 +9447,9 @@ const sliderStyles = StyleSheet.create({
     },
     referralApplyButtonText: {
       color: '#FFFFFF',
-      fontSize: 14,
-      fontWeight: '600',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontSize: 18,
+      fontWeight: '700',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     // Account Management Styles
     accountsList: {
@@ -9395,6 +9568,42 @@ const sliderStyles = StyleSheet.create({
       fontSize: 14,
       color: COLORS.GRAY,
       marginTop: 4,
+    },
+    priceContainer: {
+      position: 'relative',
+      height: 24,
+      justifyContent: 'center',
+      alignItems: 'flex-end',
+      paddingRight: 8,
+    },
+    priceContainerWide: {
+      width: 173,
+    },
+    priceBadgeGradient: {
+      position: 'absolute',
+      right: 0,
+      top: 0,
+      width: 112,
+      height: 24,
+      borderRadius: 100,
+      opacity: 0.14,
+    },
+    priceBadgeGradientWide: {
+      position: 'absolute',
+      right: 0,
+      top: 0,
+      width: 173,
+      height: 24,
+      borderRadius: 100,
+      opacity: 0.14,
+    },
+    priceText: {
+      fontSize: 14,
+      fontWeight: '700',
+      fontFamily: 'Alexandria_400Regular',
+      color: '#0B8321',
+      lineHeight: 20,
+      textAlign: 'right',
     },
     accountActiveLabel: {
       fontSize: 12,
@@ -9661,7 +9870,7 @@ const sliderStyles = StyleSheet.create({
     inviteTokenText: {
       fontSize: 14,
       color: COLORS.TEXT,
-      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     teamMemberItemSimple: {
       backgroundColor: '#f5f5f5',
@@ -9678,7 +9887,7 @@ const sliderStyles = StyleSheet.create({
     teamMemberTokenText: {
       fontSize: 12,
       color: COLORS.GRAY,
-      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     emptyText: {
       fontSize: 14,
@@ -9764,7 +9973,7 @@ const sliderStyles = StyleSheet.create({
     tokenValueSmall: {
       fontSize: 12,
       color: '#333',
-      fontFamily: 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     revokeButtonSmall: {
       backgroundColor: '#ff4444',
@@ -9790,7 +9999,7 @@ const sliderStyles = StyleSheet.create({
     },
     inviteToken: {
       fontSize: 13,
-      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
       color: '#007bff',
       fontWeight: '600',
       flex: 1,
@@ -9876,14 +10085,14 @@ const sliderStyles = StyleSheet.create({
       fontSize: 18,
       fontWeight: 'bold',
       color: '#333',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     addMemberButtonPrice: {
       fontSize: 16,
       fontWeight: '600',
       color: '#4CAF50',
       marginTop: 4,
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     addMemberOverlay: {
       ...StyleSheet.absoluteFillObject,
@@ -10135,7 +10344,7 @@ const sliderStyles = StyleSheet.create({
       color: '#666',
       textAlign: 'center',
       textDecorationLine: 'underline',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     legalLinksContainer: {
       flexDirection: 'row',
@@ -10155,13 +10364,13 @@ const sliderStyles = StyleSheet.create({
       color: '#666',
       textAlign: 'center',
       textDecorationLine: 'underline',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     legalLinkSeparator: {
       fontSize: 12,
       color: '#666',
       marginHorizontal: 8,
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     versionContainer: {
       alignItems: 'center',
@@ -10173,6 +10382,7 @@ const sliderStyles = StyleSheet.create({
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
+      justifyContent:'center'
     },
     proofPixLogo: {
       width: 40,
@@ -10186,28 +10396,27 @@ const sliderStyles = StyleSheet.create({
       fontSize: 24,
       fontWeight: '700',
       color: COLORS.TEXT,
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     versionText: {
       fontSize: 12,
       color: '#999',
-      fontFamily: FONTS.QUICKSAND_REGULAR,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     bottomNavPill: {
       position: 'absolute',
       bottom: 20,
-      left: 20,
-      right: 20,
+      left: 12,
+      right: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-around',
-      backgroundColor: 'white',
-      borderRadius: 32,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
+      justifyContent: 'center',
+      backgroundColor: '#f4f4f4',
+      borderRadius: 296,
+      height: 60,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.15,
+      shadowOpacity: 0.1,
       shadowRadius: 12,
       elevation: 8,
       zIndex: 90,
@@ -10217,17 +10426,23 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: 10,
-      borderRadius: 20,
-    },
-    navItemActive: {
-      backgroundColor: '#F0F0F0',
-    },
-    navItemText: {
+      borderRadius: 20
+      },
+      navItemImage:{
+        width: 22,
+        height: 22,
+      },
+      navItemActive: {
+        backgroundColor: '#E0E0E0',
+        borderRadius: 100,
+        marginHorizontal: -7,
+      },
+      navItemText: {
       fontSize: 11,
       fontWeight: '500',
       color: '#666666',
-      marginTop: 4,
-    },
+      marginTop: 4
+      },
     navItemTextActive: {
       color: '#000000',
       fontWeight: '600',

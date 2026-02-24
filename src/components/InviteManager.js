@@ -7,6 +7,7 @@ import { generateInviteToken } from '../utils/tokens';
 import proxyService from '../services/proxyService';
 import { PROXY_SERVER_URL } from '../config/proxy';
 import { COLORS } from '../constants/rooms';
+import { FONTS } from '../constants/fonts';
 import { generateInviteLink, generateShareContent, generateInviteCode } from '../utils/inviteLinkGenerator';
 
 /**
@@ -178,7 +179,7 @@ export default function InviteManager({ navigation }) {
                 // Refresh team members list if possible, then navigate to Home
                 fetchTeamMembers().then(() => {
                   if (navigation) {
-                    navigation.navigate('Home');
+                    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
                   }
                 });
               }
@@ -548,7 +549,7 @@ const styles = StyleSheet.create({
   },
   inviteToken: {
     fontSize: 13,
-    fontFamily: 'monospace',
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#007bff',
     fontWeight: '600',
     flex: 1,

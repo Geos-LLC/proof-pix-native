@@ -69,22 +69,28 @@ class ImageCompositor: NSObject {
             let topH = CGFloat(truncating: topHeight ?? 0) * scaleFactor
             let bottomH = CGFloat(truncating: bottomHeight ?? 0) * scaleFactor
 
-            // Draw before image on top
-            beforeImage.draw(in: CGRect(x: 0, y: 0, width: canvasWidth, height: topH))
+            let topRect = CGRect(x: 0, y: 0, width: canvasWidth, height: topH)
+            let bottomRect = CGRect(x: 0, y: topH, width: canvasWidth, height: bottomH)
 
-            // Draw after image on bottom
-            afterImage.draw(in: CGRect(x: 0, y: topH, width: canvasWidth, height: bottomH))
+            // Draw before image on top (aspect-fill with center crop)
+            self.drawImageAspectFill(beforeImage, in: topRect, context: context)
+
+            // Draw after image on bottom (aspect-fill with center crop)
+            self.drawImageAspectFill(afterImage, in: bottomRect, context: context)
 
           } else {
             // Side-by-side layout (horizontal)
             let leftW = CGFloat(truncating: leftWidth ?? 0) * scaleFactor
             let rightW = CGFloat(truncating: rightWidth ?? 0) * scaleFactor
 
-            // Draw before image on left
-            beforeImage.draw(in: CGRect(x: 0, y: 0, width: leftW, height: canvasHeight))
+            let leftRect = CGRect(x: 0, y: 0, width: leftW, height: canvasHeight)
+            let rightRect = CGRect(x: leftW, y: 0, width: rightW, height: canvasHeight)
 
-            // Draw after image on right
-            afterImage.draw(in: CGRect(x: leftW, y: 0, width: rightW, height: canvasHeight))
+            // Draw before image on left (aspect-fill with center crop)
+            self.drawImageAspectFill(beforeImage, in: leftRect, context: context)
+
+            // Draw after image on right (aspect-fill with center crop)
+            self.drawImageAspectFill(afterImage, in: rightRect, context: context)
           }
         }
 
@@ -380,6 +386,34 @@ class ImageCompositor: NSObject {
         reject("WATERMARK_ERROR", "Failed to add watermark to image: \(error.localizedDescription)", error)
       }
     }
+  }
+
+  /// Draws an image into the target rect using aspect-fill (center-crop).
+  /// The image is scaled up to completely fill the rect, then centered so
+  /// excess content is cropped equally on both sides.
+  private func drawImageAspectFill(_ image: UIImage, in rect: CGRect, context: UIGraphicsImageRendererContext) {
+    let imageSize = image.size
+    let targetSize = rect.size
+
+    // Calculate scale to fill (aspect-fill uses the larger scale)
+    let scaleX = targetSize.width / imageSize.width
+    let scaleY = targetSize.height / imageSize.height
+    let scale = max(scaleX, scaleY)
+
+    let scaledWidth = imageSize.width * scale
+    let scaledHeight = imageSize.height * scale
+
+    // Center the scaled image in the target rect
+    let drawX = rect.origin.x + (targetSize.width - scaledWidth) / 2
+    let drawY = rect.origin.y + (targetSize.height - scaledHeight) / 2
+
+    let drawRect = CGRect(x: drawX, y: drawY, width: scaledWidth, height: scaledHeight)
+
+    // Clip to the target rect so overflow is cropped, then draw
+    context.cgContext.saveGState()
+    context.cgContext.clip(to: rect)
+    image.draw(in: drawRect)
+    context.cgContext.restoreGState()
   }
 
   private func hexToUIColor(hex: String) -> UIColor {

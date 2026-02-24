@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#FFFFFF',
     color: '#000000',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
+    fontFamily: FONTS.ALEXANDRIA,
   },
   textArea: {
     height: 120,

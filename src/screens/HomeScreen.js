@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,34 +12,75 @@ import {
   Modal,
   Alert,
   TextInput,
-  Share,
   ActivityIndicator,
   Switch,
-  InteractionManager
+  InteractionManager,
+  Platform,
+  KeyboardAvoidingView
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { RoomIcon } from '../utils/roomIcons';
 import { usePhotos } from '../context/PhotoContext';
-import { ROOMS, COLORS, PHOTO_MODES } from '../constants/rooms';
+import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
-import { createAlbumName } from '../services/uploadService';
+import { createAlbumName, ensureLabelForPhoto } from '../services/uploadService';
+import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
+import { LOCATIONS, getLocationName } from '../config/locations';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
-import UploadIndicatorLine from '../components/UploadIndicatorLine';
 import RoomEditor from '../components/RoomEditor';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
+import * as ExpoLocation from 'expo-location';
+import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { isTrialActive } from '../services/trialService';
+import Constants from 'expo-constants';
+
+// react-native-share for proper image file sharing (not available in Expo Go)
+let Share = {
+  open: async () => {
+    console.log('[Share] react-native-share not available (likely Expo Go). Share.open call ignored.');
+  },
+};
+if (Constants?.appOwnership !== 'expo') {
+  try {
+    const shareModule = require('react-native-share');
+    Share = shareModule.default || shareModule;
+  } catch (e) {
+    console.warn('[Share] Failed to load react-native-share:', e?.message);
+  }
+}
 
 const { width } = Dimensions.get('window');
-const PHOTO_SIZE = (width - 60) / 2;
+const PHOTO_SIZE = (width - 60) / 2; // 2 columns - thumbnails MUST be square (1:1)
+
+// Helper to check if aspect ratio is portrait (height > width)
+const isPortraitAspectRatio = (aspectRatio) => {
+  if (!aspectRatio) return true; // Default to portrait if unknown
+  const [w, h] = aspectRatio.split(':').map(Number);
+  return h > w; // 3:4, 9:16 etc are portrait
+};
+
+// Helper to check if layout should be stacked based on template or aspect ratio
+const isStackedLayout = (templateType, aspectRatio) => {
+  // First check templateType if available
+  if (templateType) {
+    const config = TEMPLATE_CONFIGS[templateType];
+    if (config?.layout) return config.layout === 'stack';
+  }
+  // Fallback to aspect ratio - landscape photos should be stacked, portrait should be side-by-side
+  // Portrait (3:4, 9:16): side-by-side (vertical divider)
+  // Landscape (4:3, 16:9): stacked (horizontal divider)
+  return !isPortraitAspectRatio(aspectRatio);
+};
 
 export default function HomeScreen({ navigation }) {
   const { t } = useTranslation();
@@ -56,12 +97,36 @@ export default function HomeScreen({ navigation }) {
   const [fullScreenPhotoSet, setFullScreenPhotoSet] = useState(null);
   const [fullScreenIndex, setFullScreenIndex] = useState(0);
   const [fullScreenPhotos, setFullScreenPhotos] = useState([]);
+  const [fullScreenLoading, setFullScreenLoading] = useState(false);
+  const [fullScreenError, setFullScreenError] = useState(null);
   const [openProjectVisible, setOpenProjectVisible] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const { projects, getPhotosByProject, deleteProject, setActiveProject, activeProjectId, createProject, renameProject, photos } = usePhotos();
-  const { userName, location, getRooms, userPlan, cleaningServiceEnabled, sectionLanguage, updateUserPlan, showLabels, toggleLabels, beforeLabelPosition, afterLabelPosition } = useSettings();
-  const { userMode } = useAdmin();
+  const activeProject = projects.find(p => p.id === activeProjectId) || null;
+  const insets = useSafeAreaInsets();
+  const {
+    userName,
+    location,
+    getRooms,
+    userPlan,
+    cleaningServiceEnabled,
+    sectionLanguage,
+    updateUserPlan,
+    showLabels,
+    toggleLabels,
+    beforeLabelPosition,
+    afterLabelPosition,
+    labelBackgroundColor,
+    labelTextColor,
+    labelSize,
+    labelMarginHorizontal,
+    labelMarginVertical,
+    updateUserInfo,
+  } = useSettings();
+  const { userMode, updatePlanLimit } = useAdmin();
+  const fullScreenTopInset = Math.max(insets.top, 25);
+  const fullScreenBottomInset = Math.max(insets.bottom, 20);
   const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
   const { exceedsLimit } = useFeaturePermissions();
   const { uploadStatus, cancelUpload, cancelAllUploads } = useBackgroundUpload();
@@ -71,7 +136,9 @@ export default function HomeScreen({ navigation }) {
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
   const [roomEditorMode, setRoomEditorMode] = useState('customize');
-  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectNamePart, setNewProjectNamePart] = useState('');
+  const [newProjectLocation, setNewProjectLocation] = useState(location);
+  const [locationLoadingInModal, setLocationLoadingInModal] = useState(false);
   const [pendingCameraAfterCreate, setPendingCameraAfterCreate] = useState(false);
   const [combinedBaseUris, setCombinedBaseUris] = useState({});
   const [showPlanModal, setShowPlanModal] = useState(false);
@@ -82,6 +149,8 @@ export default function HomeScreen({ navigation }) {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
   const [sharing, setSharing] = useState(false);
+  const [showDeletePhotoConfirm, setShowDeletePhotoConfirm] = useState(false);
+  const pendingDeletePhotoIdRef = useRef(null);
 
   const { customRooms, saveCustomRooms, resetCustomRooms } = useSettings();
   const [rooms, setRooms] = useState(() => getRooms());
@@ -196,9 +265,6 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  useEffect(() => {}, [rooms]);
-  useEffect(() => {}, [customRooms]);
-
   useEffect(() => {
     if (rooms && rooms.length > 0) {
       const currentRoomExists = rooms.some(room => room.id === currentRoom);
@@ -207,8 +273,6 @@ export default function HomeScreen({ navigation }) {
       }
     }
   }, [rooms, currentRoom]);
-
-  useEffect(() => {}, [photos]);
 
   useEffect(() => {
     if (activeProjectId && projects.length > 0) {
@@ -223,6 +287,7 @@ export default function HomeScreen({ navigation }) {
     }
   }, [projects, activeProjectId]);
 
+
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const touchStartPos = useRef(null);
@@ -234,8 +299,48 @@ export default function HomeScreen({ navigation }) {
   const beforePhotos = getBeforePhotos(currentRoom);
   const afterPhotos = getAfterPhotos(currentRoom);
   const currentRoomRef = useRef(currentRoom);
+  const roomTabsScrollRef = useRef(null);
 
-  useEffect(() => {}, [photos]);
+  // Create circular room arrangement with active room in center
+  const getCircularRooms = useCallback(() => {
+    if (!rooms.length) return [];
+
+    const activeIndex = rooms.findIndex(r => r.id === currentRoom);
+    if (activeIndex < 0) return rooms;
+
+    const totalRooms = rooms.length;
+    const middleIndex = Math.floor(totalRooms / 2);
+
+    // Calculate how much to rotate the array to put active item in middle
+    const rotateBy = activeIndex - middleIndex;
+
+    // Create new array with circular rotation
+    const circularRooms = [];
+    for (let i = 0; i < totalRooms; i++) {
+      const sourceIndex = (i + rotateBy + totalRooms) % totalRooms;
+      circularRooms.push(rooms[sourceIndex]);
+    }
+
+    return circularRooms;
+  }, [rooms, currentRoom]);
+
+  // Scroll to center after room change
+  useEffect(() => {
+    if (!roomTabsScrollRef.current || !rooms.length) return;
+
+    const TAB_WIDTH = 79; // minWidth(69) + gap(10)
+    const PADDING = 16;
+    const screenWidth = Dimensions.get('window').width;
+    const middleIndex = Math.floor(rooms.length / 2);
+
+    // Calculate scroll position to center the middle tab (which is now the active one)
+    const tabCenterX = PADDING + (middleIndex * TAB_WIDTH) + (TAB_WIDTH / 2);
+    const scrollX = Math.max(0, tabCenterX - (screenWidth / 2));
+
+    setTimeout(() => {
+      roomTabsScrollRef.current?.scrollTo({ x: scrollX, animated: false });
+    }, 50);
+  }, [currentRoom, rooms]);
 
   useEffect(() => {
     let cancelled = false;
@@ -327,6 +432,8 @@ export default function HomeScreen({ navigation }) {
 
   useFocusEffect(
     React.useCallback(() => {
+      isSwiping.current = false;
+      longPressTriggered.current = false;
       let cancelled = false;
       const timeoutId = setTimeout(() => {
         (async () => {
@@ -426,23 +533,9 @@ export default function HomeScreen({ navigation }) {
       longPressTriggered.current = true;
       const photoSet = beforePhoto || photo;
       if (!photoSet) return;
-      
-      Alert.alert(
-        t('home.deletePhotoSet'),
-        t('home.deletePhotoSetConfirm', { name: photoSet.name }),
-        [
-          { text: t('common.cancel'), style: 'cancel', onPress: () => longPressTriggered.current = false },
-          { 
-            text: t('common.delete'), 
-            style: 'destructive', 
-            onPress: () => {
-              deletePhotoSet(photoSet.id);
-              longPressTriggered.current = false;
-            }
-          }
-        ],
-        { cancelable: true, onDismiss: () => longPressTriggered.current = false }
-      );
+
+      pendingDeletePhotoIdRef.current = photoSet.id;
+      setShowDeletePhotoConfirm(true);
     }, 500);
   };
 
@@ -455,11 +548,13 @@ export default function HomeScreen({ navigation }) {
 
     setFullScreenPhoto(null);
     setFullScreenPhotoSet(null);
-    
+    setFullScreenLoading(false);
+    setFullScreenError(null);
+
     if (wasLongPress) {
       setTimeout(() => {
         longPressTriggered.current = false;
-      }, 100); 
+      }, 100);
     } else {
       longPressTriggered.current = false;
     }
@@ -496,11 +591,13 @@ export default function HomeScreen({ navigation }) {
     if (photo) {
       photoIndex = allPhotos.findIndex(p => p.id === photo.id);
     } else if (beforePhoto) {
-      photoIndex = allPhotos.findIndex(p => p.id === beforePhoto.id);
+      photoIndex = allPhotos.findIndex(p => p.id === beforePhoto.id || p.beforePhoto?.id === beforePhoto.id);
     }
     if (photoIndex >= 0) {
       setFullScreenPhotos(allPhotos);
       setFullScreenIndex(photoIndex);
+      setFullScreenLoading(false);
+      setFullScreenError(null);
       if (beforePhoto && afterPhoto) {
         setFullScreenPhotoSet({ before: beforePhoto, after: afterPhoto });
       } else {
@@ -513,7 +610,7 @@ export default function HomeScreen({ navigation }) {
     if (fullScreenPhotos.length === 0) {
       return;
     }
-    
+
     let newIndex = fullScreenIndex;
     if (direction === 'left') {
       newIndex = (fullScreenIndex + 1) % fullScreenPhotos.length;
@@ -521,6 +618,8 @@ export default function HomeScreen({ navigation }) {
       newIndex = fullScreenIndex === 0 ? fullScreenPhotos.length - 1 : fullScreenIndex - 1;
     }
     setFullScreenIndex(newIndex);
+    setFullScreenLoading(false);
+    setFullScreenError(null);
     const newPhoto = fullScreenPhotos[newIndex];
     if (newPhoto.type === 'combined' || newPhoto.type === 'split') {
       setFullScreenPhotoSet({ before: newPhoto.beforePhoto, after: newPhoto.afterPhoto });
@@ -531,20 +630,87 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const shareCombinedPhoto = async (thumbnailUri, photoName, roomId) => {
+  const shareCombinedPhoto = async (thumbnailUri, photoName, roomId, combinedPhoto, beforePhoto, afterPhoto) => {
     try {
       setSharing(true);
+
+      let shareUri = thumbnailUri;
+
+      // Re-composite a fresh 1:1 square combined photo for sharing
+      if (beforePhoto?.uri && afterPhoto?.uri) {
+        try {
+          // Determine layout from stored metadata or template/aspect ratio
+          const storedLayout = combinedPhoto?.combinedLayout;
+          const isStack = storedLayout
+            ? storedLayout === 'STACK'
+            : isStackedLayout(null, beforePhoto.aspectRatio);
+          const layout = isStack ? 'STACK' : 'SIDE';
+
+          // Get before photo dimensions to calculate square size
+          const getImageSize = (uri) => new Promise((resolve, reject) => {
+            Image.getSize(uri, (w, h) => resolve({ w, h }), reject);
+          });
+          const bSize = await getImageSize(beforePhoto.uri);
+          const squareSize = Math.min(Math.max(bSize.w, 2048), 4096);
+
+          const dims = isStack
+            ? { width: squareSize, height: squareSize, topH: Math.round(squareSize / 2), bottomH: squareSize - Math.round(squareSize / 2) }
+            : { width: squareSize, height: squareSize, leftW: Math.round(squareSize / 2), rightW: squareSize - Math.round(squareSize / 2) };
+
+          console.log('[HomeScreen] Re-compositing 1:1 combined for share:', layout, squareSize);
+          const freshUri = await compositeImages(beforePhoto.uri, afterPhoto.uri, layout, dims);
+
+          // Apply labels if enabled
+          if (showLabels) {
+            try {
+              const labelSizeMap = { small: 48, medium: 56, large: 64 };
+              const fontSize = labelSizeMap[labelSize] || 56;
+              const convertPos = (pos) => {
+                const map = { 'top-left': 'left-top', 'top-right': 'right-top', 'bottom-left': 'left-bottom', 'bottom-right': 'right-bottom' };
+                return map[pos] || pos || 'left-top';
+              };
+
+              const baseLabelConfig = {
+                backgroundColor: labelBackgroundColor || '#FFD700',
+                textColor: labelTextColor || '#000000',
+                fontSize,
+                marginHorizontal: labelMarginHorizontal || 20,
+                marginVertical: labelMarginVertical || 20,
+                padding: 16,
+              };
+
+              // Add Before label
+              const beforePos = convertPos(beforeLabelPosition || 'top-left');
+              const withBeforeLabel = await addLabelToImage(freshUri, t('common.before') || 'BEFORE', { ...baseLabelConfig, position: beforePos });
+
+              // Add After label with offset
+              const afterPos = convertPos(afterLabelPosition || 'top-right');
+              const halfW = Math.round(squareSize / 2);
+              const halfH = Math.round(squareSize / 2);
+              const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPos, isStack, halfW, halfH, squareSize, squareSize);
+              shareUri = await addLabelToImage(withBeforeLabel, t('common.after') || 'AFTER', { ...baseLabelConfig, position: afterPos, offsetX, offsetY });
+              console.log('[HomeScreen] Labels applied to combined share photo');
+            } catch (labelErr) {
+              console.warn('[HomeScreen] Label application failed, sharing without labels:', labelErr?.message);
+              shareUri = freshUri;
+            }
+          } else {
+            shareUri = freshUri;
+          }
+        } catch (compositeErr) {
+          console.warn('[HomeScreen] Re-composite failed, falling back to stored URI:', compositeErr?.message);
+        }
+      }
+
       const tempFileName = `${roomId}_${photoName}_combined_${Date.now()}.jpg`;
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
-      await FileSystem.copyAsync({ from: thumbnailUri, to: tempUri });
+      await FileSystem.copyAsync({ from: shareUri, to: tempUri });
 
-      const shareOptions = {
+      await Share.open({
         title: `${t('common.before')}/${t('common.after')} - ${photoName}`,
-        url: tempUri,
-        type: 'image/jpeg'
-      };
-
-      await Share.share(shareOptions);
+        url: `file://${tempUri}`,
+        type: 'image/jpeg',
+      });
 
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
@@ -631,8 +797,6 @@ export default function HomeScreen({ navigation }) {
     });
   }, [fullScreenPhoto, fullScreenPhotoSet, fullScreenPhotos.length, handleSwipeNavigation, handleLongPressEnd]);
 
-  useEffect(() => {}, [openProjectVisible]);
-
   const openNewProjectModal = (navigateToCamera = false) => {
     if (!userName || userName.trim() === '') {
       Alert.alert(
@@ -640,7 +804,7 @@ export default function HomeScreen({ navigation }) {
         t('projects.userNameRequiredMessage'),
         [
           { text: t('common.cancel'), style: 'cancel' },
-          { text: t('projects.goToSettings'), onPress: () => navigation.navigate('Settings') }
+          { text: t('projects.goToSettings'), onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Settings' }] }) }
         ]
       );
       return;
@@ -651,21 +815,44 @@ export default function HomeScreen({ navigation }) {
       return;
     }
     
-    const base = createAlbumName(userName, new Date(), null, location) || `Project`;
-    const normalize = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[^a-z0-9_\- ]/gi, '_');
-    const existing = projects.map(p => p.name);
-    const existingNorm = new Set(existing.map(normalize));
-    let defaultName = base;
-    let candidate = defaultName;
-    if (existingNorm.has(normalize(defaultName))) {
-      let i = 2;
-      while (existingNorm.has(normalize(`${i} ${base}`))) i++;
-      candidate = `${i} ${base}`;
-    }
-    defaultName = candidate;
-    setNewProjectName(defaultName);
+    const locationDisplay = getLocationName(location);
+    setNewProjectNamePart(userName || '');
+    setNewProjectLocation(locationDisplay);
     setPendingCameraAfterCreate(navigateToCamera);
     setNewProjectVisible(true);
+  };
+
+  const handleUseCurrentLocationInModal = async () => {
+    setLocationLoadingInModal(true);
+    try {
+      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          t('settings.locationPermissionTitle', { defaultValue: 'Location access' }),
+          t('settings.locationPermissionMessage', { defaultValue: 'Permission to use location is required to set folder location from GPS.' }),
+          [{ text: 'OK', style: 'cancel' }]
+        );
+        return;
+      }
+      const position = await ExpoLocation.getCurrentPositionAsync({
+        accuracy: ExpoLocation.Accuracy.Balanced,
+      });
+      const [address] = await ExpoLocation.reverseGeocodeAsync({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+      const locationDisplay = address?.city || address?.region || address?.subregion || address?.country || t('projects.unknownLocation', { defaultValue: 'Unknown' });
+      setNewProjectLocation(locationDisplay);
+    } catch (error) {
+      console.error('[HomeScreen] Use current location in modal:', error);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('settings.locationError', { defaultValue: 'Could not get current location. Please try again or select a location manually.' }),
+        [{ text: 'OK', style: 'cancel' }]
+      );
+    } finally {
+      setLocationLoadingInModal(false);
+    }
   };
 
   const handleCreateProject = async () => {
@@ -674,12 +861,27 @@ export default function HomeScreen({ navigation }) {
       setShowPlanModal(true);
       return;
     }
-    
+    const namePart = (newProjectNamePart || userName || 'Project').trim();
+    if (!namePart) {
+      Alert.alert(t('common.error'), t('projects.enterProjectName'));
+      return;
+    }
+    const fullName = createAlbumName(namePart, new Date(), null, newProjectLocation || getLocationName(location));
+    const normalize = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[^a-z0-9_\- ]/gi, '_');
+    const existing = projects.map(p => p.name);
+    const existingNorm = new Set(existing.map(normalize));
+    let finalName = fullName;
+    if (existingNorm.has(normalize(fullName))) {
+      let i = 2;
+      while (existingNorm.has(normalize(`${i} ${fullName}`))) i++;
+      finalName = `${i} ${fullName}`;
+    }
+    const safeName = finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
     try {
-      const safeName = (newProjectName || 'Project').replace(/[^\p{L}\p{N}_\- ]/gu, '_');
       const proj = await createProject(safeName);
       await setActiveProject(proj.id);
       setNewProjectVisible(false);
+      setNewProjectNamePart('');
       if (pendingCameraAfterCreate) {
         setPendingCameraAfterCreate(false);
         navigation.navigate('Camera', {
@@ -777,10 +979,6 @@ export default function HomeScreen({ navigation }) {
     setSelectedProjects(new Set());
   };
 
-  const handlePlanModalClose = () => {
-    setShowPlanModal(false);
-  };
-
   const handleDisabledDeleteClick = () => {
     Alert.alert(
       t('projects.selectToDelete'),
@@ -792,10 +990,13 @@ export default function HomeScreen({ navigation }) {
   };
 
   const renderRoomTabs = () => {
+    const circularRooms = getCircularRooms();
+
     return (
       <View style={styles.roomTabsContainer}>
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          ref={roomTabsScrollRef}
+          horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.roomTabsScrollContent}
           style={styles.roomTabsScrollView}
@@ -804,7 +1005,7 @@ export default function HomeScreen({ navigation }) {
           scrollEnabled={true}
           bounces={false}
         >
-          {rooms.map((room) => {
+          {circularRooms.map((room, index) => {
             const isActive = room.id === currentRoom;
             return (
               <TouchableOpacity
@@ -816,15 +1017,29 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => setCurrentRoom(room.id)}
                 onLongPress={(event) => handleRoomLongPress(room, event)}
               >
-                <RoomIcon 
-                  roomId={room.id} 
-                  size={32} 
-                  color={isActive ? '#000' : '#666'} 
-                />
-                <Text style={[
-                  styles.roomTabText,
-                  isActive && styles.roomTabTextActive
-                ]}>
+                {room.image ? (
+                  <Image
+                    key={`room-icon-${room.id}`}
+                    source={room.image}
+                    style={styles.roomTabImage}
+                    resizeMode="contain"
+                    fadeDuration={0}
+                  />
+                ) : (
+                  <RoomIcon
+                    roomId={room.id}
+                    size={30}
+                    color="#000"
+                  />
+                )}
+                <Text
+                  style={[
+                    styles.roomTabText,
+                    isActive && styles.roomTabTextActive
+                  ]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {cleaningServiceEnabled
                     ? t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })
                     : room.name}
@@ -860,8 +1075,8 @@ export default function HomeScreen({ navigation }) {
               });
             }}
           >
-            <RoomIcon 
-              roomId={currentRoom} 
+            <Image
+              source={ROOMS.image}
               size={64} 
               color={COLORS.PRIMARY} 
             />
@@ -886,9 +1101,15 @@ export default function HomeScreen({ navigation }) {
 
         if (thumbnailUri) {
           gridItems.push(
-            <View
+            <TouchableOpacity
               key={beforePhoto.id}
               style={styles.photoItem}
+              activeOpacity={1}
+              onPress={() => {
+                if (!isSwiping.current) {
+                  handleDoubleTap(null, beforePhoto, afterPhoto);
+                }
+              }}
             >
               <CroppedThumbnail
                 imageUri={thumbnailUri}
@@ -896,15 +1117,20 @@ export default function HomeScreen({ navigation }) {
                 orientation={beforePhoto.orientation || 'portrait'}
                 size={PHOTO_SIZE}
               />
+              <View
+                style={styles.photoCenterDivider}
+                pointerEvents="none"
+              />
               <View style={styles.photoOverlayBadge}>
                 <View style={styles.checkmarkBadge}>
-                  <Ionicons name="checkmark" size={16} color="#FFF" />
+                  <Ionicons name="checkmark-circle-sharp" size={25} color='#22C55E' />
                 </View>
               </View>
               <View style={styles.thumbnailButtonsOverlay}>
                 <TouchableOpacity
                   style={styles.retakeButton}
-                  onPress={() => {
+                  onPress={(e) => {
+                    e.stopPropagation();
                     if (!isSwiping.current) {
                       navigation.navigate('Camera', {
                         mode: 'after',
@@ -920,30 +1146,16 @@ export default function HomeScreen({ navigation }) {
                   <Text style={styles.retakeButtonText}>{t('home.retake')}</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         } else {
-          // Determine layout based on aspect ratio
-          const beforeAspectRatio = beforePhoto.aspectRatio || '4:3';
-          const parseAspectRatio = (ratio) => {
-            if (typeof ratio === 'string') {
-              const parts = ratio.split(':');
-              if (parts.length === 2) {
-                const w = parseFloat(parts[0]);
-                const h = parseFloat(parts[1]);
-                if (w && h) return w / h;
-              }
-              return 1.0; // Default to square if parsing fails
-            }
-            return ratio || 1.0;
-          };
-          
-          const beforeRatio = parseAspectRatio(beforeAspectRatio);
-          // Square images: ratio close to 1:1 (between 0.85 and 1.15)
-          // Portrait/long images: ratio < 0.85 (taller than wide, like 3:4 = 0.75, 9:16 = 0.5625)
-          const isSquare = beforeRatio >= 0.85 && beforeRatio <= 1.15;
-          // For square images, stack vertically (one up, one down); for portrait/long images, show side-by-side
-          const useStackedLayout = isSquare;
+          // Has after photo but no combined yet - show split preview
+          const phoneOrientation = beforePhoto.orientation || 'portrait';
+          const cameraViewMode = beforePhoto.cameraViewMode || 'portrait';
+          const isLetterbox = beforePhoto.templateType === 'letterbox' || (phoneOrientation === 'portrait' && cameraViewMode === 'landscape');
+          const isTrueLandscape = phoneOrientation === 'landscape';
+          const isLetterboxLandscape = isLetterbox && isTrueLandscape;
+          const useStackedLayout = isTrueLandscape && !isLetterbox ? true : isLetterboxLandscape;
 
           gridItems.push(
             <TouchableOpacity
@@ -1001,7 +1213,7 @@ export default function HomeScreen({ navigation }) {
                     }
                   }}
                 >
-                  <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
+                  <Ionicons name="camera-outline" size={14} color="#FFFFFF" />
                   <Text style={styles.retakeButtonText}>{t('home.retake')}</Text>
                 </TouchableOpacity>
               </View>
@@ -1010,9 +1222,15 @@ export default function HomeScreen({ navigation }) {
         }
       } else {
         gridItems.push(
-          <View
+          <TouchableOpacity
             key={beforePhoto.id}
             style={[styles.photoItem]}
+            activeOpacity={1}
+            onPress={() => {
+              if (!isSwiping.current) {
+                handleDoubleTap(null, beforePhoto, null);
+              }
+            }}
           >
             <CroppedThumbnail
               imageUri={beforePhoto.uri}
@@ -1023,7 +1241,8 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.thumbnailButtonsOverlay}>
               <TouchableOpacity
                 style={styles.takeAfterButton}
-                onPress={() => {
+                onPress={(e) => {
+                  e.stopPropagation();
                   if (!isSwiping.current) {
                     navigation.navigate('Camera', {
                       mode: 'after',
@@ -1033,16 +1252,16 @@ export default function HomeScreen({ navigation }) {
                   }
                 }}
               >
-                <Ionicons name="camera" size={18} color="#000" />
+                <Ionicons name="camera" size={14} color="#000" />
                 <Text style={styles.takeAfterButtonText}>{t('home.takeAfter')}</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.photoOverlayBadge}>
               <View style={styles.clockBadge}>
-                <Ionicons name="time-outline" size={16} color="#666" />
+                <Ionicons name="timer-outline" size={20} color="#FFFFFF" fill="#FFFFFF" />
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
         );
       }
     });
@@ -1055,7 +1274,7 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image
-            source={require('../../assets/PP_logo.png')}
+            source={require('../../assets/logo.png')}
             style={styles.logoImage}
             resizeMode="contain"
           />
@@ -1063,38 +1282,28 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.headerRight}>
           <View style={styles.planButtonsContainer}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 styles.starterButton,
-                userPlan === 'starter' && styles.planButtonSelected,
-                userPlan === 'starter' && styles.planButtonSelectedBackground
-              ]} 
+                styles.planButtonSelected,
+                styles.planButtonSelectedBackground
+              ]}
               onPress={() => setShowPlanModal(true)}
             >
               <Text style={[
                 styles.starterButtonText,
-                userPlan === 'starter' && styles.planButtonSelectedText
-              ]}>Starter</Text>
+                styles.planButtonSelectedText
+              ]}>{(userPlan || 'starter').charAt(0).toUpperCase() + (userPlan || 'starter').slice(1)}</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[
-                styles.upgradeButton,
-                userPlan !== 'starter' && styles.planButtonSelected,
-                userPlan !== 'starter' && styles.planButtonSelectedBackground
-              ]} 
-              onPress={() => setShowPlanModal(true)}
-            >
-              <Ionicons 
-                name="star" 
-                size={16} 
-                color={userPlan !== 'starter' ? '#FFFFFF' : '#666'} 
-                style={styles.upgradeButtonIcon} 
-              />
-              <Text style={[
-                styles.upgradeButtonText,
-                userPlan !== 'starter' && styles.planButtonSelectedText
-              ]}>Upgrade</Text>
-            </TouchableOpacity>
+            {(!userPlan || userPlan === 'starter') && (
+              <TouchableOpacity
+                style={styles.upgradeButton}
+                onPress={() => setShowPlanModal(true)}
+              >
+                <Image source={require('../../assets/Magic_Stick.png')} style={styles.upgradeButtonImage} resizeMode="contain" />
+                <Text style={styles.upgradeButtonText}>Upgrade</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -1154,6 +1363,7 @@ export default function HomeScreen({ navigation }) {
                   <Text style={styles.projectNameText} numberOfLines={1}>
                     {displayName}
                   </Text>
+                  <Ionicons name="pencil-outline" size={14} color="#999" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
               );
             })()}
@@ -1165,12 +1375,6 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="ellipsis-horizontal" size={22} color="#333" />
           </TouchableOpacity>
         </View>
-        <UploadIndicatorLine 
-          uploadStatus={uploadStatus}
-          onPress={() => {
-            navigation.navigate('Gallery', { showUploadDetails: true });
-          }}
-        />
       </View>
 
       {renderRoomTabs()}
@@ -1197,96 +1401,177 @@ export default function HomeScreen({ navigation }) {
           });
         }}
       >
-        <Ionicons name="camera" size={32} color="#000" />
+        <Ionicons name="camera" size={38} color="#000" />
       </TouchableOpacity>
 
       <View style={styles.bottomNavPill}>
         <TouchableOpacity 
           style={[styles.navItem, styles.navItemActive]}
         >
-          <Ionicons name="home-outline" size={24} color="#000000" />
+          <Image source={require('../../assets/icons/home.png')} style={styles.navItemImage} resizeMode="contain" />
           <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate('Projects')}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Projects' }] })}
         >
-          <Ionicons name="folder-outline" size={24} color="#666666" />
+          <Image source={require('../../assets/icons/projects.png')} style={styles.navItemImage} resizeMode="contain" />
           <Text style={styles.navItemText}>Projects</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate('Gallery')}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] })}
         >
-          <Ionicons name="images-outline" size={24} color="#666666" />
+          <Image source={require('../../assets/icons/gallery.png')} style={styles.navItemImage} resizeMode="contain" />
           <Text style={styles.navItemText}>Gallery</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
-          onPress={() => navigation.navigate('Settings')}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Settings' }] })}
         >
-          <Ionicons name="settings-outline" size={24} color="#666666" />
+          <Image source={require('../../assets/icons/settings.png')} style={styles.navItemImage} resizeMode="contain" />
           <Text style={styles.navItemText}>Settings</Text>
         </TouchableOpacity>
       </View>
 
       {fullScreenPhoto && (
         <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
-          <TouchableWithoutFeedback onPress={handleLongPressEnd}>
-            <Image
-              source={{ uri: fullScreenPhoto.uri }}
-              style={styles.fullScreenPhoto}
-              resizeMode="contain"
-            />
-          </TouchableWithoutFeedback>
-          <TouchableOpacity
-            style={styles.fullScreenDeleteButton}
-            onPress={() => {
-              Alert.alert(
-                t('home.deletePhotoSet'),
-                t('home.deletePhotoSetConfirm', { name: fullScreenPhoto.name }),
-                [
-                  { text: t('common.cancel'), style: 'cancel' },
-                  {
-                    text: t('common.delete'),
-                    style: 'destructive',
-                    onPress: () => {
-                      deletePhotoSet(fullScreenPhoto.id);
-                      handleLongPressEnd();
-                    }
-                  }
-                ]
-              );
-            }}
-          >
-            <Ionicons name="trash-outline" size={28} color="#EF4444" />
-          </TouchableOpacity>
-          {fullScreenPhotos.length > 1 && (
-            <View style={styles.fullScreenNavigation}>
-              <Text style={styles.fullScreenCounter}>
-                {fullScreenIndex + 1} / {fullScreenPhotos.length}
-              </Text>
+          {/* Header: Labels toggle | Customize Labels > | Red X close */}
+          <View style={[styles.fullScreenHeaderRow, { paddingTop: fullScreenTopInset }]}>
+            <View style={styles.fullScreenLabelsToggle}>
+              <Text style={styles.fullScreenLabelsText}>{t('Labels')}</Text>
+              <Switch
+                value={showLabels}
+                onValueChange={toggleLabels}
+                trackColor={{ false: '#767577', true: '#34C759' }}
+                thumbColor={showLabels ? '#fff' : '#f4f3f4'}
+              />
             </View>
-          )}
-          <View style={styles.fullScreenBottomButtons}>
             <TouchableOpacity
-              style={styles.fullScreenActionButton}
-              onPress={handleLongPressEnd}
-            >
-              <Text style={styles.fullScreenActionButtonText}>{t('common.close')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fullScreenRetakeButton}
+              style={styles.fullScreenCustomizeButton}
               onPress={() => {
                 handleLongPressEnd();
-                navigation.navigate('Camera', {
-                  mode: fullScreenPhoto.mode === 'before' ? 'after' : 'before',
-                  beforePhoto: fullScreenPhoto.mode === 'before' ? fullScreenPhoto : null,
-                  room: currentRoom
-                });
+                navigation.navigate('LabelCustomization');
               }}
             >
-              <Text style={styles.fullScreenRetakeButtonText}>{t('home.retake')}</Text>
+              <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
+              <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.fullScreenCloseButton} onPress={handleLongPressEnd}>
+              <Ionicons name="close" size={20} color="rgba(255, 0, 0, 0.82)" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Photo area: yellow border, single image */}
+          <View style={styles.fullScreenPhotoArea}>
+            <View style={styles.fullScreenSinglePreview}>
+              {fullScreenLoading && (
+                <View style={styles.fullScreenLoadingOverlay}>
+                  <ActivityIndicator size="large" color="#F2C31B" />
+                </View>
+              )}
+              {fullScreenError && (
+                <View style={styles.fullScreenErrorOverlay}>
+                  <Ionicons name="image-outline" size={48} color="#666" />
+                  <Text style={styles.fullScreenErrorText}>{t('gallery.imageLoadError', { defaultValue: 'Failed to load image' })}</Text>
+                </View>
+              )}
+              <Image
+                key={fullScreenPhoto.uri || fullScreenPhoto.id}
+                source={{ uri: fullScreenPhoto.uri }}
+                style={styles.fullScreenPhoto}
+                resizeMode="contain"
+                onError={(e) => {
+                  console.log('[HomeScreen] Image load error:', e.nativeEvent?.error, 'URI:', fullScreenPhoto.uri);
+                  setFullScreenLoading(false);
+                  setFullScreenError(e.nativeEvent?.error || 'Unknown error');
+                }}
+                onLoadStart={() => {
+                  console.log('[HomeScreen] Image load start:', fullScreenPhoto.uri?.substring(0, 80));
+                  setFullScreenLoading(true);
+                  setFullScreenError(null);
+                }}
+                onLoad={() => {
+                  console.log('[HomeScreen] Image loaded successfully');
+                  setFullScreenLoading(false);
+                  setFullScreenError(null);
+                }}
+              />
+              {showLabels && fullScreenPhoto.mode && !fullScreenError && (
+                <PhotoLabel
+                  label={fullScreenPhoto.mode === 'before' ? 'common.before' : 'common.after'}
+                  position={fullScreenPhoto.mode === 'before' ? (beforeLabelPosition || 'top-left') : (afterLabelPosition || 'top-left')}
+                />
+              )}
+            </View>
+          </View>
+
+          {/* Room name + pagination dots */}
+          <View style={styles.fullScreenRoomNameRow}>
+            <Text style={styles.fullScreenRoomName}>
+              {rooms.find(r => r.id === fullScreenPhoto.room)?.name || fullScreenPhoto.room || ''}
+            </Text>
+            {fullScreenPhotos.length > 1 && (
+              <View style={styles.fullScreenPaginationDots}>
+                {fullScreenPhotos.map((_, i) => (
+                  <View
+                    key={i}
+                    style={[styles.fullScreenDot, i === fullScreenIndex && styles.fullScreenDotActive]}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Bottom bar: black delete circle, yellow share circle */}
+          <View style={[styles.fullScreenBottomBar, { paddingBottom: fullScreenBottomInset }]}>
+            <TouchableOpacity
+              style={styles.fullScreenDeleteCircle}
+              onPress={() => {
+                pendingDeletePhotoIdRef.current = fullScreenPhoto.id;
+                setShowDeletePhotoConfirm(true);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.fullScreenShareCircle}
+              disabled={sharing}
+              onPress={async () => {
+                try {
+                  setSharing(true);
+                  let shareUri = fullScreenPhoto.uri;
+                  // Apply label if labels are enabled
+                  if (showLabels && fullScreenPhoto.mode) {
+                    try {
+                      const photoWithType = { ...fullScreenPhoto, type: fullScreenPhoto.mode };
+                      const labeledUri = await ensureLabelForPhoto(photoWithType);
+                      if (labeledUri && labeledUri !== fullScreenPhoto.uri) {
+                        shareUri = labeledUri;
+                      }
+                    } catch (labelErr) {
+                      console.warn('[HomeScreen] Label lookup failed for single photo:', labelErr?.message);
+                    }
+                  }
+                  await Share.open({
+                    url: `file://${shareUri}`,
+                    type: 'image/jpeg',
+                    title: fullScreenPhoto.name || t('gallery.share'),
+                  });
+                } catch (e) {
+                  if (e?.message !== 'User did not share') {
+                    Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
+                  }
+                } finally {
+                  setSharing(false);
+                }
+              }}
+            >
+              {sharing ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <Ionicons name="paper-plane-outline" size={20} color="#000" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -1294,10 +1579,37 @@ export default function HomeScreen({ navigation }) {
 
       {fullScreenPhotoSet && (
         <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
-          <TouchableWithoutFeedback onPress={handleLongPressEnd}>
+          {/* Header: Labels toggle | Customize Labels > | Red X close */}
+          <View style={[styles.fullScreenHeaderRow, { paddingTop: fullScreenTopInset }]}>
+            <View style={styles.fullScreenLabelsToggle}>
+              <Text style={styles.fullScreenLabelsText}>{t('settings.labels', { defaultValue: 'Labels' })}</Text>
+              <Switch
+                value={showLabels}
+                onValueChange={toggleLabels}
+                trackColor={{ false: '#767577', true: '#34C759' }}
+                thumbColor={showLabels ? '#fff' : '#f4f3f4'}
+              />
+            </View>
+            <TouchableOpacity
+              style={styles.fullScreenCustomizeButton}
+              onPress={() => {
+                handleLongPressEnd();
+                navigation.navigate('LabelCustomization');
+              }}
+            >
+              <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
+              <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.fullScreenCloseButton} onPress={handleLongPressEnd}>
+              <Ionicons name="close" size={20} color="red" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Photo area: yellow border, before/after with white center divider */}
+          <View style={styles.fullScreenPhotoArea}>
             <View style={[
               styles.fullScreenCombinedPreview,
-              (fullScreenPhotoSet.before.orientation === 'landscape' || fullScreenPhotoSet.before.cameraViewMode === 'landscape')
+              isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio)
                 ? styles.fullScreenStacked
                 : styles.fullScreenSideBySide
             ]}>
@@ -1314,6 +1626,7 @@ export default function HomeScreen({ navigation }) {
                   />
                 )}
               </View>
+              <View style={isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio) ? styles.fullScreenCenterDividerHorizontal : styles.fullScreenCenterDivider} pointerEvents="none" />
               <View style={styles.fullScreenHalf}>
                 <Image
                   source={{ uri: fullScreenPhotoSet.after.uri }}
@@ -1328,67 +1641,38 @@ export default function HomeScreen({ navigation }) {
                 )}
               </View>
             </View>
-          </TouchableWithoutFeedback>
-          <View style={styles.fullScreenLabelsToggleContainer}>
-            <View style={styles.fullScreenLabelsToggle}>
-              <Text style={styles.fullScreenLabelsText}>{t('settings.showLabels')}</Text>
-              <Switch
-                value={showLabels}
-                onValueChange={toggleLabels}
-                trackColor={{ false: '#767577', true: COLORS.PRIMARY }}
-                thumbColor={showLabels ? '#fff' : '#f4f3f4'}
-              />
-            </View>
-            {showLabels && (
-              <TouchableOpacity
-                style={styles.fullScreenCustomizeButton}
-                onPress={() => {
-                  handleLongPressEnd();
-                  navigation.navigate('LabelCustomization');
-                }}
-              >
-                <Text style={styles.fullScreenCustomizeText}>{t('settings.customize')}</Text>
-              </TouchableOpacity>
+          </View>
+
+          {/* Room name + pagination dots */}
+          <View style={styles.fullScreenRoomNameRow}>
+            <Text style={styles.fullScreenRoomName}>
+              {rooms.find(r => r.id === fullScreenPhotoSet.before.room)?.name || fullScreenPhotoSet.before.room}
+            </Text>
+            {fullScreenPhotos.length > 1 && (
+              <View style={styles.fullScreenPaginationDots}>
+                {fullScreenPhotos.map((_, i) => (
+                  <View
+                    key={i}
+                    style={[styles.fullScreenDot, i === fullScreenIndex && styles.fullScreenDotActive]}
+                  />
+                ))}
+              </View>
             )}
           </View>
-          <TouchableOpacity
-            style={styles.fullScreenDeleteButton}
-            onPress={() => {
-              Alert.alert(
-                t('home.deletePhotoSet'),
-                t('home.deletePhotoSetConfirm', { name: fullScreenPhotoSet.before.name }),
-                [
-                  { text: t('common.cancel'), style: 'cancel' },
-                  {
-                    text: t('common.delete'),
-                    style: 'destructive',
-                    onPress: () => {
-                      deletePhotoSet(fullScreenPhotoSet.before.id);
-                      handleLongPressEnd();
-                    }
-                  }
-                ]
-              );
-            }}
-          >
-            <Ionicons name="trash-outline" size={28} color="#EF4444" />
-          </TouchableOpacity>
-          {fullScreenPhotos.length > 1 && (
-            <View style={styles.fullScreenNavigation}>
-              <Text style={styles.fullScreenCounter}>
-                {fullScreenIndex + 1} / {fullScreenPhotos.length}
-              </Text>
-            </View>
-          )}
-          <View style={styles.fullScreenBottomButtons}>
+
+          {/* Bottom bar: black delete circle, yellow share circle */}
+          <View style={[styles.fullScreenBottomBar, { paddingBottom: fullScreenBottomInset }]}>
             <TouchableOpacity
-              style={styles.fullScreenActionButton}
-              onPress={handleLongPressEnd}
+              style={styles.fullScreenDeleteCircle}
+              onPress={() => {
+                pendingDeletePhotoIdRef.current = fullScreenPhotoSet.before.id;
+                setShowDeletePhotoConfirm(true);
+              }}
             >
-              <Text style={styles.fullScreenActionButtonText}>{t('common.close')}</Text>
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.fullScreenShareButton}
+              style={styles.fullScreenShareCircle}
               disabled={sharing}
               onPress={() => {
                 const combinedPhoto = getCombinedPhotos(fullScreenPhotoSet.before.room).find(
@@ -1396,14 +1680,14 @@ export default function HomeScreen({ navigation }) {
                 );
                 const thumbnailUri = combinedBaseUris[fullScreenPhotoSet.before.name] || combinedPhoto?.uri;
                 if (thumbnailUri) {
-                  shareCombinedPhoto(thumbnailUri, fullScreenPhotoSet.before.name, fullScreenPhotoSet.before.room);
+                  shareCombinedPhoto(thumbnailUri, fullScreenPhotoSet.before.name, fullScreenPhotoSet.before.room, combinedPhoto, fullScreenPhotoSet.before, fullScreenPhotoSet.after);
                 }
               }}
             >
               {sharing ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color="#000" />
               ) : (
-                <Text style={styles.fullScreenShareButtonText}>{t('gallery.share')}</Text>
+                <Ionicons name="paper-plane-outline" size={20} color="#000" />
               )}
             </TouchableOpacity>
           </View>
@@ -1503,7 +1787,7 @@ export default function HomeScreen({ navigation }) {
                   onPress={() => {
                     setOpenProjectVisible(false);
                     exitMultiSelectMode();
-                    navigation.navigate('Gallery');
+                    navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] });
                   }}
                 >
                   <Text style={[styles.actionBtnText, { color: '#000' }]}>🖼️ {t('home.gallery')}</Text>
@@ -1514,7 +1798,7 @@ export default function HomeScreen({ navigation }) {
                   onPress={() => {
                     setOpenProjectVisible(false);
                     exitMultiSelectMode();
-                    navigation.navigate('Gallery', { openManage: true });
+                    navigation.reset({ index: 0, routes: [{ name: 'Gallery', params: { openManage: true } }] });
                   }}
                 >
                   <Text style={[styles.actionBtnText, { color: '#0077CC' }]}>📤 {t('home.shareProject')}</Text>
@@ -1529,8 +1813,24 @@ export default function HomeScreen({ navigation }) {
               </>
             ) : (
               <>
+                {activeProject && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: '#FFF8E1', marginTop: 20 }]}
+                    onPress={() => {
+                      setOpenProjectVisible(false);
+                      setTimeout(() => {
+                        setEditedProjectName(activeProject.name);
+                        setIsEditingProjectName(true);
+                      }, 100);
+                    }}
+                  >
+                    <Ionicons name="pencil-outline" size={18} color="#B8860B" style={{ marginRight: 6 }} />
+                    <Text style={[styles.actionBtnText, { color: '#B8860B' }]}>{t('home.renameProject', { defaultValue: 'Rename Project' })}</Text>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#22A45D', marginTop: 20 }]}
+                  style={[styles.actionBtn, { backgroundColor: '#22A45D', marginTop: activeProject ? 8 : 20 }]}
                   onPress={() => {
                     setOpenProjectVisible(false);
                     setTimeout(() => openNewProjectModal(false), 50);
@@ -1559,7 +1859,7 @@ export default function HomeScreen({ navigation }) {
                   style={[styles.actionBtn, { backgroundColor: '#F2C31B', marginTop: 16 }]}
                   onPress={() => {
                     setOpenProjectVisible(false);
-                    navigation.navigate('Gallery');
+                    navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] });
                   }}
                 >
                   <Text style={[styles.actionBtnText, { color: '#000' }]}>🖼️ {t('home.gallery')}</Text>
@@ -1569,7 +1869,7 @@ export default function HomeScreen({ navigation }) {
                   style={[styles.actionBtn, { backgroundColor: '#D6ECFF', marginTop: 8 }]}
                   onPress={() => {
                     setOpenProjectVisible(false);
-                    navigation.navigate('Gallery', { openManage: true });
+                    navigation.reset({ index: 0, routes: [{ name: 'Gallery', params: { openManage: true } }] });
                   }}
                 >
                   <Text style={[styles.actionBtnText, { color: '#0077CC' }]}>📤 {t('home.shareProject')}</Text>
@@ -1593,7 +1893,10 @@ export default function HomeScreen({ navigation }) {
         animationType="fade"
         onRequestClose={() => setNewProjectVisible(false)}
       >
-        <View style={styles.optionsModalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.optionsModalOverlay}
+        >
           <View style={styles.optionsModalContent}>
             <Text style={styles.optionsTitle}>{t('projects.newProjectTitle')}</Text>
             <View style={{ width: '92%', marginTop: 8 }}>
@@ -1606,11 +1909,82 @@ export default function HomeScreen({ navigation }) {
                   fontSize: 16,
                   backgroundColor: 'white'
                 }}
-                value={newProjectName}
-                onChangeText={setNewProjectName}
-                placeholder={t('projects.projectName')}
+                value={newProjectNamePart}
+                onChangeText={setNewProjectNamePart}
+                placeholder={t('projects.projectNamePart', { defaultValue: 'Name (date & location added when created)' })}
                 placeholderTextColor={COLORS.GRAY}
               />
+              {/* Folder location: user can type any location, with optional quick suggestions */}
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 13, marginBottom: 6 }}>
+                  {t('settings.folderLocation', { defaultValue: 'Folder location' })}
+                </Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1,
+                    borderColor: COLORS.BORDER,
+                    borderRadius: 8,
+                    padding: 10,
+                    fontSize: 14,
+                    backgroundColor: 'white',
+                  }}
+                  value={newProjectLocation}
+                  onChangeText={setNewProjectLocation}
+                  placeholder={t('settings.folderLocationPlaceholder', { defaultValue: 'Type city or location name' })}
+                  placeholderTextColor={COLORS.GRAY}
+                />
+                <TouchableOpacity
+                  onPress={handleUseCurrentLocationInModal}
+                  disabled={locationLoadingInModal}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginTop: 8,
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                    alignSelf: 'flex-start',
+                    borderRadius: 8,
+                    backgroundColor: locationLoadingInModal ? '#E8E8E8' : '#F0F0F0',
+                  }}
+                >
+                  {locationLoadingInModal ? (
+                    <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginRight: 6 }} />
+                  ) : (
+                    <Ionicons name="locate" size={18} color={COLORS.PRIMARY} style={{ marginRight: 6 }} />
+                  )}
+                  <Text style={{ fontSize: 13, color: '#333' }}>
+                    {locationLoadingInModal ? t('projects.gettingLocation', { defaultValue: 'Getting location…' }) : t('projects.useCurrentLocation', { defaultValue: 'Use current location' })}
+                  </Text>
+                </TouchableOpacity>
+                {/* Optional quick picks – location only; name and date stay separate */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+                  {LOCATIONS.map((loc) => (
+                    <TouchableOpacity
+                      key={loc.id}
+                      onPress={() => setNewProjectLocation(loc.name)}
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: newProjectLocation === loc.name ? COLORS.PRIMARY : COLORS.BORDER,
+                        marginRight: 6,
+                        marginBottom: 6,
+                        backgroundColor: newProjectLocation === loc.name ? '#FFF7D1' : '#FFFFFF',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: '#000000',
+                        }}
+                      >
+                        {loc.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             </View>
             <View style={{ flexDirection: 'row', marginTop: 12 }}>
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#F2F2F2', flex: 1, marginRight: 6 }]} onPress={() => setNewProjectVisible(false)}>
@@ -1621,7 +1995,7 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showContextMenu} transparent={true} animationType="fade">
@@ -1689,94 +2063,184 @@ export default function HomeScreen({ navigation }) {
         editRoom={contextMenuRoom}
       />
 
+      {/* Plan Selection Modal */}
       <Modal
         visible={showPlanModal}
-        transparent={true}
         animationType="slide"
-        onRequestClose={handlePlanModalClose}
+        presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
+        onRequestClose={() => setShowPlanModal(false)}
       >
-        <View style={styles.planModalOverlay}>
-          <View style={styles.planModalContent}>
-            <View style={styles.planModalHeader}>
-              <Text style={styles.planModalTitle}>{t('planModal.title')}</Text>
+        <View style={[styles.planModalContainer, { paddingTop: Platform.OS === 'ios' ? 12 : insets.top }]}>
+          <View style={styles.planModalHeader}>
+            <TouchableOpacity
+              onPress={() => setShowPlanModal(false)}
+              style={styles.planModalBackButton}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
+            </TouchableOpacity>
+            <Text style={styles.planModalTitle}>Upgrade a plan</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          <View style={styles.planModalBody}>
+            <ScrollView style={styles.planModalScrollView} contentContainerStyle={styles.planModalContent}>
+              {/* Starter Plan Card */}
               <TouchableOpacity
-                onPress={handlePlanModalClose}
-                style={styles.planModalCloseButton}
+                style={[styles.planCard, userPlan === 'starter' && styles.planCardSelected]}
+                onPress={async () => {
+                  await updateUserPlan('starter');
+                  setShowPlanModal(false);
+                }}
               >
-                <Text style={styles.planModalCloseText}>×</Text>
+                <View style={styles.planCardHeader}>
+                  <Text style={styles.planCardTitle}>Starter</Text>
+                  <View style={styles.planBadgeFree}>
+                    <Text style={styles.planBadgeText}>FREE</Text>
+                  </View>
+                </View>
+                <Text style={styles.planCardDescription}>
+                  Free forever. Easily manage your first project and create stunning before/after photos ready for social sharing.
+                </Text>
               </TouchableOpacity>
-            </View>
 
-            <ScrollView style={styles.planModalScrollView}>
-              <View style={styles.planContainer}>
-                <TouchableOpacity
-                  style={[styles.planButton, userPlan === 'starter' && styles.planButtonSelected]}
-                  onPress={async () => {
-                    try {
-                      await updateUserPlan('starter');
-                      InteractionManager.runAfterInteractions(() => {
-                        handlePlanModalClose();
-                      });
-                    } catch (error) {
-                      handlePlanModalClose();
-                    }
-                  }}
-                >
-                  <Text style={[styles.planButtonText, userPlan === 'starter' && styles.planButtonTextSelected]}>{t('planModal.starter')}</Text>
-                </TouchableOpacity>
-                <Text style={styles.planSubtext}>{t('planModal.starterDescription')}</Text>
-              </View>
-
-              <View style={styles.planContainer}>
-                <TouchableOpacity
-                  style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
-                  onPress={async () => {
-                    try {
+              {/* Pro Plan Card */}
+              <TouchableOpacity
+                style={[styles.planCard, userPlan === 'pro' && styles.planCardSelected]}
+                onPress={async () => {
+                  try {
+                    const onTrial = await isTrialActive();
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      if (userPlan === 'pro') {
+                        Alert.alert('Already Subscribed', 'You already have the Pro plan.', [{ text: 'OK' }]);
+                        return;
+                      }
+                      try {
+                        setShowPlanModal(false);
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                        await updateUserPlan('pro');
+                        Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.proPlanActivated', { defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' }));
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
+                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        return;
+                      }
+                    } else {
                       await updateUserPlan('pro');
-                      InteractionManager.runAfterInteractions(() => {
-                        handlePlanModalClose();
-                      });
-                    } catch (error) {
-                      handlePlanModalClose();
+                      setShowPlanModal(false);
                     }
-                  }}
-                >
-                  <Text style={[styles.planButtonText, userPlan === 'pro' && styles.planButtonTextSelected]}>{t('planModal.pro')}</Text>
-                </TouchableOpacity>
-                <Text style={styles.planSubtext}>{t('planModal.proDescription')}</Text>
-              </View>
+                  } catch (error) {
+                    console.error('[HomeScreen] Error changing to Pro plan:', error);
+                    Alert.alert(t('common.error'), t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' }));
+                  }
+                }}
+              >
+                <View style={styles.planCardHeader}>
+                  <Text style={styles.planCardTitle}>Pro</Text>
+                  <View style={styles.planBadgePrice}>
+                    <Text style={styles.planBadgeText}>$8.99/month</Text>
+                  </View>
+                </View>
+                <Text style={styles.planCardDescription}>
+                  Everything in Starter & For professionals. Cloud sync + bulk upload.
+                </Text>
+                <View style={styles.recommendedBadge}>
+                  <Text style={styles.recommendedBadgeText}>👍 Recommended</Text>
+                </View>
+              </TouchableOpacity>
 
-              <View style={styles.planContainer}>
-                <TouchableOpacity
-                  style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
-                  onPress={async () => {
-                    try {
+              {/* Business Plan Card */}
+              <TouchableOpacity
+                style={[styles.planCard, userPlan === 'business' && styles.planCardSelected]}
+                onPress={async () => {
+                  try {
+                    const onTrial = await isTrialActive();
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      if (userPlan === 'business') {
+                        Alert.alert('Already Subscribed', 'You already have the Business plan.', [{ text: 'OK' }]);
+                        return;
+                      }
+                      try {
+                        setShowPlanModal(false);
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                        await updatePlanLimit(5);
+                        await updateUserPlan('business');
+                        Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.businessPlanActivated', { defaultValue: 'Business plan activated! You can now add up to 5 team members.' }));
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
+                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        return;
+                      }
+                    } else {
+                      await updatePlanLimit(5);
                       await updateUserPlan('business');
-                      InteractionManager.runAfterInteractions(() => {
-                        handlePlanModalClose();
-                      });
-                    } catch (error) {
-                      handlePlanModalClose();
+                      setShowPlanModal(false);
                     }
-                  }}
-                >
-                  <Text style={[styles.planButtonText, userPlan === 'business' && styles.planButtonTextSelected]}>{t('planModal.business')}</Text>
-                </TouchableOpacity>
-                <Text style={styles.planSubtext}>{t('planModal.businessDescription')}</Text>
-              </View>
+                  } catch (error) {
+                    console.error('[HomeScreen] Error setting up business plan:', error);
+                    Alert.alert(t('common.error'), t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' }));
+                  }
+                }}
+              >
+                <View style={styles.planCardHeader}>
+                  <Text style={styles.planCardTitle}>Business</Text>
+                  <View style={styles.planBadgePrice}>
+                    <Text style={styles.planBadgeText}>$24.99/month</Text>
+                  </View>
+                </View>
+                <Text style={styles.planCardDescription}>
+                  Everything in Pro & For small teams up to 5 members. $5.99 per additional team member.
+                </Text>
+              </TouchableOpacity>
 
-              <View style={styles.planContainer}>
-                <TouchableOpacity
-                  style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
-                  onPress={() => {
-                    setShowPlanModal(false);
-                    setShowEnterpriseModal(true);
-                  }}
-                >
-                  <Text style={[styles.planButtonText, userPlan === 'enterprise' && styles.planButtonTextSelected]}>{t('planModal.enterprise')}</Text>
-                </TouchableOpacity>
-                <Text style={styles.planSubtext}>{t('planModal.enterpriseDescription')}</Text>
-              </View>
+              {/* Enterprise Plan Card */}
+              <TouchableOpacity
+                style={[styles.planCard, userPlan === 'enterprise' && styles.planCardSelected]}
+                onPress={async () => {
+                  try {
+                    const onTrial = await isTrialActive();
+                    if (Platform.OS === 'ios' && !onTrial) {
+                      if (userPlan === 'enterprise') {
+                        Alert.alert('Already Subscribed', 'You already have the Enterprise plan.', [{ text: 'OK' }]);
+                        return;
+                      }
+                      try {
+                        setShowPlanModal(false);
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                        await updatePlanLimit(15);
+                        await updateUserPlan('enterprise');
+                        Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit.' }));
+                      } catch (err) {
+                        if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
+                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        return;
+                      }
+                    } else {
+                      await updatePlanLimit(15);
+                      await updateUserPlan('enterprise');
+                      setShowPlanModal(false);
+                      Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit.' }));
+                    }
+                  } catch (error) {
+                    console.error('[HomeScreen] Error setting up enterprise plan:', error);
+                    Alert.alert(t('common.error'), t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' }));
+                  }
+                }}
+              >
+                <View style={styles.planCardHeader}>
+                  <Text style={styles.planCardTitle}>Enterprise</Text>
+                  <View style={styles.planBadgePrice}>
+                    <Text style={styles.planBadgeText}>Starts at $69.99/month</Text>
+                  </View>
+                </View>
+                <Text style={styles.planCardDescription}>
+                  Everything in Business & For growing organizations with 15 team members and more
+                </Text>
+              </TouchableOpacity>
+
             </ScrollView>
           </View>
         </View>
@@ -1806,14 +2270,33 @@ export default function HomeScreen({ navigation }) {
           }, 100);
         }}
         deleteFromStorageDefault={true}
-        userPlan={userPlan}
-        onShowPlanModal={() => {
-          setShowPlanModal(true);
+      />
+
+      <DeleteConfirmationModal
+        visible={showDeletePhotoConfirm}
+        title={t('home.deletePhotoSet')}
+        message={t('home.deletePhotoSetConfirm', {
+          name: (() => {
+            if (!pendingDeletePhotoIdRef.current) return '';
+            const p = photos.find(ph => ph.id === pendingDeletePhotoIdRef.current);
+            return p?.name || '';
+          })()
+        })}
+        onConfirm={(deleteFromStorage) => {
+          const photoId = pendingDeletePhotoIdRef.current;
+          setShowDeletePhotoConfirm(false);
+          pendingDeletePhotoIdRef.current = null;
+          handleLongPressEnd();
+          if (photoId) {
+            deletePhotoSet(photoId, { deleteFromStorage });
+          }
         }}
-        planModalVisible={showPlanModal}
-        onPlanModalClose={handlePlanModalClose}
-        updateUserPlan={updateUserPlan}
-        t={t}
+        onCancel={() => {
+          setShowDeletePhotoConfirm(false);
+          pendingDeletePhotoIdRef.current = null;
+          longPressTriggered.current = false;
+        }}
+        deleteFromStorageDefault={true}
       />
     </SafeAreaView>
   );
@@ -1822,30 +2305,33 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF'
+    backgroundColor: '#F6F8FA'
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F6F8FA',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    
   },
   logoImage: {
-    width: 40,
-    height: 40,
-    marginRight: 12,
+    width: 41,
+    height: 28,
+    marginRight: 0,
   },
   appName: {
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
     color: '#000000',
-    letterSpacing: -0.3,
+    letterSpacing: -0.1,
   },
   headerRight: {
     flexDirection: 'row',
@@ -1855,35 +2341,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.PRIMARY,
-    borderRadius: 20,
+    borderColor: '#F2C31B',
+    borderRadius: 30,
     overflow: 'hidden',
+    height: 32,
   },
   starterButton: {
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRightWidth: 0,
-    borderRightColor: COLORS.PRIMARY,
+    paddingHorizontal: 16,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   starterButtonText: {
     color: '#000000',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.11,
+  },
+  navItemImage:{
+    width: 22,
+    height: 22,
   },
   upgradeButton: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    height: 32,
+    fontWeight: '700',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 30,
   },
   upgradeButtonIcon: {
-    marginRight: 6,
+    marginRight: 4,
   },
   upgradeButtonText: {
-    color: '#666666',
-    fontSize: 13,
+    color: '#000000',
+    fontSize: 13.7,
     fontWeight: '700',
   },
   planButtonSelected: {
@@ -1900,21 +2394,33 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   planButtonSelectedText: {
-    color: '#FFFFFF',
+    color: '#000000',
+    fontWeight: '700',
   },
   projectNameContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    marginHorizontal: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginHorizontal: 17,
     marginTop: 8,
-    marginBottom: 16,
-    backgroundColor: 'white',
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+    shadowColor: 'grey',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 9,
+  },
+  upgradeButtonImage:{
+    width: 14,
+    height: 14,
+    marginRight: 4,
+  },
+  roomTabImage:{
+    width: 35,
+    height: 35,
   },
   projectInfoRow: {
     flexDirection: 'row',
@@ -1927,24 +2433,25 @@ const styles = StyleSheet.create({
   },
   projectLabel: {
     fontSize: 12,
-    color: '#999',
-    fontWeight: '400',
-    marginBottom: 6,
-    letterSpacing: 0.1,
+    color: 'grey',
+    fontWeight: '500',
+    marginBottom: 4,
+    letterSpacing: -0.1,
   },
   projectNameText: {
-    fontSize: 20,
-    color: '#000',
+    fontSize: 17,
+    color: '#000000',
     fontWeight: '700',
-    letterSpacing: -0.3,
-    lineHeight: 26,
+    letterSpacing: -0.1,
+    lineHeight: 18,
   },
   projectNameTouchable: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   projectMenuButton: {
     padding: 8,
-    marginTop: 20,
   },
   projectNameInput: {
     borderWidth: 1,
@@ -1959,34 +2466,33 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 90,
     right: 20,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: COLORS.PRIMARY,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#F2C31B',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: '#F2C31B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
     elevation: 8,
     zIndex: 100,
   },
   bottomNavPill: {
     position: 'absolute',
     bottom: 20,
-    left: 20,
-    right: 20,
+    left: 12,
+    right: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: 'white',
-    borderRadius: 32,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    justifyContent: 'center',
+    backgroundColor: '#f4f4f4',
+    borderRadius: 296,
+    height: 50,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 8,
     zIndex: 90,
@@ -1995,25 +2501,31 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    gap: 1,
+    height: 50,
   },
   navItemActive: {
-    backgroundColor: '#F0F0F0',
+    backgroundColor: '#E0E0E0',
+    borderRadius: 100,
+    marginHorizontal: -7,
   },
   navItemText: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#666666',
-    marginTop: 4,
+    fontSize: 10,
+    fontWeight: '510',
+    color: '#1E1E1E',
+    marginTop: 1,
+    textAlign: 'center',
   },
   navItemTextActive: {
-    color: '#000000',
-    fontWeight: '600',
+    color: '#1E1E1E',
+    fontWeight: '590',
+    letterSpacing: -0.1,
   },
   roomTabsContainer: {
-    backgroundColor: 'white',
-    paddingVertical: 16,
+    backgroundColor: '#F6F8FA',
+    paddingVertical: 12,
   },
   roomTabsScrollView: {
     flex: 0,
@@ -2023,48 +2535,43 @@ const styles = StyleSheet.create({
     paddingRight: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
   roomTab: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 12,
     backgroundColor: '#FFFFFF',
-    marginRight: 12,
-    width: 100,
+    minWidth: 69,
+    height: 63,
     borderWidth: 1,
-    borderColor: '#E8E8E8',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    borderColor: '#ECECEC',
   },
   roomTabActive: {
-    backgroundColor: '#FDF5D0',
-    borderColor: '#FDF5D0',
-    shadowColor: COLORS.PRIMARY,
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: '#FFEAA0',
+    borderColor: '#FFEAA0',
+    borderWidth: 0,
   },
   roomTabText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-    marginTop: 8,
+    fontSize: 10,
+    color: '#000000',
+    fontWeight: '400',
+    marginTop: 5,
     textAlign: 'center',
+    letterSpacing: -0.1,
+    flexShrink: 0,
   },
   roomTabTextActive: {
-    color: '#000',
-    fontWeight: '600',
+    color: '#000000',
+    fontWeight: '590',
   },
   content: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 17,
     paddingTop: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F6F8FA',
   },
   photoGrid: {
     flexDirection: 'row',
@@ -2077,16 +2584,33 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 4
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+  },
+  photoCenterDivider: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -1,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: '#FFFFFF',
+    zIndex: 5,
+  },
+  photoCenterDividerHorizontal: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -1,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: '#FFFFFF',
+    zIndex: 5,
   },
   photoOverlayBadge: {
     position: 'absolute',
-    top: 8,
+    bottom: 8,
     right: 8,
     zIndex: 10,
   },
@@ -2094,27 +2618,16 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#22C55E',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 4,
   },
   clockBadge: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    color: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
   },
   thumbnailButtonsOverlay: {
     position: 'absolute',
@@ -2122,21 +2635,24 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     alignItems: 'flex-start',
+    zIndex: 10,
   },
   retakeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 20,
-    gap: 6,
+    gap: 3,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 5,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
   },
   retakeButtonText: {
     color: '#FFFFFF',
@@ -2148,11 +2664,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.PRIMARY,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 20,
-    gap: 8,
-    alignSelf: 'center',
+    gap: 4,
     shadowColor: COLORS.PRIMARY,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -2161,7 +2676,7 @@ const styles = StyleSheet.create({
   },
   takeAfterButtonText: {
     color: '#000',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
   addPhotoItemCenter: {
@@ -2214,25 +2729,117 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#000',
     zIndex: 1000
   },
   fullScreenPhoto: {
     width: '100%',
     height: '100%'
   },
-  fullScreenCombinedPreview: {
+  fullScreenSinglePreview: {
     aspectRatio: 1,
-    width: '90%',
-    maxWidth: 500,
-    maxHeight: 500,
-    backgroundColor: 'white',
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: 400,
+    backgroundColor: '#1a1a1a',
     borderRadius: 12,
     overflow: 'hidden',
-    borderWidth: 3,
-    borderColor: COLORS.PRIMARY
+    borderWidth: 2,
+    borderColor: COLORS.PRIMARY,
+    position: 'relative'
+  },
+  fullScreenLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 10
+  },
+  fullScreenErrorOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    zIndex: 10,
+    padding: 20
+  },
+  fullScreenErrorText: {
+    color: '#fff',
+    fontSize: 14,
+    marginTop: 12,
+    textAlign: 'center'
+  },
+  fullScreenHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 25,
+    paddingBottom: 12,
+    zIndex: 1002
+  },
+  fullScreenLabelsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  fullScreenLabelsText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600'
+  },
+  fullScreenCustomizeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#000000',
+    borderWidth: 1,
+    borderColor: 'grey',
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    borderRadius: 15
+  },
+  fullScreenCustomizeText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  fullScreenCloseButton: {
+    width: 27,
+    height: 27,
+    borderRadius: 15,
+    backgroundColor: 'rgba(99, 3, 3, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'grey',
+    zIndex: 1002
+  },
+  fullScreenPhotoArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20
+  },
+  fullScreenCombinedPreview: {
+    aspectRatio: 1,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: 400,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.PRIMARY,
+    position: 'relative',
+    flexDirection: 'column' // Default to stacked, will be overridden by fullScreenStacked/SideBySide
   },
   fullScreenStacked: {
     flexDirection: 'column'
@@ -2241,11 +2848,86 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   fullScreenHalf: {
-    flex: 1
+    flex: 1,
+    position: 'relative'
   },
   fullScreenHalfImage: {
     width: '100%',
     height: '100%'
+  },
+  fullScreenCenterDivider: {
+    position: 'absolute',
+    left: '50%',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    marginLeft: -1,
+    backgroundColor: COLORS.PRIMARY,
+    zIndex: 5
+  },
+  fullScreenCenterDividerHorizontal: {
+    position: 'absolute',
+    top: '50%',
+    left: 0,
+    right: 0,
+    height: 1,
+    marginTop: -1,
+    backgroundColor: COLORS.PRIMARY,
+    zIndex: 5
+  },
+  fullScreenRoomNameRow: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    zIndex: 1001
+  },
+  fullScreenRoomName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8
+  },
+  fullScreenPaginationDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6
+  },
+  fullScreenDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.35)'
+  },
+  fullScreenDotActive: {
+    backgroundColor: '#FFFFFF'
+  },
+  fullScreenBottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 32,
+    paddingBottom:20,
+    paddingTop: 16,
+    zIndex: 1002
+  },
+  fullScreenDeleteCircle: {
+    width: 35,
+    height: 35,
+    borderRadius: 17,
+    backgroundColor: '#000',
+    borderWidth: 1,
+    borderColor: 'grey',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  fullScreenShareCircle: {
+    width: 35,
+    height: 35,
+    borderRadius: 17,
+    backgroundColor: COLORS.PRIMARY,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   fullScreenNavigation: {
     position: 'absolute',
@@ -2261,39 +2943,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-  },
-  fullScreenLabelsToggleContainer: {
-    position: 'absolute',
-    top: '15%',
-    alignSelf: 'center',
-    alignItems: 'center',
-    zIndex: 1002
-  },
-  fullScreenLabelsToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  fullScreenLabelsText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginRight: 8
-  },
-  fullScreenCustomizeButton: {
-    marginTop: 8,
-    backgroundColor: COLORS.PRIMARY,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20
-  },
-  fullScreenCustomizeText: {
-    color: '#000',
-    fontSize: 14,
-    fontWeight: '600'
   },
   fullScreenDeleteButton: {
     position: 'absolute',
@@ -2481,45 +3130,33 @@ const styles = StyleSheet.create({
   contextMenuTextDanger: {
     color: '#FF4444',
   },
-  planModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
-    zIndex: 10001,
-  },
-  planModalContent: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-    paddingBottom: 20,
-  },
   planModalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#E8E8E8'
+    borderBottomColor: '#E5E5E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   planModalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#000'
-  },
-  planModalCloseButton: {
-    width: 30,
-    height: 30,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  planModalCloseText: {
-    fontSize: 24,
-    color: '#999'
+    color: '#000000',
+    letterSpacing: -0.3,
   },
   planModalScrollView: {
-    paddingHorizontal: 20,
-    paddingTop: 20
+    flex: 1,
+  },
+  planModalContent: {
+    padding: 16,
+    paddingBottom: 20,
   },
   planContainer: {
     marginBottom: 20
@@ -2550,4 +3187,147 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 10
   },
+  // New card-style plan modal styles
+  planModalContainer: {
+    flex: 1,
+    backgroundColor: '#FAFAFA',
+  },
+  planModalBody: {
+    flex: 1,
+    position: 'relative',
+  },
+  planModalBackButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+  },
+  planCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  planCardRecommended: {
+    borderWidth: 2,
+    borderColor: COLORS.PRIMARY,
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  planCardSelected: {
+    borderWidth: 2.5,
+    borderColor: COLORS.PRIMARY,
+  },
+  planCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  planCardTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#000000',
+    letterSpacing: -0.5,
+  },
+  planBadgeFree: {
+    backgroundColor: '#81C784',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    shadowColor: '#81C784',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  planBadgePrice: {
+    backgroundColor: '#81C784',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    shadowColor: '#81C784',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  planBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  planCardDescription: {
+    fontSize: 14,
+    color: '#666666',
+    lineHeight: 22,
+    marginBottom: 16,
+    letterSpacing: -0.2,
+  },
+  currentPlanButton: {
+    backgroundColor: COLORS.PRIMARY,
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  currentPlanButtonText: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  recommendedBadge: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  recommendedBadgeText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+  },
+  getMoreButton: {
+    backgroundColor: '#000000',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  getMoreButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
 });
+

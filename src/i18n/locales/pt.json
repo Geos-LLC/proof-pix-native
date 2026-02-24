@@ -646,7 +646,7 @@
     "statFriendsJoined": "Amigos que Entraram",
     "statMonthsEarned": "Meses Ganhos",
     "shareIntroTitle": "Indicação ProofPix",
-    "shareIntroMessage": "Junte-se ao ProofPix e organize-se!\\n\\n📱 Baixe o ProofPix:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\nApós instalar, use meu código de indicação para começar!",
+    "shareIntroMessage": "Junte-se ao ProofPix e organize-se!\n\n📱 Baixe o ProofPix:\niOS: {{iosLink}}\nAndroid: {{androidLink}}\n\nApós instalar, use meu código de indicação para começar!",
     "shareCodePromptTitle": "Compartilhar Código de Indicação?",
     "shareCodePromptMessage": "Agora compartilhe seu código de indicação como uma mensagem separada para que eles possam copiá-lo facilmente.",
     "shareErrorMessage": "Falha ao compartilhar link de indicação. Por favor, tente novamente.",

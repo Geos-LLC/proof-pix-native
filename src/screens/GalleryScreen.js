@@ -15,12 +15,10 @@ import {
   ActivityIndicator,
   Switch,
   TextInput,
-  Share as RNShare,
   Platform,
-  PixelRatio,
   InteractionManager
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
@@ -36,18 +34,36 @@ import dropboxAuthService from '../services/dropboxAuthService';
 import dropboxService from '../services/dropboxService';
 import { uploadPhotoBatchToDropbox } from '../services/dropboxUploadService';
 import { captureRef } from 'react-native-view-shot';
-import { addLabelToImage, compositeImages, calculateAfterLabelOffsets } from '../utils/imageCompositor';
 import * as FileSystem from 'expo-file-system/legacy';
+import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
+import { ensureLabelForPhoto } from '../services/labelService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
-import UploadIndicatorLine from '../components/UploadIndicatorLine';
 import UploadCompletionModal from '../components/UploadCompletionModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import { filterNewPhotos, markPhotosAsUploaded } from '../services/uploadTracker';
-import Share from 'react-native-share';
+import Constants from 'expo-constants';
 import JSZip from 'jszip';
 import { useTranslation } from 'react-i18next';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+
+// Share module is native (react-native-share) and not available in Expo Go.
+// Load it conditionally and provide a safe no-op fallback to avoid TurboModule errors.
+let Share = {
+  open: async () => {
+    console.log('[Share] react-native-share not available (likely Expo Go). Share.open call ignored.');
+  },
+};
+
+if (Constants?.appOwnership !== 'expo') {
+  try {
+    // eslint-disable-next-line global-require
+    const shareModule = require('react-native-share');
+    Share = shareModule.default || shareModule;
+  } catch (e) {
+    console.warn('[Share] Failed to load react-native-share, falling back to no-op implementation:', e?.message);
+  }
+}
 import {
   calculateSettingsHash,
   getCachedLabeledPhoto,
@@ -61,7 +77,7 @@ import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { FEATURES } from '../constants/featurePermissions';
 
 const COLORS = {
-  BACKGROUND: '#F8F8F8',
+  BACKGROUND: '#F6F8FA',
   PRIMARY: '#F2C31B',
   TEXT: '#000000',
   GRAY: '#666666',
@@ -74,6 +90,26 @@ const PHOTO_SPACING = 16;
 const AVAILABLE_WIDTH = width - CONTAINER_PADDING - PHOTO_SPACING;
 const COLUMN_WIDTH = AVAILABLE_WIDTH / 3;
 
+// Helper to check if aspect ratio is portrait (height > width)
+const isPortraitAspectRatio = (aspectRatio) => {
+  if (!aspectRatio) return true; // Default to portrait if unknown
+  const [w, h] = aspectRatio.split(':').map(Number);
+  return h > w; // 3:4, 9:16 etc are portrait
+};
+
+// Helper to check if layout should be stacked based on template or aspect ratio
+const isStackedLayout = (templateType, aspectRatio) => {
+  // First check templateType if available
+  if (templateType) {
+    const config = TEMPLATE_CONFIGS[templateType];
+    if (config?.layout) return config.layout === 'stack';
+  }
+  // Fallback to aspect ratio - landscape photos should be stacked, portrait should be side-by-side
+  // Portrait (3:4, 9:16): side-by-side (vertical divider)
+  // Landscape (4:3, 16:9): stacked (horizontal divider)
+  return !isPortraitAspectRatio(aspectRatio);
+};
+
 export default function GalleryScreen({ navigation, route }) {
   const { t } = useTranslation();
   const {
@@ -83,6 +119,7 @@ export default function GalleryScreen({ navigation, route }) {
     getCombinedPhotos,
     deleteAllPhotos,
     deletePhoto,
+    deletePhotoSet,
     createProject,
     assignPhotosToProject,
     activeProjectId,
@@ -97,6 +134,7 @@ export default function GalleryScreen({ navigation, route }) {
     useFolderStructure,
     enabledFolders,
     showLabels,
+    toggleLabels,
     shouldShowWatermark,
     beforeLabelPosition,
     afterLabelPosition,
@@ -115,6 +153,7 @@ export default function GalleryScreen({ navigation, route }) {
     updateUserPlan,
   } = useSettings();
   
+  const insets = useSafeAreaInsets();
   const { canUse } = useFeaturePermissions();
   const { userMode, teamInfo, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType } = useAdmin();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
@@ -122,7 +161,18 @@ export default function GalleryScreen({ navigation, route }) {
   // State management
   const [fullScreenPhoto, setFullScreenPhoto] = useState(null);
   const [fullScreenPhotoSet, setFullScreenPhotoSet] = useState(null);
+  const [fullScreenPhotos, setFullScreenPhotos] = useState([]);
+  const [fullScreenIndex, setFullScreenIndex] = useState(0);
+  const [fullScreenLoading, setFullScreenLoading] = useState(false);
+  const [fullScreenError, setFullScreenError] = useState(null);
   const [sharing, setSharing] = useState(false);
+  const swipeStartX = useRef(null);
+  const fullScreenCombinedRef = useRef(null);
+  const fullScreenVisibleRef = useRef(false);
+  const fullScreenPhotosRef = useRef([]);
+  const fullScreenIndexRef = useRef(0);
+  const handleSwipeRef = useRef(null);
+  const handleCloseRef = useRef(null);
   const [capturingPhoto, setCapturingPhoto] = useState(null);
   const labelCaptureRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -150,6 +200,8 @@ export default function GalleryScreen({ navigation, route }) {
   const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [showDeleteSelectedConfirm, setShowDeleteSelectedConfirm] = useState(false);
+  const [showDeletePhotoConfirm, setShowDeletePhotoConfirm] = useState(false);
+  const pendingDeletePhotoRef = useRef(null);
   const [selectedTypes, setSelectedTypes] = useState({ before: true, after: true, combined: true });
   const [selectedShareTypes, setSelectedShareTypes] = useState({ before: true, after: true, combined: true });
   const [shareAsArchive, setShareAsArchive] = useState(false);
@@ -175,6 +227,7 @@ export default function GalleryScreen({ navigation, route }) {
   const renderViewRef = useRef(null);
   const combinedCaptureRef = useRef(null);
   const [showUploadDetails, setShowUploadDetails] = useState(false);
+  const [isPreparingUpload, setIsPreparingUpload] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showUploadAlertModal, setShowUploadAlertModal] = useState(false);
   const [uploadAlertConfig, setUploadAlertConfig] = useState(null);
@@ -192,10 +245,12 @@ export default function GalleryScreen({ navigation, route }) {
   }, [route?.params?.showUploadDetails, navigation]);
 
   useEffect(() => {
-    if (uploadStatus.completedUploads && uploadStatus.completedUploads.length > 0) {
+    // Only show completion modal when upload details modal is NOT showing
+    // This prevents the completion modal from popping up on top of the progress modal
+    if (!showUploadDetails && uploadStatus.completedUploads && uploadStatus.completedUploads.length > 0) {
       setShowCompletionModal(true);
     }
-  }, [uploadStatus.completedUploads]);
+  }, [uploadStatus.completedUploads, showUploadDetails]);
 
   useEffect(() => {
     if (optionsVisible) {
@@ -217,6 +272,15 @@ export default function GalleryScreen({ navigation, route }) {
       });
     }
   }, [optionsVisible, isAuthenticated]);
+
+  // Keep refs in sync with state for PanResponder
+  useEffect(() => {
+    fullScreenPhotosRef.current = fullScreenPhotos;
+  }, [fullScreenPhotos]);
+
+  useEffect(() => {
+    fullScreenIndexRef.current = fullScreenIndex;
+  }, [fullScreenIndex]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -324,7 +388,8 @@ export default function GalleryScreen({ navigation, route }) {
     }
     setFullScreenPhoto(null);
     setFullScreenPhotoSet(null);
-    
+    setFullScreenPhotos([]);
+    setFullScreenIndex(0);
     if (wasLongPress) {
       setTimeout(() => {
         longPressTriggered.current = false;
@@ -344,9 +409,12 @@ export default function GalleryScreen({ navigation, route }) {
       onPanResponderRelease: (evt, gestureState) => {
         const { dy } = gestureState;
         const threshold = 100;
-        
-        if (dy > threshold) {
-          navigation.goBack();
+        if (dy > threshold && !fullScreenVisibleRef.current) {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+          }
         }
       }
     })
@@ -355,20 +423,31 @@ export default function GalleryScreen({ navigation, route }) {
   const shareIndividualPhoto = async (photo) => {
     try {
       setSharing(true);
-      
+
+      // Apply label if labels are enabled
+      let sourceUri = photo.uri;
+      if (showLabels && (photo.mode === 'before' || photo.mode === 'after')) {
+        try {
+          const labeledUri = await ensureLabelForPhoto({
+            ...photo,
+            type: photo.mode,
+          });
+          if (labeledUri) sourceUri = labeledUri;
+        } catch (labelErr) {
+          console.warn('[GalleryScreen] Label application failed, using original:', labelErr);
+        }
+      }
+
       const tempFileName = `${photo.room}_${photo.name}_${photo.mode}_${Date.now()}.jpg`;
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
-      await FileSystem.copyAsync({ from: photo.uri, to: tempUri });
+      await FileSystem.copyAsync({ from: sourceUri, to: tempUri });
 
-      const shareOptions = {
+      await Share.open({
         title: `${photo.mode === 'before' ? 'Before' : 'After'} Photo - ${photo.name}`,
-        message: `Check out this ${photo.mode} photo from ${photo.room}!`,
-        url: tempUri,
-        type: 'image/jpeg'
-      };
+        url: `file://${tempUri}`,
+        type: 'image/jpeg',
+      });
 
-      const result = await RNShare.share(shareOptions);
-      
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
         if (fileInfo.exists) {
@@ -378,7 +457,9 @@ export default function GalleryScreen({ navigation, route }) {
         console.log('[GALLERY] Cleanup error:', cleanupError);
       }
     } catch (error) {
-      Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
+      if (error?.message !== 'User did not share') {
+        Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
+      }
     } finally {
       setSharing(false);
     }
@@ -397,14 +478,11 @@ export default function GalleryScreen({ navigation, route }) {
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
       await FileSystem.copyAsync({ from: capturedUri, to: tempUri });
 
-      const shareOptions = {
+      await Share.open({
         title: `Before/After - ${photoSet.name}`,
-        message: `Check out this before/after comparison from ${photoSet.room}!`,
-        url: tempUri,
-        type: 'image/jpeg'
-      };
-
-      const result = await RNShare.share(shareOptions);
+        url: `file://${tempUri}`,
+        type: 'image/jpeg',
+      });
       
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
@@ -415,7 +493,119 @@ export default function GalleryScreen({ navigation, route }) {
         console.log('[GALLERY] Cleanup error:', cleanupError);
       }
     } catch (error) {
-      Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
+      if (error?.message !== 'User did not share') {
+        Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
+      }
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const shareFullScreenCombined = async () => {
+    if (!fullScreenPhotoSet) return;
+    try {
+      setSharing(true);
+      let shareUri = null;
+
+      const beforePhoto = fullScreenPhotoSet.before;
+      const afterPhoto = fullScreenPhotoSet.after;
+
+      if (beforePhoto?.uri && afterPhoto?.uri) {
+        try {
+          // Determine layout from stored metadata or aspect ratio
+          const currentFullScreenPhoto = fullScreenPhotos[fullScreenIndex];
+          const storedLayout = currentFullScreenPhoto?.combinedLayout;
+          const isStack = storedLayout ? storedLayout === 'STACK' : isStackedLayout(currentFullScreenPhoto?.templateType, beforePhoto.aspectRatio);
+          const layout = isStack ? 'STACK' : 'SIDE';
+
+          // Get before image dimensions for 1:1 square calculation
+          const getImageSize = (uri) => new Promise((resolve, reject) => {
+            Image.getSize(uri, (w, h) => resolve({ w, h }), reject);
+          });
+          const bSize = await getImageSize(beforePhoto.uri);
+          const squareSize = Math.min(Math.max(bSize.w, 2048), 4096);
+
+          const dims = isStack
+            ? { width: squareSize, height: squareSize, topH: Math.round(squareSize / 2), bottomH: squareSize - Math.round(squareSize / 2) }
+            : { width: squareSize, height: squareSize, leftW: Math.round(squareSize / 2), rightW: squareSize - Math.round(squareSize / 2) };
+
+          // Re-composite fresh 1:1 square
+          const freshUri = await compositeImages(beforePhoto.uri, afterPhoto.uri, layout, dims);
+
+          if (showLabels) {
+            // Apply native labels
+            const labelSizeMap = { small: 48, medium: 56, large: 64 };
+            const fontSize = labelSizeMap[labelSize] || 56;
+            const convertPos = (pos) => {
+              const map = { 'top-left': 'left-top', 'top-right': 'right-top', 'bottom-left': 'left-bottom', 'bottom-right': 'right-bottom' };
+              return map[pos] || pos || 'left-top';
+            };
+            const beforePos = convertPos(beforeLabelPosition || 'top-left');
+            const afterPos = convertPos(afterLabelPosition || 'top-right');
+            const baseLabelConfig = {
+              backgroundColor: labelBackgroundColor || '#FFD700',
+              textColor: labelTextColor || '#000000',
+              fontSize,
+              marginHorizontal: labelMarginHorizontal || 10,
+              marginVertical: labelMarginVertical || 10,
+              padding: 8,
+            };
+
+            // Apply Before label
+            const withBeforeLabel = await addLabelToImage(freshUri, t('common.before') || 'BEFORE', {
+              ...baseLabelConfig,
+              position: beforePos,
+            });
+
+            // Calculate After label offsets for correct half positioning
+            const halfW = Math.round(squareSize / 2);
+            const halfH = Math.round(squareSize / 2);
+            const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPos, isStack, halfW, halfH, squareSize, squareSize);
+
+            // Apply After label
+            shareUri = await addLabelToImage(withBeforeLabel, t('common.after') || 'AFTER', {
+              ...baseLabelConfig,
+              position: afterPos,
+              offsetX,
+              offsetY,
+            });
+          } else {
+            shareUri = freshUri;
+          }
+        } catch (compositeErr) {
+          console.warn('[GalleryScreen] Re-composite failed, falling back to captureRef:', compositeErr);
+          // Fallback to captureRef if native composite fails
+          if (fullScreenCombinedRef.current) {
+            shareUri = await captureRef(fullScreenCombinedRef, { format: 'jpg', quality: 0.95 });
+          }
+        }
+      }
+
+      if (!shareUri) {
+        // Last resort fallback
+        if (fullScreenCombinedRef.current) {
+          shareUri = await captureRef(fullScreenCombinedRef, { format: 'jpg', quality: 0.95 });
+        } else {
+          throw new Error('No share URI available');
+        }
+      }
+
+      const tempFileName = `${fullScreenPhotoSet.before.room}_${fullScreenPhotoSet.before.name}_combined_${Date.now()}.jpg`;
+      const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
+      await FileSystem.copyAsync({ from: shareUri, to: tempUri });
+      await Share.open({
+        title: `Before/After - ${fullScreenPhotoSet.before.name}`,
+        url: `file://${tempUri}`,
+        type: 'image/jpeg',
+      });
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(tempUri);
+        if (fileInfo.exists) await FileSystem.deleteAsync(tempUri, { idempotent: true });
+      } catch (_) {}
+    } catch (error) {
+      if (error?.message !== 'User did not share') {
+        Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
+      }
     } finally {
       setSharing(false);
     }
@@ -448,13 +638,12 @@ export default function GalleryScreen({ navigation, route }) {
       }
       
       if (selectedShareTypes.combined) {
+        // Add combined photos directly from PhotoContext (already generated at capture time)
         const beforePhotos = sourcePhotos.filter(p => p.mode === 'before');
         for (const beforePhoto of beforePhotos) {
-          const afterPhoto = sourcePhotos.find(
-            p => p.mode === 'after' && p.beforePhotoId === beforePhoto.id
-          );
-          if (afterPhoto) {
-            photosToShare.push({ type: 'combined', before: beforePhoto, after: afterPhoto });
+          const combinedPhoto = photos.find(p => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === beforePhoto.id);
+          if (combinedPhoto) {
+            photosToShare.push(combinedPhoto);
           }
         }
       }
@@ -465,6 +654,22 @@ export default function GalleryScreen({ navigation, route }) {
         return;
       }
 
+      // Apply labels to photos before sharing (uses cached versions from background service)
+      if (showLabels) {
+        for (let i = 0; i < photosToShare.length; i++) {
+          try {
+            const photo = photosToShare[i];
+            const photoWithType = { ...photo, type: photo.mode || photo.type };
+            const labeledUri = await ensureLabelForPhoto(photoWithType);
+            if (labeledUri && labeledUri !== photo.uri) {
+              photosToShare[i] = { ...photo, uri: labeledUri };
+            }
+          } catch (e) {
+            console.warn('[GALLERY] Label failed for share photo, using original:', e?.message);
+          }
+        }
+      }
+
       if (shareAsArchive) {
         const zip = new JSZip();
         
@@ -472,13 +677,8 @@ export default function GalleryScreen({ navigation, route }) {
           const photo = photosToShare[i];
           let fileName, fileUri;
           
-          if (photo.type === 'combined') {
-            fileName = `${photo.before.room}_${photo.before.name}_combined.jpg`;
-            continue;
-          } else {
-            fileName = `${photo.room}_${photo.name}_${photo.mode}.jpg`;
-            fileUri = photo.uri;
-          }
+          fileName = `${photo.room}_${photo.name}_${photo.mode}.jpg`;
+          fileUri = photo.uri;
           
           const fileData = await FileSystem.readAsStringAsync(fileUri, {
             encoding: FileSystem.EncodingType.Base64,
@@ -502,13 +702,8 @@ export default function GalleryScreen({ navigation, route }) {
 
         await FileSystem.deleteAsync(zipUri, { idempotent: true });
       } else {
-        const urls = [];
-        for (const photo of photosToShare) {
-          if (photo.type !== 'combined') {
-            urls.push(photo.uri);
-          }
-        }
-        
+        const urls = photosToShare.map(photo => photo.uri).filter(Boolean);
+
         if (urls.length > 0) {
           await Share.open({
             urls: urls,
@@ -553,6 +748,12 @@ export default function GalleryScreen({ navigation, route }) {
       if (activeProjectId) {
         await deleteProject(activeProjectId, { deleteFromStorage: shouldDeleteFromStorage });
         setActiveProject(null);
+        // Navigate back after deleting the project
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+        }
       } else {
         await deleteAllPhotos();
       }
@@ -623,6 +824,142 @@ export default function GalleryScreen({ navigation, route }) {
     setOptionsVisible(true);
   };
 
+  const handleConfirmUpload = async () => {
+    try {
+      // Gather photos to upload based on selected types
+      let photosToUpload = [];
+      const sourcePhotos = uploadSelectedPhotos?.individual || [];
+
+      sourcePhotos.forEach(photo => {
+        if (selectedTypes.before && photo.mode === 'before') {
+          photosToUpload.push(
+            useFolderStructure && !enabledFolders.before ? { ...photo, flatOverride: true } : photo
+          );
+        }
+        if (selectedTypes.after && photo.mode === 'after') {
+          photosToUpload.push(
+            useFolderStructure && !enabledFolders.after ? { ...photo, flatOverride: true } : photo
+          );
+        }
+      });
+
+      // Also add photos from sets
+      const sourceSets = uploadSelectedPhotos?.sets || [];
+      sourceSets.forEach(set => {
+        if (selectedTypes.before && set.before) {
+          photosToUpload.push(
+            useFolderStructure && !enabledFolders.before ? { ...set.before, flatOverride: true } : set.before
+          );
+        }
+        if (selectedTypes.after && set.after) {
+          photosToUpload.push(
+            useFolderStructure && !enabledFolders.after ? { ...set.after, flatOverride: true } : set.after
+          );
+        }
+      });
+
+      // Add combined photos directly from PhotoContext (already generated at capture time)
+      if (selectedTypes.combined) {
+        // Collect all before photo IDs from selection
+        const beforeIds = new Set();
+        sourcePhotos.filter(p => p.mode === 'before').forEach(p => beforeIds.add(p.id));
+        sourceSets.forEach(set => { if (set.before) beforeIds.add(set.before.id); });
+
+        // Find combined photos by beforePhotoId — instant lookup, no filesystem scanning
+        for (const beforeId of beforeIds) {
+          const combinedPhoto = photos.find(p => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === beforeId);
+          if (combinedPhoto) {
+            photosToUpload.push(
+              useFolderStructure && !enabledFolders.combined ? { ...combinedPhoto, flatOverride: true } : combinedPhoto
+            );
+          }
+        }
+      }
+
+      // Deduplicate by photo ID to prevent uploading the same photo twice
+      const uniqueMap = new Map();
+      photosToUpload.forEach(p => { if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p); });
+      photosToUpload = Array.from(uniqueMap.values());
+
+      if (photosToUpload.length === 0) {
+        Alert.alert('No Photos', 'No photos match the selected types.');
+        return;
+      }
+
+      // Close modal and show upload progress immediately
+      setOptionsVisible(false);
+      setUploadSelectedPhotos(null);
+      setShowCompletionModal(false);
+      clearCompletedUploads();
+      setIsPreparingUpload(true);
+      setShowUploadDetails(true);
+
+      // Exit selection mode
+      isSelectionModeRef.current = false;
+      setIsSelectionMode(false);
+      setSelectedPhotos(new Set());
+
+      // Create album name
+      const albumName = createAlbumName(userName || 'User', new Date(), null, location);
+
+      // Upload to selected destinations
+      if (uploadDestinations.google && isAuthenticated) {
+        // Always validate session (even if proxySessionId exists, it may be stale)
+        let sessionId = null;
+        try {
+          const result = await initializeProxySession(folderId, accountType || 'google');
+          if (result?.success && result?.sessionId) {
+            sessionId = result.sessionId;
+          }
+        } catch (e) {
+          console.error('[GALLERY] Failed to init proxy session:', e);
+        }
+
+        if (!sessionId) {
+          setIsPreparingUpload(false);
+          Alert.alert('Session Error', 'Your upload session has expired. Please reconnect your Google account in Settings.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+          ]);
+          return;
+        }
+
+        setIsPreparingUpload(false);
+        startBackgroundUpload({
+          items: photosToUpload,
+          albumName,
+          location: location || '',
+          userName: userName || 'User',
+          flat: !useFolderStructure,
+          config: {
+            folderId,
+            sessionId,
+            accountType: accountType || 'google',
+            useDirectDrive: true,
+          },
+        });
+      }
+
+      if (uploadDestinations.dropbox && isDropboxConnected) {
+        setIsPreparingUpload(false);
+        startBackgroundUpload({
+          items: photosToUpload,
+          albumName,
+          location: location || '',
+          userName: userName || 'User',
+          flat: !useFolderStructure,
+          config: {
+            accountType: 'dropbox',
+          },
+        });
+      }
+
+    } catch (error) {
+      console.error('[GALLERY] Upload error:', error);
+      Alert.alert('Upload Error', 'Failed to start upload. Please try again.');
+    }
+  };
+
   const handleShareSelected = async () => {
     const selected = getSelectedPhotos();
     const selectedSets = getSelectedPhotoSets();
@@ -647,9 +984,9 @@ export default function GalleryScreen({ navigation, route }) {
   const handleDeleteSelectedConfirmed = async (deleteFromStorageParam) => {
     try {
       const photosToDelete = getSelectedPhotos();
-      
+
       for (const photo of photosToDelete) {
-        await deletePhoto(photo.id);
+        await deletePhoto(photo.id, { deleteFromStorage: deleteFromStorageParam });
       }
       
       setSelectedPhotos(new Set());
@@ -687,6 +1024,190 @@ export default function GalleryScreen({ navigation, route }) {
 
     return Object.values(sets);
   };
+
+  const getGalleryAllPhotos = () => {
+    // Build allPhotos to match EXACTLY how the gallery grid displays photos:
+    // For each set: before, after (if exists), combined (if both exist)
+    const allPhotos = [];
+    if (!getRooms || typeof getRooms !== 'function') return allPhotos;
+    const rooms = getRooms();
+    if (!rooms || !Array.isArray(rooms)) return allPhotos;
+    rooms.forEach(room => {
+      const sets = getPhotoSets(room.id);
+      const combinedPhotos = getCombinedPhotos(room.id);
+      sets.forEach(set => {
+        // Always add the before photo
+        if (set.before) {
+          allPhotos.push({ ...set.before, type: 'before' });
+        }
+        // Add the after photo if it exists
+        if (set.after) {
+          allPhotos.push({ ...set.after, type: 'after' });
+        }
+        // Add the combined photo if both before and after exist
+        if (set.before && set.after) {
+          const combinedPhoto = combinedPhotos.find(p => p.name === set.before.name && p.room === set.before.room);
+          allPhotos.push({
+            type: 'combined',
+            beforePhoto: set.before,
+            afterPhoto: set.after,
+            id: `combined-${set.before.id}`, // Unique ID for combined
+            name: set.before.name,
+            room: set.before.room,
+            uri: combinedPhoto?.uri || set.before.uri,
+            templateType: combinedPhoto?.templateType,
+            combinedLayout: combinedPhoto?.combinedLayout,
+          });
+        }
+      });
+    });
+    return allPhotos;
+  };
+
+  const openFullScreenFromGallery = (photo, photoSet, photoType) => {
+    fullScreenVisibleRef.current = true;
+    const allPhotos = getGalleryAllPhotos();
+    let index = 0;
+
+    console.log('[GalleryScreen] openFullScreen called - photoType:', photoType, 'photo.id:', photo?.id, 'photoSet.before.id:', photoSet?.before?.id);
+
+    if (photoType === 'combined' && photoSet?.before) {
+      // For combined, find by matching beforePhoto.id
+      index = allPhotos.findIndex(p => p.type === 'combined' && p.beforePhoto?.id === photoSet.before.id);
+    } else if (photo?.id) {
+      // For before/after, find by matching id AND type
+      index = allPhotos.findIndex(p => p.id === photo.id && p.type === photoType);
+      // Fallback to just id if not found with type
+      if (index < 0) {
+        index = allPhotos.findIndex(p => p.id === photo.id);
+      }
+    }
+
+    console.log('[GalleryScreen] Found index:', index, 'of', allPhotos.length, 'photos');
+
+    if (index < 0) index = 0;
+    setFullScreenPhotos(allPhotos);
+    setFullScreenIndex(index);
+    setFullScreenLoading(false);
+    setFullScreenError(null);
+
+    // Use the actual type from allPhotos[index]
+    const actualPhoto = allPhotos[index];
+    const actualType = actualPhoto?.type;
+    console.log('[GalleryScreen] Displaying - type:', actualType, 'id:', actualPhoto?.id, 'uri:', actualPhoto?.uri?.substring(0, 50));
+
+    if (actualType === 'combined' || actualType === 'split') {
+      // Combined/split photos use fullScreenPhotoSet
+      setFullScreenPhotoSet({ before: actualPhoto.beforePhoto, after: actualPhoto.afterPhoto });
+      setFullScreenPhoto(null);
+    } else {
+      // Single before/after photos use fullScreenPhoto
+      setFullScreenPhoto(actualPhoto || null);
+      setFullScreenPhotoSet(null);
+    }
+  };
+
+  const handleGalleryFullScreenClose = () => {
+    fullScreenVisibleRef.current = false;
+    setFullScreenPhoto(null);
+    setFullScreenPhotoSet(null);
+    setFullScreenPhotos([]);
+    setFullScreenIndex(0);
+    setFullScreenLoading(false);
+    setFullScreenError(null);
+    handleLongPressEnd();
+  };
+
+  const handleSwipeNavigation = (direction) => {
+    // Use refs to get current values (avoids stale closure in PanResponder)
+    const photos = fullScreenPhotosRef.current;
+    const currentIndex = fullScreenIndexRef.current;
+
+    if (photos.length === 0) return;
+
+    let newIndex = currentIndex;
+    if (direction === 'left') {
+      // Next photo
+      newIndex = (currentIndex + 1) % photos.length;
+    } else if (direction === 'right') {
+      // Previous photo
+      newIndex = currentIndex === 0 ? photos.length - 1 : currentIndex - 1;
+    }
+
+    // Validate newIndex
+    if (newIndex < 0 || newIndex >= photos.length) {
+      console.log('[GalleryScreen] Invalid index:', newIndex, 'length:', photos.length);
+      return;
+    }
+
+    const newPhoto = photos[newIndex];
+    console.log('[GalleryScreen] swipe', direction, '- index:', newIndex, 'type:', newPhoto?.type, 'id:', newPhoto?.id);
+
+    if (!newPhoto) {
+      console.log('[GalleryScreen] No photo at index:', newIndex);
+      return;
+    }
+
+    setFullScreenIndex(newIndex);
+    setFullScreenLoading(false);
+    setFullScreenError(null);
+
+    if (newPhoto.type === 'combined' || newPhoto.type === 'split') {
+      if (newPhoto.beforePhoto && newPhoto.afterPhoto) {
+        setFullScreenPhotoSet({ before: newPhoto.beforePhoto, after: newPhoto.afterPhoto });
+        setFullScreenPhoto(null);
+      } else {
+        // Fallback if combined photo is missing before/after data
+        console.log('[GalleryScreen] Combined photo missing data, showing as single');
+        setFullScreenPhoto(newPhoto);
+        setFullScreenPhotoSet(null);
+      }
+    } else {
+      setFullScreenPhoto(newPhoto);
+      setFullScreenPhotoSet(null);
+    }
+  };
+
+  // Keep function refs updated for PanResponder
+  handleSwipeRef.current = handleSwipeNavigation;
+  handleCloseRef.current = handleGalleryFullScreenClose;
+
+  const fullScreenPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        if (!fullScreenVisibleRef.current) return false;
+        const isHorizontalSwipe = Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 20;
+        const isVerticalSwipe = Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && Math.abs(gestureState.dy) > 20;
+        return isHorizontalSwipe || isVerticalSwipe;
+      },
+      onPanResponderGrant: () => {
+        swipeStartX.current = null;
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        const swipeThreshold = 50;
+        const photosLength = fullScreenPhotosRef.current.length;
+
+        // Horizontal swipe for navigation
+        if (Math.abs(gestureState.dx) > Math.abs(gestureState.dy)) {
+          if (gestureState.dx > swipeThreshold && photosLength > 1) {
+            console.log('[GalleryScreen] Swipe right - previous photo');
+            handleSwipeRef.current?.('right');
+          } else if (gestureState.dx < -swipeThreshold && photosLength > 1) {
+            console.log('[GalleryScreen] Swipe left - next photo');
+            handleSwipeRef.current?.('left');
+          }
+        }
+        // Vertical swipe to close
+        else if (Math.abs(gestureState.dy) > swipeThreshold) {
+          handleCloseRef.current?.();
+        }
+
+        swipeStartX.current = null;
+      },
+      onPanResponderTerminationRequest: () => false,
+    })
+  ).current
 
   const renderDummyCard = (label) => (
     <View style={styles.dummyCard}>
@@ -786,10 +1307,7 @@ export default function GalleryScreen({ navigation, route }) {
           return;
         }
         
-        navigation.navigate('PhotoEditor', {
-          beforePhoto: photoSet.before,
-          afterPhoto: photoSet.after
-        });
+        openFullScreenFromGallery(null, photoSet, 'combined');
       };
 
       return (
@@ -804,7 +1322,7 @@ export default function GalleryScreen({ navigation, route }) {
           onLongPress={() => handleLongPressStart(null, photoSet)}
         >
           <View style={[styles.combinedThumbnail, useStackedLayout ? styles.stackedThumbnail : styles.sideBySideThumbnail]}>
-            <Image source={{ uri: photoSet.before.uri }} style={styles.halfImage} resizeMode="cover" />
+            <Image key={`combined-before-${photoSet.before.id}`} source={{ uri: photoSet.before.uri }} style={styles.halfImage} resizeMode="cover" />
             <View style={{
               position: 'absolute',
               [useStackedLayout ? 'top' : 'left']: '50%',
@@ -814,7 +1332,7 @@ export default function GalleryScreen({ navigation, route }) {
               backgroundColor: COLORS.PRIMARY,
               zIndex: 1
             }} />
-            <Image source={{ uri: photoSet.after.uri }} style={styles.halfImage} resizeMode="cover" />
+            <Image key={`combined-after-${photoSet.after.id}`} source={{ uri: photoSet.after.uri }} style={styles.halfImage} resizeMode="cover" />
           </View>
           
           {currentSelectionMode && (
@@ -927,20 +1445,9 @@ export default function GalleryScreen({ navigation, route }) {
       }
       
       if (photoType === 'combined') {
-        navigation.navigate('PhotoEditor', {
-          beforePhoto: photoSet.before,
-          afterPhoto: photoSet.after,
-          isSelectionMode: false,
-          selectedPhotos: [],
-          onSelectionChange: () => {}
-        });
+        openFullScreenFromGallery(null, photoSet, 'combined');
       } else {
-        navigation.navigate('PhotoDetail', { 
-          photo,
-          isSelectionMode: false,
-          selectedPhotos: [],
-          onSelectionChange: () => {}
-        });
+        openFullScreenFromGallery(photo, photoSet, photoType);
       }
     };
 
@@ -951,6 +1458,7 @@ export default function GalleryScreen({ navigation, route }) {
         onLongPress={() => handleLongPressStart(photo, photoType === 'combined' ? photoSet : null)}
       >
         <CroppedThumbnail
+          key={`thumb-${photoType}-${photo.id}`}
           imageUri={photo.uri}
           aspectRatio={photo.aspectRatio || photoSet.before?.aspectRatio || '4:3'}
           orientation={photo.orientation || photoSet.before?.orientation || 'portrait'}
@@ -978,32 +1486,44 @@ export default function GalleryScreen({ navigation, route }) {
     const showBefore = photoFilter === 'all' || photoFilter === 'before';
     const showAfter = photoFilter === 'all' || photoFilter === 'after';
     const showCombined = photoFilter === 'all' || photoFilter === 'combined';
-    
+    const setKey = set.before?.id ?? `set-${roomId}-${index}`;
     return (
-      <View key={index} style={styles.photoSetRow}>
+      <View key={`${roomId}-${setKey}`} style={styles.photoSetRow}>
         <View style={styles.threeColumnRow}>
-          {showBefore && renderPhotoCard(set.before, '#4CAF50', 'before', set, false, isSelectionMode, selectedPhotos)}
-          {showAfter && renderPhotoCard(set.after, '#2196F3', 'after', set, false, isSelectionMode, selectedPhotos)}
-          {showCombined && renderPhotoCard(set.combined, COLORS.PRIMARY, 'combined', set, true, isSelectionMode, selectedPhotos)}
+          {showBefore && (
+            <View key={`${setKey}-before`}>
+              {renderPhotoCard(set.before, '#4CAF50', 'before', set, false, isSelectionMode, selectedPhotos)}
+            </View>
+          )}
+          {showAfter && (
+            <View key={`${setKey}-after`}>
+              {renderPhotoCard(set.after, '#2196F3', 'after', set, false, isSelectionMode, selectedPhotos)}
+            </View>
+          )}
+          {showCombined && (
+            <View key={`${setKey}-combined`}>
+              {renderPhotoCard(set.combined, COLORS.PRIMARY, 'combined', set, true, isSelectionMode, selectedPhotos)}
+            </View>
+          )}
         </View>
       </View>
     );
   };
 
-  const renderFilteredPhotos = (photos, photoType, borderColor) => {
+  const renderFilteredPhotos = (photos, photoType, borderColor, roomId = '') => {
     const photosPerRow = 3;
     const rows = [];
     
     for (let i = 0; i < photos.length; i += photosPerRow) {
       const rowPhotos = photos.slice(i, i + photosPerRow);
       rows.push(
-        <View key={i} style={styles.photoSetRow}>
+        <View key={`${roomId}-row-${i}`} style={styles.photoSetRow}>
           <View style={styles.threeColumnRow}>
             {rowPhotos.map((photo, idx) => {
               const photoSet = photo.photoSet || { before: photo, after: null, combined: null };
               const isLast = idx === rowPhotos.length - 1;
               const photoToRender = photoType === 'combined' ? null : photo;
-              const uniqueKey = photoType === 'combined' ? `combined_${photoSet.before?.id || idx}` : (photo.id || `photo_${idx}`);
+              const uniqueKey = photoType === 'combined' ? `combined_${photoSet.before?.id || i}_${idx}` : (photo.id || `photo_${i}_${idx}`);
               return (
                 <View key={uniqueKey}>
                   {renderPhotoCard(photoToRender, borderColor, photoType, photoSet, isLast, isSelectionMode, selectedPhotos)}
@@ -1092,7 +1612,6 @@ export default function GalleryScreen({ navigation, route }) {
       return (
         <View key={room.id} style={styles.roomSection}>
           <View style={styles.roomHeader}>
-            <RoomIcon roomId={room.id} size={24} color={COLORS.TEXT} style={{ marginRight: 8 }} />
             <Text style={styles.roomName}>
               {t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })}
             </Text>
@@ -1132,12 +1651,11 @@ export default function GalleryScreen({ navigation, route }) {
       return (
         <View key={room.id} style={styles.roomSection}>
           <View style={styles.roomHeader}>
-            <RoomIcon roomId={room.id} size={24} color={COLORS.TEXT} style={{ marginRight: 8 }} />
             <Text style={styles.roomName}>
               {t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })}
             </Text>
           </View>
-          {renderFilteredPhotos(filteredPhotos, photoType, borderColor)}
+          {renderFilteredPhotos(filteredPhotos, photoType, borderColor, room.id)}
         </View>
       );
     }
@@ -1145,7 +1663,6 @@ export default function GalleryScreen({ navigation, route }) {
     return (
       <View key={room.id} style={styles.roomSection}>
         <View style={styles.roomHeader}>
-          <RoomIcon roomId={room.id} size={24} color={COLORS.TEXT} style={{ marginRight: 8 }} />
           <Text style={styles.roomName}>
             {t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })}
           </Text>
@@ -1155,8 +1672,11 @@ export default function GalleryScreen({ navigation, route }) {
     );
   };
 
+  const topInset = Math.max(insets.top, 25);
+  const bottomInset = Math.max(insets.bottom, 20);
+
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
+    <SafeAreaView style={[styles.container, { paddingTop: 0 }]} edges={['top']} {...panResponder.panHandlers}>
       <View style={styles.header}>
         {isSelectionMode ? (
           <>
@@ -1182,16 +1702,45 @@ export default function GalleryScreen({ navigation, route }) {
           </>
         ) : (
           <>
-            <Text style={styles.title}>{t('gallery.title')}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else {
+                    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                  }
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={{ marginRight: 8 }}
+              >
+                <Ionicons name="chevron-back" size={24} color={COLORS.TEXT} />
+              </TouchableOpacity>
+              <Text style={styles.title}>{t('gallery.title')}</Text>
+            </View>
             <TouchableOpacity
               style={styles.selectButton}
               activeOpacity={0.7}
               onPress={() => {
                 isSelectionModeRef.current = true;
                 setIsSelectionMode(true);
+                // Auto-select all photos
+                const allIds = new Set();
+                const rooms = getRooms ? getRooms() : [];
+                if (Array.isArray(rooms)) {
+                  rooms.forEach(room => {
+                    const sets = getPhotoSets(room.id);
+                    sets.forEach(set => {
+                      if (set.before) allIds.add(set.before.id);
+                      if (set.after) allIds.add(set.after.id);
+                      if (set.before) allIds.add(`combined_${set.before.id}`);
+                    });
+                  });
+                }
+                setSelectedPhotos(allIds);
               }}
             >
-              <Text style={styles.selectButtonText}>{t('gallery.selectPhotos')}</Text>
+              <Text style={styles.selectButtonText}>{t('Select')}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -1213,7 +1762,7 @@ export default function GalleryScreen({ navigation, route }) {
           activeOpacity={0.7}
         >
           <Text style={[styles.filterButtonText, photoFilter === 'before' && styles.filterButtonTextActive]}>
-            {t('camera.before', { lng: labelLanguage })}
+            Before
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -1222,7 +1771,7 @@ export default function GalleryScreen({ navigation, route }) {
           activeOpacity={0.7}
         >
           <Text style={[styles.filterButtonText, photoFilter === 'after' && styles.filterButtonTextActive]}>
-            {t('camera.after', { lng: labelLanguage })}
+            After
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -1231,56 +1780,10 @@ export default function GalleryScreen({ navigation, route }) {
           activeOpacity={0.7}
         >
           <Text style={[styles.filterButtonText, photoFilter === 'combined' && styles.filterButtonTextActive]}>
-            {t('camera.combined', { lng: labelLanguage })}
+            Combined
           </Text>
         </TouchableOpacity>
       </View>
-
-      {activeProjectId && (() => {
-        const activeProject = projects?.find?.(p => p.id === activeProjectId);
-        const rooms = getRooms && typeof getRooms === 'function' ? getRooms() : ROOMS;
-        const firstRoomWithPhotos = rooms.find(room => {
-          const sets = getPhotoSets(room.id);
-          return sets.length > 0;
-        });
-        
-        return (
-          <View style={styles.projectRoomContainer}>
-            <View style={styles.projectRoomInfo}>
-              <Text style={styles.projectNameDisplay}>
-                {activeProject?.name || t('gallery.noProjectSelected')}
-              </Text>
-              {firstRoomWithPhotos && (
-                <Text style={styles.roomNameDisplay}>
-                  {t(`rooms.${firstRoomWithPhotos.id}`, { lng: sectionLanguage, defaultValue: firstRoomWithPhotos.name })}
-                </Text>
-              )}
-            </View>
-            {isSelectionMode && selectedPhotos.size > 0 && (
-              <View style={styles.actionIconsContainer}>
-                <TouchableOpacity
-                  style={styles.actionIconButton}
-                  onPress={handleDeleteSelected}
-                >
-                  <Ionicons name="trash-outline" size={22} color="#333" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionIconButton}
-                  onPress={handleShareSelected}
-                >
-                  <Ionicons name="paper-plane-outline" size={22} color="#333" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionIconButton}
-                  onPress={handleUploadSelected}
-                >
-                  <Ionicons name="cloud-upload-outline" size={22} color="#333" />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        );
-      })()}
 
       {photos.length === 0 || !activeProjectId ? (
         <View style={styles.emptyState}>
@@ -1299,6 +1802,29 @@ export default function GalleryScreen({ navigation, route }) {
           style={styles.scrollView} 
           contentContainerStyle={[styles.content, { paddingBottom: 120 }]}
         >
+          {/* Project Name Section */}
+          {(() => {
+            const activeProject = projects?.find?.(p => p.id === activeProjectId);
+            return (
+              <View style={styles.projectNameSection}>
+                <View style={styles.projectNameRow}>
+                  <Text style={styles.projectNameDisplay}>
+                    {activeProject?.name || t('gallery.noProjectSelected')}
+                  </Text>
+                  <View style={styles.projectNameLine} />
+                  <TouchableOpacity
+                    onPress={() => setShowDeleteAllConfirm(true)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={{ marginLeft: 12 }}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#999" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })()}
+          
+          {/* Room Sections */}
           {(getRooms && typeof getRooms === 'function' ? getRooms() : ROOMS).map(room => renderRoomSection(room))}
         </ScrollView>
       )}
@@ -1306,54 +1832,65 @@ export default function GalleryScreen({ navigation, route }) {
       {!isSelectionMode && (
         <>
           <View style={styles.bottomNavPill}>
-            <TouchableOpacity 
-              style={styles.navItem}
-              onPress={() => navigation.navigate('Home')}
-            >
-              <Ionicons name="home-outline" size={24} color="#666666" />
-              <Text style={styles.navItemText}>Home</Text>
-            </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+        >
+          <Image source={require('../../assets/icons/home.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Projects' }] })}
+        >
+          <Image source={require('../../assets/icons/projects.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Projects</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+         style={[styles.navItem, styles.navItemActive]}
 
-            <TouchableOpacity 
-              style={styles.navItem}
-              onPress={() => navigation.navigate('Projects')}
-            >
-              <Ionicons name="folder-outline" size={24} color="#666666" />
-              <Text style={styles.navItemText}>Projects</Text>
-            </TouchableOpacity>
+        >
+          <Image source={require('../../assets/icons/gallery.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Gallery</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Settings' }] })}
+        >
+          <Image source={require('../../assets/icons/settings.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Settings</Text>
+        </TouchableOpacity>
+      </View>
 
-            <TouchableOpacity 
-              style={[styles.navItem, styles.navItemActive]}
-            >
-              <Ionicons name="images" size={24} color="#000000" />
-              <Text style={[styles.navItemText, styles.navItemTextActive]}>Gallery</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.navItem}
-              onPress={() => navigation.navigate('Settings')}
-            >
-              <Ionicons name="settings-outline" size={24} color="#666666" />
-              <Text style={styles.navItemText}>Settings</Text>
-            </TouchableOpacity>
-          </View>
 
           <TouchableOpacity
             style={styles.floatingAddButton}
             onPress={() => {
               if (!activeProjectId) return;
-              navigation.navigate('Camera', {
-                mode: 'before',
-                room: (getRooms && typeof getRooms === 'function' ? getRooms() : ROOMS)[0]?.id
-              });
+              isSelectionModeRef.current = true;
+              setIsSelectionMode(true);
+              // Auto-select all photos
+              const allIds = new Set();
+              const rooms = getRooms ? getRooms() : [];
+              if (Array.isArray(rooms)) {
+                rooms.forEach(room => {
+                  const sets = getPhotoSets(room.id);
+                  sets.forEach(set => {
+                    if (set.before) allIds.add(set.before.id);
+                    if (set.after) allIds.add(set.after.id);
+                    if (set.before) allIds.add(`combined_${set.before.id}`);
+                  });
+                });
+              }
+              setSelectedPhotos(allIds);
             }}
           >
-            <Ionicons name="add" size={36} color="#000000" />
+            <Ionicons name="share-outline" size={28} color="#000000" />
           </TouchableOpacity>
         </>
       )}
 
-      {isSelectionMode && selectedPhotos.size > 0 && (
+      {isSelectionMode && (
         <View style={styles.floatingActionButtons}>
           <TouchableOpacity
             style={[styles.floatingActionButton, styles.floatingActionButtonTrash]}
@@ -1389,6 +1926,189 @@ export default function GalleryScreen({ navigation, route }) {
         </View>
       )}
 
+      {/* Full-screen photo overlay (same interface as HomeScreen) */}
+      {fullScreenPhoto && (
+        <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
+          <View style={[styles.fullScreenHeaderRow, { paddingTop: topInset }]}>
+            <View style={styles.fullScreenLabelsToggle}>
+              <Text style={styles.fullScreenLabelsText}>{t('Labels')}</Text>
+              <Switch
+                value={showLabels}
+                onValueChange={toggleLabels}
+                trackColor={{ false: '#767577', true: '#34C759' }}
+                thumbColor={showLabels ? '#fff' : '#f4f3f4'}
+              />
+            </View>
+            <TouchableOpacity
+              style={styles.fullScreenCustomizeButton}
+              onPress={() => {
+                handleGalleryFullScreenClose();
+                navigation.navigate('LabelCustomization');
+              }}
+            >
+              <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
+              <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.fullScreenCloseButton} onPress={handleGalleryFullScreenClose}>
+              <Ionicons name="close" size={20} color="rgba(255, 0, 0, 0.82)" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.fullScreenPhotoArea}>
+            <View style={styles.fullScreenSinglePreview}>
+              {fullScreenLoading && (
+                <View style={styles.fullScreenLoadingOverlay}>
+                  <ActivityIndicator size="large" color="#F2C31B" />
+                </View>
+              )}
+              {fullScreenError && (
+                <View style={styles.fullScreenErrorOverlay}>
+                  <Ionicons name="image-outline" size={48} color="#666" />
+                  <Text style={styles.fullScreenErrorText}>{t('gallery.imageLoadError', { defaultValue: 'Failed to load image' })}</Text>
+                  <Text style={styles.fullScreenErrorUri}>{fullScreenPhoto.uri?.substring(0, 60)}...</Text>
+                </View>
+              )}
+              <Image
+                key={fullScreenPhoto.uri || fullScreenPhoto.id}
+                source={{ uri: fullScreenPhoto.uri }}
+                style={styles.fullScreenPhoto}
+                resizeMode="contain"
+                onError={(e) => {
+                  console.log('[GalleryScreen] Image load error:', e.nativeEvent?.error, 'URI:', fullScreenPhoto.uri);
+                  setFullScreenLoading(false);
+                  setFullScreenError(e.nativeEvent?.error || 'Unknown error');
+                }}
+                onLoadStart={() => {
+                  console.log('[GalleryScreen] Image load start:', fullScreenPhoto.uri?.substring(0, 80));
+                  setFullScreenLoading(true);
+                  setFullScreenError(null);
+                }}
+                onLoad={() => {
+                  console.log('[GalleryScreen] Image loaded successfully');
+                  setFullScreenLoading(false);
+                  setFullScreenError(null);
+                }}
+              />
+              {showLabels && fullScreenPhoto.mode && !fullScreenError && (
+                <PhotoLabel
+                  label={fullScreenPhoto.mode === 'before' ? 'common.before' : 'common.after'}
+                  position={fullScreenPhoto.mode === 'before' ? (beforeLabelPosition || 'top-left') : (afterLabelPosition || 'top-left')}
+                />
+              )}
+            </View>
+          </View>
+          <View style={styles.fullScreenRoomNameRow}>
+            <Text style={styles.fullScreenRoomName}>
+              {((getRooms && typeof getRooms === 'function' ? getRooms() : [])).find(r => r.id === fullScreenPhoto.room)?.name || fullScreenPhoto.room || ''}
+            </Text>
+            {fullScreenPhotos.length > 1 && (
+              <View style={styles.fullScreenPaginationDots}>
+                {fullScreenPhotos.map((_, i) => (
+                  <View key={i} style={[styles.fullScreenDot, i === fullScreenIndex && styles.fullScreenDotActive]} />
+                ))}
+              </View>
+            )}
+          </View>
+          <View style={[styles.fullScreenBottomBar, { paddingBottom: bottomInset }]}>
+            <TouchableOpacity
+              style={styles.fullScreenDeleteCircle}
+              onPress={() => {
+                pendingDeletePhotoRef.current = { id: fullScreenPhoto.id, name: fullScreenPhoto.name, type: 'photo' };
+                setShowDeletePhotoConfirm(true);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.fullScreenShareCircle}
+              disabled={sharing}
+              onPress={() => shareIndividualPhoto(fullScreenPhoto)}
+            >
+              {sharing ? <ActivityIndicator size="small" color="#000" /> : <Ionicons name="paper-plane-outline" size={20} color="#000" />}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {fullScreenPhotoSet && (
+        <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
+          <View style={[styles.fullScreenHeaderRow, { paddingTop: topInset }]}>
+            <View style={styles.fullScreenLabelsToggle}>
+              <Text style={styles.fullScreenLabelsText}>{t('settings.labels', { defaultValue: 'Labels' })}</Text>
+              <Switch value={showLabels} onValueChange={toggleLabels} trackColor={{ false: '#767577', true: '#34C759' }} thumbColor={showLabels ? '#fff' : '#f4f3f4'} />
+            </View>
+            <TouchableOpacity style={styles.fullScreenCustomizeButton} onPress={() => { handleGalleryFullScreenClose(); navigation.navigate('LabelCustomization'); }}>
+              <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
+              <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.fullScreenCloseButton} onPress={handleGalleryFullScreenClose}>
+              <Ionicons name="close" size={20} color="red" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.fullScreenPhotoArea}>
+            <View
+              ref={fullScreenCombinedRef}
+              collapsable={false}
+              style={[
+                styles.fullScreenCombinedPreview,
+                isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio) ? styles.fullScreenStacked : styles.fullScreenSideBySide
+              ]}
+            >
+              <View style={styles.fullScreenHalf}>
+                <Image
+                  key={`before-${fullScreenPhotoSet.before.uri}`}
+                  source={{ uri: fullScreenPhotoSet.before.uri }}
+                  style={styles.fullScreenHalfImage}
+                  resizeMode="cover"
+                  onLoadStart={() => console.log('[GalleryScreen] Combined BEFORE load start:', fullScreenPhotoSet.before.uri?.substring(0, 60))}
+                />
+                {showLabels && <PhotoLabel label="common.before" position={beforeLabelPosition || 'top-left'} />}
+              </View>
+              <View style={isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio) ? styles.fullScreenCenterDividerHorizontal : styles.fullScreenCenterDivider} pointerEvents="none" />
+              <View style={styles.fullScreenHalf}>
+                <Image
+                  key={`after-${fullScreenPhotoSet.after.uri}`}
+                  source={{ uri: fullScreenPhotoSet.after.uri }}
+                  style={styles.fullScreenHalfImage}
+                  resizeMode="cover"
+                  onLoadStart={() => console.log('[GalleryScreen] Combined AFTER load start:', fullScreenPhotoSet.after.uri?.substring(0, 60))}
+                />
+                {showLabels && <PhotoLabel label="common.after" position={afterLabelPosition || 'top-right'} />}
+              </View>
+            </View>
+          </View>
+          <View style={styles.fullScreenRoomNameRow}>
+            <Text style={styles.fullScreenRoomName}>
+              {((getRooms && typeof getRooms === 'function' ? getRooms() : [])).find(r => r.id === fullScreenPhotoSet.before.room)?.name || fullScreenPhotoSet.before.room}
+            </Text>
+            {fullScreenPhotos.length > 1 && (
+              <View style={styles.fullScreenPaginationDots}>
+                {fullScreenPhotos.map((_, i) => (
+                  <View key={i} style={[styles.fullScreenDot, i === fullScreenIndex && styles.fullScreenDotActive]} />
+                ))}
+              </View>
+            )}
+          </View>
+          <View style={[styles.fullScreenBottomBar, { paddingBottom: bottomInset }]}>
+            <TouchableOpacity
+              style={styles.fullScreenDeleteCircle}
+              onPress={() => {
+                pendingDeletePhotoRef.current = { id: fullScreenPhotoSet.before.id, name: fullScreenPhotoSet.before.name, type: 'set' };
+                setShowDeletePhotoConfirm(true);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.fullScreenShareCircle}
+              disabled={sharing}
+              onPress={shareFullScreenCombined}
+            >
+              {sharing ? <ActivityIndicator size="small" color="#000" /> : <Ionicons name="paper-plane-outline" size={20} color="#000" />}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* MODALS START HERE */}
       <Modal
         visible={shareOptionsVisible}
@@ -1400,122 +2120,261 @@ export default function GalleryScreen({ navigation, route }) {
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.shareModalContent}>
-                <View style={styles.modalHeader}>
+                {/* Grabber */}
+                <View style={styles.grabberContainer}>
+                  <View style={styles.modalGrabber} />
+                </View>
+
+                {/* Header */}
+                <View style={styles.shareModalHeader}>
                   <TouchableOpacity 
                     onPress={() => setShareOptionsVisible(false)}
-                    style={styles.closeButton}
+                    style={styles.shareCloseButton}
                   >
-                    <Ionicons name="close" size={32} color="#333" />
+                    <Ionicons name="close" size={20} color="#999999" />
                   </TouchableOpacity>
-                  <Text style={styles.modalTitle}>Choose Shared Formats</Text>
+                  <Text style={styles.shareModalTitle}>Choose Shared Formats</Text>
                 </View>
-                <View style={styles.modalHandle} />
 
                 <ScrollView 
                   style={styles.shareModalScroll}
                   contentContainerStyle={styles.shareModalScrollContent}
                   showsVerticalScrollIndicator={false}
                 >
-                  <Text style={styles.sectionTitle}>Photo types</Text>
-                <View style={styles.photoTypeButtons}>
+                  {/* Photo Types Section */}
+                  <Text style={styles.shareSectionLabel}>Photo types</Text>
+                  <View style={styles.shareTypeButtons}>
+                    <TouchableOpacity
+                      style={[styles.shareTypeButton, selectedShareTypes.before && styles.shareTypeButtonActive]}
+                      onPress={() => setSelectedShareTypes(prev => ({ ...prev, before: !prev.before }))}
+                    >
+                      <Text style={[styles.shareTypeButtonText, selectedShareTypes.before && styles.shareTypeButtonTextActive]}>
+                        Before
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.shareTypeButton, selectedShareTypes.after && styles.shareTypeButtonActive]}
+                      onPress={() => setSelectedShareTypes(prev => ({ ...prev, after: !prev.after }))}
+                    >
+                      <Text style={[styles.shareTypeButtonText, selectedShareTypes.after && styles.shareTypeButtonTextActive]}>
+                        After
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.shareTypeButton, selectedShareTypes.combined && styles.shareTypeButtonActive]}
+                      onPress={() => setSelectedShareTypes(prev => ({ ...prev, combined: !prev.combined }))}
+                    >
+                      <Text style={[styles.shareTypeButtonText, selectedShareTypes.combined && styles.shareTypeButtonTextActive]}>
+                        Combined
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Divider */}
+                  <View style={styles.shareDivider} />
+
+                  {/* Advance Options Header */}
                   <TouchableOpacity
-                    style={[styles.typeButton, selectedShareTypes.before && styles.typeButtonActive]}
-                    onPress={() => setSelectedShareTypes(prev => ({ ...prev, before: !prev.before }))}
+                    style={styles.advanceOptionsHeader}
+                    onPress={() => setShowAdvancedShareFormats(!showAdvancedShareFormats)}
                   >
-                    <Text style={[styles.typeButtonText, selectedShareTypes.before && styles.typeButtonTextActive]}>
-                      Before
-                    </Text>
+                    <Text style={styles.advanceOptionsTitle}>Advance Options</Text>
+                    <Ionicons 
+                      name={showAdvancedShareFormats ? "chevron-up" : "chevron-down"} 
+                      size={24} 
+                      color="#1C274C" 
+                    />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.typeButton, selectedShareTypes.after && styles.typeButtonActive]}
-                    onPress={() => setSelectedShareTypes(prev => ({ ...prev, after: !prev.after }))}
-                  >
-                    <Text style={[styles.typeButtonText, selectedShareTypes.after && styles.typeButtonTextActive]}>
-                      After
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.typeButton, selectedShareTypes.combined && styles.typeButtonActive]}
-                    onPress={() => setSelectedShareTypes(prev => ({ ...prev, combined: !prev.combined }))}
-                  >
-                    <Text style={[styles.typeButtonText, selectedShareTypes.combined && styles.typeButtonTextActive]}>
-                      Combined
-                    </Text>
-                  </TouchableOpacity>
-                </View>
 
-                <TouchableOpacity
-                  style={styles.advancedOptionsHeader}
-                  onPress={() => setShowAdvancedShareFormats(!showAdvancedShareFormats)}
-                >
-                  <Text style={styles.sectionTitle}>Advance Options</Text>
-                  <Ionicons 
-                    name={showAdvancedShareFormats ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color="#666" 
-                  />
-                </TouchableOpacity>
+                  {showAdvancedShareFormats && (
+                    <>
+                      {/* Stacked Formats */}
+                      <Text style={styles.shareFormatLabel}>Stacked formats</Text>
+                      <View style={styles.shareFormatButtons}>
+                        {[TEMPLATE_TYPES.STACK_PORTRAIT, TEMPLATE_TYPES.STACK_LANDSCAPE, TEMPLATE_TYPES.SQUARE_STACK].map((key) => {
+                          const config = TEMPLATE_CONFIGS[key];
+                          if (!config) return null;
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              style={[styles.shareFormatButton, selectedFormats[key] && styles.shareFormatButtonActive]}
+                              onPress={() => handleFormatToggle(key)}
+                            >
+                              <Text style={[styles.shareFormatButtonText, selectedFormats[key] && styles.shareFormatButtonTextActive]}>
+                                {config.name || key}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
 
-                {showAdvancedShareFormats && (
-                  <>
-                    <Text style={styles.subsectionTitle}>Stacked formats</Text>
-                    <View style={styles.formatButtons}>
-                      {[TEMPLATE_TYPES.STACK_PORTRAIT, TEMPLATE_TYPES.STACK_LANDSCAPE, TEMPLATE_TYPES.SQUARE_STACK].map((key) => {
-                        const config = TEMPLATE_CONFIGS[key];
-                        if (!config) return null;
-                        return (
-                          <TouchableOpacity
-                            key={key}
-                            style={[styles.formatButton, selectedFormats[key] && styles.formatButtonActive]}
-                            onPress={() => handleFormatToggle(key)}
-                          >
-                            <Text style={[styles.formatButtonText, selectedFormats[key] && styles.formatButtonTextActive]}>
-                              {config.name || key}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
+                      {/* Divider */}
+                      <View style={styles.shareDivider} />
 
-                    <Text style={styles.subsectionTitle}>Side-by-side formats</Text>
-                    <View style={styles.formatButtons}>
-                      {[TEMPLATE_TYPES.SIDE_BY_SIDE_LANDSCAPE, TEMPLATE_TYPES.SIDE_BY_SIDE_WIDE, TEMPLATE_TYPES.BLOG_FORMAT, TEMPLATE_TYPES.SQUARE_SIDE].map((key) => {
-                        const config = TEMPLATE_CONFIGS[key];
-                        if (!config) return null;
-                        return (
-                          <TouchableOpacity
-                            key={key}
-                            style={[styles.formatButton, selectedFormats[key] && styles.formatButtonActive]}
-                            onPress={() => handleFormatToggle(key)}
-                          >
-                            <Text style={[styles.formatButtonText, selectedFormats[key] && styles.formatButtonTextActive]}>
-                              {config.name || key}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </>
-                )}
+                      {/* Side-by-side Formats */}
+                      <Text style={styles.shareFormatLabel}>Side-by-side formats</Text>
+                      <View style={styles.shareFormatButtons}>
+                        {[TEMPLATE_TYPES.SIDE_BY_SIDE_LANDSCAPE, TEMPLATE_TYPES.SIDE_BY_SIDE_WIDE, TEMPLATE_TYPES.BLOG_FORMAT, TEMPLATE_TYPES.SQUARE_SIDE].map((key) => {
+                          const config = TEMPLATE_CONFIGS[key];
+                          if (!config) return null;
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              style={[styles.shareFormatButton, selectedFormats[key] && styles.shareFormatButtonActive]}
+                              onPress={() => handleFormatToggle(key)}
+                            >
+                              <Text style={[styles.shareFormatButtonText, selectedFormats[key] && styles.shareFormatButtonTextActive]}>
+                                {config.name || key}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </>
+                  )}
 
-                <View style={styles.archiveToggleContainer}>
-                  <Switch
-                    value={shareAsArchive}
-                    onValueChange={setShareAsArchive}
-                    trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                    thumbColor={shareAsArchive ? '#FFFFFF' : '#FFFFFF'}
-                    ios_backgroundColor="#E0E0E0"
-                  />
-                  <Text style={styles.archiveToggleText}>Share as archive (zip)</Text>
-                </View>
+                  {/* Divider */}
+                  <View style={styles.shareDivider} />
+
+                  {/* Share as Archive Toggle */}
+                  <View style={styles.archiveToggleRow}>
+                    <Switch
+                      value={shareAsArchive}
+                      onValueChange={setShareAsArchive}
+                      trackColor={{ false: '#E0E0E0', true: '#34C759' }}
+                      thumbColor="#FFFFFF"
+                      ios_backgroundColor="#E0E0E0"
+                    />
+                    <Text style={styles.archiveToggleLabel}>Share as archive (zip)</Text>
+                  </View>
                 </ScrollView>
 
-                <TouchableOpacity
-                  style={styles.shareNowButton}
-                  onPress={startSharingWithOptions}
+                {/* Share Now Button */}
+                <View style={styles.shareButtonContainer}>
+                  <TouchableOpacity
+                    style={styles.shareNowButton}
+                    onPress={startSharingWithOptions}
+                  >
+                    <Text style={styles.shareNowButtonText}>Share Now</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Upload Options Modal */}
+      <Modal
+        visible={optionsVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setOptionsVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setOptionsVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.shareModalContent}>
+                {/* Grabber */}
+                <View style={styles.grabberContainer}>
+                  <View style={styles.modalGrabber} />
+                </View>
+
+                {/* Header */}
+                <View style={styles.shareModalHeader}>
+                  <TouchableOpacity
+                    onPress={() => setOptionsVisible(false)}
+                    style={styles.shareCloseButton}
+                  >
+                    <Ionicons name="close" size={20} color="#999999" />
+                  </TouchableOpacity>
+                  <Text style={styles.shareModalTitle}>Upload Photos</Text>
+                </View>
+
+                <ScrollView
+                  style={styles.shareModalScroll}
+                  contentContainerStyle={styles.shareModalScrollContent}
+                  showsVerticalScrollIndicator={false}
                 >
-                  <Text style={styles.shareNowButtonText}>Share Now</Text>
-                </TouchableOpacity>
+                  {/* Photo Types Section */}
+                  <Text style={styles.shareSectionLabel}>Photo types to upload</Text>
+                  <View style={styles.shareTypeButtons}>
+                    <TouchableOpacity
+                      style={[styles.shareTypeButton, selectedTypes.before && styles.shareTypeButtonActive]}
+                      onPress={() => setSelectedTypes(prev => ({ ...prev, before: !prev.before }))}
+                    >
+                      <Text style={[styles.shareTypeButtonText, selectedTypes.before && styles.shareTypeButtonTextActive]}>
+                        Before
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.shareTypeButton, selectedTypes.after && styles.shareTypeButtonActive]}
+                      onPress={() => setSelectedTypes(prev => ({ ...prev, after: !prev.after }))}
+                    >
+                      <Text style={[styles.shareTypeButtonText, selectedTypes.after && styles.shareTypeButtonTextActive]}>
+                        After
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.shareTypeButton, selectedTypes.combined && styles.shareTypeButtonActive]}
+                      onPress={() => setSelectedTypes(prev => ({ ...prev, combined: !prev.combined }))}
+                    >
+                      <Text style={[styles.shareTypeButtonText, selectedTypes.combined && styles.shareTypeButtonTextActive]}>
+                        Combined
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Divider */}
+                  <View style={styles.shareDivider} />
+
+                  {/* Upload Destinations */}
+                  <Text style={styles.shareSectionLabel}>Upload to</Text>
+
+                  <TouchableOpacity
+                    style={[styles.uploadDestRow, uploadDestinations.google && styles.uploadDestRowActive]}
+                    onPress={() => setUploadDestinations(prev => ({ ...prev, google: !prev.google }))}
+                  >
+                    <Ionicons name="logo-google" size={20} color={uploadDestinations.google ? '#000' : '#999'} />
+                    <Text style={[styles.uploadDestText, uploadDestinations.google && styles.uploadDestTextActive]}>
+                      Google Drive
+                    </Text>
+                    {!isAuthenticated && (
+                      <Text style={styles.uploadDestHint}>Not connected</Text>
+                    )}
+                    {uploadDestinations.google && (
+                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.uploadDestRow, uploadDestinations.dropbox && styles.uploadDestRowActive]}
+                    onPress={() => setUploadDestinations(prev => ({ ...prev, dropbox: !prev.dropbox }))}
+                  >
+                    <Ionicons name="cloud-outline" size={20} color={uploadDestinations.dropbox ? '#000' : '#999'} />
+                    <Text style={[styles.uploadDestText, uploadDestinations.dropbox && styles.uploadDestTextActive]}>
+                      Dropbox
+                    </Text>
+                    {!isDropboxConnected && (
+                      <Text style={styles.uploadDestHint}>Not connected</Text>
+                    )}
+                    {uploadDestinations.dropbox && (
+                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+                </ScrollView>
+
+                {/* Upload Now Button */}
+                <View style={styles.shareButtonContainer}>
+                  <TouchableOpacity
+                    style={[styles.shareNowButton, (!uploadDestinations.google && !uploadDestinations.dropbox) && { opacity: 0.5 }]}
+                    onPress={handleConfirmUpload}
+                    disabled={!uploadDestinations.google && !uploadDestinations.dropbox}
+                  >
+                    <Ionicons name="cloud-upload" size={20} color="#000" style={{ marginRight: 8 }} />
+                    <Text style={styles.shareNowButtonText}>Upload Now</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -1525,10 +2384,11 @@ export default function GalleryScreen({ navigation, route }) {
       {showUploadDetails && (
         <UploadDetailsModal
           visible={showUploadDetails}
-          onClose={() => setShowUploadDetails(false)}
+          onClose={() => { setShowUploadDetails(false); setIsPreparingUpload(false); }}
           uploadStatus={uploadStatus}
           onCancelUpload={cancelUpload}
-          onCancelAll={cancelAllUploads}
+          onMinimize={() => setShowUploadDetails(false)}
+          isPreparing={isPreparingUpload}
         />
       )}
 
@@ -1536,21 +2396,60 @@ export default function GalleryScreen({ navigation, route }) {
         <UploadCompletionModal
           visible={showCompletionModal}
           completedUploads={uploadStatus.completedUploads || []}
-          onClose={() => {
-            setShowCompletionModal(false);
-            clearCompletedUploads();
-          }}
+          onClearCompleted={clearCompletedUploads}
+          onClose={() => setShowCompletionModal(false)}
+          onDeleteProject={handleDeleteAllConfirmed}
         />
       )}
 
       {showDeleteSelectedConfirm && (
         <DeleteConfirmationModal
           visible={showDeleteSelectedConfirm}
-          onClose={() => setShowDeleteSelectedConfirm(false)}
+          title={t('home.deletePhotoSet')}
+          message={t('gallery.deleteSelectedConfirm', { defaultValue: `Are you sure you want to delete ${selectedPhotos.size} selected photo(s)?` })}
           onConfirm={handleDeleteSelectedConfirmed}
-          photoCount={selectedPhotos.size}
-          deleteFromStorage={deleteFromStorage}
-          setDeleteFromStorage={setDeleteFromStorage}
+          onCancel={() => setShowDeleteSelectedConfirm(false)}
+          deleteFromStorageDefault={true}
+        />
+      )}
+
+      {showDeletePhotoConfirm && pendingDeletePhotoRef.current && (
+        <DeleteConfirmationModal
+          visible={showDeletePhotoConfirm}
+          title={t('home.deletePhotoSet')}
+          message={t('home.deletePhotoSetConfirm', { name: pendingDeletePhotoRef.current?.name || '' })}
+          onConfirm={async (deleteFromStorageVal) => {
+            const pending = pendingDeletePhotoRef.current;
+            setShowDeletePhotoConfirm(false);
+            pendingDeletePhotoRef.current = null;
+            if (pending) {
+              if (pending.type === 'set') {
+                await deletePhotoSet(pending.id, { deleteFromStorage: deleteFromStorageVal });
+              } else {
+                await deletePhoto(pending.id, { deleteFromStorage: deleteFromStorageVal });
+              }
+              handleGalleryFullScreenClose();
+            }
+          }}
+          onCancel={() => {
+            setShowDeletePhotoConfirm(false);
+            pendingDeletePhotoRef.current = null;
+          }}
+          deleteFromStorageDefault={true}
+        />
+      )}
+
+      {showDeleteAllConfirm && (
+        <DeleteConfirmationModal
+          visible={showDeleteAllConfirm}
+          title={t('projects.deleteProject', { defaultValue: 'Delete Project' })}
+          message={t('projects.deleteProjectMessage', {
+            defaultValue: `Are you sure you want to delete "${projects?.find?.(p => p.id === activeProjectId)?.name || ''}"? This will remove the project. Uncheck the box below to keep the photos.`,
+            name: projects?.find?.(p => p.id === activeProjectId)?.name || '',
+          })}
+          onConfirm={handleDeleteAllConfirmed}
+          onCancel={() => setShowDeleteAllConfirm(false)}
+          deleteFromStorageDefault={true}
         />
       )}
 
@@ -1573,7 +2472,7 @@ export default function GalleryScreen({ navigation, route }) {
                   style={styles.upgradeButton}
                   onPress={() => {
                     handleSharePlanModalClose();
-                    navigation.navigate('Settings');
+                    navigation.reset({ index: 0, routes: [{ name: 'Settings' }] });
                   }}
                 >
                   <Text style={styles.upgradeButtonText}>View Plans</Text>
@@ -1600,14 +2499,221 @@ export default function GalleryScreen({ navigation, route }) {
       </View>
     </View>
   )}
-</View>
+</SafeAreaView>
 );
 }
 const styles = StyleSheet.create({
 container: {
 flex: 1,
 backgroundColor: COLORS.BACKGROUND,
-paddingTop: 50
+paddingTop: 25
+},
+fullScreenPhotoContainer: {
+position: 'absolute',
+top: 0,
+left: 0,
+right: 0,
+bottom: 0,
+backgroundColor: '#000',
+zIndex: 1000
+},
+fullScreenHeaderRow: {
+flexDirection: 'row',
+alignItems: 'center',
+justifyContent: 'space-between',
+paddingHorizontal: 20,
+paddingTop: 25,
+paddingBottom: 12,
+zIndex: 1002
+},
+fullScreenLabelsToggle: {
+flexDirection: 'row',
+alignItems: 'center',
+gap: 8
+},
+fullScreenLabelsText: {
+color: '#fff',
+fontSize: 16,
+fontWeight: '600'
+},
+fullScreenCustomizeButton: {
+flexDirection: 'row',
+alignItems: 'center',
+backgroundColor: '#000000',
+borderWidth: 1,
+borderColor: 'grey',
+paddingHorizontal: 5,
+paddingVertical: 3,
+borderRadius: 15
+},
+fullScreenCustomizeText: {
+color: 'white',
+fontSize: 14,
+fontWeight: '600'
+},
+fullScreenCloseButton: {
+width: 27,
+height: 27,
+borderRadius: 15,
+backgroundColor: 'rgba(99, 3, 3, 0.55)',
+alignItems: 'center',
+justifyContent: 'center',
+borderWidth: 1,
+borderColor: 'grey',
+zIndex: 1002
+},
+fullScreenPhotoArea: {
+flex: 1,
+justifyContent: 'center',
+alignItems: 'center',
+paddingHorizontal: 20
+},
+fullScreenPhoto: {
+width: '100%',
+height: '100%'
+},
+fullScreenSinglePreview: {
+aspectRatio: 1,
+width: '100%',
+maxWidth: 400,
+maxHeight: 400,
+backgroundColor: '#1a1a1a',
+borderRadius: 12,
+overflow: 'hidden',
+borderWidth: 2,
+borderColor: COLORS.PRIMARY,
+position: 'relative'
+},
+fullScreenLoadingOverlay: {
+position: 'absolute',
+top: 0,
+left: 0,
+right: 0,
+bottom: 0,
+justifyContent: 'center',
+alignItems: 'center',
+backgroundColor: 'rgba(0,0,0,0.5)',
+zIndex: 10
+},
+fullScreenErrorOverlay: {
+position: 'absolute',
+top: 0,
+left: 0,
+right: 0,
+bottom: 0,
+justifyContent: 'center',
+alignItems: 'center',
+backgroundColor: 'rgba(0,0,0,0.8)',
+zIndex: 10,
+padding: 20
+},
+fullScreenErrorText: {
+color: '#fff',
+fontSize: 14,
+marginTop: 12,
+textAlign: 'center'
+},
+fullScreenErrorUri: {
+color: '#888',
+fontSize: 10,
+marginTop: 8,
+textAlign: 'center'
+},
+fullScreenCombinedPreview: {
+aspectRatio: 1,
+width: '100%',
+maxWidth: 400,
+maxHeight: 400,
+backgroundColor: '#1a1a1a',
+borderRadius: 12,
+overflow: 'hidden',
+borderWidth: 1,
+borderColor: COLORS.PRIMARY,
+position: 'relative'
+},
+fullScreenStacked: { flexDirection: 'column' },
+fullScreenSideBySide: { flexDirection: 'row' },
+fullScreenHalf: {
+flex: 1,
+position: 'relative'
+},
+fullScreenHalfImage: {
+width: '100%',
+height: '100%'
+},
+fullScreenCenterDivider: {
+position: 'absolute',
+left: '50%',
+top: 0,
+bottom: 0,
+width: 1,
+marginLeft: -1,
+backgroundColor: COLORS.PRIMARY,
+zIndex: 5
+},
+fullScreenCenterDividerHorizontal: {
+position: 'absolute',
+top: '50%',
+left: 0,
+right: 0,
+height: 1,
+marginTop: -1,
+backgroundColor: COLORS.PRIMARY,
+zIndex: 5
+},
+fullScreenRoomNameRow: {
+alignItems: 'center',
+paddingVertical: 12,
+paddingHorizontal: 20,
+zIndex: 1001
+},
+fullScreenRoomName: {
+color: '#FFFFFF',
+fontSize: 16,
+fontWeight: '600',
+marginBottom: 8
+},
+fullScreenPaginationDots: {
+flexDirection: 'row',
+alignItems: 'center',
+justifyContent: 'center',
+gap: 6
+},
+fullScreenDot: {
+width: 8,
+height: 8,
+borderRadius: 4,
+backgroundColor: 'rgba(255, 255, 255, 0.35)'
+},
+fullScreenDotActive: {
+backgroundColor: '#FFFFFF'
+},
+fullScreenBottomBar: {
+flexDirection: 'row',
+alignItems: 'center',
+justifyContent: 'space-between',
+paddingHorizontal: 32,
+paddingBottom: 20,
+paddingTop: 16,
+zIndex: 1002
+},
+fullScreenDeleteCircle: {
+width: 35,
+height: 35,
+borderRadius: 17,
+backgroundColor: '#000',
+borderWidth: 1,
+borderColor: 'grey',
+alignItems: 'center',
+justifyContent: 'center'
+},
+fullScreenShareCircle: {
+width: 35,
+height: 35,
+borderRadius: 17,
+backgroundColor: COLORS.PRIMARY,
+alignItems: 'center',
+justifyContent: 'center'
 },
 header: {
 flexDirection: 'row',
@@ -1616,97 +2722,101 @@ alignItems: 'center',
 paddingHorizontal: 20,
 paddingTop: 16,
 paddingBottom: 16,
-backgroundColor: 'white'
 },
 title: {
-fontSize: 34,
+fontSize: 28,
 fontWeight: '700',
 color: COLORS.TEXT,
-letterSpacing: -0.5
+letterSpacing: -0.3,
 },
 selectionCountText: {
-fontSize: 34,
+fontSize: 28,
 fontWeight: '700',
 color: COLORS.TEXT,
-letterSpacing: -0.5
+letterSpacing: -0.3,
 },
 cancelButton: {
-paddingHorizontal: 12,
-paddingVertical: 6
+paddingHorizontal: 16,
+paddingVertical: 8,
+borderRadius: 20,
+backgroundColor: 'rgba(255, 180, 180, 0.4)',
 },
 cancelButtonText: {
-color: COLORS.PRIMARY,
+color: '#E53935',
 fontSize: 16,
-fontWeight: '600'
+fontWeight: '500',
 },
 selectButton: {
-paddingHorizontal: 20,
-paddingVertical: 10,
-borderRadius: 22,
-backgroundColor: '#F0F0F0',
+paddingHorizontal: 14,
+paddingVertical: 8,
+borderRadius: 20,
+backgroundColor: 'rgba(118, 118, 128, 0.12)',
 alignItems: 'center',
-borderWidth: 0
+justifyContent: 'center',
 },
 selectButtonText: {
 color: COLORS.TEXT,
-fontSize: 16,
-fontWeight: '600'
+fontSize: 15,
+fontWeight: '500',
 },
 filterContainer: {
 flexDirection: 'row',
 alignItems: 'center',
-backgroundColor: 'white',
-paddingVertical: 16,
-paddingHorizontal: 20,
-gap: 10
+backgroundColor: '#F6F8FA',
+paddingVertical: 12,
+paddingHorizontal: 19,
+gap: 10,
 },
 filterButton: {
-paddingVertical: 10,
-paddingHorizontal: 20,
-borderRadius: 24,
-backgroundColor: '#F0F0F0',
+paddingVertical: 3,
+paddingHorizontal: 14,
+borderRadius: 30,
+backgroundColor: 'transparent',
 alignItems: 'center',
 justifyContent: 'center',
-borderWidth: 0,
-minWidth: 80
+borderWidth: 1,
+borderColor: 'rgba(0, 0, 0, 0.18)',
 },
 filterButtonActive: {
 backgroundColor: COLORS.PRIMARY,
-borderColor: 'transparent'
+borderColor: 'rgba(0, 0, 0, 0.18)',
+borderopacity: 0.5,
 },
 filterButtonText: {
-fontSize: 16,
-fontWeight: '600',
-color: '#000000'
+fontSize: 14,
+fontWeight: '500',
+color: '#000000',
+textTransform: 'capitalize',
 },
 filterButtonTextActive: {
 color: '#000000',
-fontWeight: '700'
+fontWeight: '500',
 },
-projectRoomContainer: {
+projectNameSection: {
+marginBottom: 8,
+},
+projectNameRow: {
 flexDirection: 'row',
-justifyContent: 'space-between',
 alignItems: 'center',
-paddingHorizontal: 20,
-paddingVertical: 16,
-backgroundColor: 'white',
-borderBottomWidth: 1,
-borderBottomColor: '#F0F0F0'
-},
-projectRoomInfo: {
-flex: 1
 },
 projectNameDisplay: {
-fontSize: 22,
+fontSize: 17,
 fontWeight: '700',
 color: COLORS.TEXT,
-marginBottom: 4
+lineHeight: 21,
+},
+projectNameLine: {
+flex: 1,
+height: 1,
+backgroundColor: '#000000',
+opacity: 0.2,
+marginLeft: 12,
 },
 roomNameDisplay: {
-fontSize: 16,
-fontWeight: '600',
+fontSize: 14,
+fontWeight: '400',
 color: COLORS.TEXT,
-opacity: 0.6
+lineHeight: 17,
 },
 actionIconsContainer: {
 flexDirection: 'row',
@@ -1718,20 +2828,20 @@ padding: 8
 },
 floatingActionButtons: {
 position: 'absolute',
-bottom: 20,
-left: 20,
-right: 20,
+bottom: 80,
+left: 16,
+right: 16,
 flexDirection: 'row',
 alignItems: 'center',
-justifyContent: 'center',
-gap: 12,
+justifyContent: 'flex-start',
+gap: 8,
 zIndex: 1000,
 elevation: 1000
 },
 floatingActionButton: {
-  width: 48,
-  height: 48,
-  borderRadius: 24,
+  width: 46,
+  height: 46,
+  borderRadius: 23,
   backgroundColor: '#333333',
   justifyContent: 'center',
   alignItems: 'center',
@@ -1743,57 +2853,66 @@ floatingActionButton: {
 },
 floatingActionButtonTrash: {
   backgroundColor: '#FFFFFF',
-  borderWidth: 0,
+  borderWidth: 1,
+  borderColor: 'rgba(0, 0, 0, 0.3)',
+  opacity: 0.9,
 },
 floatingActionButtonClose: {
-  backgroundColor: '#FF4444',
-  width: 48,
-  height: 48,
+  backgroundColor: '#DB4446',
+  width: 60,
+  height: 60,
+  borderRadius: 30,
+  position: 'absolute',
+  right: 0,
+  shadowColor: '#DB4446',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.45,
+  shadowRadius: 24,
 },
 floatingActionButtonShare: {
 flexDirection: 'row',
 width: 'auto',
-minWidth: 100,
-paddingHorizontal: 20,
-borderRadius: 24,
+height: 46,
+paddingHorizontal: 18,
+borderRadius: 60,
 backgroundColor: COLORS.PRIMARY,
 gap: 8
 },
 floatingActionButtonUpload: {
 flexDirection: 'row',
 width: 'auto',
-minWidth: 100,
-paddingHorizontal: 20,
-borderRadius: 24,
+height: 46,
+paddingHorizontal: 18,
+borderRadius: 60,
 backgroundColor: '#000000',
 gap: 8
 },
 floatingActionButtonText: {
 color: '#000',
-fontSize: 14,
-fontWeight: '700'
+fontSize: 15,
+fontWeight: '600',
+fontFamily: 'Alexandria_400Regular',
 },
 floatingActionButtonTextWhite: {
 color: '#FFFFFF'
 },
 bottomNavPill: {
-position: 'absolute',
-bottom: 20,
-left: 20,
-right: 20,
-flexDirection: 'row',
-alignItems: 'center',
-justifyContent: 'space-around',
-backgroundColor: 'white',
-borderRadius: 32,
-paddingVertical: 10,
-paddingHorizontal: 12,
-shadowColor: '#000',
-shadowOffset: { width: 0, height: 4 },
-shadowOpacity: 0.15,
-shadowRadius: 12,
-elevation: 8,
-zIndex: 90
+  position: 'absolute',
+  bottom: 20,
+  left: 12,
+  right: 12,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#f4f4f4',
+  borderRadius: 296,
+  height: 60,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.1,
+  shadowRadius: 12,
+  elevation: 8,
+  zIndex: 90,
 },
 navItem: {
 flex: 1,
@@ -1802,8 +2921,14 @@ justifyContent: 'center',
 paddingVertical: 10,
 borderRadius: 20
 },
+navItemImage:{
+  width: 22,
+  height: 22,
+},
 navItemActive: {
-backgroundColor: '#F0F0F0'
+  backgroundColor: '#E0E0E0',
+  borderRadius: 100,
+  marginHorizontal: -7,
 },
 navItemText: {
 fontSize: 11,
@@ -1817,78 +2942,71 @@ fontWeight: '600'
 },
 floatingAddButton: {
 position: 'absolute',
-bottom: 100,
+bottom: 120,
 right: 20,
-width: 64,
-height: 64,
-borderRadius: 32,
+width: 60,
+height: 60,
+borderRadius: 30,
 backgroundColor: COLORS.PRIMARY,
 justifyContent: 'center',
 alignItems: 'center',
-shadowColor: '#000',
+shadowColor: '#F2C31B',
 shadowOffset: { width: 0, height: 4 },
-shadowOpacity: 0.25,
-shadowRadius: 12,
+shadowOpacity: 0.45,
+shadowRadius: 24,
 elevation: 10,
 zIndex: 95
 },
 scrollView: {
-flex: 1
+flex: 1,
+backgroundColor: '#F6F8FA',
 },
 content: {
-padding: 16
+padding: 19,
+paddingTop: 10,
+backgroundColor: '#F6F8FA',
 },
 roomSection: {
-marginBottom: 24
+marginBottom: 24,
 },
 roomHeader: {
-flexDirection: 'row',
-alignItems: 'center',
 marginBottom: 12,
-paddingBottom: 8,
-borderBottomWidth: 2,
-borderBottomColor: COLORS.PRIMARY
 },
 roomName: {
-fontSize: 18,
-fontWeight: 'bold',
-color: COLORS.TEXT
+fontSize: 14,
+fontWeight: '500',
+color: COLORS.TEXT,
 },
 photoSetRow: {
 flexDirection: 'row',
-alignItems: 'center',
-marginBottom: 12
+alignItems: 'flex-start',
+marginBottom: 16,
 },
 threeColumnRow: {
 flex: 1,
 flexDirection: 'row',
-flexWrap: 'nowrap'
+flexWrap: 'nowrap',
 },
 photoCard: {
-width: COLUMN_WIDTH,
-height: COLUMN_WIDTH,
-borderRadius: 16,
+width: (width - 38 - 30) / 3,
+height: ((width - 38 - 30) / 3) * 1.26,
+borderRadius: 5,
 borderWidth: 0,
 overflow: 'hidden',
-shadowColor: '#000',
-shadowOffset: { width: 0, height: 2 },
-shadowOpacity: 0.08,
-shadowRadius: 8,
-elevation: 3,
-backgroundColor: 'white',
-marginRight: 8,
+marginRight: 15,
 position: 'relative'
 },
 photoCardCombined: {
-borderWidth: 0,
-borderColor: 'transparent'
+borderWidth: 0.62,
+borderColor: '#FCD116',
+borderRadius: 5,
 },
 photoCardLast: {
 marginRight: 0
 },
 photoCardSelected: {
 opacity: 1,
-borderWidth: 3,
+borderWidth: 2,
 borderColor: COLORS.PRIMARY
 },
 cardImage: {
@@ -1911,42 +3029,56 @@ halfImage: {
 flex: 1
 },
 modeLabel: {
-position: 'absolute',
-bottom: 8,
-left: 8,
-right: 8,
-paddingVertical: 8,
-paddingHorizontal: 10,
-alignItems: 'center',
-justifyContent: 'center',
-backgroundColor: 'rgba(0, 0, 0, 0.75)',
-borderRadius: 8
+  position: 'absolute',
+  bottom: 0,
+  left: 0,
+  right: 0,
+  paddingVertical: 4,
+  paddingHorizontal: 6,
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: 'rgba(255, 255, 255, 0.95)',
+  borderBottomLeftRadius: 5,
+  borderBottomRightRadius: 5,
+  borderLeftWidth: 1,
+  borderLeftColor: 'rgba(0, 0, 0, 0.2)',
+  borderRightWidth: 1,
+  borderRightColor: 'rgba(0, 0, 0, 0.2)',
+  borderBottomWidth: 1,
+  borderBottomColor: 'rgba(0, 0, 0, 0.2)',
 },
 modeLabelCombined: {
-backgroundColor: COLORS.PRIMARY
+backgroundColor: '#F2C31B',
+borderLeftWidth: 1,
+  borderLeftColor: '#F2C31B',
+  borderRightWidth: 1,
+  borderRightColor: '#F2C31B',
+  borderBottomWidth: 1,
+  borderBottomColor: '#F2C31B',
 },
 modeLabelText: {
-color: '#FFFFFF',
-fontSize: 12,
+color: '#000000',
+fontSize: 11,
 fontWeight: '700',
-letterSpacing: 0.5,
-textTransform: 'uppercase'
+letterSpacing: 0.3,
+textTransform: 'uppercase',
+zIndex: 1000,
 },
 photoCheckboxContainer: {
-width: 30,
-height: 30,
-borderRadius: 15,
-backgroundColor: 'rgba(255, 255, 255, 0.9)',
-borderWidth: 2,
-borderColor: '#000000',
+width: 26,
+height: 26,
+borderRadius: 13,
+backgroundColor: 'rgba(255, 255, 255, 0.95)',
+borderWidth: 1.5,
+borderColor: 'rgba(0, 0, 0, 0.3)',
 justifyContent: 'center',
 alignItems: 'center',
 overflow: 'hidden'
 },
 photoCheckboxGrid: {
 position: 'absolute',
-top: 8,
-right: 8,
+top: 6,
+right: 6,
 zIndex: 10
 },
 photoCheckboxSelected: {
@@ -1989,156 +3121,206 @@ textAlign: 'center'
 },
 modalOverlay: {
 flex: 1,
-backgroundColor: 'rgba(0, 0, 0, 0.5)',
+backgroundColor: 'rgba(0, 0, 0, 0.34)',
 justifyContent: 'flex-end',
 },
 shareModalContent: {
-  backgroundColor: 'white',
-  borderTopLeftRadius: 24,
-  borderTopRightRadius: 24,
-  paddingHorizontal: 20,
-  paddingBottom: 20,
-  paddingTop: 8,
-  maxHeight: '80%',
+  backgroundColor: '#FFFFFF',
+  borderTopLeftRadius: 38,
+  borderTopRightRadius: 38,
+  maxHeight: '85%',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: -15 },
+  shadowOpacity: 0.18,
+  shadowRadius: 75,
+  elevation: 20,
 },
-shareModalScroll: {
-  maxHeight: 400,
+grabberContainer: {
+  alignItems: 'center',
+  paddingTop: 5,
 },
-shareModalScrollContent: {
-  paddingBottom: 8,
+modalGrabber: {
+  width: 36,
+  height: 5,
+  backgroundColor: '#CCCCCC',
+  borderRadius: 100,
 },
-modalHandle: {
-  width: 40,
-  height: 4,
-  backgroundColor: '#E0E0E0',
-  borderRadius: 2,
-  alignSelf: 'center',
-  marginTop: 8,
-  marginBottom: 20,
-},
-modalHeader: {
+shareModalHeader: {
   flexDirection: 'row',
   alignItems: 'center',
-  marginBottom: 8,
-  position: 'relative',
-},
-closeButton: {
-  position: 'absolute',
-  left: 0,
-  padding: 8,
-  zIndex: 1,
-},
-modalTitle: {
-  fontSize: 22,
-  fontWeight: '700',
-  color: COLORS.TEXT,
-  flex: 1,
-  textAlign: 'center',
-},
-sectionTitle: {
-  fontSize: 18,
-  fontWeight: '700',
-  color: COLORS.TEXT,
-  marginBottom: 12,
-  marginTop: 0,
-},
-subsectionTitle: {
-  fontSize: 16,
-  fontWeight: '600',
-  color: COLORS.TEXT,
-  marginBottom: 12,
-  marginTop: 12,
-},
-photoTypeButtons: {
-flexDirection: 'row',
-gap: 10,
-marginBottom: 16,
-},
-typeButton: {
-  flex: 1,
-  paddingVertical: 12,
   paddingHorizontal: 16,
-  borderRadius: 24,
-  backgroundColor: '#F0F0F0',
+  paddingVertical: 10,
+},
+shareCloseButton: {
+  width: 44,
+  height: 44,
+  borderRadius: 22,
+  backgroundColor: 'rgba(120, 120, 128, 0.16)',
+  justifyContent: 'center',
   alignItems: 'center',
-  borderWidth: 0,
-  borderColor: 'transparent',
 },
-typeButtonActive: {
-backgroundColor: COLORS.PRIMARY,
-borderColor: COLORS.PRIMARY,
+shareModalTitle: {
+  flex: 1,
+  fontSize: 18,
+  fontWeight: '600',
+  color: '#333333',
+  textAlign: 'center',
+  marginRight: 44,
+  letterSpacing: -0.43,
 },
-typeButtonText: {
-fontSize: 15,
-fontWeight: '600',
-color: '#000',
+shareModalScroll: {
+  maxHeight: 500,
 },
-typeButtonTextActive: {
-color: '#000',
-fontWeight: '700',
+shareModalScrollContent: {
+  paddingHorizontal: 19,
+  paddingBottom: 20,
 },
-advancedOptionsHeader: {
+shareSectionLabel: {
+  fontSize: 14,
+  fontWeight: '300',
+  color: COLORS.TEXT,
+  marginBottom: 11,
+  marginTop: 17,
+  lineHeight: 17,
+},
+shareTypeButtons: {
+  flexDirection: 'row',
+  gap: 10,
+},
+shareTypeButton: {
+  paddingVertical: 10,
+  paddingHorizontal: 15,
+  borderRadius: 30,
+  borderWidth: 1,
+  borderColor: 'rgba(0, 0, 0, 0.25)',
+  backgroundColor: 'transparent',
+},
+shareTypeButtonActive: {
+  backgroundColor: COLORS.PRIMARY,
+  borderColor: 'rgba(0, 0, 0, 0.25)',
+},
+shareTypeButtonText: {
+  fontSize: 14,
+  fontWeight: '400',
+  color: COLORS.TEXT,
+  lineHeight: 17,
+},
+shareTypeButtonTextActive: {
+  color: COLORS.TEXT,
+},
+shareDivider: {
+  height: 1,
+  backgroundColor: '#000000',
+  opacity: 0.15,
+  marginTop: 17,
+},
+advanceOptionsHeader: {
   flexDirection: 'row',
   justifyContent: 'space-between',
   alignItems: 'center',
   paddingVertical: 12,
-  marginTop: 16,
-  marginBottom: 4,
+  marginTop: 5,
 },
-formatButtons: {
-flexDirection: 'row',
-flexWrap: 'wrap',
-gap: 10,
-marginBottom: 16,
-},
-formatButton: {
-  paddingVertical: 10,
-  paddingHorizontal: 16,
-  borderRadius: 24,
-  backgroundColor: '#F0F0F0',
-  borderWidth: 0,
-  borderColor: 'transparent',
-},
-formatButtonActive: {
-backgroundColor: COLORS.PRIMARY,
-borderColor: COLORS.PRIMARY,
-},
-formatButtonText: {
-fontSize: 14,
-fontWeight: '600',
-color: '#000',
-},
-formatButtonTextActive: {
-color: '#000',
-fontWeight: '700',
-},
-archiveToggleContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingVertical: 16,
-  borderTopWidth: 1,
-  borderTopColor: '#F0F0F0',
-  marginTop: 16,
-  gap: 12,
-},
-archiveToggleText: {
-  fontSize: 16,
+advanceOptionsTitle: {
+  fontSize: 14,
   fontWeight: '600',
   color: COLORS.TEXT,
-  flex: 1,
+  lineHeight: 17,
+},
+shareFormatLabel: {
+  fontSize: 14,
+  fontWeight: '300',
+  color: COLORS.TEXT,
+  marginBottom: 11,
+  marginTop: 17,
+  lineHeight: 17,
+},
+shareFormatButtons: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  gap: 10,
+},
+shareFormatButton: {
+  paddingVertical: 10,
+  paddingHorizontal: 15,
+  borderRadius: 30,
+  borderWidth: 1,
+  borderColor: 'rgba(0, 0, 0, 0.25)',
+  backgroundColor: 'transparent',
+},
+shareFormatButtonActive: {
+  backgroundColor: COLORS.PRIMARY,
+  borderColor: 'rgba(0, 0, 0, 0.25)',
+},
+shareFormatButtonText: {
+  fontSize: 14,
+  fontWeight: '400',
+  color: COLORS.TEXT,
+  lineHeight: 17,
+},
+shareFormatButtonTextActive: {
+  color: COLORS.TEXT,
+},
+archiveToggleRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingVertical: 12,
+  gap: 6,
+  marginTop: 5,
+},
+archiveToggleLabel: {
+  fontSize: 14,
+  fontWeight: '400',
+  color: COLORS.TEXT,
+  lineHeight: 17,
+},
+shareButtonContainer: {
+  paddingHorizontal: 19.5,
+  paddingBottom: 34,
+  paddingTop: 10,
 },
 shareNowButton: {
-  backgroundColor: '#000',
-  paddingVertical: 18,
-  borderRadius: 28,
+  backgroundColor: '#000000',
+  borderRadius: 100,
+  height: 54,
+  justifyContent: 'center',
   alignItems: 'center',
-  marginTop: 24,
-  width: '100%',
+  flexDirection: 'row',
 },
 shareNowButtonText: {
-  color: '#FFF',
-  fontSize: 16,
+  fontSize: 18,
   fontWeight: '700',
+  color: '#FFFFFF',
+  textAlign: 'center',
+},
+uploadDestRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingVertical: 14,
+  paddingHorizontal: 16,
+  borderRadius: 12,
+  backgroundColor: '#F5F5F5',
+  marginBottom: 8,
+  gap: 12,
+},
+uploadDestRowActive: {
+  backgroundColor: '#FFF9E0',
+  borderWidth: 1,
+  borderColor: COLORS.PRIMARY,
+},
+uploadDestText: {
+  fontSize: 16,
+  fontWeight: '500',
+  color: '#999',
+},
+uploadDestTextActive: {
+  color: '#000',
+  fontWeight: '600',
+},
+uploadDestHint: {
+  fontSize: 12,
+  color: '#CC0000',
+  marginLeft: 4,
 },
 upgradeModalContent: {
 backgroundColor: 'white',

@@ -334,11 +334,11 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 26,
-    fontWeight: 'bold',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontWeight: '700',
     color: COLORS.TEXT,
     textAlign: 'center',
     marginBottom: 12,
-    fontFamily: FONTS.QUICKSAND_BOLD,
     marginTop: 40, // Avoid overlap with back button
   },
   subtitle: {
@@ -453,9 +453,9 @@ const styles = StyleSheet.create({
   },
   planButtonText: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontWeight: '700',
     color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_BOLD,
     textAlign: 'center',
   },
   planButtonTextSelected: {
@@ -475,8 +475,9 @@ const styles = StyleSheet.create({
   },
   planPrice: {
     fontSize: 16,
+    fontFamily: FONTS.ALEXANDRIA,
     fontWeight: '600',
     color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_BOLD,
   },
 });
+

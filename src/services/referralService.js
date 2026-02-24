@@ -374,7 +374,12 @@ export const completeReferralSetup = async (referralCode, userId) => {
       console.log('[ReferralService] Setup completed on server. Referrer earned:', data.monthsEarned, 'month(s)');
       return data;
     } else {
-      console.error('[ReferralService] Failed to complete setup:', data.error);
+      const isNoPending = data.error && String(data.error).toLowerCase().includes('no pending referral');
+      if (isNoPending) {
+        console.warn('[ReferralService] No pending referral found for this code (expected when using dev test tools).', data.error);
+      } else {
+        console.error('[ReferralService] Failed to complete setup:', data.error);
+      }
       return null;
     }
   } catch (error) {
@@ -523,14 +528,16 @@ export const simulateFriendSignup = async () => {
 
     // If server-side simulation failed (e.g., "No pending referral found for this code"),
     // fall back to a local-only simulation so the test button is still useful.
-    console.error('[ReferralService] Failed to simulate friend signup on server, falling back to local simulation:', result);
+    console.warn('[ReferralService] Server simulation unavailable (no pending referral). Falling back to local simulation.');
+    // Add a fake pending invite so processReferralReward can apply a reward locally
+    await addReferralInvite('test');
     const monthsEarned = await processReferralReward(myCode);
     if (monthsEarned > 0) {
       console.log(`[ReferralService] ✅ Local friend signup simulation applied: ${monthsEarned} month(s) locally`);
       return true;
     }
 
-    console.error('[ReferralService] Local friend signup simulation did not apply any rewards');
+    console.warn('[ReferralService] Local friend signup simulation did not apply any rewards (run checkAndApplyReferralRewards if server has rewards).');
     return false;
   } catch (error) {
     console.error('[ReferralService] Error simulating friend signup:', error);

@@ -119,7 +119,7 @@ class ProxyService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('[PROXY] Init error response:', errorText);
+        console.warn('[PROXY] Init response:', response.status, errorText);
 
         // If it's an auth code error, clear the stored code so it won't be reused (Google only)
         if (accountType === 'google' && (errorText.includes('authorization code has expired') || errorText.includes('already been used'))) {
@@ -161,12 +161,7 @@ class ProxyService {
         throw error;
       }
       
-      console.error('[PROXY] Error initializing session:', error);
-      console.error('[PROXY] Error details:', {
-        message: error.message,
-        name: error.name,
-        stack: error.stack
-      });
+      console.warn('[PROXY] Could not initialize session:', error?.message);
       throw error;
     }
   }
@@ -355,16 +350,21 @@ class ProxyService {
    * @param {string} albumName - Album folder name
    * @returns {Promise<Object>} Prepare result
    */
-  async prepareAlbumFolder(sessionId, albumName) {
+  async prepareAlbumFolder(sessionId, albumName, subfolders = []) {
     try {
-      console.log('[PROXY] Preparing album folder:', { sessionId, albumName });
+      console.log('[PROXY] Preparing album folder:', { sessionId, albumName, subfolders });
+
+      const body = { albumName };
+      if (subfolders.length > 0) {
+        body.subfolders = subfolders;
+      }
 
       const response = await fetch(`${PROXY_SERVER_URL}/api/prepare/${sessionId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ albumName }),
+        body: JSON.stringify(body),
       });
 
       console.log('[PROXY] Prepare response status:', response.status);

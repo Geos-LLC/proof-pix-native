@@ -8,15 +8,16 @@ const DEFAULT_LABEL_BACKGROUND = '#FFD700';
 const DEFAULT_WATERMARK_OPACITY = 0.5;
 
 const FONT_FAMILY_MAP = {
-  system: null,
-  montserratBold: 'Montserrat_700Bold',
-  playfairBold: 'PlayfairDisplay_700Bold',
-  robotoMonoBold: 'RobotoMono_700Bold',
-  latoBold: 'Lato_700Bold',
-  poppinsSemiBold: 'Poppins_600SemiBold',
-  oswaldSemiBold: 'Oswald_600SemiBold',
-  serif: 'PlayfairDisplay_700Bold',
-  monospace: 'RobotoMono_700Bold',
+  alexandria: 'Alexandria_400Regular',
+  system: 'Alexandria_400Regular',
+  montserratBold: 'Alexandria_400Regular',
+  playfairBold: 'Alexandria_400Regular',
+  robotoMonoBold: 'Alexandria_400Regular',
+  latoBold: 'Alexandria_400Regular',
+  poppinsSemiBold: 'Alexandria_400Regular',
+  oswaldSemiBold: 'Alexandria_400Regular',
+  serif: 'Alexandria_400Regular',
+  monospace: 'Alexandria_400Regular',
 };
 
 /**
