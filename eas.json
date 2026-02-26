@@ -22,9 +22,14 @@
     },
     "preview": {
       "distribution": "internal",
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release"
+      },
       "android": {
         "buildType": "app-bundle"
       },
+      "channel": "preview",
       "env": {
         "EXPO_PUBLIC_PROXY_URL": "https://steadfast-blessing-production.up.railway.app",
         "EXPO_PUBLIC_WATERMARK_URL": "https://geos-ai.com/",
@@ -40,6 +45,14 @@
       }
     },
     "production": {
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "channel": "production",
       "env": {
         "EXPO_PUBLIC_PROXY_URL": "https://steadfast-blessing-production.up.railway.app",
         "EXPO_PUBLIC_WATERMARK_URL": "https://geos-ai.com/",
@@ -57,6 +70,11 @@
   },
   "submit": {
     "production": {
+      "ios": {
+        "appleId": "adeniyiadejuwon0@gmail.com",
+        "ascAppId": "6754261444",
+        "appleTeamId": "X46T9F8UMA"
+      },
       "android": {
         "serviceAccountKeyPath": "./proofpix-play-store-service-account.json",
         "track": "internal",

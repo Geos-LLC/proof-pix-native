@@ -5,13 +5,35 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Platform,
   Alert,
   Linking,
   InteractionManager,
+  Dimensions,
+  Modal,
+  StatusBar,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// Fallback component for LinearGradient if native module isn't available
+const GradientView = ({ colors, start, end, style, children, fallbackColor }) => {
+  if (LinearGradient && typeof LinearGradient === 'function') {
+    return (
+      <LinearGradient colors={colors} start={start} end={end} style={style}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  
+  return (
+    <View style={[style, { backgroundColor: fallbackColor || colors[colors.length - 1] }]}>
+      {children}
+    </View>
+  );
+};
+
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
@@ -19,49 +41,47 @@ import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import TrialNotificationModal from '../components/TrialNotificationModal';
-import TrialConfirmationModal from '../components/TrialConfirmationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
 import { IAP_PRODUCTS, purchaseProduct, restorePurchases, getAvailablePurchases, diagnoseIAPState } from '../services/iapService';
 
+const { width } = Dimensions.get('window');
+
 export default function PlanSelectionScreen({ navigation }) {
   const { t } = useTranslation();
-  const { updateUserPlan } = useSettings();
+  const { userPlan, updateUserPlan } = useSettings();
   const { updatePlanLimit } = useAdmin();
   const insets = useSafeAreaInsets();
 
-  // Enterprise modal state
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
-  const [trialAvailable, setTrialAvailable] = useState(false);
+  const [trialAvailable, setTrialAvailable] = useState(true);
   const [trialDays, setTrialDays] = useState(30);
-  // Trial notification modal state
   const [showTrialModal, setShowTrialModal] = useState(false);
   const [trialNotification, setTrialNotification] = useState(null);
-  // Trial confirmation modal state
   const [showTrialConfirmation, setShowTrialConfirmation] = useState(false);
   const [selectedPlanForTrial, setSelectedPlanForTrial] = useState(null);
-  // Track if we've shown the notification in this session
   const hasShownTrialNotification = useRef(false);
-  // Track if component is mounted to prevent state updates after unmount
   const isMounted = useRef(true);
-  // Track restore purchases loading state
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
-  // Track if purchase is in progress to prevent double-clicks
   const isPurchasing = useRef(false);
 
   useEffect(() => {
     console.log('[PlanSelection] 🔵 Component mounted, isMounted set to true');
     isMounted.current = true;
 
-    // Check if trial is available for new users
     const checkTrialAvailability = async () => {
       try {
-        const available = await canStartTrial();
+        // Always show trial modal for now - comment out the service check
+        // const available = await canStartTrial();
+        // if (isMounted.current) {
+        //   setTrialAvailable(available);
+        // }
+        
+        // Keep trial available as true (set in initial state)
         if (isMounted.current) {
-          setTrialAvailable(available);
+          setTrialAvailable(true);
         }
 
-        // Check if user has a referral code to determine trial days
         try {
           const AsyncStorage = await import('@react-native-async-storage/async-storage');
           const referralData = await AsyncStorage.default.getItem('@referral_accepted');
@@ -75,7 +95,6 @@ export default function PlanSelectionScreen({ navigation }) {
         }
       } catch (error) {
         console.error('[PlanSelection] Error checking trial availability:', error);
-        // Default to showing trial UI if check fails (for new users)
         if (isMounted.current) {
           setTrialAvailable(true);
           setTrialDays(30);
@@ -84,7 +103,6 @@ export default function PlanSelectionScreen({ navigation }) {
     };
     checkTrialAvailability();
 
-    // Clear modal state when screen is focused (e.g., when navigating back)
     if (isMounted.current) {
       setShowTrialModal(false);
     }
@@ -93,25 +111,28 @@ export default function PlanSelectionScreen({ navigation }) {
       console.log('[PlanSelection] 🔴 Component unmounting, isMounted set to false');
       isMounted.current = false;
     };
-    setTrialNotification(null);
-    hasShownTrialNotification.current = false;
   }, []);
 
+  const handleGoBack = () => {
+    navigation.goBack();
+  };
+
   const handleSelectPlan = async (plan) => {
-    // If trial is available, show confirmation modal first (except for enterprise which currently has no trial)
+    if (plan === 'starter') {
+      await proceedWithPlanSelection(plan, false);
+      return;
+    }
+
     if (trialAvailable && plan !== 'enterprise') {
       setSelectedPlanForTrial(plan);
       setShowTrialConfirmation(true);
       return;
     }
 
-    // No trial flow or enterprise (no trial) → proceed directly
     await proceedWithPlanSelection(plan, false);
   };
 
-  // Proceed with plan selection (with or without trial)
   const proceedWithPlanSelection = async (plan, useTrial = false) => {
-    // Prevent double-clicks/multiple simultaneous purchases
     if (isPurchasing.current) {
       console.log('[PlanSelection] ⚠️ Purchase already in progress, ignoring duplicate request');
       return;
@@ -123,308 +144,155 @@ export default function PlanSelectionScreen({ navigation }) {
     try {
       let trialJustStarted = false;
 
-      // Close all modals before proceeding to prevent state updates during navigation
       setShowTrialModal(false);
       setShowTrialConfirmation(false);
       setTrialNotification(null);
 
-    if (useTrial) {
-      console.log('[PlanSelection] 🟡 Using trial flow');
-      try {
-        console.log('[PlanSelection] 🟡 Calling startTrial...');
-        await startTrial(plan);
-        console.log('[PlanSelection] 🟡 startTrial completed, calling updateUserPlan...');
-        await updateUserPlan(plan);
-        console.log('[PlanSelection] 🟡 updateUserPlan completed');
-        trialJustStarted = true;
-      } catch (error) {
-        console.error('[PlanSelection] ❌ Error starting trial:', error);
-        // Fallback to regular plan selection
-        await updateUserPlan(plan);
-      }
-    } else {
-      console.log('[PlanSelection] 🔵 Regular plan flow (no trial)');
-      // Regular plan selection without trial
-      // On iOS, require in-app purchase for paid plans before changing plan.
-      if (Platform.OS === 'ios') {
-        console.log('[PlanSelection] iOS platform detected, checking for IAP');
-        let productId = null;
-        if (plan === 'pro') productId = IAP_PRODUCTS.PRO_MONTHLY;
-        else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
-        else if (plan === 'enterprise') productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
+      if (useTrial) {
+        console.log('[PlanSelection] 🟡 Using trial flow');
+        try {
+          console.log('[PlanSelection] 🟡 Calling startTrial...');
+          await startTrial(plan);
+          console.log('[PlanSelection] 🟡 startTrial completed, calling updateUserPlan...');
+          await updateUserPlan(plan);
+          console.log('[PlanSelection] 🟡 updateUserPlan completed');
+          trialJustStarted = true;
+        } catch (error) {
+          console.error('[PlanSelection] ❌ Error starting trial:', error);
+          await updateUserPlan(plan);
+        }
+      } else {
+        console.log('[PlanSelection] 🔵 Regular plan flow (no trial)');
+        if (Platform.OS === 'ios') {
+          console.log('[PlanSelection] iOS platform detected, checking for IAP');
+          let productId = null;
+          if (plan === 'pro') productId = IAP_PRODUCTS.PRO_MONTHLY;
+          else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
+          else if (plan === 'enterprise') productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
 
-        console.log('[PlanSelection] Selected plan:', plan, 'Product ID:', productId);
+          console.log('[PlanSelection] Selected plan:', plan, 'Product ID:', productId);
 
-        if (productId) {
-          try {
-            console.log('[PlanSelection] Starting purchase for:', productId);
-            console.log('[PlanSelection] Plan:', plan);
-            const purchaseResult = await purchaseProduct(productId);
-            console.log('[PlanSelection] ✅ Purchase successful:', JSON.stringify(purchaseResult, null, 2));
-            console.log('[PlanSelection] ✅ Purchase completed, updating plan to:', plan);
-            // Purchase successful, update plan and proceed
-            await updateUserPlan(plan);
-            console.log('[PlanSelection] ✅ Plan updated, navigating to account setup');
-            
-            return new Promise((resolve) => {
-              InteractionManager.runAfterInteractions(() => {
-                console.log('[PlanSelection] ✅ Navigating after successful purchase');
-                isMounted.current = false;
-                navigation.navigate('Home');
-                resolve();
-              });
-            });
-          } catch (err) {
-            console.log('[PlanSelection] ❌ Purchase error caught');
-            console.log('[PlanSelection] Error message:', err?.message);
-            console.log('[PlanSelection] Error code:', err?.code);
-            
-            // Check if user cancelled - handle silently
-            const errorMsg = err?.message || '';
-            if (errorMsg === 'USER_CANCELLED' || errorMsg === 'user-cancelled' || errorMsg.includes('cancelled')) {
-              console.log('[PlanSelection] User cancelled purchase');
-              return; // user cancelled, do not change plan
-            }
-
-            // Check if item already owned or purchase timed out
-            if (errorMsg === 'already-owned' || errorMsg === 'PURCHASE_TIMEOUT') {
-              console.log('[PlanSelection] Purchase blocked - iOS says:', errorMsg);
+          if (productId) {
+            try {
+              console.log('[PlanSelection] Starting purchase for:', productId);
+              const purchaseResult = await purchaseProduct(productId);
+              console.log('[PlanSelection] ✅ Purchase successful:', JSON.stringify(purchaseResult, null, 2));
+              await updateUserPlan(plan);
               
-              // If "already-owned", iOS explicitly confirms subscription exists
-              // Only need verification for timeout (which could be false positive)
-              if (errorMsg === 'already-owned') {
-                console.log('[PlanSelection] ✅ iOS explicitly confirmed: Subscription already exists');
-                console.log('[PlanSelection] Proceeding with plan:', plan);
-                await updateUserPlan(plan);
-                
-                Alert.alert(
-                  t('common.success', { defaultValue: 'Already Subscribed' }),
-                  t('settings.alreadySubscribed', { defaultValue: 'You already have an active subscription to this plan!' })
-                );
-                
-                // Navigate to account setup
-                console.log('[PlanSelection] Navigating to account setup');
-                return new Promise((resolve) => {
-                  InteractionManager.runAfterInteractions(() => {
-                    console.log('[PlanSelection] All interactions complete, navigating...');
-                    isMounted.current = false;
-                    navigation.navigate('Home');
-                    resolve();
-                  });
+              return new Promise((resolve) => {
+                InteractionManager.runAfterInteractions(() => {
+                  console.log('[PlanSelection] ✅ Navigating after successful purchase');
+                  isMounted.current = false;
+                  navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                  resolve();
                 });
-              }
+              });
+            } catch (err) {
+              console.log('[PlanSelection] ❌ Purchase error caught');
+              console.log('[PlanSelection] Error message:', err?.message);
               
-              // For PURCHASE_TIMEOUT, verify subscription actually exists
-              // (timeout can be triggered by expired renewals - false positive)
-              console.log('[PlanSelection] Timeout detected - verifying if subscription actually exists...');
-              try {
-                const purchases = await restorePurchases();
-                const now = Date.now();
-                const activePurchase = purchases?.find(p => 
-                  p.expirationDateIOS && p.expirationDateIOS > now
-                );
-                
-                if (activePurchase) {
-                  console.log('[PlanSelection] ✅ Confirmed: Active subscription exists');
-                  console.log('[PlanSelection] Product:', activePurchase.productId);
-                  console.log('[PlanSelection] Expires:', new Date(activePurchase.expirationDateIOS).toISOString());
-                  console.log('[PlanSelection] Updating plan to:', plan);
+              const errorMsg = err?.message || '';
+              if (errorMsg === 'USER_CANCELLED' || errorMsg === 'user-cancelled' || errorMsg.includes('cancelled')) {
+                console.log('[PlanSelection] User cancelled purchase');
+                isPurchasing.current = false;
+                return;
+              }
+
+              if (errorMsg === 'already-owned' || errorMsg === 'PURCHASE_TIMEOUT') {
+                if (errorMsg === 'already-owned') {
                   await updateUserPlan(plan);
                   
-                  // Navigate to account setup
-                  console.log('[PlanSelection] Navigating to account setup');
+                  Alert.alert(
+                    t('common.success', { defaultValue: 'Already Subscribed' }),
+                    t('settings.alreadySubscribed', { defaultValue: 'You already have an active subscription to this plan!' })
+                  );
+                  
                   return new Promise((resolve) => {
                     InteractionManager.runAfterInteractions(() => {
-                      console.log('[PlanSelection] All interactions complete, navigating...');
                       isMounted.current = false;
-                      navigation.navigate('Home');
+                      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
                       resolve();
                     });
                   });
-                } else {
-                  console.log('[PlanSelection] ❌ No active subscription found');
-                  console.log('[PlanSelection] This suggests the purchase did not complete');
-                  
-                  Alert.alert(
-                    t('common.info', { defaultValue: 'Purchase Not Completed' }),
-                    'The purchase did not complete. This can happen if:\n\n• You already have a different active subscription\n• The sandbox account needs to be refreshed\n• The purchase was cancelled\n\nIf you were charged, the purchase will appear in your account within a few minutes.'
-                  );
-                  return;
                 }
-              } catch (verifyError) {
-                console.error('[PlanSelection] Failed to verify subscription:', verifyError);
-                
-                // Check if user cancelled the verification prompt
-                const errorMessage = verifyError?.message || '';
-                if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED')) {
-                  console.log('[PlanSelection] User cancelled verification prompt');
-                  return; // Silently exit, user cancelled intentionally
-                }
-                
-                Alert.alert(
-                  t('common.error', { defaultValue: 'Error' }),
-                  t('settings.purchaseFailed', { defaultValue: 'Could not verify subscription status. Please try again.' })
-                );
-                return;
               }
+              
+              Alert.alert(
+                t('common.error', { defaultValue: 'Error' }),
+                t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+              );
+              isPurchasing.current = false;
+              return;
             }
-
-            console.error('[PlanSelection] ❌ Purchase failed:', err);
-            console.error('[PlanSelection] Error message:', err?.message);
-            console.error('[PlanSelection] Error stack:', err?.stack);
-            
-            Alert.alert(
-              t('common.error', { defaultValue: 'Error' }),
-              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-            );
-            return;
           }
-        } else {
-          console.log('[PlanSelection] No product ID for plan:', plan, '(free plan?)');
         }
-      } else {
-        console.log('[PlanSelection] Platform is not iOS:', Platform.OS);
+
+        await updateUserPlan(plan);
       }
 
-      console.log('[PlanSelection] 🔵 Calling updateUserPlan...');
-      await updateUserPlan(plan);
-      console.log('[PlanSelection] 🔵 updateUserPlan completed');
-    }
-
-      console.log('[PlanSelection] 🟢 About to navigate to LabelLanguageSetup');
-
-      // Use InteractionManager to wait for all animations/interactions to complete
-      // This prevents React errors during navigation
-      // Wrap in a Promise to ensure we wait for navigation to complete
+      console.log('[PlanSelection] Plan selection complete, navigating...');
       return new Promise((resolve) => {
         InteractionManager.runAfterInteractions(() => {
-          console.log('[PlanSelection] 🔵 All interactions complete, setting isMounted to false');
           isMounted.current = false;
-
-          console.log('[PlanSelection] 🟢 Navigating to LabelLanguageSetup...');
-          navigation.navigate('Home');
-          console.log('[PlanSelection] 🟢 Navigation called, proceedWithPlanSelection END');
+          navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
           resolve();
         });
       });
+    } catch (error) {
+      console.error('[PlanSelection] ❌ Error in proceedWithPlanSelection:', error);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('common.genericError', { defaultValue: 'Something went wrong. Please try again.' })
+      );
     } finally {
-      // Always reset purchase lock, even if function exits early
       isPurchasing.current = false;
-      console.log('[PlanSelection] 🔓 Purchase lock released');
     }
   };
 
-  // Handle trial confirmation - use trial
   const handleUseTrial = async () => {
-    console.log('[PlanSelection] 🔴 handleUseTrial START');
-    console.log('[PlanSelection] 🔴 Closing trial confirmation modal');
-    setShowTrialConfirmation(false);
-    const plan = selectedPlanForTrial;
-    console.log('[PlanSelection] 🔴 Selected plan for trial:', plan);
-    setSelectedPlanForTrial(null);
-    console.log('[PlanSelection] 🔴 Calling proceedWithPlanSelection with useTrial=true');
-    await proceedWithPlanSelection(plan, true);
-    console.log('[PlanSelection] 🔴 handleUseTrial END');
-  };
-
-  // Handle trial confirmation - cancel (continue without trial)
-  const handleCancelTrial = async () => {
-    console.log('[PlanSelection] 🟣 handleCancelTrial START');
-    console.log('[PlanSelection] 🟣 Closing trial confirmation modal');
-    setShowTrialConfirmation(false);
-    const plan = selectedPlanForTrial;
-    console.log('[PlanSelection] 🟣 Selected plan:', plan);
-    setSelectedPlanForTrial(null);
-    console.log('[PlanSelection] 🟣 Calling proceedWithPlanSelection with useTrial=false');
-    await proceedWithPlanSelection(plan, false);
-    console.log('[PlanSelection] 🟣 handleCancelTrial END');
-  };
-
-  const handleGoBack = () => {
-    navigation.goBack();
-  };
-
-  // Handle free trial button click - show confirmation modal first
-  const handleFreeTrialClick = () => {
-    if (!trialAvailable || hasShownTrialNotification.current) {
-      return;
+    if (selectedPlanForTrial) {
+      await proceedWithPlanSelection(selectedPlanForTrial, true);
     }
-
-    // Show confirmation modal for business plan
-    setSelectedPlanForTrial('business');
-    setShowTrialConfirmation(true);
   };
 
-  // Handle trial modal close
+  const handleCancelTrial = async () => {
+    setShowTrialConfirmation(false);
+    if (selectedPlanForTrial) {
+      await proceedWithPlanSelection(selectedPlanForTrial, false);
+    }
+  };
+
   const handleTrialModalClose = () => {
     setShowTrialModal(false);
-    setTrialNotification(null);
   };
 
-  // Handle trial upgrade - show plan modal
   const handleTrialUpgrade = () => {
     setShowTrialModal(false);
-    setTrialNotification(null);
-    // Navigate to Settings where plan modal can be shown
-    navigation.navigate('Settings', { showPlanModal: true });
   };
 
-  // Handle refer a friend
   const handleTrialRefer = () => {
     setShowTrialModal(false);
-    setTrialNotification(null);
-    // Navigate to Referral screen
-    navigation.navigate('Referral');
+    navigation.reset({ index: 0, routes: [{ name: 'Settings', params: { openReferral: true } }] });
   };
 
-  // Handle diagnostic check (for debugging)
-  const handleDiagnose = async () => {
-    if (Platform.OS !== 'ios') {
-      return;
-    }
-
-    try {
-      console.log('[PlanSelection] Running IAP diagnostics...');
-      const results = await diagnoseIAPState();
-      
-      // Show results in alert
-      const summary = `
-Platform: ${results.supported ? 'Supported' : 'Not Supported'}
-Connection: ${results.connectionInitialized ? 'Initialized' : 'Not Initialized'}
-Available Purchases: ${results.availablePurchasesCount || 0}
-Restored Purchases: ${results.restoredPurchasesCount || 0}
-Active Subscriptions: ${results.activeSubscriptionsCount || 0}
-
-${results.error ? `Error: ${results.error}` : ''}
-      `.trim();
-      
-      Alert.alert('IAP Diagnostics', summary);
-    } catch (error) {
-      Alert.alert('Diagnostic Error', error.message);
-    }
-  };
-
-  // Handle restore purchases
   const handleRestorePurchases = async () => {
     if (Platform.OS !== 'ios') {
-      return; // Only show on iOS
+      return;
     }
 
     setIsRestoringPurchases(true);
     try {
       console.log('[PlanSelection] Restoring purchases...');
       
-      // First, check for available purchases (completed but not finalized)
       const availablePurchases = await getAvailablePurchases();
       console.log('[PlanSelection] Available purchases:', availablePurchases?.length || 0);
       
       const purchases = await restorePurchases();
       
       if (!purchases || purchases.length === 0) {
-        // Provide more helpful error message based on available purchases
         const message = availablePurchases && availablePurchases.length > 0
-          ? 'Completed purchases found but not yet finalized. This may be a sandbox testing issue. Try signing out and back into your sandbox test account in Settings > App Store, then try again.'
-          : 'No active subscriptions found. If you recently purchased, please wait a moment and try again. For sandbox testing, ensure you\'re signed in with a sandbox test account.';
+          ? 'Completed purchases found but not yet finalized. This may be a sandbox testing issue.'
+          : 'No active subscriptions found. If you recently purchased, please wait a moment and try again.';
         
         Alert.alert(
           t('common.info', { defaultValue: 'No Purchases Found' }),
@@ -434,7 +302,6 @@ ${results.error ? `Error: ${results.error}` : ''}
         return;
       }
       
-      // Find active subscription
       const now = Date.now();
       const activePurchase = purchases.find(p => p.expirationDateIOS && p.expirationDateIOS > now);
       
@@ -450,12 +317,10 @@ ${results.error ? `Error: ${results.error}` : ''}
         
         setIsRestoringPurchases(false);
         
-        // Navigate to next screen with the restored plan
-        console.log('[PlanSelection] Navigating to LabelLanguageSetup with restored plan');
         return new Promise((resolve) => {
           InteractionManager.runAfterInteractions(() => {
             isMounted.current = false;
-            navigation.navigate('Home');
+            navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
             resolve();
           });
         });
@@ -469,10 +334,8 @@ ${results.error ? `Error: ${results.error}` : ''}
     } catch (error) {
       console.error('[PlanSelection] Error restoring purchases:', error);
 
-      // Check if user cancelled the restore
       const errorMessage = error?.message || '';
       if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED')) {
-        // User cancelled - don't show error alert
         console.log('[PlanSelection] User cancelled restore purchases');
         setIsRestoringPurchases(false);
         return;
@@ -480,132 +343,225 @@ ${results.error ? `Error: ${results.error}` : ''}
 
       Alert.alert(
         t('common.error', { defaultValue: 'Error' }),
-        t('settings.restoreFailed', { defaultValue: 'Failed to restore purchases. Please try again or contact support if the problem persists.' })
+        t('settings.restoreFailed', { defaultValue: 'Failed to restore purchases. Please try again.' })
       );
       setIsRestoringPurchases(false);
     }
   };
 
-
   return (
-    <SafeAreaView style={styles.container}>
-      <TouchableOpacity
-        style={[styles.backButton, { top: insets.top + 10, left: insets.left + 10 }]}
-        onPress={handleGoBack}
-      >
-        <Text style={styles.backButtonText}>←</Text>
-      </TouchableOpacity>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F2C31B" />
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleGoBack}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <View style={styles.backButtonInner}>
+            <Ionicons name="arrow-back-outline" size={22} color="#000000" />
+          </View>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('firstLoad.choosePlan', { defaultValue: 'Choose a plan' })}</Text>
+       {showTrialModal &&
+        <TouchableOpacity
+          style={styles.selectButton}
+          onPress={() => {}}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.selectButtonText}>Select</Text>
+        </TouchableOpacity>}
+      </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={true}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.formContainer}>
-          <Text style={styles.welcomeText}>{t('firstLoad.choosePlan')}</Text>
-
-          {/* Restore Purchases - iOS only */}
-          {Platform.OS === 'ios' && (
-            <TouchableOpacity
-              style={styles.restorePurchasesButton}
-              onPress={handleRestorePurchases}
-              disabled={isRestoringPurchases}
-            >
-              <Text style={styles.restorePurchasesText}>
-                {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {trialAvailable && (
-            <TouchableOpacity
+        {/* Trial Banner */}
+        {trialAvailable && (
+          <View style={styles.trialBannerWrapper}>
+            <GradientView
+              colors={['rgb(226, 208, 95)', '#FFFFFF']}
+              start={{ x: 0, y: 1.3 }}
+              end={{ x: 0.2, y: 0 }}
               style={styles.trialBanner}
-              onPress={handleFreeTrialClick}
+              fallbackColor="#FFFFFF"
             >
               <Text style={styles.trialBannerText}>
-                🎉 {trialDays}-Day Free Trial Available!
+                {trialDays}-Day <Text style={styles.trialBannerBold}>FREE</Text> Trial Available!
               </Text>
-            </TouchableOpacity>
-          )}
-
-          <View style={styles.planContainer}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.planButton]}
-              onPress={() => handleSelectPlan('starter')}
-            >
-              <Text style={[styles.selectionButtonText, styles.planButtonText]}>
-                {t('firstLoad.starter')}
-              </Text>
-              <Text style={styles.planPrice}>Free</Text>
-            </TouchableOpacity>
-            <Text style={styles.planSubtext}>{t('firstLoad.starterDesc')}</Text>
+            </GradientView>
           </View>
+        )}
 
-          <View style={styles.planContainer}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.planButton]}
-              onPress={() => handleSelectPlan('pro')}
-            >
-              <Text style={[styles.selectionButtonText, styles.planButtonText]}>
-                {t('firstLoad.pro')}
-              </Text>
-              <Text style={styles.planPrice}>$8.99/month</Text>
-            </TouchableOpacity>
-            <Text style={styles.planSubtext}>{t('firstLoad.proDesc')}</Text>
-          </View>
-
-          <View style={styles.planContainer}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.planButton]}
-              onPress={() => handleSelectPlan('business')}
-            >
-              <Text style={[styles.selectionButtonText, styles.planButtonText]}>
-                {t('firstLoad.business')}
-              </Text>
-              <Text style={styles.planPrice}>$24.99/month</Text>
-            </TouchableOpacity>
-            <Text style={styles.planSubtext}>
-              For small teams up to 5 members. $5.99 per additional team member
+        {/* Starter Plan Card */}
+        <TouchableOpacity
+          style={[styles.planCardWrapper, userPlan === 'starter' && styles.planCardWrapperSelected]}
+          onPress={() => handleSelectPlan('starter')}
+          activeOpacity={0.8}
+        >
+          <GradientView
+            colors={['rgb(226, 208, 95)', '#FFFFFF']}
+            start={{ x: 0, y: 1.9 }}
+            end={{ x: 0.2, y: 0.2 }}
+            style={styles.planCard}
+            fallbackColor="#FFFFFF"
+          >
+            <View style={styles.planCardHeader}>
+              <Text style={styles.planCardTitle}>{t('firstLoad.starter', { defaultValue: 'Starter' })}</Text>
+              <View style={styles.priceContainer}>
+                <GradientView
+                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.priceBadgeGradient}
+                  fallbackColor="rgba(11, 131, 33, 0.14)"
+                />
+                <Text style={styles.priceText}>FREE</Text>
+              </View>
+            </View>
+            <Text style={styles.planCardDescription}>
+             Free forever. Easily manage your first project and {'\n'}create stunning before/after photos ready for {'\n'}social sharing.
             </Text>
-          </View>
+          </GradientView>
+        </TouchableOpacity>
 
-          <View style={styles.planContainer}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.planButton]}
-              onPress={() => handleSelectPlan('enterprise')}
-            >
-              <Text style={[styles.selectionButtonText, styles.planButtonText]}>
-                {t('firstLoad.enterprise')}
-              </Text>
-              <Text style={styles.planPrice}>Starts at $69.99/month</Text>
-            </TouchableOpacity>
-            <Text style={styles.planSubtext}>
-              For growing organisations with 15 team members and more
+        {/* Pro Plan Card */}
+        <TouchableOpacity
+          style={[styles.planCardWrapper, userPlan === 'pro' && styles.planCardWrapperSelected]}
+          onPress={() => handleSelectPlan('pro')}
+          activeOpacity={0.8}
+        >
+          <GradientView
+            colors={['rgb(226, 208, 95)', '#FFFFFF']}
+            start={{ x: 0, y: 1.9 }}
+            end={{ x: 0.2, y: 0.2 }}
+            style={styles.planCard}
+            fallbackColor="#FFFFFF"
+          >
+            <View style={styles.planCardHeader}>
+              <Text style={styles.planCardTitle}>{t('firstLoad.pro', { defaultValue: 'Pro' })}</Text>
+              <View style={styles.priceContainer}>
+                <GradientView
+                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.priceBadgeGradient}
+                  fallbackColor="rgba(11, 131, 33, 0.14)"
+                />
+                <Text style={styles.priceText}>$8.99/month</Text>
+              </View>
+            </View>
+            <Text style={styles.planCardDescription}>
+            Everything in Starter &{'\n'}
+            For professionals. Cloud sync + bulk upload.
             </Text>
-          </View>
+            <View style={styles.recommendedBadge}>
+              <Text style={styles.recommendedIcon}>👍</Text>
+              <Text style={styles.recommendedText}>Recommended</Text>
+            </View>
+          </GradientView>
+        </TouchableOpacity>
 
-          {/* Terms and Privacy Policy Links */}
-          <View style={styles.legalLinksContainer}>
-            <TouchableOpacity
-              onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
-              style={styles.legalLinkButton}
-            >
-              <Text style={styles.legalLinkText}>
-                {t('settings.termsOfUse', { defaultValue: 'Terms of Use (EULA)' })}
-              </Text>
-            </TouchableOpacity>
+        {/* Business Plan Card */}
+        <TouchableOpacity
+          style={[styles.planCardWrapper, userPlan === 'business' && styles.planCardWrapperSelected]}
+          onPress={() => handleSelectPlan('business')}
+          activeOpacity={0.8}
+        >
+          <GradientView
+             colors={['rgb(226, 208, 95)', '#FFFFFF']}
+             start={{ x: 0, y: 1.9 }}
+             end={{ x: 0.2, y: 0.2 }}
+            style={styles.planCard}
+            fallbackColor="#FFFFFF"
+          >
+            <View style={styles.planCardHeader}>
+              <Text style={styles.planCardTitle}>{t('firstLoad.business', { defaultValue: 'Business' })}</Text>
+              <View style={styles.priceContainer}>
+                <GradientView
+                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.priceBadgeGradient}
+                  fallbackColor="rgba(11, 131, 33, 0.14)"
+                />
+                <Text style={styles.priceText}>$24.99/month</Text>
+              </View>
+            </View>
+            <Text style={styles.planCardDescription}>
+              Everything in Pro &{'\n'}For small teams up to 5 members. $5.99 per {'\n'}additional team member.
+            </Text>
+          </GradientView>
+        </TouchableOpacity>
 
-            <Text style={styles.legalLinkSeparator}>•</Text>
+        {/* Enterprise Plan Card */}
+        <TouchableOpacity
+          style={[styles.planCardWrapper, userPlan === 'enterprise' && styles.planCardWrapperSelected]}
+          onPress={() => handleSelectPlan('enterprise')}
+          activeOpacity={0.8}
+        >
+          <GradientView
+            colors={['rgb(226, 208, 95)', '#FFFFFF']}
+            start={{ x: 0, y: 1.9 }}
+            end={{ x: 0.2, y: 0.2 }}
+            style={styles.planCard}
+            fallbackColor="#FFFFFF"
+          >
+            <View style={styles.planCardHeader}>
+              <Text style={styles.planCardTitle}>{t('firstLoad.enterprise', { defaultValue: 'Enterprise' })}</Text>
+              <View style={[styles.priceContainer, styles.priceContainerWide]}>
+                <GradientView
+                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.priceBadgeGradientWide}
+                  fallbackColor="rgba(11, 131, 33, 0.14)"
+                />
+                <Text style={styles.priceText}>Starts at $69.99/month</Text>
+              </View>
+            </View>
+            <Text style={styles.planCardDescription}>
+              Everything in Business &{'\n'}For growing organizations with 15 team members and more
+            </Text>
+          </GradientView>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => Linking.openURL('https://sayapingeorge.wixsite.com/geos/privacy-policy')}
-              style={styles.legalLinkButton}
-            >
-              <Text style={styles.legalLinkText}>
-                {t('settings.privacyPolicy', { defaultValue: 'Privacy Policy' })}
-              </Text>
-            </TouchableOpacity>
-          </View>
+        {/* Restore Purchases */}
+        <TouchableOpacity
+          style={styles.restorePurchasesButton}
+          onPress={handleRestorePurchases}
+          disabled={isRestoringPurchases}
+        >
+          <Ionicons name="refresh-outline" size={24} color="#000000" style={styles.restoreIcon} />
+          <Text style={styles.restorePurchasesText}>
+            {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchase' })}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Terms and Privacy Policy Links */}
+        <View style={styles.legalLinksContainer}>
+          <TouchableOpacity
+            onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
+            style={styles.legalLinkButton}
+          >
+            <Text style={styles.legalLinkText}>
+              {t('settings.termsOfUse', { defaultValue: 'Terms of Use (EULA)' })}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.legalLinkDot} />
+
+          <TouchableOpacity
+            onPress={() => Linking.openURL('https://sayapingeorge.wixsite.com/geos/privacy-policy')}
+            style={styles.legalLinkButton}
+          >
+            <Text style={styles.legalLinkText}>
+              {t('settings.privacyPolicy', { defaultValue: 'Privacy Policy' })}
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -615,13 +571,67 @@ ${results.error ? `Error: ${results.error}` : ''}
         onClose={() => setShowEnterpriseModal(false)}
       />
 
-      {/* Trial Confirmation Modal */}
-      <TrialConfirmationModal
+      {/* Trial Confirmation Modal - Inline */}
+      <Modal
         visible={showTrialConfirmation}
-        planName={selectedPlanForTrial ? selectedPlanForTrial.charAt(0).toUpperCase() + selectedPlanForTrial.slice(1) : ''}
-        onUseTrial={handleUseTrial}
-        onCancel={handleCancelTrial}
-      />
+        transparent={true}
+        animationType="slide"
+        onRequestClose={handleCancelTrial}
+      >
+        <View style={styles.trialModalOverlay}>
+          <TouchableOpacity 
+            style={styles.trialModalOverlayTouchable} 
+            activeOpacity={1} 
+            onPress={handleCancelTrial}
+          />
+          
+          <View style={styles.trialModalContainer}>
+            {/* Grabber Handle */}
+            <View style={styles.trialModalGrabberContainer}>
+              <View style={styles.trialModalGrabber} />
+            </View>
+
+            {/* Header with Close Button and Title */}
+            <View style={styles.trialModalHeader}>
+              <TouchableOpacity
+                style={styles.trialModalCloseButton}
+                onPress={handleCancelTrial}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={20} color="#999999" />
+              </TouchableOpacity>
+              <Text style={styles.trialModalTitle}>START FREE TRIAL</Text>
+              <View style={styles.trialModalHeaderSpacer} />
+            </View>
+
+            {/* Body Content */}
+            <View style={styles.trialModalBody}>
+              <Text style={styles.trialModalBodyText}>
+                You're eligible for a {trialDays}-days free trial of {selectedPlanForTrial ? selectedPlanForTrial.toLowerCase() : 'business'} features. Would you like to start your free trial now?
+              </Text>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.trialModalButtonsContainer}>
+              <TouchableOpacity
+                style={styles.trialModalSkipButton}
+                onPress={handleCancelTrial}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.trialModalSkipButtonText}>Skip</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.trialModalStartButton}
+                onPress={handleUseTrial}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.trialModalStartButtonText}>Start</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Trial Notification Modal */}
       <TrialNotificationModal
@@ -632,7 +642,6 @@ ${results.error ? `Error: ${results.error}` : ''}
         onRefer={handleTrialRefer}
         onCTA={(notification) => {
           handleTrialModalClose();
-          // Determine which section to scroll to based on notification key
           let scrollParam = {};
           if (notification?.key === 'day7_10') {
             scrollParam = { scrollToWatermark: true };
@@ -641,161 +650,353 @@ ${results.error ? `Error: ${results.error}` : ''}
           } else if (notification?.key === 'day22_24') {
             scrollParam = { scrollToAccountData: true };
           }
-          navigation.navigate('Settings', scrollParam);
+          navigation.reset({ index: 0, routes: [{ name: 'Settings', params: scrollParam }] });
         }}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.PRIMARY,
+    backgroundColor: '#F2C31B',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
   },
   backButton: {
-    position: 'absolute',
-    zIndex: 10,
-    padding: 10,
+    width: 36,
+    height: 36,
   },
-  backButtonText: {
-    color: COLORS.TEXT,
-    fontSize: 24,
+  backButtonInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 23,
     fontWeight: 'bold',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    letterSpacing: -0.2,
+    flex: 1,
+    textAlign: 'center',
+    textTransform: 'sentence-case',
+  },
+  headerSpacer: {
+    width: 36,
+  },
+  selectButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(118, 118, 128, 0.12)',
+    borderRadius: 1000,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectButtonText: {
+    fontSize: 15,
+    fontWeight: 'normal',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    letterSpacing: -0.23,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingTop: 60,
+    paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  formContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  welcomeText: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: COLORS.TEXT,
-    textAlign: 'center',
-    marginBottom: 10,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  planContainer: {
-    marginBottom: 20,
-    width: '100%',
-  },
-  selectionButton: {
-    backgroundColor: COLORS.PRIMARY,
-    borderWidth: 2,
-    borderColor: COLORS.PRIMARY,
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    alignItems: 'center',
-    elevation: 2,
+  trialBannerWrapper: {
+    marginBottom: 14,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: '#000000',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  selectionButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000000',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  planButton: {
-    backgroundColor: '#fff',
-    borderColor: '#ddd',
-  },
-  planButtonText: {
-    color: '#333',
-  },
-  planPrice: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4CAF50',
-    marginTop: 4,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  planSubtext: {
-    fontSize: 14,
-    color: '#333',
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 10,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.11,
+    shadowRadius: 8.2,
+    elevation: 4,
+    overflow: 'hidden',
   },
   trialBanner: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    minHeight: 50,
   },
   trialBannerText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: '#000000',
+    fontSize: 13,
     fontWeight: 'bold',
     textAlign: 'center',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: 'Alexandria_400Regular',
   },
-  trialBadge: {
+  trialBannerBold: {
+    fontWeight: '900',
+  },
+  planCardWrapper: {
+    marginBottom: 14,
+    borderRadius: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.11,
+    shadowRadius: 8.2,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  planCardWrapperSelected: {
+    borderWidth: 2.5,
+    borderColor: '#F2C31B',
+  },
+  planCard: {
+    borderRadius: 25,
+    paddingHorizontal: 22,
+    paddingTop: 15,
+    paddingBottom: 20,
+  },
+  planCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  planCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    fontStyle: 'semibold',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    lineHeight: 20,
+  },
+  priceContainer: {
+    position: 'relative',
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingRight: 8,
+  },
+  priceContainerWide: {
+    width: 173,
+  },
+  priceBadgeGradient: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: 112,
+    height: 24,
+    borderRadius: 100,
+    opacity: 0.14,
+  },
+  priceBadgeGradientWide: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: 173,
+    height: 24,
+    borderRadius: 100,
+    opacity: 0.14,
+  },
+  priceText: {
     fontSize: 14,
-    color: '#4CAF50',
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#0B8321',
+    lineHeight: 17,
+    textAlign: 'right',
+  },
+  planCardDescription: {
+    fontSize: 12,
     fontWeight: '600',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    lineHeight: 18,
+  },
+  recommendedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 7,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  recommendedIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  recommendedText: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    lineHeight: 15,
   },
   restorePurchasesButton: {
-    marginTop: 2,
-    marginBottom: 15,
-    paddingVertical: 8,
-    paddingHorizontal: 20,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 16,
+    marginTop: 12,
+  },
+  restoreIcon: {
+    marginRight: 6,
   },
   restorePurchasesText: {
-    fontSize: 13,
-    color: '#666',
-    textAlign: 'center',
-    textDecorationLine: 'underline',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontSize: 14,
+    fontWeight: '400',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    lineHeight: 17,
   },
   legalLinksContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 15,
-    marginBottom: 20,
-    paddingHorizontal: 20,
-    flexWrap: 'wrap',
+    marginTop: 20,
+    gap: 7,
+    bottom: 3,
+    display: 'absolute',
   },
   legalLinkButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingVertical: 4,
   },
   legalLinkText: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
+    fontSize: 10,
+    fontWeight: '400',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
     textDecorationLine: 'underline',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    lineHeight: 12,
   },
-  legalLinkSeparator: {
-    fontSize: 12,
-    color: '#666',
-    marginHorizontal: 8,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+  legalLinkDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#000000',
+  },
+  // Trial Confirmation Modal Styles
+  trialModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.34)',
+    justifyContent: 'flex-end',
+  },
+  trialModalOverlayTouchable: {
+    flex: 1,
+  },
+  trialModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 38,
+    borderTopRightRadius: 38,
+    paddingBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -15 },
+    shadowOpacity: 0.18,
+    shadowRadius: 75,
+    elevation: 20,
+  },
+  trialModalGrabberContainer: {
+    alignItems: 'center',
+    paddingTop: 5,
+  },
+  trialModalGrabber: {
+    width: 36,
+    height: 5,
+    backgroundColor: '#CCCCCC',
+    borderRadius: 100,
+  },
+  trialModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    height: 44,
+    marginTop: 5,
+  },
+  trialModalCloseButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 296,
+    backgroundColor: 'rgba(120, 120, 128, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trialModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#333333',
+    textAlign: 'center',
+    letterSpacing: -0.43,
+    flex: 1,
+  },
+  trialModalHeaderSpacer: {
+    width: 44,
+  },
+  trialModalBody: {
+    paddingHorizontal: 36,
+    paddingTop: 20,
+    paddingBottom: 30,
+  },
+  trialModalBodyText: {
+    fontSize: 15,
+    fontWeight: 'normal',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textAlign: 'center',
+    lineHeight: 22,
+    letterSpacing: -0.43,
+  },
+  trialModalButtonsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 23,
+    gap: 9,
+  },
+  trialModalSkipButton: {
+    flex: 1,
+    height: 54,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trialModalSkipButtonText: {
+    fontSize: 18,
+    fontWeight: 'normal',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textAlign: 'center',
+  },
+  trialModalStartButton: {
+    flex: 1,
+    height: 54,
+    borderRadius: 100,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trialModalStartButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
 });

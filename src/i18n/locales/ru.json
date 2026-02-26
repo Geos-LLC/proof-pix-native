@@ -644,7 +644,7 @@
     "statFriendsJoined": "Друзья присоединились",
     "statMonthsEarned": "Заработано месяцев",
     "shareIntroTitle": "Реферал ProofPix",
-    "shareIntroMessage": "Присоединяйтесь к ProofPix и организуйте себя!\\n\\n📱 Скачайте ProofPix:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\nПосле установки используйте мой реферальный код для начала!",
+    "shareIntroMessage": "Присоединяйтесь к ProofPix и организуйте себя!\n\n📱 Скачайте ProofPix:\niOS: {{iosLink}}\nAndroid: {{androidLink}}\n\nПосле установки используйте мой реферальный код для начала!",
     "shareCodePromptTitle": "Поделиться реферальным кодом?",
     "shareCodePromptMessage": "Теперь поделитесь своим реферальным кодом как отдельным сообщением, чтобы они могли легко скопировать его.",
     "shareErrorMessage": "Не удалось поделиться реферальной ссылкой. Пожалуйста, попробуйте снова.",

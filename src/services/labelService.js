@@ -6,15 +6,19 @@
 
 import { Image, PixelRatio, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import backgroundLabelPreparationService from './backgroundLabelPreparationService';
 import { getCachedLabeledPhoto, calculateSettingsHash } from './labelCacheService';
 
 /**
  * Ensure a photo has its label applied (either from cache or prepare it)
  * @param {Object} photo - Photo object with id, uri, type/mode
+ * @param {Object} [opts] - Optional pre-computed values to skip redundant reads
+ * @param {string} [opts.settingsHash] - Pre-computed settings hash (skips AsyncStorage read)
+ * @param {boolean} [opts.skipCacheCheck] - Skip cache check (already done by caller)
  * @returns {Promise<string>} - URI of labeled photo (or original if labeling disabled/failed)
  */
-export async function ensureLabelForPhoto(photo) {
+export async function ensureLabelForPhoto(photo, opts = {}) {
   // Only apply to before/after photos (combined/mix usually handled elsewhere or don't need standard labels)
   // Check both type and mode to be safe
   const effectiveType = photo.type || photo.mode;
@@ -22,46 +26,47 @@ export async function ensureLabelForPhoto(photo) {
     return photo.uri;
   }
 
-  try {
-    // First, check if labels are already cached from background preparation
-    // Settings are stored under 'app-settings' key (from SettingsContext)
-    const settingsJson = await AsyncStorage.getItem('app-settings');
-    const settings = settingsJson ? JSON.parse(settingsJson) : {};
+  let settingsHash = opts.settingsHash || null;
 
-    // If labels are disabled, return original (default to true if not set)
-    if (settings.showLabels === false) {
-      console.log(`[LABEL] Labels disabled in settings, using original URI for ${photo.id}`);
-      return photo.uri;
+  if (!opts.skipCacheCheck) {
+    try {
+      // First, check if labels are already cached from background preparation
+      const settingsJson = await AsyncStorage.getItem('app-settings');
+      const settings = settingsJson ? JSON.parse(settingsJson) : {};
+
+      // If labels are disabled, return original (default to true if not set)
+      if (settings.showLabels === false) {
+        console.log(`[LABEL] Labels disabled in settings, using original URI for ${photo.id}`);
+        return photo.uri;
+      }
+
+      if (!settingsHash) {
+        settingsHash = calculateSettingsHash(settings);
+      }
+      const photoWithMode = { ...photo, mode: effectiveType };
+
+      // Check cache first - this is where background-prepared labels are stored
+      const cachedUri = await getCachedLabeledPhoto(photoWithMode, settingsHash);
+      if (cachedUri) {
+        console.log(`[LABEL] ✅ Using cached labeled photo for ${photo.id}: ${cachedUri.substring(0, 50)}...`);
+        return cachedUri;
+      }
+
+      console.log(`[LABEL] ⚠️ No cached label found for ${photo.id}, queueing preparation...`);
+    } catch (error) {
+      console.warn('[LABEL] Error checking label cache:', error);
     }
-
-    console.log(`[LABEL] 🏷️ Labels enabled, checking cache for ${photo.id}...`);
-    const settingsHash = calculateSettingsHash(settings);
-    const photoWithMode = { ...photo, mode: effectiveType };
-
-    // Check cache first - this is where background-prepared labels are stored
-    const cachedUri = await getCachedLabeledPhoto(photoWithMode, settingsHash);
-    if (cachedUri) {
-      console.log(`[LABEL] ✅ Using cached labeled photo for ${photo.id}: ${cachedUri.substring(0, 50)}...`);
-      return cachedUri;
-    }
-
-    console.log(`[LABEL] ⚠️ No cached label found for ${photo.id}, queueing preparation...`);
-  } catch (error) {
-    console.warn('[LABEL] Error checking label cache:', error);
   }
 
   // If not cached, queue for preparation (fallback)
   return new Promise((resolve) => {
     // Timeout safety: if labeling takes too long (e.g. service not running), proceed with original
     const timeoutId = setTimeout(() => {
-      console.warn(`[LABEL] Label preparation timed out for ${photo.id}, using original URI`);
+      console.warn(`[LABEL] ⚠️ Label preparation timed out for ${photo.id}, using original URI`);
       resolve(photo.uri);
-    }, 30000); // 30 seconds timeout for large images
+    }, 30000); // 30 seconds - combined photos need composite + 2 label operations
 
     // Get image dimensions required for labeling service
-    console.log(`[LABEL] 🔍 BEFORE Image.getSize - photo.uri:`, photo.uri);
-    console.log(`[LABEL] 🔍 BEFORE Image.getSize - effectiveType:`, effectiveType);
-    console.log(`[LABEL] 🔍 BEFORE Image.getSize - format:`, photo.format);
     Image.getSize(
       photo.uri,
       async (width, height) => {
@@ -73,60 +78,36 @@ export async function ensureLabelForPhoto(photo) {
         const actualHeight = Math.round(height * pixelRatio);
 
         console.log(`[LABEL] 📐 Image dimensions for ${photo.id || photo.filename}:`, {
-          dpWidth: width,
-          dpHeight: height,
-          pixelRatio,
           actualWidth,
           actualHeight,
-          uri: photo.uri?.substring(0, 60) + '...',
           type: effectiveType,
-          format: photo.format,
-          isStack: actualHeight > actualWidth,
-        });
-        console.log(`[LABEL] 🔍 DIMENSION CHECK:`, {
-          dpWidth: width,
-          dpHeight: height,
-          actualWidth,
-          actualHeight,
-          halfWidth: Math.round(actualWidth / 2),
-          halfHeight: Math.round(actualHeight / 2),
-          isCombined: effectiveType === 'combined' || effectiveType === 'mix',
-          isOriginalFormat: photo.format?.includes('original'),
         });
 
-        // Get settings hash for cache key
-        let prepSettingsHash;
-        try {
-          const prepSettingsJson = await AsyncStorage.getItem('app-settings');
-          const prepSettings = prepSettingsJson ? JSON.parse(prepSettingsJson) : {};
-          prepSettingsHash = calculateSettingsHash(prepSettings);
-        } catch (e) {
-          console.warn('[LABEL] Failed to get settings hash for preparation:', e);
+        // Use pre-computed hash or compute once
+        let prepSettingsHash = settingsHash;
+        if (!prepSettingsHash) {
+          try {
+            const prepSettingsJson = await AsyncStorage.getItem('app-settings');
+            const prepSettings = prepSettingsJson ? JSON.parse(prepSettingsJson) : {};
+            prepSettingsHash = calculateSettingsHash(prepSettings);
+          } catch (e) {
+            console.warn('[LABEL] Failed to get settings hash for preparation:', e);
+          }
         }
 
-        console.log(`[LABEL] 📋 Queueing preparation for ${effectiveType} photo:`, {
-          photoId: photo.id || `temp_${Date.now()}`,
-          mode: effectiveType,
-          format: photo.format,
-          actualWidth,
-          actualHeight,
-          halfHeight: Math.round(actualHeight / 2),
-          halfWidth: Math.round(actualWidth / 2),
-        });
+        console.log(`[LABEL] 📋 Queueing preparation for ${effectiveType} photo ${photo.id}`);
 
         // Queue the preparation with ACTUAL PIXEL dimensions (converted from dp on Android)
         backgroundLabelPreparationService.queuePreparation({
           photo: {
             ...photo,
-            // Ensure essential properties are present
             id: photo.id || `temp_${Date.now()}`,
             uri: photo.uri,
-            mode: effectiveType // Map 'type' to 'mode' for the service
+            mode: effectiveType
           },
-          width: actualWidth,  // Actual pixels (dp * pixelRatio on Android)
-          height: actualHeight, // Actual pixels (dp * pixelRatio on Android)
+          width: actualWidth,
+          height: actualHeight,
           settingsHash: prepSettingsHash,
-          // If labels are disabled in settings, the service resolves with original URI immediately
           resolve: (labeledUri) => {
             clearTimeout(timeoutId);
             resolve(labeledUri);
@@ -134,7 +115,7 @@ export async function ensureLabelForPhoto(photo) {
           reject: (error) => {
             clearTimeout(timeoutId);
             console.warn('[LABEL] Label preparation failed in service, using original:', error);
-            resolve(photo.uri); // Fallback to original on error
+            resolve(photo.uri);
           }
         });
       },
@@ -145,4 +126,102 @@ export async function ensureLabelForPhoto(photo) {
       }
     );
   });
+}
+
+/**
+ * Batch-optimized label check for multiple photos.
+ * Reads settings and cache metadata ONCE, then checks all photos against shared data.
+ * Falls back to ensureLabelForPhoto() for any photo not found in cache.
+ * @param {Array} photos - Array of photo objects with id, uri, type/mode
+ * @param {Object} [opts] - Options
+ * @param {Function} [opts.onProgress] - Progress callback (completed, total)
+ * @returns {Promise<Array>} - Array of { photo, labeledUri } objects
+ */
+export async function ensureLabelsForPhotoBatch(photos, opts = {}) {
+  // Read settings ONCE
+  let settings = {};
+  let settingsHash = null;
+  let labelsEnabled = true;
+
+  try {
+    const settingsJson = await AsyncStorage.getItem('app-settings');
+    settings = settingsJson ? JSON.parse(settingsJson) : {};
+    labelsEnabled = settings.showLabels !== false;
+    if (labelsEnabled) {
+      settingsHash = calculateSettingsHash(settings);
+    }
+  } catch (e) {
+    console.warn('[LABEL_BATCH] Error reading settings:', e);
+  }
+
+  // If labels disabled, return all originals immediately
+  if (!labelsEnabled) {
+    console.log('[LABEL_BATCH] Labels disabled, returning all originals');
+    return photos.map(p => ({ photo: p, labeledUri: p.uri }));
+  }
+
+  // Read cache metadata ONCE
+  let cacheMetadata = {};
+  try {
+    const stored = await AsyncStorage.getItem('label-cache-metadata');
+    cacheMetadata = stored ? JSON.parse(stored) : {};
+  } catch (e) {
+    console.warn('[LABEL_BATCH] Error reading cache metadata:', e);
+  }
+
+  // Check all photos against cache in parallel (only file existence checks, no AsyncStorage)
+  const { onProgress } = opts;
+  let completed = 0;
+  const total = photos.length;
+
+  const results = await Promise.all(photos.map(async (photo) => {
+    const effectiveType = photo.type || photo.mode;
+    if (effectiveType !== 'before' && effectiveType !== 'after' && effectiveType !== 'combined' && effectiveType !== 'mix') {
+      completed++;
+      if (onProgress) onProgress(completed, total);
+      return { photo, labeledUri: photo.uri };
+    }
+
+    const cacheKey = `${photo.id}_${effectiveType}`;
+    const cached = cacheMetadata[cacheKey];
+
+    if (cached && cached.settingsHash === settingsHash) {
+      // Quick file existence check (no AsyncStorage needed)
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(cached.uri);
+        if (fileInfo.exists) {
+          completed++;
+          if (onProgress) onProgress(completed, total);
+          return { photo, labeledUri: cached.uri };
+        }
+      } catch (e) {
+        // File check failed, fall through
+      }
+    }
+
+    // Not in cache or file missing — prepare label with timeout.
+    // UI shows "Preparing labels X/Y" progress, so user knows it's working.
+    // 30s per photo allows time for combined photos (composite + 2 labels).
+    // Pass pre-computed settingsHash and skip cache check (already done above).
+    try {
+      const photoWithType = { ...photo, type: effectiveType };
+      const labeledUri = await Promise.race([
+        ensureLabelForPhoto(photoWithType, { settingsHash, skipCacheCheck: true }),
+        new Promise((resolve) => setTimeout(() => {
+          console.warn(`[LABEL_BATCH] ⚠️ Timeout for ${photo.id} (mode: ${effectiveType}), using original URI`);
+          resolve(photo.uri);
+        }, 30000))
+      ]);
+      completed++;
+      if (onProgress) onProgress(completed, total);
+      return { photo, labeledUri };
+    } catch (e) {
+      console.warn(`[LABEL_BATCH] Failed for ${photo.id}:`, e.message);
+      completed++;
+      if (onProgress) onProgress(completed, total);
+      return { photo, labeledUri: photo.uri };
+    }
+  }));
+
+  return results;
 }

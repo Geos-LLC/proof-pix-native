@@ -4,8 +4,9 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated
+  Animated,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 
 const UploadIndicatorLine = ({ uploadStatus, onPress }) => {
@@ -14,167 +15,108 @@ const UploadIndicatorLine = ({ uploadStatus, onPress }) => {
   const hasQueuedUploads = queueLength > 0;
   const showIndicator = hasActiveUploads || hasQueuedUploads;
 
-  const animatedValue = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(0)).current;
 
-  const getProgressWidth = () => {
-    if (hasActiveUploads) {
-      const upload = activeUploads[0];
-      const { current, total } = upload.progress;
-      const width = total > 0 ? (current / total) * 100 : 0;
-      // 
-      return width;
-    }
-    // 
-    return 0;
+  const getPhase = () => {
+    if (!hasActiveUploads) return null;
+    const upload = activeUploads[0];
+    const lp = upload.labelProgress;
+    const isLabeling = lp && lp.total > 0 && lp.current < lp.total;
+    const isUploading = upload.progress && upload.progress.total > 0;
+    if (isLabeling && !isUploading) return 'labeling';
+    return 'uploading';
   };
 
-  // Debug logging
-  // useEffect(() => {
-  //   const progressWidth = getProgressWidth();
-  //   
-  // }, [hasActiveUploads, activeUploads, uploadStatus]);
+  const getProgressPercent = () => {
+    if (!hasActiveUploads) return 0;
+    const upload = activeUploads[0];
+    const phase = getPhase();
+    if (phase === 'labeling') {
+      const { current, total } = upload.labelProgress;
+      return total > 0 ? (current / total) * 100 : 0;
+    }
+    const { current, total } = upload.progress;
+    return total > 0 ? (current / total) * 100 : 0;
+  };
 
   useEffect(() => {
     if (showIndicator) {
-      // Start pulsing animation
-      const pulseAnimation = Animated.loop(
+      const animation = Animated.loop(
         Animated.sequence([
-          Animated.timing(animatedValue, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(animatedValue, {
-            toValue: 0,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 0, duration: 800, useNativeDriver: true }),
         ])
       );
-      pulseAnimation.start();
-
-      return () => pulseAnimation.stop();
+      animation.start();
+      return () => animation.stop();
     } else {
-      animatedValue.setValue(0);
+      pulseAnim.setValue(0);
     }
-  }, [showIndicator, animatedValue]);
+  }, [showIndicator, pulseAnim]);
 
-  if (!showIndicator) {
-    // 
-    return null;
-  }
+  if (!showIndicator) return null;
 
-  const getIndicatorColor = () => {
-    if (hasActiveUploads) {
-      return COLORS.PRIMARY; // Default yellow color
-    } else if (hasQueuedUploads) {
-      return COLORS.PRIMARY; // Default yellow color
-    }
-    return COLORS.PRIMARY;
-  };
+  const phase = getPhase();
+  const isLabeling = phase === 'labeling';
+  const accentColor = isLabeling ? '#FF9500' : COLORS.PRIMARY;
+  const progressPercent = getProgressPercent();
 
-  const getPhotoCountText = () => {
+  const getStatusText = () => {
     if (hasActiveUploads) {
       const upload = activeUploads[0];
+      if (isLabeling) {
+        const { current, total } = upload.labelProgress;
+        return `Preparing  ${current} / ${total}`;
+      }
       const { current, total } = upload.progress;
-      const text = `${current}/${total}`; // Shorter text
-      // 
-      return text;
-    } else if (hasQueuedUploads) {
-      const text = `${queueLength} queued`; // Shorter text
-      // 
-      return text;
+      return `Uploading  ${current} / ${total}`;
     }
-    // 
+    if (hasQueuedUploads) return `${queueLength} queued`;
     return '';
   };
 
-  const getTotalPhotos = () => {
-    if (hasActiveUploads) {
-      const upload = activeUploads[0];
-      return upload.items.length;
-    } else if (hasQueuedUploads) {
-      return queueLength;
-    }
-    return 0;
-  };
-
-  const opacity = animatedValue.interpolate({
+  const iconOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.6, 1],
+    outputRange: [0.5, 1],
   });
 
-  // ,
-  //   progressWidth: getProgressWidth(),
-  //   showIndicator,
-  //   hasActiveUploads,
-  //   hasQueuedUploads,
-  //   activeUploadsCount: activeUploads.length,
-  //   queueLength,
-  //   uploadStatusKeys: Object.keys(uploadStatus),
-  //   fullUploadStatus: uploadStatus
-  // });
-
   return (
-    <TouchableOpacity 
-      key={`upload-indicator-${hasActiveUploads ? activeUploads[0]?.id : 'none'}-${hasActiveUploads ? activeUploads[0]?.progress?.current : 0}`}
+    <TouchableOpacity
       style={styles.container}
-      onPress={() => {
-        // 
-        onPress && onPress();
-      }}
-      activeOpacity={0.7}
+      onPress={() => onPress && onPress()}
+      activeOpacity={0.8}
     >
-      <View 
-        style={styles.indicatorContainer}
-        onLayout={(event) => {
-          // ,
-          //   hasActiveUploads
-          // });
-        }}
-      >
-        <View 
-          style={[
-            styles.progressLineContainer,
-            { backgroundColor: '#E0E0E0' } // Ensure background is visible
-          ]}
-          onLayout={(event) => {
-            // ,
-            //   widthPercent: `${getProgressWidth()}%`
-            // });
-          }}
-        >
-          {/* Progress fill */}
-          {hasActiveUploads && (
-            <View 
-              key={`progress-fill-${activeUploads[0]?.progress?.current}-${activeUploads[0]?.progress?.total}`}
-              style={[
-                styles.progressFill,
-                { 
-                  backgroundColor: '#F2C31B', // Use the primary color directly
-                  height: '100%',
-                  width: `${getProgressWidth()}%`,
-                  minWidth: getProgressWidth() > 0 ? '2px' : '0px' // Ensure minimum visibility
-                }
-              ]} 
-              onLayout={(event) => {
-                // }%`,
-                //   backgroundColor: getIndicatorColor(),
-                //   layout: event.nativeEvent.layout,
-                //   progressWidth: getProgressWidth()
-                // });
-              }}
-            />
-          )}
-          {/* Debug: Show progress width */}
-          {hasActiveUploads && (
-            <Text style={{ position: 'absolute', top: -20, left: 0, fontSize: 10, color: 'red', zIndex: 1000 }}>
-              {getProgressWidth()}%
-            </Text>
-          )}
-        </View>
-        <View style={styles.countContainer}>
-          <Text style={styles.countText}>{getPhotoCountText()}</Text>
+      <View style={styles.content}>
+        {/* Pulsing icon */}
+        <Animated.View style={{ opacity: iconOpacity }}>
+          <Ionicons
+            name={isLabeling ? 'brush-outline' : 'cloud-upload-outline'}
+            size={14}
+            color={accentColor}
+          />
+        </Animated.View>
+
+        {/* Status text */}
+        <Text style={[styles.statusText, { color: '#555' }]}>
+          {getStatusText()}
+        </Text>
+
+        {/* Tap hint */}
+        <Ionicons name="chevron-forward" size={12} color="#BBB" />
+      </View>
+
+      {/* Progress bar track */}
+      <View style={styles.trackContainer}>
+        <View style={styles.track}>
+          <View
+            style={[
+              styles.fill,
+              {
+                width: `${Math.max(progressPercent, 1)}%`,
+                backgroundColor: accentColor,
+              },
+            ]}
+          />
         </View>
       </View>
     </TouchableOpacity>
@@ -183,48 +125,37 @@ const UploadIndicatorLine = ({ uploadStatus, onPress }) => {
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 2,
+    backgroundColor: '#FAFAFA',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E5E5',
+    paddingTop: 6,
+    paddingBottom: 4,
   },
-  indicatorContainer: {
-    height: 20, // Reduced height for smaller text
+  content: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20, // Match project name padding
+    paddingHorizontal: 16,
+    marginBottom: 5,
   },
-  progressLineContainer: {
-    flex: 0.9, // 90% of screen width
-    height: 6, // Increased height for better visibility
-    backgroundColor: '#E0E0E0',
-    borderRadius: 3,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  progressBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 2,
-  },
-  progressFill: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    borderRadius: 3,
-    opacity: 1.0, // Make it fully visible
-  },
-  countContainer: {
-    flex: 0.1, // 10% of screen width (reduced from 20%)
-    alignItems: 'flex-start', // Left align for better readability
-    justifyContent: 'center',
-    paddingLeft: 8,
-  },
-  countText: {
-    color: '#666666', // Gray color
-    fontSize: 13, // 20% smaller than 16px (16 * 0.8 = 12.8, rounded to 13)
+  statusText: {
+    flex: 1,
+    fontSize: 12,
     fontWeight: '600',
+    marginLeft: 8,
+    letterSpacing: 0.2,
+  },
+  trackContainer: {
+    paddingHorizontal: 16,
+  },
+  track: {
+    height: 3,
+    backgroundColor: '#EBEBEB',
+    borderRadius: 1.5,
+    overflow: 'hidden',
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 1.5,
   },
 });
 

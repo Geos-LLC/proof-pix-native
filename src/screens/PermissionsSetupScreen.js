@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     textAlign: 'center',
     marginBottom: 12,
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666666',
     textAlign: 'center',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
+    fontFamily: FONTS.ALEXANDRIA,
     lineHeight: 22,
     paddingHorizontal: 20,
   },
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
   permissionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     marginBottom: 6,
     letterSpacing: -0.3,
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   permissionDescription: {
     fontSize: 14,
     color: '#666666',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
+    fontFamily: FONTS.ALEXANDRIA,
     lineHeight: 20,
   },
   permissionStatus: {
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   enableButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#000000',
   },
   actionsContainer: {
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
   continueButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#000000',
     letterSpacing: 0.5,
   },
@@ -556,7 +556,7 @@ const styles = StyleSheet.create({
   skipButtonText: {
     fontSize: 16,
     color: '#666666',
-    fontFamily: FONTS.QUICKSAND_MEDIUM,
+    fontFamily: FONTS.ALEXANDRIA,
   },
 });
 

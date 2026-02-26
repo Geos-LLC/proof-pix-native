@@ -1,14 +1,44 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, Image, Modal, Dimensions, Clipboard } from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Modal,
+  Dimensions,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
+import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
-import { useTranslation } from 'react-i18next';
 
 const { width, height } = Dimensions.get('window');
 
+// Static map so Metro can bundle all flag assets at build time (same as FirstLoadScreen).
+const FLAG_IMAGES = {
+  en: require('../../assets/flags/usa.png'),
+  es: require('../../assets/flags/spain.png'),
+  fr: require('../../assets/flags/france.png'),
+  de: require('../../assets/flags/germany.png'),
+  ru: require('../../assets/flags/usa.png'),
+  be: require('../../assets/flags/belarus.png'),
+  zh: require('../../assets/flags/china.png'),
+  tl: require('../../assets/flags/philipines.png'),
+  ar: require('../../assets/flags/saudi.png'),
+  ko: require('../../assets/flags/korea.png'),
+};
+
+// Same list as FirstLoadScreen (matches FLAG_IMAGES).
 const LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
   { code: 'es', name: 'Español', flag: '🇪🇸' },
@@ -16,41 +46,37 @@ const LANGUAGES = [
   { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
   { code: 'ru', name: 'Русский', flag: '🇷🇺' },
   { code: 'be', name: 'Беларуская', flag: '🇧🇾' },
-  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
   { code: 'zh', name: '中文', flag: '🇨🇳' },
   { code: 'tl', name: 'Tagalog', flag: '🇵🇭' },
   { code: 'ar', name: 'العربية', flag: '🇸🇦' },
   { code: 'ko', name: '한국어', flag: '🇰🇷' },
-  { code: 'pt', name: 'Português', flag: '🇵🇹' },
-  { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
 ];
+
+const YELLOW = '#F2C31B';
 
 export default function JoinTeamScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const { updateUserInfo, updateLabelLanguage, updateSectionLanguage } = useSettings();
-  // Check if invite code came from deep link or route params
+  const { isAuthenticated } = useAdmin();
+
   const inviteFromParams = route?.params?.invite || '';
   const [inviteCode, setInviteCode] = useState(inviteFromParams);
   const [userName, setUserName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const inviteCodeRef = useRef(null);
-  const { isAuthenticated } = useAdmin();
 
-  // Auto-fill invite code from params or check clipboard
+  // Auto-fill invite code from route params or clipboard
   useEffect(() => {
     const initInviteCode = async () => {
       if (inviteFromParams) {
-        console.log('[JoinTeam] Invite from params:', inviteFromParams);
         setInviteCode(inviteFromParams);
       } else {
-        // Check clipboard for invite code
         try {
-          const clipboardContent = await Clipboard.getString();
+          const clipboardContent = await Clipboard.getStringAsync();
           if (clipboardContent && clipboardContent.includes('|')) {
             const parts = clipboardContent.trim().split('|');
             if (parts.length === 2 && parts[0].length > 10 && parts[1].length > 20) {
-              console.log('[JoinTeam] Invite code found in clipboard');
               setInviteCode(clipboardContent.trim());
             }
           }
@@ -63,7 +89,7 @@ export default function JoinTeamScreen({ navigation, route }) {
   }, [inviteFromParams]);
 
   const getCurrentLanguage = () => {
-    return LANGUAGES.find(lang => lang.code === i18n.language) || LANGUAGES[0];
+    return LANGUAGES.find((lang) => lang.code === i18n.language) || LANGUAGES[0];
   };
 
   const changeLanguage = (languageCode) => {
@@ -90,191 +116,238 @@ export default function JoinTeamScreen({ navigation, route }) {
       return;
     }
 
-    // Parse invite code - format is "TOKEN|SESSIONID" (proxy server format)
-    // Legacy format "TOKEN|SCRIPTURL" is also supported for backward compatibility
     const parts = inviteCode.trim().split('|');
     if (parts.length !== 2) {
       Alert.alert(
         t('joinTeam.invalidCode', { defaultValue: 'Invalid Code' }),
-        t('joinTeam.invalidCodeFormat', { defaultValue: 'This invite code is not in the correct format. Please check with your admin.' })
+        t('joinTeam.invalidCodeFormat', {
+          defaultValue: 'This invite code is not in the correct format. Please check with your admin.',
+        })
       );
       return;
     }
 
     const [token, sessionIdOrUrl] = parts;
-
     if (!token || !sessionIdOrUrl) {
       Alert.alert(
         t('joinTeam.invalidCode', { defaultValue: 'Invalid Code' }),
-        t('joinTeam.incompleteCode', { defaultValue: 'This invite code is incomplete. Please check with your admin.' })
+        t('joinTeam.incompleteCode', {
+          defaultValue: 'This invite code is incomplete. Please check with your admin.',
+        })
       );
       return;
     }
 
-    // Save user name before navigating
-    await updateUserInfo(userName.trim());
-
-    // Proxy server format: token|sessionId
-    navigation.navigate('Invite', {
-      token: token,
-      sessionId: sessionIdOrUrl
-    });
+    setIsLoading(true);
+    try {
+      await updateUserInfo(userName.trim());
+      navigation.navigate('Invite', {
+        token: token,
+        sessionId: sessionIdOrUrl,
+      });
+    } catch (e) {
+      console.log('[JoinTeam] join error', e?.message);
+      Alert.alert(
+        t('joinTeam.error', { defaultValue: 'Error' }),
+        t('joinTeam.joinFailed', { defaultValue: 'Unable to join the team. Please try again.' })
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleUseOnMyOwn = () => {
-    // Pass flag to skip clipboard check - user explicitly chose individual mode
     navigation.replace('FirstLoad', { skipClipboardCheck: true });
-  };
-
-  const handleEditInviteCode = () => {
-    // Focus the input and select all text
-    if (inviteCodeRef.current) {
-      inviteCodeRef.current.focus();
-      // Select all text after a short delay to ensure focus is complete
-      setTimeout(() => {
-        if (inviteCodeRef.current) {
-          inviteCodeRef.current.setSelection(0, inviteCode.length);
-        }
-      }, 100);
-    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeftContent}>
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../../assets/logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </View>
+          <Text style={styles.headerTitle}>ProofPix</Text>
+        </View>
+        
+        <TouchableOpacity
+          style={styles.languageSelector}
+          onPress={() => setLanguageModalVisible(true)}
+        >
+          <Image
+            source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
+            style={styles.languageFlagImage}
+            resizeMode="contain"
+          />
+          <Ionicons name="chevron-down" style={{ padding: 2 }} size={18} color="#200E32" />
+        </TouchableOpacity>
+      </View>
+
       <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('../../assets/PP_logo.png')}
-              style={styles.logo}
+          {/* Team Avatar Icon */}
+          <View style={styles.avatarContainer}>
+          <Image
+              source={require('../../assets/jointeam.png')}
               resizeMode="contain"
+              style={{width: 97, height: 97}}
             />
-            <Text style={styles.appTitle}>ProofPix</Text>
-            <Text style={styles.appSubtitle}>{t('joinTeam.subtitle', { defaultValue: 'Enter the invite code your team admin shared with you' })}</Text>
           </View>
 
-          <View style={styles.formContainer}>
-            <Text style={styles.inputLabel}>{t('firstLoad.yourName', { defaultValue: 'Your Name' })}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder={t('firstLoad.enterYourName', { defaultValue: 'Enter your name' })}
-              placeholderTextColor="#999"
-              value={userName}
-              onChangeText={setUserName}
-              autoCapitalize="words"
-              autoCorrect={false}
-              returnKeyType="done"
-            />
+          {/* Title and Subtitle */}
+          <Text style={styles.mainTitle}>
+            {t('joinTeam.title', { defaultValue: 'Join a Team' })}
+          </Text>
+          <Text style={styles.subtitle}>
+            {t('joinTeam.subtitle', {
+              defaultValue: 'Enter the invite code your team admin shared with you.',
+            })}
+          </Text>
 
-            <TouchableOpacity
-              style={styles.joinButton}
-              onPress={handleJoinTeam}
-              disabled={isLoading}
-            >
-              <Text style={styles.joinButtonText}>
-                {isLoading ? t('joinTeam.joining', { defaultValue: 'Joining...' }) : t('joinTeam.joinTeam', { defaultValue: 'Join Team' })}
+          {/* Invitation Code Input */}
+          <View style={styles.inputContainer}>
+            <View style={styles.inputBox}>
+              <Text style={styles.inputLabel}>
+                {t('joinTeam.invitationCode', { defaultValue: 'Invitation Code' })}
               </Text>
-            </TouchableOpacity>
-
-            <View style={styles.inviteCodeSection}>
-              <TouchableOpacity onPress={handleEditInviteCode} style={styles.inviteCodeIconButton}>
-                <Text style={styles.inviteCodeIcon}>✏️</Text>
-              </TouchableOpacity>
               <TextInput
                 ref={inviteCodeRef}
-                style={styles.inviteCodeInput}
-                placeholder={t('joinTeam.enterInviteCode', { defaultValue: 'Enter invite code' })}
-                placeholderTextColor="#666"
+                style={styles.textInput}
                 value={inviteCode}
                 onChangeText={setInviteCode}
+                placeholder={t('joinTeam.enterInviteCode', { defaultValue: 'Proofpix007' })}
+                placeholderTextColor="#000"
                 autoCapitalize="none"
                 autoCorrect={false}
-                returnKeyType="done"
-                onSubmitEditing={handleJoinTeam}
-                multiline={false}
-                selectTextOnFocus={true}
+                returnKeyType="next"
               />
             </View>
+          </View>
 
-            <TouchableOpacity
-              style={styles.useOnMyOwnButton}
-              onPress={handleUseOnMyOwn}
-            >
-              <Text style={styles.useOnMyOwnText}>
-                {t('joinTeam.useOnMyOwn', { defaultValue: 'Use the app on my own' })}
+          {/* Your Name Input */}
+          <View style={styles.inputContainer}>
+            <View style={styles.inputBox}>
+              <Text style={styles.inputLabel}>
+                {t('firstLoad.yourName', { defaultValue: 'Your Name' })}
               </Text>
-            </TouchableOpacity>
-
-            <View style={styles.languageSection}>
-              <TouchableOpacity
-                style={styles.languageRow}
-                onPress={() => setLanguageModalVisible(true)}
-              >
-                <Text style={styles.languageRowLabel}>
-                  {t('firstLoad.language', { defaultValue: 'Language' })}
-                </Text>
-                <View style={styles.languageValueContainer}>
-                  <Text style={styles.languageRowFlag}>{getCurrentLanguage().flag}</Text>
-                  <Text style={styles.languageRowValue}>
-                    {getCurrentLanguage().name}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              <TextInput
+                style={styles.textInput}
+                value={userName}
+                onChangeText={setUserName}
+                placeholder={'Alex Bond'}
+                placeholderTextColor="#000"
+                autoCapitalize="words"
+                autoCorrect={false}
+                returnKeyType="done"
+              />
             </View>
           </View>
+
+          {/* Join Button */}
+          <TouchableOpacity
+            style={styles.joinButton}
+            onPress={handleJoinTeam}
+            disabled={isLoading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.joinButtonText}>
+              {isLoading
+                ? t('joinTeam.joining', { defaultValue: 'Joining...' })
+                : t('joinTeam.join', { defaultValue: 'Join' })}
+            </Text>
+          </TouchableOpacity>
+
+          {/* OR Separator */}
+          <View style={styles.orContainer}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>OR</Text>
+            <View style={styles.orLine} />
+          </View>
+
+          {/* Join as Individual Link */}
+          <TouchableOpacity
+            style={styles.individualLinkButton}
+            onPress={handleUseOnMyOwn}
+          >
+            <Text style={styles.individualLinkText}>
+              {t('joinTeam.joinIndividual', { defaultValue: 'Join as Individual' })}
+            </Text>
+          </TouchableOpacity>
+
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Language Selection Modal */}
+      {/* Language Selection Modal - Bottom Sheet Style */}
       <Modal
         visible={languageModalVisible}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setLanguageModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{t('firstLoad.selectLanguage', { defaultValue: 'Select Language' })}</Text>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setLanguageModalVisible(false)}
+        >
+          <View style={styles.modalContentBottomSheet}>
+            {/* Handle Bar */}
+            <View style={styles.modalHandle} />
+            
+            {/* Header */}
+            <View style={styles.modalHeaderBottomSheet}>
+              <TouchableOpacity
+                style={styles.modalCloseButtonTop}
+                onPress={() => setLanguageModalVisible(false)}
+              >
+                <Ionicons name="close" size={24} color={COLORS.TEXT} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitleBottomSheet}>
+                {t('firstLoad.changeLanguage', { defaultValue: 'Change Language' })}
+              </Text>
+              <View style={styles.modalCloseButtonTop} />
+            </View>
 
+            {/* Language List */}
             <ScrollView style={styles.languageScrollView} showsVerticalScrollIndicator={true}>
               {LANGUAGES.map((language) => (
                 <TouchableOpacity
                   key={language.code}
-                  style={[
-                    styles.languageOption,
-                    i18n.language === language.code && styles.languageOptionActive
-                  ]}
+                  style={styles.languageOptionBottomSheet}
                   onPress={() => changeLanguage(language.code)}
                 >
-                  <Text style={styles.languageFlag}>{language.flag}</Text>
-                  <Text style={[
-                    styles.languageOptionText,
-                    i18n.language === language.code && styles.languageOptionTextActive
-                  ]}>
+                  <View style={styles.flagCircle}>
+                    <Image
+                      source={FLAG_IMAGES[language.code] || FLAG_IMAGES.en}
+                      style={styles.languageFlagImages}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <Text style={styles.languageOptionTextBottomSheet}>
                     {language.name}
                   </Text>
                   {i18n.language === language.code && (
-                    <Text style={styles.checkmark}>✓</Text>
+                    <View style={styles.checkmarkCircle}>
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                    </View>
                   )}
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
-            <TouchableOpacity
-              style={styles.closeModalButton}
-              onPress={() => setLanguageModalVisible(false)}
-            >
-              <Text style={styles.closeModalButtonText}>{t('common.close', { defaultValue: 'Close' })}</Text>
-            </TouchableOpacity>
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -283,215 +356,352 @@ export default function JoinTeamScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F6F8FA',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  headerLeftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    width: 50,
+    height: 50,
+    marginRight: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoImage: {
+    width: 50,
+    height: 50,
+  },
+  logoCircle: {
+    width: 39,
+    height: 39,
+    borderRadius: 19.5,
     backgroundColor: '#F2C31B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    zIndex: 2,
+  },
+  logoArrow: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoArrowText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginTop: -2,
+  },
+  logoCircleOutline: {
+    width: 33,
+    height: 33,
+    borderRadius: 16.5,
+    borderWidth: 1.6,
+    borderColor: '#F2C31B',
+    position: 'absolute',
+    left: 25,
+    top: 3,
+    zIndex: 1,
+  },
+  headerTitle: {
+    fontSize: 25,
+    fontWeight: 'bold',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    letterSpacing: -0.11,
+  },
+  languageSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+    borderRadius: 62,
+    paddingHorizontal: 1,
+    paddingVertical: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.09,
+    shadowRadius: 15,
+    elevation: 3,
+  },
+  languageFlag: {
+    fontSize: 24,
+    marginRight: 4,
+  },
+  languageFlagImage: {
+    width: 28,
+    height: 28,
+    marginRight: 4,
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'flex-start',
-    paddingHorizontal: 30,
-    paddingVertical: 30,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
-  formContainer: {
-    width: '100%',
+  avatarContainer: {
+    alignItems: 'center',
+    marginTop: 50,
+    marginBottom: 24,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '600',
+  avatarIcon: {
+    width: 97,
+    height: 97,
+    borderRadius: 48.5,
+    backgroundColor: 'rgba(255, 199, 0, 0.13)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  // Center person (main)
+  personCenter: {
+    alignItems: 'center',
+    position: 'absolute',
+    zIndex: 3,
+  },
+  personCenterHead: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#000000',
+    marginBottom: 2,
+  },
+  personCenterBody: {
+    width: 32,
+    height: 18,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    backgroundColor: '#000000',
+  },
+  // Side people
+  personLeft: {
+    alignItems: 'center',
+    position: 'absolute',
+    left: 14,
+    top: 26,
+    zIndex: 2,
+  },
+  personRight: {
+    alignItems: 'center',
+    position: 'absolute',
+    right: 14,
+    top: 26,
+    zIndex: 2,
+  },
+  personSideHead: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#000000',
+    opacity: 0.4,
+    marginBottom: 1,
+  },
+  personSideBody: {
+    width: 20,
+    height: 12,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+    backgroundColor: '#000000',
+    opacity: 0.4,
+  },
+  mainTitle: {
+    fontSize: 23,
+    fontWeight: '700',
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#000000',
     textAlign: 'center',
-    marginBottom: 12,
-    marginTop: 20,
+    marginBottom: 7,
+    letterSpacing: -0.2,
+    lineHeight: 29,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 24,
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
     textAlign: 'center',
+    marginBottom: 18,
+    letterSpacing: -0.2,
+    lineHeight: 24,
+    paddingHorizontal: 40,
+  },
+  inputContainer: {
+    marginBottom: 11,
+  },
+  inputBox: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D5D5D5',
+    borderRadius: 11,
+    paddingHorizontal: 12,
+    paddingTop: 7,
+    paddingBottom: 8,
   },
   inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '400',
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#000000',
-    marginBottom: 8,
+    opacity: 0.4,
+    marginBottom: 4,
   },
-  input: {
-    borderWidth: 2,
-    borderColor: COLORS.BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    backgroundColor: 'white',
-    color: COLORS.TEXT,
-    marginBottom: 16,
+  textInput: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    fontFamily: FONTS.ALEXANDRIA,
+    color: '#000000',
+    padding: 0,
+    margin: 0,
   },
   joinButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: '#000000',
+    borderRadius: 100,
+    paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
   },
   joinButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  inviteCodeSection: {
-    marginTop: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inviteCodeIconButton: {
-    padding: 4,
-  },
-  inviteCodeIcon: {
-    fontSize: 16,
-  },
-  inviteCodeInput: {
-    fontSize: 14,
-    color: '#000',
-    textAlign: 'left',
-    padding: 8,
-    flex: 1,
-    maxWidth: 280,
-    backgroundColor: 'transparent',
-  },
-  useOnMyOwnButton: {
-    marginTop: 24,
-    padding: 12,
-    alignItems: 'center',
-  },
-  useOnMyOwnText: {
-    fontSize: 16,
-    color: '#000',
-    fontWeight: '500',
-    textDecorationLine: 'underline',
-  },
-  languageSection: {
-    marginTop: 16,
-  },
-  languageRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    minHeight: 52,
-  },
-  languageRowLabel: {
-    fontSize: 18,
-    color: '#000',
+    fontSize: 22,
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: 'Alexandria_400Regular',
+    color: '#FFFFFF',
   },
-  languageValueContainer: {
+  orContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginLeft: 8,
+    marginTop: 27,
+    marginBottom: 10,
+    paddingHorizontal: 40,
+    marginHorizontal: 70,
   },
-  languageRowFlag: {
-    fontSize: 20,
-    marginRight: 6,
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#000000',
+    opacity: 0.1,
   },
-  languageRowValue: {
-    fontSize: 18,
-    color: '#000',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 0,
-    marginRight: 5,
-  },
-  appTitle: {
-    fontSize: FONTS.XXXLARGE,
-    fontWeight: FONTS.BOLD,
-    fontFamily: FONTS.QUICKSAND_BOLD,
+  orText: {
+    fontSize: 13,
+    fontWeight: '300',
+    fontFamily: 'Alexandria_400Regular',
     color: '#000000',
-    marginBottom: 0,
+    marginHorizontal: 8,
+    textTransform: 'uppercase',
   },
-  appSubtitle: {
-    fontSize: 16,
-    color: '#333333',
-    textAlign: 'center',
-    marginTop: 8,
+  individualLinkButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
   },
-  // Modal styles
+  individualLinkText: {
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textDecorationLine: 'underline',
+    letterSpacing: 0.3,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContentBottomSheet: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    minHeight: '80%',
+    maxHeight: '90%',
+    paddingBottom: 20,
+    width: '100%',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E5E5',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  modalHeaderBottomSheet: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    position: 'relative',
+  },
+  modalCloseButtonTop: {
+    width: 32,
+    height: 32,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
-    width: width * 0.85,
-    maxWidth: 400,
-    maxHeight: height * 0.7,
-  },
-  modalTitle: {
-    fontSize: 20,
+  modalTitleBottomSheet: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#000',
+    fontFamily: FONTS.ALEXANDRIA,
+    color: COLORS.TEXT,
+    flex: 1,
     textAlign: 'center',
-    marginBottom: 20,
   },
   languageScrollView: {
-    maxHeight: height * 0.45,
+    maxHeight: height * 0.8,
   },
-  languageOption: {
+  languageOptionBottomSheet: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  flagCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+    overflow: 'hidden',
   },
-  languageOptionActive: {
-    backgroundColor: '#F2C31B',
+  languageFlagImages: {
+    width: 40,
+    height: 40,
   },
-  languageFlag: {
-    fontSize: 24,
-    marginRight: 12,
+  languageFlagBottomSheet: {
+    fontSize: 28,
   },
-  languageOptionText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  languageOptionTextActive: {
-    color: '#000',
-  },
-  checkmark: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  closeModalButton: {
-    marginTop: 16,
-    backgroundColor: '#F2F2F2',
-    paddingVertical: 14,
+  checkmarkCircle: {
+    width: 24,
+    height: 24,
     borderRadius: 12,
+    backgroundColor: COLORS.PRIMARY,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  closeModalButtonText: {
+  languageOptionTextBottomSheet: {
+    flex: 1,
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: '400',
+    fontFamily: FONTS.ALEXANDRIA,
+    color: COLORS.TEXT,
   },
 });

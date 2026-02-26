@@ -644,7 +644,7 @@
     "statFriendsJoined": "가입한 친구",
     "statMonthsEarned": "획득한 개월",
     "shareIntroTitle": "ProofPix 추천",
-    "shareIntroMessage": "ProofPix에 가입하고 정리하세요!\\n\\n📱 ProofPix 다운로드:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\n설치 후 내 추천 코드를 사용하여 시작하세요!",
+    "shareIntroMessage": "ProofPix에 가입하고 정리하세요!\n\n📱 ProofPix 다운로드:\niOS: {{iosLink}}\nAndroid: {{androidLink}}\n\n설치 후 내 추천 코드를 사용하여 시작하세요!",
     "shareCodePromptTitle": "추천 코드를 공유하시겠습니까?",
     "shareCodePromptMessage": "이제 추천 코드를 별도 메시지로 공유하여 쉽게 복사할 수 있도록 하세요.",
     "shareErrorMessage": "추천 링크 공유에 실패했습니다. 다시 시도하세요.",

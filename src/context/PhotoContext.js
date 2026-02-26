@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch } from '../services/storage';
 import { deleteImagesFromGalleryNative, deleteImagesByProjectIdNative } from '../utils/mediaStoreSaver';
@@ -17,6 +17,9 @@ export const usePhotos = () => {
 
 export const PhotoProvider = ({ children }) => {
   const [photos, setPhotos] = useState([]);
+  const photosRef = useRef(photos);
+  // Keep ref in sync so addPhoto always reads the latest photos
+  useEffect(() => { photosRef.current = photos; }, [photos]);
   const [currentRoom, setCurrentRoom] = useState('kitchen');
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
@@ -153,11 +156,31 @@ export const PhotoProvider = ({ children }) => {
         await savePhotosMetadata(validPhotos);
       }
 
+      // Migrate URIs after app update (iOS changes container UUID on reinstall)
+      // Extract filename from stored URI and rebuild with current documentDirectory
+      const docDir = FileSystem.documentDirectory;
+      let urisMigrated = false;
+      const migratedPhotos = validPhotos.map(photo => {
+        if (photo.uri && photo.uri.startsWith('file://') && docDir && !photo.uri.startsWith(docDir)) {
+          const filename = photo.uri.split('/').pop();
+          if (filename) {
+            urisMigrated = true;
+            return { ...photo, uri: `${docDir}${filename}` };
+          }
+        }
+        return photo;
+      });
+      if (urisMigrated) {
+        console.log('[PhotoContext] Migrated photo URIs to current document directory');
+        await savePhotosMetadata(migratedPhotos);
+      }
+
       // Reassign photo names sequentially
-      const renamedPhotos = reassignPhotoNames(validPhotos);
+      const renamedPhotos = reassignPhotoNames(urisMigrated ? migratedPhotos : validPhotos);
 
       // Save if names changed
-      const namesChanged = renamedPhotos.some((photo, idx) => photo.name !== validPhotos[idx]?.name);
+      const sourceForComparison = urisMigrated ? migratedPhotos : validPhotos;
+      const namesChanged = renamedPhotos.some((photo, idx) => photo.name !== sourceForComparison[idx]?.name);
       if (namesChanged) {
         await savePhotosMetadata(renamedPhotos);
       }
@@ -181,6 +204,7 @@ export const PhotoProvider = ({ children }) => {
     try {
       // Reassign names sequentially before saving
       const renamedPhotos = reassignPhotoNames(newPhotos);
+      photosRef.current = renamedPhotos; // Sync ref immediately so addPhoto always reads latest
       setPhotos(renamedPhotos);
       await savePhotosMetadata(renamedPhotos);
     } catch (error) {
@@ -189,7 +213,9 @@ export const PhotoProvider = ({ children }) => {
 
   const addPhoto = async (photo) => {
     try {
-      const newPhotos = [...photos, { ...photo, projectId: photo.projectId ?? activeProjectId ?? null }];
+      // Use ref to always read latest photos (avoids stale closure when called from setTimeout)
+      const currentPhotos = photosRef.current;
+      const newPhotos = [...currentPhotos, { ...photo, projectId: photo.projectId ?? activeProjectId ?? null }];
       await savePhotos(newPhotos);
     } catch (error) {
       throw error; // Re-throw so caller knows it failed
@@ -361,7 +387,7 @@ export const PhotoProvider = ({ children }) => {
         const fname = (uriStr || '').split('/').pop();
         if (fname) filenamesSet.add(fname);
       }
-      
+
       try {
         for (const path of filePaths) {
           try {
@@ -411,11 +437,22 @@ export const PhotoProvider = ({ children }) => {
           console.error(`[PhotoContext] ❌ Error deleting project assets:`, projErr);
         }
       }
+
+      // Remove photo metadata only when deleting from storage
+      const remaining = photos.filter(p => p.projectId !== projectId);
+      await savePhotos(remaining);
+    } else {
+      // When keeping photos, clear their projectId so they become "unassigned"
+      // This way they'll still be visible in the app and can be reassigned to another project
+      const updatedPhotos = photos.map(p =>
+        p.projectId === projectId ? { ...p, projectId: null } : p
+      );
+      setPhotos(updatedPhotos);
+      await savePhotosMetadata(updatedPhotos);
+      console.log(`[PhotoContext] ✅ Cleared projectId for ${related.length} photos (project deleted, photos kept)`);
     }
-    
-    // Remove only metadata for this project's photos
-    const remaining = photos.filter(p => p.projectId !== projectId);
-    await savePhotos(remaining);
+
+    // Delete the project entry itself
     await deleteProjectEntry(projectId);
     await loadProjectsList();
   };

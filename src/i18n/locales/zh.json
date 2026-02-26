@@ -646,7 +646,7 @@
     "statFriendsJoined": "已加入的朋友",
     "statMonthsEarned": "已赚取的月份",
     "shareIntroTitle": "ProofPix推荐",
-    "shareIntroMessage": "加入ProofPix并保持井然有序！\\n\\n📱 下载ProofPix：\\niOS：{{iosLink}}\\nAndroid：{{androidLink}}\\n\\n安装后，使用我的推荐码开始使用！",
+    "shareIntroMessage": "加入ProofPix并保持井然有序！\n\n📱 下载ProofPix：\niOS：{{iosLink}}\nAndroid：{{androidLink}}\n\n安装后，使用我的推荐码开始使用！",
     "shareCodePromptTitle": "分享推荐码？",
     "shareCodePromptMessage": "现在将您的推荐码作为单独的消息分享，以便他们可以轻松复制。",
     "shareErrorMessage": "分享推荐链接失败。请重试。",

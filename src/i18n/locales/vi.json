@@ -644,7 +644,7 @@
     "statFriendsJoined": "Bạn Bè Đã Tham Gia",
     "statMonthsEarned": "Tháng Đã Kiếm",
     "shareIntroTitle": "Giới Thiệu ProofPix",
-    "shareIntroMessage": "Tham gia ProofPix và tổ chức công việc!\\n\\n📱 Tải ProofPix:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\nSau khi cài đặt, sử dụng mã giới thiệu của tôi để bắt đầu!",
+    "shareIntroMessage": "Tham gia ProofPix và tổ chức công việc!\n\n📱 Tải ProofPix:\niOS: {{iosLink}}\nAndroid: {{androidLink}}\n\nSau khi cài đặt, sử dụng mã giới thiệu của tôi để bắt đầu!",
     "shareCodePromptTitle": "Chia Sẻ Mã Giới Thiệu?",
     "shareCodePromptMessage": "Bây giờ chia sẻ mã giới thiệu của bạn dưới dạng tin nhắn riêng để họ có thể sao chép dễ dàng.",
     "shareErrorMessage": "Không thể chia sẻ link giới thiệu. Vui lòng thử lại.",

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -72,15 +72,24 @@ const BackgroundUploadStatus = ({ uploadStatus, onCancelUpload, onCancelAll, onS
   );
 };
 
-const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, onMinimize }) => {
+const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, onMinimize, isPreparing }) => {
   const { activeUploads, queueLength } = uploadStatus;
+  const hasSeenUploads = useRef(false);
 
-  // Auto-close when no active uploads and no queue
+  // Auto-close only after uploads were active and then finished (not on initial open)
   useEffect(() => {
-    if (visible && activeUploads.length === 0 && queueLength === 0) {
+    if (!visible) {
+      hasSeenUploads.current = false;
+      return;
+    }
+    if (activeUploads.length > 0 || queueLength > 0) {
+      hasSeenUploads.current = true;
+    }
+    // Don't auto-close while still preparing
+    if (hasSeenUploads.current && activeUploads.length === 0 && queueLength === 0 && !isPreparing) {
       onClose();
     }
-  }, [visible, activeUploads.length, queueLength, onClose]);
+  }, [visible, activeUploads.length, queueLength, onClose, isPreparing]);
 
   return (
     <Modal
@@ -96,25 +105,56 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
           </View>
 
           <ScrollView style={styles.modalBody}>
-            {activeUploads.map((upload) => (
+            {/* Show preparing state when upload is being set up */}
+            {isPreparing && activeUploads.length === 0 && (
+              <View style={styles.uploadItem}>
+                <View style={styles.preparingContainer}>
+                  <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginRight: 10 }} />
+                  <Text style={styles.preparingText}>Preparing upload...</Text>
+                </View>
+              </View>
+            )}
+
+            {activeUploads.map((upload) => {
+              const isLabeling = upload.labelProgress && upload.labelProgress.total > 0 && upload.labelProgress.current < upload.labelProgress.total;
+              const isUploading = upload.progress.total > 0;
+              const labelPct = upload.labelProgress?.total > 0
+                ? Math.round((upload.labelProgress.current / upload.labelProgress.total) * 100) : 0;
+              const uploadPct = upload.progress.total > 0
+                ? Math.round((upload.progress.current / upload.progress.total) * 100) : 0;
+
+              return (
               <View key={upload.id} style={styles.uploadItem}>
                 <View style={styles.uploadHeader}>
                   <Text style={styles.uploadTitle}>{upload.albumName}</Text>
                 </View>
-                
+
+                {/* Label preparation progress */}
+                {isLabeling && !isUploading && (
+                  <View style={styles.progressContainer}>
+                    <View style={styles.progressBar}>
+                      <View style={[styles.progressFill, { width: `${labelPct}%`, backgroundColor: '#FF9800' }]} />
+                    </View>
+                    <Text style={styles.progressText}>
+                      Applying labels... {upload.labelProgress.current} / {upload.labelProgress.total}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Upload progress */}
                 <View style={styles.progressContainer}>
                   <View style={styles.progressBar}>
-                    <View 
+                    <View
                       style={[
                         styles.progressFill,
-                        { 
-                          width: `${upload.progress.total > 0 ? (upload.progress.current / upload.progress.total) * 100 : 0}%` 
+                        {
+                          width: `${uploadPct}%`
                         }
-                      ]} 
+                      ]}
                     />
                   </View>
                   <Text style={styles.progressText}>
-                    {upload.progress.total > 0 ? `${upload.progress.current} / ${upload.progress.total}` : 'Preparing...'}
+                    {isUploading ? `${upload.progress.current} / ${upload.progress.total}` : (isLabeling ? 'Waiting for labels...' : 'Processing labels...')}
                   </Text>
                 </View>
 
@@ -134,7 +174,8 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
                   </TouchableOpacity>
                 </View>
               </View>
-            ))}
+              );
+            })}
 
             {queueLength > 0 && (
               <View style={styles.queueItem}>
@@ -315,6 +356,17 @@ const styles = StyleSheet.create({
     color: COLORS.GRAY,
     minWidth: 60,
     textAlign: 'right',
+  },
+  preparingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  preparingText: {
+    fontSize: 15,
+    color: COLORS.TEXT,
+    fontWeight: '500',
   },
   queueItem: {
     padding: 12,

@@ -646,7 +646,7 @@
     "statFriendsJoined": "Mga Kaibigan na Sumali",
     "statMonthsEarned": "Mga Buwang Kinita",
     "shareIntroTitle": "ProofPix Referral",
-    "shareIntroMessage": "Sumali sa ProofPix at maging organisado!\\n\\n📱 I-download ang ProofPix:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\nPagkatapos mag-install, gamitin ang aking referral code para magsimula!",
+    "shareIntroMessage": "Sumali sa ProofPix at maging organisado!\n\n📱 I-download ang ProofPix:\niOS: {{iosLink}}\nAndroid: {{androidLink}}\n\nPagkatapos mag-install, gamitin ang aking referral code para magsimula!",
     "shareCodePromptTitle": "Ibahagi ang Referral Code?",
     "shareCodePromptMessage": "Ngayon, ibahagi ang iyong referral code bilang hiwalay na mensahe para madali nilang makopya.",
     "shareErrorMessage": "Nabigo ang pagbabahagi ng referral link. Pakisubukan ulit.",

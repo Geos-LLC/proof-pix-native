@@ -66,7 +66,11 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 // v22: Added watermark support to uploaded photos. Watermark settings (showWatermark, customWatermarkEnabled,
 //      watermarkText, watermarkColor, watermarkOpacity) are now included in the settings hash so cached
 //      photos are properly invalidated when watermark settings change.
-const CACHE_VERSION = 22;
+// v23: Added watermarkPosition and watermarkFontFamily to settings hash so cached photos are invalidated
+//      when the user changes watermark position or font.
+// v24: Added labelCornerStyle, combinedLabelPosition, and labelLanguage to settings hash.
+//      labelLanguage is critical — changing the label language changes BEFORE/AFTER text.
+const CACHE_VERSION = 24;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid
@@ -82,11 +86,16 @@ export const calculateSettingsHash = (settings) => {
     labelFontFamily,
     labelMarginVertical,
     labelMarginHorizontal,
+    labelCornerStyle,
+    combinedLabelPosition,
+    labelLanguage,
     showWatermark,
     customWatermarkEnabled,
     watermarkText,
     watermarkColor,
     watermarkOpacity,
+    watermarkPosition,
+    watermarkFontFamily,
   } = settings;
 
   // Create a string representation of all settings including cache version
@@ -99,14 +108,19 @@ export const calculateSettingsHash = (settings) => {
     labelTextColor: labelTextColor || '#000000',
     labelSize: labelSize || 'medium',
     labelFontFamily: labelFontFamily || 'system',
+    labelCornerStyle: labelCornerStyle || 'rounded',
     labelMarginVertical: labelMarginVertical || 10,
     labelMarginHorizontal: labelMarginHorizontal || 10,
+    combinedLabelPosition: combinedLabelPosition || 'top-left',
+    labelLanguage: labelLanguage || 'en',
     // Watermark settings
     showWatermark: showWatermark ?? true,
     customWatermarkEnabled: customWatermarkEnabled || false,
     watermarkText: customWatermarkEnabled ? (watermarkText || 'Created with ProofPix.app') : 'Created with ProofPix.app',
     watermarkColor: watermarkColor || '#FFD700',
     watermarkOpacity: typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5,
+    watermarkPosition: watermarkPosition || 'right-bottom',
+    watermarkFontFamily: watermarkFontFamily || 'Alexandria_400Regular',
   };
 
   const settingsString = JSON.stringify(settingsObj);

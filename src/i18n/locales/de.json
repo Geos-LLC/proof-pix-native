@@ -659,7 +659,7 @@
     "statMonthsEarned": "Verdiente Monate",
 
     "shareIntroTitle": "ProofPix Empfehlung",
-    "shareIntroMessage": "Treten Sie ProofPix bei und organisieren Sie sich!\\n\\n📱 ProofPix Herunterladen:\\niOS: {{iosLink}}\\nAndroid: {{androidLink}}\\n\\nVerwenden Sie nach der Installation meinen Empfehlungscode, um zu beginnen!",
+    "shareIntroMessage": "Treten Sie ProofPix bei und organisieren Sie sich!\n\n📱 ProofPix Herunterladen:\niOS: {{iosLink}}\nAndroid: {{androidLink}}\n\nVerwenden Sie nach der Installation meinen Empfehlungscode, um zu beginnen!",
     "shareCodePromptTitle": "Empfehlungscode Teilen?",
     "shareCodePromptMessage": "Teilen Sie jetzt Ihren Empfehlungscode als separate Nachricht, damit sie ihn leicht kopieren können.",
     "shareErrorMessage": "Empfehlungslink konnte nicht geteilt werden. Bitte versuchen Sie es erneut.",

@@ -16,37 +16,11 @@ const DEFAULT_LABEL_CORNER_STYLE = 'rounded';
 const getProjectRoomsKey = (projectId) => `custom-rooms-${projectId}`;
 
 const normalizeFontKey = (value) => {
-  if (!value) return 'system';
+  // All fonts are Alexandria; map any legacy key to alexandria
+  if (!value) return 'alexandria';
   const mapped = String(value).toLowerCase();
-  switch (mapped) {
-    case 'system':
-      return 'system';
-    case 'serif':
-    case 'playfairbold':
-    case 'playfairdisplay_700bold':
-      return 'playfairBold';
-    case 'monospace':
-    case 'robotomonobold':
-    case 'robotomono_700bold':
-      return 'robotoMonoBold';
-    case 'montserrat':
-    case 'montserratbold':
-    case 'montserrat_700bold':
-      return 'montserratBold';
-    case 'latobold':
-    case 'lato_700bold':
-      return 'latoBold';
-    case 'poppins':
-    case 'poppinssemibold':
-    case 'poppins_600semibold':
-      return 'poppinsSemiBold';
-    case 'oswald':
-    case 'oswaldsemibold':
-    case 'oswald_600semibold':
-      return 'oswaldSemiBold';
-    default:
-      return mapped || 'system';
-  }
+  if (mapped === 'alexandria') return 'alexandria';
+  return 'alexandria';
 };
 
 const normalizeColorHex = (value, fallback = null) => {
@@ -87,12 +61,12 @@ export const SettingsProvider = ({ children }) => {
   const [watermarkColor, setWatermarkColor] = useState(DEFAULT_LABEL_BACKGROUND);
   const [watermarkOpacity, setWatermarkOpacity] = useState(DEFAULT_WATERMARK_OPACITY);
   const [watermarkPosition, setWatermarkPosition] = useState(DEFAULT_WATERMARK_POSITION);
-  const [watermarkFontFamily, setWatermarkFontFamily] = useState('system'); // Default system font
+  const [watermarkFontFamily, setWatermarkFontFamily] = useState('alexandria');
   const [labelBackgroundColor, setLabelBackgroundColor] = useState(DEFAULT_LABEL_BACKGROUND);
   const [labelTextColor, setLabelTextColor] = useState(DEFAULT_LABEL_TEXT);
   const [labelSize, setLabelSize] = useState(DEFAULT_LABEL_SIZE);
   const [labelCornerStyle, setLabelCornerStyle] = useState(DEFAULT_LABEL_CORNER_STYLE);
-  const [labelFontFamily, setLabelFontFamily] = useState('system'); // Default system font
+  const [labelFontFamily, setLabelFontFamily] = useState('alexandria');
   const [beforeLabelPosition, setBeforeLabelPosition] = useState(DEFAULT_BEFORE_LABEL_POSITION);
   const [afterLabelPosition, setAfterLabelPosition] = useState(DEFAULT_AFTER_LABEL_POSITION);
   const [combinedLabelPosition, setCombinedLabelPosition] = useState(DEFAULT_LABEL_POSITION);
@@ -209,6 +183,8 @@ export const SettingsProvider = ({ children }) => {
         watermarkLink,
         watermarkColor,
         watermarkOpacity,
+        watermarkPosition,
+        watermarkFontFamily,
         labelBackgroundColor,
         labelTextColor,
         labelFontFamily,
@@ -392,9 +368,13 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ labelMarginHorizontal: margin });
   };
 
-  const updateUserInfo = async (name) => {
-    setUserName(name);
-    await saveSettings({ userName: name });
+  const updateUserInfo = async (name, newLocation) => {
+    if (name !== undefined) setUserName(name);
+    if (newLocation !== undefined) setLocation(newLocation);
+    const updates = {};
+    if (name !== undefined) updates.userName = name;
+    if (newLocation !== undefined) updates.location = newLocation;
+    if (Object.keys(updates).length) await saveSettings(updates);
   };
 
   // Reload settings from AsyncStorage (useful when external changes are made)
@@ -512,10 +492,10 @@ export const SettingsProvider = ({ children }) => {
         watermarkColor: DEFAULT_LABEL_BACKGROUND,
         watermarkOpacity: DEFAULT_WATERMARK_OPACITY,
         watermarkPosition: DEFAULT_WATERMARK_POSITION,
-        watermarkFontFamily: 'system',
+        watermarkFontFamily: 'alexandria',
         labelBackgroundColor: DEFAULT_LABEL_BACKGROUND,
         labelTextColor: DEFAULT_LABEL_TEXT,
-        labelFontFamily: 'system',
+        labelFontFamily: 'alexandria',
         labelSize: DEFAULT_LABEL_SIZE,
         labelCornerStyle: DEFAULT_LABEL_CORNER_STYLE,
         beforeLabelPosition: DEFAULT_BEFORE_LABEL_POSITION,

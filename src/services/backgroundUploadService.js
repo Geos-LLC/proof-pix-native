@@ -114,6 +114,10 @@ class BackgroundUploadService {
         onProgress: (current, total) => {
           upload.progress = { current, total };
           this.notifyListeners();
+        },
+        onLabelProgress: (current, total) => {
+          upload.labelProgress = { current, total };
+          this.notifyListeners();
         }
       };
 
@@ -184,6 +188,10 @@ class BackgroundUploadService {
         accountType: upload.config?.accountType || teamInfo.accountType || 'google', // Pass account type
         onProgress: (current, total) => {
           upload.progress = { current, total };
+          this.notifyListeners();
+        },
+        onLabelProgress: (current, total) => {
+          upload.labelProgress = { current, total };
           this.notifyListeners();
         }
       };

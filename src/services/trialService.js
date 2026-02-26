@@ -199,8 +199,16 @@ export const canStartTrial = async () => {
   return !used && !active;
 };
 
+// Plan tier hierarchy (higher index = higher tier)
+const PLAN_TIERS = ['starter', 'pro', 'business', 'enterprise'];
+
+const getPlanRank = (plan) => {
+  const idx = PLAN_TIERS.indexOf(plan);
+  return idx >= 0 ? idx : 0; // default to starter if unknown
+};
+
 /**
- * Get effective plan (trial plan if trial active, otherwise actual plan)
+ * Get effective plan (higher of trial plan or actual plan)
  * @param {string} currentPlan - Current user plan
  * @returns {Promise<string>} Effective plan name
  */
@@ -211,8 +219,12 @@ export const getEffectivePlan = async (currentPlan) => {
     const trialInfo = await getTrialInfo();
     console.log('[getEffectivePlan] Trial is active, trialInfo:', trialInfo);
     if (trialInfo?.plan) {
-      console.log('[getEffectivePlan] Returning trial plan:', trialInfo.plan);
-      return trialInfo.plan; // Return the plan tier from trial
+      // Return whichever plan is higher tier — never downgrade the user
+      const currentRank = getPlanRank(currentPlan);
+      const trialRank = getPlanRank(trialInfo.plan);
+      const effective = currentRank >= trialRank ? currentPlan : trialInfo.plan;
+      console.log('[getEffectivePlan] Comparing plans — current:', currentPlan, '(rank', currentRank + ') vs trial:', trialInfo.plan, '(rank', trialRank + ') → returning:', effective);
+      return effective;
     }
   }
   console.log('[getEffectivePlan] No active trial, returning currentPlan:', currentPlan);

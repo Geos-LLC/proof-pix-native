@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import googleAuthService from '../services/googleAuthService';
 import appleAuthService from '../services/appleAuthService';
 import proxyService from '../services/proxyService';
+import googleDriveService from '../services/googleDriveService';
 import { useSettings } from './SettingsContext';
 import { hasFeature, FEATURES } from '../constants/featurePermissions';
 import {
@@ -1118,22 +1119,30 @@ export function AdminProvider({ children }) {
       }
 
     try {
-      // If we already have a session ID, return it
-      if (proxySessionId) {
-        console.log('[ADMIN] Using existing proxy session ID');
-        await updateActiveAccount({ proxySessionId });
-        return { sessionId: proxySessionId, success: true };
+      // If we already have a session ID, validate it first
+      const existingId = proxySessionId || await AsyncStorage.getItem(STORAGE_KEYS.PROXY_SESSION_ID);
+      if (existingId) {
+        console.log('[ADMIN] Validating existing proxy session...');
+        try {
+          const validation = await proxyService.validateSession(existingId);
+          if (validation && validation.valid) {
+            console.log('[ADMIN] Existing proxy session is valid');
+            if (!proxySessionId) setProxySessionId(existingId);
+            await updateActiveAccount({ proxySessionId: existingId });
+            return { sessionId: existingId, success: true };
+          }
+          console.warn('[ADMIN] Existing proxy session is invalid/expired, clearing...');
+        } catch (valErr) {
+          console.warn('[ADMIN] Session validation failed:', valErr?.message);
+        }
+        // Clear stale session
+        setProxySessionId(null);
+        await AsyncStorage.removeItem(STORAGE_KEYS.PROXY_SESSION_ID);
+        await updateActiveAccount({ proxySessionId: null });
+        // Fall through to create a new session below
       }
 
-      // Check storage for existing session
-      const storedSessionId = await AsyncStorage.getItem(STORAGE_KEYS.PROXY_SESSION_ID);
-      if (storedSessionId) {
-        console.log('[ADMIN] Found stored proxy session ID');
-        setProxySessionId(storedSessionId);
-        await updateActiveAccount({ proxySessionId: storedSessionId });
-        return { sessionId: storedSessionId, success: true };
-      }
-
+      // No valid session - try to create one
       // Set guard to prevent concurrent calls
       setIsInitializingProxy(true);
 
@@ -1147,14 +1156,49 @@ export function AdminProvider({ children }) {
         console.log('[ADMIN] Using existing userId:', userId);
       }
 
+      // Always get a fresh serverAuthCode - stored one may have been consumed already
+      if (accountType === 'google' || !accountType) {
+        console.log('[ADMIN] Refreshing serverAuthCode via Google...');
+        await googleAuthService.clearServerAuthCode();
+        const freshCode = await googleAuthService.refreshServerAuthCode();
+        if (!freshCode) {
+          console.warn('[ADMIN] Could not get fresh serverAuthCode');
+          setIsInitializingProxy(false);
+          return { success: false, error: 'AUTH_CODE_UNAVAILABLE' };
+        }
+        console.log('[ADMIN] Got fresh serverAuthCode');
+      }
+
+      // Ensure folderId exists - create Google Drive folder if needed
+      let effectiveFolderId = folderId;
+      if (!effectiveFolderId && (accountType === 'google' || !accountType)) {
+        console.log('[ADMIN] No folderId, creating Google Drive folder...');
+        try {
+          effectiveFolderId = await googleDriveService.findOrCreateProofPixFolder();
+          if (effectiveFolderId) {
+            console.log('[ADMIN] Created Google Drive folder:', effectiveFolderId);
+            setFolderId(effectiveFolderId);
+            await updateActiveAccount({ folderId: effectiveFolderId });
+          }
+        } catch (folderErr) {
+          console.warn('[ADMIN] Failed to create Google Drive folder:', folderErr?.message);
+        }
+      }
+
+      if (!effectiveFolderId && (accountType === 'google' || !accountType)) {
+        console.warn('[ADMIN] No folderId available for Google upload');
+        setIsInitializingProxy(false);
+        return { success: false, error: 'NO_FOLDER_ID' };
+      }
+
       // Initialize new session via proxy service
       console.log('[ADMIN] Initializing new proxy session for account type:', accountType);
-      const result = await proxyService.initializeAdminSession(folderId, accountType, userId);
-      
+      const result = await proxyService.initializeAdminSession(effectiveFolderId, accountType, userId);
+
       if (result && result.sessionId) {
         await AsyncStorage.setItem(STORAGE_KEYS.PROXY_SESSION_ID, result.sessionId);
         setProxySessionId(result.sessionId);
-        await updateActiveAccount({ proxySessionId: result.sessionId });
+        await updateActiveAccount({ proxySessionId: result.sessionId, folderId: effectiveFolderId });
         console.log('[ADMIN] Proxy session initialized successfully');
         setIsInitializingProxy(false);
         return { sessionId: result.sessionId, success: true };
@@ -1169,10 +1213,9 @@ export function AdminProvider({ children }) {
         return { success: false, error: 'GOOGLE_NOT_CONNECTED', skippable: true };
       }
       
-      console.error('[ADMIN] Error initializing proxy session:', error);
+      console.warn('[ADMIN] Could not initialize proxy session:', error?.message);
       setIsInitializingProxy(false);
-      // Return error object instead of null
-      return { success: false, error: error.message };
+      return { success: false, error: error?.message };
     }
   };
 

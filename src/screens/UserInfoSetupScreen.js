@@ -1,426 +1,353 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   TextInput,
-  ScrollView,
+  TouchableOpacity,
+  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
-  Animated,
+  ScrollView,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { COLORS } from '../constants/rooms';
-import { FONTS } from '../constants/fonts';
-import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
+import { useTranslation } from 'react-i18next';
+import { FONTS } from '../constants/fonts';
 
 export default function UserInfoSetupScreen({ navigation }) {
   const { t, i18n } = useTranslation();
   const { updateUserInfo, updateLabelLanguage, updateSectionLanguage } = useSettings();
-  const insets = useSafeAreaInsets();
-  
-  const [userName, setUserName] = useState('');
-  const [location, setLocation] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [nameFocused, setNameFocused] = useState(false);
-  const [locationFocused, setLocationFocused] = useState(false);
-  const scrollViewRef = useRef(null);
-  const locationInputRef = useRef(null);
-  
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  const validateForm = () => {
-    if (!userName.trim()) {
-      Alert.alert(
-        t('userInfo.nameRequired', { defaultValue: 'Name Required' }),
-        t('userInfo.nameRequiredMessage', { defaultValue: 'Please enter your name to continue.' })
-      );
-      return false;
-    }
-    return true;
-  };
+  const [name, setName] = useState('');
 
   const handleContinue = async () => {
-    if (!validateForm()) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
 
-    setIsSubmitting(true);
-    try {
-      // Save user info (name)
-      await updateUserInfo(userName.trim());
-      
-      // Save location if provided (location is stored in settings)
-      if (location.trim()) {
-        const settings = await AsyncStorage.getItem('app-settings');
-        const parsedSettings = settings ? JSON.parse(settings) : {};
-        await AsyncStorage.setItem('app-settings', JSON.stringify({
-          ...parsedSettings,
-          location: location.trim(),
-          userName: userName.trim() // Ensure name is also saved
-        }));
-      }
+    // Save name to settings
+    await updateUserInfo(trimmed);
 
-      // Apply current language to labels and sections
-      const currentLang = i18n.language || 'en';
-      updateLabelLanguage(currentLang);
-      updateSectionLanguage(currentLang);
+    // Keep existing language behaviour from the old screen
+    const currentLang = i18n.language || 'en';
+    updateLabelLanguage(currentLang);
+    updateSectionLanguage(currentLang);
 
-      // Navigate to permissions screen
-      navigation.navigate('PermissionsSetup');
-    } catch (error) {
-      console.error('[UserInfoSetup] Error saving user info:', error);
-      Alert.alert(
-        t('common.error', { defaultValue: 'Error' }),
-        t('userInfo.saveError', { defaultValue: 'Failed to save information. Please try again.' })
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
+    navigation.navigate('PermissionsSetup');
   };
 
-  const handleBack = () => {
-    navigation.goBack();
+  const handleInvitedToTeam = () => {
+    navigation.navigate('JoinTeam');
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.root}>
       <KeyboardAvoidingView
-        style={styles.keyboardAvoidingView}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
-          ref={scrollViewRef}
+          style={styles.flex}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
         >
-          {/* Back Button */}
-          <TouchableOpacity
-            style={[styles.backButton, { top: insets.top + 10 }]}
-            onPress={handleBack}
-            activeOpacity={0.7}
-          >
-            <View style={styles.backButtonContainer}>
-              <Ionicons name="arrow-back" size={24} color={COLORS.PRIMARY} />
-            </View>
-          </TouchableOpacity>
+          {/* Status / header row */}
+          <View style={styles.topRow}>
+            <TouchableOpacity style={styles.backTouch} onPress={() => navigation.goBack()}>
+              <Ionicons name="arrow-back" size={22} color="#000" />
+            </TouchableOpacity>
 
-          {/* Header */}
-          <Animated.View 
-            style={[
-              styles.header,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-          >
-            <View style={styles.headerIconContainer}>
-              <Ionicons name="person-circle-outline" size={48} color={COLORS.PRIMARY} />
+            <View style={styles.timeContainer}>
+              <Text style={styles.timeText}>9:41</Text>
             </View>
+          </View>
+
+          {/* Brand row */}
+          <View style={styles.brandRow}>
+            <View style={styles.logoRow}>
+              <View style={styles.logoCircleOuter}>
+                <View style={styles.logoArrow} />
+              </View>
+              <Text style={styles.logoText}>ProofPix</Text>
+            </View>
+
+            <View style={styles.languageChip}>
+              <Text style={styles.languageText}>EN</Text>
+            </View>
+          </View>
+
+          {/* Avatar */}
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatarBackground} />
+            <View style={styles.avatarIcon} />
+          </View>
+
+          {/* Main content */}
+          <View style={styles.content}>
             <Text style={styles.title}>
-              {t('userInfo.title', { defaultValue: 'Tell Us About Yourself' })}
+              {t('userInfo.letsStartWithName', { defaultValue: 'Let’s start with your name' })}
             </Text>
-            <Text style={styles.subtitle}>
-              {t('userInfo.subtitle', { defaultValue: 'This information helps us personalize your experience' })}
-            </Text>
-          </Animated.View>
 
-          {/* Form */}
-          <Animated.View 
-            style={[
-              styles.formContainer,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-          >
-            {/* Name Input */}
             <View style={styles.inputGroup}>
-              <View style={styles.inputLabelContainer}>
-                <Ionicons name="person-outline" size={18} color={COLORS.TEXT} style={styles.labelIcon} />
+              <View style={styles.inputWrapper}>
                 <Text style={styles.inputLabel}>
                   {t('userInfo.nameLabel', { defaultValue: 'Your Name' })}
-                  <Text style={styles.required}> *</Text>
                 </Text>
-              </View>
-              <View style={[
-                styles.inputWrapper,
-                nameFocused && styles.inputWrapperFocused,
-                userName.trim() && styles.inputWrapperFilled,
-              ]}>
                 <TextInput
-                  style={styles.textInput}
-                  value={userName}
-                  onChangeText={setUserName}
-                  placeholder={t('userInfo.namePlaceholder', { defaultValue: 'Enter your name' })}
-                  placeholderTextColor="#999"
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  returnKeyType="next"
-                  onFocus={() => setNameFocused(true)}
-                  onBlur={() => setNameFocused(false)}
-                  onSubmitEditing={() => locationInputRef.current?.focus()}
-                />
-                {userName.trim() && (
-                  <Ionicons name="checkmark-circle" size={20} color="#34C759" style={styles.inputCheckIcon} />
-                )}
-              </View>
-            </View>
-
-            {/* Location Input */}
-            <View style={styles.inputGroup}>
-              <View style={styles.inputLabelContainer}>
-                <Ionicons name="location-outline" size={18} color={COLORS.TEXT} style={styles.labelIcon} />
-                <Text style={styles.inputLabel}>
-                  {t('userInfo.locationLabel', { defaultValue: 'Location (Optional)' })}
-                </Text>
-              </View>
-              <View style={[
-                styles.inputWrapper,
-                locationFocused && styles.inputWrapperFocused,
-                location.trim() && styles.inputWrapperFilled,
-              ]}>
-                <TextInput
-                  ref={locationInputRef}
-                  style={styles.textInput}
-                  value={location}
-                  onChangeText={setLocation}
-                  placeholder={t('userInfo.locationPlaceholder', { defaultValue: 'City, State (e.g., Tampa, FL)' })}
-                  placeholderTextColor="#999"
+                  style={styles.input}
+                  placeholder={t('userInfo.namePlaceholder', { defaultValue: 'Alex Bond' })}
+                  placeholderTextColor="rgba(0,0,0,0.35)"
+                  value={name}
+                  onChangeText={setName}
                   autoCapitalize="words"
                   autoCorrect={false}
                   returnKeyType="done"
-                  onFocus={() => setLocationFocused(true)}
-                  onBlur={() => setLocationFocused(false)}
                   onSubmitEditing={handleContinue}
                 />
-                {location.trim() && (
-                  <Ionicons name="checkmark-circle" size={20} color="#34C759" style={styles.inputCheckIcon} />
-                )}
               </View>
-              <Text style={styles.inputHint}>
-                {t('userInfo.locationHint', { defaultValue: 'This will be included in folder names for better organization' })}
-              </Text>
-            </View>
-          </Animated.View>
 
-          {/* Continue Button */}
-          <Animated.View
-            style={{
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            }}
-          >
-            <TouchableOpacity
-              style={[
-                styles.continueButton,
-                (isSubmitting || !userName.trim()) && styles.continueButtonDisabled
-              ]}
-              onPress={handleContinue}
-              disabled={isSubmitting || !userName.trim()}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.continueButtonText}>
-                {t('common.continue', { defaultValue: 'Continue' })}
+              <TouchableOpacity
+                style={[styles.primaryButton, !name.trim() && styles.primaryButtonDisabled]}
+                disabled={!name.trim()}
+                onPress={handleContinue}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {t('userInfo.saveAndContinue', { defaultValue: 'Save & Continue' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* OR separator */}
+            <View style={styles.orRow}>
+              <View style={styles.orLine} />
+              <Text style={styles.orText}>OR</Text>
+              <View style={styles.orLine} />
+            </View>
+
+            {/* Invited to team */}
+            <TouchableOpacity onPress={handleInvitedToTeam}>
+              <Text style={styles.invitedText}>
+                {t('userInfo.invitedToTeam', { defaultValue: 'I was invited to a team' })}
               </Text>
-              <Ionicons name="arrow-forward" size={20} color="#000" style={styles.buttonIcon} />
             </TouchableOpacity>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+const YELLOW = '#F2C31B';
+
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
-  keyboardAvoidingView: {
+  root: {
     flex: 1,
+    backgroundColor: '#F6F8FA',
   },
   scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 30,
-    paddingTop: 20,
-    paddingBottom: 30,
-  },
-  backButton: {
-    position: 'absolute',
-    left: 20,
-    zIndex: 10,
-  },
-  backButtonContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F8F9FA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.PRIMARY + '20',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  header: {
-    marginTop: 60,
-    marginBottom: 40,
-    alignItems: 'center',
-  },
-  headerIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    backgroundColor: COLORS.PRIMARY + '15',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: COLORS.PRIMARY + '30',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    color: COLORS.TEXT,
-    textAlign: 'center',
-    marginBottom: 12,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
-    lineHeight: 22,
     paddingHorizontal: 20,
+    paddingBottom: 32,
   },
-  formContainer: {
+
+  /* Top row (back + time) */
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  backTouch: {
+    padding: 4,
+  },
+  timeContainer: {
     flex: 1,
-    justifyContent: 'center',
-    marginVertical: 20,
+    alignItems: 'center',
   },
-  inputGroup: {
-    marginBottom: 24,
+  timeText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E1E1E',
   },
-  inputLabelContainer: {
+
+  /* Brand row */
+  brandRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  labelIcon: {
+  logoCircleOuter: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1.6,
+    borderColor: YELLOW,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 8,
   },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    color: COLORS.TEXT,
+  logoArrow: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: YELLOW,
   },
-  required: {
-    color: '#FF3B30',
+  logoText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: -0.1,
+    color: '#000',
+  },
+
+  languageChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 62,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+    shadowColor: '#000',
+    shadowOpacity: 0.09,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  languageText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#000',
+  },
+
+  /* Avatar */
+  avatarContainer: {
+    alignItems: 'center',
+    marginTop: 32,
+  },
+  avatarBackground: {
+    width: 97,
+    height: 97,
+    borderRadius: 48.5,
+    backgroundColor: 'rgba(255,199,0,0.13)',
+  },
+  avatarIcon: {
+    position: 'absolute',
+    width: 63,
+    height: 63,
+    borderRadius: 31.5,
+    backgroundColor: '#000',
+    opacity: 0.8,
+    top: 17,
+  },
+
+  /* Main content */
+  content: {
+    marginTop: 40,
+    alignItems: 'center',
+  },
+  title: {
+    fontFamily: FONTS.ALEXANDRIA,
+    width: 260,
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '600',
+    lineHeight: 29,
+    letterSpacing: -0.2,
+    color: '#000',
+    marginBottom: 24,
+  },
+
+  inputGroup: {
+    width: '100%',
+    alignItems: 'center',
   },
   inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.BORDER,
-    borderRadius: 14,
+    width: 335,
+    maxWidth: '100%',
+    height: 54,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#D5D5D5',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    marginBottom: 16,
   },
-  inputWrapperFocused: {
-    borderColor: COLORS.PRIMARY,
-    shadowColor: COLORS.PRIMARY,
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+  inputLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    color: 'rgba(0,0,0,0.65)',
+    marginBottom: 2,
   },
-  inputWrapperFilled: {
-    borderColor: COLORS.PRIMARY + '60',
+  input: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 15,
+    color: '#000',
   },
-  textInput: {
-    flex: 1,
-    paddingVertical: 16,
-    fontSize: 16,
-    color: COLORS.TEXT,
-    fontFamily: FONTS.QUICKSAND_REGULAR,
-  },
-  inputCheckIcon: {
-    marginLeft: 8,
-  },
-  inputHint: {
-    fontSize: 13,
-    color: '#999999',
-    marginTop: 8,
-    fontFamily: FONTS.QUICKSAND_REGULAR,
-    lineHeight: 18,
-    paddingLeft: 26,
-  },
-  continueButton: {
-    backgroundColor: COLORS.PRIMARY,
-    borderRadius: 16,
-    paddingVertical: 20,
-    paddingHorizontal: 32,
-    flexDirection: 'row',
+
+  primaryButton: {
+    width: 335,
+    maxWidth: '100%',
+    height: 54,
+    borderRadius: 100,
+    backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
-    elevation: 6,
-    shadowColor: COLORS.PRIMARY,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    borderWidth: 2,
-    borderColor: '#00000010',
+    marginTop: 4,
   },
-  continueButtonDisabled: {
-    backgroundColor: '#E0E0E0',
-    opacity: 0.6,
-    shadowOpacity: 0,
-    elevation: 0,
+  primaryButtonDisabled: {
+    opacity: 0.4,
   },
-  continueButtonText: {
+  primaryButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 18,
-    fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
-    color: '#000000',
-    letterSpacing: 0.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  buttonIcon: {
-    marginLeft: 10,
+
+  orRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 28,
+    marginBottom: 8,
+  },
+  orLine: {
+    width: 60,
+    height: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.2)',
+  },
+  orText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    marginHorizontal: 8,
+    fontSize: 13,
+    fontWeight: '300',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: '#000',
+  },
+
+  invitedText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    marginTop: 4,
+    fontSize: 18,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
+    color: '#000',
+    textAlign: 'center',
   },
 });
 

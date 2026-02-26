@@ -19,8 +19,11 @@ import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
 import { savePhotoToDevice } from '../services/storage';
 import { COLORS, TEMPLATE_TYPES, TEMPLATE_CONFIGS, LABEL_POSITIONS } from '../constants/rooms';
+import { FONTS } from '../constants/fonts';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
+import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
+import { useTranslation } from 'react-i18next';
 
 export default function PhotoEditorScreen({ route, navigation }) {
   const { beforePhoto, afterPhoto, isSelectionMode = false, selectedPhotos = [], onSelectionChange, allPhotoSets: providedPhotoSets } = route.params;
@@ -103,8 +106,10 @@ export default function PhotoEditorScreen({ route, navigation }) {
   const combinedRef = useRef(null);
   const templateScrollRef = useRef(null);
   const photoScrollRef = useRef(null);
+  const { t } = useTranslation();
   const { getUnpairedBeforePhotos, getBeforePhotos, getAfterPhotos, activeProjectId, deletePhoto } = usePhotos();
   const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms } = useSettings();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { width, height } = Dimensions.get('window');
   
   // Debug: Log showLabels value
@@ -328,36 +333,23 @@ export default function PhotoEditorScreen({ route, navigation }) {
     }
   };
 
-  const handleDelete = async () => {
-    Alert.alert(
-      'Delete Combined Photo',
-      'This will delete both the before and after photos. Are you sure?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete both before and after photos
-              await deletePhoto(currentPhotoSet.before.id);
-              await deletePhoto(currentPhotoSet.after.id);
-              // Navigate back after deletion
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              } else {
-                navigation.navigate('Home');
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete photos');
-            }
-          }
-        }
-      ]
-    );
+  const handleDelete = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteConfirmed = async (deleteFromStorage) => {
+    setShowDeleteConfirm(false);
+    try {
+      await deletePhoto(currentPhotoSet.before.id, { deleteFromStorage });
+      await deletePhoto(currentPhotoSet.after.id, { deleteFromStorage });
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete photos');
+    }
   };
 
   // PanResponder for swipe down to close - applies to entire screen
@@ -377,7 +369,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
           if (navigation.canGoBack()) {
             navigation.goBack();
           } else {
-            navigation.navigate('Home');
+            navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
           }
         }
       }
@@ -809,7 +801,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
             if (navigation.canGoBack()) {
               navigation.goBack();
             } else {
-              navigation.navigate('Home');
+              navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
             }
           }}
         >
@@ -896,6 +888,15 @@ export default function PhotoEditorScreen({ route, navigation }) {
           <Text style={styles.shareButtonText}>Share</Text>
         )}
       </TouchableOpacity>
+
+      <DeleteConfirmationModal
+        visible={showDeleteConfirm}
+        title={t('home.deletePhotoSet')}
+        message={t('home.deletePhotoSetConfirm', { name: currentPhotoSet?.before?.name || '' })}
+        onConfirm={handleDeleteConfirmed}
+        onCancel={() => setShowDeleteConfirm(false)}
+        deleteFromStorageDefault={true}
+      />
     </SafeAreaView>
   );
 }
@@ -931,11 +932,13 @@ const styles = StyleSheet.create({
     width: 60
   },
   backButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.PRIMARY,
     fontSize: 24,
     fontWeight: 'bold'
   },
   title: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.TEXT
@@ -946,6 +949,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20
   },
   subtitle: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.PRIMARY,
@@ -971,6 +975,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   swipeHint: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     color: '#999',
     marginBottom: 8
@@ -1022,6 +1027,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.PRIMARY
   },
   checkmark: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: 'white',
     fontSize: 20,
     fontWeight: 'bold'
@@ -1047,6 +1053,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10
   },
   selectorTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.TEXT,
@@ -1071,10 +1078,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.PRIMARY
   },
   templateButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.GRAY,
     fontWeight: '600'
   },
   templateButtonTextActive: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT
   },
   shareButton: {
@@ -1088,6 +1097,7 @@ const styles = StyleSheet.create({
     opacity: 0.5
   },
   shareButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     fontSize: 18,
     fontWeight: 'bold'
@@ -1096,6 +1106,7 @@ const styles = StyleSheet.create({
     padding: 8
   },
   deleteButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 24
   }
 });

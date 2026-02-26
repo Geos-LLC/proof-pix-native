@@ -14,8 +14,11 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
+  SafeAreaView,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import enterpriseContactService from '../services/enterpriseContactService';
@@ -79,158 +82,240 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
   return (
     <Modal
       visible={visible}
-      transparent={true}
-      animationType="fade"
+      animationType="slide"
       onRequestClose={handleClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.modalOverlay}
-      >
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>{title || t('enterprise.title')}</Text>
-          <Text style={styles.modalSubtitle}>{subtitle || t('enterprise.subtitle')}</Text>
-
-          <TextInput
-            style={styles.modalInput}
-            placeholder={t('enterprise.namePlaceholder')}
-            placeholderTextColor="#999"
-            value={formData.name}
-            onChangeText={(text) => setFormData({ ...formData, name: text })}
-            autoCapitalize="words"
-          />
-
-          <TextInput
-            style={styles.modalInput}
-            placeholder={t('enterprise.emailPlaceholder')}
-            placeholderTextColor="#999"
-            value={formData.email}
-            onChangeText={(text) => setFormData({ ...formData, email: text })}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-
-          <TextInput
-            style={styles.modalInput}
-            placeholder={t('enterprise.phonePlaceholder')}
-            placeholderTextColor="#999"
-            value={formData.phone}
-            onChangeText={(text) => setFormData({ ...formData, phone: text })}
-            keyboardType="phone-pad"
-          />
-
-          <TextInput
-            style={[styles.modalInput, styles.modalTextArea]}
-            placeholder={t('enterprise.descriptionPlaceholder')}
-            placeholderTextColor="#999"
-            value={formData.description}
-            onChangeText={(text) => setFormData({ ...formData, description: text })}
-            multiline={true}
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
-
-          <View style={styles.modalButtons}>
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          {/* Header */}
+          <View style={styles.header}>
             <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
               onPress={handleClose}
+              style={styles.backButton}
             >
-              <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
+              <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.modalButton, styles.submitButton, isSubmitting && styles.disabledButton]}
-              onPress={handleSubmit}
-              disabled={isSubmitting}
-            >
-              <Text style={styles.submitButtonText}>
-                {isSubmitting ? t('enterprise.submitting') : t('enterprise.submit')}
-              </Text>
-            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Contact us</Text>
+            <View style={{ width: 40 }} />
           </View>
-        </View>
-      </KeyboardAvoidingView>
+
+          <ScrollView 
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Icon Section */}
+            <View style={styles.iconContainer}>
+              <View style={styles.iconCircle}>
+                <Ionicons name="mail" size={40} color="#F9A825" />
+              </View>
+            </View>
+
+            {/* Heading */}
+            <Text style={styles.heading}>Tell us what you think</Text>
+
+            {/* Description */}
+            <Text style={styles.description}>
+              We'd love to hear your feedback, suggestions or answer any questions you may have.
+            </Text>
+
+            {/* Form Fields */}
+            <View style={styles.formContainer}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Your Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Your Name"
+                  placeholderTextColor="#999"
+                  value={formData.name}
+                  onChangeText={(text) => setFormData({ ...formData, name: text })}
+                  autoCapitalize="words"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email Address</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email Address"
+                  placeholderTextColor="#999"
+                  value={formData.email}
+                  onChangeText={(text) => setFormData({ ...formData, email: text })}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Phone number (Optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone number (Optional)"
+                  placeholderTextColor="#999"
+                  value={formData.phone}
+                  onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Tell us about your needs</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Tell us about your needs"
+                  placeholderTextColor="#999"
+                  value={formData.description}
+                  onChangeText={(text) => setFormData({ ...formData, description: text })}
+                  multiline={true}
+                  numberOfLines={6}
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* Send Request Button */}
+          <TouchableOpacity
+            style={[styles.sendButton, isSubmitting && styles.disabledButton]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.sendButtonText}>
+              {isSubmitting ? 'Sending...' : 'Send Request'}
+            </Text>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: {
+  container: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    backgroundColor: '#FFFFFF',
   },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-    maxHeight: '90%',
+  keyboardView: {
+    flex: 1,
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 8,
-    fontFamily: FONTS.QUICKSAND_BOLD,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    marginBottom: 12,
-    backgroundColor: '#f9f9f9',
-    color: '#333',
-  },
-  modalTextArea: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-  modalButtons: {
+  header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
   },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+  backButton: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 20,
   },
-  cancelButton: {
-    backgroundColor: '#f0f0f0',
-    marginRight: 8,
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    letterSpacing: -0.3,
   },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 100,
+  },
+  iconContainer: {
+    alignItems: 'center',
+    marginTop: 32,
+    marginBottom: 24,
+  },
+  iconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#FFF9C4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  heading: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000000',
     textAlign: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 20,
+    letterSpacing: -0.5,
   },
-  submitButton: {
-    backgroundColor: COLORS.PRIMARY,
-    marginLeft: 8,
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  description: {
+    fontSize: 14,
+    color: '#666666',
     textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+    paddingHorizontal: 20,
+    letterSpacing: -0.2,
+  },
+  formContainer: {
+    paddingHorizontal: 20,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 8,
+    letterSpacing: -0.2,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    backgroundColor: '#FFFFFF',
+    color: '#000000',
+    fontFamily: FONTS.ALEXANDRIA,
+  },
+  textArea: {
+    height: 120,
+    textAlignVertical: 'top',
+    paddingTop: 14,
+  },
+  sendButton: {
+    backgroundColor: '#000000',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  sendButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   disabledButton: {
     opacity: 0.6,

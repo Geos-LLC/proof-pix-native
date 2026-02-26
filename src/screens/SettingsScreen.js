@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   Alert,
   ActivityIndicator,
   Modal as RNModal,
-  Clipboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -22,13 +21,17 @@ import {
   Share,
   InteractionManager,
   Linking,
+  Image,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Slider from '@react-native-community/slider';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS, getLabelPositions } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { RoomIcon } from '../utils/roomIcons';
 import RoomEditor from '../components/RoomEditor';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
@@ -49,10 +52,11 @@ import { generateInviteLink, generateShareContent, generateInviteCode } from '..
 import Modal from 'react-native-modal';
 import ColorPicker from 'react-native-wheel-color-picker';
 import { useTranslation } from 'react-i18next';
+import { Ionicons } from '@expo/vector-icons';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { FEATURES } from '../constants/featurePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
-import { isTrialActive, getTrialDaysRemaining, getTrialPlan } from '../services/trialService';
+import { isTrialActive, getTrialDaysRemaining, getTrialPlan, getTrialInfo } from '../services/trialService';
 import * as TrialTestUtils from '../utils/trialTestUtils';
 import { generateInviteToken } from '../utils/tokens';
 import {
@@ -64,49 +68,15 @@ import {
 } from '../utils/analytics';
 import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions } from '../services/iapService';
 import * as Application from 'expo-application';
+import * as ExpoLocation from 'expo-location';
+import { LOCATIONS, getLocationName } from '../config/locations';
 
 const getFontOptions = (t) => [
   {
-    key: 'system',
-    label: t('labelCustomization.fontModal.systemDefault'),
+    key: 'alexandria',
+    label: 'Alexandria',
     description: t('labelCustomization.fontModal.systemDefaultDescription'),
-    fontFamily: null,
-  },
-  {
-    key: 'montserratBold',
-    label: t('labelCustomization.fontModal.montserratBold'),
-    description: t('labelCustomization.fontModal.montserratBoldDescription'),
-    fontFamily: 'Montserrat_700Bold',
-  },
-  {
-    key: 'latoBold',
-    label: t('labelCustomization.fontModal.latoBold'),
-    description: t('labelCustomization.fontModal.latoBoldDescription'),
-    fontFamily: 'Lato_700Bold',
-  },
-  {
-    key: 'playfairBold',
-    label: t('labelCustomization.fontModal.playfairDisplay'),
-    description: t('labelCustomization.fontModal.playfairDisplayDescription'),
-    fontFamily: 'PlayfairDisplay_700Bold',
-  },
-  {
-    key: 'poppinsSemiBold',
-    label: t('labelCustomization.fontModal.poppinsSemiBold'),
-    description: t('labelCustomization.fontModal.poppinsSemiBoldDescription'),
-    fontFamily: 'Poppins_600SemiBold',
-  },
-  {
-    key: 'robotoMonoBold',
-    label: t('labelCustomization.fontModal.robotoMono'),
-    description: t('labelCustomization.fontModal.robotoMonoDescription'),
-    fontFamily: 'RobotoMono_700Bold',
-  },
-  {
-    key: 'oswaldSemiBold',
-    label: t('labelCustomization.fontModal.oswaldSemiBold'),
-    description: t('labelCustomization.fontModal.oswaldSemiBoldDescription'),
-    fontFamily: 'Oswald_600SemiBold',
+    fontFamily: 'Alexandria_400Regular',
   },
 ];
 
@@ -116,6 +86,23 @@ const getLabelSizeOptions = (t) => [
   { key: 'large', label: t('labelCustomization.large') },
 ];
 
+// Static map so Metro can bundle all flag assets (same as FirstLoadScreen).
+const FLAG_IMAGES = {
+  en: require('../../assets/flags/usa.png'),
+  es: require('../../assets/flags/spain.png'),
+  fr: require('../../assets/flags/france.png'),
+  de: require('../../assets/flags/germany.png'),
+  ru: require('../../assets/flags/russia.png'),
+  be: require('../../assets/flags/belarus.png'),
+  zh: require('../../assets/flags/china.png'),
+  tl: require('../../assets/flags/philipines.png'),
+  ar: require('../../assets/flags/saudi.png'),
+  ko: require('../../assets/flags/korea.png'),
+  pt: require('../../assets/flags/portugal.png'),
+  uk: require('../../assets/flags/ukraine.png'),
+  vi: require('../../assets/flags/vietnam.png'),
+};
+
 const LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
   { code: 'es', name: 'Español', flag: '🇪🇸' },
@@ -123,12 +110,12 @@ const LANGUAGES = [
   { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
   { code: 'ru', name: 'Русский', flag: '🇷🇺' },
   { code: 'be', name: 'Беларуская', flag: '🇧🇾' },
-  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
   { code: 'zh', name: '中文', flag: '🇨🇳' },
   { code: 'tl', name: 'Tagalog', flag: '🇵🇭' },
   { code: 'ar', name: 'العربية', flag: '🇸🇦' },
   { code: 'ko', name: '한국어', flag: '🇰🇷' },
   { code: 'pt', name: 'Português', flag: '🇵🇹' },
+  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
   { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
 ];
 
@@ -155,7 +142,21 @@ const LABEL_SIZE_STYLE_MAP = {
     minWidth: 104,
   },
 };
-
+const GradientView = ({ colors, start, end, style, children, fallbackColor }) => {
+  if (LinearGradient && typeof LinearGradient === 'function') {
+    return (
+      <LinearGradient colors={colors} start={start} end={end} style={style}>
+        {children}
+      </LinearGradient>
+    );
+  }
+  
+  return (
+    <View style={[style, { backgroundColor: fallbackColor || colors[colors.length - 1] }]}>
+      {children}
+    </View>
+  );
+};
 const getLabelCornerOptions = (t) => [
   { key: 'rounded', label: t('labelCustomization.cornerOptions.rounded') },
   { key: 'square', label: t('labelCustomization.cornerOptions.straight') },
@@ -260,12 +261,16 @@ export default function SettingsScreen({ navigation, route }) {
     watermarkLink,
     watermarkColor,
     watermarkOpacity,
+    watermarkPosition,
+    watermarkFontFamily,
     toggleWatermark,
     updateShowWatermark,
     updateWatermarkText,
     updateWatermarkLink,
     updateWatermarkColor,
     updateWatermarkOpacity,
+    updateWatermarkPosition,
+    updateWatermarkFontFamily,
     shouldShowWatermark,
     labelBackgroundColor,
     labelTextColor,
@@ -311,6 +316,7 @@ export default function SettingsScreen({ navigation, route }) {
 
   const { canUse, exceedsLimit, getLimit, effectivePlan } = useFeaturePermissions();
   const { t, i18n } = useTranslation();
+  const insets = useSafeAreaInsets();
 
   // Memoize translated options
   const FONT_OPTIONS = useMemo(() => getFontOptions(t), [t]);
@@ -336,6 +342,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [trialActive, setTrialActive] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
   const [trialPlan, setTrialPlan] = useState(null);
+  const [trialDuration, setTrialDuration] = useState(30);
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [colorModalType, setColorModalType] = useState(null);
   const [draftColor, setDraftColor] = useState(labelBackgroundColor);
@@ -344,6 +351,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [hexModalValue, setHexModalValue] = useState(labelBackgroundColor?.toUpperCase() || '');
   const [hexModalError, setHexModalError] = useState(null);
   const [fontModalVisible, setFontModalVisible] = useState(false);
+  const [watermarkFontModalVisible, setWatermarkFontModalVisible] = useState(false);
   const [colorPickerKey, setColorPickerKey] = useState(0);
   const [watermarkOpacityPreview, setWatermarkOpacityPreview] = useState(
     typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5
@@ -509,46 +517,46 @@ export default function SettingsScreen({ navigation, route }) {
     [rooms]
   );
 
-  const renderRoomTabs = () => (
-    <View style={styles.roomTabsContainer} {...roomPanResponder.panHandlers}>
-      {circularRooms.map((room, index) => {
-        const isActive = room.offset === 0; // Center item is active
-        const distance = Math.abs(room.offset);
-        const scale = isActive ? 1 : Math.max(0.65, 1 - (distance * 0.15));
-        const opacity = isActive ? 1 : Math.max(0.4, 1 - (distance * 0.2));
-        
-        return (
-          <TouchableOpacity
-            key={`${room.id}-${index}`}
-            style={[
-              styles.roomTab,
-              isActive && styles.roomTabActive,
-              {
-                transform: [{ scale }],
-                opacity
-              }
-            ]}
-            hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
-            onPress={() => setCurrentRoom(room.id)}
-          >
-            <Text style={[styles.roomIcon, { fontSize: isActive ? 28 : 22 }]}>{room.icon}</Text>
-            {isActive && (
-              <Text
+  const renderRoomTabs = () => {
+    // Get first 5 rooms for display
+    const displayRooms = rooms.slice(0, 5);
+    
+    return (
+      <View style={styles.roomListContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.roomListScrollContent}
+        >
+          {displayRooms.map((room, index) => {
+            const isActive = currentRoom === room.id;
+            return (
+              <TouchableOpacity
+                key={`${room.id}-${index}`}
                 style={[
-                  styles.roomTabText,
-                  styles.roomTabTextActive
+                  styles.roomListItem,
+                  isActive && styles.roomListItemActive
                 ]}
+                onPress={() => setCurrentRoom(room.id)}
               >
-                {cleaningServiceEnabled
-                  ? t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })
-                  : `${t('settings.section', { lng: sectionLanguage })} ${index + 1}`}
-              </Text>
-            )}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
+                <Image 
+                source={rooms.find(r => r.id === room.id)?.image} 
+                style={{ width: 24, height: 24 }} />
+                <Text style={[
+                  styles.roomListItemText,
+                  isActive && styles.roomListItemTextActive
+                ]}>
+                  {cleaningServiceEnabled
+                    ? t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })
+                    : `${t('settings.section', { lng: sectionLanguage })} ${index + 1}`}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  };
 
   const watermarkSwatchColor = useMemo(() => {
     const baseColor = customWatermarkEnabled
@@ -563,9 +571,11 @@ export default function SettingsScreen({ navigation, route }) {
       const active = await isTrialActive();
       const daysRemaining = await getTrialDaysRemaining();
       const plan = await getTrialPlan();
+      const trialInfo = await getTrialInfo();
       setTrialActive(active);
       setTrialDaysRemaining(daysRemaining);
       setTrialPlan(plan);
+      setTrialDuration(trialInfo?.durationDays || 30);
     };
     loadTrialInfo();
   }, []);
@@ -633,7 +643,24 @@ export default function SettingsScreen({ navigation, route }) {
           console.error('[SETTINGS] Error loading Dropbox tokens:', error);
         }
       };
+      
+      const loadTrialInfo = async () => {
+        try {
+          const active = await isTrialActive();
+          const daysRemaining = await getTrialDaysRemaining();
+          const plan = await getTrialPlan();
+          const trialInfo = await getTrialInfo();
+          setTrialActive(active);
+          setTrialDaysRemaining(daysRemaining);
+          setTrialPlan(plan);
+          setTrialDuration(trialInfo?.durationDays || 30);
+        } catch (error) {
+          console.error('[SETTINGS] Error loading trial info:', error);
+        }
+      };
+      
       loadDropboxTokens();
+      loadTrialInfo();
     }, [userPlan, connectedAccounts, userMode, upsertConnectedAccount, isAuthenticated, adminUserInfo])
   );
 
@@ -784,7 +811,9 @@ export default function SettingsScreen({ navigation, route }) {
   }, [isEnterprisePlan, activeEnterpriseAccount, adminUserInfo, isDropboxAuthenticatedForDisplay, dropboxUserInfoChecked, userPlan, isAuthenticated]);
 
   const [name, setName] = useState(userName);
-  
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [useCurrentLocationLoading, setUseCurrentLocationLoading] = useState(false);
+
   // Update name when userName changes (e.g., when switching back from team mode)
   useEffect(() => {
     setName(userName);
@@ -837,7 +866,6 @@ export default function SettingsScreen({ navigation, route }) {
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
-  const [showContactModal, setShowContactModal] = useState(false);
   const [editingTeamName, setEditingTeamName] = useState(false);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
@@ -1228,16 +1256,9 @@ export default function SettingsScreen({ navigation, route }) {
           console.log('[TEST_JOIN] Step 8: Starting navigation');
           // Navigate to Home screen to show team member mode
           if (navigation) {
-            console.log('[TEST_JOIN] Navigation object exists, calling goBack()');
-            // Use goBack first to close Settings, then navigate to Home
-            // This ensures we're not navigating from a modal context
-            navigation.goBack();
-            console.log('[TEST_JOIN] goBack() called, waiting 200ms before navigate');
-            setTimeout(() => {
-              console.log('[TEST_JOIN] Step 9: Calling navigate("Home")');
-              navigation.navigate('Home');
-              console.log('[TEST_JOIN] Step 9 complete: navigate("Home") called');
-            }, 200);
+            console.log('[TEST_JOIN] Navigation object exists, resetting to Home');
+            navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+            console.log('[TEST_JOIN] navigation.reset called');
           } else {
             console.log('[TEST_JOIN] ERROR: Navigation object is null!');
           }
@@ -1770,8 +1791,8 @@ export default function SettingsScreen({ navigation, route }) {
           {
             text: 'Send Feedback',
             onPress: () => {
-              // Open the existing feedback/contact form
-              setShowContactModal(true);
+              // Navigate to Contact Us screen
+              navigation.navigate('ContactUs');
             }
           },
           { text: 'OK', style: 'cancel' }
@@ -2019,6 +2040,49 @@ export default function SettingsScreen({ navigation, route }) {
   const handleSaveUserInfo = async () => {
     await updateUserInfo(name, location);
   };
+
+  const handleUseCurrentLocation = useCallback(async () => {
+    setUseCurrentLocationLoading(true);
+    try {
+      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          t('settings.locationPermissionTitle', { defaultValue: 'Location access' }),
+          t('settings.locationPermissionMessage', { defaultValue: 'Permission to use location is required to set folder location from GPS.' }),
+          [{ text: 'OK', style: 'cancel' }]
+        );
+        return;
+      }
+      const position = await ExpoLocation.getCurrentPositionAsync({
+        accuracy: ExpoLocation.Accuracy.Balanced,
+      });
+      const [address] = await ExpoLocation.reverseGeocodeAsync({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+      const cityName = address?.city || address?.region || address?.subregion || address?.country || 'Unknown';
+      const matchedLocation = LOCATIONS.find(
+        (loc) => loc.name.toLowerCase() === cityName.toLowerCase()
+      );
+      const locationToSave = matchedLocation ? matchedLocation.id : cityName;
+      await updateUserInfo(undefined, locationToSave);
+      setShowLocationDropdown(false);
+      Alert.alert(
+        t('settings.locationUpdated', { defaultValue: 'Location updated' }),
+        t('settings.locationUpdatedMessage', { defaultValue: 'Folder location set to: ' }) + getLocationName(locationToSave),
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('[Settings] Use current location error:', error);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('settings.locationError', { defaultValue: 'Could not get current location. Please try again or select a location manually.' }),
+        [{ text: 'OK', style: 'cancel' }]
+      );
+    } finally {
+      setUseCurrentLocationLoading(false);
+    }
+  }, [t, updateUserInfo]);
 
   const handleApplyReferralCode = async () => {
     const code = referralCodeInput.trim().toUpperCase();
@@ -2624,153 +2688,218 @@ export default function SettingsScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backButtonText}>←</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleTitleTap} activeOpacity={0.7}>
+        <TouchableOpacity onPress={handleTitleTap} activeOpacity={1} style={styles.titleTouchable} hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}>
           <Text style={styles.title}>{t('settings.title')}</Text>
         </TouchableOpacity>
-        <View style={{ width: 60 }} />
+        <TouchableOpacity
+          style={styles.headerLanguageSelector}
+          onPress={() => setLanguageModalVisible(true)}
+        >
+          <Image
+            source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
+            style={styles.headerLanguageFlagImage}
+            resizeMode="cover"
+          />
+          <Ionicons name="chevron-down" size={18} color="#200E32" style={{ padding: 2 }} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView 
         ref={mainScrollViewRef}
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: 120 }}
         onLayout={(event) => {
           const { height } = event.nativeEvent.layout;
           setScrollContainerHeight(height);
         }}
       >
-        {/* Current Plan - Moved to top */}
-        {userPlan && (
-          <TouchableOpacity
-            style={styles.currentPlanBox}
-            onPress={() => setShowPlanModal(true)}
-          >
-            <View style={styles.currentPlanInfo}>
-              <Text style={styles.currentPlanLabel}>{t('settings.currentPlan')}</Text>
-              <View style={styles.currentPlanValueContainer}>
-                <Text style={styles.currentPlanValue}>
-                  {userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
-                  {trialActive && trialPlan && (
-                    <Text style={styles.trialBadge}>
-                      {' '}({t('settings.trial', { defaultValue: 'Trial' })})
-                    </Text>
-                  )}
-                </Text>
-                <TouchableOpacity onPress={() => setShowPlanModal(true)}>
-                  <Text style={styles.changePlanText}>{t('settings.change')}</Text>
-                </TouchableOpacity>
+        {/* User Account Card */}
+        <View style={styles.userAccountCard}>
+          <View style={styles.userAccountHeader}>
+            <View style={styles.userAccountLeft}>
+              <View style={styles.userAvatar}>
+               <Image 
+               source={require('../../assets/icons/user.png')}
+               style={{ width: 50, height: 50 }}
+               />
               </View>
-              {trialActive && trialDaysRemaining > 0 && (
-                <Text style={styles.trialDaysText}>
-                  {t('settings.trialDaysRemaining', { 
-                    days: trialDaysRemaining,
-                    defaultValue: `${trialDaysRemaining} days remaining` 
-                  })}
+              <View style={styles.userInfo}>
+                <Text style={styles.userName}>{userName || 'User'}</Text>
+                <Text style={styles.accountType}>
+                  {userMode === 'team_member' ? t('settings.teamAccount', { defaultValue: 'Team account' }) : t('settings.individualAccount', { defaultValue: 'Individual account' })}
                 </Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.editButton}>
+              <Image 
+              source={require('../../assets/icons/pen.png')}
+              style={{ width: 25, height: 25 }}
+              />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.planInfo}>
+            <View style={styles.planNameRow}>
+              <Text style={styles.planName}>
+                {t('settings.planName', { plan: userPlan ? t(`settings.plans.${userPlan}`, { defaultValue: userPlan.charAt(0).toUpperCase() + userPlan.slice(1) }) : t('settings.plans.starter', { defaultValue: 'Starter' }), defaultValue: `${userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter'} Plan` })}
+                {trialActive && trialPlan && ` (${t('settings.trial', { defaultValue: 'Trial' })})`}
+              </Text>
+              {trialActive && (
+                  <View style={styles.priceContainer}>
+                <GradientView
+                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.priceBadgeGradient}
+                  fallbackColor="rgba(11, 131, 33, 0.14)"
+                />
+                <Text style={styles.priceText}>{t('settings.free', { defaultValue: 'FREE' })}</Text>
+              </View>
               )}
             </View>
-          </TouchableOpacity>
-        )}
-
-        {/* Language Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
-
-          {/* App Language */}
+            
+            {trialActive && trialDaysRemaining > 0 && (
+              <View style={styles.trialProgressContainer}>
+                <View style={styles.trialProgressBar}>
+                  <View 
+                    style={[
+                      styles.trialProgressFill,
+                      { width: `${(trialDaysRemaining / trialDuration) * 100}%` }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.trialDaysText}>
+                  {t('settings.trialDaysRemaining', { days: trialDaysRemaining, defaultValue: `${trialDaysRemaining} days remaining` })}
+                </Text>
+              </View>
+            )}
+          </View>
+          
           <TouchableOpacity
-            style={[styles.settingButton, { marginBottom: 8 }]}
-            onPress={() => setLanguageModalVisible(true)}
+            style={styles.upgradeButton}
+            onPress={() => setShowPlanModal(true)}
           >
-            <Text style={styles.settingText}>{t('settings.appLanguage')}</Text>
-            <View style={styles.languageSelector}>
-              <Text style={styles.languageFlag}>{getCurrentLanguage().flag}</Text>
-              <Text style={styles.languageName}>{getCurrentLanguage().name}</Text>
-              <Text style={styles.languageChangeText}>›</Text>
-            </View>
+            <Text style={styles.upgradeButtonText}>{t('settings.upgrade', { defaultValue: 'Upgrade' })}</Text>
           </TouchableOpacity>
-
         </View>
 
+        {/* Folder location - manual pick + Use current location (GPS) */}
+        {userMode !== 'team_member' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('settings.folderLocation', { defaultValue: 'Folder location' })}</Text>
+            <Text style={styles.sectionDescription}>
+              {t('settings.folderLocationDescription', { defaultValue: 'Location used in project and upload folder names.' })}
+            </Text>
+            <TouchableOpacity
+              style={styles.locationPicker}
+              onPress={() => setShowLocationDropdown((v) => !v)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.locationPickerText} numberOfLines={1}>
+                {getLocationName(location)}
+              </Text>
+              <Ionicons name={showLocationDropdown ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.GRAY} style={styles.locationPickerArrow} />
+            </TouchableOpacity>
+            {showLocationDropdown && (
+              <View style={styles.locationDropdown}>
+                <TouchableOpacity
+                  style={[styles.locationOption, styles.locationOptionUseCurrent]}
+                  onPress={handleUseCurrentLocation}
+                  disabled={useCurrentLocationLoading}
+                >
+                  {useCurrentLocationLoading ? (
+                    <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginRight: 8 }} />
+                  ) : (
+                    <Ionicons name="locate" size={20} color={COLORS.PRIMARY} style={{ marginRight: 8 }} />
+                  )}
+                  <Text style={styles.locationOptionText}>
+                    {t('settings.useCurrentLocation', { defaultValue: 'Use current location' })}
+                  </Text>
+                </TouchableOpacity>
+                {LOCATIONS.map((loc) => (
+                  <TouchableOpacity
+                    key={loc.id}
+                    style={[styles.locationOption, location === loc.id && styles.locationOptionSelected]}
+                    onPress={async () => {
+                      await updateUserInfo(undefined, loc.id);
+                      setShowLocationDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.locationOptionText, location === loc.id && styles.locationOptionTextSelected]}>
+                      {loc.name}
+                    </Text>
+                    {location === loc.id && (
+                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={styles.locationOptionCheck} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+    
         {userMode !== 'team_member' && (
           <>
             {/* Label Customization */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('settings.labelCustomization_short')}</Text>
+              <Text style={styles.sectionTitle}>{t('settings.labels', { defaultValue: 'Labels' })}</Text>
               <Text style={styles.sectionDescription}>
-                {t('settings.labelCustomizationDescription')}
+                {t('settings.labelCustomizationDescription', { defaultValue: 'Customize the appearance of before/after labels on your photos.' })}
               </Text>
 
-                <View style={styles.settingRow}>
-                  <View style={styles.settingInfo}>
-                    <Text style={styles.settingLabel}>{t('settings.showLabels')}</Text>
-                    <Text style={styles.settingDescription}>
-                      {t('settings.showLabelsDescription')}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={showLabels}
-                    onValueChange={toggleLabels}
-                    trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
-                    thumbColor="white"
-                  />
+              {/* Labels Toggle */}
+              <View style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.showLabels', { defaultValue: 'Labels' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.showLabelsDescription', { defaultValue: 'Show BEFORE/AFTER labels on photos' })}
+                  </Text>
                 </View>
-
-              {/* Dummy Photo Preview */}
-              <View style={styles.labelPreviewSection}>
-                <View style={styles.positionPreviewBox}>
-                  {/* Left half - BEFORE */}
-                  <View style={styles.previewHalfBefore}>
-                    {showLabels && (
-                      <View
-                        style={[
-                          styles.previewLabel,
-                          getLabelPositions(labelMarginVertical, labelMarginHorizontal)[beforeLabelPosition]
-                        ]}
-                      >
-                        <PhotoLabel
-                          label="common.before"
-                          position="left-top"
-                          style={{ position: 'relative', top: 0, left: 0 }}
-                        />
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Right half - AFTER */}
-                  <View style={styles.previewHalfAfter}>
-                    {showLabels && (
-                      <View
-                        style={[
-                          styles.previewLabel,
-                          getLabelPositions(labelMarginVertical, labelMarginHorizontal)[afterLabelPosition]
-                        ]}
-                      >
-                        <PhotoLabel
-                          label="common.after"
-                          position="left-top"
-                          style={{ position: 'relative', top: 0, left: 0 }}
-                        />
-                      </View>
-                    )}
-                  </View>
-                  {/* Watermark Preview */}
-                  {shouldShowWatermark && (
-                    <PhotoWatermark />
-                  )}
-                </View>
+                <Switch
+                  value={showLabels}
+                  onValueChange={toggleLabels}
+                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+                  thumbColor="white"
+                />
               </View>
 
-              <View 
+              {/* Customize Labels Option */}
+              <TouchableOpacity
+                style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}
+                onPress={() => {
+                  navigation.navigate('LabelCustomization');
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.customizeLabelsDescription', { defaultValue: 'Customize the labels on photos' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
+              </TouchableOpacity>
+
+              {/* Customize Watermark Option */}
+              <TouchableOpacity
                 ref={watermarkSectionRef}
-                style={[
-                  styles.settingRow,
-                  highlightWatermarkSection && styles.highlightedSettingRow,
-                ]}
+                style={styles.settingRow}
+                onPress={() => {
+                  // Navigate to watermark customization screen
+                  console.log('Customize Watermark pressed');
+                  console.log('canUse CUSTOM_WATERMARKS:', canUse(FEATURES.CUSTOM_WATERMARKS));
+                  if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                    console.log('Navigating to WatermarkCustomization');
+                    if (navigation && navigation.navigate) {
+                      navigation.navigate('WatermarkCustomization');
+                    } else {
+                      console.error('Navigation not available');
+                    }
+                  } else {
+                    console.log('Feature not available, showing plan modal');
+                    setShowPlanModal(true);
+                  }
+                }}
                 onLayout={(event) => {
                   const { y } = event.nativeEvent.layout;
                   watermarkSectionY.current = y;
@@ -2787,40 +2916,15 @@ export default function SettingsScreen({ navigation, route }) {
                 }}
               >
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>{t('settings.customizeWatermark')}</Text>
+                  <Text style={styles.settingLabel}>{t('settings.customizeWatermark', { defaultValue: 'Customize Watermark' })}</Text>
                   <Text style={styles.settingDescription}>
                     {customWatermarkEnabled
-                      ? t('settings.watermarkCustomDescription')
-                      : t('settings.watermarkDefaultDescription')}
+                      ? t('settings.watermarkCustomDescription', { defaultValue: 'Using custom watermark' })
+                      : t('settings.watermarkDefaultDescription', { defaultValue: 'Using default watermark (Powered by ProofPix)' })}
                   </Text>
                 </View>
-                <Switch
-                  value={customWatermarkEnabled}
-                  onValueChange={(value) => {
-                    // Check if user has access to customize watermark
-                    const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                    console.log('[Settings] Watermark toggle - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-                    
-                    if (value && !hasAccess) {
-                      // Show alert explaining why they can't use this feature instead of plan modal
-                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                      Alert.alert(
-                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                        t('settings.watermarkNotAvailableMessage', { 
-                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                          plan: planName
-                        }),
-                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                      );
-                      return;
-                    }
-                    toggleWatermark(value);
-                  }}
-                  trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
-                  thumbColor="white"
-                  disabled={!canUse(FEATURES.CUSTOM_WATERMARKS)}
-                />
-              </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
+              </TouchableOpacity>
               {customWatermarkEnabled && (
                 <View style={styles.watermarkCustomization}>
                   {/* Add Watermark Checkbox */}
@@ -3014,80 +3118,175 @@ export default function SettingsScreen({ navigation, route }) {
                       </Text>
                     </View>
                   </View>
+
+                  {/* Watermark Position */}
+                  <View style={styles.watermarkField}>
+                    <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkPosition', { defaultValue: 'Watermark Position' })}</Text>
+                    <View style={styles.positionGrid}>
+                      <View style={styles.gridRow}>
+                        {['left-top', 'center-top', 'right-top'].map((key) => {
+                          const pos = getLabelPositions(10, 10)[key];
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              style={[
+                                styles.positionGridCell,
+                                watermarkPosition === key && styles.positionGridCellSelected,
+                              ]}
+                              onPress={() => {
+                                if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                                  setShowPlanModal(true);
+                                  return;
+                                }
+                                updateWatermarkPosition(key);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.positionGridText}>{pos.name}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      <View style={styles.gridRow}>
+                        {['left-middle', 'center-middle', 'right-middle'].map((key) => {
+                          const pos = getLabelPositions(10, 10)[key];
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              style={[
+                                styles.positionGridCell,
+                                watermarkPosition === key && styles.positionGridCellSelected,
+                              ]}
+                              onPress={() => {
+                                if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                                  setShowPlanModal(true);
+                                  return;
+                                }
+                                updateWatermarkPosition(key);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.positionGridText}>{pos.name}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      <View style={styles.gridRow}>
+                        {['left-bottom', 'center-bottom', 'right-bottom'].map((key) => {
+                          const pos = getLabelPositions(10, 10)[key];
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              style={[
+                                styles.positionGridCell,
+                                watermarkPosition === key && styles.positionGridCellSelected,
+                              ]}
+                              onPress={() => {
+                                if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                                  setShowPlanModal(true);
+                                  return;
+                                }
+                                updateWatermarkPosition(key);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.positionGridText}>{pos.name}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Watermark Font */}
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkFont', { defaultValue: 'Watermark Font' })}</Text>
+                      <Text style={styles.settingDescription}>
+                        {FONT_OPTIONS.find(opt => opt.key === watermarkFontFamily)?.label || FONT_OPTIONS[0]?.label}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.fontSelectorButton}
+                      onPress={() => {
+                        if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                          setShowPlanModal(true);
+                          return;
+                        }
+                        setWatermarkFontModalVisible(true);
+                      }}
+                    >
+                      <Text style={styles.fontSelectorButtonText}>{t('settings.chooseFont', { defaultValue: 'Choose Font' })}</Text>
+                    </TouchableOpacity>
+                  </View>
+
                   <Text style={styles.watermarkHelperText}>
                     {t('settings.watermarkHelperText')}
                   </Text>
                 </View>
               )}
 
-              {/* Customize Button - Always active */}
-              <TouchableOpacity
-                style={[
-                  styles.customizeButton,
-                  !showLabels && styles.customizeButtonDisabled
-                ]}
-                onPress={() => {
-                  navigation.navigate('LabelCustomization');
-                }}
-                disabled={!showLabels}
-              >
-                <Text style={[
-                  styles.customizeButtonText,
-                  !showLabels && styles.customizeButtonTextDisabled
-                ]}>{t('settings.customize')}</Text>
-              </TouchableOpacity>
             </View>
 
-            {/* Room Customization */}
+            {/* Sections */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('settings.folderCustomization_short')}</Text>
+              <Text style={styles.sectionTitle}>{t('settings.folderCustomization_short', { defaultValue: 'Sections' })}</Text>
               <Text style={styles.sectionDescription}>
-                {t('settings.folderCustomizationDescription')}
+                {t('settings.folderCustomizationDescription', { defaultValue: 'Customize the names and default status of your project sections.' })}
               </Text>
 
               <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>{t('settings.cleaningService')}</Text>
+                  <Text style={styles.settingLabel}>{t('settings.cleaningService', { defaultValue: 'Cleaning Service' })}</Text>
                   <Text style={styles.settingDescription}>
-                    {t('settings.cleaningServiceDescription')}
+                    {t('settings.cleaningServiceDescription', { defaultValue: 'Show real room names (Kitchen, Bathroom etc.)' })}
                   </Text>
                 </View>
                 <Switch
                   value={cleaningServiceEnabled}
                   onValueChange={toggleCleaningServiceEnabled}
-                  trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
+                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
                   thumbColor="white"
                 />
               </View>
 
               {renderRoomTabs()}
 
-              {/* Customize Button */}
+              {/* Customize Sections Option */}
               <TouchableOpacity
-                style={styles.customizeButton}
+                style={[styles.settingRow, {borderTopWidth: 1, borderTopColor: 'rgba(0, 0, 0, 0.1)'}]}
                 onPress={() => {
                   setShowRoomEditor(true);
                 }}
               >
-                <Text style={styles.customizeButtonText}>{t('settings.customize')}</Text>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.customizeSections', { defaultValue: 'Customize Sections' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.customizeSectionsDescription', { defaultValue: 'Add/edit/remove sections' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
               </TouchableOpacity>
             </View>
 
             {/* Upload Structure */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('settings.uploadStructure')}</Text>
+              <Text style={styles.sectionTitle}>{t('settings.uploadStructure', { defaultValue: 'Upload Structure' })}</Text>
+              <Text style={styles.sectionDescription}>
+                {t('settings.uploadStructureDescription', { defaultValue: 'Configure how photos are organized in cloud storage.' })}
+              </Text>
 
-              <View style={styles.settingRow}>
+              <View style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>{t('settings.useFolderStructure')}</Text>
+                  <Text style={styles.settingLabel}>{t('settings.useFolderStructure', { defaultValue: "Use 'Before/After/Combined' folder structure" })}</Text>
                   <Text style={styles.settingDescription}>
-                    {t('settings.useFolderStructureDescription')}
+                    {t('settings.useFolderStructureDescription', { defaultValue: 'Auto create subfolders for different photo states.' })}
                   </Text>
                 </View>
                 <Switch
                   value={useFolderStructure}
                   onValueChange={toggleUseFolderStructure}
-                  trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
+                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
                   thumbColor="white"
                 />
               </View>
@@ -3096,37 +3295,39 @@ export default function SettingsScreen({ navigation, route }) {
                 <>
                   <View style={styles.settingRow}>
                     <View style={styles.settingInfo}>
-                      <Text style={styles.settingLabel}>{t('settings.beforeFolder')}</Text>
-                      <Text style={styles.settingDescription}>{t('settings.beforeFolderDescription')}</Text>
+                      <Text style={styles.settingLabel}>{t('settings.beforeFolder', { defaultValue: "'Before' Folder" })}</Text>
+                      <Text style={styles.settingDescription}>{t('settings.beforeFolderDescription', { defaultValue: 'Enable the folder for original photos.' })}</Text>
                     </View>
                     <Switch
                       value={enabledFolders.before}
                       onValueChange={(v) => updateEnabledFolders({ before: v })}
-                      trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
+                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
                       thumbColor="white"
                     />
                   </View>
+
                   <View style={styles.settingRow}>
                     <View style={styles.settingInfo}>
-                      <Text style={styles.settingLabel}>{t('settings.afterFolder')}</Text>
-                      <Text style={styles.settingDescription}>{t('settings.afterFolderDescription')}</Text>
+                      <Text style={styles.settingLabel}>{t('settings.afterFolder', { defaultValue: "'After' Folder" })}</Text>
+                      <Text style={styles.settingDescription}>{t('settings.afterFolderDescription', { defaultValue: 'Upload after photos to this folder.' })}</Text>
                     </View>
                     <Switch
                       value={enabledFolders.after}
                       onValueChange={(v) => updateEnabledFolders({ after: v })}
-                      trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
+                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
                       thumbColor="white"
                     />
                   </View>
+
                   <View style={styles.settingRow}>
                     <View style={styles.settingInfo}>
-                      <Text style={styles.settingLabel}>{t('settings.combinedFolder')}</Text>
-                      <Text style={styles.settingDescription}>{t('settings.combinedFolderDescription')}</Text>
+                      <Text style={styles.settingLabel}>{t('settings.combinedFolder', { defaultValue: "'Combined' Folder" })}</Text>
+                      <Text style={styles.settingDescription}>{t('settings.combinedFolderDescription', { defaultValue: 'Upload combined photos to this folder.' })}</Text>
                     </View>
                     <Switch
                       value={enabledFolders.combined}
                       onValueChange={(v) => updateEnabledFolders({ combined: v })}
-                      trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
+                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
                       thumbColor="white"
                     />
                   </View>
@@ -3136,8 +3337,7 @@ export default function SettingsScreen({ navigation, route }) {
           </>
         )}
 
-        {/* Admin Setup Section - Hidden for Starter plan */}
-        {userPlan !== 'starter' && (
+        {/* Cloud & Team Sync Section */}
         <View 
           ref={cloudSyncSectionRef}
           style={[
@@ -3145,7 +3345,8 @@ export default function SettingsScreen({ navigation, route }) {
             highlightCloudSection && styles.highlightedSection,
           ]}
         >
-          <Text style={styles.sectionTitle}>{t('settings.cloudTeamSync')}</Text>
+          <Text style={styles.sectionTitle}>{t('settings.cloudTeamSync', { defaultValue: 'Cloud & Team Sync' })}</Text>
+          <Text style={styles.sectionDescription}>{t('settings.teamPlanFeature', { defaultValue: 'Team Plan Feature' })}</Text>
           
           {userMode === 'team_member' ? (
             <>
@@ -3400,36 +3601,22 @@ export default function SettingsScreen({ navigation, route }) {
                 </>
               ) : (
                 <>
-                  {/* Show feature buttons with enable/disable based on plan */}
-                  <Text style={styles.sectionDescription}>
-                    {userPlan ?
-                      t('settings.planFeatures', { plan: userPlan.charAt(0).toUpperCase() + userPlan.slice(1) }) :
-                      t('settings.signInPrompt')
-                    }
-                  </Text>
-                  
-                  {/* Buttons - Show opposite account's connect button to allow switching (for Pro/Business) */}
-                  <>
-                    {/* Connect to Google Account Button - Hide if Google is connected (for Pro/Business), show if Dropbox or Apple is connected */}
-                        {(() => {
-                          // Show Google button if accountType is NOT 'google' (i.e., Dropbox or Apple is connected, or nothing is connected)
-                          // Use displayedActiveAccount.accountType to get the correct current account type
-                          const currentAccountType = displayedActiveAccount?.accountType || accountType;
-                          const isGoogleConnected = isAuthenticated && currentAccountType === 'google';
-                          const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? !isGoogleConnected : true;
-                          console.log('[SETTINGS] 🔍 Google button shouldShow:', shouldShow, '(isGoogleConnected:', isGoogleConnected, ', currentAccountType:', currentAccountType, ')');
-                          const isDisabled = (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn);
-                          const canUseFeature = canUse(FEATURES.GOOGLE_DRIVE_SYNC);
-                          return shouldShow;
-                        })() && (
+                  {/* Cloud Services Row */}
+                  <View style={styles.cloudServicesRow}>
+                    {/* Connect to Google Account Button */}
+                    {(() => {
+                      const currentAccountType = displayedActiveAccount?.accountType || accountType;
+                      const isGoogleConnected = isAuthenticated && currentAccountType === 'google';
+                      const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? !isGoogleConnected : true;
+                      return shouldShow;
+                    })() && (
                       <TouchableOpacity
                         style={[
-                          styles.featureButton,
-                          styles.googleSignInButton,
-                            (() => {
-                              const styleDisabled = ((userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn));
-                              return styleDisabled && styles.googleButtonDisabled;
-                            })()
+                          styles.cloudServiceButton,
+                          (() => {
+                            const styleDisabled = ((userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn));
+                            return styleDisabled && styles.cloudServiceButtonDisabled;
+                          })()
                         ]}
                         onPress={async () => {
                           // For Pro/Business/Enterprise: Check if Dropbox is connected first
@@ -3505,17 +3692,85 @@ export default function SettingsScreen({ navigation, route }) {
                         {isSigningIn ? (
                           <ActivityIndicator size="small" color="#fff" />
                         ) : (
-                          <Text style={[
-                            styles.googleSignInButtonText,
-                            ((userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? !isGoogleSignInAvailable : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable)) && styles.googleButtonTextDisabled
-                          ]}>
-                            {t('settings.connectToGoogleAccount')}
-                          </Text>
+                          <View style={styles.cloudButtonContent}>
+                            <Image
+                              source={require('../../assets/Google.png')}
+                              style={styles.googleCloudButtonIcon}
+                              resizeMode="contain"
+                            />
+                            <Text style={[
+                              styles.cloudButtonText,
+                              ((userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? !isGoogleSignInAvailable : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable)) && styles.cloudButtonTextDisabled
+                            ]}>
+                              Google
+                            </Text>
+                          </View>
                         )}
                       </TouchableOpacity>
                     )}
                     
-                    {/* Connect to Dropbox Button - Hide if Dropbox is connected (for Pro/Business), show if Google is connected or neither */}
+                    {/* Connect to iCloud/Apple Button - iOS only */}
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity
+                        style={[
+                          styles.cloudServiceButton,
+                          (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn) && styles.cloudServiceButtonDisabled
+                        ]}
+                        onPress={async () => {
+                          if (!canUse(FEATURES.GOOGLE_DRIVE_SYNC)) {
+                            setShowPlanModal(true);
+                            return;
+                          }
+
+                          setIsSigningIn(true);
+                          try {
+                            if (userPlan === 'pro') {
+                              await appleIndividualSignIn();
+                            } else {
+                              await appleAdminSignIn();
+                            }
+
+                            try {
+                              const folderId = await iCloudService.findOrCreateProofPixFolder();
+                              console.log('[iCloud] Folder ready:', folderId);
+                            } catch (folderError) {
+                              console.error('[iCloud] Folder creation error:', folderError);
+                            }
+
+                            Alert.alert(
+                              t('settings.appleConnected', { defaultValue: 'Connected to iCloud' }),
+                              t('settings.appleConnectedMessage', { defaultValue: 'Your account has been connected successfully.' }),
+                              [{ text: t('common.ok') }]
+                            );
+                          } catch (error) {
+                            console.error('[APPLE] Sign-in error:', error);
+                            Alert.alert(
+                              t('common.error'),
+                              error.message || t('settings.appleSignInError', { defaultValue: 'Failed to connect with Apple. Please try again.' })
+                            );
+                          } finally {
+                            setIsSigningIn(false);
+                          }
+                        }}
+                        disabled={!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn}
+                      >
+                        {isSigningIn ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <View style={styles.cloudButtonContent}>
+                            <Ionicons name="logo-apple" size={20} color="#000" />
+                            <Text style={[
+                              styles.cloudButtonText,
+                              !canUse(FEATURES.GOOGLE_DRIVE_SYNC) && styles.cloudButtonTextDisabled
+                            ]}>
+                              Apple
+                            </Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Connect to Dropbox Button */}
                     {(() => {
                       const shouldShow = (userPlan === 'pro' || userPlan === 'business')
                         ? (!isDropboxAuthenticatedForDisplay || isAuthenticated)
@@ -3524,9 +3779,8 @@ export default function SettingsScreen({ navigation, route }) {
                     })() && (
                       <TouchableOpacity
                         style={[
-                          styles.featureButton,
-                          styles.dropboxButton,
-                          ((userPlan === 'pro' || userPlan === 'business') ? isSigningInDropbox : (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox)) && styles.dropboxButtonDisabled
+                          styles.cloudServiceButton,
+                          ((userPlan === 'pro' || userPlan === 'business') ? isSigningInDropbox : (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox)) && styles.cloudServiceButtonDisabled
                         ]}
                         onPress={async () => {
                           // For Pro/Business: Check if another account is connected first
@@ -3683,113 +3937,49 @@ export default function SettingsScreen({ navigation, route }) {
                         {isSigningInDropbox ? (
                           <ActivityIndicator size="small" color="#fff" />
                         ) : (
-                          <Text style={[
-                            styles.featureButtonText,
-                            styles.dropboxButtonText,
-                            ((userPlan === 'pro' || userPlan === 'business') ? false : !canUse(FEATURES.DROPBOX_SYNC)) && styles.dropboxButtonTextDisabled
-                          ]}>
-                            {t('settings.connectToDropbox')}
-                          </Text>
+                          <View style={styles.cloudButtonContent}>
+                            <Image
+                              source={require('../../assets/dropbox.png')}
+                              style={styles.dropboxCloudButtonIcon}
+                              resizeMode="contain"
+                            />
+                            <Text style={[
+                              styles.cloudButtonText,
+                              ((userPlan === 'pro' || userPlan === 'business') ? false : !canUse(FEATURES.DROPBOX_SYNC)) && styles.cloudButtonTextDisabled
+                            ]}>
+                              Dropbox
+                            </Text>
+                          </View>
                         )}
                       </TouchableOpacity>
                     )}
 
-                    {/* Connect to iCloud/Apple Button - iOS only */}
-                    {Platform.OS === 'ios' && (
-                      <TouchableOpacity
-                        style={[
-                          styles.featureButton,
-                          styles.appleSignInButton,
-                          (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn) && styles.appleButtonDisabled
-                        ]}
-                        onPress={async () => {
-                          // Check tier access
-                          if (!canUse(FEATURES.GOOGLE_DRIVE_SYNC)) {
-                            setShowPlanModal(true);
-                            return;
-                          }
+                  </View>
 
-                          setIsSigningIn(true);
-                          try {
-                            // For Pro, use individual sign-in; for Business/Enterprise, use admin sign-in
-                            if (userPlan === 'pro') {
-                              await appleIndividualSignIn();
-                            } else {
-                              await appleAdminSignIn();
-                            }
-
-                            // Initialize iCloud folder
-                            try {
-                              const folderId = await iCloudService.findOrCreateProofPixFolder();
-                              console.log('[iCloud] Folder ready:', folderId);
-                            } catch (folderError) {
-                              console.error('[iCloud] Folder creation error:', folderError);
-                            }
-
-                            Alert.alert(
-                              t('settings.appleConnected', { defaultValue: 'Connected to iCloud' }),
-                              t('settings.appleConnectedMessage', { defaultValue: 'Your account has been connected successfully.' }),
-                              [{ text: t('common.ok') }]
-                            );
-                          } catch (error) {
-                            console.error('[APPLE] Sign-in error:', error);
-                            Alert.alert(
-                              t('common.error'),
-                              error.message || t('settings.appleSignInError', { defaultValue: 'Failed to connect with Apple. Please try again.' })
-                            );
-                          } finally {
-                            setIsSigningIn(false);
-                          }
-                        }}
-                        disabled={!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn}
-                      >
-                        {isSigningIn ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Text style={[
-                            styles.featureButtonText,
-                            styles.appleButtonText,
-                            !canUse(FEATURES.GOOGLE_DRIVE_SYNC) && styles.appleButtonTextDisabled
-                          ]}>
-                            {t('settings.connectToiCloud', { defaultValue: 'Connect with Apple / iCloud' })}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    )}
-
-                    {/* Connect Team Button - Always visible */}
+                  {/* Team Management Row */}
+                  <View style={styles.teamManagementRow}>
+                    {/* Set up Team / Manage Team Button */}
                     <TouchableOpacity
                       style={[
-                        styles.featureButton,
-                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.buttonDisabled
+                        styles.teamButton,
+                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.teamButtonDisabled
                       ]}
                       onPress={async () => {
-                        console.log('[TEAM_BUTTON] Button pressed');
-                        console.log('[TEAM_BUTTON] userPlan:', userPlan);
-                        console.log('[TEAM_BUTTON] isAuthenticated:', isAuthenticated);
-                        console.log('[TEAM_BUTTON] userMode:', userMode);
-                        console.log('[TEAM_BUTTON] isSigningIn:', isSigningIn);
-
                         const isStarter = !userPlan || userPlan === 'starter';
                         const isPro = userPlan === 'pro';
                         const isBusiness = userPlan === 'business';
                         const isEnterprise = userPlan === 'enterprise';
 
-                        console.log('[TEAM_BUTTON] isStarter:', isStarter);
-                        console.log('[TEAM_BUTTON] isPro:', isPro);
-                        console.log('[TEAM_BUTTON] isBusiness:', isBusiness);
-                        console.log('[TEAM_BUTTON] isEnterprise:', isEnterprise);
+                        // Check if team is already connected
+                        const teamConnected = proxySessionId && userMode === 'admin' && (isBusiness || isEnterprise);
+                        console.log('[SET_UP_TEAM] Button pressed, teamConnected:', teamConnected, 'proxySessionId:', proxySessionId, 'userMode:', userMode);
 
-                        // Starter - show plan popup
                         if (isStarter) {
-                          console.log('[TEAM_BUTTON] Showing plan modal for starter');
                           setShowPlanModal(true);
                           return;
                         }
 
-                        // Pro - show popup saying not available
                         if (isPro) {
-                          console.log('[TEAM_BUTTON] Showing unavailable alert for pro');
                           Alert.alert(
                             t('settings.featureUnavailable'),
                             t('settings.teamSetupFeature')
@@ -3797,15 +3987,33 @@ export default function SettingsScreen({ navigation, route }) {
                           return;
                         }
 
-                        // Business - check team member limit
+                        // If team is already connected, open Manage Team modal
+                        if (teamConnected) {
+                          console.log('[SET_UP_TEAM] Team already connected, opening manage modal');
+                          setTeamNameInput(teamName || '');
+                          setLoadingTeamMembers(true);
+                          try {
+                            const result = await proxyService.getTeamMembers(proxySessionId);
+                            if (result.success && result.teamMembers) {
+                              setTeamMembersList(result.teamMembers);
+                            } else {
+                              setTeamMembersList([]);
+                            }
+                          } catch (error) {
+                            console.error('[SETTINGS] Failed to fetch team members:', error);
+                            setTeamMembersList([]);
+                          } finally {
+                            setLoadingTeamMembers(false);
+                            setShowManageTeamModal(true);
+                          }
+                          return;
+                        }
+
                         if (isBusiness) {
-                          console.log('[TEAM_BUTTON] Business plan detected');
                           const maxTeamMembers = getLimit('maxTeamMembers', userPlan);
                           const currentTeamMembers = inviteTokens?.length || 0;
-                          console.log('[TEAM_BUTTON] maxTeamMembers:', maxTeamMembers, 'currentTeamMembers:', currentTeamMembers);
 
                           if (exceedsLimit('maxTeamMembers', userPlan, currentTeamMembers)) {
-                            console.log('[TEAM_BUTTON] Team limit exceeded');
                             Alert.alert(
                               t('settings.teamLimitReached'),
                               t('settings.teamLimitMessage', { limit: maxTeamMembers })
@@ -3814,49 +4022,43 @@ export default function SettingsScreen({ navigation, route }) {
                           }
 
                           if (!isAuthenticated) {
-                            console.log('[TEAM_BUTTON] Not authenticated, showing alert');
                             Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
                             return;
                           }
-                          console.log('[TEAM_BUTTON] Calling handleSetupTeam for business');
                           await handleSetupTeam();
                           return;
                         }
 
-                        // Enterprise - allow unlimited team members
                         if (isEnterprise) {
-                          console.log('[TEAM_BUTTON] Enterprise plan detected');
                           if (!isAuthenticated) {
-                            console.log('[TEAM_BUTTON] Not authenticated, showing alert');
                             Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
                             return;
                           }
-                          console.log('[TEAM_BUTTON] Calling handleSetupTeam for enterprise');
                           await handleSetupTeam();
                           return;
                         }
-
-                        console.log('[TEAM_BUTTON] No matching plan condition - this should not happen!');
                       }}
                       disabled={isSigningIn}
                     >
+                      <Image source={require('../../assets/icons/team.png')} style={{ width: 20, height: 20 }} />
                       <Text style={[
-                        styles.featureButtonText,
-                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.buttonTextDisabled
+                        styles.teamButtonText,
+                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.teamButtonTextDisabled
                       ]}>
-                        {t('settings.setUpTeam')}
+                        {proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise')
+                          ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
+                          : t('settings.setUpTeam', { defaultValue: 'Set up Team' })
+                        }
                       </Text>
                     </TouchableOpacity>
                     
-                    {/* Multiple Profiles Button - Always visible */}
+                    {/* Manage Profiles Button */}
                     <TouchableOpacity
                       style={[
-                        styles.featureButton,
-                        styles.multipleProfilesButton,
-                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business' || isSigningIn) && styles.multipleProfilesButtonDisabled
+                        styles.teamButton,
+                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business' || isSigningIn) && styles.teamButtonDisabled
                       ]}
                       onPress={() => {
-                        // For enterprise, show accounts management modal; for others, show plan modal
                         if (userPlan === 'enterprise') {
                           setShowMultipleAccountsModal(true);
                         } else {
@@ -3865,26 +4067,15 @@ export default function SettingsScreen({ navigation, route }) {
                       }}
                       disabled={isSigningIn}
                     >
-                      <Text style={[
-                        styles.featureButtonText,
-                        styles.multipleProfilesButtonText,
-                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business') && styles.multipleProfilesButtonTextDisabled
+                      <Image source={require('../../assets/icons/cup.png')} style={{ width: 20, height: 20 }} />
+                       <Text style={[
+                        styles.teamButtonText,
+                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || userPlan === 'business') && styles.teamButtonTextDisabled
                       ]}>
-                        {t('settings.manageProfiles', { defaultValue: 'Manage Profiles' })}
+                        Manage Profiles
                       </Text>
                     </TouchableOpacity>
-                    
-                    {!isGoogleSignInAvailable && (canUse(FEATURES.GOOGLE_DRIVE_SYNC) || canUse(FEATURES.TEAM_INVITES)) && (
-                      <View style={styles.expoGoWarning}>
-                        <Text style={styles.expoGoWarningText}>
-                          {t('settings.expoGoWarning')}
-                        </Text>
-                        <Text style={styles.expoGoWarningSubtext}>
-                          {t('settings.expoGoWarningCommand')}
-                        </Text>
-                      </View>
-                    )}
-                  </>
+                  </View>
                 </>
               )}
             </>
@@ -3952,7 +4143,7 @@ export default function SettingsScreen({ navigation, route }) {
                         return (
                           <View style={styles.accountIconContainer}>
                             <View style={[styles.accountIcon, styles.appleIcon]}>
-                              <Text style={styles.accountIconText}>🍎</Text>
+                            <Image source={require('../../assets/icons/apple.png')} style={{ width: 20, height: 20 }} />
                             </View>
                           </View>
                         );
@@ -3961,7 +4152,7 @@ export default function SettingsScreen({ navigation, route }) {
                         return (
                           <View style={styles.accountIconContainer}>
                             <View style={[styles.accountIcon, styles.googleIcon]}>
-                              <Text style={styles.accountIconText}>G</Text>
+                              <Image source={require('../../assets/Google.png')} style={{ width: 20, height: 20 }} />
                             </View>
                           </View>
                         );
@@ -4064,16 +4255,107 @@ export default function SettingsScreen({ navigation, route }) {
                 </View>
               )}
                       <View style={[styles.accountItem, isDropboxAccount && styles.accountItemDropbox]}>
-                        {/* First line: Account name with scrolling + checkbox + icon */}
-                        <ScrollingAccountName
-                          text={activeAccountEmail}
-                          isActive={true}
-                          accountType={accountType}
-                          onToggle={() => {
-                            // Active account checkbox - no action needed, just show as active
-                          }}
-                        />
-                        {/* Second line: Buttons */}
+                        {/* Google Account Connection Section */}
+                        {accountType === 'google' && (
+                          <View style={styles.googleAccountConnection}>
+                            <View style={styles.googleAccountIcon}>
+                              <Image
+                                source={require('../../assets/Google.png')}
+                                style={styles.googleAccountIconImage}
+                                resizeMode="contain"
+                              />
+                            </View>
+                            <View style={styles.googleAccountInfo}>
+                              <Text style={styles.googleAccountEmail}>{activeAccountEmail}</Text>
+                              <Text style={styles.googleAccountStatus}>Connected with Google</Text>
+                            </View>
+                          </View>
+                        )}
+                        
+                        {/* Dropbox Account Connection Section */}
+                        {accountType === 'dropbox' && (
+                          <View style={styles.googleAccountConnection}>
+                            <View style={styles.dropboxAccountIcon}>
+                              <Image
+                                source={require('../../assets/dropbox.png')}
+                                style={styles.dropboxAccountIconImage}
+                                resizeMode="contain"
+                              />
+                            </View>
+                            <View style={styles.googleAccountInfo}>
+                              <Text style={styles.googleAccountEmail}>{activeAccountEmail}</Text>
+                              <Text style={styles.googleAccountStatus}>Connected with Dropbox</Text>
+                            </View>
+                          </View>
+                        )}
+                        
+                        {/* Apple Account Connection Section */}
+                        {accountType === 'apple' && (
+                          <View style={styles.googleAccountConnection}>
+                            <View style={styles.appleAccountIcon}>
+                              <Ionicons name="logo-apple" size={24} color="#000" />
+                            </View>
+                            <View style={styles.googleAccountInfo}>
+                              <Text style={styles.googleAccountEmail}>{activeAccountEmail}</Text>
+                              <Text style={styles.googleAccountStatus}>Connected with Apple</Text>
+                            </View>
+                          </View>
+                        )}
+                        
+                        {/* Dropbox Integration Option (if Google is connected) */}
+                        {accountType === 'google' && !isDropboxAuthenticatedForDisplay && (
+                          <TouchableOpacity
+                            style={styles.dropboxIntegrationButton}
+                            onPress={async () => {
+                              // Same logic as the Dropbox connect button
+                              const shouldCheckTier = userPlan !== 'pro' && userPlan !== 'business' && userPlan !== 'enterprise';
+                              const canUseDropbox = canUse(FEATURES.DROPBOX_SYNC);
+                              
+                              if (shouldCheckTier && !canUseDropbox) {
+                                setShowPlanModal(true);
+                                return;
+                              }
+                              
+                              const isConfigured = dropboxAuthService.isConfigured();
+                              if (!isConfigured) {
+                                Alert.alert(
+                                  t('settings.featureUnavailable'),
+                                  t('settings.dropboxNotConfigured')
+                                );
+                                return;
+                              }
+                              setIsSigningInDropbox(true);
+                              try {
+                                const result = await dropboxAuthService.signIn();
+                                const folderPath = await dropboxService.findOrCreateProofPixFolder();
+                                await dropboxAuthService.loadStoredTokens();
+                                const isAuth = dropboxAuthService.isAuthenticated();
+                                const userInfo = dropboxAuthService.getUserInfo();
+                                setIsDropboxAuthenticated(isAuth);
+                                setDropboxUserInfo(userInfo);
+                                Alert.alert(
+                                  t('settings.dropboxConnected'),
+                                  t('settings.dropboxConnectedMessage', { email: userInfo?.email || '' }),
+                                  [{ text: t('common.ok') }]
+                                );
+                              } catch (error) {
+                                console.error('[DROPBOX] Sign-in error:', error);
+                                Alert.alert(t('common.error'), error.message || t('settings.dropboxSignInError'));
+                              } finally {
+                                setIsSigningInDropbox(false);
+                              }
+                            }}
+                          >
+                            <Image
+                              source={require('../../assets/dropbox.png')}
+                              style={styles.dropboxIntegrationIcon}
+                              resizeMode="contain"
+                            />
+                            <Text style={styles.dropboxIntegrationText}>Dropbox</Text>
+                          </TouchableOpacity>
+                        )}
+                        
+                        {/* Action Buttons Row */}
                         <View style={styles.accountActionsRow}>
                           {/* Yellow button (left) - Set Up Team or Manage Team */}
                         {(() => {
@@ -4083,24 +4365,38 @@ export default function SettingsScreen({ navigation, route }) {
                         })()}
                         <TouchableOpacity
                           style={[
-                            styles.accountActionButton,
-                            styles.accountActionButtonYellow,
+                            styles.setupTeamButtonNew,
                             isSigningIn && styles.buttonDisabled
                           ]}
                           onPress={async () => {
+                            // Re-compute isTeamConnected using fresh values to avoid stale closure
+                            const currentIsTeamConnected = proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise');
+
+                            console.log('[MANAGE_TEAM] Button pressed!');
+                            console.log('[MANAGE_TEAM] userPlan:', userPlan);
+                            console.log('[MANAGE_TEAM] isTeamConnected (closure):', isTeamConnected);
+                            console.log('[MANAGE_TEAM] currentIsTeamConnected (fresh):', currentIsTeamConnected);
+                            console.log('[MANAGE_TEAM] proxySessionId:', proxySessionId);
+                            console.log('[MANAGE_TEAM] userMode:', userMode);
+
                             // Show tier selection modal for Starter/Pro users
                             if (userPlan === 'starter' || userPlan === 'pro') {
+                              console.log('[MANAGE_TEAM] Showing plan modal for starter/pro');
                               setShowPlanModal(true);
                               return;
                             }
 
                             // If team is connected, open Manage Team modal
-                            if (isTeamConnected) {
+                            // Use fresh computed value to ensure we have the latest state
+                            if (currentIsTeamConnected) {
+                              console.log('[MANAGE_TEAM] Team is connected, opening manage modal');
                               // Fetch team members before opening modal
                               setTeamNameInput(teamName || ''); // Initialize with current team name
                               setLoadingTeamMembers(true);
                               try {
+                                console.log('[MANAGE_TEAM] Fetching team members...');
                                 const result = await proxyService.getTeamMembers(proxySessionId);
+                                console.log('[MANAGE_TEAM] Team members result:', result);
                                 if (result.success && result.teamMembers) {
                                   setTeamMembersList(result.teamMembers);
                                 } else {
@@ -4110,11 +4406,14 @@ export default function SettingsScreen({ navigation, route }) {
                                 console.error('[SETTINGS] Failed to fetch team members:', error);
                                 setTeamMembersList([]);
                               } finally {
+                                console.log('[MANAGE_TEAM] Opening manage team modal NOW');
                                 setLoadingTeamMembers(false);
                                 setShowManageTeamModal(true);
                               }
                               return;
                             }
+
+                            console.log('[MANAGE_TEAM] Team not connected, proceeding with setup');
                             
                             // If team is not connected, proceed with setup
                             const isPro = userPlan === 'pro';
@@ -4173,19 +4472,19 @@ export default function SettingsScreen({ navigation, route }) {
                             return isDisabled;
                           })()}
                         >
-                          <Text style={[
-                            styles.accountActionButtonText,
-                            styles.accountActionButtonTextYellow
-                          ]}>
-                            {isTeamConnected 
-                              ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
-                              : t('settings.setUpTeam', { defaultValue: 'Set Up Team' })
-                            }
-                          </Text>
+                          <View style={styles.setupTeamButtonContent}>
+                            <Ionicons name="people" size={20} color="#000" />
+                            <Text style={styles.setupTeamButtonTextNew}>
+                              {isTeamConnected 
+                                ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
+                                : t('settings.setUpTeam', { defaultValue: 'Set up Team' })
+                              }
+                            </Text>
+                          </View>
                         </TouchableOpacity>
-                        {/* Light red button (right) - Disconnect or Reconnect */}
+                        {/* Disconnect button (right) */}
                         <TouchableOpacity
-                          style={[styles.accountActionButton, styles.accountActionButtonDisconnect]}
+                          style={styles.disconnectButtonNew}
                           onPress={async () => {
                             // Handle disconnect for Google, Dropbox, and Apple accounts
                             console.log('[SETTINGS] 🔌 Disconnect button pressed for accountType:', accountType);
@@ -4255,11 +4554,14 @@ export default function SettingsScreen({ navigation, route }) {
                             return isDisabled;
                           })()}
                         >
-                          <Text style={[styles.accountActionButtonText, styles.accountActionButtonTextDisconnect]}>
-                            {needsReconnect
-                              ? t('settings.reconnect', { defaultValue: 'Reconnect' })
-                              : t('settings.disconnect', { defaultValue: 'Disconnect' })}
-                          </Text>
+                          <View style={styles.disconnectButtonContent}>
+                            <Ionicons name="power" size={20} color="#CC0000" />
+                            <Text style={styles.disconnectButtonTextNew}>
+                              {needsReconnect
+                                ? t('settings.reconnect', { defaultValue: 'Reconnect' })
+                                : t('settings.disconnect', { defaultValue: 'Disconnect' })}
+                            </Text>
+                          </View>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -4688,11 +4990,49 @@ export default function SettingsScreen({ navigation, route }) {
             </>
           ) : null}
         </View>
-        )}
 
-        {/* Referrals */}
+        {/* Invite Friends */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('referral.settingsSectionTitle', { defaultValue: 'Referrals' })}</Text>
+          <Text style={styles.sectionTitle}>{t('settings.inviteFriends', { defaultValue: 'Invite Friends' })}</Text>
+          <Text style={styles.sectionDescription}>
+            {t('settings.inviteFriendsDescription', { defaultValue: 'Earn rewards for inviting friends' })}
+          </Text>
+
+          {/* Stats Cards */}
+          <View style={styles.referralStatsContainer}>
+            <View style={styles.referralStatCard}>
+              <Image source={require('../../assets/icons/team.png')} style={{height:25, width: 25}}/>
+              <View >
+              <Text style={styles.referralStatValue}>
+                {t('settings.outOf', { current: referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0, total: 3, defaultValue: `${referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0} out of 3` })}
+              </Text>
+              <Text style={styles.referralStatLabel}>
+                {t('settings.friendsJoined', { defaultValue: 'Friends Joined' })}
+              </Text>
+              </View>
+            </View>
+            <View style={styles.referralStatCard}>
+              <Image source={require('../../assets/icons/cup.png')} style={{height:25, width: 25}}/>
+              <View>
+              <Text style={styles.referralStatValue}>
+                {t('settings.monthsCount', { count: referralInfo.totalMonthsEarned || 0, defaultValue: `${referralInfo.totalMonthsEarned || 0} Months` })}
+              </Text>
+              <Text style={styles.referralStatLabel}>
+                {t('settings.monthsEarned', { defaultValue: 'Months earned' })}
+              </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Invite Friends Button */}
+          <TouchableOpacity
+            style={styles.inviteFriendsButton}
+            onPress={() => navigation.navigate('Referral')}
+          >
+            <Text style={styles.inviteFriendsButtonText}>
+              {t('settings.inviteFriends', { defaultValue: 'Invite Friends' })}
+            </Text>
+          </TouchableOpacity>
 
           {/* Referral Code Input */}
           <View style={styles.referralCodeContainer}>
@@ -4700,7 +5040,7 @@ export default function SettingsScreen({ navigation, route }) {
               style={styles.referralCodeInput}
               value={referralCodeInput}
               onChangeText={setReferralCodeInput}
-              placeholder={t('referral.enterCodePlaceholder', { defaultValue: 'Enter referral code' })}
+              placeholder={t('settings.enterReferralCode', { defaultValue: 'Enter referral code' })}
               placeholderTextColor={COLORS.GRAY}
               autoCapitalize="characters"
               autoCorrect={false}
@@ -4711,93 +5051,41 @@ export default function SettingsScreen({ navigation, route }) {
               disabled={isApplyingReferral}
             >
               <Text style={styles.referralApplyButtonText}>
-                {isApplyingReferral
-                  ? t('referral.applyingButton', { defaultValue: 'Applying...' })
-                  : t('referral.applyButton', { defaultValue: 'Apply' })}
+                {isApplyingReferral ? t('settings.applying', { defaultValue: 'Applying...' }) : t('settings.apply', { defaultValue: 'Apply' })}
               </Text>
             </TouchableOpacity>
           </View>
+        </View>
 
-          <View style={styles.referralStatsContainer}>
-            <View style={styles.referralStatItem}>
-              <Text style={styles.referralStatLabel}>
-                {t('referral.settingsFriendsJoinedLabel', { defaultValue: 'Friends Joined' })}
-              </Text>
-              <Text style={styles.referralStatValue}>
-                {t('referral.settingsFriendsJoinedSummary', {
-                  completed: referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0,
-                  defaultValue: `${referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0} of 3`
-                })}
-              </Text>
-            </View>
-            <View style={[styles.referralStatItem, styles.referralStatItemRight]}>
-              <Text style={[styles.referralStatLabel, styles.referralStatLabelRight]}>
-                {t('referral.settingsMonthsEarnedLabel', { defaultValue: 'Months Earned' })}
-              </Text>
-              <Text style={[styles.referralStatValue, styles.referralStatValueRight]}>
-                {t('referral.settingsMonthsEarnedSummary', {
-                  months: referralInfo.totalMonthsEarned || 0,
-                  defaultValue: `${referralInfo.totalMonthsEarned || 0} months`
-                })}
-              </Text>
-            </View>
-          </View>
+        
+
+        {/* Contact Us Section */}
+        <View style={styles.section}>
           <TouchableOpacity
-            style={[styles.featureButton, styles.referralButton]}
-            onPress={() => navigation.navigate('Referral')}
+            style={styles.contactUsRow}
+            onPress={() => navigation.navigate('ContactUs')}
           >
-            <Text style={[styles.featureButtonText, styles.referralButtonText]}>
-              {t('referral.settingsInviteButton', { defaultValue: 'Invite Friends' })}
-            </Text>
+            <View style={styles.contactUsContent}>
+              <Text style={styles.sectionTitle}>{t('settings.contactUs', { defaultValue: 'Contact us' })}</Text>
+              <Text style={styles.sectionDescription}>
+                {t('settings.contactUsDescription', { defaultValue: 'Have question or need help?' })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={COLORS.GRAY} />
           </TouchableOpacity>
         </View>
 
-        {/* Account & Data */}
-        <View 
-          ref={accountDataSectionRef}
-          style={styles.section}
-        >
-          <Text style={styles.sectionTitle}>{t('settings.accountData')}</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t('settings.userName')}</Text>
-            <TextInput
-              style={[styles.input, isTeamMember && styles.inputDisabled]}
-              value={name}
-              onChangeText={setName}
-              placeholder={t('settings.enterYourName')}
-              placeholderTextColor={COLORS.GRAY}
-              onBlur={handleSaveUserInfo}
-              editable={!isTeamMember}
-            />
-          </View>
-
-          <View style={styles.divider} />
-
-          {/* Contact Us Section */}
-          <Text style={styles.sectionTitle}>{t('settings.contactUs')}</Text>
+        {/* Data Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.data', { defaultValue: 'Data' })}</Text>
           <Text style={styles.sectionDescription}>
-            {t('settings.contactUsDescription')}
+            {t('settings.dataDescription', { defaultValue: 'This will clear all projects, photos and settings' })}
           </Text>
           <TouchableOpacity
-            style={styles.contactButton}
-            onPress={() => setShowContactModal(true)}
-          >
-            <Text style={styles.contactButtonText}>{t('settings.contactUs')}</Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.sectionDescription}>
-            {isTeamMember
-              ? t('settings.resetTeamMemberDescription')
-              : t('settings.resetIndividualDescription')}
-          </Text>
-          <TouchableOpacity
-            style={styles.resetButton}
+            style={styles.resetDataButton}
             onPress={handleResetUserData}
           >
-            <Text style={styles.resetButtonText}>{t('settings.resetUserData')}</Text>
+            <Text style={styles.resetDataButtonText}>{t('settings.resetUserData', { defaultValue: 'Reset User Data' })}</Text>
           </TouchableOpacity>
 
           {showDeleteFromStorageHint && (
@@ -4867,12 +5155,49 @@ export default function SettingsScreen({ navigation, route }) {
 
         {/* App Version Info */}
         <View style={styles.versionContainer}>
+          <View style={styles.proofPixBranding}>
+             <Image source={require('../../assets/logo.png')} style={{ width: 50, height: 50
+             }} resizeMode="contain"/>
+            <Text style={styles.proofPixText}>ProofPix</Text>
+          </View>
           <Text style={styles.versionText}>
-            v{Application.nativeApplicationVersion} ({Application.nativeBuildVersion})
+            Version {Application.nativeApplicationVersion} ({Application.nativeBuildVersion})
           </Text>
         </View>
 
         </ScrollView>
+
+        <View style={styles.bottomNavPill}>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+        >
+          <Image source={require('../../assets/icons/home.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Projects' }] })}
+        >
+          <Image source={require('../../assets/icons/projects.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Projects</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] })}
+        >
+          <Image source={require('../../assets/icons/gallery.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Gallery</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          onPress={handleTitleTap}
+          style={[styles.navItem, styles.navItemActive]}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Image source={require('../../assets/icons/settings.png')} style={styles.navItemImage} resizeMode="contain" />
+          <Text style={styles.navItemText}>Settings</Text>
+        </TouchableOpacity>
+      </View>
 
         <RoomEditor
           visible={showRoomEditor}
@@ -5074,33 +5399,118 @@ export default function SettingsScreen({ navigation, route }) {
           </View>
         </Modal>
 
+        {/* Watermark Font Modal */}
+        <Modal
+          isVisible={watermarkFontModalVisible}
+          onBackdropPress={() => setWatermarkFontModalVisible(false)}
+          onBackButtonPress={() => setWatermarkFontModalVisible(false)}
+          style={styles.bottomModal}
+          useNativeDriver
+        >
+          <View style={styles.customModalSheet}>
+            <View style={styles.customModalHeader}>
+              <Text style={styles.customModalTitle}>{t('settings.watermarkFont', { defaultValue: 'Watermark Font' })}</Text>
+              <TouchableOpacity
+                onPress={() => setWatermarkFontModalVisible(false)}
+                style={styles.customModalCloseButton}
+              >
+                <Text style={styles.customModalCloseText}>Γ£ò</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.fontList}>
+              {FONT_OPTIONS.map((option) => {
+                const isSelected = option.key === watermarkFontFamily;
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    style={[
+                      styles.fontOptionRow,
+                      isSelected && styles.fontOptionRowSelected,
+                    ]}
+                    onPress={() => {
+                      if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                        setWatermarkFontModalVisible(false);
+                        setShowPlanModal(true);
+                        return;
+                      }
+                      updateWatermarkFontFamily(option.key);
+                      setWatermarkFontModalVisible(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.fontOptionTitle,
+                        option.fontFamily ? { fontFamily: option.fontFamily } : null,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    <Text style={styles.fontOptionSubtitle}>{option.description}</Text>
+                    <Text
+                      style={[
+                        styles.fontOptionPreview,
+                        option.fontFamily ? { fontFamily: option.fontFamily } : null,
+                      ]}
+                    >
+                      Created with ProofPix.app
+                    </Text>
+                    {isSelected && <Text style={styles.fontSelectedBadge}>{t('common.selected')}</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
+
         {/* hex modal rendered inside color modal */}
 
         {/* Plan Selection Modal */}
         <RNModal
           visible={showPlanModal}
-          transparent={true}
           animationType="slide"
+          presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
           onRequestClose={() => setShowPlanModal(false)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{t('planModal.title')}</Text>
-                <TouchableOpacity
-                  onPress={() => setShowPlanModal(false)}
-                  style={styles.modalCloseButton}
-                >
-                  <Text style={styles.modalCloseText}>×</Text>
-                </TouchableOpacity>
-              </View>
+          <View style={[styles.planModalContainer, { paddingTop: Platform.OS === 'ios' ? 12 : insets.top }]}>
+            <View style={styles.planModalHeader}>
+              <TouchableOpacity
+                onPress={() => setShowPlanModal(false)}
+                style={styles.planModalBackButton}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
+              </TouchableOpacity>
+              <Text style={styles.planModalTitle}>Upgrade a plan</Text>
+              <View style={{ width: 40 }} />
+            </View>
 
-              <ScrollView style={styles.modalScrollView}>
-                <View style={styles.planContainer}>
-                  <TouchableOpacity
-                    style={[styles.planButton, userPlan === 'starter' && styles.planButtonSelected]}
-                    onPress={async () => {
-                      // Clear team data when switching to Starter
+            <View style={styles.planModalBody}>
+              <ScrollView style={styles.planModalScrollView} contentContainerStyle={styles.planModalContent}>
+                {/* Starter Plan Card */}
+                <TouchableOpacity
+                  style={[styles.planCard, userPlan === 'starter' && styles.planCardSelected]}
+                  onPress={async () => {
+                    await updateUserPlan('starter');
+                    setShowPlanModal(false);
+                  }}
+                >
+                  <View style={styles.planCardHeader}>
+                    <Text style={styles.planCardTitle}>Starter</Text>
+                    <View style={styles.planBadgeFree}>
+                      <Text style={styles.planBadgeText}>FREE</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.planCardDescription}>
+                    Free forever. Easily manage your first project and create stunning before/after photos ready for social sharing.
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Pro Plan Card */}
+                <TouchableOpacity
+                  style={[styles.planCard, userPlan === 'pro' && styles.planCardSelected]}
+                  onPress={async () => {
+                    try {
+                      // Clear team data when switching to Pro
                       if (userPlan === 'business' || userPlan === 'enterprise') {
                         try {
                           await updatePlanLimit(0);
@@ -5109,363 +5519,319 @@ export default function SettingsScreen({ navigation, route }) {
                           console.error('[SETTINGS] Error clearing team data:', error);
                         }
                       }
-                      await updateUserPlan('starter');
-                      setShowPlanModal(false);
-                    }}
-                  >
-                    <View style={styles.planButtonRow}>
-                      <Text style={[styles.planButtonText, userPlan === 'starter' && styles.planButtonTextSelected]}>{t('firstLoad.starter')}</Text>
-                      <Text style={styles.planPrice}>Free</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <Text style={styles.planSubtext}>{t('firstLoad.starterDesc')}</Text>
-                </View>
+                      
+                      // Check if user is on active trial - if so, skip IAP
+                      const onTrial = await isTrialActive();
 
-                <View style={styles.planContainer}>
-                  <TouchableOpacity
-                    style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
-                    onPress={async () => {
-                      try {
-                        // Clear team data when switching to Pro
-                        if (userPlan === 'business' || userPlan === 'enterprise') {
-                          try {
-                            await updatePlanLimit(0);
-                            await initializeProxySession(null);
-                          } catch (error) {
-                            console.error('[SETTINGS] Error clearing team data:', error);
-                          }
+                      // On iOS, require in-app purchase for Pro plan (unless on trial)
+                      if (Platform.OS === 'ios' && !onTrial) {
+                        // Check if already on Pro plan
+                        if (userPlan === 'pro') {
+                          Alert.alert(
+                            'Already Subscribed',
+                            'You already have the Pro plan.',
+                            [{ text: 'OK' }]
+                          );
+                          return;
                         }
                         
-                        // Check if user is on active trial - if so, skip IAP
-                        const onTrial = await isTrialActive();
-
-                        // On iOS, require in-app purchase for Pro plan (unless on trial)
-                        if (Platform.OS === 'ios' && !onTrial) {
-                          // Check if already on Pro plan
-                          if (userPlan === 'pro') {
-                            Alert.alert(
-                              'Already Subscribed',
-                              'You already have the Pro plan.',
-                              [{ text: 'OK' }]
-                            );
-                            return;
-                          }
+                        try {
+                          console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Pro...');
                           
-                          try {
-                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Pro...');
-                            
-                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
-                            setShowPlanModal(false);
-                            
-                            // Wait for modal to close
-                            await new Promise(resolve => setTimeout(resolve, 300));
-                            
-                            await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
-                            
-                            // Purchase succeeded - update plan
-                            await updateUserPlan('pro');
-                            
-                            // Wait for context to update
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                            
-                            // Show success message
-                            Alert.alert(
-                              t('common.success', { defaultValue: 'Success' }),
-                              t('settings.proPlanActivated', { 
-                                defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' 
-                              })
-                            );
-                          } catch (err) {
-                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
-                              return;
-                            }
-                            
-                            Alert.alert(
-                              t('common.error', { defaultValue: 'Error' }),
-                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-                            );
-                            return;
-                          }
-                        } else {
-                          // Trial or non-iOS - update plan directly
-                          await updateUserPlan('pro');
+                          // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
                           setShowPlanModal(false);
-                        }
-                      } catch (error) {
-                        console.error('[SETTINGS] Error changing to Pro plan:', error);
-                        Alert.alert(
-                          t('common.error'),
-                          t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
-                        );
-                      }
-                    }}
-                  >
-                    <View style={styles.planButtonRow}>
-                      <Text style={[styles.planButtonText, userPlan === 'pro' && styles.planButtonTextSelected]}>{t('firstLoad.pro')}</Text>
-                      <Text style={styles.planPrice}>$8.99/month</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <Text style={styles.planSubtext}>{t('firstLoad.proDesc')}</Text>
-                </View>
-
-                <View style={styles.planContainer}>
-                  <TouchableOpacity
-                    style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
-                    onPress={async () => {
-                      try {
-                        // Check if user is on active trial - if so, skip IAP
-                        const onTrial = await isTrialActive();
-
-                        // On iOS, require in-app purchase for Business plan (unless on trial)
-                        if (Platform.OS === 'ios' && !onTrial) {
-                          // Check if already on Business plan
-                          if (userPlan === 'business') {
-                            Alert.alert(
-                              'Already Subscribed',
-                              'You already have the Business plan.',
-                              [{ text: 'OK' }]
-                            );
+                          
+                          // Wait for modal to close
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                          
+                          await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                          
+                          // Purchase succeeded - update plan
+                          await updateUserPlan('pro');
+                          
+                          // Wait for context to update
+                          await new Promise(resolve => setTimeout(resolve, 500));
+                          
+                          // Show success message
+                          Alert.alert(
+                            t('common.success', { defaultValue: 'Success' }),
+                            t('settings.proPlanActivated', { 
+                              defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' 
+                            })
+                          );
+                        } catch (err) {
+                          if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                             return;
                           }
                           
-                          try {
-                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Business...');
-                            
-                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
-                            setShowPlanModal(false);
-                            
-                            // Wait for modal to close
-                            await new Promise(resolve => setTimeout(resolve, 300));
-                            
-                            await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
-                            
-                            // Purchase succeeded - update plan
-                            await updatePlanLimit(5);
-                            await updateUserPlan('business');
-                            
-                            // Wait for context to update
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                            
-                            // Show success message
-                            Alert.alert(
-                              t('common.success', { defaultValue: 'Success' }),
-                              t('settings.businessPlanActivated', { 
-                                defaultValue: 'Business plan activated! You can now add up to 5 team members.' 
-                              })
-                            );
-                          } catch (err) {
-                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
-                              return;
-                            }
-                            
-                            Alert.alert(
-                              t('common.error', { defaultValue: 'Error' }),
-                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-                            );
-                            return;
-                          }
-                        } else {
-                          // Trial or non-iOS - update plan directly
+                          Alert.alert(
+                            t('common.error', { defaultValue: 'Error' }),
+                            t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                          );
+                          return;
+                        }
+                      } else {
+                        // Trial or non-iOS - update plan directly
+                        await updateUserPlan('pro');
+                        setShowPlanModal(false);
+                      }
+                    } catch (error) {
+                      console.error('[SETTINGS] Error changing to Pro plan:', error);
+                      Alert.alert(
+                        t('common.error'),
+                        t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                      );
+                    }
+                  }}
+                >
+                  <View style={styles.planCardHeader}>
+                    <Text style={styles.planCardTitle}>Pro</Text>
+                    <View style={styles.planBadgePrice}>
+                      <Text style={styles.planBadgeText}>$8.99/month</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.planCardDescription}>
+                    Everything in Starter & For professionals. Cloud sync + bulk upload.
+                  </Text>
+                  <View style={styles.recommendedBadge}>
+                    <Text style={styles.recommendedBadgeText}>👍 Recommended</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Business Plan Card */}
+                <TouchableOpacity
+                  style={[styles.planCard, userPlan === 'business' && styles.planCardSelected]}
+                  onPress={async () => {
+                    try {
+                      // Check if user is on active trial - if so, skip IAP
+                      const onTrial = await isTrialActive();
+
+                      // On iOS, require in-app purchase for Business plan (unless on trial)
+                      if (Platform.OS === 'ios' && !onTrial) {
+                        // Check if already on Business plan
+                        if (userPlan === 'business') {
+                          Alert.alert(
+                            'Already Subscribed',
+                            'You already have the Business plan.',
+                            [{ text: 'OK' }]
+                          );
+                          return;
+                        }
+                        
+                        try {
+                          console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Business...');
+                          
+                          // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
+                          setShowPlanModal(false);
+                          
+                          // Wait for modal to close
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                          
+                          await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                          
+                          // Purchase succeeded - update plan
                           await updatePlanLimit(5);
                           await updateUserPlan('business');
-                          setShowPlanModal(false);
-                        }
-                      } catch (error) {
-                        console.error('[SETTINGS] Error setting up business plan:', error);
-                        Alert.alert(
-                          t('common.error'),
-                          t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
-                        );
-                      }
-                    }}
-                  >
-                    <View style={styles.planButtonRow}>
-                      <Text style={[styles.planButtonText, userPlan === 'business' && styles.planButtonTextSelected]}>{t('firstLoad.business')}</Text>
-                      <Text style={styles.planPrice}>$24.99/month</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <Text style={styles.planSubtext}>
-                    For small teams up to 5 members. $5.99 per additional team member
-                  </Text>
-                </View>
-
-                <View style={styles.planContainer}>
-                  <TouchableOpacity
-                    style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
-                    onPress={async () => {
-                      try {
-                        // Check if user is on active trial - if so, skip IAP
-                        const onTrial = await isTrialActive();
-
-                        // On iOS, require in-app purchase for Enterprise plan (unless on trial)
-                        if (Platform.OS === 'ios' && !onTrial) {
-                          // Check if already on Enterprise plan
-                          if (userPlan === 'enterprise') {
-                            Alert.alert(
-                              'Already Subscribed',
-                              'You already have the Enterprise plan.',
-                              [{ text: 'OK' }]
-                            );
+                          
+                          // Wait for context to update
+                          await new Promise(resolve => setTimeout(resolve, 500));
+                          
+                          // Show success message
+                          Alert.alert(
+                            t('common.success', { defaultValue: 'Success' }),
+                            t('settings.businessPlanActivated', { 
+                              defaultValue: 'Business plan activated! You can now add up to 5 team members.' 
+                            })
+                          );
+                        } catch (err) {
+                          if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                             return;
                           }
                           
-                          try {
-                            console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Enterprise...');
-                            
-                            // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
-                            setShowPlanModal(false);
-                            
-                            // Wait for modal to close
-                            await new Promise(resolve => setTimeout(resolve, 300));
-                            
-                            await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
-                            
-                            // Purchase succeeded - update plan
-                            await updatePlanLimit(15);
-                            await updateUserPlan('enterprise');
-                            
-                            // Wait for context to update
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                            
-                            Alert.alert(
-                              t('common.success', { defaultValue: 'Success' }),
-                              t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
-                            );
-                          } catch (err) {
-                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
-                              return;
-                            }
-                            
-                            Alert.alert(
-                              t('common.error', { defaultValue: 'Error' }),
-                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-                            );
-                            return;
-                          }
-                        } else {
-                          // Trial or non-iOS - update plan directly
+                          Alert.alert(
+                            t('common.error', { defaultValue: 'Error' }),
+                            t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                          );
+                          return;
+                        }
+                      } else {
+                        // Trial or non-iOS - update plan directly
+                        await updatePlanLimit(5);
+                        await updateUserPlan('business');
+                        setShowPlanModal(false);
+                      }
+                    } catch (error) {
+                      console.error('[SETTINGS] Error setting up business plan:', error);
+                      Alert.alert(
+                        t('common.error'),
+                        t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                      );
+                    }
+                  }}
+                >
+                  <View style={styles.planCardHeader}>
+                    <Text style={styles.planCardTitle}>Business</Text>
+                    <View style={styles.planBadgePrice}>
+                      <Text style={styles.planBadgeText}>$24.99/month</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.planCardDescription}>
+                    Everything in Pro & For small teams up to 5 members. $5.99 per additional team member.
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Enterprise Plan Card */}
+                <TouchableOpacity
+                  style={[styles.planCard, userPlan === 'enterprise' && styles.planCardSelected]}
+                  onPress={async () => {
+                    try {
+                      // Check if user is on active trial - if so, skip IAP
+                      const onTrial = await isTrialActive();
+
+                      // On iOS, require in-app purchase for Enterprise plan (unless on trial)
+                      if (Platform.OS === 'ios' && !onTrial) {
+                        // Check if already on Enterprise plan
+                        if (userPlan === 'enterprise') {
+                          Alert.alert(
+                            'Already Subscribed',
+                            'You already have the Enterprise plan.',
+                            [{ text: 'OK' }]
+                          );
+                          return;
+                        }
+                        
+                        try {
+                          console.log('[SETTINGS] Initiating plan change from', userPlan, 'to Enterprise...');
+                          
+                          // IMPORTANT: Close modal BEFORE purchase to allow iOS dialog to show
+                          setShowPlanModal(false);
+                          
+                          // Wait for modal to close
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                          
+                          await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                          
+                          // Purchase succeeded - update plan
                           await updatePlanLimit(15);
                           await updateUserPlan('enterprise');
-                          setShowPlanModal(false);
+                          
+                          // Wait for context to update
+                          await new Promise(resolve => setTimeout(resolve, 500));
                           
                           Alert.alert(
                             t('common.success', { defaultValue: 'Success' }),
                             t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
                           );
+                        } catch (err) {
+                          if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
+                            return;
+                          }
+                          
+                          Alert.alert(
+                            t('common.error', { defaultValue: 'Error' }),
+                            t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                          );
+                          return;
                         }
-                      } catch (error) {
-                        console.error('[SETTINGS] Error setting up enterprise plan:', error);
+                      } else {
+                        // Trial or non-iOS - update plan directly
+                        await updatePlanLimit(15);
+                        await updateUserPlan('enterprise');
+                        setShowPlanModal(false);
+                        
                         Alert.alert(
-                          t('common.error'),
-                          t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                          t('common.success', { defaultValue: 'Success' }),
+                          t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
                         );
                       }
-                    }}
-                  >
-                    <View style={styles.planButtonRow}>
-                      <Text style={[styles.planButtonText, userPlan === 'enterprise' && styles.planButtonTextSelected]}>{t('firstLoad.enterprise')}</Text>
-                      <Text style={styles.planPrice}>Starts at $69.99/month</Text>
+                    } catch (error) {
+                      console.error('[SETTINGS] Error setting up enterprise plan:', error);
+                      Alert.alert(
+                        t('common.error'),
+                        t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' })
+                      );
+                    }
+                  }}
+                >
+                  <View style={styles.planCardHeader}>
+                    <Text style={styles.planCardTitle}>Enterprise</Text>
+                    <View style={styles.planBadgePrice}>
+                      <Text style={styles.planBadgeText}>Starts at $69.99/month</Text>
                     </View>
-                  </TouchableOpacity>
-                  <Text style={styles.planSubtext}>
-                    For growing organisations with 15 team members and more
+                  </View>
+                  <Text style={styles.planCardDescription}>
+                    Everything in Business & For growing organizations with 15 team members and more
                   </Text>
-                </View>
+                </TouchableOpacity>
 
-                {/* Restore Purchases Button - iOS only */}
-                {Platform.OS === 'ios' && (
-                  <TouchableOpacity
-                    style={styles.restorePurchasesButton}
-                    onPress={handleRestorePurchases}
-                    disabled={isRestoringPurchases}
-                  >
-                    <Text style={styles.restorePurchasesText}>
-                      {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchases' })}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Terms and Privacy Policy Links */}
-                <View style={styles.legalLinksContainer}>
-                  <TouchableOpacity
-                    onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
-                    style={styles.legalLinkButton}
-                  >
-                    <Text style={styles.legalLinkText}>
-                      {t('settings.termsOfUse', { defaultValue: 'Terms of Use (EULA)' })}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <Text style={styles.legalLinkSeparator}>•</Text>
-
-                  <TouchableOpacity
-                    onPress={() => Linking.openURL('https://sayapingeorge.wixsite.com/geos/privacy-policy')}
-                    style={styles.legalLinkButton}
-                  >
-                    <Text style={styles.legalLinkText}>
-                      {t('settings.privacyPolicy', { defaultValue: 'Privacy Policy' })}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
               </ScrollView>
             </View>
           </View>
         </RNModal>
 
-        {/* Language Selection Modal */}
+        {/* Language Selection Modal - Bottom Sheet Style */}
         <RNModal
           visible={languageModalVisible}
           transparent={true}
-          animationType="fade"
+          animationType="slide"
           onRequestClose={() => setLanguageModalVisible(false)}
         >
-          <View style={styles.languageModalOverlay}>
-            <View style={styles.languageModalContent}>
-              <Text style={styles.modalTitle}>{t('settings.language')}</Text>
+          <TouchableOpacity
+            style={styles.languageModalOverlay}
+            activeOpacity={1}
+            onPress={() => setLanguageModalVisible(false)}
+          >
+            <View style={styles.languageModalContentBottomSheet}>
+              {/* Handle Bar */}
+              <View style={styles.modalHandle} />
+              
+              {/* Header */}
+              <View style={styles.modalHeaderBottomSheet}>
+                <TouchableOpacity
+                  style={styles.modalCloseButtonTop}
+                  onPress={() => setLanguageModalVisible(false)}
+                >
+                  <Ionicons name="close" size={24} color={COLORS.TEXT} />
+                </TouchableOpacity>
+                <Text style={styles.modalTitleBottomSheet}>
+                  {t('settings.language', { defaultValue: 'Change Language' })}
+                </Text>
+                <View style={styles.modalCloseButtonTop} />
+              </View>
 
-              <ScrollView 
-                ref={appLanguageScrollViewRef}
-                style={styles.languageScrollView} 
-                showsVerticalScrollIndicator={true}
-              >
+              {/* Language List */}
+              <ScrollView style={styles.languageScrollViewBottomSheet} showsVerticalScrollIndicator={true}>
                 {LANGUAGES.map((language) => (
                   <TouchableOpacity
                     key={language.code}
-                    onLayout={(event) => {
-                      const layout = event.nativeEvent.layout;
-                      appLanguageLayouts.current[language.code] = layout.y;
-                    }}
-                    style={[
-                      styles.languageOption,
-                      i18n.language === language.code && styles.languageOptionActive
-                    ]}
+                    style={styles.languageOptionBottomSheet}
                     onPress={() => {
                       i18n.changeLanguage(language.code);
+                      updateLabelLanguage(language.code);
+                      updateSectionLanguage(language.code);
                       setLanguageModalVisible(false);
                     }}
                   >
-                    <Text style={styles.languageFlag}>{language.flag}</Text>
-                    <Text style={[
-                      styles.languageOptionText,
-                      i18n.language === language.code && styles.languageOptionTextActive
-                    ]}>
+                    <View style={styles.flagCircle}>
+                      <Image
+                        source={FLAG_IMAGES[language.code] || FLAG_IMAGES.en}
+                        style={styles.languageFlagImages}
+                        resizeMode="cover"
+                      />
+                    </View>
+                    <Text style={styles.languageOptionTextBottomSheet}>
                       {language.name}
                     </Text>
                     {i18n.language === language.code && (
-                      <Text style={styles.checkmark}>✓</Text>
+                      <View style={styles.checkmarkCircle}>
+                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      </View>
                     )}
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-
-              <TouchableOpacity
-                style={styles.closeModalButton}
-                onPress={() => setLanguageModalVisible(false)}
-              >
-                <Text style={styles.closeModalButtonText}>{t('common.close')}</Text>
-              </TouchableOpacity>
             </View>
-          </View>
+          </TouchableOpacity>
         </RNModal>
 
         {/* Enterprise Contact Form Modal */}
@@ -5474,13 +5840,6 @@ export default function SettingsScreen({ navigation, route }) {
           onClose={() => setShowEnterpriseModal(false)}
         />
 
-        {/* Contact Us Modal */}
-        <EnterpriseContactModal
-          visible={showContactModal}
-          onClose={() => setShowContactModal(false)}
-          title={t('settings.contactUsTitle')}
-          subtitle={t('settings.contactUsSubtitle')}
-        />
 
         {/* Multiple Accounts Management Modal */}
         <Modal
@@ -5581,7 +5940,7 @@ export default function SettingsScreen({ navigation, route }) {
                               return (
                                 <View style={styles.accountIconContainer}>
                                   <View style={[styles.accountIcon, styles.appleIcon]}>
-                                    <Text style={styles.accountIconText}>🍎</Text>
+                                    <Image source={require('../../assets/icons/apple.png')} style={{ width: 20, height: 20 }} />
                                   </View>
                                 </View>
                               );
@@ -6756,30 +7115,49 @@ const sliderStyles = StyleSheet.create({
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: COLORS.BACKGROUND
+      backgroundColor: '#F8F8F8'
     },
     header: {
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 16,
+      backgroundColor: 'white',
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      padding: 20,
-      paddingTop: 10,
-      backgroundColor: 'white',
-      borderBottomWidth: 1,
-      borderBottomColor: COLORS.BORDER
-    },
-    backButton: {
-      width: 60
-    },
-    backButtonText: {
-      color: COLORS.PRIMARY,
-      fontSize: 24,
-      fontWeight: 'bold'
     },
     title: {
-      fontSize: 24,
-      fontWeight: 'bold',
-      color: COLORS.TEXT
+      fontSize: 34,
+      fontWeight: '700',
+      color: COLORS.TEXT,
+      letterSpacing: -0.5,
+    },
+    titleTouchable: {
+      alignSelf: 'flex-start',
+    },
+    headerLanguageSelector: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#ECECEC',
+      borderRadius: 62,
+      paddingHorizontal: 1,
+      paddingVertical: 1,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.09,
+      shadowRadius: 15,
+      elevation: 3,
+    },
+    headerLanguageFlag: {
+      fontSize: 20,
+    },
+    headerLanguageFlagImage: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      marginRight: 4,
     },
     content: {
       flex: 1
@@ -6787,23 +7165,27 @@ const sliderStyles = StyleSheet.create({
     section: {
       backgroundColor: 'white',
       marginTop: 20,
+      marginHorizontal: 20,
+      borderRadius: 16,
       paddingVertical: 20,
       paddingHorizontal: 20,
-      borderTopWidth: 1,
-      borderBottomWidth: 1,
-      borderColor: COLORS.BORDER
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      elevation: 3,
     },
     sectionTitle: {
-      fontSize: 18,
-      fontWeight: 'bold',
+      fontSize: 22,
+      fontWeight: '700',
       color: COLORS.TEXT,
-      marginBottom: 16
+      marginBottom: 2,
     },
     inputGroup: {
       marginBottom: 16
     },
     label: {
-      fontSize: 14,
+      fontSize: 12,
       fontWeight: '600',
       color: COLORS.TEXT,
       marginBottom: 8
@@ -6849,7 +7231,15 @@ const sliderStyles = StyleSheet.create({
     },
     locationOption: {
       padding: 12,
-      backgroundColor: 'white'
+      paddingRight: 40,
+      backgroundColor: 'white',
+      position: 'relative'
+    },
+    locationOptionUseCurrent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      borderBottomColor: COLORS.BORDER,
     },
     locationOptionSelected: {
       backgroundColor: '#f7f7f7'
@@ -6867,8 +7257,123 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.PRIMARY
     },
     sectionDescription: {
-      color: COLORS.GRAY,
-      marginBottom: 12
+      fontSize: 12,
+      color: 'grey',
+      marginBottom: 2,
+      lineHeight: 20,
+    },
+    userAccountCard: {
+      backgroundColor: 'white',
+      borderRadius: 16,
+      padding: 20,
+      marginTop: 20,
+      marginHorizontal: 20,
+      marginBottom: 0,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    userAccountHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    userAccountLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    userAvatar: {
+      borderRadius: 32,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 12,
+    },
+    userInfo: {
+      flex: 1,
+    },
+    userName: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: COLORS.TEXT,
+      marginBottom: 4,
+    },
+    accountType: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: 'rgba(0, 0, 0, 0.6)',
+    },
+    editButton: {
+      padding: 8,
+    },
+    planInfo: {
+      marginBottom: 16,
+    },
+    planNameRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    planName: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: COLORS.TEXT,
+      flex: 1,
+    },
+    trialProgressContainer: {
+      marginBottom: 0,
+    },
+    trialProgressBar: {
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: '#E5E5E5',
+      overflow: 'hidden',
+      marginBottom: 8,
+    },
+    trialProgressFill: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      height: '100%',
+      backgroundColor: '#4CAF50',
+      borderRadius: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 0 }, // 👈 key part
+      shadowOpacity: 0.25,
+      shadowRadius: 6,
+      elevation: 6,
+    },
+    trialDaysText: {
+      fontSize: 14,
+      fontWeight: '500',
+      color: 'grey',
+    },
+    freeBadge: {
+      backgroundColor: '#90EE90',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+    },
+    freeBadgeText: {
+      color: '#228B22',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    upgradeButton: {
+      backgroundColor: '#000000',
+      borderRadius: 32,
+      paddingVertical: 16,
+      alignItems: 'center',
+      marginTop: 5,
+    },
+    upgradeButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '700',
     },
     settingRow: {
       flexDirection: 'row',
@@ -6892,7 +7397,8 @@ const sliderStyles = StyleSheet.create({
     },
     settingLabel: {
       color: COLORS.TEXT,
-      fontWeight: '600'
+      fontWeight: '600',
+      fontSize: 15,
     },
     settingDescription: {
       color: COLORS.GRAY,
@@ -7000,6 +7506,15 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.TEXT,
       fontWeight: '600',
     },
+    contactUsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 4,
+    },
+    contactUsContent: {
+      flex: 1,
+    },
     contactButton: {
       backgroundColor: COLORS.PRIMARY,
       borderRadius: 12,
@@ -7041,6 +7556,22 @@ const sliderStyles = StyleSheet.create({
       color: '#CC0000',
       fontSize: 16,
       fontWeight: '600'
+    },
+    resetDataButton: {
+      backgroundColor: 'white',
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: '#FF0000',
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 12,
+    },
+    resetDataButtonText: {
+      color: '#FF0000',
+      fontSize: 16,
+      fontWeight: '600',
     },
     deleteFromStorageHint: {
       marginTop: 16,
@@ -7226,6 +7757,175 @@ const sliderStyles = StyleSheet.create({
       paddingHorizontal: 20,
       paddingTop: 20
     },
+    planModalContainer: {
+      flex: 1,
+      backgroundColor: '#FAFAFA',
+    },
+    planModalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      backgroundColor: 'white',
+      borderBottomWidth: 1,
+      borderBottomColor: '#E5E5E5',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    planModalBackButton: {
+      width: 40,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 20,
+    },
+    planModalTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#000000',
+      letterSpacing: -0.3,
+    },
+    planModalBody: {
+      flex: 1,
+      position: 'relative',
+    },
+    planModalScrollView: {
+      flex: 1,
+    },
+    planModalContent: {
+      padding: 16,
+      paddingBottom: 20,
+    },
+    planCard: {
+      backgroundColor: 'white',
+      borderRadius: 16,
+      padding: 20,
+      marginBottom: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+      elevation: 2,
+      overflow: 'hidden',
+    },
+    planCardRecommended: {
+      borderWidth: 2,
+      borderColor: COLORS.PRIMARY,
+      shadowColor: COLORS.PRIMARY,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    planCardSelected: {
+      borderWidth: 2.5,
+      borderColor: COLORS.PRIMARY,
+    },
+    planCardHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    planCardTitle: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: '#000000',
+      letterSpacing: -0.5,
+    },
+    planBadgeFree: {
+      backgroundColor: '#81C784',
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      shadowColor: '#81C784',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    planBadgePrice: {
+      backgroundColor: '#81C784',
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      shadowColor: '#81C784',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    planBadgeText: {
+      color: 'white',
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 0.3,
+    },
+    planCardDescription: {
+      fontSize: 14,
+      color: '#666666',
+      lineHeight: 22,
+      marginBottom: 16,
+      letterSpacing: -0.2,
+    },
+    currentPlanButton: {
+      backgroundColor: COLORS.PRIMARY,
+      borderRadius: 20,
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      alignSelf: 'flex-start',
+      marginTop: 4,
+      shadowColor: COLORS.PRIMARY,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 3,
+      elevation: 2,
+    },
+    currentPlanButtonText: {
+      color: '#000000',
+      fontSize: 14,
+      fontWeight: '700',
+      letterSpacing: 0.2,
+    },
+    recommendedBadge: {
+      backgroundColor: '#F5F5F5',
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      alignSelf: 'flex-start',
+      marginTop: 4,
+    },
+    recommendedBadgeText: {
+      color: '#000000',
+      fontSize: 12,
+      fontWeight: '600',
+      letterSpacing: 0.1,
+    },
+    getMoreButton: {
+      backgroundColor: '#000000',
+      borderRadius: 20,
+      paddingVertical: 18,
+      paddingHorizontal: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 8,
+      marginBottom: 20,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 6,
+      elevation: 5,
+    },
+    getMoreButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+    },
     backLink: {
       marginBottom: 12,
       alignSelf: 'flex-start'
@@ -7293,7 +7993,7 @@ const sliderStyles = StyleSheet.create({
     expoGoWarningSubtext: {
       color: '#856404',
       fontSize: 12,
-      fontFamily: 'monospace'
+      fontFamily: FONTS.ALEXANDRIA
     },
     adminNote: {
       color: COLORS.GRAY,
@@ -7372,7 +8072,7 @@ const sliderStyles = StyleSheet.create({
     tokenValue: {
       fontSize: 13,
       color: COLORS.TEXT,
-      fontFamily: 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     teamWarningText: {
       color: COLORS.GRAY,
@@ -7661,6 +8361,99 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.TEXT,
       fontSize: 16,
       fontWeight: '600'
+    },
+    cloudServicesRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 12,
+      marginBottom: 12,
+    },
+    cloudServiceButton: {
+      flexGrow: 1,
+      flexShrink: 0,
+      flexBasis: '40%',
+      backgroundColor: 'white',
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      minHeight: 56,
+    },
+    cloudServiceButtonDisabled: {
+      opacity: 0.5,
+      backgroundColor: '#F5F5F5',
+    },
+    cloudButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    googleLogo: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: '#4285F4',
+      width: 24,
+      height: 24,
+      textAlign: 'center',
+      lineHeight: 24,
+    },
+    googleCloudButtonIcon: {
+      width: 20,
+      height: 20,
+    },
+    dropboxLogo: {
+      width: 20,
+      height: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    dropboxLogoInner: {
+      width: 20,
+      height: 20,
+      backgroundColor: '#0061FF',
+      borderRadius: 4,
+    },
+    cloudButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+    },
+    cloudButtonTextDisabled: {
+      color: '#999999',
+    },
+    teamManagementRow: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 8,
+    },
+    teamButton: {
+      flex: 1,
+      backgroundColor: 'white',
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      flexDirection: 'row',
+      gap: 8,
+      minHeight: 56,
+    },
+    teamButtonDisabled: {
+      opacity: 0.5,
+      backgroundColor: '#F5F5F5',
+    },
+    teamButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+    },
+    teamButtonTextDisabled: {
+      color: '#999999',
     },
     connectedStatus: {
       backgroundColor: '#d4edda',
@@ -8242,6 +9035,30 @@ const sliderStyles = StyleSheet.create({
       backgroundColor: COLORS.PRIMARY,
       borderColor: COLORS.PRIMARY,
     },
+    positionGrid: {
+      marginTop: 12,
+      gap: 4,
+    },
+    positionGridCell: {
+      flex: 1,
+      paddingVertical: 10,
+      paddingHorizontal: 8,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: '#F5F5F5',
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: COLORS.BORDER,
+    },
+    positionGridCellSelected: {
+      backgroundColor: COLORS.PRIMARY,
+      borderColor: COLORS.PRIMARY,
+    },
+    positionGridText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+    },
     // Dummy photo preview styles
     positionPreviewContainer: {
       marginVertical: 8,
@@ -8310,6 +9127,11 @@ const sliderStyles = StyleSheet.create({
     languageFlag: {
       fontSize: 20,
     },
+    languageFlagImage: {
+      width: 28,
+      height: 28,
+      marginRight: 8,
+    },
     languageName: {
       fontSize: 16,
       color: COLORS.TEXT_MUTED,
@@ -8318,68 +9140,94 @@ const sliderStyles = StyleSheet.create({
       fontSize: 20,
       color: COLORS.TEXT_MUTED,
     },
-    // Language modal styles
+    // Language modal styles - Bottom Sheet Style
     languageModalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'flex-end',
+    },
+    languageModalContentBottomSheet: {
+      backgroundColor: 'white',
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      minHeight: '80%',
+      maxHeight: '90%',
+      paddingBottom: 20,
+      width: '100%',
+    },
+    modalHandle: {
+      width: 40,
+      height: 4,
+      backgroundColor: '#E5E5E5',
+      borderRadius: 2,
+      alignSelf: 'center',
+      marginTop: 8,
+      marginBottom: 16,
+    },
+    modalHeaderBottomSheet: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingBottom: 16,
+      position: 'relative',
+    },
+    modalCloseButtonTop: {
+      width: 32,
+      height: 32,
       justifyContent: 'center',
       alignItems: 'center',
     },
-    languageModalContent: {
-      backgroundColor: 'white',
-      borderRadius: 16,
-      padding: 24,
-      width: '85%',
-      maxWidth: 400,
-      maxHeight: '70%',
-    },
-    modalTitle: {
-      fontSize: 20,
+    modalTitleBottomSheet: {
+      fontSize: 18,
       fontWeight: '700',
-      color: '#000',
+      fontFamily: FONTS.ALEXANDRIA,
+      color: COLORS.TEXT,
+      flex: 1,
       textAlign: 'center',
-      marginBottom: 20,
     },
-    languageScrollView: {
-      maxHeight: Dimensions.get('window').height * 0.45,
+    languageScrollViewBottomSheet: {
+      maxHeight: Dimensions.get('window').height * 0.8,
     },
-    languageOption: {
+    languageOptionBottomSheet: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 14,
-      paddingHorizontal: 16,
-      borderRadius: 12,
-      marginBottom: 8,
+      paddingVertical: 16,
+      paddingHorizontal: 20,
+      borderBottomWidth: 1,
+      borderBottomColor: '#F5F5F5',
+    },
+    flagCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       backgroundColor: '#F5F5F5',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 16,
+      overflow: 'hidden',
     },
-    languageOptionActive: {
-      backgroundColor: '#F2C31B',
+    languageFlagBottomSheet: {
+      fontSize: 28,
     },
-    languageOptionText: {
-      flex: 1,
-      fontSize: 16,
-      fontWeight: '600',
-      color: '#333',
+    languageFlagImages: {
+      width: 40,
+      height: 40,
     },
-    languageOptionTextActive: {
-      color: '#000',
-    },
-    checkmark: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: '#000',
-    },
-    closeModalButton: {
-      marginTop: 16,
-      backgroundColor: '#F2F2F2',
-      paddingVertical: 14,
+    checkmarkCircle: {
+      width: 24,
+      height: 24,
       borderRadius: 12,
+      backgroundColor: COLORS.PRIMARY,
+      justifyContent: 'center',
       alignItems: 'center',
     },
-    closeModalButtonText: {
+    languageOptionTextBottomSheet: {
+      flex: 1,
       fontSize: 16,
-      fontWeight: '600',
-      color: '#333',
+      fontWeight: '400',
+      fontFamily: FONTS.ALEXANDRIA,
+      color: COLORS.TEXT,
     },
     settingButton: {
       backgroundColor: '#FFFFFF',
@@ -8431,6 +9279,43 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.TEXT,
       fontWeight: '600',
     },
+    roomListContainer: {
+      marginVertical: 12,
+     
+    },
+    roomListScrollContent: {
+      paddingRight: 20,
+      gap: 8,
+    },
+    roomListItem: {
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 3,
+      borderRadius: 10,
+      backgroundColor: 'white',
+      borderWidth: 1,
+      borderColor: 'rgba(0, 0, 0, 0.1)',
+      minWidth: 65,
+      gap: 6,
+    },
+    roomListItemActive: {
+      backgroundColor: COLORS.PRIMARY,
+      borderColor: COLORS.PRIMARY,
+    },
+    roomListItemText: {
+      fontSize: 12,
+      fontWeight: '500',
+      color: '#666666',
+      textAlign: 'center',
+    },
+    roomListItemTextActive: {
+      color: '#000000',
+      fontWeight: '600',
+    },
+    indentedRow: {
+      paddingLeft: 24,
+    },
     testToolsButton: {
       backgroundColor: '#FFF3CD',
       borderRadius: 12,
@@ -8446,7 +9331,7 @@ const sliderStyles = StyleSheet.create({
       fontSize: 16,
       fontWeight: '600',
       color: '#856404',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     testSection: {
       marginTop: 20,
@@ -8462,7 +9347,7 @@ const sliderStyles = StyleSheet.create({
       fontWeight: 'bold',
       color: COLORS.TEXT,
       marginBottom: 12,
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     testButtons: {
       flexDirection: 'row',
@@ -8483,77 +9368,88 @@ const sliderStyles = StyleSheet.create({
       fontSize: 16,
       fontWeight: '600',
       color: '#000000',
-      fontFamily: FONTS.QUICKSAND_BOLD,
-    },
-    referralCodeContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 16,
-      gap: 10,
-    },
-    referralCodeInput: {
-      flex: 1,
-      borderWidth: 1,
-      borderColor: '#e0e0e0',
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 14,
-      fontFamily: FONTS.QUICKSAND_REGULAR,
-      color: COLORS.TEXT,
-      backgroundColor: '#f9f9f9',
-    },
-    referralApplyButton: {
-      backgroundColor: '#28a745',
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderRadius: 8,
-    },
-    referralApplyButtonDisabled: {
-      backgroundColor: '#9ed3ab',
-    },
-    referralApplyButtonText: {
-      color: '#FFFFFF',
-      fontSize: 14,
-      fontWeight: '600',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     referralStatsContainer: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      gap: 12,
+      marginTop: 12,
       marginBottom: 16,
-      paddingVertical: 12,
     },
-    referralStatItem: {
+    referralStatCard: {
       flex: 1,
-      alignItems: 'flex-start',
+      backgroundColor: 'white',
+      borderRadius: 10,
+      borderWidth: 1,
+      flexDirection: 'row',
+      borderColor: '#E0E0E0',
+      padding: 3,
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 10,
     },
     referralStatLabel: {
       fontSize: 12,
       color: COLORS.GRAY,
-      marginBottom: 4,
-      textAlign: 'left',
+      textAlign: 'center',
+      marginTop: 4,
     },
     referralStatValue: {
-      fontSize: 14,
+      fontSize: 17,
       color: COLORS.TEXT,
       fontWeight: '600',
-      textAlign: 'left',
+      textAlign: 'center',
     },
-    referralStatItemRight: {
-      alignItems: 'flex-end',
+    inviteFriendsButton: {
+      backgroundColor: '#000000',
+      borderRadius: 32,
+      paddingVertical: 16,
+      paddingHorizontal: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 16,
     },
-    referralStatLabelRight: {
-      textAlign: 'right',
-    },
-    referralStatValueRight: {
-      textAlign: 'right',
-    },
-    referralButton: {
-      backgroundColor: '#28a745',
-    },
-    referralButtonText: {
+    inviteFriendsButtonText: {
       color: '#FFFFFF',
+      fontSize: 18,
+      fontWeight: '700',
+      fontFamily: FONTS.ALEXANDRIA,
+    },
+    referralCodeContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      borderRadius: 28,
+      padding: 2,
+    },
+    referralCodeInput: {
+      flex: 1,
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      fontSize: 17,
+      fontFamily: FONTS.ALEXANDRIA,
+      color: COLORS.TEXT,
+      backgroundColor: 'white',
+    },
+    referralApplyButton: {
+      backgroundColor: '#000000',
+      paddingHorizontal: 28,
+      paddingVertical: 14,
+      borderRadius: 28,
+      minWidth: 70,
+    },
+    referralApplyButtonDisabled: {
+      backgroundColor: '#666666',
+      opacity: 0.6,
+    },
+    referralApplyButtonText: {
+      color: '#FFFFFF',
+      fontSize: 18,
+      fontWeight: '700',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     // Account Management Styles
     accountsList: {
@@ -8566,12 +9462,17 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 12,
     },
     accountItem: {
-      backgroundColor: '#f9f9f9',
+      backgroundColor: '#FFFFFF',
       borderRadius: 12,
-      padding: 16,
+      padding: 20,
       marginBottom: 12,
       borderWidth: 1,
-      borderColor: '#e0e0e0',
+      borderColor: '#E0E0E0',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
     },
     accountItemActive: {
       backgroundColor: '#f0f8ff',
@@ -8668,6 +9569,42 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.GRAY,
       marginTop: 4,
     },
+    priceContainer: {
+      position: 'relative',
+      height: 24,
+      justifyContent: 'center',
+      alignItems: 'flex-end',
+      paddingRight: 8,
+    },
+    priceContainerWide: {
+      width: 173,
+    },
+    priceBadgeGradient: {
+      position: 'absolute',
+      right: 0,
+      top: 0,
+      width: 112,
+      height: 24,
+      borderRadius: 100,
+      opacity: 0.14,
+    },
+    priceBadgeGradientWide: {
+      position: 'absolute',
+      right: 0,
+      top: 0,
+      width: 173,
+      height: 24,
+      borderRadius: 100,
+      opacity: 0.14,
+    },
+    priceText: {
+      fontSize: 14,
+      fontWeight: '700',
+      fontFamily: 'Alexandria_400Regular',
+      color: '#0B8321',
+      lineHeight: 20,
+      textAlign: 'right',
+    },
     accountActiveLabel: {
       fontSize: 12,
       fontWeight: '600',
@@ -8681,8 +9618,139 @@ const sliderStyles = StyleSheet.create({
     },
     accountActionsRow: {
       flexDirection: 'row',
+      gap: 12,
+      marginTop: 16,
+    },
+    // New Google Account Connection Styles
+    googleAccountConnection: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    googleAccountIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+      overflow: 'hidden',
+    },
+    googleAccountIconImage: {
+      width: 32,
+      height: 32,
+    },
+    dropboxAccountIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+      overflow: 'hidden',
+    },
+    dropboxAccountIconImage: {
+      width: 32,
+      height: 32,
+    },
+    dropboxIntegrationIcon: {
+      width: 20,
+      height: 20,
+      marginRight: 0,
+    },
+    dropboxCloudButtonIcon: {
+      width: 20,
+      height: 20,
+    },
+    appleAccountIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    googleAccountInfo: {
+      flex: 1,
+    },
+    googleAccountEmail: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#000000',
+      marginBottom: 4,
+    },
+    googleAccountStatus: {
+      fontSize: 14,
+      color: '#666666',
+    },
+    dropboxIntegrationButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      marginBottom: 16,
+    },
+    dropboxIntegrationText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#000000',
+      marginLeft: 12,
+    },
+    setupTeamButtonNew: {
+      flex: 1,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    setupTeamButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
       gap: 8,
-      marginTop: 8,
+    },
+    setupTeamButtonTextNew: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#000000',
+    },
+    disconnectButtonNew: {
+      flex: 1,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#CC0000',
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    disconnectButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    disconnectButtonTextNew: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#CC0000',
     },
     accountActionButton: {
       flex: 1,
@@ -8802,7 +9870,7 @@ const sliderStyles = StyleSheet.create({
     inviteTokenText: {
       fontSize: 14,
       color: COLORS.TEXT,
-      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     teamMemberItemSimple: {
       backgroundColor: '#f5f5f5',
@@ -8819,7 +9887,7 @@ const sliderStyles = StyleSheet.create({
     teamMemberTokenText: {
       fontSize: 12,
       color: COLORS.GRAY,
-      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     emptyText: {
       fontSize: 14,
@@ -8905,7 +9973,7 @@ const sliderStyles = StyleSheet.create({
     tokenValueSmall: {
       fontSize: 12,
       color: '#333',
-      fontFamily: 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
     },
     revokeButtonSmall: {
       backgroundColor: '#ff4444',
@@ -8931,7 +9999,7 @@ const sliderStyles = StyleSheet.create({
     },
     inviteToken: {
       fontSize: 13,
-      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+      fontFamily: FONTS.ALEXANDRIA,
       color: '#007bff',
       fontWeight: '600',
       flex: 1,
@@ -9017,14 +10085,14 @@ const sliderStyles = StyleSheet.create({
       fontSize: 18,
       fontWeight: 'bold',
       color: '#333',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     addMemberButtonPrice: {
       fontSize: 16,
       fontWeight: '600',
       color: '#4CAF50',
       marginTop: 4,
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     addMemberOverlay: {
       ...StyleSheet.absoluteFillObject,
@@ -9276,7 +10344,7 @@ const sliderStyles = StyleSheet.create({
       color: '#666',
       textAlign: 'center',
       textDecorationLine: 'underline',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     legalLinksContainer: {
       flexDirection: 'row',
@@ -9296,22 +10364,87 @@ const sliderStyles = StyleSheet.create({
       color: '#666',
       textAlign: 'center',
       textDecorationLine: 'underline',
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     legalLinkSeparator: {
       fontSize: 12,
       color: '#666',
       marginHorizontal: 8,
-      fontFamily: FONTS.QUICKSAND_BOLD,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     versionContainer: {
       alignItems: 'center',
       paddingVertical: 20,
       marginTop: 10,
+      gap: 8,
+    },
+    proofPixBranding: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      justifyContent:'center'
+    },
+    proofPixLogo: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: COLORS.PRIMARY,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    proofPixText: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: COLORS.TEXT,
+      fontFamily: FONTS.ALEXANDRIA,
     },
     versionText: {
       fontSize: 12,
       color: '#999',
-      fontFamily: FONTS.QUICKSAND_REGULAR,
+      fontFamily: FONTS.ALEXANDRIA,
+    },
+    bottomNavPill: {
+      position: 'absolute',
+      bottom: 20,
+      left: 12,
+      right: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#f4f4f4',
+      borderRadius: 296,
+      height: 60,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.1,
+      shadowRadius: 12,
+      elevation: 8,
+      zIndex: 90,
+    },
+    navItem: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      borderRadius: 20
+      },
+      navItemImage:{
+        width: 22,
+        height: 22,
+      },
+      navItemActive: {
+        backgroundColor: '#E0E0E0',
+        borderRadius: 100,
+        marginHorizontal: -7,
+      },
+      navItemText: {
+      fontSize: 11,
+      fontWeight: '500',
+      color: '#666666',
+      marginTop: 4
+      },
+    navItemTextActive: {
+      color: '#000000',
+      fontWeight: '600',
     },
   });

@@ -11,10 +11,11 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
-import { FONTS } from '../constants/fonts';
+import { FONTS, scaleFontSize } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get('window');
+const scaled = (size) => scaleFontSize(size, width);
 
 export default function WelcomeSetupScreen({ navigation }) {
   const { t } = useTranslation();
@@ -64,7 +65,7 @@ export default function WelcomeSetupScreen({ navigation }) {
         >
           <View style={styles.logoWrapper}>
             <Image
-              source={require('../../assets/PP_logo.png')}
+              source={require('../../assets/logo.png')}
               style={styles.logo}
               resizeMode="contain"
             />
@@ -195,19 +196,19 @@ const styles = StyleSheet.create({
     height: 100,
   },
   appTitle: {
-    fontSize: 44,
+    fontSize: scaled(44),
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     marginBottom: 12,
     letterSpacing: -0.5,
   },
   appSubtitle: {
-    fontSize: 17,
+    fontSize: scaled(17),
     color: '#666666',
     textAlign: 'center',
-    fontFamily: FONTS.QUICKSAND_MEDIUM,
-    lineHeight: 24,
+    fontFamily: FONTS.ALEXANDRIA,
+    lineHeight: scaled(24),
     paddingHorizontal: 24,
   },
   featuresContainer: {
@@ -239,18 +240,18 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   featureTitle: {
-    fontSize: 20,
+    fontSize: scaled(20),
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     marginBottom: 6,
     letterSpacing: -0.3,
   },
   featureDescription: {
-    fontSize: 15,
+    fontSize: scaled(15),
     color: '#666666',
-    fontFamily: FONTS.QUICKSAND_REGULAR,
-    lineHeight: 22,
+    fontFamily: FONTS.ALEXANDRIA,
+    lineHeight: scaled(22),
   },
   getStartedButton: {
     backgroundColor: COLORS.PRIMARY,
@@ -269,9 +270,9 @@ const styles = StyleSheet.create({
     borderColor: '#00000010',
   },
   getStartedButtonText: {
-    fontSize: 18,
+    fontSize: scaled(18),
     fontWeight: 'bold',
-    fontFamily: FONTS.QUICKSAND_BOLD,
+    fontFamily: FONTS.ALEXANDRIA,
     color: '#000000',
     letterSpacing: 0.5,
   },

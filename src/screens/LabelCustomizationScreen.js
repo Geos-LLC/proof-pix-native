@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,1546 +6,970 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Modal as RNModal,
-  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
-  TouchableWithoutFeedback,
-  Switch,
-  Alert,
+  Dimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../context/SettingsContext';
-import { COLORS, getLabelPositions } from '../constants/rooms';
-import PhotoLabel from '../components/PhotoLabel';
-import PhotoWatermark from '../components/PhotoWatermark';
-import EnterpriseContactModal from '../components/EnterpriseContactModal';
-import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
-import { isTrialActive } from '../services/trialService';
-import ColorPicker, { Panel1, HueSlider } from 'reanimated-color-picker';
-import { runOnJS } from 'react-native-reanimated';
-// HSL conversion utilities
-const hslToHex = (h, s, l) => {
-  s /= 100;
-  l /= 100;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n) => {
-    const k = (n + h / 30) % 12;
-    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * color).toString(16).padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`.toUpperCase();
+import { getLabelPositions } from '../constants/rooms';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Color Palette
+const COLORS = {
+  PRIMARY: '#EAB308',
+  TEXT: '#000000',
+  GRAY: '#666666',
+  BORDER: '#E5E5E5',
+  BACKGROUND: '#F5F5F5',
 };
 
-const hexToHsl = (hex) => {
-  let r = parseInt(hex.slice(1, 3), 16) / 255;
-  let g = parseInt(hex.slice(3, 5), 16) / 255;
-  let b = parseInt(hex.slice(5, 7), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  let h = 0, s = 0, l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-      case g: h = ((b - r) / d + 2) / 6; break;
-      case b: h = ((r - g) / d + 4) / 6; break;
-    }
+// Font Options
+const FONT_OPTIONS = [
+  { key: 'system', label: 'Arial Blank' },
+  { key: 'shadow', label: 'Shadow Into Light' },
+  { key: 'shanatel', label: 'Shanatel Light' },
+  { key: 'sf', label: 'SF Compact' },
+  { key: 'share', label: 'Share Tech' },
+];
+
+// Size Options
+const SIZE_OPTIONS = [
+  { key: 'small', label: 'Before', fontSize: 10, padding: 6 },
+  { key: 'medium', label: 'Before', fontSize: 14, padding: 10 },
+  { key: 'large', label: 'Before', fontSize: 18, padding: 14 },
+];
+
+// Helper to convert HSL to Hex
+const hslToHex = (hue, sat, light) => {
+  const h = hue / 360;
+  const s = sat / 100;
+  const l = light / 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+  const m = l - c / 2;
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (h < 0.1667) {
+    r = c; g = x; b = 0;
+  } else if (h < 0.3333) {
+    r = x; g = c; b = 0;
+  } else if (h < 0.5) {
+    r = 0; g = c; b = x;
+  } else if (h < 0.6667) {
+    r = 0; g = x; b = c;
+  } else if (h < 0.8333) {
+    r = x; g = 0; b = c;
+  } else {
+    r = c; g = 0; b = x;
   }
-  return { h: h * 360, s: s * 100, l: l * 100 };
-};
-import { useTranslation } from 'react-i18next';
-import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
-import { FEATURES } from '../constants/featurePermissions';
 
-const getLabelSizeOptions = (t) => [
-  { key: 'small', label: t('labelCustomization.small') },
-  { key: 'medium', label: t('labelCustomization.medium') },
-  { key: 'large', label: t('labelCustomization.large') },
-];
+  const rHex = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+  const gHex = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+  const bHex = Math.round((b + m) * 255).toString(16).padStart(2, '0');
 
-const LABEL_SIZE_STYLE_MAP = {
-  small: {
-    fontSize: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    minWidth: 72,
-  },
-  medium: {
-    fontSize: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    minWidth: 96,
-  },
-  large: {
-    fontSize: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 104,
-  },
+  return '#' + rHex.toUpperCase() + gHex.toUpperCase() + bHex.toUpperCase();
 };
 
-const getLabelCornerOptions = (t) => [
-  { key: 'rounded', label: t('labelCustomization.cornerOptions.rounded') },
-  { key: 'square', label: t('labelCustomization.cornerOptions.straight') },
+// Generate color grid for color picker (now generates hex directly)
+const generateColorGrid = () => {
+  const colors = [];
+  const hues = 12;
+  const shades = 10;
+
+  for (let s = 0; s < shades; s++) {
+    const row = [];
+    for (let h = 0; h < hues; h++) {
+      const hue = (h * 30);
+      const saturation = s === 0 ? 0 : 100;
+      const lightness = s === 0 ? 100 - (h * 8) : 100 - (s * 10);
+      row.push(hslToHex(hue, saturation, lightness));
+    }
+    colors.push(row);
+  }
+  return colors;
+};
+
+const COLOR_GRID = generateColorGrid();
+
+// Saved colors for color picker
+const SAVED_COLORS = [
+  '#A855F7', '#000000', '#3B82F6', '#22C55E', '#EAB308', '#EF4444',
+  '#06B6D4', '#A855F7', '#6366F1', '#F43F5E'
 ];
 
-const getFontOptions = (t) => [
-  { key: 'system', label: t('labelCustomization.fontModal.systemDefault'), fontFamily: null },
-  { key: 'montserratBold', label: t('labelCustomization.fontModal.montserratBold'), fontFamily: 'Montserrat_700Bold' },
-  { key: 'robotoBold', label: t('labelCustomization.fontModal.robotoBold'), fontFamily: 'Roboto_700Bold' },
-  { key: 'openSansBold', label: t('labelCustomization.fontModal.openSansBold'), fontFamily: 'OpenSans_700Bold' },
-  { key: 'latoBlack', label: t('labelCustomization.fontModal.latoBlack'), fontFamily: 'Lato_900Black' },
-  { key: 'poppinsBold', label: t('labelCustomization.fontModal.poppinsBold'), fontFamily: 'Poppins_700Bold' },
-  { key: 'ralewayBold', label: t('labelCustomization.fontModal.ralewayBold'), fontFamily: 'Raleway_700Bold' },
-  { key: 'oswaldBold', label: t('labelCustomization.fontModal.oswaldBold'), fontFamily: 'Oswald_700Bold' },
-  { key: 'archivoBlack', label: t('labelCustomization.fontModal.archivoBlack'), fontFamily: 'ArchivoBlack_400Regular' },
-];
-
-export default function LabelCustomizationScreen({ navigation }) {
-  const { t } = useTranslation();
+export default function CustomizeLabelsScreen({ navigation }) {
+  // Get settings from context (these are persisted to AsyncStorage)
   const {
     labelBackgroundColor,
     labelTextColor,
-    labelFontFamily,
-    labelSize,
     labelCornerStyle,
+    labelSize,
+    labelFontFamily,
     beforeLabelPosition,
     afterLabelPosition,
-    combinedLabelPosition,
     labelMarginVertical,
     labelMarginHorizontal,
     updateLabelBackgroundColor,
     updateLabelTextColor,
-    updateLabelFontFamily,
-    updateLabelSize,
     updateLabelCornerStyle,
+    updateLabelSize,
+    updateLabelFontFamily,
     updateBeforeLabelPosition,
     updateAfterLabelPosition,
-    updateCombinedLabelPosition,
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,
-    shouldShowWatermark,
-    showWatermark,
-    userPlan,
-    updateUserPlan,
-    customWatermarkEnabled,
+    // Watermark settings
     watermarkText,
     watermarkLink,
     watermarkColor,
     watermarkOpacity,
-    toggleWatermark,
-    updateShowWatermark,
+    watermarkPosition,
+    watermarkFontFamily,
     updateWatermarkText,
     updateWatermarkLink,
     updateWatermarkColor,
     updateWatermarkOpacity,
-    watermarkPosition,
-    watermarkFontFamily,
     updateWatermarkPosition,
     updateWatermarkFontFamily,
   } = useSettings();
 
-  const { canUse, effectivePlan } = useFeaturePermissions();
+  // Local state for UI only (modals, temp values)
 
-  const [colorModalVisible, setColorModalVisible] = useState(false);
-  const [colorModalType, setColorModalType] = useState(null);
-  const [draftColor, setDraftColor] = useState('#FFD700');
-  const [colorInput, setColorInput] = useState('');
-  const [hexModalVisible, setHexModalVisible] = useState(false);
-  const [hexModalValue, setHexModalValue] = useState('');
-  const [hexModalError, setHexModalError] = useState(null);
+  // Modal states
   const [fontModalVisible, setFontModalVisible] = useState(false);
+  const [colorModalVisible, setColorModalVisible] = useState(false);
+  const [colorModalType, setColorModalType] = useState(null); // 'bg', 'text', 'watermark'
+  const [positionModalVisible, setPositionModalVisible] = useState(false);
+  const [sizeModalVisible, setSizeModalVisible] = useState(false);
+  const [marginModalVisible, setMarginModalVisible] = useState(false);
+  // Watermark modal states
+  const [watermarkOpacityModalVisible, setWatermarkOpacityModalVisible] = useState(false);
   const [watermarkFontModalVisible, setWatermarkFontModalVisible] = useState(false);
-  const [showPlanModal, setShowPlanModal] = useState(false);
-  const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
-  const [sliderResetKey, setSliderResetKey] = useState(0);
-  const [colorPickerKey, setColorPickerKey] = useState(0);
+  const [watermarkPositionModalVisible, setWatermarkPositionModalVisible] = useState(false);
   const [watermarkOpacityPreview, setWatermarkOpacityPreview] = useState(watermarkOpacity || 0.5);
-  const watermarkTextInputRef = useRef(null);
-  const watermarkLinkInputRef = useRef(null);
 
-  // HSL state for color picker
-  const [hue, setHue] = useState(0);
-  const [saturation, setSaturation] = useState(100);
-  const [lightness, setLightness] = useState(50);
+  // Color picker state
+  const [tempColor, setTempColor] = useState('#EAB308');
+  const [colorTab, setColorTab] = useState('Grid');
+  const [colorOpacity, setColorOpacity] = useState(100);
 
-  // Watermark swatch color (using existing normalizeHex function defined later)
-  const watermarkSwatchColor = useMemo(() => {
-    const baseColor = customWatermarkEnabled
-      ? watermarkColor || labelBackgroundColor
-      : labelBackgroundColor;
-    // Use a simple fallback if normalizeHex isn't available yet
-    if (typeof normalizeHex === 'function') {
-      return normalizeHex(baseColor) || '#FFD700';
-    }
-    // Fallback: simple hex validation
-    if (baseColor && /^#[0-9A-F]{6}$/i.test(baseColor)) {
-      return baseColor.toUpperCase();
-    }
-    return baseColor || '#FFD700';
-  }, [customWatermarkEnabled, watermarkColor, labelBackgroundColor]);
-
-  // Update watermark opacity preview when watermarkOpacity changes
+  // Update preview when watermarkOpacity changes from outside
   useEffect(() => {
     if (typeof watermarkOpacity === 'number') {
       setWatermarkOpacityPreview(watermarkOpacity);
     }
   }, [watermarkOpacity]);
 
-  const LABEL_SIZE_OPTIONS = useMemo(() => getLabelSizeOptions(t), [t]);
-  const LABEL_CORNER_OPTIONS = useMemo(() => getLabelCornerOptions(t), [t]);
-  const FONT_OPTIONS = useMemo(() => getFontOptions(t), [t]);
-
-  const currentFontOption = useMemo(() => {
-    const normalized = labelFontFamily?.toLowerCase();
-    return FONT_OPTIONS.find(
-      (opt) => opt.key.toLowerCase() === normalized
-    ) || FONT_OPTIONS[0];
-  }, [labelFontFamily, FONT_OPTIONS]);
-
-  const hsvToHex = ({ h, s, v }) => {
-    const hNorm = h / 360;
-    const sNorm = s / 100;
-    const vNorm = v / 100;
-    const c = vNorm * sNorm;
-    const x = c * (1 - Math.abs(((hNorm * 6) % 2) - 1));
-    const m = vNorm - c;
-    let r = 0,
-      g = 0,
-      b = 0;
-    if (hNorm < 1 / 6) {
-      [r, g, b] = [c, x, 0];
-    } else if (hNorm < 2 / 6) {
-      [r, g, b] = [x, c, 0];
-    } else if (hNorm < 3 / 6) {
-      [r, g, b] = [0, c, x];
-    } else if (hNorm < 4 / 6) {
-      [r, g, b] = [0, x, c];
-    } else if (hNorm < 5 / 6) {
-      [r, g, b] = [x, 0, c];
-    } else {
-      [r, g, b] = [c, 0, x];
-    }
-    const rInt = Math.round((r + m) * 255);
-    const gInt = Math.round((g + m) * 255);
-    const bInt = Math.round((b + m) * 255);
-    const hex = ((rInt << 16) | (gInt << 8) | bInt).toString(16).padStart(6, '0');
-    return `#${hex.toUpperCase()}`;
-  };
-
   const openColorModal = (type) => {
-    console.log('[ColorPicker] openColorModal called with type:', type);
-    // Check if user has access
-    if (type === 'watermark') {
-      const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-      console.log('[LabelCustomization] Color modal (watermark) - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-      if (!hasAccess) {
-        const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-        Alert.alert(
-          t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-          t('settings.watermarkNotAvailableMessage', { 
-            defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-            plan: planName
-          }),
-          [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-        );
-        return;
-      }
-    } else {
-      if (!canUse(FEATURES.CUSTOM_LABELS)) {
-        setShowPlanModal(true);
-        return;
-      }
-    }
-    
-    let currentColor;
-    if (type === 'background') {
-      currentColor = labelBackgroundColor;
-    } else if (type === 'text') {
-      currentColor = labelTextColor;
-    } else if (type === 'watermark') {
-      currentColor = watermarkColor || labelBackgroundColor;
-    }
-    console.log('[ColorPicker] Setting draftColor to:', currentColor);
-
-    // Initialize HSL values from current color
-    const hsl = hexToHsl(currentColor);
-    setHue(hsl.h);
-    setSaturation(hsl.s);
-    setLightness(hsl.l);
-
     setColorModalType(type);
-    setDraftColor(currentColor);
-    setColorInput(currentColor);
+    if (type === 'bg') {
+      setTempColor(labelBackgroundColor);
+    } else if (type === 'watermark') {
+      setTempColor(watermarkColor || '#666666');
+    } else {
+      setTempColor(labelTextColor);
+    }
     setColorModalVisible(true);
   };
 
-  const handleColorModalCancel = () => {
-    setColorModalVisible(false);
-    setColorModalType(null);
-  };
+  // Convert HSL/RGB to hex color (kept for backward compatibility)
+  const convertToHex = (color) => {
+    if (!color) return '#666666';
 
-  const handleColorModalApply = async () => {
-    if (colorModalType === 'background') {
-      await updateLabelBackgroundColor(draftColor);
-    } else if (colorModalType === 'text') {
-      await updateLabelTextColor(draftColor);
-    } else if (colorModalType === 'watermark') {
-      await updateWatermarkColor(draftColor);
-    }
-    setColorModalVisible(false);
-    setColorModalType(null);
-  };
-
-  const openHexModal = () => {
-    const normalized = normalizeHex(colorInput);
-    setDraftColor(normalized);
-    setColorInput(normalized);
-    setHexModalValue(normalized);
-    setHexModalError(null);
-    setHexModalVisible(true);
-  };
-
-  const handleHexModalChange = (text) => {
-    const input = text.toUpperCase();
-    setHexModalValue(input);
-    if (!input) {
-      setHexModalError(null);
-      return;
-    }
-    const normalized = normalizeHex(input);
-    if (normalized) {
-      setHexModalError(null);
-    } else if (input.length >= 4) {
-      setHexModalError('Enter #RRGGBB, #RGB, or rgb(r, g, b)');
-    } else {
-      setHexModalError(null);
-    }
-  };
-
-  const handleHexModalCancel = () => {
-    setHexModalVisible(false);
-    setHexModalError(null);
-  };
-
-  const handleHexModalApply = () => {
-    const normalized = normalizeHex(hexModalValue);
-    if (!normalized) {
-      setHexModalError('Enter #RRGGBB, #RGB, or rgb(r, g, b)');
-      return;
-    }
-    handleDraftColorChange(normalized, { source: 'complete' });
-    setHexModalVisible(false);
-  };
-
-  const handleDraftColorChange = (color, arg1 = {}, arg2 = null) => {
-    let options = {};
-    let hsvMeta = null;
-
-    if (arg1 && typeof arg1 === 'object' && 'source' in arg1) {
-      options = arg1;
-      hsvMeta = arg2;
-    } else {
-      hsvMeta = arg1;
-      options = arg2 && typeof arg2 === 'object' ? arg2 : {};
+    // If already hex, return as is
+    if (color.startsWith('#')) {
+      return color;
     }
 
-    const { source } = options;
+    // Handle HSL colors
+    if (color.startsWith('hsl')) {
+      const match = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+      if (match) {
+        const h = parseInt(match[1]) / 360;
+        const s = parseInt(match[2]) / 100;
+        const l = parseInt(match[3]) / 100;
 
-    let candidateHex = normalizeHex(color);
-    if (hsvMeta && typeof hsvMeta === 'object') {
-      const { h = 0, s = 0, v = 0 } = hsvMeta;
-      if (colorModalType === 'text' && v <= 1) {
-        candidateHex = hsvToHex({ h, s, v: 100 });
-      } else {
-        candidateHex = hsvToHex({ h, s, v });
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+        const m = l - c / 2;
+
+        let r, g, b;
+
+        if (h < 0.1667) {
+          r = c; g = x; b = 0;
+        } else if (h < 0.3333) {
+          r = x; g = c; b = 0;
+        } else if (h < 0.5) {
+          r = 0; g = c; b = x;
+        } else if (h < 0.6667) {
+          r = 0; g = x; b = c;
+        } else if (h < 0.8333) {
+          r = x; g = 0; b = c;
+        } else {
+          r = c; g = 0; b = x;
+        }
+
+        r = Math.round((r + m) * 255);
+        g = Math.round((g + m) * 255);
+        b = Math.round((b + m) * 255);
+
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
       }
     }
-    const normalized = normalizeHex(candidateHex);
-    if (!normalized) {
-      return;
+
+    // Handle RGB colors
+    if (color.startsWith('rgb')) {
+      const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (match) {
+        const r = parseInt(match[1]);
+        const g = parseInt(match[2]);
+        const b = parseInt(match[3]);
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+      }
     }
-    setDraftColor(normalized);
-    setColorInput(normalized);
-    setHexModalValue(normalized);
-    setHexModalError(null);
+
+    // Default fallback
+    return color;
   };
+
+  const applyColor = async () => {
+    const hexColor = convertToHex(tempColor);
+    if (colorModalType === 'bg') {
+      await updateLabelBackgroundColor(hexColor);
+    } else if (colorModalType === 'text') {
+      await updateLabelTextColor(hexColor);
+    } else if (colorModalType === 'watermark') {
+      await updateWatermarkColor(hexColor);
+    }
+    setColorModalVisible(false);
+  };
+
+  const currentFont = FONT_OPTIONS.find(f => f.key === labelFontFamily)?.label || 'Arial Blank';
+  const currentSize = SIZE_OPTIONS.find(s => s.key === labelSize);
+
+  // Helper function to get position styles for preview with margin
+  const getPositionStyle = (position, marginV, marginH) => {
+    // Preview box is roughly square, so we'll use fixed positions
+    const boxSize = SCREEN_WIDTH / 2 - 20; // Approximate box size
+    const centerX = (boxSize - 60) / 2; // Approximate label width is 60
+    const centerY = (boxSize - 30) / 2; // Approximate label height is 30
+    
+    const positions = {
+      'left-top': { top: marginV || 8, left: marginH || 8 },
+      'center-top': { top: marginV || 8, left: centerX },
+      'right-top': { top: marginV || 8, right: marginH || 8 },
+      'left-middle': { top: centerY, left: marginH || 8 },
+      'center-middle': { top: centerY, left: centerX },
+      'right-middle': { top: centerY, right: marginH || 8 },
+      'left-bottom': { bottom: marginV || 8, left: marginH || 8 },
+      'center-bottom': { bottom: marginV || 8, left: centerX },
+      'right-bottom': { bottom: marginV || 8, right: marginH || 8 },
+    };
+    return positions[position] || positions['left-top'];
+  };
+
+  const beforePosStyle = getPositionStyle(beforeLabelPosition, labelMarginVertical, labelMarginHorizontal);
+  const afterPosStyle = getPositionStyle(afterLabelPosition, labelMarginVertical, labelMarginHorizontal);
+
+  // Get watermark position style using the same function as PhotoWatermark
+  const watermarkPositions = getLabelPositions(labelMarginVertical ?? 10, labelMarginHorizontal ?? 10);
+  const watermarkPosKey = watermarkPosition || 'right-bottom';
+  const watermarkPosStyle = watermarkPositions[watermarkPosKey] || watermarkPositions['right-bottom'];
+  const { name: watermarkPosName, horizontalAlign, verticalAlign, ...watermarkPositionCoords } = watermarkPosStyle;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>←</Text>
+        <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.backButton}>
+          <View style={styles.backButtonCircle}>
+            <Ionicons name="arrow-back" size={20} color={COLORS.TEXT} />
+          </View>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('labelCustomization.title')}</Text>
-        <View style={styles.headerSpacer} />
+        <Text style={styles.headerTitle}>Customize Labels</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.sectionDescription}>
-          {t('labelCustomization.description')}
-        </Text>
-
-        {/* Corner Style */}
-        <View style={styles.settingRowStacked}>
-          <View style={styles.cornerControlsRow}>
-            <Text style={styles.settingLabel}>{t('labelCustomization.cornerStyle')}</Text>
-            <View style={styles.cornerOptions}>
-              {LABEL_CORNER_OPTIONS.map((option) => {
-                const isSelected = labelCornerStyle === option.key;
-                const buttonBorderRadius = option.key === 'square' ? 0 : 8;
-                return (
-                  <TouchableOpacity
-                    key={option.key}
-                    style={[
-                      styles.cornerOption,
-                      { borderRadius: buttonBorderRadius },
-                      isSelected && styles.cornerOptionSelected,
-                    ]}
-                    onPress={() => updateLabelCornerStyle(option.key)}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.cornerOptionText,
-                        isSelected && styles.cornerOptionTextSelected,
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView 
+          style={styles.scrollView} 
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+        {/* Preview Section - Combined Before/After with Labels and Watermark */}
+        <View style={styles.previewSection}>
+          <View style={styles.previewCombinedContainer}>
+            {/* Before section */}
+            <View style={styles.previewCombinedHalf}>
+              <Ionicons name="image-outline" size={48} color="#999" />
+              {/* Before Label */}
+              <View style={[
+                styles.previewLabel,
+                {
+                  backgroundColor: labelBackgroundColor,
+                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
+                  padding: currentSize?.padding || 10,
+                  position: 'absolute',
+                  ...beforePosStyle,
+                }
+              ]}>
+                <Text style={[
+                  styles.previewLabelText,
+                  { color: labelTextColor, fontSize: currentSize?.fontSize || 14 }
+                ]}>Before</Text>
+              </View>
             </View>
-          </View>
-        </View>
-
-        {/* Label Size */}
-        <Text style={styles.settingLabel}>{t('labelCustomization.labelSize')}</Text>
-        <View style={styles.labelPreviewContainer}>
-          <View style={styles.labelPreview}>
-            {LABEL_SIZE_OPTIONS.map((option) => {
-              const sizeStyle =
-                LABEL_SIZE_STYLE_MAP[option.key] || LABEL_SIZE_STYLE_MAP.medium;
-              const cornerRadius =
-                labelCornerStyle === 'square' ? 0 : sizeStyle.borderRadius;
-              const isSelected = labelSize === option.key;
-              const swatchBackground = isSelected ? labelBackgroundColor : '#E0E0E0';
-              const swatchTextColor = isSelected ? labelTextColor : '#666666';
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={styles.previewLabelOption}
-                  onPress={() => updateLabelSize(option.key)}
-                  activeOpacity={0.85}
-                >
-                  <PhotoLabel
-                    label="common.before"
-                    position="left-top"
-                    style={{
-                      position: 'relative',
-                      top: 0,
-                      left: 0,
-                      paddingHorizontal: sizeStyle.paddingHorizontal,
-                      paddingVertical: sizeStyle.paddingVertical,
-                      minWidth: sizeStyle.minWidth,
-                      borderRadius: cornerRadius,
-                      borderWidth: 1,
-                      borderColor: isSelected ? 'transparent' : '#D0D0D0',
-                    }}
-                    textStyle={{
-                      fontSize: sizeStyle.fontSize,
-                    }}
-                    backgroundColor={swatchBackground}
-                    textColor={swatchTextColor}
-                  />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Background Color */}
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>{t('labelCustomization.backgroundColor')}</Text>
-            <Text style={styles.settingDescription}>
-              {labelBackgroundColor?.toUpperCase()}
+            {/* After section */}
+            <View style={[styles.previewCombinedHalf, styles.previewCombinedHalfAfter]}>
+              <Ionicons name="image-outline" size={48} color="#999" />
+              {/* After Label */}
+              <View style={[
+                styles.previewLabel,
+                {
+                  backgroundColor: labelBackgroundColor,
+                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
+                  padding: currentSize?.padding || 10,
+                  position: 'absolute',
+                  ...afterPosStyle,
+                }
+              ]}>
+                <Text style={[
+                  styles.previewLabelText,
+                  { color: labelTextColor, fontSize: currentSize?.fontSize || 14 }
+                ]}>After</Text>
+              </View>
+            </View>
+            {/* Single Watermark - appears once on the entire combined image */}
+            <Text style={[
+              styles.previewWatermark,
+              {
+                color: watermarkColor || '#666666',
+                opacity: watermarkOpacity || 0.5,
+                ...watermarkPositionCoords,
+              }
+            ]}>
+              {watermarkText || 'Created with Proofpix.app'}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.customSelectorButton}
-            onPress={() => openColorModal('background')}
-          >
-            <View
-              style={[
-                styles.colorPreviewSwatch,
-                { backgroundColor: labelBackgroundColor },
-              ]}
-            />
-            <Text style={styles.customSelectorButtonText}>{t('labelCustomization.pickColor')}</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Text Color */}
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>{t('labelCustomization.textColor')}</Text>
-            <Text style={styles.settingDescription}>
-              {labelTextColor?.toUpperCase()}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.customSelectorButton}
+        {/* Label Section */}
+        <Text style={styles.sectionTitle}>Label</Text>
+        
+        {/* Control Buttons Row 1 */}
+        <View style={styles.controlsRow}>
+          <ControlButton
+            icon="ellipse-outline"
+            label="Style"
+            selected={labelCornerStyle === 'rounded'}
+            onPress={async () => {
+              const newStyle = labelCornerStyle === 'rounded' ? 'square' : 'rounded';
+              await updateLabelCornerStyle(newStyle);
+            }}
+          />
+          <ControlButton
+            icon="text"
+            label="Font"
+            onPress={() => setFontModalVisible(true)}
+          />
+          <ControlButton
+            icon="resize"
+            label="Size"
+            onPress={() => setSizeModalVisible(true)}
+          />
+          <ColorControlButton
+            color={labelBackgroundColor}
+            label="BG Color"
+            selected={true}
+            onPress={() => openColorModal('bg')}
+          />
+          <ColorControlButton
+            color={labelTextColor}
+            label="Text Color"
             onPress={() => openColorModal('text')}
-          >
-            <View
-              style={[
-                styles.colorPreviewSwatch,
-                { backgroundColor: labelTextColor },
-              ]}
-            />
-            <Text style={styles.customSelectorButtonText}>{t('labelCustomization.pickColor')}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Font Style */}
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>{t('labelCustomization.fontStyle')}</Text>
-            <Text style={styles.settingDescription}>
-              {currentFontOption?.label}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.fontSelectorButton}
-            onPress={() => {
-              // Check if user has access to custom labels
-              if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                setShowPlanModal(true);
-                return;
-              }
-              setFontModalVisible(true);
-            }}
-          >
-            <Text style={styles.fontSelectorButtonText}>{t('labelCustomization.chooseFont')}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Watermark Customization */}
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>{t('settings.customizeWatermark')}</Text>
-            <Text style={styles.settingDescription}>
-              {customWatermarkEnabled
-                ? t('settings.watermarkCustomDescription')
-                : t('settings.watermarkDefaultDescription')}
-            </Text>
-          </View>
-          <Switch
-            value={customWatermarkEnabled}
-            onValueChange={(value) => {
-              // Check if user has access to customize watermark
-              const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-              console.log('[LabelCustomization] Watermark toggle - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'value:', value);
-              
-              if (value && !hasAccess) {
-                // Show alert explaining why they can't use this feature (instead of plan modal)
-                const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                Alert.alert(
-                  t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                  t('settings.watermarkNotAvailableMessage', { 
-                    defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                    plan: planName
-                  }),
-                  [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                );
-                return;
-              }
-              toggleWatermark(value);
-            }}
-            trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
-            thumbColor="white"
-            disabled={!canUse(FEATURES.CUSTOM_WATERMARKS) && !customWatermarkEnabled}
           />
         </View>
-        {customWatermarkEnabled && (
-          <View style={styles.watermarkCustomization}>
-            {/* Add Watermark Checkbox */}
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>{t('settings.addWatermark', { defaultValue: 'Add watermark' })}</Text>
-                <Text style={styles.settingDescription}>
-                  {t('settings.addWatermarkDescription', { defaultValue: 'Show watermark on photos' })}
-                </Text>
-              </View>
-              <Switch
-                value={showWatermark}
-                onValueChange={(value) => {
-                  // Check if user has access to customize watermark
-                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                  console.log('[LabelCustomization] Add watermark toggle - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'value:', value);
-                  if (!hasAccess) {
-                    // Starter users cannot turn off watermark - show alert
-                    if (value === false) {
-                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                      Alert.alert(
-                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                        t('settings.watermarkNotAvailableMessage', { 
-                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                          plan: planName
-                        }),
-                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                      );
-                      return;
-                    }
-                  }
-                  updateShowWatermark(value);
-                }}
-                trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
-                thumbColor="white"
-              />
-            </View>
 
-            <View style={styles.watermarkField}>
-              <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkText')}</Text>
-              <Pressable
-                onPress={() => {
-                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                  console.log('[LabelCustomization] Watermark text press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-                  if (!hasAccess) {
-                    const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                    Alert.alert(
-                      t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                      t('settings.watermarkNotAvailableMessage', { 
-                        defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                        plan: planName
-                      }),
-                      [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                    );
-                  } else {
-                    // Focus the input if user has access
-                    if (watermarkTextInputRef.current) {
-                      watermarkTextInputRef.current.focus();
-                    }
-                  }
-                }}
-              >
-                <TextInput
-                  ref={watermarkTextInputRef}
-                  style={styles.watermarkInput}
-                  value={watermarkText}
-                  onChangeText={updateWatermarkText}
-                  onFocus={() => {
-                    // Check if user has access to customize watermark
-                    const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                    console.log('[LabelCustomization] Watermark text focus - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-                    if (!hasAccess) {
-                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                      Alert.alert(
-                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                        t('settings.watermarkNotAvailableMessage', { 
-                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                          plan: planName
-                        }),
-                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                      );
-                      // Blur the input to prevent typing
-                      if (watermarkTextInputRef.current) {
-                        watermarkTextInputRef.current.blur();
-                      }
-                    }
-                  }}
-                  placeholder={t('settings.watermarkTextPlaceholder')}
-                  placeholderTextColor={COLORS.GRAY}
-                  editable={canUse(FEATURES.CUSTOM_WATERMARKS)}
-                  pointerEvents={canUse(FEATURES.CUSTOM_WATERMARKS) ? 'auto' : 'none'}
-                />
-              </Pressable>
-            </View>
-            <View style={styles.watermarkField}>
-              <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkLink')}</Text>
-              <Pressable
-                onPress={() => {
-                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                  console.log('[LabelCustomization] Watermark link press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-                  if (!hasAccess) {
-                    const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                    Alert.alert(
-                      t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                      t('settings.watermarkNotAvailableMessage', { 
-                        defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                        plan: planName
-                      }),
-                      [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                    );
-                  } else {
-                    // Focus the input if user has access
-                    if (watermarkLinkInputRef.current) {
-                      watermarkLinkInputRef.current.focus();
-                    }
-                  }
-                }}
-              >
-                <TextInput
-                  ref={watermarkLinkInputRef}
-                  style={styles.watermarkInput}
-                  value={watermarkLink}
-                  onChangeText={updateWatermarkLink}
-                  onFocus={() => {
-                    // Check if user has access to customize watermark
-                    const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                    console.log('[LabelCustomization] Watermark link focus - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-                    if (!hasAccess) {
-                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                      Alert.alert(
-                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                        t('settings.watermarkNotAvailableMessage', { 
-                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                          plan: planName
-                        }),
-                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                      );
-                      // Blur the input to prevent typing
-                      if (watermarkLinkInputRef.current) {
-                        watermarkLinkInputRef.current.blur();
-                      }
-                    }
-                  }}
-                  placeholder={t('settings.watermarkLinkPlaceholder')}
-                  placeholderTextColor={COLORS.GRAY}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  editable={canUse(FEATURES.CUSTOM_WATERMARKS)}
-                  pointerEvents={canUse(FEATURES.CUSTOM_WATERMARKS) ? 'auto' : 'none'}
-                />
-              </Pressable>
-            </View>
-            <View style={styles.watermarkColorRow}>
-              <View style={styles.watermarkColorInfo}>
-                <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkColor')}</Text>
-                <Text style={styles.watermarkColorValue}>{watermarkSwatchColor}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.watermarkColorButton}
-                onPress={() => {
-                  // Check if user has access to customize watermark
-                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                  console.log('[LabelCustomization] Watermark color press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-                  if (!hasAccess) {
-                    const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                    Alert.alert(
-                      t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                      t('settings.watermarkNotAvailableMessage', { 
-                        defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                        plan: planName
-                      }),
-                      [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                    );
-                    return;
-                  }
-                  openColorModal('watermark');
-                }}
-              >
-                <View
-                  style={[
-                    styles.colorPreviewSwatch,
-                    styles.watermarkColorSwatch,
-                    { backgroundColor: watermarkSwatchColor },
-                  ]}
-                />
-                <Text style={styles.customSelectorButtonText}>{t('settings.pickColor')}</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.watermarkOpacityRow}>
-              <Text style={styles.watermarkFieldLabel}>{t('settings.opacity')}</Text>
-              <View style={styles.watermarkOpacityControls}>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={1}
-                  step={0.01}
-                  value={watermarkOpacityPreview}
-                  onValueChange={(value) => {
-                    // Update preview during dragging (don't check permissions here to avoid jumping)
-                    setWatermarkOpacityPreview(value);
-                  }}
-                  onSlidingComplete={(value) => {
-                    // Check if user has access to customize watermark when dragging ends
-                    const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                    console.log('[LabelCustomization] Watermark opacity slide - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-                    if (!hasAccess) {
-                      const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                      Alert.alert(
-                        t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                        t('settings.watermarkNotAvailableMessage', { 
-                          defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                          plan: planName
-                        }),
-                        [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                      );
-                      // Reset to original value
-                      setWatermarkOpacityPreview(watermarkOpacity);
-                      return;
-                    }
-                    updateWatermarkOpacity(value);
-                  }}
-                  minimumTrackTintColor={watermarkSwatchColor}
-                  maximumTrackTintColor="#d3d3d3"
-                  thumbTintColor={watermarkSwatchColor}
-                  disabled={!canUse(FEATURES.CUSTOM_WATERMARKS)}
-                />
-                <Text style={styles.watermarkOpacityValue}>
-                  {Math.round(watermarkOpacityPreview * 100)}%
-                </Text>
-              </View>
-            </View>
-
-            {/* Watermark Position */}
-            <View style={styles.watermarkField}>
-              <Text style={styles.watermarkFieldLabel}>{t('labelCustomization.watermarkPosition', { defaultValue: 'Watermark Position' })}</Text>
-              <View style={styles.positionGrid}>
-                <View style={styles.gridRow}>
-                  {['left-top', 'center-top', 'right-top'].map((key) => {
-                    const pos = getLabelPositions(10, 10)[key];
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        style={[
-                          styles.positionGridCell,
-                          watermarkPosition === key && styles.positionGridCellSelected,
-                        ]}
-                        onPress={() => {
-                          const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                          console.log('[LabelCustomization] Watermark position press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'position:', key);
-                          if (!hasAccess) {
-                            const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                            Alert.alert(
-                              t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                              t('settings.watermarkNotAvailableMessage', { 
-                                defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                                plan: planName
-                              }),
-                              [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                            );
-                            return;
-                          }
-                          updateWatermarkPosition(key);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.positionGridText}>{pos.name}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <View style={styles.gridRow}>
-                  {['left-middle', 'center-middle', 'right-middle'].map((key) => {
-                    const pos = getLabelPositions(10, 10)[key];
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        style={[
-                          styles.positionGridCell,
-                          watermarkPosition === key && styles.positionGridCellSelected,
-                        ]}
-                        onPress={() => {
-                          const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                          console.log('[LabelCustomization] Watermark position press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'position:', key);
-                          if (!hasAccess) {
-                            const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                            Alert.alert(
-                              t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                              t('settings.watermarkNotAvailableMessage', { 
-                                defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                                plan: planName
-                              }),
-                              [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                            );
-                            return;
-                          }
-                          updateWatermarkPosition(key);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.positionGridText}>{pos.name}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <View style={styles.gridRow}>
-                  {['left-bottom', 'center-bottom', 'right-bottom'].map((key) => {
-                    const pos = getLabelPositions(10, 10)[key];
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        style={[
-                          styles.positionGridCell,
-                          watermarkPosition === key && styles.positionGridCellSelected,
-                        ]}
-                        onPress={() => {
-                          const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                          console.log('[LabelCustomization] Watermark position press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess, 'position:', key);
-                          if (!hasAccess) {
-                            const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                            Alert.alert(
-                              t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                              t('settings.watermarkNotAvailableMessage', { 
-                                defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                                plan: planName
-                              }),
-                              [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                            );
-                            return;
-                          }
-                          updateWatermarkPosition(key);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.positionGridText}>{pos.name}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            </View>
-
-            {/* Watermark Font */}
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.watermarkFieldLabel}>{t('labelCustomization.watermarkFont', { defaultValue: 'Watermark Font' })}</Text>
-                <Text style={styles.settingDescription}>
-                  {FONT_OPTIONS.find(opt => opt.key === watermarkFontFamily)?.label || FONT_OPTIONS[0]?.label}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.fontSelectorButton}
-                onPress={() => {
-                  const hasAccess = canUse(FEATURES.CUSTOM_WATERMARKS);
-                  console.log('[LabelCustomization] Watermark font press - userPlan:', userPlan, 'effectivePlan:', effectivePlan, 'hasAccess:', hasAccess);
-                  if (!hasAccess) {
-                    const planName = userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter';
-                    Alert.alert(
-                      t('settings.watermarkNotAvailable', { defaultValue: 'Watermark Customization Not Available' }),
-                      t('settings.watermarkNotAvailableMessage', { 
-                        defaultValue: `Custom watermark features (position, font, color, text) are available on Pro, Business, and Enterprise plans. Your current plan is ${planName}.`,
-                        plan: planName
-                      }),
-                      [{ text: t('common.ok', { defaultValue: 'OK' }) }]
-                    );
-                    return;
-                  }
-                  // Store that this is for watermark font
-                  setWatermarkFontModalVisible(true);
-                }}
-              >
-                <Text style={styles.fontSelectorButtonText}>{t('labelCustomization.chooseFont')}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.watermarkHelperText}>
-              {t('settings.watermarkHelperText')}
-            </Text>
-          </View>
-        )}
-
-        {/* Label Position */}
-        <View style={styles.settingRowStacked}>
-          <Text style={styles.settingLabel}>{t('labelCustomization.labelPosition')}</Text>
-          <Text style={styles.settingDescription}>
-            {t('labelCustomization.positionDescription')}
-          </Text>
-
-          {/* Dummy Photo Preview */}
-          <View style={styles.positionPreviewContainer}>
-            <View style={styles.positionPreviewBox}>
-              {/* Left half - BEFORE */}
-              <View style={styles.previewHalfBefore}>
-                <View
-                  style={[
-                    styles.previewLabelPosition,
-                    getLabelPositions(labelMarginVertical, labelMarginHorizontal)[beforeLabelPosition]
-                  ]}
-                >
-                  <PhotoLabel
-                    label="common.before"
-                    position="left-top"
-                    style={{ position: 'relative', top: 0, left: 0 }}
-                  />
-                </View>
-              </View>
-
-              {/* Right half - AFTER */}
-              <View style={styles.previewHalfAfter}>
-                <View
-                  style={[
-                    styles.previewLabelPosition,
-                    getLabelPositions(labelMarginVertical, labelMarginHorizontal)[afterLabelPosition]
-                  ]}
-                >
-                  <PhotoLabel
-                    label="common.after"
-                    position="left-top"
-                    style={{ position: 'relative', top: 0, left: 0 }}
-                  />
-                </View>
-              </View>
-              {/* Watermark Preview */}
-              {shouldShowWatermark && (
-                <PhotoWatermark />
-              )}
-            </View>
-          </View>
-
-          {/* Grid-Based Position Selector */}
-          <View style={styles.positionGridContainer}>
-            {/* Grid for BEFORE (left side) */}
-            <View style={styles.gridHalf}>
-              <View style={styles.gridRow}>
-                {['left-top', 'center-top', 'right-top'].map((key) => (
-                  <TouchableOpacity
-                    key={`before-${key}`}
-                    style={[
-                      styles.gridCell,
-                      beforeLabelPosition === key && styles.gridCellSelected
-                    ]}
-                    onPress={() => {
-                      // Check if user has access to custom labels
-                      if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                        setShowPlanModal(true);
-                        return;
-                      }
-                      updateBeforeLabelPosition(key);
-                      updateCombinedLabelPosition(key);
-                    }}
-                    activeOpacity={0.7}
-                  />
-                ))}
-              </View>
-              <View style={styles.gridRow}>
-                {['left-middle', 'center-middle', 'right-middle'].map((key) => (
-                  <TouchableOpacity
-                    key={`before-${key}`}
-                    style={[
-                      styles.gridCell,
-                      beforeLabelPosition === key && styles.gridCellSelected
-                    ]}
-                    onPress={() => {
-                      // Check if user has access to custom labels
-                      if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                        setShowPlanModal(true);
-                        return;
-                      }
-                      updateBeforeLabelPosition(key);
-                      updateCombinedLabelPosition(key);
-                    }}
-                    activeOpacity={0.7}
-                  />
-                ))}
-              </View>
-              <View style={styles.gridRow}>
-                {['left-bottom', 'center-bottom', 'right-bottom'].map((key) => (
-                  <TouchableOpacity
-                    key={`before-${key}`}
-                    style={[
-                      styles.gridCell,
-                      beforeLabelPosition === key && styles.gridCellSelected
-                    ]}
-                    onPress={() => {
-                      // Check if user has access to custom labels
-                      if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                        setShowPlanModal(true);
-                        return;
-                      }
-                      updateBeforeLabelPosition(key);
-                      updateCombinedLabelPosition(key);
-                    }}
-                    activeOpacity={0.7}
-                  />
-                ))}
-              </View>
-            </View>
-
-            {/* Grid for AFTER (right side) */}
-            <View style={styles.gridHalf}>
-              <View style={styles.gridRow}>
-                {['left-top', 'center-top', 'right-top'].map((key) => (
-                  <TouchableOpacity
-                    key={`after-${key}`}
-                    style={[
-                      styles.gridCell,
-                      afterLabelPosition === key && styles.gridCellSelected
-                    ]}
-                    onPress={() => {
-                      // Check if user has access to custom labels
-                      if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                        setShowPlanModal(true);
-                        return;
-                      }
-                      updateAfterLabelPosition(key);
-                      updateCombinedLabelPosition(key);
-                    }}
-                    activeOpacity={0.7}
-                  />
-                ))}
-              </View>
-              <View style={styles.gridRow}>
-                {['left-middle', 'center-middle', 'right-middle'].map((key) => (
-                  <TouchableOpacity
-                    key={`after-${key}`}
-                    style={[
-                      styles.gridCell,
-                      afterLabelPosition === key && styles.gridCellSelected
-                    ]}
-                    onPress={() => {
-                      // Check if user has access to custom labels
-                      if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                        setShowPlanModal(true);
-                        return;
-                      }
-                      updateAfterLabelPosition(key);
-                      updateCombinedLabelPosition(key);
-                    }}
-                    activeOpacity={0.7}
-                  />
-                ))}
-              </View>
-              <View style={styles.gridRow}>
-                {['left-bottom', 'center-bottom', 'right-bottom'].map((key) => (
-                  <TouchableOpacity
-                    key={`after-${key}`}
-                    style={[
-                      styles.gridCell,
-                      afterLabelPosition === key && styles.gridCellSelected
-                    ]}
-                    onPress={() => {
-                      // Check if user has access to custom labels
-                      if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                        setShowPlanModal(true);
-                        return;
-                      }
-                      updateAfterLabelPosition(key);
-                      updateCombinedLabelPosition(key);
-                    }}
-                    activeOpacity={0.7}
-                  />
-                ))}
-              </View>
-            </View>
-          </View>
+        {/* Control Buttons Row 2 */}
+        <View style={styles.controlsRow}>
+          <ControlButton
+            icon="move"
+            label="Position"
+            onPress={() => setPositionModalVisible(true)}
+          />
+          <ControlButton
+            icon="resize-outline"
+            label="Margin"
+            onPress={() => setMarginModalVisible(true)}
+          />
         </View>
 
-        {/* Label Margins */}
-        <View style={styles.settingRowStacked}>
-          <Text style={styles.settingLabel}>{t('labelCustomization.labelMargins')}</Text>
-          <Text style={styles.settingDescription}>
-            {t('labelCustomization.marginsDescription')}
-          </Text>
+        {/* Watermark Section */}
+        <Text style={styles.sectionTitle}>Watermark</Text>
 
-          {/* Vertical Margin Slider */}
-          <View style={styles.marginSliderContainer}>
-            <Text style={styles.marginSliderLabel}>
-              {t('labelCustomization.verticalMargin', { value: labelMarginVertical })}
-            </Text>
-            <View style={styles.sliderWrapper}>
-              <Slider
-                key={`vertical-${sliderResetKey}`}
-                style={styles.slider}
-                minimumValue={0}
-                maximumValue={50}
-                step={1}
-                value={labelMarginVertical}
-                onValueChange={(value) => {
-                  // Check if user has access to custom labels
-                  if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                    setShowPlanModal(true);
-                    // Force slider to reset by updating key
-                    setSliderResetKey(prev => prev + 1);
-                    return;
-                  }
-                  updateLabelMarginVertical(value);
-                }}
-                minimumTrackTintColor={COLORS.PRIMARY}
-                maximumTrackTintColor="#d3d3d3"
-                thumbTintColor={COLORS.PRIMARY}
-              />
-              <View style={styles.sliderDefaultMark} />
-            </View>
-          </View>
+        <TextInput
+          style={styles.input}
+          value={watermarkText}
+          onChangeText={updateWatermarkText}
+          placeholder="Watermark Text"
+          placeholderTextColor={COLORS.GRAY}
+        />
 
-          {/* Horizontal Margin Slider */}
-          <View style={styles.marginSliderContainer}>
-            <Text style={styles.marginSliderLabel}>
-              {t('labelCustomization.horizontalMargin', { value: labelMarginHorizontal })}
-            </Text>
-            <View style={styles.sliderWrapper}>
-              <Slider
-                key={`horizontal-${sliderResetKey}`}
-                style={styles.slider}
-                minimumValue={0}
-                maximumValue={50}
-                step={1}
-                value={labelMarginHorizontal}
-                onValueChange={(value) => {
-                  // Check if user has access to custom labels
-                  if (!canUse(FEATURES.CUSTOM_LABELS)) {
-                    setShowPlanModal(true);
-                    // Force slider to reset by updating key
-                    setSliderResetKey(prev => prev + 1);
-                    return;
-                  }
-                  updateLabelMarginHorizontal(value);
-                }}
-                minimumTrackTintColor={COLORS.PRIMARY}
-                maximumTrackTintColor="#d3d3d3"
-                thumbTintColor={COLORS.PRIMARY}
-              />
-              <View style={styles.sliderDefaultMark} />
-            </View>
-          </View>
+        <TextInput
+          style={styles.input}
+          value={watermarkLink}
+          onChangeText={updateWatermarkLink}
+          placeholder="Watermark Link"
+          placeholderTextColor={COLORS.GRAY}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+        />
+
+        {/* Watermark Controls */}
+        <View style={styles.controlsRow}>
+          <ControlButton
+            icon="contrast-outline"
+            label="Opacity"
+            onPress={() => setWatermarkOpacityModalVisible(true)}
+          />
+          <ControlButton
+            icon="text"
+            label="Font"
+            onPress={() => setWatermarkFontModalVisible(true)}
+          />
+          <ColorControlButton
+            color={watermarkColor || '#666666'}
+            label="Color"
+            onPress={() => {
+              setColorModalType('watermark');
+              setTempColor(watermarkColor || '#666666');
+              setColorModalVisible(true);
+            }}
+          />
+          <ControlButton
+            icon="move"
+            label="Position"
+            onPress={() => setWatermarkPositionModalVisible(true)}
+          />
         </View>
-      </ScrollView>
 
-      {/* Color Picker Modal */}
-      <RNModal visible={colorModalVisible} transparent animationType="slide">
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <TouchableWithoutFeedback onPress={handleColorModalCancel}>
-            <View style={styles.modalBackdrop} />
-          </TouchableWithoutFeedback>
-          <View style={styles.colorModalContainer}>
-            <View style={styles.colorModalHeader}>
-              <Text style={styles.colorModalTitle}>
-                {colorModalType === 'background'
-                  ? t('labelCustomization.colorPicker.backgroundTitle')
-                  : t('labelCustomization.colorPicker.textTitle')}
-              </Text>
-              <TouchableOpacity onPress={openHexModal}>
-                <Text style={styles.hexInputLink}>{t('labelCustomization.colorPicker.enterHex')}</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.colorPickerWrapper}>
-              <ColorPicker
-                value={draftColor}
-                onComplete={(colors) => {
-                  'worklet';
-                  runOnJS(setDraftColor)(colors.hex);
-                  runOnJS(setColorInput)(colors.hex);
-                }}
-              >
-                <Panel1 style={styles.colorPanel} />
-                <HueSlider style={styles.hueSlider} />
-              </ColorPicker>
-            </View>
-            <View style={styles.colorPreview}>
-              <View style={[styles.colorPreviewBox, { backgroundColor: draftColor }]} />
-              <Text style={styles.colorPreviewText}>{draftColor}</Text>
-            </View>
-            <View style={styles.colorModalActions}>
-              <TouchableOpacity
-                style={[styles.colorModalButton, styles.cancelButton]}
-                onPress={handleColorModalCancel}
-              >
-                <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.colorModalButton, styles.applyButton]}
-                onPress={handleColorModalApply}
-              >
-                <Text style={styles.applyButtonText}>{t('common.apply')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </RNModal>
-
-      {/* Hex Input Modal */}
-      <RNModal visible={hexModalVisible} transparent animationType="fade">
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <TouchableWithoutFeedback onPress={handleHexModalCancel}>
-            <View style={styles.modalBackdrop} />
-          </TouchableWithoutFeedback>
-          <View style={styles.hexModalContainer}>
-            <Text style={styles.hexModalTitle}>{t('labelCustomization.colorPicker.enterColor')}</Text>
-            <TextInput
-              style={styles.hexInput}
-              value={hexModalValue}
-              onChangeText={handleHexModalChange}
-              placeholder={t('labelCustomization.colorPicker.hexPlaceholder')}
-              placeholderTextColor="#999"
-              autoCapitalize="characters"
-              autoCorrect={false}
-            />
-            {hexModalError ? (
-              <Text style={styles.hexModalError}>{hexModalError}</Text>
-            ) : null}
-            <View style={styles.hexModalActions}>
-              <TouchableOpacity
-                style={[styles.hexModalButton, styles.cancelButton]}
-                onPress={handleHexModalCancel}
-              >
-                <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.hexModalButton, styles.applyButton]}
-                onPress={handleHexModalApply}
-              >
-                <Text style={styles.applyButtonText}>{t('common.apply')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </RNModal>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Font Modal */}
-      <RNModal visible={fontModalVisible} transparent animationType="slide">
-        <TouchableWithoutFeedback onPress={() => setFontModalVisible(false)}>
-          <View style={styles.modalBackdrop} />
-        </TouchableWithoutFeedback>
-        <View style={styles.fontModalContainer}>
-          <View style={styles.fontModalHeader}>
-            <Text style={styles.fontModalTitle}>{t('labelCustomization.fontModal.title')}</Text>
-            <TouchableOpacity onPress={() => setFontModalVisible(false)}>
-              <Text style={styles.fontModalClose}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={styles.fontList}>
-            {FONT_OPTIONS.map((option) => {
-              const isSelected = currentFontOption?.key === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.fontOption,
-                    isSelected && styles.fontOptionSelected,
-                  ]}
-                  onPress={() => {
-                    updateLabelFontFamily(option.key);
-                    setFontModalVisible(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.fontOptionLabel,
-                      option.fontFamily && { fontFamily: option.fontFamily },
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                  {isSelected && (
-                    <Text style={styles.fontOptionCheck}>✓</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </RNModal>
-
-      {/* Watermark Font Modal */}
-      <RNModal visible={watermarkFontModalVisible} transparent animationType="slide">
-        <TouchableWithoutFeedback onPress={() => setWatermarkFontModalVisible(false)}>
-          <View style={styles.modalBackdrop} />
-        </TouchableWithoutFeedback>
-        <View style={styles.fontModalContainer}>
-          <View style={styles.fontModalHeader}>
-            <Text style={styles.fontModalTitle}>{t('labelCustomization.watermarkFont', { defaultValue: 'Watermark Font' })}</Text>
-            <TouchableOpacity onPress={() => setWatermarkFontModalVisible(false)}>
-              <Text style={styles.fontModalClose}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={styles.fontList}>
-            {FONT_OPTIONS.map((option) => {
-              const isSelected = watermarkFontFamily === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.fontOption,
-                    isSelected && styles.fontOptionSelected,
-                  ]}
-                  onPress={() => {
-                    updateWatermarkFontFamily(option.key);
-                    setWatermarkFontModalVisible(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.fontOptionLabel,
-                      option.fontFamily && { fontFamily: option.fontFamily },
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                  {isSelected && (
-                    <Text style={styles.fontOptionCheck}>✓</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </RNModal>
-
-      {/* Plan Selection Modal */}
-      <RNModal
-        visible={showPlanModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowPlanModal(false)}
+      <BottomModal
+        visible={fontModalVisible}
+        onClose={() => setFontModalVisible(false)}
+        title="Label Font"
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('planModal.title')}</Text>
+        <View style={styles.fontListContainer}>
+          {FONT_OPTIONS.map((font) => {
+            const isSelected = labelFontFamily === font.key;
+            return (
               <TouchableOpacity
-                onPress={() => setShowPlanModal(false)}
-                style={styles.modalCloseButton}
+                key={font.key}
+                style={[
+                  styles.fontListItem,
+                  isSelected && styles.fontListItemSelected
+                ]}
+                onPress={async () => {
+                  await updateLabelFontFamily(font.key);
+                  setFontModalVisible(false);
+                }}
               >
-                <Text style={styles.modalCloseText}>×</Text>
+                <Text style={[
+                  styles.fontListItemText,
+                  isSelected && styles.fontListItemTextSelected
+                ]}>{font.label}</Text>
               </TouchableOpacity>
+            );
+          })}
+        </View>
+      </BottomModal>
+
+      {/* Color Picker Modal */}
+      <BottomModal
+        visible={colorModalVisible}
+        onClose={() => setColorModalVisible(false)}
+        title={
+          colorModalType === 'bg'
+            ? 'Background Color'
+            : colorModalType === 'watermark'
+            ? 'Watermark Color'
+            : 'Text Color'
+        }
+        headerExtra={
+          <TouchableOpacity style={styles.eyedropperButton}>
+            <Ionicons name="eyedrop-outline" size={20} color={COLORS.GRAY} />
+          </TouchableOpacity>
+        }
+      >
+        <View style={styles.colorPickerContainer}>
+          {/* Tabs */}
+          <View style={styles.colorTabs}>
+            {['Grid', 'Spectrum', 'Sliders'].map(tab => (
+                      <TouchableOpacity
+                key={tab}
+                        style={[
+                  styles.colorTab,
+                  colorTab === tab && styles.colorTabActive
+                ]}
+                onPress={() => setColorTab(tab)}
+              >
+                <Text style={[
+                  styles.colorTabText,
+                  colorTab === tab && styles.colorTabTextActive
+                ]}>{tab}</Text>
+                      </TouchableOpacity>
+            ))}
             </View>
 
-            <ScrollView style={styles.modalScrollView}>
-              <View style={styles.planContainer}>
-                <TouchableOpacity
-                  style={[styles.planButton, userPlan === 'starter' && styles.planButtonSelected]}
-                  onPress={async () => {
-                    await updateUserPlan('starter');
-                    setShowPlanModal(false);
-                    // Reset color picker key to ensure proper remounting
-                    setColorPickerKey((prev) => prev + 1);
-                  }}
-                >
-                  <View style={styles.planButtonRow}>
-                    <Text style={[styles.planButtonText, userPlan === 'starter' && styles.planButtonTextSelected]}>{t('firstLoad.starter')}</Text>
-                    <Text style={styles.planPrice}>Free</Text>
-                  </View>
-                </TouchableOpacity>
-                <Text style={styles.planSubtext}>{t('firstLoad.starterDesc')}</Text>
+          {/* Color Grid */}
+          {colorTab === 'Grid' && (
+            <View style={styles.colorGrid}>
+              {COLOR_GRID.map((row, rowIdx) => (
+                <View key={rowIdx} style={styles.colorGridRow}>
+                  {row.map((color, colIdx) => (
+              <TouchableOpacity
+                      key={`${rowIdx}-${colIdx}`}
+                  style={[
+                        styles.colorCell,
+                        { backgroundColor: color },
+                        tempColor === color && styles.colorCellSelected
+                      ]}
+                      onPress={() => setTempColor(color)}
+                    />
+                  ))}
+                </View>
+              ))}
+              </View>
+          )}
+
+          {/* Opacity Slider */}
+          <View style={styles.opacitySection}>
+            <Text style={styles.opacityLabel}>Opacity</Text>
+            <View style={styles.opacitySliderContainer}>
+              <View style={[
+                styles.opacitySliderTrack,
+                { background: `linear-gradient(to right, transparent, ${tempColor})` }
+              ]}>
+                <View style={styles.opacityCheckered} />
+                </View>
+              <Text style={styles.opacityValue}>{colorOpacity}%</Text>
+            </View>
+          </View>
+
+          {/* Color Preview & Saved Colors */}
+          <View style={styles.colorPreviewSection}>
+            <View style={[
+              styles.colorPreviewLarge,
+              { backgroundColor: tempColor }
+            ]} />
+            {SAVED_COLORS.map((color, idx) => (
+                  <TouchableOpacity
+                key={idx}
+                    style={[
+                  styles.colorPreviewSmall,
+                  { backgroundColor: color },
+                  tempColor === color && styles.colorPreviewSelected
+                ]}
+                onPress={() => setTempColor(color)}
+                  />
+                ))}
+            <TouchableOpacity style={styles.addColorButton}>
+              <Text style={styles.addColorText}>+</Text>
+            </TouchableOpacity>
               </View>
 
-              <View style={styles.planContainer}>
-                <TouchableOpacity
-                  style={[styles.planButton, userPlan === 'pro' && styles.planButtonSelected]}
-                  onPress={async () => {
-                    // Check if user is on active trial - if so, skip IAP
-                    const onTrial = await isTrialActive();
+          {/* Apply Button */}
+          <TouchableOpacity style={styles.applyButton} onPress={applyColor}>
+            <Text style={styles.applyButtonText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </BottomModal>
 
-                    // On iOS, require in-app purchase for Pro plan (unless on trial)
-                    if (Platform.OS === 'ios' && !onTrial) {
-                      try {
-                        await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
-                      } catch (err) {
-                        if (err?.message === 'USER_CANCELLED') {
-                          return;
-                        }
-                        Alert.alert(
-                          t('common.error', { defaultValue: 'Error' }),
-                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-                        );
-                        return;
-                      }
-                    }
-                    await updateUserPlan('pro');
-                    setShowPlanModal(false);
-                    // Reset color picker key to ensure proper remounting
-                    setColorPickerKey((prev) => prev + 1);
-                  }}
-                >
-                  <View style={styles.planButtonRow}>
-                    <Text style={[styles.planButtonText, userPlan === 'pro' && styles.planButtonTextSelected]}>{t('firstLoad.pro')}</Text>
-                    <Text style={styles.planPrice}>$8.99/month</Text>
+      {/* Position Modal */}
+      <BottomModal
+        visible={positionModalVisible}
+        onClose={() => setPositionModalVisible(false)}
+        title="Label Position"
+      >
+        <View style={styles.positionContainer}>
+          {/* Label Position - Before/After Grids */}
+          <View style={styles.positionGrid}>
+            {/* Before Grid */}
+            <View style={styles.positionHalf}>
+              {[
+                ['left-top', 'center-top', 'right-top'],
+                ['left-middle', 'center-middle', 'right-middle'],
+                ['left-bottom', 'center-bottom', 'right-bottom']
+              ].map((row, rowIdx) => (
+                <View key={rowIdx} style={styles.positionRow}>
+                  {row.map(pos => (
+                    <TouchableOpacity
+                      key={pos}
+                      style={[
+                        styles.positionCell,
+                        beforeLabelPosition === pos && styles.positionCellSelected
+                      ]}
+                      onPress={async () => await updateBeforeLabelPosition(pos)}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+
+            {/* Divider */}
+            <View style={styles.positionDivider} />
+
+            {/* After Grid */}
+              <View style={styles.positionHalf}>
+                {[
+                  ['left-top', 'center-top', 'right-top'],
+                  ['left-middle', 'center-middle', 'right-middle'],
+                  ['left-bottom', 'center-bottom', 'right-bottom']
+                ].map((row, rowIdx) => (
+                  <View key={rowIdx} style={styles.positionRow}>
+                    {row.map(pos => (
+                      <TouchableOpacity
+                        key={pos}
+                        style={[
+                          styles.positionCell,
+                          afterLabelPosition === pos && styles.positionCellSelected
+                        ]}
+                        onPress={async () => await updateAfterLabelPosition(pos)}
+                      />
+                    ))}
                   </View>
-                </TouchableOpacity>
-                <Text style={styles.planSubtext}>{t('firstLoad.proDesc')}</Text>
+                ))}
               </View>
+            </View>
+        </View>
+      </BottomModal>
 
-              <View style={styles.planContainer}>
-                <TouchableOpacity
-                  style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
-                  onPress={async () => {
-                    // Check if user is on active trial - if so, skip IAP
-                    const onTrial = await isTrialActive();
-
-                    // On iOS, require in-app purchase for Business plan (unless on trial)
-                    if (Platform.OS === 'ios' && !onTrial) {
-                      try {
-                        await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
-                      } catch (err) {
-                        if (err?.message === 'USER_CANCELLED') {
-                          return;
-                        }
-                        Alert.alert(
-                          t('common.error', { defaultValue: 'Error' }),
-                          t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
-                        );
-                        return;
-                      }
-                    }
-                    await updateUserPlan('business');
-                    setShowPlanModal(false);
-                    // Reset color picker key to ensure proper remounting
-                    setColorPickerKey((prev) => prev + 1);
-                  }}
-                >
-                  <View style={styles.planButtonRow}>
-                    <Text style={[styles.planButtonText, userPlan === 'business' && styles.planButtonTextSelected]}>{t('firstLoad.business')}</Text>
-                    <Text style={styles.planPrice}>$24.99/month</Text>
-                  </View>
-                </TouchableOpacity>
-                <Text style={styles.planSubtext}>
-                  For small teams up to 5 members. $5.99 per additional team member
-                </Text>
+      {/* Size Modal */}
+      <BottomModal
+        visible={sizeModalVisible}
+        onClose={() => setSizeModalVisible(false)}
+        title="Label Size"
+      >
+        <View style={styles.sizeContainer}>
+          {SIZE_OPTIONS.map((size) => (
+                  <TouchableOpacity
+              key={size.key}
+                    style={[
+                styles.sizeButton,
+                {
+                  padding: size.padding,
+                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
+                },
+                labelSize === size.key && styles.sizeButtonSelected
+              ]}
+              onPress={async () => {
+                await updateLabelSize(size.key);
+                setSizeModalVisible(false);
+              }}
+            >
+              <Text style={[
+                styles.sizeButtonText,
+                { fontSize: size.fontSize },
+                labelSize === size.key && styles.sizeButtonTextSelected
+              ]}>{size.label}</Text>
+            </TouchableOpacity>
+                ))}
               </View>
+      </BottomModal>
 
-              <View style={styles.planContainer}>
-                <TouchableOpacity
-                  style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
-                  onPress={() => {
-                    setShowPlanModal(false);
-                    setShowEnterpriseModal(true);
-                  }}
-                >
-                  <View style={styles.planButtonRow}>
-                    <Text style={[styles.planButtonText, userPlan === 'enterprise' && styles.planButtonTextSelected]}>{t('firstLoad.enterprise')}</Text>
-                    <Text style={styles.planPrice}>Starts at $69.99/month</Text>
-                  </View>
-                </TouchableOpacity>
-                <Text style={styles.planSubtext}>
-                  For growing organisations with 15 team members and more
-                </Text>
-              </View>
-            </ScrollView>
+      {/* Margin Modal */}
+      <BottomModal
+        visible={marginModalVisible}
+        onClose={() => setMarginModalVisible(false)}
+        title="Label Margin"
+      >
+        <View style={styles.marginContainer}>
+          <View style={styles.marginSection}>
+            <Text style={styles.marginLabel}>
+              Vertical (Top/Bottom) : {labelMarginVertical}px
+            </Text>
+            <SliderInput
+              value={labelMarginVertical}
+              onValueChange={updateLabelMarginVertical}
+              min={0}
+              max={50}
+              step={1}
+              showValue={false}
+              trackColor="#22C55E"
+            />
+          </View>
+
+          <View style={styles.marginSection}>
+            <Text style={styles.marginLabel}>
+              Horizontal (Left/Right) : {labelMarginHorizontal}px
+            </Text>
+            <SliderInput
+              value={labelMarginHorizontal}
+              onValueChange={updateLabelMarginHorizontal}
+              min={0}
+              max={50}
+              step={1}
+              showValue={false}
+              trackColor="#22C55E"
+            />
           </View>
         </View>
-      </RNModal>
+      </BottomModal>
 
-      {/* Enterprise Contact Form Modal */}
-      <EnterpriseContactModal
-        visible={showEnterpriseModal}
-        onClose={() => setShowEnterpriseModal(false)}
-      />
+      {/* Watermark Opacity Modal */}
+      <BottomModal
+        visible={watermarkOpacityModalVisible}
+        onClose={() => {
+          // Reset preview to saved value when closing
+          setWatermarkOpacityPreview(watermarkOpacity || 0.5);
+          setWatermarkOpacityModalVisible(false);
+        }}
+        title="Opacity"
+      >
+        <View style={styles.marginContainer}>
+          <View style={styles.marginSection}>
+            <View style={styles.opacityLabelContainer}>
+              <Text style={styles.marginLabel}>
+                Watermark Opacity :
+              </Text>
+              <Text style={styles.opacityValueText}>
+                {Math.round(watermarkOpacityPreview * 100)}%
+              </Text>
+            </View>
+            <SliderInput
+              value={watermarkOpacityPreview}
+              onValueChange={setWatermarkOpacityPreview}
+              onSlidingComplete={async (value) => {
+                await updateWatermarkOpacity(value);
+              }}
+              min={0}
+              max={1}
+              step={0.01}
+              showValue={false}
+              trackColor="#22C55E"
+            />
+          </View>
+        </View>
+      </BottomModal>
+
+      {/* Watermark Font Modal */}
+      <BottomModal
+        visible={watermarkFontModalVisible}
+        onClose={() => setWatermarkFontModalVisible(false)}
+        title="Watermark Font"
+      >
+        <View style={styles.fontListContainer}>
+          {FONT_OPTIONS.map((font) => {
+            const isSelected = watermarkFontFamily === font.key;
+            return (
+              <TouchableOpacity
+                key={font.key}
+                style={[
+                  styles.fontListItem,
+                  isSelected && styles.fontListItemSelected
+                ]}
+                onPress={async () => {
+                  await updateWatermarkFontFamily(font.key);
+                  setWatermarkFontModalVisible(false);
+                }}
+              >
+                <Text style={[
+                  styles.fontListItemText,
+                  isSelected && styles.fontListItemTextSelected
+                ]}>{font.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </BottomModal>
+
+      {/* Watermark Position Modal */}
+      <BottomModal
+        visible={watermarkPositionModalVisible}
+        onClose={() => setWatermarkPositionModalVisible(false)}
+        title="Watermark Position"
+      >
+        <View style={styles.positionContainer}>
+          <View style={styles.positionFull}>
+            {[
+              ['left-top', 'center-top', 'right-top'],
+              ['left-middle', 'center-middle', 'right-middle'],
+              ['left-bottom', 'center-bottom', 'right-bottom']
+            ].map((row, rowIdx) => (
+              <View key={rowIdx} style={styles.positionRow}>
+                {row.map(pos => (
+                  <TouchableOpacity
+                    key={pos}
+                    style={[
+                      styles.positionCell,
+                      watermarkPosition === pos && styles.positionCellSelected
+                    ]}
+                    onPress={async () => {
+                      await updateWatermarkPosition(pos);
+                      setWatermarkPositionModalVisible(false);
+                    }}
+                  />
+                ))}
+              </View>
+            ))}
+          </View>
+        </View>
+      </BottomModal>
+
     </SafeAreaView>
+  );
+}
+
+// Control Button Component - Updated to use rounded squares like Figma
+function ControlButton({ icon, label, selected, onPress }) {
+  return (
+    <TouchableOpacity 
+      style={styles.controlButton} 
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[
+        styles.controlSquare,
+        selected && styles.controlSquareSelected
+      ]}>
+        <Ionicons name={icon} size={22} color={selected ? '#000' : '#666'} />
+      </View>
+      <Text style={[
+        styles.controlLabel,
+        selected && styles.controlLabelSelected
+      ]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// Color Control Button Component - Updated to use rounded squares
+function ColorControlButton({ color, label, selected, onPress }) {
+  return (
+    <TouchableOpacity style={styles.controlButton} onPress={onPress}>
+      <View style={[
+        styles.controlSquare,
+        selected && styles.controlSquareSelected
+      ]}>
+        <View style={[
+          styles.colorCircle,
+          { backgroundColor: color }
+        ]} />
+      </View>
+      <Text style={[
+        styles.controlLabel,
+        selected && styles.controlLabelSelected
+      ]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// Bottom Modal Component - Updated to match standard design
+function BottomModal({ visible, onClose, title, headerExtra, children, buttonText, onButtonPress, showButton = false }) {
+  if (!visible) return null;
+  
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+          {/* Drag Handle */}
+          <View style={styles.modalHandle} />
+
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            {/* Close Button - Top Left */}
+            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
+              <View style={styles.closeButtonCircle}>
+                <Ionicons name="close" size={20} color="#666666" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Title - Centered */}
+            <Text style={styles.modalTitle}>{title}</Text>
+
+            {/* Header Extra (if provided) or Spacer */}
+            {headerExtra ? (
+              <View style={styles.modalHeaderExtra}>{headerExtra}</View>
+            ) : (
+              <View style={styles.headerSpacer} />
+            )}
+          </View>
+
+          {/* Content - Render children directly without ScrollView wrapper */}
+          <View style={styles.modalBody} onStartShouldSetResponder={() => true}>
+            {children}
+          </View>
+
+          {/* Action Button */}
+          {showButton && buttonText && (
+            <TouchableOpacity
+              style={styles.modalActionButton}
+              onPress={onButtonPress || onClose}
+            >
+              <Text style={styles.modalActionButtonText}>{buttonText}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// Slider Input Component
+function SliderInput({ value, onValueChange, onSlidingComplete, min = 0, max = 100, step = 1, showValue = true, trackColor = COLORS.PRIMARY }) {
+  const displayValue = step < 1
+    ? Math.round(value * 100) / 100
+    : Math.round(value);
+
+  return (
+    <View style={styles.sliderContainer}>
+      <Slider
+        style={styles.slider}
+        minimumValue={min}
+        maximumValue={max}
+        step={step}
+        value={value}
+        onValueChange={onValueChange}
+        onSlidingComplete={onSlidingComplete}
+        minimumTrackTintColor={trackColor}
+        maximumTrackTintColor={COLORS.BORDER}
+        thumbTintColor={trackColor}
+      />
+      {showValue && (
+        <Text style={styles.sliderValue}>
+          {step < 1 ? `${Math.round(value * 100)}%` : `${displayValue}px`}
+        </Text>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'white',
   },
   header: {
     flexDirection: 'row',
@@ -1559,580 +983,512 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 4,
   },
-  backButtonText: {
-    fontSize: 24,
-    color: COLORS.PRIMARY,
-    fontWeight: 'bold',
+  backButtonCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: '700',
     color: COLORS.TEXT,
   },
-  headerSpacer: {
-    width: 60,
+  keyboardAvoidingView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 40,
+    backgroundColor: COLORS.BACKGROUND,
   },
-  sectionDescription: {
-    fontSize: 14,
-    color: COLORS.GRAY,
+  previewSection: {
     marginBottom: 24,
   },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER,
-  },
-  settingRowStacked: {
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER,
-  },
-  settingInfo: {
-    flex: 1,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.TEXT,
-    marginBottom: 4,
-  },
-  settingDescription: {
-    fontSize: 14,
-    color: COLORS.GRAY,
-  },
-  customSelectorButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 8,
-  },
-  colorPreviewSwatch: {
-    width: 24,
-    height: 24,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#DDD',
-  },
-  customSelectorButtonText: {
-    fontSize: 14,
-    color: COLORS.TEXT,
-    fontWeight: '600',
-  },
-  fontSelectorButton: {
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  fontSelectorButtonText: {
-    fontSize: 14,
-    color: COLORS.TEXT,
-    fontWeight: '600',
-  },
-  cornerControlsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cornerOptions: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  cornerOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-    backgroundColor: '#F5F5F5',
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  cornerOptionSelected: {
-    borderColor: COLORS.PRIMARY,
-    backgroundColor: COLORS.PRIMARY,
-  },
-  cornerOptionText: {
-    fontSize: 14,
-    color: COLORS.GRAY,
-    fontWeight: '600',
-  },
-  cornerOptionTextSelected: {
-    color: '#000000',
-  },
-  labelPreviewContainer: {
-    marginTop: 16,
-  },
-  labelPreview: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: 16,
-    backgroundColor: '#F9F9F9',
-    borderRadius: 8,
-  },
-  previewLabelOption: {
-    alignItems: 'center',
-  },
   previewLabel: {
-    alignItems: 'center',
-    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   previewLabelText: {
-    fontWeight: 'bold',
-  },
-  marginSliderContainer: {
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  marginSliderLabel: {
-    fontSize: 14,
-    color: COLORS.TEXT,
-    marginBottom: 8,
-  },
-  sliderWrapper: {
-    position: 'relative',
-    justifyContent: 'center',
-  },
-  slider: {
-    width: '100%',
-    height: 40,
-  },
-  sliderDefaultMark: {
-    position: 'absolute',
-    left: '22.5%', // Corresponds to 10px, visually adjusted for track padding
-    top: '50%',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#E0E0E0',
-    transform: [{ translateX: -12 }, { translateY: -12 }],
-    zIndex: -1,
-  },
-  positionGridContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginVertical: 16,
-  },
-  gridHalf: {
-    flex: 1,
-    gap: 4,
-  },
-  gridRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  gridCell: {
-    flex: 1,
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#E5E5E5',
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: '#CCC',
-  },
-  gridCellSelected: {
-    backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY,
-  },
-  positionGrid: {
-    marginTop: 12,
-    gap: 4,
-  },
-  positionGridCell: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-  },
-  positionGridCellSelected: {
-    backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY,
-  },
-  positionGridText: {
-    fontSize: 12,
     fontWeight: '600',
-    color: COLORS.TEXT,
   },
-  positionPreviewContainer: {
-    marginVertical: 8,
-    width: '100%',
-  },
-  positionPreviewBox: {
-    width: '100%',
-    aspectRatio: 1,
-    backgroundColor: '#F5F5F5',
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  previewHalfBefore: {
-    flex: 1,
-    backgroundColor: '#D0D0D0',
-    position: 'relative',
-  },
-  previewHalfAfter: {
-    flex: 1,
-    backgroundColor: '#A0A0A0',
-    position: 'relative',
-  },
-  previewLabelPosition: {
-    position: 'absolute',
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  colorModalContainer: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-  },
-  colorModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  colorModalTitle: {
+  sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: COLORS.TEXT,
-  },
-  hexInputLink: {
-    fontSize: 14,
-    color: COLORS.PRIMARY,
-    fontWeight: '600',
-  },
-  colorPickerWrapper: {
     marginBottom: 16,
+    marginTop: 8,
   },
-  colorPanel: {
-    height: 200,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  hueSlider: {
-    height: 32,
-    borderRadius: 8,
-  },
-  colorPreview: {
+  controlsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 12,
     marginBottom: 16,
   },
-  colorPreviewBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#DDD',
+  controlButton: {
+    alignItems: 'center',
+    minWidth: 70,
   },
-  colorPreviewText: {
-    fontSize: 16,
+  controlSquare: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: 'white',
+    borderWidth: 1.5,
+    borderColor: COLORS.BORDER,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  controlSquareSelected: {
+    borderColor: '#000',
+    borderWidth: 2,
+  },
+  controlCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'white',
+    borderWidth: 2,
+    borderColor: COLORS.BORDER,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  controlCircleSelected: {
+    borderColor: '#000',
+  },
+  colorCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  controlLabel: {
+    fontSize: 11,
+    color: COLORS.GRAY,
+    textAlign: 'center',
+  },
+  controlLabelSelected: {
+    color: '#000',
     fontWeight: '600',
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 12,
+    color: COLORS.GRAY,
+    marginBottom: 6,
+    marginLeft: 4,
+  },
+  input: {
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
     color: COLORS.TEXT,
   },
-  colorModalActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  colorModalButton: {
-    flex: 1,
-    paddingVertical: 12,
+  previewCombinedContainer: {
+    width: '100%',
+    aspectRatio: 1.2, // Taller combined preview (was 2, now 1.2 for more height)
+    position: 'relative',
+    backgroundColor: '#E0E0E0',
     borderRadius: 8,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  previewCombinedHalf: {
+    flex: 1,
+    backgroundColor: '#D1D1D1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewCombinedHalfAfter: {
+    backgroundColor: '#A0A0A0',
+  },
+  previewWatermark: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    position: 'absolute',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    paddingBottom: 20,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E5E5',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    position: 'relative',
+  },
+  modalClose: {
+    position: 'absolute',
+    left: 20,
+    top: 0,
+    zIndex: 1,
+  },
+  closeButtonCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalHeaderExtra: {
+    position: 'absolute',
+    right: 20,
+    top: 0,
+    zIndex: 1,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
+  },
+  modalBody: {
+    paddingBottom: 10,
+  },
+  modalList: {
+    flex: 1,
+    maxHeight: 500,
+  },
+  modalListContent: {
+    paddingHorizontal: 20,
+  },
+  fontListContainer: {
+    paddingHorizontal: 20,
+  },
+  modalActionButton: {
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    paddingVertical: 16,
+    marginHorizontal: 20,
+    marginTop: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cancelButton: {
-    backgroundColor: '#F5F5F5',
-  },
-  cancelButtonText: {
+  modalActionButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  listItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER,
+  },
+  listItemSelected: {
+    backgroundColor: '#F9F9F9',
+  },
+  listItemText: {
+    fontSize: 16,
     color: COLORS.TEXT,
-    textAlign: 'center',
+  },
+  checkmark: {
+    fontSize: 18,
+    color: COLORS.PRIMARY,
+    fontWeight: '700',
+  },
+  fontListItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginBottom: 8,
+    borderRadius: 25,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+  },
+  fontListItemSelected: {
+    backgroundColor: COLORS.PRIMARY,
+  },
+  fontListItemText: {
+    fontSize: 16,
+    color: COLORS.TEXT,
+    fontWeight: '500',
+  },
+  fontListItemTextSelected: {
+    color: '#000',
+    fontWeight: '600',
+  },
+  colorPickerContainer: {
+    padding: 16,
+  },
+  eyedropperButton: {
+    padding: 8,
+  },
+  colorTabs: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.BACKGROUND,
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 16,
+  },
+  colorTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  colorTabActive: {
+    backgroundColor: 'white',
+  },
+  colorTabText: {
+    fontSize: 14,
+    color: COLORS.GRAY,
+  },
+  colorTabTextActive: {
+    color: COLORS.TEXT,
+    fontWeight: '600',
+  },
+  colorGrid: {
+    marginBottom: 16,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  colorGridRow: {
+    flexDirection: 'row',
+  },
+  colorCell: {
+    flex: 1,
+    aspectRatio: 1,
+  },
+  colorCellSelected: {
+    borderWidth: 2,
+    borderColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 2,
+    elevation: 5,
+  },
+  opacitySection: {
+    marginBottom: 16,
+  },
+  opacityLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  opacitySliderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  opacitySliderTrack: {
+    flex: 1,
+    height: 32,
+    borderRadius: 4,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  opacityCheckered: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    backgroundImage: `repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%)`,
+    backgroundSize: '16px 16px',
+  },
+  opacityValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    minWidth: 50,
+    textAlign: 'right',
+  },
+  colorPreviewSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  colorPreviewLarge: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  colorPreviewSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  colorPreviewSelected: {
+    borderWidth: 2,
+    borderColor: '#A855F7',
+  },
+  addColorButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.BACKGROUND,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addColorText: {
+    fontSize: 20,
+    color: COLORS.GRAY,
   },
   applyButton: {
     backgroundColor: COLORS.PRIMARY,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
   },
   applyButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000000',
-    textAlign: 'center',
+    color: '#000',
   },
-  hexModalContainer: {
-    width: '80%',
-    maxWidth: 300,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
+  positionContainer: {
+    padding: 24,
+    minHeight: 200,
   },
-  hexModalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.TEXT,
-    marginBottom: 16,
-  },
-  hexInput: {
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: COLORS.TEXT,
-    marginBottom: 8,
-  },
-  hexModalError: {
-    fontSize: 12,
-    color: '#FF3B30',
-    marginBottom: 16,
-  },
-  hexModalActions: {
+  positionGrid: {
     flexDirection: 'row',
     gap: 12,
+    alignItems: 'flex-start',
   },
-  hexModalButton: {
+  positionHalf: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
+    minWidth: 0,
   },
-  fontModalContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '70%',
-  },
-  fontModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER,
-  },
-  fontModalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.TEXT,
-  },
-  fontModalClose: {
-    fontSize: 24,
-    color: COLORS.GRAY,
-  },
-  fontList: {
-    flex: 1,
-  },
-  fontOption: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER,
-  },
-  fontOptionSelected: {
-    backgroundColor: '#F9F9F9',
-  },
-  fontOptionLabel: {
-    fontSize: 16,
-    color: COLORS.TEXT,
-  },
-  fontOptionCheck: {
-    fontSize: 18,
-    color: COLORS.PRIMARY,
-    fontWeight: '700',
-  },
-  // Plan Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end'
-  },
-  modalContent: {
+  positionFull: {
     width: '100%',
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-    paddingBottom: 20
   },
-  modalHeader: {
+  positionRow: {
     flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.TEXT
-  },
-  modalCloseButton: {
-    width: 30,
-    height: 30,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  modalCloseText: {
-    fontSize: 24,
-    color: COLORS.GRAY
-  },
-  modalScrollView: {
-    paddingHorizontal: 20,
-    paddingTop: 20
-  },
-  planContainer: {
-    marginBottom: 20
-  },
-  planButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
+  positionCell: {
+    flex: 1,
+    maxWidth: 60,
+    aspectRatio: 1,
+    minHeight: 50,
+    backgroundColor: COLORS.BORDER,
+    borderRadius: 8,
     borderWidth: 2,
-    borderColor: COLORS.PRIMARY,
-    alignItems: 'center'
-  },
-  planButtonSelected: {
-    backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY
-  },
-  planButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.PRIMARY
-  },
-  planButtonTextSelected: {
-    color: '#000000'
-  },
-  planButtonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%'
-  },
-  planPrice: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.TEXT
-  },
-  planSubtext: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 10
-  },
-  watermarkCustomization: {
-    marginTop: 8,
-    marginBottom: 16,
-    padding: 16,
-    borderWidth: 1,
     borderColor: COLORS.BORDER,
-    borderRadius: 12,
-    backgroundColor: '#f9f9f9',
+    marginHorizontal: 2,
   },
-  watermarkField: {
+  positionCellSelected: {
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: '#000',
+    borderWidth: 2,
+  },
+  positionDivider: {
+    width: 2,
+    backgroundColor: COLORS.BORDER,
+  },
+  sizeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    padding: 24,
+    gap: 16,
+  },
+  sizeButton: {
+    backgroundColor: COLORS.BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sizeButtonSelected: {
+    backgroundColor: COLORS.PRIMARY,
+  },
+  sizeButtonText: {
+    fontWeight: '600',
+    color: '#666',
+  },
+  sizeButtonTextSelected: {
+    color: '#000',
+  },
+  marginContainer: {
+    padding: 24,
+  },
+  marginSection: {
+    marginBottom: 24,
+  },
+  marginLabel: {
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 12,
   },
-  watermarkFieldLabel: {
-    color: COLORS.TEXT,
+  opacityLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  opacityValueText: {
+    fontSize: 14,
     fontWeight: '600',
-    marginBottom: 6,
-  },
-  watermarkInput: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: COLORS.TEXT,
-  },
-  watermarkHelperText: {
-    color: COLORS.GRAY,
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 4,
-  },
-  watermarkColorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    gap: 12,
-  },
-  watermarkColorInfo: {
-    flex: 1,
-  },
-  watermarkColorValue: {
-    color: COLORS.GRAY,
-    fontSize: 12,
-  },
-  watermarkColorButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-    backgroundColor: 'white',
-    gap: 8,
-  },
-  watermarkColorSwatch: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: COLORS.BORDER,
-  },
-  watermarkOpacityRow: {
-    marginBottom: 16,
-  },
-  watermarkOpacityControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  watermarkOpacityValue: {
-    minWidth: 48,
+    minWidth: 50,
     textAlign: 'right',
-    color: COLORS.TEXT,
+    fontVariant: ['tabular-nums'],
+  },
+  sliderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  slider: {
+    flex: 1,
+    height: 40,
+  },
+  sliderValue: {
+    minWidth: 60,
+    textAlign: 'right',
+    fontSize: 14,
     fontWeight: '600',
+    color: COLORS.TEXT,
+  },
+  opacityContainer: {
+    padding: 24,
+  },
+  opacityModalLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 16,
   },
 });

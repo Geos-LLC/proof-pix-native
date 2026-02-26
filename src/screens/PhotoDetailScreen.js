@@ -18,21 +18,26 @@ import { captureRef } from 'react-native-view-shot';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
 import { COLORS, PHOTO_MODES, getLabelPositions, ROOMS } from '../constants/rooms';
+import { FONTS } from '../constants/fonts';
 import * as FileSystem from 'expo-file-system/legacy';
 import PhotoWatermark from '../components/PhotoWatermark';
+import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import { getCachedLabeledPhoto, calculateSettingsHash } from '../services/labelCacheService';
 import backgroundLabelPreparationService from '../services/backgroundLabelPreparationService';
 import { Image as RNImage } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 const { width, height } = Dimensions.get('window');
 
 export default function PhotoDetailScreen({ route, navigation }) {
   const { photo, isSelectionMode = false, selectedPhotos = [], onSelectionChange, allPhotos: providedPhotos } = route.params;
+  const { t } = useTranslation();
   const { deletePhoto, getBeforePhotos, getAfterPhotos, activeProjectId } = usePhotos();
   const settings = useSettings();
   const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, labelMarginVertical, labelMarginHorizontal, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily } = settings || {};
   const getRooms = settings?.getRooms;
   const [sharing, setSharing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [containerLayout, setContainerLayout] = useState(null);
   const [imageSize, setImageSize] = useState(null);
   const [currentPhoto, setCurrentPhoto] = useState(photo);
@@ -380,16 +385,19 @@ export default function PhotoDetailScreen({ route, navigation }) {
     return result;
   }, [imageSize]);
 
-  const handleDelete = async () => {
-    await deletePhoto(currentPhoto.id);
-    // If there are more photos, navigate to the next one, otherwise go back
+  const handleDelete = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteConfirmed = async (deleteFromStorage) => {
+    setShowDeleteConfirm(false);
+    await deletePhoto(currentPhoto.id, { deleteFromStorage });
     if (allPhotos.length > 1) {
       const newIndex = currentIndex >= allPhotos.length - 1 ? currentIndex - 1 : currentIndex;
       if (newIndex >= 0) {
         const nextPhoto = allPhotos[newIndex];
         setCurrentIndex(newIndex);
         setCurrentPhoto(nextPhoto);
-        // Update route params to reflect new photo
         navigation.setParams({ photo: nextPhoto });
       } else {
         navigation.goBack();
@@ -529,10 +537,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
             setImageSize({ width, height });
           }}
         />
-        {/* Show watermark if enabled */}
-        {shouldShowWatermark && (
-          <PhotoWatermark style={getWatermarkStyle()} />
-        )}
+        {/* Show watermark if enabled - PhotoWatermark handles its own positioning from settings */}
+        {shouldShowWatermark && <PhotoWatermark />}
 
         {/* Checkbox overlay in selection mode */}
         {isSelectionMode && (
@@ -640,8 +646,6 @@ export default function PhotoDetailScreen({ route, navigation }) {
             return (
               <PhotoWatermark
                 style={{
-                  bottom: 10 * scaleFactor,
-                  right: 10 * scaleFactor,
                   paddingHorizontal: 10 * scaleFactor,
                   paddingVertical: 4 * scaleFactor,
                   borderRadius: 4 * scaleFactor
@@ -664,6 +668,15 @@ export default function PhotoDetailScreen({ route, navigation }) {
           <Text style={styles.shareButtonText}>Share</Text>
         )}
       </TouchableOpacity>
+
+      <DeleteConfirmationModal
+        visible={showDeleteConfirm}
+        title={t('home.deletePhotoSet')}
+        message={t('home.deletePhotoSetConfirm', { name: currentPhoto?.name || '' })}
+        onConfirm={handleDeleteConfirmed}
+        onCancel={() => setShowDeleteConfirm(false)}
+        deleteFromStorageDefault={true}
+      />
     </SafeAreaView>
   );
 }
@@ -686,6 +699,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20
   },
   title: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: 'black',
     fontSize: 18,
     fontWeight: 'bold',
@@ -707,6 +721,7 @@ const styles = StyleSheet.create({
     elevation: 5
   },
   shareButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT,
     fontSize: 18,
     fontWeight: 'bold'
@@ -715,6 +730,7 @@ const styles = StyleSheet.create({
     padding: 8
   },
   backButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.PRIMARY,
     fontSize: 24,
     fontWeight: 'bold'
@@ -723,6 +739,7 @@ const styles = StyleSheet.create({
     padding: 8
   },
   deleteButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
     fontSize: 24
   },
   image: {
@@ -751,6 +768,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.PRIMARY
   },
   checkmark: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: 'white',
     fontSize: 20,
     fontWeight: 'bold'
@@ -764,6 +782,7 @@ const styles = StyleSheet.create({
     position: 'relative'
   },
   mode: {
+    fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.PRIMARY,
     fontSize: 12,
     fontWeight: '600'

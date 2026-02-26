@@ -10,7 +10,7 @@ import googleDriveService from './googleDriveService';
 import googleAuthService from './googleAuthService';
 import proxyService from './proxyService';
 import { uploadPhotoToDropbox } from './dropboxUploadService';
-import { ensureLabelForPhoto } from './labelService';
+import { ensureLabelForPhoto, ensureLabelsForPhotoBatch } from './labelService';
 import iCloudService from './iCloudService';
 
 /**
@@ -33,7 +33,7 @@ async function compressImageIfNeeded(uri) {
  */
 async function fileUriToBase64(fileUri) {
   try {
-    // Read the file as base64 (using string encoding type)
+    console.log('[fileUriToBase64] Reading file:', fileUri?.substring(0, 100));
     let base64;
 
     // Build candidate URIs to try reading
@@ -278,33 +278,10 @@ async function uploadPhotoToDriveDirect({
       throw new Error('Proxy session ID is required for upload');
     }
 
-    console.log('[UPLOAD_DIRECT] 🔄 Converting image to base64...');
-    
-    // Get base64 data
-    let base64String = imageDataUrl;
-    if (imageDataUrl.startsWith('data:')) {
-      base64String = imageDataUrl.split('base64,')[1];
-    } else {
-      // If it's a file URI, convert to base64
-      let normalized = normalizeFileUri(imageDataUrl);
-      
-      // Check and compress if needed (Android only) to prevent proxy rejection
-      // Team members are never signed in locally as admin, so we compress if falling back to Base64 on Android
-      if (Platform.OS === 'android') {
-         normalized = await compressImageIfNeeded(normalized);
-      }
-
-      const base64DataUrl = await fileUriToBase64(normalized);
-      base64String = base64DataUrl.includes('base64,')
-        ? base64DataUrl.split('base64,')[1]
-        : base64DataUrl;
-    }
-
-    // ATTEMPT DIRECT UPLOAD (Bypass Proxy Limit for Admins)
-    // This allows uploading large files (>4.5MB) that would fail on Vercel
+    // ATTEMPT DIRECT UPLOAD FIRST (Bypass Proxy Limit for Admins)
+    // This uploads directly from file URI - no base64 conversion needed
     if (accountType === 'google') {
       try {
-        // Safe check for sign-in status
         let isSignedIn = false;
         try {
            isSignedIn = await googleAuthService.isSignedIn();
@@ -325,7 +302,6 @@ async function uploadPhotoToDriveDirect({
           if (!flat) {
              let subfolderName;
              if (format !== 'default') {
-               // Ensure 'formats' folder exists first
                const formatsFolderId = await googleDriveService.findOrCreateSubfolder(albumFolderId, 'formats');
                subfolderName = format;
                targetFolderId = await googleDriveService.findOrCreateSubfolder(formatsFolderId, subfolderName);
@@ -338,25 +314,20 @@ async function uploadPhotoToDriveDirect({
           }
 
           // 3. Upload File Directly from URI (NO SIZE LIMIT - bypasses Vercel 4.5MB restriction)
-          // Determine the source URI
           let sourceUri = imageDataUrl;
           if (imageDataUrl.startsWith('data:')) {
-            // If it's a data URL, we need to convert it to a file first
-            // Create a temp file to upload
             const tempFilename = `temp_upload_${Date.now()}.jpg`;
             const tempUri = `${FileSystem.cacheDirectory}${tempFilename}`;
-
-            // Extract base64 from data URL
             const base64Part = imageDataUrl.split('base64,')[1] || imageDataUrl;
             await FileSystem.writeAsStringAsync(tempUri, base64Part, { encoding: 'base64' });
             sourceUri = tempUri;
-            console.log('[UPLOAD] 📝 Converted data URL to temp file:', tempUri);
+            console.log('[UPLOAD] Converted data URL to temp file:', tempUri);
           } else {
-            // It's already a file URI - normalize it
             sourceUri = normalizeFileUri(imageDataUrl);
           }
 
           console.log('[UPLOAD] 📤 Uploading directly from file URI (no compression, no Vercel limit)...');
+          console.log('[UPLOAD] Source URI:', sourceUri?.substring(0, 80));
           const result = await googleDriveService.uploadFileFromUri(sourceUri, filename, targetFolderId);
 
           console.log('[UPLOAD] ✅ Direct upload successful:', result.fileId);
@@ -377,12 +348,24 @@ async function uploadPhotoToDriveDirect({
         }
       } catch (directError) {
         console.warn('[UPLOAD] Direct upload attempt failed, falling back to proxy:', directError.message);
-
-        // If direct upload failed, we are falling back to proxy.
-        // We will try multipart upload first if available, which avoids the size overhead.
       }
     }
 
+    // FALLBACK: Convert to base64 for proxy upload (only if direct upload didn't succeed)
+    console.log('[UPLOAD_DIRECT] 🔄 Converting image to base64 for proxy upload...');
+    let base64String = imageDataUrl;
+    if (imageDataUrl.startsWith('data:')) {
+      base64String = imageDataUrl.split('base64,')[1];
+    } else {
+      let normalized = normalizeFileUri(imageDataUrl);
+      if (Platform.OS === 'android') {
+         normalized = await compressImageIfNeeded(normalized);
+      }
+      const base64DataUrl = await fileUriToBase64(normalized);
+      base64String = base64DataUrl.includes('base64,')
+        ? base64DataUrl.split('base64,')[1]
+        : base64DataUrl;
+    }
     console.log('[UPLOAD_DIRECT] ✅ Base64 conversion complete');
     console.log('[UPLOAD_DIRECT] 📡 Calling proxyService.uploadPhotoAsAdmin...');
 
@@ -558,6 +541,7 @@ export async function uploadPhotoBatch(photos, config) {
     cleanerName,
     batchSize = 2, // Reduced from all-parallel to 2 to prevent Vercel rate limiting (403)
     onProgress,
+    onLabelProgress, // optional callback for label preparation progress (current, total)
     onBatchComplete,
     getAbortController, // optional callback to retrieve/create AbortController per request
     abortSignal, // optional AbortSignal to stop scheduling further uploads
@@ -601,13 +585,36 @@ export async function uploadPhotoBatch(photos, config) {
   // Determine if this is a team member upload (Google only)
   const isTeamMemberUpload = !!(token && sessionId);
 
+  // Resolve a unique album name so each upload batch gets its own folder.
+  // e.g. "John - Feb 13, 2026 - NYC" → "John - Feb 13, 2026 - NYC (2)" if the first already exists.
+  let resolvedAlbumName = albumName;
+  if (albumName && folderId && accountType === 'google') {
+    try {
+      const isSignedIn = await googleAuthService.isSignedIn();
+      if (isSignedIn) {
+        resolvedAlbumName = await googleDriveService.findUniqueAlbumName(folderId, albumName);
+      }
+    } catch (e) {
+      console.warn('[UPLOAD] Could not resolve unique album name:', e.message);
+    }
+  }
+
   // If using proxy server and albumName is provided, prepare the album folder first
   // This ensures all parallel uploads use the same album folder
   // Note: Team members can also use album folders (same as Pro/Business/Enterprise)
-  if (useDirectDrive && albumName && sessionId && !flat) {
+  if (useDirectDrive && resolvedAlbumName && sessionId && !flat) {
     try {
-      console.log('[UPLOAD] Preparing album folder before parallel uploads:', albumName);
-      await proxyService.prepareAlbumFolder(sessionId, albumName);
+      // Determine unique subfolder types needed so they can be pre-created
+      const subfolderTypes = new Set();
+      for (const photo of photos) {
+        const rawType = photo.mode || photo.type || 'mix';
+        const isCombined = rawType === 'mix' || rawType === 'combined';
+        const subfolderName = isCombined ? 'combined' : rawType;
+        subfolderTypes.add(subfolderName);
+      }
+      const subfolders = Array.from(subfolderTypes);
+      console.log('[UPLOAD] Preparing album folder before parallel uploads:', resolvedAlbumName, 'subfolders:', subfolders);
+      await proxyService.prepareAlbumFolder(sessionId, resolvedAlbumName, subfolders);
       console.log('[UPLOAD] Album folder prepared, starting parallel uploads');
     } catch (error) {
       console.warn('[UPLOAD] Failed to prepare album folder (will create during upload):', error.message);
@@ -617,41 +624,72 @@ export async function uploadPhotoBatch(photos, config) {
 
   const successful = [];
   const failed = [];
-  let completed = 0;
-  const total = photos.length;
 
-  // PRE-PROCESS: Prepare all labels SEQUENTIALLY before starting uploads
-  // This ensures combined photos get both Before and After labels applied
-  // before any uploads begin, preventing race conditions.
-  // IMPORTANT: We process SEQUENTIALLY because the background label service
-  // processes one photo at a time. Parallel queueing can cause timeouts.
-  console.log('[UPLOAD] 🏷️ Pre-processing labels for all photos SEQUENTIALLY...');
-  const labeledPhotos = [];
-  for (const photo of photos) {
-    const effectiveType = photo.mode || photo.type;
+  // PRE-CHECK: Deduplicate photos by ID to prevent duplicate uploads
+  const deduped = new Map();
+  photos.forEach(p => { if (!deduped.has(p.id)) deduped.set(p.id, p); });
+  const uniquePhotos = Array.from(deduped.values());
+  if (uniquePhotos.length < photos.length) {
+    console.warn(`[UPLOAD] ⚠️ Removed ${photos.length - uniquePhotos.length} duplicate photo(s) from upload batch`);
+  }
 
-    // Check if this photo needs labeling
-    const isCandidate = ((effectiveType === 'before' || effectiveType === 'after') &&
-        (!photo.format || photo.format === 'default')) ||
-        ((effectiveType === 'combined' || effectiveType === 'mix') &&
-        (photo.format === 'original-side' || photo.format === 'original-stack'));
-
-    if (isCandidate) {
-      console.log(`[UPLOAD] 🏷️ Pre-labeling: ${photo.filename || photo.id} (${effectiveType})`);
-      try {
-        const photoWithType = { ...photo, type: effectiveType };
-        const labeledUri = await ensureLabelForPhoto(photoWithType);
-        console.log(`[UPLOAD] ✅ Pre-labeled: ${photo.filename || photo.id}`);
-        labeledPhotos.push({ ...photo, uri: labeledUri, _preLabeledUri: labeledUri });
-      } catch (labelError) {
-        console.warn(`[UPLOAD] ⚠️ Pre-labeling failed for ${photo.filename}: ${labelError.message}`);
-        labeledPhotos.push(photo); // Use original if labeling fails
+  // PRE-CHECK: Verify all photo files exist before starting upload
+  // Skip photos whose files are missing (stale metadata)
+  const validPhotos = [];
+  for (const photo of uniquePhotos) {
+    const uri = normalizeFileUri(photo.uri);
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      if (info.exists) {
+        validPhotos.push(photo);
+      } else {
+        console.warn(`[UPLOAD] ⚠️ Skipping photo ${photo.id} (${photo.name}) - file does not exist: ${uri?.substring(0, 80)}`);
+        failed.push({ photo, error: 'File does not exist on device' });
       }
-    } else {
-      labeledPhotos.push(photo);
+    } catch (e) {
+      console.warn(`[UPLOAD] ⚠️ Skipping photo ${photo.id} - cannot verify file: ${e.message}`);
+      failed.push({ photo, error: 'Cannot verify file exists' });
     }
   }
-  console.log('[UPLOAD] ✅ All labels pre-processed SEQUENTIALLY');
+
+  if (validPhotos.length === 0) {
+    console.error('[UPLOAD] ❌ No valid photo files found - all files are missing from device');
+    return { successful: [], failed };
+  }
+
+  if (validPhotos.length < photos.length) {
+    console.warn(`[UPLOAD] ⚠️ ${photos.length - validPhotos.length} photo(s) skipped (files missing). Uploading ${validPhotos.length} valid photos.`);
+  }
+
+  let completed = 0;
+  const total = validPhotos.length;
+
+  // PRE-PROCESS: Batch-optimized label check (reads settings + cache metadata ONCE)
+  // Labels should already be cached from background preparation (done right after photo capture).
+  // Wait for all labels to be prepared - UI shows "Preparing labels X/Y" progress.
+  console.log('[UPLOAD] Pre-processing labels (batch-optimized)...');
+  let labeledPhotos;
+  try {
+    const batchResults = await ensureLabelsForPhotoBatch(validPhotos, { onProgress: onLabelProgress });
+    let labeledCount = 0;
+    let originalCount = 0;
+    labeledPhotos = batchResults.map(({ photo, labeledUri }) => {
+      if (labeledUri && labeledUri !== photo.uri) {
+        labeledCount++;
+        return { ...photo, uri: labeledUri, _preLabeledUri: labeledUri };
+      }
+      originalCount++;
+      return photo;
+    });
+    if (originalCount > 0) {
+      console.warn(`[UPLOAD] ${originalCount}/${validPhotos.length} photos using original (unlabeled) URI`);
+    }
+    console.log(`[UPLOAD] ${labeledCount}/${validPhotos.length} photos labeled successfully`);
+  } catch (e) {
+    console.warn('[UPLOAD] Label batch prep failed, using originals:', e.message);
+    labeledPhotos = validPhotos;
+  }
+  console.log('[UPLOAD] All labels pre-processed');
 
   // Split photos into batches (using pre-labeled photos)
   const batches = [];
@@ -713,7 +751,7 @@ export async function uploadPhotoBatch(photos, config) {
             filename: photo.filename || `${photo.name}_${format !== 'default' ? format : typeParam}.jpg`,
             sessionId,
             token,
-            albumName,
+            albumName: resolvedAlbumName,
             room: photo.room || 'general',
             type: typeParam,
             format: format,
@@ -724,7 +762,7 @@ export async function uploadPhotoBatch(photos, config) {
         : uploadPhoto({
             imageDataUrl: photoUri, // Use the potentially labeled URI
             filename: photo.filename || `${photo.name}_${format !== 'default' ? format : typeParam}.jpg`,
-            albumName,
+            albumName: resolvedAlbumName,
             room: photo.room || 'general',
             type: typeParam,
             format: format,
@@ -821,17 +859,15 @@ export function createAlbumName(userName, date = new Date(), projectUploadId = n
   const day = date.getDate();
   const year = date.getFullYear();
 
-  // If projectUploadId is provided, use it (for re-uploads to same project)
-  // Otherwise generate one based on current time (for new projects or no project)
-  const uniqueId = projectUploadId || generateProjectId(date);
-  
-  // Build album name with location if provided
+  // Build album name: name - date - location
   const parts = [userName];
+  parts.push(`${month} ${day}, ${year}`);
   if (location) {
     parts.push(location);
   }
-  parts.push(`${month} ${day}, ${year}`);
-  parts.push(uniqueId);
+  
+  // Note: projectUploadId is kept for backward compatibility but not included in folder name
+  // The folder name is now: "Name - Date - Location" (project name format)
   
   return parts.join(' - ');
 }
