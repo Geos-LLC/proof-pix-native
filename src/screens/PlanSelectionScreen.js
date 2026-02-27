@@ -43,7 +43,7 @@ import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import TrialNotificationModal from '../components/TrialNotificationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
-import { IAP_PRODUCTS, purchaseProduct, restorePurchases, getAvailablePurchases, diagnoseIAPState } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
 
 const { width } = Dimensions.get('window');
 
@@ -162,9 +162,8 @@ export default function PlanSelectionScreen({ navigation }) {
           await updateUserPlan(plan);
         }
       } else {
-        console.log('[PlanSelection] 🔵 Regular plan flow (no trial)');
-        if (Platform.OS === 'ios') {
-          console.log('[PlanSelection] iOS platform detected, checking for IAP');
+        console.log('[PlanSelection] Regular plan flow (no trial)');
+        if (Platform.OS === 'ios' || Platform.OS === 'android') {
           let productId = null;
           if (plan === 'pro') productId = IAP_PRODUCTS.PRO_MONTHLY;
           else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
@@ -176,47 +175,44 @@ export default function PlanSelectionScreen({ navigation }) {
             try {
               console.log('[PlanSelection] Starting purchase for:', productId);
               const purchaseResult = await purchaseProduct(productId);
-              console.log('[PlanSelection] ✅ Purchase successful:', JSON.stringify(purchaseResult, null, 2));
+              console.log('[PlanSelection] Purchase successful');
               await updateUserPlan(plan);
-              
+
               return new Promise((resolve) => {
                 InteractionManager.runAfterInteractions(() => {
-                  console.log('[PlanSelection] ✅ Navigating after successful purchase');
+                  console.log('[PlanSelection] Navigating after successful purchase');
                   isMounted.current = false;
                   navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
                   resolve();
                 });
               });
             } catch (err) {
-              console.log('[PlanSelection] ❌ Purchase error caught');
-              console.log('[PlanSelection] Error message:', err?.message);
-              
+              console.log('[PlanSelection] Purchase error caught:', err?.message);
+
               const errorMsg = err?.message || '';
-              if (errorMsg === 'USER_CANCELLED' || errorMsg === 'user-cancelled' || errorMsg.includes('cancelled')) {
+              if (errorMsg === 'USER_CANCELLED' || errorMsg === 'user-cancelled' || errorMsg.includes('cancelled') || errorMsg.includes('canceled')) {
                 console.log('[PlanSelection] User cancelled purchase');
                 isPurchasing.current = false;
                 return;
               }
 
-              if (errorMsg === 'already-owned' || errorMsg === 'PURCHASE_TIMEOUT') {
-                if (errorMsg === 'already-owned') {
-                  await updateUserPlan(plan);
-                  
-                  Alert.alert(
-                    t('common.success', { defaultValue: 'Already Subscribed' }),
-                    t('settings.alreadySubscribed', { defaultValue: 'You already have an active subscription to this plan!' })
-                  );
-                  
-                  return new Promise((resolve) => {
-                    InteractionManager.runAfterInteractions(() => {
-                      isMounted.current = false;
-                      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-                      resolve();
-                    });
+              if (errorMsg === 'already-owned') {
+                await updateUserPlan(plan);
+
+                Alert.alert(
+                  t('common.success', { defaultValue: 'Already Subscribed' }),
+                  t('settings.alreadySubscribed', { defaultValue: 'You already have an active subscription to this plan!' })
+                );
+
+                return new Promise((resolve) => {
+                  InteractionManager.runAfterInteractions(() => {
+                    isMounted.current = false;
+                    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                    resolve();
                   });
-                }
+                });
               }
-              
+
               Alert.alert(
                 t('common.error', { defaultValue: 'Error' }),
                 t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
@@ -276,47 +272,44 @@ export default function PlanSelectionScreen({ navigation }) {
   };
 
   const handleRestorePurchases = async () => {
-    if (Platform.OS !== 'ios') {
+    if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
       return;
     }
 
     setIsRestoringPurchases(true);
     try {
       console.log('[PlanSelection] Restoring purchases...');
-      
-      const availablePurchases = await getAvailablePurchases();
-      console.log('[PlanSelection] Available purchases:', availablePurchases?.length || 0);
-      
+
       const purchases = await restorePurchases();
-      
+
       if (!purchases || purchases.length === 0) {
-        const message = availablePurchases && availablePurchases.length > 0
-          ? 'Completed purchases found but not yet finalized. This may be a sandbox testing issue.'
-          : 'No active subscriptions found. If you recently purchased, please wait a moment and try again.';
-        
         Alert.alert(
           t('common.info', { defaultValue: 'No Purchases Found' }),
-          t('settings.noPurchasesFound', { defaultValue: message })
+          t('settings.noPurchasesFound', { defaultValue: 'No active subscriptions found. If you recently purchased, please wait a moment and try again.' })
         );
         setIsRestoringPurchases(false);
         return;
       }
-      
+
+      // Find an active purchase (platform-aware)
       const now = Date.now();
-      const activePurchase = purchases.find(p => p.expirationDateIOS && p.expirationDateIOS > now);
-      
+      const activePurchase = purchases.find(p => {
+        if (Platform.OS === 'ios') {
+          return p.expirationDateIOS && p.expirationDateIOS > now;
+        } else {
+          // Android: if in available purchases with PURCHASED state, it's active
+          return p.purchaseStateAndroid === 1 || p.purchaseStateAndroid === undefined;
+        }
+      });
+
       if (activePurchase) {
-        const productId = activePurchase.productId;
-        let restoredPlan = 'starter';
-        if (productId.includes('pro.monthly')) restoredPlan = 'pro';
-        else if (productId.includes('business.monthly')) restoredPlan = 'business';
-        else if (productId.includes('enterprise.monthly')) restoredPlan = 'enterprise';
-        
+        const restoredPlan = productIdToPlan(activePurchase.productId);
+
         console.log('[PlanSelection] Restored active plan:', restoredPlan);
         await updateUserPlan(restoredPlan);
-        
+
         setIsRestoringPurchases(false);
-        
+
         return new Promise((resolve) => {
           InteractionManager.runAfterInteractions(() => {
             isMounted.current = false;
@@ -335,7 +328,7 @@ export default function PlanSelectionScreen({ navigation }) {
       console.error('[PlanSelection] Error restoring purchases:', error);
 
       const errorMessage = error?.message || '';
-      if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED')) {
+      if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED') || errorMessage.includes('canceled')) {
         console.log('[PlanSelection] User cancelled restore purchases');
         setIsRestoringPurchases(false);
         return;
@@ -544,7 +537,11 @@ export default function PlanSelectionScreen({ navigation }) {
         {/* Terms and Privacy Policy Links */}
         <View style={styles.legalLinksContainer}>
           <TouchableOpacity
-            onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
+            onPress={() => Linking.openURL(
+              Platform.OS === 'android'
+                ? 'https://play.google.com/intl/en_us/about/play-terms/'
+                : 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'
+            )}
             style={styles.legalLinkButton}
           >
             <Text style={styles.legalLinkText}>

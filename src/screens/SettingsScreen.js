@@ -66,7 +66,7 @@ import {
   logFeatureGateShown,
   logFeatureGateAction,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions, productIdToPlan } from '../services/iapService';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
 import { LOCATIONS, getLocationName } from '../config/locations';
@@ -1425,9 +1425,9 @@ export default function SettingsScreen({ navigation, route }) {
             try {
               setShowAddMemberModal(false);
 
-              // On iOS, require in-app purchase for each additional seat
+              // Require in-app purchase for each additional seat (iOS & Android)
               let seatsToAdd = additionalMembersCount || 1;
-              if (Platform.OS === 'ios') {
+              if (Platform.OS === 'ios' || Platform.OS === 'android') {
                 // Determine which IAP product to use based on current plan
                 let seatProductId = null;
                 if (userPlan === 'business') {
@@ -1437,7 +1437,7 @@ export default function SettingsScreen({ navigation, route }) {
                 }
 
                 if (!seatProductId) {
-                  Alert.alert('Error', 'Additional members are only available for Business and Enterprise plans on iOS.');
+                  Alert.alert('Error', 'Additional members are only available for Business and Enterprise plans.');
                   return;
                 }
 
@@ -1446,7 +1446,7 @@ export default function SettingsScreen({ navigation, route }) {
                   const proceed = await new Promise((resolve) => {
                     Alert.alert(
                       'Multiple Purchases Required',
-                      'Adding multiple team members on iOS requires confirming a purchase for each additional member. Continue?',
+                      'Adding multiple team members requires confirming a purchase for each additional member. Continue?',
                       [
                         { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
                         { text: 'Continue', onPress: () => resolve(true) },
@@ -1462,20 +1462,16 @@ export default function SettingsScreen({ navigation, route }) {
                   try {
                     await purchaseProduct(seatProductId);
                   } catch (err) {
-                    if (err?.message === 'USER_CANCELLED') {
-                      // If user cancels mid-way, stop further purchases and don't change remaining seats
+                    if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                       if (i === 0) {
-                        // No seats purchased
                         return;
                       } else {
-                        // Some seats purchased; adjust seatsToAdd to what was successfully purchased
                         seatsToAdd = i;
                         break;
                       }
                     } else {
                       console.error('[PURCHASE] Error during seat purchase:', err);
                       Alert.alert('Error', 'Failed to complete purchase. Some seats may not have been added.');
-                      // Adjust seatsToAdd to how many were successfully purchased
                       seatsToAdd = i;
                       break;
                     }
@@ -1740,10 +1736,10 @@ export default function SettingsScreen({ navigation, route }) {
     );
   };
 
-  // Handle restore purchases
+  // Handle restore purchases (iOS & Android)
   const handleRestorePurchases = async () => {
-    if (Platform.OS !== 'ios') {
-      return; // Only available on iOS
+    if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+      return;
     }
 
     setIsRestoringPurchases(true);
@@ -3502,12 +3498,12 @@ export default function SettingsScreen({ navigation, route }) {
                             console.error('[SETTINGS] Error clearing team data:', error);
                           }
                         }
-                        // On iOS, require in-app purchase for Pro plan
-                        if (Platform.OS === 'ios') {
+                        // Require in-app purchase for Pro plan (iOS & Android)
+                        if (Platform.OS === 'ios' || Platform.OS === 'android') {
                           try {
                             await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
                           } catch (err) {
-                            if (err?.message === 'USER_CANCELLED') {
+                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                               return;
                             }
                             Alert.alert(
@@ -3531,12 +3527,12 @@ export default function SettingsScreen({ navigation, route }) {
                     <TouchableOpacity
                       style={[styles.planButton, userPlan === 'business' && styles.planButtonSelected]}
                       onPress={async () => {
-                        // On iOS, require in-app purchase for Business plan
-                        if (Platform.OS === 'ios') {
+                        // Require in-app purchase for Business plan (iOS & Android)
+                        if (Platform.OS === 'ios' || Platform.OS === 'android') {
                           try {
                             await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
                           } catch (err) {
-                            if (err?.message === 'USER_CANCELLED') {
+                            if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                               return;
                             }
                             Alert.alert(
@@ -3561,12 +3557,12 @@ export default function SettingsScreen({ navigation, route }) {
                       style={[styles.planButton, userPlan === 'enterprise' && styles.planButtonSelected]}
                       onPress={async () => {
                         try {
-                          // On iOS, require in-app purchase for Enterprise plan
-                          if (Platform.OS === 'ios') {
+                          // Require in-app purchase for Enterprise plan (iOS & Android)
+                          if (Platform.OS === 'ios' || Platform.OS === 'android') {
                             try {
                               await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
                             } catch (err) {
-                              if (err?.message === 'USER_CANCELLED') {
+                              if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                                 return;
                               }
                               Alert.alert(
@@ -5117,13 +5113,15 @@ export default function SettingsScreen({ navigation, route }) {
               >
                 <Text style={styles.testToolsButtonText}>🧪 Test Tools</Text>
               </TouchableOpacity>
-              {Platform.OS === 'ios' && (
+              {(Platform.OS === 'ios' || Platform.OS === 'android') && (
                 <TouchableOpacity
                   style={[styles.testToolsButton, { backgroundColor: '#fff3e0', marginTop: 10 }]}
                   onPress={async () => {
                     Alert.alert(
                       'Clear IAP Cache',
-                      'Clear stuck sandbox transactions.\n\nNote: Sandbox transactions often cannot be fully cleared.\n\nContinue?',
+                      Platform.OS === 'android'
+                        ? 'Clear stuck pending purchases.\n\nContinue?'
+                        : 'Clear stuck sandbox transactions.\n\nNote: Sandbox transactions often cannot be fully cleared.\n\nContinue?',
                       [
                         { text: 'Cancel', style: 'cancel' },
                         {
@@ -5523,8 +5521,8 @@ export default function SettingsScreen({ navigation, route }) {
                       // Check if user is on active trial - if so, skip IAP
                       const onTrial = await isTrialActive();
 
-                      // On iOS, require in-app purchase for Pro plan (unless on trial)
-                      if (Platform.OS === 'ios' && !onTrial) {
+                      // Require in-app purchase for Pro plan (unless on trial)
+                      if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
                         // Check if already on Pro plan
                         if (userPlan === 'pro') {
                           Alert.alert(
@@ -5571,7 +5569,7 @@ export default function SettingsScreen({ navigation, route }) {
                           return;
                         }
                       } else {
-                        // Trial or non-iOS - update plan directly
+                        // Trial - update plan directly
                         await updateUserPlan('pro');
                         setShowPlanModal(false);
                       }
@@ -5606,8 +5604,8 @@ export default function SettingsScreen({ navigation, route }) {
                       // Check if user is on active trial - if so, skip IAP
                       const onTrial = await isTrialActive();
 
-                      // On iOS, require in-app purchase for Business plan (unless on trial)
-                      if (Platform.OS === 'ios' && !onTrial) {
+                      // Require in-app purchase for Business plan (unless on trial)
+                      if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
                         // Check if already on Business plan
                         if (userPlan === 'business') {
                           Alert.alert(
@@ -5655,7 +5653,7 @@ export default function SettingsScreen({ navigation, route }) {
                           return;
                         }
                       } else {
-                        // Trial or non-iOS - update plan directly
+                        // Trial - update plan directly
                         await updatePlanLimit(5);
                         await updateUserPlan('business');
                         setShowPlanModal(false);
@@ -5688,8 +5686,8 @@ export default function SettingsScreen({ navigation, route }) {
                       // Check if user is on active trial - if so, skip IAP
                       const onTrial = await isTrialActive();
 
-                      // On iOS, require in-app purchase for Enterprise plan (unless on trial)
-                      if (Platform.OS === 'ios' && !onTrial) {
+                      // Require in-app purchase for Enterprise plan (unless on trial)
+                      if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
                         // Check if already on Enterprise plan
                         if (userPlan === 'enterprise') {
                           Alert.alert(
@@ -5734,7 +5732,7 @@ export default function SettingsScreen({ navigation, route }) {
                           return;
                         }
                       } else {
-                        // Trial or non-iOS - update plan directly
+                        // Trial - update plan directly
                         await updatePlanLimit(15);
                         await updateUserPlan('enterprise');
                         setShowPlanModal(false);

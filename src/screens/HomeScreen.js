@@ -2110,7 +2110,7 @@ export default function HomeScreen({ navigation }) {
                 onPress={async () => {
                   try {
                     const onTrial = await isTrialActive();
-                    if (Platform.OS === 'ios' && !onTrial) {
+                    if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
                       if (userPlan === 'pro') {
                         Alert.alert('Already Subscribed', 'You already have the Pro plan.', [{ text: 'OK' }]);
                         return;
@@ -2156,7 +2156,7 @@ export default function HomeScreen({ navigation }) {
                 onPress={async () => {
                   try {
                     const onTrial = await isTrialActive();
-                    if (Platform.OS === 'ios' && !onTrial) {
+                    if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
                       if (userPlan === 'business') {
                         Alert.alert('Already Subscribed', 'You already have the Business plan.', [{ text: 'OK' }]);
                         return;
@@ -2201,7 +2201,7 @@ export default function HomeScreen({ navigation }) {
                 onPress={async () => {
                   try {
                     const onTrial = await isTrialActive();
-                    if (Platform.OS === 'ios' && !onTrial) {
+                    if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
                       if (userPlan === 'enterprise') {
                         Alert.alert('Already Subscribed', 'You already have the Enterprise plan.', [{ text: 'OK' }]);
                         return;
