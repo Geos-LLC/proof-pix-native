@@ -40,7 +40,7 @@ import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import * as ExpoLocation from 'expo-location';
-import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseOrUpgrade } from '../services/iapService';
 import { isTrialActive } from '../services/trialService';
 import Constants from 'expo-constants';
 
@@ -2118,7 +2118,7 @@ export default function HomeScreen({ navigation }) {
                       try {
                         setShowPlanModal(false);
                         await new Promise(resolve => setTimeout(resolve, 300));
-                        await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                        await purchaseOrUpgrade(IAP_PRODUCTS.PRO_MONTHLY);
                         await updateUserPlan('pro');
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.proPlanActivated', { defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' }));
                       } catch (err) {
@@ -2164,7 +2164,7 @@ export default function HomeScreen({ navigation }) {
                       try {
                         setShowPlanModal(false);
                         await new Promise(resolve => setTimeout(resolve, 300));
-                        await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                        await purchaseOrUpgrade(IAP_PRODUCTS.BUSINESS_MONTHLY);
                         await updatePlanLimit(5);
                         await updateUserPlan('business');
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.businessPlanActivated', { defaultValue: 'Business plan activated! You can now add up to 5 team members.' }));
@@ -2209,7 +2209,7 @@ export default function HomeScreen({ navigation }) {
                       try {
                         setShowPlanModal(false);
                         await new Promise(resolve => setTimeout(resolve, 300));
-                        await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                        await purchaseOrUpgrade(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
                         await updatePlanLimit(15);
                         await updateUserPlan('enterprise');
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit.' }));

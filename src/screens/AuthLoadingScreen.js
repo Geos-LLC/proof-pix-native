@@ -47,22 +47,18 @@ export default function AuthLoadingScreen({ navigation }) {
         const purchases = await restorePurchases();
         
         if (purchases && purchases.length > 0) {
-          // Find the most recent active subscription
-          const now = Date.now();
-          const activeSubscription = purchases.find(purchase => {
-            const expirationDate = purchase.expirationDateIOS;
-            return expirationDate && expirationDate > now;
-          });
+          // Find active subscription - v14: if returned by getAvailablePurchases, it's active
+          const activeSubscription = purchases.find(purchase => !!purchase.productId);
 
           if (activeSubscription) {
             const productId = activeSubscription.productId;
             console.log('[AuthLoading] Active subscription found:', productId);
-            
-            // Map product ID to plan name
+
+            // Map product ID to plan name (works for both iOS and Android product IDs)
             let planName = 'starter';
-            if (productId.includes('pro.monthly')) planName = 'pro';
-            else if (productId.includes('business.monthly')) planName = 'business';
-            else if (productId.includes('enterprise.monthly')) planName = 'enterprise';
+            if (productId.includes('enterprise') && !productId.includes('seat')) planName = 'enterprise';
+            else if (productId.includes('business') && !productId.includes('seat')) planName = 'business';
+            else if (productId.includes('pro')) planName = 'pro';
             
             // Update user plan
             console.log('[AuthLoading] Updating plan from subscription:', planName);

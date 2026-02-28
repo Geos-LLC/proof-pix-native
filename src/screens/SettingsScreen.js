@@ -66,7 +66,7 @@ import {
   logFeatureGateShown,
   logFeatureGateAction,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions, productIdToPlan } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan } from '../services/iapService';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
 import { LOCATIONS, getLocationName } from '../config/locations';
@@ -3501,7 +3501,7 @@ export default function SettingsScreen({ navigation, route }) {
                         // Require in-app purchase for Pro plan (iOS & Android)
                         if (Platform.OS === 'ios' || Platform.OS === 'android') {
                           try {
-                            await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
+                            await purchaseOrUpgrade(IAP_PRODUCTS.PRO_MONTHLY);
                           } catch (err) {
                             if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                               return;
@@ -3530,7 +3530,7 @@ export default function SettingsScreen({ navigation, route }) {
                         // Require in-app purchase for Business plan (iOS & Android)
                         if (Platform.OS === 'ios' || Platform.OS === 'android') {
                           try {
-                            await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
+                            await purchaseOrUpgrade(IAP_PRODUCTS.BUSINESS_MONTHLY);
                           } catch (err) {
                             if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                               return;
@@ -3560,7 +3560,7 @@ export default function SettingsScreen({ navigation, route }) {
                           // Require in-app purchase for Enterprise plan (iOS & Android)
                           if (Platform.OS === 'ios' || Platform.OS === 'android') {
                             try {
-                              await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+                              await purchaseOrUpgrade(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
                             } catch (err) {
                               if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                                 return;
@@ -5542,8 +5542,8 @@ export default function SettingsScreen({ navigation, route }) {
                           // Wait for modal to close
                           await new Promise(resolve => setTimeout(resolve, 300));
                           
-                          await purchaseProduct(IAP_PRODUCTS.PRO_MONTHLY);
-                          
+                          await purchaseOrUpgrade(IAP_PRODUCTS.PRO_MONTHLY);
+
                           // Purchase succeeded - update plan
                           await updateUserPlan('pro');
                           
@@ -5625,8 +5625,8 @@ export default function SettingsScreen({ navigation, route }) {
                           // Wait for modal to close
                           await new Promise(resolve => setTimeout(resolve, 300));
                           
-                          await purchaseProduct(IAP_PRODUCTS.BUSINESS_MONTHLY);
-                          
+                          await purchaseOrUpgrade(IAP_PRODUCTS.BUSINESS_MONTHLY);
+
                           // Purchase succeeded - update plan
                           await updatePlanLimit(5);
                           await updateUserPlan('business');
@@ -5707,8 +5707,8 @@ export default function SettingsScreen({ navigation, route }) {
                           // Wait for modal to close
                           await new Promise(resolve => setTimeout(resolve, 300));
                           
-                          await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
-                          
+                          await purchaseOrUpgrade(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
+
                           // Purchase succeeded - update plan
                           await updatePlanLimit(15);
                           await updateUserPlan('enterprise');

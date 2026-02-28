@@ -43,7 +43,7 @@ import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import TrialNotificationModal from '../components/TrialNotificationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
-import { IAP_PRODUCTS, purchaseProduct, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
 
 const { width } = Dimensions.get('window');
 
@@ -174,7 +174,7 @@ export default function PlanSelectionScreen({ navigation }) {
           if (productId) {
             try {
               console.log('[PlanSelection] Starting purchase for:', productId);
-              const purchaseResult = await purchaseProduct(productId);
+              const purchaseResult = await purchaseOrUpgrade(productId);
               console.log('[PlanSelection] Purchase successful');
               await updateUserPlan(plan);
 
@@ -215,7 +215,7 @@ export default function PlanSelectionScreen({ navigation }) {
 
               Alert.alert(
                 t('common.error', { defaultValue: 'Error' }),
-                t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                `Purchase failed: ${errorMsg || 'Unknown error'}. Please try again.`
               );
               isPurchasing.current = false;
               return;
@@ -291,16 +291,8 @@ export default function PlanSelectionScreen({ navigation }) {
         return;
       }
 
-      // Find an active purchase (platform-aware)
-      const now = Date.now();
-      const activePurchase = purchases.find(p => {
-        if (Platform.OS === 'ios') {
-          return p.expirationDateIOS && p.expirationDateIOS > now;
-        } else {
-          // Android: if in available purchases with PURCHASED state, it's active
-          return p.purchaseStateAndroid === 1 || p.purchaseStateAndroid === undefined;
-        }
-      });
+      // Find an active purchase - v14: if returned by getAvailablePurchases, it's active
+      const activePurchase = purchases.find(p => !!p.productId);
 
       if (activePurchase) {
         const restoredPlan = productIdToPlan(activePurchase.productId);

@@ -55,17 +55,6 @@ export const initIAPIfNeeded = async () => {
     await RNIap.initConnection();
     connectionInitialized = true;
     console.log('[IAP] Connection initialized successfully');
-
-    // On Android, flush any pending purchases that weren't acknowledged
-    if (Platform.OS === 'android') {
-      try {
-        await RNIap.flushFailedPurchasesCachedAsPendingAndroid();
-        console.log('[IAP] Flushed failed pending Android purchases');
-      } catch (e) {
-        // Not critical - may not have any pending purchases
-        console.log('[IAP] No pending Android purchases to flush');
-      }
-    }
   } catch (e) {
     console.error('[IAP] Failed to init connection:', e);
     console.error('[IAP] Error details:', JSON.stringify(e, null, 2));
@@ -86,6 +75,7 @@ const cleanupListeners = () => {
 /**
  * For Android: fetch subscription details and extract the monthly offer token.
  * Google Play Billing v5+ requires an offerToken to launch subscription purchases.
+ * Uses react-native-iap v14 API: fetchProducts({skus, type: 'subs'})
  */
 const getAndroidOfferToken = async (productId) => {
   // Check cache first
@@ -95,7 +85,8 @@ const getAndroidOfferToken = async (productId) => {
   }
 
   console.log('[IAP] Fetching Android subscription details for:', productId);
-  const subscriptions = await RNIap.getSubscriptions({ skus: [productId] });
+  // v14 API: use fetchProducts with type 'subs' instead of getSubscriptions
+  const subscriptions = await RNIap.fetchProducts({ skus: [productId], type: 'subs' });
   console.log('[IAP] Got', subscriptions?.length || 0, 'subscription(s)');
 
   if (!subscriptions || subscriptions.length === 0) {
@@ -103,7 +94,8 @@ const getAndroidOfferToken = async (productId) => {
   }
 
   const product = subscriptions[0];
-  const offers = product.subscriptionOfferDetails;
+  // v14 API: field is subscriptionOfferDetailsAndroid (not subscriptionOfferDetails)
+  const offers = product.subscriptionOfferDetailsAndroid;
 
   if (!offers || offers.length === 0) {
     console.error('[IAP] No subscription offer details for:', productId);
@@ -147,6 +139,7 @@ const getAndroidOfferToken = async (productId) => {
 /**
  * Purchase a single product and resolve when the transaction is completed.
  * Handles both iOS and Android subscription flows.
+ * Uses react-native-iap v14 unified requestPurchase API.
  * Throws 'user-cancelled' on user cancellation.
  */
 export const purchaseProduct = async (productId) => {
@@ -182,69 +175,39 @@ export const purchaseProduct = async (productId) => {
 
     console.log('[IAP] Setting up purchaseUpdatedListener...');
     purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchase) => {
-      const {
-        productId: purchasedId,
-        transactionReceipt,
-        transactionReasonIOS,
-        expirationDateIOS,
-        purchaseStateAndroid,
-        purchaseToken,
-        autoRenewingAndroid,
-      } = purchase || {};
-
-      // === iOS: Handle renewals ===
-      if (Platform.OS === 'ios' && transactionReasonIOS === 'RENEWAL') {
-        const now = Date.now();
-        const isActive = expirationDateIOS && expirationDateIOS > now;
-
-        console.log('[IAP] Renewal detected for:', purchasedId);
-        console.log('[IAP] Renewal active:', isActive);
-
-        if (isActive) {
-          console.log('[IAP] Active renewal detected - treating as valid subscription');
-        } else {
-          console.log('[IAP] Ignoring expired renewal');
-          return;
-        }
-      }
+      // v14 PurchaseAndroid fields: productId, purchaseState, purchaseToken, isAutoRenewing, isAcknowledgedAndroid
+      // v14 PurchaseIOS fields: productId, transactionId, etc.
+      const purchasedId = purchase?.productId || '';
 
       console.log('[IAP] purchaseUpdatedListener triggered');
       console.log('[IAP] Purchased ID:', purchasedId, 'Expected:', productId);
       console.log('[IAP] Platform:', Platform.OS);
 
       if (Platform.OS === 'ios') {
-        console.log('[IAP] Transaction reason:', transactionReasonIOS);
-        console.log('[IAP] Has receipt:', !!transactionReceipt);
+        console.log('[IAP] Has transactionId:', !!purchase?.transactionId);
       } else {
-        console.log('[IAP] Purchase state Android:', purchaseStateAndroid);
-        console.log('[IAP] Has purchase token:', !!purchaseToken);
-        console.log('[IAP] Auto-renewing:', autoRenewingAndroid);
+        // v14: purchaseState (not purchaseStateAndroid)
+        console.log('[IAP] Purchase state:', purchase?.purchaseState);
+        console.log('[IAP] Has purchase token:', !!purchase?.purchaseToken);
+        console.log('[IAP] Auto-renewing:', purchase?.isAutoRenewing);
       }
 
       // Validate purchase matches expected product
-      // On Android, purchasedId might be in purchase.productIds array
-      const productIds = purchase?.productIds || [];
-      const matchesExpected = purchasedId === productId || productIds.includes(productId);
+      // On Android v14, also check purchase.ids array
+      const ids = purchase?.ids || [];
+      const matchesExpected = purchasedId === productId || ids.includes(productId);
 
       if (!matchesExpected) {
-        if (Platform.OS === 'ios' && transactionReasonIOS === 'RENEWAL') {
-          console.log('[IAP] Ignoring renewal event during purchase (waiting for actual purchase event)');
-          return;
-        }
-
         console.log('[IAP] Purchase validation failed - wrong product or missing product ID');
         return;
       }
 
       // === Android: Validate purchase state ===
       if (Platform.OS === 'android') {
-        // purchaseStateAndroid: 0=UNSPECIFIED, 1=PURCHASED, 2=PENDING
-        if (purchaseStateAndroid === 2) {
+        // v14: purchaseState (string): 'purchased', 'pending', 'unspecified'
+        const state = purchase?.purchaseState;
+        if (state === 'pending' || state === 2) {
           console.log('[IAP] Android purchase is PENDING - waiting for completion');
-          return;
-        }
-        if (purchaseStateAndroid !== 1 && purchaseStateAndroid !== undefined) {
-          console.log('[IAP] Android purchase state invalid:', purchaseStateAndroid);
           return;
         }
 
@@ -264,34 +227,12 @@ export const purchaseProduct = async (productId) => {
         return;
       }
 
-      // === iOS: Validate receipt ===
-      if (!transactionReceipt) {
-        console.log('[IAP] No receipt yet - this may be a delayed sandbox purchase');
-
-        if (__DEV__) {
-          console.log('[IAP] Development mode: Accepting purchase without receipt');
-
-          finish(async () => {
-            try {
-              await RNIap.finishTransaction(purchase, false);
-              console.log('[IAP] Transaction finished successfully');
-            } catch (finishErr) {
-              console.log('[IAP] Could not finish transaction (expected in sandbox without receipt)');
-            }
-            resolve(purchase);
-          });
-          return;
-        }
-
-        console.log('[IAP] Production mode: Waiting for receipt...');
-        return;
-      }
-
+      // === iOS: Validate ===
       console.log('[IAP] Purchase validated successfully');
       finish(async () => {
         try {
           console.log('[IAP] Calling finishTransaction...');
-          await RNIap.finishTransaction(purchase, false);
+          await RNIap.finishTransaction({ purchase, isConsumable: false });
           console.log('[IAP] Transaction finished');
         } catch (finishErr) {
           console.error('[IAP] Failed to finish transaction:', finishErr);
@@ -337,24 +278,26 @@ export const purchaseProduct = async (productId) => {
         console.log('[IAP] Android: Getting offer token for:', productId);
         const { offerToken } = await getAndroidOfferToken(productId);
 
-        console.log('[IAP] Android: Requesting subscription...');
-        await RNIap.requestSubscription({
-          sku: productId,
-          subscriptionOffers: [{ sku: productId, offerToken }],
+        // v14 API: use requestPurchase with type 'subs' and android-specific params
+        console.log('[IAP] Android: Requesting subscription purchase...');
+        await RNIap.requestPurchase({
+          type: 'subs',
+          request: {
+            android: {
+              skus: [productId],
+              subscriptionOffers: [{ sku: productId, offerToken }],
+            },
+          },
         });
         console.log('[IAP] Android: Subscription request sent, waiting for response...');
       } else {
-        // === iOS purchase flow (unchanged) ===
+        // === iOS purchase flow ===
         console.log('[IAP] Fetching products for:', [productId]);
         const products = await RNIap.fetchProducts({
           skus: [productId],
           type: 'subs'
         });
-        const cleanProducts = products.map(p => {
-          const { jsonRepresentationIOS, ...rest } = p;
-          return { ...rest, jsonRepresentationIOS: '[REDACTED]' };
-        });
-        console.log('[IAP] Products fetched:', JSON.stringify(cleanProducts, null, 2));
+        console.log('[IAP] Products fetched:', products?.length || 0);
 
         if (!products || products.length === 0) {
           console.error('[IAP] No products found for:', productId);
@@ -363,21 +306,21 @@ export const purchaseProduct = async (productId) => {
 
         console.log('[IAP] Requesting purchase...');
         await RNIap.requestPurchase({
+          type: 'subs',
           request: {
             ios: { sku: productId },
-            android: { skus: [productId] }
-          }
+          },
         });
         console.log('[IAP] Purchase request sent, waiting for response...');
       }
 
-      // Set a reasonable timeout for network issues
+      // Set a generous timeout - Google Play payment dialogs can take a while
       purchaseTimeout = setTimeout(() => {
         if (!finished) {
-          console.warn('[IAP] Purchase request timed out after 15 seconds');
+          console.warn('[IAP] Purchase request timed out after 120 seconds');
           finish(() => reject(new Error('PURCHASE_TIMEOUT')));
         }
-      }, 15000);
+      }, 120000);
     } catch (err) {
       console.error('[IAP] Error during purchase flow:', err);
       console.error('[IAP] Error details:', JSON.stringify(err, null, 2));
@@ -389,7 +332,7 @@ export const purchaseProduct = async (productId) => {
 /**
  * Purchase or upgrade a subscription.
  * On Android, if user has an active main plan, this will trigger an upgrade flow
- * with immediate proration.
+ * with immediate proration. Uses v14 requestPurchase with replacementModeAndroid.
  */
 export const purchaseOrUpgrade = async (targetProductId) => {
   console.log('[IAP] purchaseOrUpgrade called for:', targetProductId);
@@ -405,8 +348,8 @@ export const purchaseOrUpgrade = async (targetProductId) => {
 
     const existingMainPlan = currentPurchases?.find(p => {
       const pid = p.productId || '';
-      const pids = p.productIds || [];
-      return mainPlanIds.some(id => pid === id || pids.includes(id));
+      const ids = p.ids || [];
+      return mainPlanIds.some(id => pid === id || ids.includes(id));
     });
 
     if (existingMainPlan && existingMainPlan.purchaseToken) {
@@ -430,18 +373,16 @@ export const purchaseOrUpgrade = async (targetProductId) => {
 
         purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchase) => {
           const purchasedId = purchase?.productId || '';
-          const productIds = purchase?.productIds || [];
-          if (purchasedId === targetProductId || productIds.includes(targetProductId)) {
-            if (purchase.purchaseStateAndroid === 1 || purchase.purchaseStateAndroid === undefined) {
-              finish(async () => {
-                try {
-                  await RNIap.finishTransaction({ purchase, isConsumable: false });
-                } catch (e) {
-                  console.error('[IAP] Failed to acknowledge upgrade:', e);
-                }
-                resolve(purchase);
-              });
-            }
+          const ids = purchase?.ids || [];
+          if (purchasedId === targetProductId || ids.includes(targetProductId)) {
+            finish(async () => {
+              try {
+                await RNIap.finishTransaction({ purchase, isConsumable: false });
+              } catch (e) {
+                console.error('[IAP] Failed to acknowledge upgrade:', e);
+              }
+              resolve(purchase);
+            });
           }
         });
 
@@ -456,16 +397,22 @@ export const purchaseOrUpgrade = async (targetProductId) => {
         });
 
         try {
-          await RNIap.requestSubscription({
-            sku: targetProductId,
-            subscriptionOffers: [{ sku: targetProductId, offerToken }],
-            purchaseTokenAndroid: existingMainPlan.purchaseToken,
-            prorationModeAndroid: 1, // IMMEDIATE_WITH_TIME_PRORATION
+          // v14 API: use requestPurchase with type 'subs' and upgrade params
+          await RNIap.requestPurchase({
+            type: 'subs',
+            request: {
+              android: {
+                skus: [targetProductId],
+                subscriptionOffers: [{ sku: targetProductId, offerToken }],
+                purchaseTokenAndroid: existingMainPlan.purchaseToken,
+                replacementModeAndroid: 1, // IMMEDIATE_WITH_TIME_PRORATION
+              },
+            },
           });
 
           purchaseTimeout = setTimeout(() => {
             if (!finished) finish(() => reject(new Error('PURCHASE_TIMEOUT')));
-          }, 15000);
+          }, 120000);
         } catch (err) {
           finish(() => reject(err));
         }
@@ -496,14 +443,6 @@ export const clearPendingTransactions = async () => {
       } catch (err) {
         console.warn('[IAP] Could not clear transaction queue:', err?.message);
       }
-    } else if (Platform.OS === 'android') {
-      try {
-        console.log('[IAP] Step 1: Flushing failed pending Android purchases...');
-        await RNIap.flushFailedPurchasesCachedAsPendingAndroid();
-        console.log('[IAP] Android pending purchases flushed');
-      } catch (err) {
-        console.warn('[IAP] Could not flush Android purchases:', err?.message);
-      }
     }
 
     // Step 2: Get and finish ALL available purchases
@@ -514,9 +453,8 @@ export const clearPendingTransactions = async () => {
     if (purchases && purchases.length > 0) {
       console.log('[IAP] Pending purchases to clear:');
       purchases.forEach((purchase, index) => {
-        console.log(`[IAP]   ${index + 1}. ${purchase.productId || purchase.productID || 'unknown'}`);
+        console.log(`[IAP]   ${index + 1}. ${purchase.productId || 'unknown'}`);
         console.log(`[IAP]      Transaction ID: ${purchase.transactionId || 'missing'}`);
-        console.log(`[IAP]      Has receipt: ${!!purchase.transactionReceipt}`);
       });
     }
 
@@ -525,16 +463,10 @@ export const clearPendingTransactions = async () => {
 
     for (const purchase of purchases || []) {
       try {
-        const pid = purchase.productId || purchase.productID || 'unknown';
+        const pid = purchase.productId || 'unknown';
         console.log('[IAP] Attempting to finish:', pid);
 
-        if (!purchase || !purchase.transactionId) {
-          console.log('[IAP] Skipping invalid purchase (missing transactionId)');
-          failCount++;
-          continue;
-        }
-
-        await RNIap.finishTransaction(purchase, false);
+        await RNIap.finishTransaction({ purchase, isConsumable: false });
         console.log('[IAP] Successfully finished:', pid);
         successCount++;
       } catch (err) {
@@ -591,16 +523,14 @@ export const checkActiveSubscription = async () => {
       return null;
     }
 
-    const now = Date.now();
+    // v14: purchases returned by getAvailablePurchases are active
+    // Android: purchaseState field, iOS: check transactionId exists
     const activeSubscription = purchases.find(purchase => {
       if (Platform.OS === 'ios') {
-        // iOS: check expiration date
-        const expirationDate = purchase.expirationDateIOS;
-        return expirationDate && expirationDate > now;
+        return !!purchase.transactionId;
       } else {
-        // Android: if returned by getAvailablePurchases and state is PURCHASED, it's active
-        // purchaseStateAndroid: 1 = PURCHASED
-        return purchase.purchaseStateAndroid === 1 || purchase.purchaseStateAndroid === undefined;
+        // If returned by getAvailablePurchases, it's active
+        return true;
       }
     });
 
@@ -634,12 +564,10 @@ export const getAvailablePurchases = async () => {
         console.log(`[IAP] Available Purchase ${index + 1}:`, {
           productId: purchase.productId,
           transactionId: purchase.transactionId,
-          ...(Platform.OS === 'ios' ? {
-            transactionDate: purchase.transactionDateIOS,
-          } : {
-            purchaseState: purchase.purchaseStateAndroid,
-            autoRenewing: purchase.autoRenewingAndroid,
-          }),
+          ...(Platform.OS === 'android' ? {
+            purchaseState: purchase.purchaseState,
+            isAutoRenewing: purchase.isAutoRenewing,
+          } : {}),
         });
       });
     }
@@ -670,42 +598,11 @@ export const hasActiveIAPSubscription = async () => {
       return false;
     }
 
-    const now = Date.now();
+    // If getAvailablePurchases returns any purchases, user has active subscriptions
     for (const purchase of availablePurchases) {
       const pid = purchase.productId;
-
-      if (Platform.OS === 'ios') {
-        // iOS: check expiration
-        if (purchase.transactionReceipt || purchase.originalTransactionDateIOS) {
-          const expirationDate = purchase.expirationDateIOS
-            ? new Date(purchase.expirationDateIOS).getTime()
-            : null;
-
-          const isActive = expirationDate ? expirationDate > now : true;
-
-          console.log('[IAP] iOS subscription status:', { productId: pid, expirationDate: purchase.expirationDateIOS, isActive });
-
-          if (isActive) {
-            console.log('[IAP] Found active subscription:', pid);
-            return true;
-          }
-        }
-      } else {
-        // Android: if in available purchases with PURCHASED state, it's active
-        const isActive = purchase.purchaseStateAndroid === 1 || purchase.purchaseStateAndroid === undefined;
-
-        console.log('[IAP] Android subscription status:', {
-          productId: pid,
-          purchaseState: purchase.purchaseStateAndroid,
-          autoRenewing: purchase.autoRenewingAndroid,
-          isActive,
-        });
-
-        if (isActive) {
-          console.log('[IAP] Found active subscription:', pid);
-          return true;
-        }
-      }
+      console.log('[IAP] Found active subscription:', pid);
+      return true;
     }
 
     console.log('[IAP] No active subscriptions found');
@@ -776,7 +673,7 @@ export const productIdToPlan = (productId) => {
 
 /**
  * Comprehensive IAP diagnostic function.
- * Works on both iOS and Android.
+ * Works on both iOS and Android. Uses v14 API.
  */
 export const diagnoseIAPState = async () => {
   console.log('='.repeat(60));
@@ -797,23 +694,12 @@ export const diagnoseIAPState = async () => {
     // Check available purchases
     console.log('[DIAG] Checking available purchases...');
     const availablePurchases = await RNIap.getAvailablePurchases();
-    console.log('[DIAG] Available purchases (not finalized):', availablePurchases?.length || 0);
+    console.log('[DIAG] Available purchases:', availablePurchases?.length || 0);
 
     // Check restored purchases
     console.log('[DIAG] Checking restored purchases...');
     const restoredPurchases = await RNIap.restorePurchases();
     console.log('[DIAG] Restored purchases:', restoredPurchases?.length || 0);
-
-    // Check for active subscriptions
-    const now = Date.now();
-    const activeSubs = restoredPurchases?.filter(p => {
-      if (Platform.OS === 'ios') {
-        return p.expirationDateIOS && p.expirationDateIOS > now;
-      } else {
-        return p.purchaseStateAndroid === 1 || p.purchaseStateAndroid === undefined;
-      }
-    }) || [];
-    console.log('[DIAG] Active subscriptions:', activeSubs.length);
 
     // Log detailed purchase info
     if (restoredPurchases && restoredPurchases.length > 0) {
@@ -821,33 +707,28 @@ export const diagnoseIAPState = async () => {
       restoredPurchases.forEach((purchase, index) => {
         console.log(`[DIAG]   ${index + 1}. ${purchase.productId}`);
         console.log(`[DIAG]      Transaction ID: ${purchase.transactionId}`);
-        if (Platform.OS === 'ios') {
-          const isExpired = purchase.expirationDateIOS ? purchase.expirationDateIOS < now : 'N/A';
-          console.log(`[DIAG]      Transaction Date: ${purchase.transactionDateIOS ? new Date(purchase.transactionDateIOS).toISOString() : 'N/A'}`);
-          console.log(`[DIAG]      Expiration Date: ${purchase.expirationDateIOS ? new Date(purchase.expirationDateIOS).toISOString() : 'N/A'}`);
-          console.log(`[DIAG]      Is Expired: ${isExpired}`);
-        } else {
-          console.log(`[DIAG]      Purchase State: ${purchase.purchaseStateAndroid}`);
-          console.log(`[DIAG]      Auto-Renewing: ${purchase.autoRenewingAndroid}`);
+        if (Platform.OS === 'android') {
+          console.log(`[DIAG]      Purchase State: ${purchase.purchaseState}`);
+          console.log(`[DIAG]      Auto-Renewing: ${purchase.isAutoRenewing}`);
           console.log(`[DIAG]      Has Token: ${!!purchase.purchaseToken}`);
         }
       });
     }
 
     // Compute entitlements
-    const entitlements = computeEntitlements(activeSubs);
+    const entitlements = computeEntitlements(restoredPurchases || []);
     console.log('[DIAG] Computed entitlements:', JSON.stringify(entitlements));
 
     // Android: also check subscription product details
     if (Platform.OS === 'android') {
       try {
         console.log('[DIAG] Querying Android subscription products...');
-        const subs = await RNIap.getSubscriptions({ skus: ALL_ANDROID_SKUS });
+        const subs = await RNIap.fetchProducts({ skus: ALL_ANDROID_SKUS, type: 'subs' });
         console.log('[DIAG] Found', subs?.length || 0, 'subscription product(s)');
         subs?.forEach((sub, i) => {
-          const offers = sub.subscriptionOfferDetails || [];
+          const offers = sub.subscriptionOfferDetailsAndroid || [];
           const price = offers[0]?.pricingPhases?.pricingPhaseList?.[0]?.formattedPrice || 'N/A';
-          console.log(`[DIAG]   ${i + 1}. ${sub.productId} - ${price} (${offers.length} offer(s))`);
+          console.log(`[DIAG]   ${i + 1}. ${sub.id} - ${price} (${offers.length} offer(s))`);
         });
       } catch (e) {
         console.warn('[DIAG] Could not query Android subscriptions:', e?.message);
@@ -863,10 +744,8 @@ export const diagnoseIAPState = async () => {
       connectionInitialized,
       availablePurchasesCount: availablePurchases?.length || 0,
       restoredPurchasesCount: restoredPurchases?.length || 0,
-      activeSubscriptionsCount: activeSubs.length,
       availablePurchases,
       restoredPurchases,
-      activeSubscriptions: activeSubs,
       entitlements,
     };
   } catch (error) {
@@ -903,18 +782,14 @@ export const restorePurchases = async () => {
         console.log(`[IAP] Purchase ${index + 1}:`, {
           productId: purchase.productId,
           transactionId: purchase.transactionId,
-          ...(Platform.OS === 'ios' ? {
-            transactionDate: purchase.transactionDateIOS,
-            expirationDate: purchase.expirationDateIOS,
-            isExpired: purchase.expirationDateIOS ? purchase.expirationDateIOS < Date.now() : 'N/A',
-          } : {
-            purchaseState: purchase.purchaseStateAndroid,
-            autoRenewing: purchase.autoRenewingAndroid,
-          }),
+          ...(Platform.OS === 'android' ? {
+            purchaseState: purchase.purchaseState,
+            isAutoRenewing: purchase.isAutoRenewing,
+          } : {}),
         });
 
         // On Android, acknowledge any unacknowledged purchases during restore
-        if (Platform.OS === 'android' && !purchase.isAcknowledgedAndroid && purchase.purchaseStateAndroid === 1) {
+        if (Platform.OS === 'android' && !purchase.isAcknowledgedAndroid) {
           console.log('[IAP] Acknowledging unacknowledged Android purchase:', purchase.productId);
           RNIap.finishTransaction({ purchase, isConsumable: false }).catch(e => {
             console.warn('[IAP] Could not acknowledge during restore:', e?.message);
@@ -956,7 +831,7 @@ export const openManageSubscriptions = () => {
 /**
  * Get localized prices for all subscription plans from the store.
  * Returns an object with plan keys and their formatted price strings.
- * Useful for displaying accurate prices in the paywall UI.
+ * Uses v14 fetchProducts API.
  */
 export const getSubscriptionPrices = async () => {
   console.log('[IAP] Fetching subscription prices...');
@@ -966,41 +841,34 @@ export const getSubscriptionPrices = async () => {
 
     const allSkus = Object.values(IAP_PRODUCTS);
 
-    if (Platform.OS === 'android') {
-      const subscriptions = await RNIap.getSubscriptions({ skus: allSkus });
-      const prices = {};
+    // v14: use fetchProducts with type 'subs' for both platforms
+    const products = await RNIap.fetchProducts({ skus: allSkus, type: 'subs' });
+    const prices = {};
 
-      for (const sub of subscriptions || []) {
-        const offers = sub.subscriptionOfferDetails || [];
-        // Find the monthly recurring price from the last pricing phase
+    for (const product of products || []) {
+      if (Platform.OS === 'android') {
+        // Android: extract price from subscriptionOfferDetailsAndroid
+        const offers = product.subscriptionOfferDetailsAndroid || [];
         for (const offer of offers) {
           const phases = offer.pricingPhases?.pricingPhaseList || [];
           const recurringPhase = phases.find(p => p.billingPeriod === 'P1M' && p.recurrenceMode === 1);
           if (recurringPhase) {
-            prices[sub.productId] = recurringPhase.formattedPrice;
+            prices[product.id] = recurringPhase.formattedPrice;
             break;
           }
         }
         // Fallback to first phase price
-        if (!prices[sub.productId] && offers[0]?.pricingPhases?.pricingPhaseList?.[0]) {
-          prices[sub.productId] = offers[0].pricingPhases.pricingPhaseList[0].formattedPrice;
+        if (!prices[product.id] && offers[0]?.pricingPhases?.pricingPhaseList?.[0]) {
+          prices[product.id] = offers[0].pricingPhases.pricingPhaseList[0].formattedPrice;
         }
+      } else {
+        // iOS: use displayPrice
+        prices[product.id] = product.displayPrice || '';
       }
-
-      console.log('[IAP] Android prices:', prices);
-      return prices;
-    } else {
-      // iOS: fetch and extract prices
-      const products = await RNIap.fetchProducts({ skus: allSkus, type: 'subs' });
-      const prices = {};
-
-      for (const product of products || []) {
-        prices[product.productId] = product.localizedPrice || product.price;
-      }
-
-      console.log('[IAP] iOS prices:', prices);
-      return prices;
     }
+
+    console.log('[IAP] Prices:', prices);
+    return prices;
   } catch (error) {
     console.error('[IAP] Failed to fetch prices:', error);
     return {};
