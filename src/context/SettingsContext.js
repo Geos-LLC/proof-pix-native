@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_AFTER_LABEL_POSITION, DEFAULT_WATERMARK_POSITION } from '../constants/rooms';
 
@@ -81,7 +82,7 @@ export const SettingsProvider = ({ children }) => {
   const [customRooms, setCustomRooms] = useState(null); // null means use default rooms
   const [userPlan, setUserPlan] = useState('starter'); // Add userPlan state
   const [cleaningServiceEnabled, setCleaningServiceEnabled] = useState(true);
-  const [shutterSoundEnabled, setShutterSoundEnabled] = useState(true);
+  const [shutterSoundEnabled, setShutterSoundEnabled] = useState(Platform.OS !== 'android');
   const [loading, setLoading] = useState(true);
 
   // Load settings on mount
@@ -157,7 +158,7 @@ export const SettingsProvider = ({ children }) => {
         setShutterSoundEnabled(
           typeof settings.shutterSoundEnabled === 'boolean'
             ? settings.shutterSoundEnabled
-            : true
+            : Platform.OS !== 'android'
         );
       }
       

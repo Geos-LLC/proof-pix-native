@@ -5165,7 +5165,7 @@ export default function SettingsScreen({ navigation, route }) {
 
         </ScrollView>
 
-        <View style={styles.bottomNavPill}>
+        <View style={[styles.bottomNavPill, { bottom: 20 + insets.bottom }]}>
         <TouchableOpacity 
           style={styles.navItem}
           onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}

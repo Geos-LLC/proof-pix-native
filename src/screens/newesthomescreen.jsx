@@ -1372,7 +1372,7 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { bottom: 90 + insets.bottom }]}
         onPress={() => {
           if (!activeProjectId) {
             openNewProjectModal(true);
@@ -1387,7 +1387,7 @@ export default function HomeScreen({ navigation }) {
         <Ionicons name="camera" size={38} color="#000" />
       </TouchableOpacity>
 
-      <View style={styles.bottomNavPill}>
+      <View style={[styles.bottomNavPill, { bottom: 20 + insets.bottom }]}>
         <TouchableOpacity 
           style={[styles.navItem, styles.navItemActive]}
         >

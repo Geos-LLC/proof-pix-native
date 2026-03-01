@@ -1831,7 +1831,7 @@ export default function GalleryScreen({ navigation, route }) {
 
       {!isSelectionMode && (
         <>
-          <View style={styles.bottomNavPill}>
+          <View style={[styles.bottomNavPill, { bottom: 20 + insets.bottom }]}>
         <TouchableOpacity 
           style={styles.navItem}
           onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
