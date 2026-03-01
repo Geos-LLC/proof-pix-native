@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Random from 'expo-random';
 import * as Device from 'expo-device';
+import { logReferralEvent } from '../utils/analytics';
 
 const REFERRAL_STORAGE_KEY = '@user_referral_info';
 const REFERRAL_CODE_KEY = '@user_referral_code';
@@ -44,6 +45,7 @@ export const getOrCreateReferralCode = async () => {
       code = uniqueId.substring(0, 8).toUpperCase();
       await AsyncStorage.setItem(REFERRAL_CODE_KEY, code);
       console.log('[ReferralService] Generated new referral code:', code);
+      logReferralEvent('code_created', { code });
     }
     return code;
   } catch (error) {
@@ -96,6 +98,8 @@ export const addReferralInvite = async (method = 'unknown') => {
     info.invitesSent.push(invite);
     await AsyncStorage.setItem(REFERRAL_STORAGE_KEY, JSON.stringify(info));
     console.log('[ReferralService] Added referral invite:', invite);
+    const code = await AsyncStorage.getItem(REFERRAL_CODE_KEY);
+    logReferralEvent('invite_shared', { code, method });
   } catch (error) {
     console.error('[ReferralService] Error adding referral invite:', error);
   }
@@ -132,6 +136,7 @@ export const acceptReferral = async (referralCode) => {
     };
     await AsyncStorage.setItem(REFERRAL_ACCEPTED_KEY, JSON.stringify(referralData));
     console.log('[ReferralService] Referral accepted:', referralCode);
+    logReferralEvent('accepted', { code: referralCode });
   } catch (error) {
     console.error('[ReferralService] Error accepting referral:', error);
   }
@@ -297,6 +302,7 @@ export const registerReferralCodeOnServer = async (userId, referralCode) => {
 
     if (data.success) {
       console.log('[ReferralService] Code registered on server:', referralCode);
+      logReferralEvent('code_registered', { code: referralCode });
       return true;
     } else {
       // Only log as error if it's not "already in use" (which is expected for existing users)
@@ -334,6 +340,7 @@ export const trackReferralInstallation = async (referralCode) => {
 
     if (data.success) {
       console.log('[ReferralService] Installation tracked on server:', data.referralId);
+      logReferralEvent('installation_tracked', { code: referralCode });
       // Also store locally
       await acceptReferral(referralCode);
       return { success: true, data };
@@ -372,6 +379,7 @@ export const completeReferralSetup = async (referralCode, userId) => {
 
     if (data.success) {
       console.log('[ReferralService] Setup completed on server. Referrer earned:', data.monthsEarned, 'month(s)');
+      logReferralEvent('setup_completed', { code: referralCode });
       return data;
     } else {
       const isNoPending = data.error && String(data.error).toLowerCase().includes('no pending referral');
@@ -472,6 +480,7 @@ export const checkAndApplyReferralRewards = async () => {
         // Mark these rewards as applied
         await AsyncStorage.setItem('@referral_rewards_applied', stats.monthsEarned.toString());
         console.log(`[ReferralService] ✅ Applied ${pendingRewards} reward(s) - added ${daysToAdd} days to trial`);
+        logReferralEvent('reward_applied', { code: stats.code || null, rewards: pendingRewards, days_added: daysToAdd });
         return pendingRewards;
       }
     }

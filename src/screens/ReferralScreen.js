@@ -83,7 +83,7 @@ export default function ReferralScreen({ navigation }) {
 
   const handleShare = async (method) => {
     try {
-      const iosAppStoreLink = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/6754261444';
+      const iosAppStoreLink = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/us/app/proofpix-before-after/id6754261444';
       const androidPlayStoreLink = process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.proofpix.app';
 
       await addReferralInvite(method);

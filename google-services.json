@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "366423185-f1mvt1fd6vh0qoo1k1273504ctl8jt1q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.proofpix.app",
+            "certificate_hash": "4f33d12f5a42b2e2c95325f855c4aaa798be6158"
+          }
+        },
+        {
           "client_id": "366423185-iru8jpgqfgmtp8j61095fqp3fm0kpai0.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -27,6 +35,14 @@
           "android_info": {
             "package_name": "com.proofpix.app",
             "certificate_hash": "92a62e2057b969016be65cc2dc7f53c42e0440d6"
+          }
+        },
+        {
+          "client_id": "366423185-rm6vhvhlobpuv8cc0s5j21v263ptncog.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.proofpix.app",
+            "certificate_hash": "3b59aac2d1a6ccd2e0527c9517672a0ec51c0421"
           }
         },
         {
