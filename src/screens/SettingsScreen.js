@@ -327,6 +327,8 @@ export default function SettingsScreen({ navigation, route }) {
   const [showMultipleAccountsModal, setShowMultipleAccountsModal] = useState(false);
   const [showTestToolsModal, setShowTestToolsModal] = useState(false);
   const [showManageTeamModal, setShowManageTeamModal] = useState(false);
+  const [showSwitchAccountModal, setShowSwitchAccountModal] = useState(false);
+  const [pendingAccountType, setPendingAccountType] = useState(null);
   const [teamMembersList, setTeamMembersList] = useState([]);
   const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);
   const [teamNameInput, setTeamNameInput] = useState('');
@@ -3601,9 +3603,8 @@ export default function SettingsScreen({ navigation, route }) {
                   <View style={styles.cloudServicesRow}>
                     {/* Connect to Google Account Button */}
                     {(() => {
-                      const currentAccountType = displayedActiveAccount?.accountType || accountType;
-                      const isGoogleConnected = isAuthenticated && currentAccountType === 'google';
-                      const shouldShow = (userPlan === 'pro' || userPlan === 'business') ? !isGoogleConnected : true;
+                      const hasAnyConnection = isAuthenticated || isDropboxAuthenticatedForDisplay;
+                      const shouldShow = userPlan === 'enterprise' ? true : (userPlan === 'pro' || userPlan === 'business') ? !hasAnyConnection : true;
                       return shouldShow;
                     })() && (
                       <TouchableOpacity
@@ -3615,44 +3616,10 @@ export default function SettingsScreen({ navigation, route }) {
                           })()
                         ]}
                         onPress={async () => {
-                          // For Pro/Business/Enterprise: Check if Dropbox is connected first
-                          if (isDropboxAuthenticatedForDisplay) {
-                            Alert.alert(
-                              t('settings.disconnectActiveAccount', { defaultValue: 'Disconnect Active Account' }),
-                              t('settings.disconnectActiveAccountMessage', { 
-                                defaultValue: 'You need to disconnect your current Dropbox account before connecting a Google account.' 
-                              }),
-                              [
-                                { text: t('common.cancel'), style: 'cancel' },
-                                {
-                                  text: t('settings.disconnect', { defaultValue: 'Disconnect' }),
-                                  style: 'destructive',
-                                  onPress: async () => {
-                                    // Disconnect Dropbox first
-                                    try {
-                                      await dropboxAuthService.signOut();
-                                      setIsDropboxAuthenticated(false);
-                                      setDropboxUserInfo(null);
-                                    } catch (error) {
-                                      console.error('[SETTINGS] Error disconnecting Dropbox:', error);
-                                    }
-                                    // Continue with Google sign-in
-                                    setIsSigningIn(true);
-                                    try {
-                                      if (userPlan === 'pro') {
-                                        await individualSignIn();
-                                      } else {
-                                        await adminSignIn();
-                                      }
-                                    } catch (error) {
-                                      console.error("Error during sign in:", error);
-                                    } finally {
-                                      setIsSigningIn(false);
-                                    }
-                                  }
-                                }
-                              ]
-                            );
+                          // For non-enterprise: show switch account modal if Dropbox is connected
+                          if (isDropboxAuthenticatedForDisplay && userPlan !== 'enterprise') {
+                            setPendingAccountType('google');
+                            setShowSwitchAccountModal(true);
                             return;
                           }
                           
@@ -3768,9 +3735,8 @@ export default function SettingsScreen({ navigation, route }) {
 
                     {/* Connect to Dropbox Button */}
                     {(() => {
-                      const shouldShow = (userPlan === 'pro' || userPlan === 'business')
-                        ? (!isDropboxAuthenticatedForDisplay || isAuthenticated)
-                        : true;
+                      const hasAnyConnection = isAuthenticated || isDropboxAuthenticatedForDisplay;
+                      const shouldShow = userPlan === 'enterprise' ? true : (userPlan === 'pro' || userPlan === 'business') ? !hasAnyConnection : true;
                       return shouldShow;
                     })() && (
                       <TouchableOpacity
@@ -3779,65 +3745,10 @@ export default function SettingsScreen({ navigation, route }) {
                           ((userPlan === 'pro' || userPlan === 'business') ? isSigningInDropbox : (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox)) && styles.cloudServiceButtonDisabled
                         ]}
                         onPress={async () => {
-                          // For Pro/Business: Check if another account is connected first
-                          if ((userPlan === 'pro' || userPlan === 'business') && isAuthenticated) {
-                            Alert.alert(
-                              t('settings.disconnectActiveAccount', { defaultValue: 'Disconnect Active Account' }),
-                              t('settings.disconnectActiveAccountMessage', { 
-                                defaultValue: 'You need to disconnect your current Google account before connecting a Dropbox account.' 
-                              }),
-                              [
-                                { text: t('common.cancel'), style: 'cancel' },
-                                {
-                                  text: t('settings.disconnect', { defaultValue: 'Disconnect' }),
-                                  style: 'destructive',
-                                  onPress: async () => {
-                                    // Disconnect Google first
-                                    try {
-                                      await signOut();
-                                    } catch (error) {
-                                      console.error('[SETTINGS] Error disconnecting Google:', error);
-                                    }
-                                    // Continue with Dropbox sign-in
-                                    setIsSigningInDropbox(true);
-                                    try {
-                                      const result = await dropboxAuthService.signIn();
-                                      
-                                      // Find or create ProofPix folder
-                                      try {
-                                        const folderPath = await dropboxService.findOrCreateProofPixFolder();
-                                        console.log('[DROPBOX] Folder ready:', folderPath);
-                                      } catch (folderError) {
-                                        console.error('[DROPBOX] Folder creation error:', folderError);
-                                      }
-
-                                      await dropboxAuthService.loadStoredTokens();
-                                      const isAuth = dropboxAuthService.isAuthenticated();
-                                      const userInfo = dropboxAuthService.getUserInfo();
-                                      
-                                      setIsDropboxAuthenticated(isAuth);
-                                      setDropboxUserInfo(userInfo);
-                                      
-                                      console.log('[DROPBOX] Sign-in successful!');
-                                      
-                                      Alert.alert(
-                                        t('settings.dropboxConnected'),
-                                        t('settings.dropboxConnectedMessage', { email: userInfo?.email || '' }),
-                                        [{ text: t('common.ok') }]
-                                      );
-                                    } catch (error) {
-                                      console.error('[DROPBOX] Sign-in error:', error);
-                                      Alert.alert(
-                                        t('common.error'),
-                                        error.message || t('settings.dropboxSignInError')
-                                      );
-                                    } finally {
-                                      setIsSigningInDropbox(false);
-                                    }
-                                  }
-                                }
-                              ]
-                            );
+                          // For non-enterprise: show switch account modal if Google is connected
+                          if (userPlan !== 'enterprise' && isAuthenticated) {
+                            setPendingAccountType('dropbox');
+                            setShowSwitchAccountModal(true);
                             return;
                           }
                           
@@ -3958,7 +3869,8 @@ export default function SettingsScreen({ navigation, route }) {
                     <TouchableOpacity
                       style={[
                         styles.teamButton,
-                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.teamButtonDisabled
+                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.teamButtonDisabled,
+                        (proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise')) && styles.teamButtonConnected
                       ]}
                       onPress={async () => {
                         const isStarter = !userPlan || userPlan === 'starter';
@@ -4039,7 +3951,8 @@ export default function SettingsScreen({ navigation, route }) {
                       <Image source={require('../../assets/icons/team.png')} style={{ width: 20, height: 20 }} />
                       <Text style={[
                         styles.teamButtonText,
-                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.teamButtonTextDisabled
+                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.teamButtonTextDisabled,
+                        (proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise')) && styles.teamButtonTextConnected
                       ]}>
                         {proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise')
                           ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
@@ -4892,8 +4805,8 @@ export default function SettingsScreen({ navigation, route }) {
                 </TouchableOpacity>
                 )}
                 
-                {/* Manage Profiles Button - Always visible for enterprise, shows plan modal for others */}
-                {(userPlan === 'enterprise' || !isAuthenticated) && (
+                {/* Manage Profiles Button - Always visible when account connected, shows plan modal for non-enterprise */}
+                {(isAuthenticated || isDropboxAuthenticatedForDisplay || userPlan === 'enterprise') && (
                   <TouchableOpacity
                     style={[
                       styles.featureButton,
@@ -6945,6 +6858,153 @@ export default function SettingsScreen({ navigation, route }) {
           </KeyboardAvoidingView>
         </Modal>
 
+        {/* Switch Account Modal */}
+        <Modal
+          isVisible={showSwitchAccountModal}
+          onBackdropPress={() => setShowSwitchAccountModal(false)}
+          onBackButtonPress={() => setShowSwitchAccountModal(false)}
+          style={styles.bottomModal}
+          useNativeDriver
+        >
+          <View style={styles.bottomSheetContainer}>
+            <View style={styles.customModalSheet}>
+              <View style={styles.customModalHeader}>
+                <Text style={styles.customModalTitle}>
+                  {t('settings.switchCloudAccount', { defaultValue: 'Switch Cloud Account' })}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowSwitchAccountModal(false)}
+                  style={styles.customModalCloseButton}
+                >
+                  <Text style={styles.customModalCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.switchAccountModalBody}>
+                <Text style={styles.switchAccountMessage}>
+                  {pendingAccountType === 'google'
+                    ? t('settings.switchToGoogleMessage', { defaultValue: 'You need to disconnect your current Dropbox account before connecting a Google account.' })
+                    : t('settings.switchToDropboxMessage', { defaultValue: 'You need to disconnect your current Google account before connecting a Dropbox account.' })
+                  }
+                </Text>
+
+                {/* Current Account Info */}
+                <View style={styles.switchAccountCurrent}>
+                  <Image
+                    source={pendingAccountType === 'google'
+                      ? require('../../assets/dropbox.png')
+                      : require('../../assets/Google.png')
+                    }
+                    style={{ width: 24, height: 24 }}
+                    resizeMode="contain"
+                  />
+                  <View>
+                    <Text style={styles.switchAccountCurrentText}>
+                      {pendingAccountType === 'google'
+                        ? (dropboxUserInfo?.email || 'Dropbox Account')
+                        : (adminUserInfo?.email || 'Google Account')
+                      }
+                    </Text>
+                    <Text style={styles.switchAccountCurrentType}>
+                      {pendingAccountType === 'google' ? 'Dropbox' : 'Google Drive'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.switchAccountButtons}>
+                  {/* Disconnect & Connect New */}
+                  <TouchableOpacity
+                    style={styles.switchAccountDisconnectBtn}
+                    onPress={async () => {
+                      setShowSwitchAccountModal(false);
+                      if (pendingAccountType === 'google') {
+                        // Disconnect Dropbox, then connect Google
+                        try {
+                          await dropboxAuthService.signOut();
+                          setIsDropboxAuthenticated(false);
+                          setDropboxUserInfo(null);
+                        } catch (error) {
+                          console.error('[SETTINGS] Error disconnecting Dropbox:', error);
+                        }
+                        setIsSigningIn(true);
+                        try {
+                          if (userPlan === 'pro') {
+                            await individualSignIn();
+                          } else {
+                            await adminSignIn();
+                          }
+                        } catch (error) {
+                          console.error('Error during sign in:', error);
+                        } finally {
+                          setIsSigningIn(false);
+                        }
+                      } else {
+                        // Disconnect Google, then connect Dropbox
+                        try {
+                          await signOut();
+                        } catch (error) {
+                          console.error('[SETTINGS] Error disconnecting Google:', error);
+                        }
+                        setIsSigningInDropbox(true);
+                        try {
+                          await dropboxAuthService.signIn();
+                          try {
+                            const folderPath = await dropboxService.findOrCreateProofPixFolder();
+                            console.log('[DROPBOX] Folder ready:', folderPath);
+                          } catch (folderError) {
+                            console.error('[DROPBOX] Folder creation error:', folderError);
+                          }
+                          await dropboxAuthService.loadStoredTokens();
+                          const isAuth = dropboxAuthService.isAuthenticated();
+                          const uInfo = dropboxAuthService.getUserInfo();
+                          setIsDropboxAuthenticated(isAuth);
+                          setDropboxUserInfo(uInfo);
+                          Alert.alert(
+                            t('settings.dropboxConnected'),
+                            t('settings.dropboxConnectedMessage', { email: uInfo?.email || '' }),
+                            [{ text: t('common.ok') }]
+                          );
+                        } catch (error) {
+                          console.error('[DROPBOX] Sign-in error:', error);
+                          Alert.alert(t('common.error'), error.message || t('settings.dropboxSignInError'));
+                        } finally {
+                          setIsSigningInDropbox(false);
+                        }
+                      }
+                    }}
+                  >
+                    <Text style={styles.switchAccountDisconnectText}>
+                      {t('settings.disconnectAndConnect', { defaultValue: 'Disconnect & Connect New' })}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Upgrade to Enterprise */}
+                  <TouchableOpacity
+                    style={styles.switchAccountUpgradeBtn}
+                    onPress={() => {
+                      setShowSwitchAccountModal(false);
+                      setShowPlanModal(true);
+                    }}
+                  >
+                    <Text style={styles.switchAccountUpgradeText}>
+                      {t('settings.upgradeForMultiple', { defaultValue: 'Upgrade for Multiple Accounts' })}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Cancel */}
+                  <TouchableOpacity
+                    style={styles.switchAccountCancelBtn}
+                    onPress={() => setShowSwitchAccountModal(false)}
+                  >
+                    <Text style={styles.switchAccountCancelText}>
+                      {t('common.cancel', { defaultValue: 'Cancel' })}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
       </SafeAreaView>
     );
   }
@@ -8445,13 +8505,81 @@ const sliderStyles = StyleSheet.create({
       opacity: 0.5,
       backgroundColor: '#F5F5F5',
     },
+    teamButtonConnected: {
+      backgroundColor: '#4CAF50',
+      borderColor: '#4CAF50',
+    },
     teamButtonText: {
       fontSize: 16,
       fontWeight: '600',
       color: COLORS.TEXT,
     },
+    teamButtonTextConnected: {
+      color: '#FFFFFF',
+    },
     teamButtonTextDisabled: {
       color: '#999999',
+    },
+    switchAccountModalBody: {
+      padding: 20,
+    },
+    switchAccountMessage: {
+      fontSize: 15,
+      color: '#666',
+      marginBottom: 16,
+      lineHeight: 22,
+    },
+    switchAccountCurrent: {
+      backgroundColor: '#F5F5F5',
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    switchAccountCurrentText: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: COLORS.TEXT,
+      marginLeft: 12,
+    },
+    switchAccountCurrentType: {
+      fontSize: 13,
+      color: '#999',
+      marginLeft: 12,
+    },
+    switchAccountButtons: {
+      gap: 10,
+    },
+    switchAccountDisconnectBtn: {
+      backgroundColor: '#FFE6E6',
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
+    switchAccountDisconnectText: {
+      color: '#CC0000',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    switchAccountUpgradeBtn: {
+      backgroundColor: COLORS.PRIMARY || '#F2C31B',
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
+    switchAccountUpgradeText: {
+      color: '#000',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    switchAccountCancelBtn: {
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
+    switchAccountCancelText: {
+      color: '#999',
+      fontSize: 16,
     },
     connectedStatus: {
       backgroundColor: '#d4edda',
