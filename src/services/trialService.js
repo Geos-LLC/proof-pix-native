@@ -1,12 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { logTrialEvent } from '../utils/analytics';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
-const TRIAL_DURATION_DAYS = 30;
+const TRIAL_DURATION_DAYS = Platform.OS === 'android' ? 14 : 30;
+const REFERRAL_BONUS_DAYS = 15;
 
 /**
  * Trial Service
- * Manages 30-day free trial for any tier (for new users)
+ * Manages free trial for any tier (for new users)
+ * Android: 14-day trial, iOS: 30-day trial
  */
 
 /**
@@ -89,7 +92,7 @@ export const startTrial = async (plan, durationDays = null) => {
     if (trialDays === null) {
       // Check if user has a referral code
       hasReferral = await hasAcceptedReferral();
-      trialDays = hasReferral ? 45 : TRIAL_DURATION_DAYS; // 45 days with referral, 30 without
+      trialDays = hasReferral ? TRIAL_DURATION_DAYS + REFERRAL_BONUS_DAYS : TRIAL_DURATION_DAYS;
     }
 
     endDate.setDate(endDate.getDate() + trialDays);

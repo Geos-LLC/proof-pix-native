@@ -444,7 +444,7 @@ export const initializeReferralCode = async () => {
 
 /**
  * Check and apply any pending referral rewards for this user
- * This extends the user's trial by 30 days for each completed referral
+ * This extends the user's trial by 15 days for each completed referral
  * @returns {Promise<number>} Number of rewards applied
  */
 export const checkAndApplyReferralRewards = async () => {
@@ -472,8 +472,8 @@ export const checkAndApplyReferralRewards = async () => {
       // Import trial service dynamically to avoid circular dependencies
       const { extendTrial } = await import('./trialService');
 
-      // Apply each pending reward (30 days per reward)
-      const daysToAdd = pendingRewards * 30;
+      // Apply each pending reward (15 days per reward)
+      const daysToAdd = pendingRewards * 15;
       const result = await extendTrial(daysToAdd);
 
       if (result) {

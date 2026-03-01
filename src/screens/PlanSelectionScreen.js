@@ -55,7 +55,9 @@ export default function PlanSelectionScreen({ navigation }) {
 
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [trialAvailable, setTrialAvailable] = useState(true);
-  const [trialDays, setTrialDays] = useState(30);
+  const baseTrial = Platform.OS === 'android' ? 14 : 30;
+  const referralBonus = 15;
+  const [trialDays, setTrialDays] = useState(baseTrial);
   const [showTrialModal, setShowTrialModal] = useState(false);
   const [trialNotification, setTrialNotification] = useState(null);
   const [showTrialConfirmation, setShowTrialConfirmation] = useState(false);
@@ -86,18 +88,18 @@ export default function PlanSelectionScreen({ navigation }) {
           const AsyncStorage = await import('@react-native-async-storage/async-storage');
           const referralData = await AsyncStorage.default.getItem('@referral_accepted');
           if (isMounted.current) {
-            setTrialDays(referralData !== null ? 45 : 30);
+            setTrialDays(referralData !== null ? baseTrial + referralBonus : baseTrial);
           }
         } catch (error) {
           if (isMounted.current) {
-            setTrialDays(30);
+            setTrialDays(baseTrial);
           }
         }
       } catch (error) {
         console.error('[PlanSelection] Error checking trial availability:', error);
         if (isMounted.current) {
           setTrialAvailable(true);
-          setTrialDays(30);
+          setTrialDays(baseTrial);
         }
       }
     };

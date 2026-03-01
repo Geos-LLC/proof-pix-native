@@ -5,22 +5,26 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 
+const BASE_TRIAL_DAYS = Platform.OS === 'android' ? 14 : 30;
+const REFERRAL_BONUS_DAYS = 15;
+
 export default function TrialConfirmationModal({ visible, planName, onUseTrial, onCancel }) {
-  const [trialDays, setTrialDays] = useState(30);
+  const [trialDays, setTrialDays] = useState(BASE_TRIAL_DAYS);
 
   useEffect(() => {
     const checkReferral = async () => {
       try {
         const referralData = await AsyncStorage.getItem('@referral_accepted');
-        setTrialDays(referralData !== null ? 45 : 30);
+        setTrialDays(referralData !== null ? BASE_TRIAL_DAYS + REFERRAL_BONUS_DAYS : BASE_TRIAL_DAYS);
       } catch (error) {
-        setTrialDays(30);
+        setTrialDays(BASE_TRIAL_DAYS);
       }
     };
 

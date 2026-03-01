@@ -120,7 +120,7 @@ export default function FirstLoadScreen({ navigation, route }) {
           Alert.alert(
             t('referral.codeAppliedTitle', { defaultValue: '🎉 Referral Code Applied!' }),
             t('referral.codeAppliedMessage', {
-              defaultValue: 'Great! You get 45 days free trial and your friend gets 1 month free!'
+              defaultValue: `Great! You get ${(Platform.OS === 'android' ? 14 : 30) + 15} days free trial and your friend gets 15 days free!`
             }),
             [{ text: t('common.ok') }]
           );
@@ -476,7 +476,7 @@ export default function FirstLoadScreen({ navigation, route }) {
             >
               <Text style={styles.modalSubtitle}>
                 {t('referral.enterCodeSubtitle', { 
-                  defaultValue: 'Enter a referral code from a friend to get 45 days free trial!' 
+                  defaultValue: `Enter a referral code from a friend to get ${(Platform.OS === 'android' ? 14 : 30) + 15} days free trial!`
                 })}
               </Text>
               
@@ -537,11 +537,11 @@ export default function FirstLoadScreen({ navigation, route }) {
               {t('referral.successMessage', { defaultValue: 'You now have' })}
               {' '}
               <Text style={styles.highlightText}>
-                {t('referral.successDays', { defaultValue: '45 days free trial!' })}
+                {t('referral.successDays', { defaultValue: `${(Platform.OS === 'android' ? 14 : 30) + 15} days free trial!` })}
               </Text>
             </Text>
             <Text style={styles.successSubtext}>
-              {t('referral.successSubtext', { defaultValue: 'Your friend will also receive 1 month free when you subscribe.' })}
+              {t('referral.successSubtext', { defaultValue: 'Your friend will also receive 15 extra days when you subscribe.' })}
             </Text>
             <TouchableOpacity
               style={styles.successButton}

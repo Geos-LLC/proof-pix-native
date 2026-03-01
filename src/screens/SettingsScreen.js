@@ -342,7 +342,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [trialActive, setTrialActive] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
   const [trialPlan, setTrialPlan] = useState(null);
-  const [trialDuration, setTrialDuration] = useState(30);
+  const [trialDuration, setTrialDuration] = useState(Platform.OS === 'android' ? 14 : 30);
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [colorModalType, setColorModalType] = useState(null);
   const [draftColor, setDraftColor] = useState(labelBackgroundColor);
@@ -575,7 +575,7 @@ export default function SettingsScreen({ navigation, route }) {
       setTrialActive(active);
       setTrialDaysRemaining(daysRemaining);
       setTrialPlan(plan);
-      setTrialDuration(trialInfo?.durationDays || 30);
+      setTrialDuration(trialInfo?.durationDays || (Platform.OS === 'android' ? 14 : 30));
     };
     loadTrialInfo();
   }, []);
@@ -653,7 +653,7 @@ export default function SettingsScreen({ navigation, route }) {
           setTrialActive(active);
           setTrialDaysRemaining(daysRemaining);
           setTrialPlan(plan);
-          setTrialDuration(trialInfo?.durationDays || 30);
+          setTrialDuration(trialInfo?.durationDays || (Platform.OS === 'android' ? 14 : 30));
         } catch (error) {
           console.error('[SETTINGS] Error loading trial info:', error);
         }
