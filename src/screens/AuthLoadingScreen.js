@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Platform, Text, Image, Dimensions, StatusBar } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as NavigationBarModule from 'expo-navigation-bar';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
@@ -12,6 +13,19 @@ export default function AuthLoadingScreen({ navigation }) {
   const { userName, userPlan, updateUserPlan, loading: settingsLoading } = useSettings();
   const { isLoading: adminLoading } = useAdmin();
   const [iapChecked, setIapChecked] = useState(false);
+
+  // Hide Android navigation bar during splash
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBarModule.setVisibilityAsync('hidden');
+      NavigationBarModule.setBehaviorAsync('overlay-swipe');
+    }
+    return () => {
+      if (Platform.OS === 'android') {
+        NavigationBarModule.setVisibilityAsync('visible');
+      }
+    };
+  }, []);
 
   // Auto-restore IAP subscriptions on app launch (iOS only)
   // IMPORTANT: Disabled in development mode to prevent constant password prompts

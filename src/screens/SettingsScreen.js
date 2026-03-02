@@ -2094,12 +2094,49 @@ export default function SettingsScreen({ navigation, route }) {
 
     setIsApplyingReferral(true);
     try {
-      await acceptReferral(code);
-      Alert.alert(
-        t('referral.successTitle', { defaultValue: 'Success' }),
-        t('referral.codeAppliedSuccess', { defaultValue: 'Referral code applied successfully!' })
-      );
-      setReferralCodeInput('');
+      // Track installation on server (also stores locally via acceptReferral)
+      const { trackReferralInstallation, completeReferralSetup, getUserId } = await import('../services/referralService');
+      const result = await trackReferralInstallation(code);
+
+      if (result && result.success) {
+        // Complete the referral setup so the referrer gets credit
+        const userId = await getUserId();
+        await completeReferralSetup(code, userId);
+
+        // Extend existing trial by referral bonus days
+        const { extendTrial, isTrialActive: checkTrialActive } = await import('../services/trialService');
+        const trialActive = await checkTrialActive();
+        if (trialActive) {
+          const bonusDays = Platform.OS === 'android' ? 15 : 15;
+          await extendTrial(bonusDays);
+          console.log(`[Settings] Extended trial by ${bonusDays} days for referral code`);
+        }
+
+        Alert.alert(
+          t('referral.successTitle', { defaultValue: 'Success' }),
+          t('referral.codeAppliedSuccess', { defaultValue: 'Referral code applied successfully! Your trial has been extended.' })
+        );
+        setReferralCodeInput('');
+      } else {
+        let errorMessage = t('referral.codeAppliedError', { defaultValue: 'Failed to apply referral code. Please try again.' });
+        if (result && result.error) {
+          if (result.error.includes('already used a referral code')) {
+            errorMessage = t('referral.alreadyUsedMessage', {
+              defaultValue: 'This device has already used a referral code. Each device can only use one referral code.'
+            });
+          } else if (result.error.includes('Invalid referral code')) {
+            errorMessage = t('referral.codeDoesNotExistMessage', {
+              defaultValue: 'This referral code does not exist. Please check and try again.'
+            });
+          } else {
+            errorMessage = result.error;
+          }
+        }
+        Alert.alert(
+          t('referral.errorTitle', { defaultValue: 'Error' }),
+          errorMessage
+        );
+      }
     } catch (error) {
       console.error('[Settings] Error applying referral code:', error);
       Alert.alert(

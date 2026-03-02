@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox } from 'react-native';
+import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox, Platform, Image } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
 
 // Log app startup
 console.log('[App] ====== APP STARTING ======');
@@ -610,12 +611,25 @@ export default function App() {
   };
 
   if (!fontsLoaded) {
+    // Hide Android navigation bar during splash
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('overlay-swipe');
+    }
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ffffff" />
-        <Text style={styles.loadingText}>Loading assets…</Text>
+        <Image
+          source={require('./assets/PP_logo_app.png')}
+          style={styles.loadingLogo}
+          resizeMode="contain"
+        />
       </View>
     );
+  }
+
+  // Restore Android navigation bar after loading
+  if (Platform.OS === 'android') {
+    NavigationBar.setVisibilityAsync('visible');
   }
 
   return (
@@ -719,14 +733,12 @@ export default function App() {
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#F2C31B',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  loadingText: {
-    marginTop: 12,
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+  loadingLogo: {
+    width: 200,
+    height: 200,
   },
 });
