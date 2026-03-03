@@ -213,17 +213,17 @@ export default function ReferralScreen({ navigation }) {
         <View style={styles.earnFreeSection}>
           <View style={styles.earnFreeContent}>
             <Text style={styles.earnFreeTitle}>
-              {t('referral.earnFreeMonthsTitle', { defaultValue: 'Earn Free Months!' })}
+              {t('referral.earnFreeTitle', { defaultValue: 'Earn Free Days!' })}
             </Text>
             <View style={styles.rewardsList}>
               <Text style={styles.rewardText}>
-                1 Friend = 1 Month Free!
+                1 Friend = 15 Days Free!
               </Text>
               <Text style={styles.rewardText}>
-                2 Friend = 2 Months Free
+                2 Friends = 30 Days Free
               </Text>
               <Text style={styles.rewardText}>
-                3+ Friends = 3 Months Free
+                3 Friends = 45 Days Free
               </Text>
             </View>
           </View>
@@ -277,7 +277,7 @@ export default function ReferralScreen({ navigation }) {
           <View style={styles.progressCard}>
             <Ionicons name="people" size={24} color={COLORS.TEXT} />
             <Text style={styles.progressCardValue}>
-              {completedCount} out of {Math.max(completedCount, 1)}
+              {completedCount} out of 3
             </Text>
             <Text style={styles.progressCardLabel}>
               {t('referral.statFriendsJoined', { defaultValue: 'Friends Joined' })}
@@ -286,10 +286,10 @@ export default function ReferralScreen({ navigation }) {
           <View style={styles.progressCard}>
             <Ionicons name="trophy" size={24} color={COLORS.TEXT} />
             <Text style={styles.progressCardValue}>
-              {monthsEarned} {monthsEarned === 1 ? 'Month' : 'Months'}
+              {monthsEarned * 15} {monthsEarned * 15 === 1 ? 'Day' : 'Days'}
             </Text>
             <Text style={styles.progressCardLabel}>
-              {t('referral.statMonthsEarned', { defaultValue: 'Months earned' })}
+              {t('referral.statDaysEarned', { defaultValue: 'Days earned' })}
             </Text>
           </View>
         </View>
@@ -345,7 +345,7 @@ export default function ReferralScreen({ navigation }) {
             {/* Content */}
             <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
               <Text style={styles.modalText}>
-                Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 1–3 months of free access. The more friends you invite, the more free months you get.
+                Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 15 extra days of free access per friend (up to 3 friends, 45 days max).
               </Text>
               
               <View style={styles.modalNote}>
