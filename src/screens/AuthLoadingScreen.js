@@ -96,6 +96,27 @@ export default function AuthLoadingScreen({ navigation }) {
     }
   }, [settingsLoading, userPlan]);
 
+  // Auto-register referral code on server & check for pending rewards
+  useEffect(() => {
+    const initReferralSystem = async () => {
+      try {
+        const { initializeReferralCode, checkAndApplyReferralRewards } = await import('../services/referralService');
+        // Register code on server (idempotent - safe to call every launch)
+        await initializeReferralCode();
+        // Check if referrer has earned rewards from friends' signups
+        const rewardsApplied = await checkAndApplyReferralRewards();
+        if (rewardsApplied > 0) {
+          console.log(`[AuthLoading] Applied ${rewardsApplied} referral reward(s)`);
+        }
+      } catch (error) {
+        console.log('[AuthLoading] Referral init error (non-critical):', error?.message);
+      }
+    };
+    if (!settingsLoading && !adminLoading) {
+      initReferralSystem();
+    }
+  }, [settingsLoading, adminLoading]);
+
   useEffect(() => {
     const navigate = async () => {
       // If userName is set, user has completed initial setup

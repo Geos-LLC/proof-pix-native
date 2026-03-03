@@ -339,19 +339,19 @@ export const logTeamMemberJoined = (payload = {}) => {
 // Referrals ----------------------------------------------------------------
 
 /**
- * Log referral events.
- * @param {string} action - 'sent' | 'received' | 'completed'
- * @param {object} payload
- *  - code
- *  - from_plan
- *  - to_plan
+ * Log referral events with full tracking data.
+ * @param {string} action - lifecycle stage of the referral
+ * @param {object} payload - all fields are passed through to Firebase
  */
 export const logReferralEvent = (action, payload = {}) => {
   logEvent('referral_event', {
     action,
     code: payload.code || null,
+    method: payload.method || null,
     from_plan: payload.from_plan || null,
     to_plan: payload.to_plan || null,
+    rewards: payload.rewards ?? null,
+    days_added: payload.days_added ?? null,
     timestamp: Date.now(),
   });
 };
