@@ -1776,7 +1776,7 @@ export default function SettingsScreen({ navigation, route }) {
     const activeAccount = getActiveAccount();
     const currentAccountType = activeAccount?.accountType || accountType || 'google';
 
-    if (!isAuthenticated || userMode !== 'admin' || isSigningIn) {
+    if ((!isAuthenticated && !isDropboxAuthenticatedForDisplay) || userMode !== 'admin' || isSigningIn) {
       return;
     }
 
@@ -3966,8 +3966,8 @@ export default function SettingsScreen({ navigation, route }) {
                             return;
                           }
 
-                          if (!isAuthenticated) {
-                            Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                          if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
+                            Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
                             return;
                           }
                           await handleSetupTeam();
@@ -3975,8 +3975,8 @@ export default function SettingsScreen({ navigation, route }) {
                         }
 
                         if (isEnterprise) {
-                          if (!isAuthenticated) {
-                            Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                          if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
+                            Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
                             return;
                           }
                           await handleSetupTeam();
@@ -4312,7 +4312,8 @@ export default function SettingsScreen({ navigation, route }) {
                         <TouchableOpacity
                           style={[
                             styles.setupTeamButtonNew,
-                            isSigningIn && styles.buttonDisabled
+                            isSigningIn && styles.buttonDisabled,
+                            (proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise')) && styles.setupTeamButtonConnected
                           ]}
                           onPress={async () => {
                             // Re-compute isTeamConnected using fresh values to avoid stale closure
@@ -4389,8 +4390,8 @@ export default function SettingsScreen({ navigation, route }) {
                                   return;
                                 }
 
-                                if (!isAuthenticated) {
-                                  Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                                if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
+                                  Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
                                   return;
                                 }
 
@@ -4405,8 +4406,8 @@ export default function SettingsScreen({ navigation, route }) {
 
                             // Enterprise - allow unlimited team members
                             if (isEnterprise) {
-                              if (!isAuthenticated) {
-                                Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                              if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
+                                Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
                                 return;
                               }
                               await handleSetupTeam();
@@ -4419,9 +4420,12 @@ export default function SettingsScreen({ navigation, route }) {
                           })()}
                         >
                           <View style={styles.setupTeamButtonContent}>
-                            <Ionicons name="people" size={20} color="#000" />
-                            <Text style={styles.setupTeamButtonTextNew}>
-                              {isTeamConnected 
+                            <Ionicons name="people" size={20} color={isTeamConnected ? '#FFFFFF' : '#000'} />
+                            <Text style={[
+                              styles.setupTeamButtonTextNew,
+                              isTeamConnected && styles.setupTeamButtonTextConnected
+                            ]}>
+                              {isTeamConnected
                                 ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
                                 : t('settings.setUpTeam', { defaultValue: 'Set up Team' })
                               }
@@ -6008,8 +6012,8 @@ export default function SettingsScreen({ navigation, route }) {
                                           return;
                                         }
 
-                                        if (!isAuthenticated) {
-                                          Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                                        if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
+                                          Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
                                           return;
                                         }
 
@@ -6024,8 +6028,8 @@ export default function SettingsScreen({ navigation, route }) {
 
                                     // Enterprise - allow unlimited team members
                                     if (isEnterprise) {
-                                      if (!isAuthenticated) {
-                                        Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
+                                      if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
+                                        Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
                                         return;
                                       }
                                       await handleSetupTeam();
@@ -9884,6 +9888,10 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
       justifyContent: 'center',
     },
+    setupTeamButtonConnected: {
+      backgroundColor: '#4CAF50',
+      borderColor: '#4CAF50',
+    },
     setupTeamButtonContent: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -9893,6 +9901,9 @@ const sliderStyles = StyleSheet.create({
       fontSize: 16,
       fontWeight: '600',
       color: '#000000',
+    },
+    setupTeamButtonTextConnected: {
+      color: '#FFFFFF',
     },
     disconnectButtonNew: {
       flex: 1,

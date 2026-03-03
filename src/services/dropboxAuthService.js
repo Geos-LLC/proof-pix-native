@@ -14,7 +14,7 @@ const STORAGE_KEYS = {
 
 // Dropbox OAuth configuration
 // These should be set in your .env file or app.config.js
-const DROPBOX_APP_KEY = process.env.EXPO_PUBLIC_DROPBOX_APP_KEY || '';
+const DROPBOX_APP_KEY = process.env.EXPO_PUBLIC_DROPBOX_APP_KEY || '78ht1k015widero';
 const DROPBOX_REDIRECT_URI = AuthSession.makeRedirectUri({
   scheme: 'proofpix',
   path: 'dropbox-auth',
