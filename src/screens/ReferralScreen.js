@@ -97,35 +97,15 @@ export default function ReferralScreen({ navigation }) {
         // non‑critical
       }
 
-      // Share the instructions message first
       await Share.share({
-        message: t('referral.shareIntroMessage', {
+        message: t('referral.shareMessage', {
+          code: referralCode,
           iosLink: iosAppStoreLink,
           androidLink: androidPlayStoreLink,
-          defaultValue: `Join ProofPix and get organized!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\nAfter installing, use my referral code to get started!`
+          defaultValue: `Join ProofPix and get organized!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\n🎁 Use my referral code: ${referralCode}\nYou'll get 15 extra days free!`
         }),
         title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
       });
-
-      // After first share completes, ask user if they want to share the code
-      Alert.alert(
-        t('referral.shareCodePromptTitle', { defaultValue: 'Share Referral Code?' }),
-        t('referral.shareCodePromptMessage', {
-          defaultValue: 'Now share your referral code as a separate message so they can easily copy it.'
-        }),
-        [
-          { text: t('common.cancel'), style: 'cancel' },
-          {
-            text: t('referral.shareCodeButton', { defaultValue: 'Share Code' }),
-            onPress: async () => {
-              await Share.share({
-                message: referralCode,
-                title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
-              });
-            }
-          }
-        ]
-      );
     } catch (error) {
       console.error('[ReferralScreen] Error sharing:', error);
       Alert.alert(
