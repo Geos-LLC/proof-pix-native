@@ -455,6 +455,22 @@ export const SettingsProvider = ({ children }) => {
       await AsyncStorage.removeItem(CUSTOM_ROOMS_KEY);
       // Clear developer tools unlock state when resetting data
       await AsyncStorage.removeItem('@dev_tools_unlocked');
+      // Clear photos, projects, trial, and referral data
+      await AsyncStorage.removeItem('cleaning-photos-metadata');
+      await AsyncStorage.removeItem('tracked-projects');
+      await AsyncStorage.removeItem('@user_trial_info');
+      await AsyncStorage.removeItem('@user_referral_code');
+      await AsyncStorage.removeItem('@referral_accepted');
+      await AsyncStorage.removeItem('@referral_rewards_applied');
+      await AsyncStorage.removeItem('@trial_notifications_shown');
+      // NOTE: intentionally NOT removing @proofpix_language — language preference should persist across resets
+      await AsyncStorage.removeItem('active-project-id');
+      await AsyncStorage.removeItem('label-cache-metadata');
+      await AsyncStorage.removeItem('@team_name');
+      await AsyncStorage.removeItem('@stored_individual_name');
+      await AsyncStorage.removeItem('@stored_individual_plan');
+      await AsyncStorage.removeItem('@stored_individual_mode');
+      await AsyncStorage.removeItem('@pending_trial_notification');
       setUserName('');
       setLocation('tampa');
       setShowLabels(true);

@@ -1156,10 +1156,9 @@ export function AdminProvider({ children }) {
         console.log('[ADMIN] Using existing userId:', userId);
       }
 
-      // Always get a fresh serverAuthCode - stored one may have been consumed already
+      // Get a serverAuthCode for the proxy session (try silently, never prompt user)
       if (accountType === 'google' || !accountType) {
         console.log('[ADMIN] Refreshing serverAuthCode via Google...');
-        await googleAuthService.clearServerAuthCode();
         const freshCode = await googleAuthService.refreshServerAuthCode();
         if (!freshCode) {
           console.warn('[ADMIN] Could not get fresh serverAuthCode');
@@ -1201,7 +1200,7 @@ export function AdminProvider({ children }) {
         await updateActiveAccount({ proxySessionId: result.sessionId, folderId: effectiveFolderId });
         console.log('[ADMIN] Proxy session initialized successfully');
         setIsInitializingProxy(false);
-        return { sessionId: result.sessionId, success: true };
+        return { sessionId: result.sessionId, folderId: effectiveFolderId, success: true };
       }
 
       throw new Error('Failed to initialize proxy session - no sessionId returned');

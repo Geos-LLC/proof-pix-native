@@ -63,6 +63,8 @@ export default function JoinTeamScreen({ navigation, route }) {
   const [inviteCode, setInviteCode] = useState(inviteFromParams);
   const [userName, setUserName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [codeFocused, setCodeFocused] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const inviteCodeRef = useRef(null);
 
@@ -223,17 +225,24 @@ export default function JoinTeamScreen({ navigation, route }) {
               <Text style={styles.inputLabel}>
                 {t('joinTeam.invitationCode', { defaultValue: 'Invitation Code' })}
               </Text>
-              <TextInput
-                ref={inviteCodeRef}
-                style={styles.textInput}
-                value={inviteCode}
-                onChangeText={setInviteCode}
-                placeholder={t('joinTeam.enterInviteCode', { defaultValue: 'Proofpix007' })}
-                placeholderTextColor="#000"
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="next"
-              />
+              <View>
+                {!codeFocused && !inviteCode && (
+                  <Text style={styles.customPlaceholder} pointerEvents="none">
+                    {t('joinTeam.enterInviteCode', { defaultValue: 'Proofpix007' })}
+                  </Text>
+                )}
+                <TextInput
+                  ref={inviteCodeRef}
+                  style={styles.textInput}
+                  value={inviteCode}
+                  onChangeText={setInviteCode}
+                  onFocus={() => setCodeFocused(true)}
+                  onBlur={() => setCodeFocused(false)}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                />
+              </View>
             </View>
           </View>
 
@@ -243,16 +252,23 @@ export default function JoinTeamScreen({ navigation, route }) {
               <Text style={styles.inputLabel}>
                 {t('firstLoad.yourName', { defaultValue: 'Your Name' })}
               </Text>
-              <TextInput
-                style={styles.textInput}
-                value={userName}
-                onChangeText={setUserName}
-                placeholder={'Alex Bond'}
-                placeholderTextColor="#000"
-                autoCapitalize="words"
-                autoCorrect={false}
-                returnKeyType="done"
-              />
+              <View>
+                {!nameFocused && !userName && (
+                  <Text style={styles.customPlaceholder} pointerEvents="none">
+                    Alex Bond
+                  </Text>
+                )}
+                <TextInput
+                  style={styles.textInput}
+                  value={userName}
+                  onChangeText={setUserName}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => setNameFocused(false)}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                />
+              </View>
             </View>
           </View>
 
@@ -568,6 +584,17 @@ const styles = StyleSheet.create({
     color: '#000000',
     padding: 0,
     margin: 0,
+  },
+  customPlaceholder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    fontSize: 15,
+    fontWeight: 'bold',
+    fontFamily: FONTS.ALEXANDRIA,
+    color: 'rgba(0,0,0,0.35)',
+    zIndex: 1,
+    lineHeight: 20,
   },
   joinButton: {
     backgroundColor: '#000000',

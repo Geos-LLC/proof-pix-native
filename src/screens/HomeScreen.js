@@ -40,9 +40,12 @@ import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import * as ExpoLocation from 'expo-location';
-import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, clearPendingTransactions } from '../services/iapService';
 import { isTrialActive } from '../services/trialService';
 import Constants from 'expo-constants';
+
+// Ensure a URI has the file:// prefix (expo FileSystem URIs already include it on Android)
+const ensureFileUri = (uri) => uri.startsWith('file://') ? uri : `file://${uri}`;
 
 // react-native-share for proper image file sharing (not available in Expo Go)
 let Share = {
@@ -142,6 +145,7 @@ export default function HomeScreen({ navigation }) {
   const [pendingCameraAfterCreate, setPendingCameraAfterCreate] = useState(false);
   const [combinedBaseUris, setCombinedBaseUris] = useState({});
   const [showPlanModal, setShowPlanModal] = useState(false);
+  const [trialActive, setTrialActive] = useState(false);
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [showDeleteProjectsConfirm, setShowDeleteProjectsConfirm] = useState(false);
   const deletedProjectIdsRef = useRef([]);
@@ -159,6 +163,13 @@ export default function HomeScreen({ navigation }) {
     const newRooms = getRooms();
     setRooms(newRooms);
   }, [customRooms]);
+
+  // Check trial status when plan modal opens
+  useEffect(() => {
+    if (showPlanModal) {
+      isTrialActive().then(active => setTrialActive(active)).catch(() => setTrialActive(false));
+    }
+  }, [showPlanModal]);
 
   const handleRoomLongPress = (room, event) => {
     setContextMenuRoom(room);
@@ -708,7 +719,7 @@ export default function HomeScreen({ navigation }) {
 
       await Share.open({
         title: `${t('common.before')}/${t('common.after')} - ${photoName}`,
-        url: `file://${tempUri}`,
+        url: ensureFileUri(tempUri),
         type: 'image/jpeg',
       });
 
@@ -1025,6 +1036,8 @@ export default function HomeScreen({ navigation }) {
                     resizeMode="contain"
                     fadeDuration={0}
                   />
+                ) : room.icon ? (
+                  <Text style={{ fontSize: 24 }}>{room.icon}</Text>
                 ) : (
                   <RoomIcon
                     roomId={room.id}
@@ -1380,8 +1393,8 @@ export default function HomeScreen({ navigation }) {
       {renderRoomTabs()}
 
       <View style={styles.content} {...panResponder.panHandlers}>
-        <ScrollView 
-          contentContainerStyle={{ paddingBottom: 120 }}
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 20 + insets.bottom + 50 + 80 }}
           showsVerticalScrollIndicator={false}
         >
           {renderPhotoGrid()}
@@ -1554,7 +1567,7 @@ export default function HomeScreen({ navigation }) {
                     }
                   }
                   await Share.open({
-                    url: `file://${shareUri}`,
+                    url: ensureFileUri(shareUri),
                     type: 'image/jpeg',
                     title: fullScreenPhoto.name || t('gallery.share'),
                   });
@@ -2067,7 +2080,7 @@ export default function HomeScreen({ navigation }) {
       <Modal
         visible={showPlanModal}
         animationType="slide"
-        presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
+        presentationStyle="fullScreen"
         onRequestClose={() => setShowPlanModal(false)}
       >
         <View style={[styles.planModalContainer, { paddingTop: Platform.OS === 'ios' ? 12 : insets.top }]}>
@@ -2077,9 +2090,9 @@ export default function HomeScreen({ navigation }) {
               style={styles.planModalBackButton}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
+              <Ionicons name="arrow-back" size={24} color="#000000" />
             </TouchableOpacity>
-            <Text style={styles.planModalTitle}>Upgrade a plan</Text>
+            <Text style={styles.planModalTitle}>Choose a Plan</Text>
             <View style={{ width: 40 }} />
           </View>
 
@@ -2123,7 +2136,25 @@ export default function HomeScreen({ navigation }) {
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.proPlanActivated', { defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' }));
                       } catch (err) {
                         if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        console.error('[IAP] Purchase error:', err?.message);
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                          [
+                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                            {
+                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                              onPress: async () => {
+                                try {
+                                  await clearPendingTransactions();
+                                } catch (e) {
+                                  console.warn('[IAP] Clear failed:', e?.message);
+                                }
+                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                              }
+                            },
+                          ]
+                        );
                         return;
                       }
                     } else {
@@ -2138,9 +2169,18 @@ export default function HomeScreen({ navigation }) {
               >
                 <View style={styles.planCardHeader}>
                   <Text style={styles.planCardTitle}>Pro</Text>
-                  <View style={styles.planBadgePrice}>
-                    <Text style={styles.planBadgeText}>$8.99/month</Text>
-                  </View>
+                  {trialActive ? (
+                    <View style={styles.planBadgeTrialRow}>
+                      <Text style={styles.planBadgeStrikethrough}>$8.99/month</Text>
+                      <View style={styles.planBadgeFree}>
+                        <Text style={styles.planBadgeText}>FREE</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.planBadgePrice}>
+                      <Text style={styles.planBadgeText}>$8.99/month</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.planCardDescription}>
                   Everything in Starter & For professionals. Cloud sync + bulk upload.
@@ -2170,7 +2210,25 @@ export default function HomeScreen({ navigation }) {
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.businessPlanActivated', { defaultValue: 'Business plan activated! You can now add up to 5 team members.' }));
                       } catch (err) {
                         if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        console.error('[IAP] Purchase error:', err?.message);
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                          [
+                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                            {
+                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                              onPress: async () => {
+                                try {
+                                  await clearPendingTransactions();
+                                } catch (e) {
+                                  console.warn('[IAP] Clear failed:', e?.message);
+                                }
+                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                              }
+                            },
+                          ]
+                        );
                         return;
                       }
                     } else {
@@ -2186,9 +2244,18 @@ export default function HomeScreen({ navigation }) {
               >
                 <View style={styles.planCardHeader}>
                   <Text style={styles.planCardTitle}>Business</Text>
-                  <View style={styles.planBadgePrice}>
-                    <Text style={styles.planBadgeText}>$24.99/month</Text>
-                  </View>
+                  {trialActive ? (
+                    <View style={styles.planBadgeTrialRow}>
+                      <Text style={styles.planBadgeStrikethrough}>$24.99/month</Text>
+                      <View style={styles.planBadgeFree}>
+                        <Text style={styles.planBadgeText}>FREE</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.planBadgePrice}>
+                      <Text style={styles.planBadgeText}>$24.99/month</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.planCardDescription}>
                   Everything in Pro & For small teams up to 5 members. $5.99 per additional team member.
@@ -2215,7 +2282,25 @@ export default function HomeScreen({ navigation }) {
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit.' }));
                       } catch (err) {
                         if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        console.error('[IAP] Purchase error:', err?.message);
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                          [
+                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                            {
+                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                              onPress: async () => {
+                                try {
+                                  await clearPendingTransactions();
+                                } catch (e) {
+                                  console.warn('[IAP] Clear failed:', e?.message);
+                                }
+                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                              }
+                            },
+                          ]
+                        );
                         return;
                       }
                     } else {
@@ -2232,9 +2317,18 @@ export default function HomeScreen({ navigation }) {
               >
                 <View style={styles.planCardHeader}>
                   <Text style={styles.planCardTitle}>Enterprise</Text>
-                  <View style={styles.planBadgePrice}>
-                    <Text style={styles.planBadgeText}>Starts at $69.99/month</Text>
-                  </View>
+                  {trialActive ? (
+                    <View style={styles.planBadgeTrialRow}>
+                      <Text style={styles.planBadgeStrikethrough}>$69.99/month</Text>
+                      <View style={styles.planBadgeFree}>
+                        <Text style={styles.planBadgeText}>FREE</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.planBadgePrice}>
+                      <Text style={styles.planBadgeText}>Starts at $69.99/month</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.planCardDescription}>
                   Everything in Business & For growing organizations with 15 team members and more
@@ -3136,14 +3230,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: '#F2C31B',
+    borderBottomWidth: 0,
+    borderBottomColor: 'transparent',
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
   planModalTitle: {
     fontSize: 18,
@@ -3190,7 +3284,7 @@ const styles = StyleSheet.create({
   // New card-style plan modal styles
   planModalContainer: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#F2C31B',
   },
   planModalBody: {
     flex: 1,
@@ -3267,6 +3361,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  planBadgeTrialRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  planBadgeStrikethrough: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#999999',
+    textDecorationLine: 'line-through',
   },
   planCardDescription: {
     fontSize: 14,

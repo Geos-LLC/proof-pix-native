@@ -362,7 +362,7 @@ class GoogleAuthService {
     try {
       this.configure();
 
-      // Try silent sign-in first (no UI)
+      // Try silent sign-in first (no UI — never prompt the user again)
       const silent = await GoogleSignin.signInSilently();
       if (silent?.data?.serverAuthCode) {
         console.log('[GoogleAuthService] Got fresh serverAuthCode via silent sign-in');
@@ -370,19 +370,25 @@ class GoogleAuthService {
         return silent.data.serverAuthCode;
       }
 
-      // Silent didn't provide auth code - do interactive sign-in
-      console.log('[GoogleAuthService] Silent sign-in did not provide serverAuthCode, trying interactive...');
-      const response = await GoogleSignin.signIn();
-      if (response?.data?.serverAuthCode) {
-        console.log('[GoogleAuthService] Got fresh serverAuthCode via interactive sign-in');
-        await AsyncStorage.setItem(SERVER_AUTH_CODE_KEY, response.data.serverAuthCode);
-        return response.data.serverAuthCode;
+      // Silent didn't return a serverAuthCode — fall back to the stored one.
+      // Do NOT call interactive signIn() here; the user already authorized
+      // and should not be prompted again just to upload.
+      console.log('[GoogleAuthService] Silent sign-in did not provide serverAuthCode, checking stored code...');
+      const storedCode = await AsyncStorage.getItem(SERVER_AUTH_CODE_KEY);
+      if (storedCode) {
+        console.log('[GoogleAuthService] Using stored serverAuthCode');
+        return storedCode;
       }
 
-      console.warn('[GoogleAuthService] Could not obtain fresh serverAuthCode');
+      console.warn('[GoogleAuthService] No serverAuthCode available (silent or stored)');
       return null;
     } catch (error) {
       console.warn('[GoogleAuthService] refreshServerAuthCode error:', error?.message);
+      // Still try the stored code as last resort
+      try {
+        const storedCode = await AsyncStorage.getItem(SERVER_AUTH_CODE_KEY);
+        if (storedCode) return storedCode;
+      } catch (_) {}
       return null;
     }
   }

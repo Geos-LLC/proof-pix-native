@@ -44,6 +44,8 @@ import {
   getOrCreateReferralCode,
   getReferralInfo,
   acceptReferral,
+  getReferralStatsFromServer,
+  getUserId,
 } from '../services/referralService';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import proxyService from '../services/proxyService';
@@ -69,6 +71,8 @@ import {
 import { IAP_PRODUCTS, purchaseProduct, restorePurchases, clearPendingTransactions } from '../services/iapService';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
+import * as Updates from 'expo-updates';
+import { isRTLLanguage } from '../hooks/useRTL';
 import { LOCATIONS, getLocationName } from '../config/locations';
 
 const getFontOptions = (t) => [
@@ -342,7 +346,7 @@ export default function SettingsScreen({ navigation, route }) {
   const [trialActive, setTrialActive] = useState(false);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
   const [trialPlan, setTrialPlan] = useState(null);
-  const [trialDuration, setTrialDuration] = useState(30);
+  const [trialDuration, setTrialDuration] = useState(15);
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [colorModalType, setColorModalType] = useState(null);
   const [draftColor, setDraftColor] = useState(labelBackgroundColor);
@@ -575,7 +579,7 @@ export default function SettingsScreen({ navigation, route }) {
       setTrialActive(active);
       setTrialDaysRemaining(daysRemaining);
       setTrialPlan(plan);
-      setTrialDuration(trialInfo?.durationDays || 30);
+      setTrialDuration(trialInfo?.durationDays || 15);
     };
     loadTrialInfo();
   }, []);
@@ -653,7 +657,7 @@ export default function SettingsScreen({ navigation, route }) {
           setTrialActive(active);
           setTrialDaysRemaining(daysRemaining);
           setTrialPlan(plan);
-          setTrialDuration(trialInfo?.durationDays || 30);
+          setTrialDuration(trialInfo?.durationDays || 15);
         } catch (error) {
           console.error('[SETTINGS] Error loading trial info:', error);
         }
@@ -849,12 +853,14 @@ export default function SettingsScreen({ navigation, route }) {
     };
   }, [isTeamMember, isAuthenticated]);
   const [showRoomEditor, setShowRoomEditor] = useState(false);
+  const [editingName, setEditingName] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [referralInfo, setReferralInfo] = useState({
     code: '',
     invitesSent: [],
     rewardsEarned: 0,
     totalMonthsEarned: 0,
+    completedInvites: 0,
   });
   const [referralCodeInput, setReferralCodeInput] = useState('');
   const [isApplyingReferral, setIsApplyingReferral] = useState(false);
@@ -888,6 +894,31 @@ export default function SettingsScreen({ navigation, route }) {
 
   const isTeamMember = userMode === 'team_member';
   const [canSwitchBack, setCanSwitchBack] = useState(false);
+
+  // Fetch referral stats from server when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const fetchReferralStats = async () => {
+        try {
+          const userId = await getUserId();
+          if (!userId) return;
+          const stats = await getReferralStatsFromServer(userId);
+          if (stats) {
+            setReferralInfo({
+              code: stats.code || '',
+              invitesSent: [],
+              rewardsEarned: stats.completedInvites || 0,
+              totalMonthsEarned: stats.monthsEarned || 0,
+              completedInvites: stats.completedInvites || 0,
+            });
+          }
+        } catch (error) {
+          console.log('[Settings] Failed to fetch referral stats:', error?.message);
+        }
+      };
+      fetchReferralStats();
+    }, [])
+  );
 
   const currentFontOption = useMemo(() => {
     return (
@@ -1778,7 +1809,7 @@ export default function SettingsScreen({ navigation, route }) {
     const activeAccount = getActiveAccount();
     const currentAccountType = activeAccount?.accountType || accountType || 'google';
 
-    if (!isAuthenticated || userMode !== 'admin' || isSigningIn) {
+    if ((!isAuthenticated && !isDropboxAuthenticatedForDisplay) || isSigningIn) {
       return;
     }
 
@@ -2405,7 +2436,12 @@ export default function SettingsScreen({ navigation, route }) {
   };
 
   const changeLanguage = (languageCode) => {
+    const wasRTL = isRTLLanguage(i18n.language);
+    const willBeRTL = isRTLLanguage(languageCode);
+
     i18n.changeLanguage(languageCode);
+    // Explicitly persist language choice (safety net for async detector)
+    AsyncStorage.setItem('@proofpix_language', languageCode).catch(() => {});
     // Analytics: track app language change
     try {
       logLanguageChange(languageCode);
@@ -2413,6 +2449,23 @@ export default function SettingsScreen({ navigation, route }) {
       // non‑critical
     }
     setLanguageModalVisible(false);
+
+    // RTL direction change requires app restart to take full effect
+    if (wasRTL !== willBeRTL) {
+      Alert.alert(
+        willBeRTL ? 'إعادة تشغيل مطلوبة' : 'Restart Required',
+        willBeRTL
+          ? 'يرجى إعادة تشغيل التطبيق لتطبيق اتجاه اللغة العربية بشكل صحيح.'
+          : 'Please restart the app to apply the language direction correctly.',
+        [
+          { text: willBeRTL ? 'لاحقاً' : 'Later', style: 'cancel' },
+          {
+            text: willBeRTL ? 'إعادة تشغيل' : 'Restart Now',
+            onPress: () => Updates.reloadAsync(),
+          },
+        ]
+      );
+    }
   };
 
   const getCurrentLanguage = () => {
@@ -2707,7 +2760,7 @@ export default function SettingsScreen({ navigation, route }) {
       <ScrollView 
         ref={mainScrollViewRef}
         style={styles.content}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 20 + insets.bottom + 50 + 80 }}
         onLayout={(event) => {
           const { height } = event.nativeEvent.layout;
           setScrollContainerHeight(height);
@@ -2730,8 +2783,8 @@ export default function SettingsScreen({ navigation, route }) {
                 </Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.editButton}>
-              <Image 
+            <TouchableOpacity style={styles.editButton} onPress={() => { setName(userName); setEditingName(true); }}>
+              <Image
               source={require('../../assets/icons/pen.png')}
               style={{ width: 25, height: 25 }}
               />
@@ -2923,9 +2976,16 @@ export default function SettingsScreen({ navigation, route }) {
                       : t('settings.watermarkDefaultDescription', { defaultValue: 'Using default watermark (Powered by ProofPix)' })}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#666666" />
+                {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                    <Ionicons name="lock-closed" size={16} color="#EAB308" />
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color="#666666" />
+                )}
               </TouchableOpacity>
-              {customWatermarkEnabled && (
+              {customWatermarkEnabled && canUse(FEATURES.CUSTOM_WATERMARKS) && (
                 <View style={styles.watermarkCustomization}>
                   {/* Add Watermark Checkbox */}
                   <View style={styles.settingRow}>
@@ -2938,20 +2998,6 @@ export default function SettingsScreen({ navigation, route }) {
                     <Switch
                       value={showWatermark}
                       onValueChange={(value) => {
-                        // Check if user has access to customize watermark
-                        if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-                          // Starter users cannot turn off watermark - show tier popup
-                          if (value === false) {
-                            try {
-                              logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
-                              logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'toggle_blocked');
-                            } catch (e) {
-                              // non‑critical
-                            }
-                            setShowPlanModal(true);
-                            return;
-                          }
-                        }
                         updateShowWatermark(value);
                       }}
                       trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
@@ -3510,9 +3556,24 @@ export default function SettingsScreen({ navigation, route }) {
                             if (err?.message === 'USER_CANCELLED') {
                               return;
                             }
+                            console.error('[IAP] Purchase error:', err?.message);
                             Alert.alert(
                               t('common.error', { defaultValue: 'Error' }),
-                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                              t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                              [
+                                { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                                {
+                                  text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                                  onPress: async () => {
+                                    try {
+                                      await clearPendingTransactions();
+                                    } catch (e) {
+                                      console.warn('[IAP] Clear failed:', e?.message);
+                                    }
+                                    Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                                  }
+                                },
+                              ]
                             );
                             return;
                           }
@@ -3539,9 +3600,24 @@ export default function SettingsScreen({ navigation, route }) {
                             if (err?.message === 'USER_CANCELLED') {
                               return;
                             }
+                            console.error('[IAP] Purchase error:', err?.message);
                             Alert.alert(
                               t('common.error', { defaultValue: 'Error' }),
-                              t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                              t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                              [
+                                { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                                {
+                                  text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                                  onPress: async () => {
+                                    try {
+                                      await clearPendingTransactions();
+                                    } catch (e) {
+                                      console.warn('[IAP] Clear failed:', e?.message);
+                                    }
+                                    Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                                  }
+                                },
+                              ]
                             );
                             return;
                           }
@@ -3566,12 +3642,13 @@ export default function SettingsScreen({ navigation, route }) {
                             try {
                               await purchaseProduct(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
                             } catch (err) {
-                              if (err?.message === 'USER_CANCELLED') {
+                              console.error('[SETTINGS] Enterprise purchase error:', err?.message, err);
+                              if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                                 return;
                               }
                               Alert.alert(
                                 t('common.error', { defaultValue: 'Error' }),
-                                t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                                `Purchase failed: ${err?.message || 'Unknown error'}. Please try again.`
                               );
                               return;
                             }
@@ -3887,8 +3964,8 @@ export default function SettingsScreen({ navigation, route }) {
                             console.log('[DROPBOX] User info:', userInfo);
                             console.log('[DROPBOX] Is authenticated:', isAuth);
                             
-                            // For enterprise users, add Dropbox account to connectedAccounts and activate it
-                            if (userPlan === 'enterprise' && upsertConnectedAccount) {
+                            // For business/enterprise users, add Dropbox account to connectedAccounts and activate it
+                            if ((userPlan === 'business' || userPlan === 'enterprise') && upsertConnectedAccount) {
                               try {
                                 const dropboxAccount = {
                                   id: userInfo.account_id || userInfo.email || `dropbox_${Date.now()}`,
@@ -3962,13 +4039,15 @@ export default function SettingsScreen({ navigation, route }) {
                     <TouchableOpacity
                       style={[
                         styles.teamButton,
-                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro' || isSigningIn) && styles.teamButtonDisabled
+                        ((!effectivePlan || effectivePlan === 'starter') || effectivePlan === 'pro' || isSigningIn) && styles.teamButtonDisabled,
+                        (proxySessionId && (effectivePlan === 'business' || effectivePlan === 'enterprise')) && styles.teamButtonConnected
                       ]}
                       onPress={async () => {
-                        const isStarter = !userPlan || userPlan === 'starter';
-                        const isPro = userPlan === 'pro';
-                        const isBusiness = userPlan === 'business';
-                        const isEnterprise = userPlan === 'enterprise';
+                        const plan = effectivePlan || userPlan;
+                        const isStarter = !plan || plan === 'starter';
+                        const isPro = plan === 'pro';
+                        const isBusiness = plan === 'business';
+                        const isEnterprise = plan === 'enterprise';
 
                         // Check if team is already connected
                         const teamConnected = proxySessionId && userMode === 'admin' && (isBusiness || isEnterprise);
@@ -4010,10 +4089,10 @@ export default function SettingsScreen({ navigation, route }) {
                         }
 
                         if (isBusiness) {
-                          const maxTeamMembers = getLimit('maxTeamMembers', userPlan);
+                          const maxTeamMembers = getLimit('maxTeamMembers', plan);
                           const currentTeamMembers = inviteTokens?.length || 0;
 
-                          if (exceedsLimit('maxTeamMembers', userPlan, currentTeamMembers)) {
+                          if (exceedsLimit('maxTeamMembers', plan, currentTeamMembers)) {
                             Alert.alert(
                               t('settings.teamLimitReached'),
                               t('settings.teamLimitMessage', { limit: maxTeamMembers })
@@ -4025,7 +4104,12 @@ export default function SettingsScreen({ navigation, route }) {
                             Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
                             return;
                           }
-                          await handleSetupTeam();
+                          try {
+                            await handleSetupTeam();
+                          } catch (err) {
+                            console.error('[SET_UP_TEAM] Business setup error:', err);
+                            Alert.alert('Error', err?.message || 'Failed to set up team. Please try again.');
+                          }
                           return;
                         }
 
@@ -4034,7 +4118,12 @@ export default function SettingsScreen({ navigation, route }) {
                             Alert.alert(t('settings.signInRequired'), t('settings.connectGoogleFirst'));
                             return;
                           }
-                          await handleSetupTeam();
+                          try {
+                            await handleSetupTeam();
+                          } catch (err) {
+                            console.error('[SET_UP_TEAM] Enterprise setup error:', err);
+                            Alert.alert('Error', err?.message || 'Failed to set up team. Please try again.');
+                          }
                           return;
                         }
                       }}
@@ -4043,9 +4132,10 @@ export default function SettingsScreen({ navigation, route }) {
                       <Image source={require('../../assets/icons/team.png')} style={{ width: 20, height: 20 }} />
                       <Text style={[
                         styles.teamButtonText,
-                        ((!userPlan || userPlan === 'starter') || userPlan === 'pro') && styles.teamButtonTextDisabled
+                        ((!effectivePlan || effectivePlan === 'starter') || effectivePlan === 'pro') && styles.teamButtonTextDisabled,
+                        (proxySessionId && (effectivePlan === 'business' || effectivePlan === 'enterprise')) && styles.teamButtonTextConnected
                       ]}>
-                        {proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise')
+                        {proxySessionId && (effectivePlan === 'business' || effectivePlan === 'enterprise')
                           ? t('settings.manageTeam', { defaultValue: 'Manage Team' })
                           : t('settings.setUpTeam', { defaultValue: 'Set up Team' })
                         }
@@ -4212,7 +4302,7 @@ export default function SettingsScreen({ navigation, route }) {
                   const isAppleAccount = accountType === 'apple';
 
                   // Check if team is connected (proxySessionId exists, userMode === 'admin', AND plan supports teams)
-                  const isTeamConnected = proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise');
+                  const isTeamConnected = proxySessionId && (userPlan === 'business' || userPlan === 'enterprise');
                   
                   return (
                     <>
@@ -4333,6 +4423,29 @@ export default function SettingsScreen({ navigation, route }) {
                                 const userInfo = dropboxAuthService.getUserInfo();
                                 setIsDropboxAuthenticated(isAuth);
                                 setDropboxUserInfo(userInfo);
+
+                                // For business/enterprise users, add Dropbox account to connectedAccounts
+                                if ((userPlan === 'business' || userPlan === 'enterprise') && upsertConnectedAccount) {
+                                  try {
+                                    const dropboxAccount = {
+                                      id: userInfo.account_id || userInfo.email || `dropbox_${Date.now()}`,
+                                      email: userInfo.email,
+                                      name: userInfo.name?.display_name || userInfo.name?.given_name || userInfo.email,
+                                      givenName: userInfo.name?.given_name || userInfo.name?.display_name,
+                                      photo: null,
+                                    };
+                                    const hasActiveAccount = connectedAccounts?.some(acc => acc.isActive);
+                                    await upsertConnectedAccount(dropboxAccount, {
+                                      accountType: 'dropbox',
+                                      userMode: userMode || 'admin',
+                                      isActive: !hasActiveAccount,
+                                    });
+                                    console.log('[DROPBOX] Account added to connected accounts');
+                                  } catch (accountError) {
+                                    console.error('[DROPBOX] Error adding account to connected accounts:', accountError);
+                                  }
+                                }
+
                                 Alert.alert(
                                   t('settings.dropboxConnected'),
                                   t('settings.dropboxConnectedMessage', { email: userInfo?.email || '' }),
@@ -4366,11 +4479,12 @@ export default function SettingsScreen({ navigation, route }) {
                         <TouchableOpacity
                           style={[
                             styles.setupTeamButtonNew,
-                            isSigningIn && styles.buttonDisabled
+                            isSigningIn && styles.buttonDisabled,
+                            (proxySessionId && (userPlan === 'business' || userPlan === 'enterprise')) && styles.setupTeamButtonConnected
                           ]}
                           onPress={async () => {
                             // Re-compute isTeamConnected using fresh values to avoid stale closure
-                            const currentIsTeamConnected = proxySessionId && userMode === 'admin' && (userPlan === 'business' || userPlan === 'enterprise');
+                            const currentIsTeamConnected = proxySessionId && (userPlan === 'business' || userPlan === 'enterprise');
 
                             console.log('[MANAGE_TEAM] Button pressed!');
                             console.log('[MANAGE_TEAM] userPlan:', userPlan);
@@ -5004,7 +5118,7 @@ export default function SettingsScreen({ navigation, route }) {
               <Image source={require('../../assets/icons/team.png')} style={{height:25, width: 25}}/>
               <View >
               <Text style={styles.referralStatValue}>
-                {t('settings.outOf', { current: referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0, total: 3, defaultValue: `${referralInfo.invitesSent?.filter(inv => inv.status === 'completed').length || 0} out of 3` })}
+                {t('settings.outOf', { current: referralInfo.completedInvites || 0, total: 3, defaultValue: `${referralInfo.completedInvites || 0} out of 3` })}
               </Text>
               <Text style={styles.referralStatLabel}>
                 {t('settings.friendsJoined', { defaultValue: 'Friends Joined' })}
@@ -5015,10 +5129,10 @@ export default function SettingsScreen({ navigation, route }) {
               <Image source={require('../../assets/icons/cup.png')} style={{height:25, width: 25}}/>
               <View>
               <Text style={styles.referralStatValue}>
-                {t('settings.monthsCount', { count: referralInfo.totalMonthsEarned || 0, defaultValue: `${referralInfo.totalMonthsEarned || 0} Months` })}
+                {t('settings.daysCount', { count: (referralInfo.completedInvites || 0) * 15, defaultValue: `${(referralInfo.completedInvites || 0) * 15} Days` })}
               </Text>
               <Text style={styles.referralStatLabel}>
-                {t('settings.monthsEarned', { defaultValue: 'Months earned' })}
+                {t('settings.daysEarned', { defaultValue: 'Days earned' })}
               </Text>
               </View>
             </View>
@@ -5117,38 +5231,6 @@ export default function SettingsScreen({ navigation, route }) {
               >
                 <Text style={styles.testToolsButtonText}>🧪 Test Tools</Text>
               </TouchableOpacity>
-              {Platform.OS === 'ios' && (
-                <TouchableOpacity
-                  style={[styles.testToolsButton, { backgroundColor: '#fff3e0', marginTop: 10 }]}
-                  onPress={async () => {
-                    Alert.alert(
-                      'Clear IAP Cache',
-                      'Clear stuck sandbox transactions.\n\nNote: Sandbox transactions often cannot be fully cleared.\n\nContinue?',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Clear',
-                          style: 'destructive',
-                          onPress: async () => {
-                            try {
-                              const success = await clearPendingTransactions();
-                              Alert.alert(
-                                'Cache Cleared',
-                                `Cleared sandbox transactions.\n\nNote: Red errors in console are normal for old sandbox transactions. These are cosmetic and can be ignored.`,
-                                [{ text: 'OK' }]
-                              );
-                            } catch (error) {
-                              Alert.alert('Error', 'Failed to clear cache.');
-                            }
-                          }
-                        }
-                      ]
-                    );
-                  }}
-                >
-                  <Text style={[styles.testToolsButtonText, { color: '#e65100' }]}>🗑️ Clear IAP Cache</Text>
-                </TouchableOpacity>
-              )}
             </>
           )}
         </View>
@@ -5210,6 +5292,43 @@ export default function SettingsScreen({ navigation, route }) {
           }}
           initialRooms={customRooms}
         />
+
+      {/* Edit Name Modal */}
+      <RNModal visible={editingName} animationType="slide" transparent={true}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: 'white', borderRadius: 16, padding: 24, width: '85%' }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.TEXT, marginBottom: 16 }}>
+              {t('settings.editName', { defaultValue: 'Edit Name' })}
+            </Text>
+            <TextInput
+              style={{ borderWidth: 1, borderColor: COLORS.BORDER, borderRadius: 10, padding: 12, fontSize: 16, color: COLORS.TEXT }}
+              value={name}
+              onChangeText={setName}
+              placeholder=""
+              autoFocus={true}
+              maxLength={40}
+            />
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16, gap: 12 }}>
+              <TouchableOpacity onPress={() => setEditingName(false)} style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
+                <Text style={{ fontSize: 16, color: COLORS.GRAY }}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  if (name.trim()) {
+                    await updateUserInfo(name.trim());
+                    setEditingName(false);
+                  } else {
+                    Alert.alert(t('common.error'), t('settings.nameRequired', { defaultValue: 'Please enter your name' }));
+                  }
+                }}
+                style={{ backgroundColor: '#000', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
+              >
+                <Text style={{ fontSize: 16, color: '#fff', fontWeight: '600' }}>{t('common.save')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </RNModal>
 
       <Modal
         isVisible={colorModalVisible}
@@ -5468,7 +5587,7 @@ export default function SettingsScreen({ navigation, route }) {
         <RNModal
           visible={showPlanModal}
           animationType="slide"
-          presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
+          presentationStyle="fullScreen"
           onRequestClose={() => setShowPlanModal(false)}
         >
           <View style={[styles.planModalContainer, { paddingTop: Platform.OS === 'ios' ? 12 : insets.top }]}>
@@ -5478,9 +5597,9 @@ export default function SettingsScreen({ navigation, route }) {
                 style={styles.planModalBackButton}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
+                <Ionicons name="arrow-back" size={24} color="#000000" />
               </TouchableOpacity>
-              <Text style={styles.planModalTitle}>Upgrade a plan</Text>
+              <Text style={styles.planModalTitle}>Choose a Plan</Text>
               <View style={{ width: 40 }} />
             </View>
 
@@ -5564,9 +5683,24 @@ export default function SettingsScreen({ navigation, route }) {
                             return;
                           }
                           
+                          console.error('[IAP] Purchase error:', err?.message);
                           Alert.alert(
                             t('common.error', { defaultValue: 'Error' }),
-                            t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                            [
+                              { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                              {
+                                text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                                onPress: async () => {
+                                  try {
+                                    await clearPendingTransactions();
+                                  } catch (e) {
+                                    console.warn('[IAP] Clear failed:', e?.message);
+                                  }
+                                  Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                                }
+                              },
+                            ]
                           );
                           return;
                         }
@@ -5586,9 +5720,18 @@ export default function SettingsScreen({ navigation, route }) {
                 >
                   <View style={styles.planCardHeader}>
                     <Text style={styles.planCardTitle}>Pro</Text>
-                    <View style={styles.planBadgePrice}>
-                      <Text style={styles.planBadgeText}>$8.99/month</Text>
-                    </View>
+                    {trialActive ? (
+                      <View style={styles.planBadgeTrialRow}>
+                        <Text style={styles.planBadgeStrikethrough}>$8.99/month</Text>
+                        <View style={styles.planBadgeFree}>
+                          <Text style={styles.planBadgeText}>FREE</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.planBadgePrice}>
+                        <Text style={styles.planBadgeText}>$8.99/month</Text>
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.planCardDescription}>
                     Everything in Starter & For professionals. Cloud sync + bulk upload.
@@ -5648,9 +5791,24 @@ export default function SettingsScreen({ navigation, route }) {
                             return;
                           }
                           
+                          console.error('[IAP] Purchase error:', err?.message);
                           Alert.alert(
                             t('common.error', { defaultValue: 'Error' }),
-                            t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                            [
+                              { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                              {
+                                text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                                onPress: async () => {
+                                  try {
+                                    await clearPendingTransactions();
+                                  } catch (e) {
+                                    console.warn('[IAP] Clear failed:', e?.message);
+                                  }
+                                  Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                                }
+                              },
+                            ]
                           );
                           return;
                         }
@@ -5671,9 +5829,18 @@ export default function SettingsScreen({ navigation, route }) {
                 >
                   <View style={styles.planCardHeader}>
                     <Text style={styles.planCardTitle}>Business</Text>
-                    <View style={styles.planBadgePrice}>
-                      <Text style={styles.planBadgeText}>$24.99/month</Text>
-                    </View>
+                    {trialActive ? (
+                      <View style={styles.planBadgeTrialRow}>
+                        <Text style={styles.planBadgeStrikethrough}>$24.99/month</Text>
+                        <View style={styles.planBadgeFree}>
+                          <Text style={styles.planBadgeText}>FREE</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.planBadgePrice}>
+                        <Text style={styles.planBadgeText}>$24.99/month</Text>
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.planCardDescription}>
                     Everything in Pro & For small teams up to 5 members. $5.99 per additional team member.
@@ -5714,22 +5881,23 @@ export default function SettingsScreen({ navigation, route }) {
                           // Purchase succeeded - update plan
                           await updatePlanLimit(15);
                           await updateUserPlan('enterprise');
-                          
+
                           // Wait for context to update
                           await new Promise(resolve => setTimeout(resolve, 500));
-                          
+
                           Alert.alert(
                             t('common.success', { defaultValue: 'Success' }),
                             t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit. You can now manage multiple accounts and teams.' })
                           );
                         } catch (err) {
+                          console.error('[SETTINGS] Enterprise purchase error:', err?.message, err);
                           if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') {
                             return;
                           }
-                          
+
                           Alert.alert(
                             t('common.error', { defaultValue: 'Error' }),
-                            t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' })
+                            `Purchase failed: ${err?.message || 'Unknown error'}. Please try again.`
                           );
                           return;
                         }
@@ -5755,9 +5923,18 @@ export default function SettingsScreen({ navigation, route }) {
                 >
                   <View style={styles.planCardHeader}>
                     <Text style={styles.planCardTitle}>Enterprise</Text>
-                    <View style={styles.planBadgePrice}>
-                      <Text style={styles.planBadgeText}>Starts at $69.99/month</Text>
-                    </View>
+                    {trialActive ? (
+                      <View style={styles.planBadgeTrialRow}>
+                        <Text style={styles.planBadgeStrikethrough}>$69.99/month</Text>
+                        <View style={styles.planBadgeFree}>
+                          <Text style={styles.planBadgeText}>FREE</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.planBadgePrice}>
+                        <Text style={styles.planBadgeText}>Starts at $69.99/month</Text>
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.planCardDescription}>
                     Everything in Business & For growing organizations with 15 team members and more
@@ -5806,10 +5983,9 @@ export default function SettingsScreen({ navigation, route }) {
                     key={language.code}
                     style={styles.languageOptionBottomSheet}
                     onPress={() => {
-                      i18n.changeLanguage(language.code);
+                      changeLanguage(language.code);
                       updateLabelLanguage(language.code);
                       updateSectionLanguage(language.code);
-                      setLanguageModalVisible(false);
                     }}
                   >
                     <View style={styles.flagCircle}>
@@ -7399,10 +7575,12 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.TEXT,
       fontWeight: '600',
       fontSize: 15,
+      flexShrink: 1,
     },
     settingDescription: {
       color: COLORS.GRAY,
-      fontSize: 12
+      fontSize: 12,
+      flexShrink: 1,
     },
     optionGroup: {
       flexDirection: 'row',
@@ -7759,7 +7937,7 @@ const sliderStyles = StyleSheet.create({
     },
     planModalContainer: {
       flex: 1,
-      backgroundColor: '#FAFAFA',
+      backgroundColor: '#F2C31B',
     },
     planModalHeader: {
       flexDirection: 'row',
@@ -7767,14 +7945,14 @@ const sliderStyles = StyleSheet.create({
       justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 16,
-      backgroundColor: 'white',
-      borderBottomWidth: 1,
-      borderBottomColor: '#E5E5E5',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 2,
-      elevation: 2,
+      backgroundColor: '#F2C31B',
+      borderBottomWidth: 0,
+      borderBottomColor: 'transparent',
+      shadowColor: 'transparent',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      elevation: 0,
     },
     planModalBackButton: {
       width: 40,
@@ -7864,6 +8042,17 @@ const sliderStyles = StyleSheet.create({
       fontSize: 12,
       fontWeight: '700',
       letterSpacing: 0.3,
+    },
+    planBadgeTrialRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    planBadgeStrikethrough: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: '#999999',
+      textDecorationLine: 'line-through',
     },
     planCardDescription: {
       fontSize: 14,

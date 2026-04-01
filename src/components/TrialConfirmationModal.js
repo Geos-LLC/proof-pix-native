@@ -11,6 +11,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 
+const BASE_TRIAL_DAYS = 15;
+const REFERRAL_BONUS_DAYS = 15;
+
 export default function TrialConfirmationModal({ visible, planName, onUseTrial, onCancel }) {
   const [trialDays, setTrialDays] = useState(30);
 

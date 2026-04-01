@@ -2,11 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logTrialEvent } from '../utils/analytics';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
-const TRIAL_DURATION_DAYS = 30;
+const TRIAL_DURATION_DAYS = 15;
+const REFERRAL_BONUS_DAYS = 15;
 
 /**
  * Trial Service
- * Manages 30-day free trial for any tier (for new users)
+ * Manages free trial for any tier (for new users)
+ * 15-day trial on all platforms
  */
 
 /**
@@ -276,7 +278,7 @@ export const extendTrial = async (additionalDays) => {
     const updatedTrialInfo = {
       ...trialInfo,
       endDate: newEndDate.toISOString(),
-      durationDays: (trialInfo.durationDays || 30) + additionalDays,
+      durationDays: (trialInfo.durationDays || 15) + additionalDays,
     };
 
     await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(updatedTrialInfo));

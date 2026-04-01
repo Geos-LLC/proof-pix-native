@@ -55,7 +55,9 @@ export default function PlanSelectionScreen({ navigation }) {
 
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [trialAvailable, setTrialAvailable] = useState(true);
-  const [trialDays, setTrialDays] = useState(30);
+  const baseTrial = 15;
+  const referralBonus = 15;
+  const [trialDays, setTrialDays] = useState(baseTrial);
   const [showTrialModal, setShowTrialModal] = useState(false);
   const [trialNotification, setTrialNotification] = useState(null);
   const [showTrialConfirmation, setShowTrialConfirmation] = useState(false);
@@ -451,7 +453,14 @@ export default function PlanSelectionScreen({ navigation }) {
                   style={styles.priceBadgeGradient}
                   fallbackColor="rgba(11, 131, 33, 0.14)"
                 />
-                <Text style={styles.priceText}>$8.99/month</Text>
+                {trialAvailable ? (
+                  <View style={styles.trialPriceRow}>
+                    <Text style={styles.priceTextStrikethrough}>$8.99/month</Text>
+                    <Text style={styles.priceText}>FREE</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.priceText}>$8.99/month</Text>
+                )}
               </View>
             </View>
             <Text style={styles.planCardDescription}>
@@ -488,7 +497,14 @@ export default function PlanSelectionScreen({ navigation }) {
                   style={styles.priceBadgeGradient}
                   fallbackColor="rgba(11, 131, 33, 0.14)"
                 />
-                <Text style={styles.priceText}>$24.99/month</Text>
+                {trialAvailable ? (
+                  <View style={styles.trialPriceRow}>
+                    <Text style={styles.priceTextStrikethrough}>$24.99/month</Text>
+                    <Text style={styles.priceText}>FREE</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.priceText}>$24.99/month</Text>
+                )}
               </View>
             </View>
             <Text style={styles.planCardDescription}>
@@ -520,7 +536,14 @@ export default function PlanSelectionScreen({ navigation }) {
                   style={styles.priceBadgeGradientWide}
                   fallbackColor="rgba(11, 131, 33, 0.14)"
                 />
-                <Text style={styles.priceText}>Starts at $69.99/month</Text>
+                {trialAvailable ? (
+                  <View style={styles.trialPriceRow}>
+                    <Text style={styles.priceTextStrikethrough}>$69.99/month</Text>
+                    <Text style={styles.priceText}>FREE</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.priceText}>Starts at $69.99/month</Text>
+                )}
               </View>
             </View>
             <Text style={styles.planCardDescription}>
@@ -577,6 +600,7 @@ export default function PlanSelectionScreen({ navigation }) {
         transparent={true}
         animationType="slide"
         onRequestClose={handleCancelTrial}
+        statusBarTranslucent={true}
       >
         <View style={styles.trialModalOverlay}>
           <TouchableOpacity 
@@ -585,7 +609,7 @@ export default function PlanSelectionScreen({ navigation }) {
             onPress={handleCancelTrial}
           />
           
-          <View style={styles.trialModalContainer}>
+          <View style={[styles.trialModalContainer, { paddingBottom: Math.max(40, insets.bottom + 20) }]}>
             {/* Grabber Handle */}
             <View style={styles.trialModalGrabberContainer}>
               <View style={styles.trialModalGrabber} />
@@ -817,6 +841,20 @@ const styles = StyleSheet.create({
     color: '#0B8321',
     lineHeight: 17,
     textAlign: 'right',
+  },
+  priceTextStrikethrough: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#999999',
+    lineHeight: 17,
+    textDecorationLine: 'line-through',
+    marginRight: 6,
+  },
+  trialPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   planCardDescription: {
     fontSize: 12,

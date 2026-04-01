@@ -16,6 +16,7 @@ import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../context/SettingsContext';
+import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
 import { getLabelPositions } from '../constants/rooms';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -108,6 +109,9 @@ const SAVED_COLORS = [
 ];
 
 export default function CustomizeLabelsScreen({ navigation }) {
+  const { canUse } = useFeaturePermissions();
+  const canCustomizeWatermark = canUse(FEATURES.CUSTOM_WATERMARKS);
+
   // Get settings from context (these are persisted to AsyncStorage)
   const {
     labelBackgroundColor,
@@ -421,52 +425,71 @@ export default function CustomizeLabelsScreen({ navigation }) {
         {/* Watermark Section */}
         <Text style={styles.sectionTitle}>Watermark</Text>
 
-        <TextInput
-          style={styles.input}
-          value={watermarkText}
-          onChangeText={updateWatermarkText}
-          placeholder="Watermark Text"
-          placeholderTextColor={COLORS.GRAY}
-        />
+        {!canCustomizeWatermark ? (
+          <TouchableOpacity
+            style={styles.lockedSection}
+            onPress={() => navigation.navigate('Settings')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="lock-closed" size={24} color={COLORS.PRIMARY} />
+            <Text style={styles.lockedTitle}>Pro Feature</Text>
+            <Text style={styles.lockedMessage}>
+              Upgrade to Pro to customize your watermark text, color, font, and position.
+            </Text>
+            <View style={styles.lockedButton}>
+              <Text style={styles.lockedButtonText}>View Plans</Text>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              value={watermarkText}
+              onChangeText={updateWatermarkText}
+              placeholder="Watermark Text"
+              placeholderTextColor={COLORS.GRAY}
+            />
 
-        <TextInput
-          style={styles.input}
-          value={watermarkLink}
-          onChangeText={updateWatermarkLink}
-          placeholder="Watermark Link"
-          placeholderTextColor={COLORS.GRAY}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-        />
+            <TextInput
+              style={styles.input}
+              value={watermarkLink}
+              onChangeText={updateWatermarkLink}
+              placeholder="Watermark Link"
+              placeholderTextColor={COLORS.GRAY}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
 
-        {/* Watermark Controls */}
-        <View style={styles.controlsRow}>
-          <ControlButton
-            icon="contrast-outline"
-            label="Opacity"
-            onPress={() => setWatermarkOpacityModalVisible(true)}
-          />
-          <ControlButton
-            icon="text"
-            label="Font"
-            onPress={() => setWatermarkFontModalVisible(true)}
-          />
-          <ColorControlButton
-            color={watermarkColor || '#666666'}
-            label="Color"
-            onPress={() => {
-              setColorModalType('watermark');
-              setTempColor(watermarkColor || '#666666');
-              setColorModalVisible(true);
-            }}
-          />
-          <ControlButton
-            icon="move"
-            label="Position"
-            onPress={() => setWatermarkPositionModalVisible(true)}
-          />
-        </View>
+            {/* Watermark Controls */}
+            <View style={styles.controlsRow}>
+              <ControlButton
+                icon="contrast-outline"
+                label="Opacity"
+                onPress={() => setWatermarkOpacityModalVisible(true)}
+              />
+              <ControlButton
+                icon="text"
+                label="Font"
+                onPress={() => setWatermarkFontModalVisible(true)}
+              />
+              <ColorControlButton
+                color={watermarkColor || '#666666'}
+                label="Color"
+                onPress={() => {
+                  setColorModalType('watermark');
+                  setTempColor(watermarkColor || '#666666');
+                  setColorModalVisible(true);
+                }}
+              />
+              <ControlButton
+                icon="move"
+                label="Position"
+                onPress={() => setWatermarkPositionModalVisible(true)}
+              />
+            </View>
+          </>
+        )}
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1490,5 +1513,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 16,
+  },
+  lockedSection: {
+    backgroundColor: '#F9F9F9',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderStyle: 'dashed',
+  },
+  lockedTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.TEXT,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  lockedMessage: {
+    fontSize: 14,
+    color: COLORS.GRAY,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  lockedButton: {
+    backgroundColor: COLORS.PRIMARY,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+  },
+  lockedButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000',
   },
 });

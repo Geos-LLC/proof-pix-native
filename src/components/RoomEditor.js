@@ -400,7 +400,7 @@ export default function RoomEditor({ visible, onClose, onSave, initialRooms = nu
 
     const newRoom = {
       id: `room_${Date.now()}`,
-      name: 'New Room',
+      name: '',
       icon: '🏠',
       isDefault: markAsDefault
     };
@@ -412,7 +412,7 @@ export default function RoomEditor({ visible, onClose, onSave, initialRooms = nu
     onSave(updatedRooms);
 
     setEditingRoom(newRoom.id);
-    setRoomName('New Room');
+    setRoomName('');
     setSelectedIcon('🏠');
     setIsEditingName(false);
 
@@ -762,7 +762,7 @@ export default function RoomEditor({ visible, onClose, onSave, initialRooms = nu
                   style={styles.modalCancelButton}
                   onPress={() => setShowNameModal(false)}
                 >
-                  <Text style={styles.modalCancelText}>{t('common.done')}</Text>
+                  <Text style={styles.modalCancelText}>{t('common.done', { defaultValue: 'Done' })}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -803,7 +803,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.TEXT
+    color: COLORS.TEXT,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 60,
   },
   saveAllButton: {
     backgroundColor: COLORS.PRIMARY,

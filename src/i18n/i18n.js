@@ -1,6 +1,7 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { applyRTLLayout } from '../hooks/useRTL';
 
 // Translation files
 import en from './locales/en.json';
@@ -77,5 +78,15 @@ i18n
     // Disable ICU features
     skipI18nInitialize: false,
   });
+
+// Apply RTL layout when language is detected on init
+i18n.on('initialized', () => {
+  applyRTLLayout(i18n.language);
+});
+
+// Apply RTL layout when language changes
+i18n.on('languageChanged', (lng) => {
+  applyRTLLayout(lng);
+});
 
 export default i18n;

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/rooms';
 import { useTranslation } from 'react-i18next';
 
@@ -23,6 +24,7 @@ const DeleteConfirmationModal = ({
   deleteFromStorageDefault = false,
 }) => {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [deleteFromStorage, setDeleteFromStorage] = useState(deleteFromStorageDefault);
 
   // Load saved checkbox state when modal becomes visible
@@ -93,7 +95,7 @@ const DeleteConfirmationModal = ({
       hardwareAccelerated={true}
     >
       <Pressable style={styles.modalOverlay} onPress={handleCancel}>
-        <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[styles.modalContent, { paddingBottom: Math.max(20, insets.bottom + 10) }]} onPress={(e) => e.stopPropagation()}>
           {/* Drag Handle */}
           <View style={styles.dragHandle} />
 

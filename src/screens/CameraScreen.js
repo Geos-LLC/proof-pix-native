@@ -23,7 +23,7 @@ import { RoomIcon } from '../utils/roomIcons';
 import { compositeImages, isNativeCompositorAvailable } from '../utils/imageCompositor';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
 import { savePhotoToDevice } from '../services/storage';
@@ -44,6 +44,7 @@ import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 
 const initialDimensions = Dimensions.get('window');
@@ -63,6 +64,7 @@ const getInitialSpecificOrientation = () => {
 
 export default function CameraScreen({ route, navigation }) {
   const { mode, beforePhoto, afterPhoto: existingAfterPhoto, combinedPhoto: existingCombinedPhoto, room: initialRoom } = route.params || {};
+  const insets = useSafeAreaInsets();
   const [room, setRoom] = useState(initialRoom);
   const [facing, setFacing] = useState('back');
   const [enableTorch, setEnableTorch] = useState(false);
@@ -1217,6 +1219,50 @@ export default function CameraScreen({ route, navigation }) {
     }
   };
 
+  // Pick a photo from the device gallery
+  const pickFromGallery = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 1,
+        allowsEditing: false,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const pickedAsset = result.assets[0];
+      const photoUri = pickedAsset.uri;
+
+      // Auto-create project if needed (same as takePicture)
+      if (!activeProjectId && projects.length === 0) {
+        try {
+          const locationDisplay = getLocationName(location);
+          const name = createAlbumName((userName || '').trim() || 'Project', new Date(), null, locationDisplay);
+          const safeName = name.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
+          const proj = await createProject(safeName);
+          if (proj?.id) {
+            await setActiveProject(proj.id);
+          }
+        } catch (e) {
+          console.error('[CameraScreen] Failed to auto-create project:', e);
+        }
+      }
+
+      if (mode === 'before') {
+        await handleBeforePhoto(photoUri);
+      } else if (mode === 'after') {
+        setIsProcessingAfter(true);
+        try {
+          await handleAfterPhoto(photoUri);
+        } finally {
+          setIsProcessingAfter(false);
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick photo from gallery');
+    }
+  };
+
   // Animate captured photo flying to thumbnail
   const runCaptureAnimation = useCallback((photoUri) => {
     // Reset animation values
@@ -2336,7 +2382,57 @@ export default function CameraScreen({ route, navigation }) {
         )}
 
 
-        <View style={styles.bottomControls}>
+        <View style={[styles.bottomControls, { paddingBottom: Math.max(20, insets.bottom + 10) }]}>
+          {/* Controls row above capture - aspect ratio & zoom */}
+          <View style={styles.controlsRowAboveCapture}>
+            {/* Aspect ratio selector - only in before mode */}
+            {mode === 'before' && (
+              <View style={styles.aspectRatioSelector}>
+                <TouchableOpacity
+                  style={[styles.aspectRatioButtonBottom, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomActive]}
+                  onPress={() => setCameraViewMode('portrait')}
+                >
+                  <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomTextActive]}>9:16</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.aspectRatioButtonBottom, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomActive]}
+                  onPress={() => setCameraViewMode('landscape')}
+                >
+                  <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomTextActive]}>3:4</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {/* Zoom controls */}
+            <View style={styles.zoomControlsBottom}>
+              <TouchableOpacity
+                style={[styles.zoomButtonBottom, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonBottomActive]}
+                onPress={() => {
+                  setCameraType('ultra-wide-angle-camera');
+                  setZoom(1.0);
+                }}
+              >
+                <Text style={[styles.zoomButtonBottomText, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonBottomTextActive]}>0.5X</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.zoomButtonBottom, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonBottomActive]}
+                onPress={() => {
+                  setCameraType('wide-angle-camera');
+                  setZoom(1.0);
+                }}
+              >
+                <Text style={[styles.zoomButtonBottomText, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonBottomTextActive]}>1X</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.zoomButtonBottom, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonBottomActive]}
+                onPress={() => {
+                  setCameraType('wide-angle-camera');
+                  setZoom(2.0);
+                }}
+              >
+                <Text style={[styles.zoomButtonBottomText, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonBottomTextActive]}>2X</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
           {/* Main control row */}
           <View style={styles.mainControlRow}>
             {/* Left container - Thumbnail */}
@@ -2383,58 +2479,8 @@ export default function CameraScreen({ route, navigation }) {
               })()}
             </View>
 
-            {/* Center container - Capture button with controls above */}
+            {/* Center container - Capture button */}
             <View style={[styles.buttonContainer, styles.captureButtonContainer]}>
-              {/* Controls row above capture button */}
-              <View style={styles.controlsRowAboveCapture}>
-                {/* Aspect ratio selector - only in before mode */}
-                {mode === 'before' && (
-                  <View style={styles.aspectRatioSelector}>
-                    <TouchableOpacity
-                      style={[styles.aspectRatioButtonBottom, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomActive]}
-                      onPress={() => setCameraViewMode('portrait')}
-                    >
-                      <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomTextActive]}>9:16</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.aspectRatioButtonBottom, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomActive]}
-                      onPress={() => setCameraViewMode('landscape')}
-                    >
-                      <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomTextActive]}>3:4</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {/* Zoom controls - positioned to the right of aspect ratio */}
-                <View style={styles.zoomControlsBottom}>
-                  <TouchableOpacity
-                    style={[styles.zoomButtonBottom, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonBottomActive]}
-                    onPress={() => {
-                      setCameraType('ultra-wide-angle-camera');
-                      setZoom(1.0);
-                    }}
-                  >
-                    <Text style={[styles.zoomButtonBottomText, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonBottomTextActive]}>0.5X</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.zoomButtonBottom, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonBottomActive]}
-                    onPress={() => {
-                      setCameraType('wide-angle-camera');
-                      setZoom(1.0);
-                    }}
-                  >
-                    <Text style={[styles.zoomButtonBottomText, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonBottomTextActive]}>1X</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.zoomButtonBottom, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonBottomActive]}
-                    onPress={() => {
-                      setCameraType('wide-angle-camera');
-                      setZoom(2.0);
-                    }}
-                  >
-                    <Text style={[styles.zoomButtonBottomText, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonBottomTextActive]}>2X</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
               {/* Capture button */}
               <TouchableOpacity
                 style={[
@@ -2462,13 +2508,15 @@ export default function CameraScreen({ route, navigation }) {
 
             {/* Right container - Checkmark button */}
             <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={styles.checkmarkButton}
-                onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="checkmark" size={32} color="#000000" />
-              </TouchableOpacity>
+              <View style={styles.checkmarkButtonBorder}>
+                <TouchableOpacity
+                  style={styles.checkmarkButton}
+                  onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="checkmark-sharp" size={36} color="#000000" style={{ fontWeight: 'bold' }} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -2997,12 +3045,12 @@ export default function CameraScreen({ route, navigation }) {
   if (!hasPermission) {
     // Camera permissions are not granted yet.
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={styles.message}>We need your permission to show the camera</Text>
         <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
           <Text style={styles.permissionButtonText}>Grant Permission</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -3318,9 +3366,9 @@ const styles = StyleSheet.create({
   controlsRowAboveCapture: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 18,
-    gap: 20,
+    justifyContent: 'center',
+    marginBottom: 12,
+    gap: 6,
   },
   aspectRatioSelector: {
     flexDirection: 'row',
@@ -3335,8 +3383,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     minWidth: 55,
     height: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
@@ -3377,7 +3423,7 @@ const styles = StyleSheet.create({
   aspectRatioTextActive: {
     color: '#000'
   },
-  captureButton: {
+   captureButton: {
     width: 69,
     height: 69,
     borderRadius: 34.5,
@@ -3385,13 +3431,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: '#F2C31B',
   },
   captureButtonInnerCircle: {
     width: 53,
     height: 53,
     borderRadius: 26.5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F2C31B',
   },
   captureButtonDisabled: {
     opacity: 0.5,
@@ -4036,14 +4082,12 @@ const styles = StyleSheet.create({
   },
   zoomButtonBottom: {
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
-     alignContent: 'center',
+    alignContent: 'center',
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 20,
     minWidth: 55,
     height: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
@@ -4064,15 +4108,33 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
   },
-  checkmarkButton: {
-    width: 69,
-    height: 69,
-    padding:3,
-    borderRadius: 34.5,
-    backgroundColor: COLORS.PRIMARY,
+  galleryPickerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 0,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+   checkmarkButtonBorder: {
+    width: 70,
+    height: 70,
+    borderRadius: 39.5,
+    borderWidth: 2.5,
+    borderColor: '#FFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 3,
+  },
+   checkmarkButton: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 34.5,
+    backgroundColor:"#FFF",
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // Photo capture animation styles
   captureAnimationOverlay: {

@@ -69,6 +69,15 @@ export const purchaseProduct = async (productId) => {
   console.log('[IAP] Initializing IAP connection...');
   await initIAPIfNeeded();
 
+  // iOS: clear stale transactions before attempting purchase to prevent failures
+  if (Platform.OS === 'ios') {
+    try {
+      await RNIap.clearTransactionIOS();
+    } catch (e) {
+      console.warn('[IAP] iOS: Could not clear transaction queue:', e?.message);
+    }
+  }
+
   return new Promise(async (resolve, reject) => {
     let finished = false;
     let purchaseTimeout = null;
@@ -199,6 +208,18 @@ export const purchaseProduct = async (productId) => {
         return;
       }
 
+      // iOS: "Cannot connect to iTunes Store" or payment queue errors are often transient
+      // Delay briefly before rejecting to allow any pending purchaseUpdated events to fire first
+      if (Platform.OS === 'ios' && (errorMsg.includes('Cannot connect') || errorMsg.includes('Payment Not Allowed') || errorCode === 'E_UNKNOWN')) {
+        console.warn('[IAP] iOS transient error, waiting for possible purchase update...', errorCode, errorMsg);
+        setTimeout(() => {
+          if (!finished) {
+            finish(() => reject(new Error(errorCode || 'IAP_ERROR')));
+          }
+        }, 3000);
+        return;
+      }
+
       // Log other errors
       console.error('[IAP] purchaseErrorListener triggered');
       console.error('[IAP] Error code:', errorCode);
@@ -263,6 +284,140 @@ export const purchaseProduct = async (productId) => {
  * Check for active subscriptions without showing UI.
  * Returns the active subscription info if found, or null if none.
  */
+export const purchaseOrUpgrade = async (targetProductId) => {
+  console.log('[IAP] purchaseOrUpgrade called for:', targetProductId);
+
+  try {
+    return await _purchaseOrUpgradeInner(targetProductId);
+  } catch (err) {
+    // If subscription is already owned (common on iOS upgrades), treat as success
+    if (err?.message === 'already-owned') {
+      console.log('[IAP] Subscription already owned — treating as successful purchase');
+      return { productId: targetProductId, alreadyOwned: true };
+    }
+    throw err;
+  }
+};
+
+const _purchaseOrUpgradeInner = async (targetProductId) => {
+
+  if (Platform.OS === 'android') {
+    // Check for existing active main plan subscription
+    const currentPurchases = await getAvailablePurchases();
+    const mainPlanIds = [
+      ANDROID_PRODUCTS.PRO_MONTHLY,
+      ANDROID_PRODUCTS.BUSINESS_MONTHLY,
+      ANDROID_PRODUCTS.ENTERPRISE_MONTHLY,
+    ];
+
+    const existingMainPlan = currentPurchases?.find(p => {
+      const pid = p.productId || '';
+      const ids = p.ids || [];
+      return mainPlanIds.some(id => pid === id || ids.includes(id));
+    });
+
+    if (existingMainPlan && existingMainPlan.purchaseToken) {
+      console.log('[IAP] Existing main plan found, upgrading...');
+      console.log('[IAP] Old purchase token present, old product:', existingMainPlan.productId);
+
+      await initIAPIfNeeded();
+      const { offerToken } = await getAndroidOfferToken(targetProductId);
+
+      return new Promise(async (resolve, reject) => {
+        let finished = false;
+        let purchaseTimeout = null;
+
+        const finish = (fn) => {
+          if (finished) return;
+          finished = true;
+          if (purchaseTimeout) clearTimeout(purchaseTimeout);
+          cleanupListeners();
+          fn();
+        };
+
+        purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchase) => {
+          const purchasedId = purchase?.productId || '';
+          const ids = purchase?.ids || [];
+          if (purchasedId === targetProductId || ids.includes(targetProductId)) {
+            finish(async () => {
+              try {
+                await RNIap.finishTransaction({ purchase, isConsumable: false });
+              } catch (e) {
+                console.error('[IAP] Failed to acknowledge upgrade:', e);
+              }
+              resolve(purchase);
+            });
+          }
+        });
+
+        purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
+          const errorCode = error?.code || '';
+          const errorMsg = error?.message || '';
+          if (errorCode === 'E_USER_CANCELLED' || errorCode === 'user-cancelled' || errorMsg.includes('cancel')) {
+            finish(() => reject(new Error('user-cancelled')));
+          } else {
+            finish(() => reject(new Error(errorCode || 'IAP_ERROR')));
+          }
+        });
+
+        try {
+          // v14 API: use requestPurchase with type 'subs' and upgrade params
+          await RNIap.requestPurchase({
+            type: 'subs',
+            request: {
+              android: {
+                skus: [targetProductId],
+                subscriptionOffers: [{ sku: targetProductId, offerToken }],
+                purchaseTokenAndroid: existingMainPlan.purchaseToken,
+                replacementModeAndroid: 1, // IMMEDIATE_WITH_TIME_PRORATION
+              },
+            },
+          });
+
+          purchaseTimeout = setTimeout(() => {
+            if (!finished) finish(() => reject(new Error('PURCHASE_TIMEOUT')));
+          }, 120000);
+        } catch (err) {
+          finish(() => reject(err));
+        }
+      });
+    }
+  }
+
+  // iOS: clear any pending/stale transactions before purchasing
+  // This prevents "purchase failed" errors when upgrading between tiers
+  if (Platform.OS === 'ios') {
+    try {
+      console.log('[IAP] iOS: Clearing pending transactions before purchase...');
+      await RNIap.clearTransactionIOS();
+      console.log('[IAP] iOS: Pending transactions cleared');
+    } catch (clearErr) {
+      console.warn('[IAP] iOS: Could not clear pending transactions:', clearErr?.message);
+      // Continue with purchase even if clear fails
+    }
+
+    // Also finish any unfinished purchases
+    try {
+      const pending = await RNIap.getAvailablePurchases();
+      if (pending && pending.length > 0) {
+        console.log('[IAP] iOS: Finishing', pending.length, 'unfinished purchase(s)...');
+        for (const purchase of pending) {
+          try {
+            await RNIap.finishTransaction({ purchase, isConsumable: false });
+          } catch (e) {
+            console.warn('[IAP] iOS: Could not finish pending purchase:', e?.message);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[IAP] iOS: Could not check pending purchases:', e?.message);
+    }
+  }
+
+  // No existing plan or iOS - do normal purchase
+  return purchaseProduct(targetProductId);
+};
+
 /**
  * Clear all pending transactions from the queue.
  * Use this to clear stuck/ghost transactions from sandbox testing.

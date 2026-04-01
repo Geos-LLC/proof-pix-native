@@ -47,23 +47,23 @@ import JSZip from 'jszip';
 import { useTranslation } from 'react-i18next';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 
-// Share module is native (react-native-share) and not available in Expo Go.
-// Load it conditionally and provide a safe no-op fallback to avoid TurboModule errors.
-let Share = {
-  open: async () => {
-    console.log('[Share] react-native-share not available (likely Expo Go). Share.open call ignored.');
-  },
-};
+// Ensure a URI has the file:// prefix (expo FileSystem URIs already include it on Android)
+const ensureFileUri = (uri) => uri.startsWith('file://') ? uri : `file://${uri}`;
 
-if (Constants?.appOwnership !== 'expo') {
+import * as Sharing from 'expo-sharing';
+
+// react-native-share for multi-file sharing (not available in Expo Go)
+let RNShare = { open: async () => {} };
+const isExpoGo = Constants?.appOwnership === 'expo';
+if (!isExpoGo) {
   try {
-    // eslint-disable-next-line global-require
     const shareModule = require('react-native-share');
-    Share = shareModule.default || shareModule;
+    RNShare = shareModule.default || shareModule;
   } catch (e) {
-    console.warn('[Share] Failed to load react-native-share, falling back to no-op implementation:', e?.message);
+    console.warn('[Gallery] Failed to load react-native-share:', e?.message);
   }
 }
+
 import {
   calculateSettingsHash,
   getCachedLabeledPhoto,
@@ -166,6 +166,7 @@ export default function GalleryScreen({ navigation, route }) {
   const [fullScreenLoading, setFullScreenLoading] = useState(false);
   const [fullScreenError, setFullScreenError] = useState(null);
   const [sharing, setSharing] = useState(false);
+  const [shareStatus, setShareStatus] = useState('');
   const swipeStartX = useRef(null);
   const fullScreenCombinedRef = useRef(null);
   const fullScreenVisibleRef = useRef(false);
@@ -206,7 +207,7 @@ export default function GalleryScreen({ navigation, route }) {
   const [selectedShareTypes, setSelectedShareTypes] = useState({ before: true, after: true, combined: true });
   const [shareAsArchive, setShareAsArchive] = useState(false);
   const [uploadDestinations, setUploadDestinations] = useState({ google: true, dropbox: false });
-  const [showAdvancedShareFormats, setShowAdvancedShareFormats] = useState(true);
+  const [showAdvancedShareFormats, setShowAdvancedShareFormats] = useState(false);
   const [showSharePlanModal, setShowSharePlanModal] = useState(false);
   const [isDropboxConnected, setIsDropboxConnected] = useState(false);
   const [selectedFormats, setSelectedFormats] = useState(() => {
@@ -442,10 +443,9 @@ export default function GalleryScreen({ navigation, route }) {
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
       await FileSystem.copyAsync({ from: sourceUri, to: tempUri });
 
-      await Share.open({
-        title: `${photo.mode === 'before' ? 'Before' : 'After'} Photo - ${photo.name}`,
-        url: `file://${tempUri}`,
-        type: 'image/jpeg',
+      await Sharing.shareAsync(ensureFileUri(tempUri), {
+        mimeType: 'image/jpeg',
+        dialogTitle: `${photo.mode === 'before' ? 'Before' : 'After'} Photo - ${photo.name}`,
       });
 
       try {
@@ -478,10 +478,9 @@ export default function GalleryScreen({ navigation, route }) {
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
       await FileSystem.copyAsync({ from: capturedUri, to: tempUri });
 
-      await Share.open({
-        title: `Before/After - ${photoSet.name}`,
-        url: `file://${tempUri}`,
-        type: 'image/jpeg',
+      await Sharing.shareAsync(ensureFileUri(tempUri), {
+        mimeType: 'image/jpeg',
+        dialogTitle: `Before/After - ${photoSet.name}`,
       });
       
       try {
@@ -593,10 +592,9 @@ export default function GalleryScreen({ navigation, route }) {
       const tempFileName = `${fullScreenPhotoSet.before.room}_${fullScreenPhotoSet.before.name}_combined_${Date.now()}.jpg`;
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
       await FileSystem.copyAsync({ from: shareUri, to: tempUri });
-      await Share.open({
-        title: `Before/After - ${fullScreenPhotoSet.before.name}`,
-        url: `file://${tempUri}`,
-        type: 'image/jpeg',
+      await Sharing.shareAsync(ensureFileUri(tempUri), {
+        mimeType: 'image/jpeg',
+        dialogTitle: `Before/After - ${fullScreenPhotoSet.before.name}`,
       });
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
@@ -654,6 +652,8 @@ export default function GalleryScreen({ navigation, route }) {
         return;
       }
 
+      setShareStatus(t('gallery.preparingPhotos', { defaultValue: 'Preparing photos...' }));
+
       // Apply labels to photos before sharing (uses cached versions from background service)
       if (showLabels) {
         for (let i = 0; i < photosToShare.length; i++) {
@@ -671,6 +671,7 @@ export default function GalleryScreen({ navigation, route }) {
       }
 
       if (shareAsArchive) {
+        setShareStatus(t('gallery.zippingPhotos', { defaultValue: `Zipping ${photosToShare.length} photos...`, count: photosToShare.length }));
         const zip = new JSZip();
         
         for (let i = 0; i < photosToShare.length; i++) {
@@ -694,21 +695,39 @@ export default function GalleryScreen({ navigation, route }) {
           encoding: FileSystem.EncodingType.Base64,
         });
 
-        await Share.open({
-          url: `file://${zipUri}`,
-          type: 'application/zip',
-          filename: zipFileName,
+        await Sharing.shareAsync(ensureFileUri(zipUri), {
+          mimeType: 'application/zip',
+          dialogTitle: zipFileName,
         });
 
         await FileSystem.deleteAsync(zipUri, { idempotent: true });
       } else {
         const urls = photosToShare.map(photo => photo.uri).filter(Boolean);
 
-        if (urls.length > 0) {
-          await Share.open({
-            urls: urls,
-            type: 'image/jpeg',
+        if (urls.length === 1) {
+          await Sharing.shareAsync(ensureFileUri(urls[0]), {
+            mimeType: 'image/jpeg',
+            dialogTitle: 'Share Photo',
           });
+        } else if (urls.length > 1) {
+          // Share multiple photos via react-native-share using temp file copies
+          setShareStatus(t('gallery.preparingPhotos', { defaultValue: `Preparing ${urls.length} photos...`, count: urls.length }));
+          const tempDir = `${FileSystem.cacheDirectory}share_temp_${Date.now()}/`;
+          await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true });
+          const tempUris = [];
+          for (let i = 0; i < urls.length; i++) {
+            const fileName = urls[i].split('/').pop() || `photo_${i}.jpg`;
+            const tempPath = `${tempDir}${fileName}`;
+            await FileSystem.copyAsync({ from: urls[i], to: tempPath });
+            tempUris.push(ensureFileUri(tempPath));
+          }
+          await RNShare.open({
+            urls: tempUris,
+            type: 'image/jpeg',
+            failOnCancel: false,
+          });
+          // Clean up temp files
+          await FileSystem.deleteAsync(tempDir, { idempotent: true });
         }
       }
     } catch (error) {
@@ -718,6 +737,7 @@ export default function GalleryScreen({ navigation, route }) {
       }
     } finally {
       setSharing(false);
+      setShareStatus('');
       setShareSelectedPhotos(null);
     }
   };
@@ -814,9 +834,30 @@ export default function GalleryScreen({ navigation, route }) {
   const handleUploadSelected = async () => {
     const selected = getSelectedPhotos();
     const selectedSets = getSelectedPhotoSets();
-    
+
     if (selected.length === 0 && selectedSets.length === 0) {
       Alert.alert('No Selection', 'Please select photos to upload.');
+      return;
+    }
+
+    // Check if any cloud service is connected before showing options
+    let dropboxConnected = false;
+    try {
+      await dropboxAuthService.loadStoredTokens();
+      dropboxConnected = dropboxAuthService.isAuthenticated();
+    } catch (e) {
+      // ignore
+    }
+
+    if (!isAuthenticated && !dropboxConnected) {
+      Alert.alert(
+        t('gallery.noConnectionTitle', { defaultValue: 'No Cloud Connected' }),
+        t('gallery.noConnectionMessage', { defaultValue: 'Please connect Google Drive or Dropbox in Settings before uploading.' }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          { text: t('settings.goToSettings', { defaultValue: 'Go to Settings' }), onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+        ]
+      );
       return;
     }
 
@@ -903,13 +944,32 @@ export default function GalleryScreen({ navigation, route }) {
       const albumName = createAlbumName(userName || 'User', new Date(), null, location);
 
       // Upload to selected destinations
-      if (uploadDestinations.google && isAuthenticated) {
+      const googleConnected = uploadDestinations.google && isAuthenticated;
+      const dropboxConnected = uploadDestinations.dropbox && isDropboxConnected;
+
+      if (!googleConnected && !dropboxConnected) {
+        setIsPreparingUpload(false);
+        setShowUploadDetails(false);
+        Alert.alert(
+          t('gallery.noConnectionTitle', { defaultValue: 'No Cloud Connected' }),
+          t('gallery.noConnectionMessage', { defaultValue: 'Please connect Google Drive or Dropbox in Settings before uploading.' }),
+          [
+            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+            { text: t('settings.goToSettings', { defaultValue: 'Go to Settings' }), onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+          ]
+        );
+        return;
+      }
+
+      if (googleConnected) {
         // Always validate session (even if proxySessionId exists, it may be stale)
         let sessionId = null;
+        let effectiveFolderId = folderId;
         try {
           const result = await initializeProxySession(folderId, accountType || 'google');
           if (result?.success && result?.sessionId) {
             sessionId = result.sessionId;
+            effectiveFolderId = result.folderId || folderId;
           }
         } catch (e) {
           console.error('[GALLERY] Failed to init proxy session:', e);
@@ -932,7 +992,7 @@ export default function GalleryScreen({ navigation, route }) {
           userName: userName || 'User',
           flat: !useFolderStructure,
           config: {
-            folderId,
+            folderId: effectiveFolderId,
             sessionId,
             accountType: accountType || 'google',
             useDirectDrive: true,
@@ -940,7 +1000,7 @@ export default function GalleryScreen({ navigation, route }) {
         });
       }
 
-      if (uploadDestinations.dropbox && isDropboxConnected) {
+      if (dropboxConnected) {
         setIsPreparingUpload(false);
         startBackgroundUpload({
           items: photosToUpload,
@@ -956,6 +1016,8 @@ export default function GalleryScreen({ navigation, route }) {
 
     } catch (error) {
       console.error('[GALLERY] Upload error:', error);
+      setIsPreparingUpload(false);
+      setShowUploadDetails(false);
       Alert.alert('Upload Error', 'Failed to start upload. Please try again.');
     }
   };
@@ -1612,7 +1674,7 @@ export default function GalleryScreen({ navigation, route }) {
       return (
         <View key={room.id} style={styles.roomSection}>
           <View style={styles.roomHeader}>
-            <Text style={styles.roomName}>
+            <Text style={styles.roomName} numberOfLines={1} ellipsizeMode="tail">
               {t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })}
             </Text>
           </View>
@@ -1651,7 +1713,7 @@ export default function GalleryScreen({ navigation, route }) {
       return (
         <View key={room.id} style={styles.roomSection}>
           <View style={styles.roomHeader}>
-            <Text style={styles.roomName}>
+            <Text style={styles.roomName} numberOfLines={1} ellipsizeMode="tail">
               {t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })}
             </Text>
           </View>
@@ -1800,7 +1862,7 @@ export default function GalleryScreen({ navigation, route }) {
       ) : (
         <ScrollView 
           style={styles.scrollView} 
-          contentContainerStyle={[styles.content, { paddingBottom: 120 }]}
+          contentContainerStyle={[styles.content, { paddingBottom: 20 + insets.bottom + 50 + 80 }]}
         >
           {/* Project Name Section */}
           {(() => {
@@ -1808,7 +1870,7 @@ export default function GalleryScreen({ navigation, route }) {
             return (
               <View style={styles.projectNameSection}>
                 <View style={styles.projectNameRow}>
-                  <Text style={styles.projectNameDisplay}>
+                  <Text style={styles.projectNameDisplay} numberOfLines={1} ellipsizeMode="tail">
                     {activeProject?.name || t('gallery.noProjectSelected')}
                   </Text>
                   <View style={styles.projectNameLine} />
@@ -1864,7 +1926,7 @@ export default function GalleryScreen({ navigation, route }) {
 
 
           <TouchableOpacity
-            style={styles.floatingAddButton}
+            style={[styles.floatingAddButton, { bottom: 20 + insets.bottom + 50 + 16 }]}
             onPress={() => {
               if (!activeProjectId) return;
               isSelectionModeRef.current = true;
@@ -1891,7 +1953,7 @@ export default function GalleryScreen({ navigation, route }) {
       )}
 
       {isSelectionMode && (
-        <View style={styles.floatingActionButtons}>
+        <View style={[styles.floatingActionButtons, { bottom: 20 + insets.bottom + 50 + 16 }]}>
           <TouchableOpacity
             style={[styles.floatingActionButton, styles.floatingActionButtonTrash]}
             onPress={handleDeleteSelected}
@@ -1997,7 +2059,7 @@ export default function GalleryScreen({ navigation, route }) {
             </View>
           </View>
           <View style={styles.fullScreenRoomNameRow}>
-            <Text style={styles.fullScreenRoomName}>
+            <Text style={styles.fullScreenRoomName} numberOfLines={1} ellipsizeMode="tail">
               {((getRooms && typeof getRooms === 'function' ? getRooms() : [])).find(r => r.id === fullScreenPhoto.room)?.name || fullScreenPhoto.room || ''}
             </Text>
             {fullScreenPhotos.length > 1 && (
@@ -2077,7 +2139,7 @@ export default function GalleryScreen({ navigation, route }) {
             </View>
           </View>
           <View style={styles.fullScreenRoomNameRow}>
-            <Text style={styles.fullScreenRoomName}>
+            <Text style={styles.fullScreenRoomName} numberOfLines={1} ellipsizeMode="tail">
               {((getRooms && typeof getRooms === 'function' ? getRooms() : [])).find(r => r.id === fullScreenPhotoSet.before.room)?.name || fullScreenPhotoSet.before.room}
             </Text>
             {fullScreenPhotos.length > 1 && (
@@ -2250,7 +2312,7 @@ export default function GalleryScreen({ navigation, route }) {
                 </ScrollView>
 
                 {/* Share Now Button */}
-                <View style={styles.shareButtonContainer}>
+                <View style={[styles.shareButtonContainer, { paddingBottom: Math.max(34, insets.bottom + 16) }]}>
                   <TouchableOpacity
                     style={styles.shareNowButton}
                     onPress={startSharingWithOptions}
@@ -2365,7 +2427,7 @@ export default function GalleryScreen({ navigation, route }) {
                 </ScrollView>
 
                 {/* Upload Now Button */}
-                <View style={styles.shareButtonContainer}>
+                <View style={[styles.shareButtonContainer, { paddingBottom: Math.max(34, insets.bottom + 16) }]}>
                   <TouchableOpacity
                     style={[styles.shareNowButton, (!uploadDestinations.google && !uploadDestinations.dropbox) && { opacity: 0.5 }]}
                     onPress={handleConfirmUpload}
@@ -2458,9 +2520,10 @@ export default function GalleryScreen({ navigation, route }) {
         transparent={true}
         animationType="fade"
         onRequestClose={handleSharePlanModalClose}
+        statusBarTranslucent={true}
       >
         <TouchableWithoutFeedback onPress={handleSharePlanModalClose}>
-          <View style={styles.modalOverlay}>
+          <View style={[styles.modalOverlay, { justifyContent: 'center', alignItems: 'center' }]}>
             <TouchableWithoutFeedback>
               <View style={styles.upgradeModalContent}>
                 <Ionicons name="lock-closed" size={48} color={COLORS.PRIMARY} style={{ marginBottom: 16 }} />
@@ -2496,6 +2559,16 @@ export default function GalleryScreen({ navigation, route }) {
         <Text style={styles.loadingText}>
           {sharing ? 'Preparing to share...' : 'Uploading...'}
         </Text>
+      </View>
+    </View>
+  )}
+
+  {/* Processing overlay */}
+  {sharing && (
+    <View style={styles.processingOverlay}>
+      <View style={styles.processingBox}>
+        <ActivityIndicator size="large" color="#F2C31B" />
+        <Text style={styles.processingText}>{shareStatus || t('gallery.sharing', { defaultValue: 'Sharing...' })}</Text>
       </View>
     </View>
   )}
@@ -2804,6 +2877,7 @@ fontSize: 17,
 fontWeight: '700',
 color: COLORS.TEXT,
 lineHeight: 21,
+flexShrink: 1,
 },
 projectNameLine: {
 flex: 1,
@@ -2828,7 +2902,6 @@ padding: 8
 },
 floatingActionButtons: {
 position: 'absolute',
-bottom: 80,
 left: 16,
 right: 16,
 flexDirection: 'row',
@@ -2942,7 +3015,6 @@ fontWeight: '600'
 },
 floatingAddButton: {
 position: 'absolute',
-bottom: 120,
 right: 20,
 width: 60,
 height: 60,
@@ -3389,5 +3461,29 @@ marginTop: 16,
 fontSize: 16,
 fontWeight: '600',
 color: COLORS.TEXT,
+},
+processingOverlay: {
+  ...StyleSheet.absoluteFillObject,
+  backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 999,
+},
+processingBox: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  padding: 30,
+  alignItems: 'center',
+  gap: 16,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.25,
+  shadowRadius: 4,
+  elevation: 5,
+},
+processingText: {
+  fontFamily: 'Alexandria_400Regular',
+  fontSize: 15,
+  color: '#333',
 },
 });

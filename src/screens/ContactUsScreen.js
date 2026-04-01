@@ -21,9 +21,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import enterpriseContactService from '../services/enterpriseContactService';
+import { useTranslation } from 'react-i18next';
+import { useRTL } from '../hooks/useRTL';
 
 export default function ContactUsScreen() {
   const navigation = useNavigation();
+  const { t } = useTranslation();
+  const { isRTL, textStyle, inputStyle } = useRTL();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -79,6 +83,8 @@ export default function ContactUsScreen() {
         errorMessage = 'Please enter your email address';
       } else if (error.message === 'INVALID_EMAIL') {
         errorMessage = 'Please enter a valid email address';
+      } else if (error.message === 'EMAIL_NOT_CONFIGURED') {
+        errorMessage = 'Email service is not configured. Please contact support directly at info@geos-ai.com';
       }
 
       Alert.alert('Error', errorMessage);
@@ -99,16 +105,17 @@ export default function ContactUsScreen() {
             onPress={() => navigation.goBack()}
             style={styles.backButton}
           >
-            <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
+            <Ionicons name={isRTL ? "arrow-forward" : "arrow-back"} size={24} color={COLORS.TEXT} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Contact us</Text>
+          <Text style={styles.headerTitle}>{t('contact.title', { defaultValue: 'Contact us' })}</Text>
           <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView 
+        <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Icon Section */}
           <View style={styles.iconContainer}>
@@ -118,20 +125,20 @@ export default function ContactUsScreen() {
           </View>
 
           {/* Heading */}
-          <Text style={styles.heading}>Tell us what you think</Text>
+          <Text style={[styles.heading, textStyle]}>{t('contact.heading', { defaultValue: 'Tell us what you think' })}</Text>
 
           {/* Description */}
-          <Text style={styles.description}>
-            We'd love to hear your feedback, suggestions or answer any questions you may have.
+          <Text style={[styles.description, textStyle]}>
+            {t('contact.description', { defaultValue: "We'd love to hear your feedback, suggestions or answer any questions you may have." })}
           </Text>
 
           {/* Form Fields */}
           <View style={styles.formContainer}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Your Name</Text>
+              <Text style={[styles.label, textStyle]}>{t('contact.nameLabel', { defaultValue: 'Your Name' })}</Text>
               <TextInput
-                style={styles.input}
-                placeholder="Your Name"
+                style={[styles.input, inputStyle]}
+                placeholder={t('contact.nameLabel', { defaultValue: 'Your Name' })}
                 placeholderTextColor="#999"
                 value={formData.name}
                 onChangeText={(text) => setFormData({ ...formData, name: text })}
@@ -140,10 +147,10 @@ export default function ContactUsScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email Address</Text>
+              <Text style={[styles.label, textStyle]}>{t('contact.emailLabel', { defaultValue: 'Email Address' })}</Text>
               <TextInput
-                style={styles.input}
-                placeholder="Email Address"
+                style={[styles.input, inputStyle]}
+                placeholder={t('contact.emailLabel', { defaultValue: 'Email Address' })}
                 placeholderTextColor="#999"
                 value={formData.email}
                 onChangeText={(text) => setFormData({ ...formData, email: text })}
@@ -153,10 +160,10 @@ export default function ContactUsScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone number (Optional)</Text>
+              <Text style={[styles.label, textStyle]}>{t('contact.phoneLabel', { defaultValue: 'Phone number (Optional)' })}</Text>
               <TextInput
-                style={styles.input}
-                placeholder="Phone number (Optional)"
+                style={[styles.input, inputStyle]}
+                placeholder={t('contact.phoneLabel', { defaultValue: 'Phone number (Optional)' })}
                 placeholderTextColor="#999"
                 value={formData.phone}
                 onChangeText={(text) => setFormData({ ...formData, phone: text })}
@@ -165,10 +172,10 @@ export default function ContactUsScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Tell us about your needs</Text>
+              <Text style={[styles.label, textStyle]}>{t('contact.descriptionLabel', { defaultValue: 'Tell us about your needs' })}</Text>
               <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Tell us about your needs"
+                style={[styles.input, styles.textArea, inputStyle]}
+                placeholder={t('contact.descriptionLabel', { defaultValue: 'Tell us about your needs' })}
                 placeholderTextColor="#999"
                 value={formData.description}
                 onChangeText={(text) => setFormData({ ...formData, description: text })}
@@ -178,18 +185,18 @@ export default function ContactUsScreen() {
               />
             </View>
           </View>
-        </ScrollView>
 
-        {/* Send Request Button */}
-        <TouchableOpacity
-          style={[styles.sendButton, isSubmitting && styles.disabledButton]}
-          onPress={handleSubmit}
-          disabled={isSubmitting}
-        >
-          <Text style={styles.sendButtonText}>
-            {isSubmitting ? 'Sending...' : 'Send Request'}
-          </Text>
-        </TouchableOpacity>
+          {/* Send Request Button */}
+          <TouchableOpacity
+            style={[styles.sendButton, isSubmitting && styles.disabledButton]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.sendButtonText}>
+              {isSubmitting ? t('contact.sending', { defaultValue: 'Sending...' }) : t('contact.submit', { defaultValue: 'Send Request' })}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -230,7 +237,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 40,
   },
   iconContainer: {
     alignItems: 'center',

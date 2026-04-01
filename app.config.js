@@ -4,7 +4,8 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    version: process.env.VERSION || "1.4.2",
+    owner: "just-web-agency",
+    version: process.env.VERSION || "1.4.8",
     runtimeVersion: {
       policy: "appVersion"
     },
@@ -27,7 +28,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "22",
+      buildNumber: "28",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -49,7 +50,10 @@ export default {
         "com.apple.developer.applesignin": ["Default"],
         "com.apple.developer.icloud-container-identifiers": ["iCloud.com.proofpix.app"],
         "com.apple.developer.ubiquity-container-identifiers": ["iCloud.com.proofpix.app"],
-        "com.apple.developer.icloud-services": ["CloudDocuments"]
+        "com.apple.developer.icloud-services": ["CloudDocuments"],
+        "com.apple.developer.associated-domains": [
+          "applinks:steadfast-blessing-production.up.railway.app"
+        ]
       },
       usesAppleSignIn: true,
       usesIcloudStorage: true
@@ -60,7 +64,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 25,
+      versionCode: 34,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
@@ -77,7 +81,26 @@ export default {
         "android.permission.READ_MEDIA_AUDIO"
       ],
       edgeToEdgeEnabled: true,
-      googleServicesFile: "./google-services.json"
+      googleServicesFile: "./google-services.json",
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "steadfast-blessing-production.up.railway.app",
+              pathPrefix: "/join"
+            },
+            {
+              scheme: "https",
+              host: "steadfast-blessing-production.up.railway.app",
+              pathPrefix: "/referral"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     web: {
       favicon: "./assets/favicon.png"

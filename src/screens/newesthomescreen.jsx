@@ -30,6 +30,7 @@ import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { createAlbumName } from '../services/uploadService';
@@ -40,7 +41,7 @@ import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import * as ExpoLocation from 'expo-location';
-import { IAP_PRODUCTS, purchaseProduct } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, clearPendingTransactions } from '../services/iapService';
 import { isTrialActive } from '../services/trialService';
 
 const { width } = Dimensions.get('window');
@@ -668,13 +669,11 @@ export default function HomeScreen({ navigation }) {
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
       await FileSystem.copyAsync({ from: thumbnailUri, to: tempUri });
 
-      const shareOptions = {
-        title: `${t('common.before')}/${t('common.after')} - ${photoName}`,
-        url: tempUri,
-        type: 'image/jpeg'
-      };
-
-      await Share.share(shareOptions);
+      if (Platform.OS === 'android') {
+        await Sharing.shareAsync(tempUri, { mimeType: 'image/jpeg', dialogTitle: `${t('common.before')}/${t('common.after')} - ${photoName}` });
+      } else {
+        await Share.share({ title: `${t('common.before')}/${t('common.after')} - ${photoName}`, url: tempUri });
+      }
 
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
@@ -1523,11 +1522,11 @@ export default function HomeScreen({ navigation }) {
               onPress={async () => {
                 try {
                   setSharing(true);
-                  await Share.share({
-                    url: fullScreenPhoto.uri,
-                    type: 'image/jpeg',
-                    title: fullScreenPhoto.name || t('gallery.share')
-                  });
+                  if (Platform.OS === 'android') {
+                    await Sharing.shareAsync(fullScreenPhoto.uri, { mimeType: 'image/jpeg', dialogTitle: fullScreenPhoto.name || t('gallery.share') });
+                  } else {
+                    await Share.share({ url: fullScreenPhoto.uri, title: fullScreenPhoto.name || t('gallery.share') });
+                  }
                 } catch (e) {
                   if (e?.message !== 'User did not share') {
                     Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
@@ -2074,7 +2073,25 @@ export default function HomeScreen({ navigation }) {
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.proPlanActivated', { defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' }));
                       } catch (err) {
                         if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        console.error('[IAP] Purchase error:', err?.message);
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                          [
+                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                            {
+                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                              onPress: async () => {
+                                try {
+                                  await clearPendingTransactions();
+                                } catch (e) {
+                                  console.warn('[IAP] Clear failed:', e?.message);
+                                }
+                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                              }
+                            },
+                          ]
+                        );
                         return;
                       }
                     } else {
@@ -2121,7 +2138,25 @@ export default function HomeScreen({ navigation }) {
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.businessPlanActivated', { defaultValue: 'Business plan activated! You can now add up to 5 team members.' }));
                       } catch (err) {
                         if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        console.error('[IAP] Purchase error:', err?.message);
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                          [
+                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                            {
+                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                              onPress: async () => {
+                                try {
+                                  await clearPendingTransactions();
+                                } catch (e) {
+                                  console.warn('[IAP] Clear failed:', e?.message);
+                                }
+                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                              }
+                            },
+                          ]
+                        );
                         return;
                       }
                     } else {
@@ -2166,7 +2201,25 @@ export default function HomeScreen({ navigation }) {
                         Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit.' }));
                       } catch (err) {
                         if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        Alert.alert(t('common.error', { defaultValue: 'Error' }), t('settings.purchaseFailed', { defaultValue: 'Purchase failed. Please try again.' }));
+                        console.error('[IAP] Purchase error:', err?.message);
+                        Alert.alert(
+                          t('common.error', { defaultValue: 'Error' }),
+                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
+                          [
+                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                            {
+                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
+                              onPress: async () => {
+                                try {
+                                  await clearPendingTransactions();
+                                } catch (e) {
+                                  console.warn('[IAP] Clear failed:', e?.message);
+                                }
+                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
+                              }
+                            },
+                          ]
+                        );
                         return;
                       }
                     } else {

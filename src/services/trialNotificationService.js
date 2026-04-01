@@ -102,7 +102,7 @@ export const getNotificationToShow = async (skipDay0 = false) => {
 
   // Get trial info to determine actual trial duration
   const trialInfo = await getTrialInfo();
-  const trialDuration = trialInfo?.durationDays || 30;
+  const trialDuration = trialInfo?.durationDays || 15;
 
   // Day 0 (Welcome) - Show immediately when trial starts (only if not skipped)
   // For 30-day trial: show when >= 28 days remaining

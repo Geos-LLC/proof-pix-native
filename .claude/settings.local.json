@@ -28,7 +28,22 @@
       "Bash(node scripts/dump_missing.js:*)",
       "Bash(npx:*)",
       "Bash(node -c:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git fetch:*)",
+      "Bash(npm ls:*)",
+      "Bash(find /c/Users/HomePC/Desktop/proof-pix-native -name *.plist -o -name *entitlement*)",
+      "Bash(find /c/Users/HomePC/Desktop/proof-pix-native -type f -name *i18n* -o -name *locale* -o -name *translation*)",
+      "Bash(grep -rn I18nManager /c/Users/HomePC/Desktop/proof-pix-native --include=*.js --include=*.jsx)",
+      "Bash(node -e \":*)",
+      "Bash(node /tmp/merge_helper.js \"C:/Users/HomePC/Desktop/proof-pix-native/src/i18n/locales\" fr /tmp/trans_fr.json)",
+      "Bash(echo $TEMP)",
+      "Read(//c/Users/HomePC/AppData/Local/Temp/**)",
+      "Bash(node _merge_helper.js fr)",
+      "Bash(node _merge_helper.js de)",
+      "Bash(node _merge_helper.js ru)",
+      "Bash(node _merge_helper.js be)",
+      "Bash(node _merge_helper.js uk)",
+      "Bash(node _merge_helper.js zh)"
     ],
     "deny": [],
     "ask": []
