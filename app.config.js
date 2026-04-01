@@ -4,7 +4,6 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    owner: "just-web-agency",
     version: process.env.VERSION || "1.4.8",
     runtimeVersion: {
       policy: "appVersion"
@@ -151,7 +150,7 @@ export default {
     ],
     extra: {
       eas: {
-        projectId: "56b6bd0e-b696-4b6c-bcc4-14714465dd9f"
+        projectId: "3e7ed884-bb3a-4191-bcb0-188386d7e977"
       },
       // Environment variables accessible in your app
       googleServiceAccountPath: process.env.GOOGLE_SERVICE_ACCOUNT_PATH,
