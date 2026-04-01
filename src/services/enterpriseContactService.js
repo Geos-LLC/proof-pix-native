@@ -35,6 +35,11 @@ class EnterpriseContactService {
       throw new Error('INVALID_EMAIL');
     }
 
+    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) {
+      console.error('[EnterpriseContact] Missing EmailJS configuration. Set EXPO_PUBLIC_EMAILJS_SERVICE_ID, EXPO_PUBLIC_EMAILJS_TEMPLATE_ID, and EXPO_PUBLIC_EMAILJS_PUBLIC_KEY in your .env file.');
+      throw new Error('EMAIL_NOT_CONFIGURED');
+    }
+
     try {
       const templateParams = {
         from_name: name.trim(),

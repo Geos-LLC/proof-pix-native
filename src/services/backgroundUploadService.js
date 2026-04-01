@@ -1,6 +1,22 @@
 import { uploadPhotoBatch, uploadPhotoAsTeamMember } from './uploadService';
 import { markPhotosAsUploaded } from './uploadTracker';
 
+// Check if the device has network connectivity
+async function checkNetworkConnectivity() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch('https://clients3.google.com/generate_204', {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return response.status === 204 || response.ok;
+  } catch {
+    return false;
+  }
+}
+
 class BackgroundUploadService {
   constructor() {
     this.activeUploads = new Map();
@@ -8,6 +24,7 @@ class BackgroundUploadService {
     this.uploadQueue = [];
     this.isProcessing = false;
     this.completedUploads = new Map();
+    this.abortControllers = new Map(); // uploadId -> AbortController
   }
 
   // Subscribe to upload progress updates
@@ -89,7 +106,18 @@ class BackgroundUploadService {
     console.log('[BG_UPLOAD] 🔍 upload.config:', upload.config);
     console.log('[BG_UPLOAD] 🔍 upload.sessionId:', upload.sessionId);
     console.log('[BG_UPLOAD] 🔍 upload.accountType:', upload.accountType);
-    
+
+    // Check network connectivity before starting
+    const isOnline = await checkNetworkConnectivity();
+    if (!isOnline) {
+      upload.status = 'failed';
+      upload.endTime = Date.now();
+      upload.error = 'No internet connection. Please check your network and try again.';
+      this.activeUploads.delete(upload.id);
+      this.notifyListeners();
+      return;
+    }
+
     try {
       // Move to active uploads
       upload.status = 'uploading';
@@ -97,6 +125,11 @@ class BackgroundUploadService {
       // Initialize progress with correct total count
       upload.progress = { current: 0, total: upload.items.length };
       this.activeUploads.set(upload.id, upload);
+
+      // Create AbortController so cancel can stop in-flight requests
+      const abortController = new AbortController();
+      this.abortControllers.set(upload.id, abortController);
+
       this.notifyListeners();
 
       // Prepare upload options
@@ -111,6 +144,7 @@ class BackgroundUploadService {
         useDirectDrive: upload.config?.useDirectDrive || upload.useDirectDrive || false, // Pass flag for proxy server upload
         sessionId: upload.config?.sessionId || upload.sessionId || null, // Pass proxy session ID
         accountType: upload.config?.accountType || upload.accountType || 'google', // Pass account type
+        abortSignal: abortController.signal,
         onProgress: (current, total) => {
           upload.progress = { current, total };
           this.notifyListeners();
@@ -140,36 +174,57 @@ class BackgroundUploadService {
       upload.status = 'completed';
       upload.endTime = Date.now();
       upload.result = result;
-      
+
       // Store in completed uploads for notification
       this.completedUploads.set(upload.id, upload);
-      
+
       // Remove from active uploads
       this.activeUploads.delete(upload.id);
+      this.abortControllers.delete(upload.id);
       this.notifyListeners();
 
     } catch (error) {
       console.error('[BG_UPLOAD] ❌ Upload failed with error:', error);
       console.error('[BG_UPLOAD] ❌ Error message:', error.message);
       console.error('[BG_UPLOAD] ❌ Error stack:', error.stack);
-      
+
       // Mark as failed
       upload.status = 'failed';
       upload.endTime = Date.now();
       upload.error = error.message || 'Upload failed';
-      
+
+      // Store in completed uploads so the user sees the failure notification
+      this.completedUploads.set(upload.id, upload);
+
       // Remove from active uploads
       this.activeUploads.delete(upload.id);
+      this.abortControllers.delete(upload.id);
       this.notifyListeners();
     }
   }
 
   async processTeamUpload(upload) {
+    // Check network connectivity before starting
+    const isOnline = await checkNetworkConnectivity();
+    if (!isOnline) {
+      upload.status = 'failed';
+      upload.endTime = Date.now();
+      upload.error = 'No internet connection. Please check your network and try again.';
+      this.activeUploads.delete(upload.id);
+      this.notifyListeners();
+      return;
+    }
+
     try {
       upload.status = 'uploading';
       upload.startTime = Date.now();
       upload.progress = { current: 0, total: upload.items.length };
       this.activeUploads.set(upload.id, upload);
+
+      // Create AbortController so cancel can stop in-flight requests
+      const abortController = new AbortController();
+      this.abortControllers.set(upload.id, abortController);
+
       this.notifyListeners();
 
       const { items, teamInfo } = upload;
@@ -186,6 +241,7 @@ class BackgroundUploadService {
         sessionId: teamInfo.sessionId,
         token: teamInfo.token, // Required for team member uploads
         accountType: upload.config?.accountType || teamInfo.accountType || 'google', // Pass account type
+        abortSignal: abortController.signal,
         onProgress: (current, total) => {
           upload.progress = { current, total };
           this.notifyListeners();
@@ -211,13 +267,16 @@ class BackgroundUploadService {
       upload.result = result;
       this.completedUploads.set(upload.id, upload);
       this.activeUploads.delete(upload.id);
+      this.abortControllers.delete(upload.id);
       this.notifyListeners();
 
     } catch (error) {
       upload.status = 'failed';
       upload.endTime = Date.now();
       upload.error = error.message || 'Team upload failed';
+      this.completedUploads.set(upload.id, upload);
       this.activeUploads.delete(upload.id);
+      this.abortControllers.delete(upload.id);
       this.notifyListeners();
     }
   }
@@ -226,20 +285,42 @@ class BackgroundUploadService {
   cancelUpload(uploadId) {
     // Remove from queue
     this.uploadQueue = this.uploadQueue.filter(upload => upload.id !== uploadId);
-    
-    // Remove from active uploads
+
+    // Abort in-flight requests
+    if (this.abortControllers.has(uploadId)) {
+      this.abortControllers.get(uploadId).abort();
+      this.abortControllers.delete(uploadId);
+    }
+
+    // Remove from active uploads and mark as cancelled
     if (this.activeUploads.has(uploadId)) {
       const upload = this.activeUploads.get(uploadId);
       upload.status = 'cancelled';
       upload.endTime = Date.now();
+      upload.error = 'Upload cancelled';
+      this.completedUploads.set(upload.id, upload);
       this.activeUploads.delete(uploadId);
     }
-    
+
     this.notifyListeners();
   }
 
   // Cancel all uploads
   cancelAllUploads() {
+    // Abort all in-flight requests
+    for (const controller of this.abortControllers.values()) {
+      controller.abort();
+    }
+    this.abortControllers.clear();
+
+    // Mark active uploads as cancelled
+    for (const upload of this.activeUploads.values()) {
+      upload.status = 'cancelled';
+      upload.endTime = Date.now();
+      upload.error = 'Upload cancelled';
+      this.completedUploads.set(upload.id, upload);
+    }
+
     this.uploadQueue = [];
     this.activeUploads.clear();
     this.isProcessing = false;

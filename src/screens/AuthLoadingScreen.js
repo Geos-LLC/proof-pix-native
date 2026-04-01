@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Platform, Text, Image, Dimensions, StatusBar } from 'react-native';
+import { View, StyleSheet, Platform, Text, Image, Dimensions, StatusBar, Linking } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as NavigationBarModule from 'expo-navigation-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
@@ -119,6 +120,26 @@ export default function AuthLoadingScreen({ navigation }) {
 
   useEffect(() => {
     const navigate = async () => {
+      // Check if the app was opened via a deep link (invite or join)
+      // If so, let React Navigation handle routing — don't override with replace
+      try {
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl) {
+          const isDeepLink = initialUrl.includes('/join') || initialUrl.includes('join?invite') || initialUrl.includes('invite/') || initialUrl.includes('referral/');
+          if (isDeepLink) {
+            console.log('[AuthLoading] Deep link detected, letting React Navigation handle:', initialUrl);
+            await SplashScreen.hideAsync().catch(() => {});
+            return; // Don't navigate — React Navigation will handle routing
+          }
+        }
+      } catch (error) {
+        console.log('[AuthLoading] Could not check initial URL:', error?.message);
+      }
+
+      // Hide the native splash screen right before navigating so the user
+      // sees one continuous splash instead of native-splash → AuthLoading → destination.
+      await SplashScreen.hideAsync().catch(() => {});
+
       // If userName is set, user has completed initial setup
       if (userName && userName.trim() !== '') {
         navigation.replace('Home');
@@ -157,10 +178,9 @@ export default function AuthLoadingScreen({ navigation }) {
       }
     };
 
-    // Wait for settings, admin, and IAP check to complete
+    // Wait for settings, admin, and IAP check to complete, then navigate immediately
     if (!settingsLoading && !adminLoading && iapChecked) {
-      // Show splash screen for a visible duration before navigating
-      setTimeout(navigate, 5000);
+      navigate();
     }
   }, [settingsLoading, adminLoading, iapChecked, userName, userPlan, navigation]);
 

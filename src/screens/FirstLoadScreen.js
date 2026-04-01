@@ -15,7 +15,7 @@ import {
   Pressable,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
@@ -24,6 +24,9 @@ import { COLORS } from '../constants/rooms';
 import { logLanguageChange } from '../utils/analytics';
 import { FONTS } from '../constants/fonts';
 import { canStartTrial } from '../services/trialService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Updates from 'expo-updates';
+import { isRTLLanguage } from '../hooks/useRTL';
 
 const { width, height } = Dimensions.get('window');
 
@@ -62,6 +65,7 @@ const LANGUAGES = [
 
 export default function FirstLoadScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { individualSignIn } = useAdmin();
   const { updateUserInfo, updateUserPlan, userPlan, updateLabelLanguage, updateSectionLanguage } = useSettings();
   const [userName, setUserName] = useState('');
@@ -120,7 +124,7 @@ export default function FirstLoadScreen({ navigation, route }) {
           Alert.alert(
             t('referral.codeAppliedTitle', { defaultValue: '🎉 Referral Code Applied!' }),
             t('referral.codeAppliedMessage', {
-              defaultValue: `Great! You get ${(Platform.OS === 'android' ? 14 : 30) + 15} days free trial and your friend gets 15 days free!`
+              defaultValue: `Great! You get ${30} days free trial and your friend gets 15 days free!`
             }),
             [{ text: t('common.ok') }]
           );
@@ -140,7 +144,12 @@ export default function FirstLoadScreen({ navigation, route }) {
   }, [route?.params?.code]);
 
   const changeLanguage = (languageCode) => {
+    const wasRTL = isRTLLanguage(i18n.language);
+    const willBeRTL = isRTLLanguage(languageCode);
+
     i18n.changeLanguage(languageCode);
+    // Explicitly persist language choice (safety net for async detector)
+    AsyncStorage.setItem('@proofpix_language', languageCode).catch(() => {});
     updateLabelLanguage(languageCode);
     updateSectionLanguage(languageCode);
     try {
@@ -149,6 +158,23 @@ export default function FirstLoadScreen({ navigation, route }) {
       // non‑critical
     }
     setLanguageModalVisible(false);
+
+    // RTL direction change requires app restart to take full effect
+    if (wasRTL !== willBeRTL) {
+      Alert.alert(
+        willBeRTL ? 'إعادة تشغيل مطلوبة' : 'Restart Required',
+        willBeRTL
+          ? 'يرجى إعادة تشغيل التطبيق لتطبيق اتجاه اللغة العربية بشكل صحيح.'
+          : 'Please restart the app to apply the language direction correctly.',
+        [
+          { text: willBeRTL ? 'لاحقاً' : 'Later', style: 'cancel' },
+          {
+            text: willBeRTL ? 'إعادة تشغيل' : 'Restart Now',
+            onPress: () => Updates.reloadAsync(),
+          },
+        ]
+      );
+    }
   };
 
   const getCurrentLanguage = () => {
@@ -337,7 +363,7 @@ export default function FirstLoadScreen({ navigation, route }) {
                 value={userName}
                 onChangeText={setUserName}
                 placeholder={'Alex Bond'}
-                placeholderTextColor="#000"
+                placeholderTextColor="#999"
                 autoCapitalize="words"
                 autoCorrect={false}
                 onFocus={handleNameInputFocus}
@@ -476,7 +502,7 @@ export default function FirstLoadScreen({ navigation, route }) {
             >
               <Text style={styles.modalSubtitle}>
                 {t('referral.enterCodeSubtitle', { 
-                  defaultValue: `Enter a referral code from a friend to get ${(Platform.OS === 'android' ? 14 : 30) + 15} days free trial!`
+                  defaultValue: `Enter a referral code from a friend to get ${30} days free trial!`
                 })}
               </Text>
               
@@ -537,7 +563,7 @@ export default function FirstLoadScreen({ navigation, route }) {
               {t('referral.successMessage', { defaultValue: 'You now have' })}
               {' '}
               <Text style={styles.highlightText}>
-                {t('referral.successDays', { defaultValue: `${(Platform.OS === 'android' ? 14 : 30) + 15} days free trial!` })}
+                {t('referral.successDays', { defaultValue: `${30} days free trial!` })}
               </Text>
             </Text>
             <Text style={styles.successSubtext}>
@@ -564,13 +590,14 @@ export default function FirstLoadScreen({ navigation, route }) {
         transparent={true}
         animationType="slide"
         onRequestClose={handleLanguageInfoClose}
+        statusBarTranslucent={true}
       >
         <Pressable
           style={styles.modalOverlay}
           onPress={handleLanguageInfoClose}
         >
           <Pressable 
-            style={styles.languageInfoModalContent}
+            style={[styles.languageInfoModalContent, { paddingBottom: Math.max(20, insets.bottom + 10) }]}
             onPress={(e) => e.stopPropagation()}
           >
             {/* Handle Bar */}

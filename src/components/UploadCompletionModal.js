@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
   if (!completedUploads || completedUploads.length === 0) return null;
 
   const latestUpload = completedUploads[completedUploads.length - 1];
+  const isUploadError = latestUpload.status === 'failed';
   const { result, albumName } = latestUpload;
   const { successful, failed } = result || { successful: [], failed: [] };
 
@@ -45,19 +46,51 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
     setShowDeleteConfirm(false);
   };
 
+  // Detect if failures are likely due to poor network
+  const isNetworkIssue = (() => {
+    const toStr = (e) => (typeof e === 'string' ? e : e?.message || '').toLowerCase();
+    const errorStr = toStr(latestUpload.error);
+    const failedErrors = (failed || []).map(f => toStr(f.error)).join(' ');
+    const allErrors = `${errorStr} ${failedErrors}`;
+    return /network|timeout|timed out|fetch|econnreset|enotfound|socket|aborted|internet|offline|dns/i.test(allErrors)
+      || (failed.length > 0 && successful.length === 0);
+  })();
+
+  // Treat as full failure if all photos failed (even if batch itself "completed")
+  const isAllFailed = !isUploadError && failed.length > 0 && successful.length === 0;
+  const isEffectiveError = isUploadError || isAllFailed;
+
   const getCompletionMessage = () => {
+    if (isEffectiveError) {
+      if (isNetworkIssue) {
+        return "Couldn't complete upload due to network error. Please check your internet connection and try again.";
+      }
+      const err = latestUpload.error;
+      const errMsg = (typeof err === 'string' ? err : err?.message);
+      if (errMsg) return errMsg;
+      if (failed.length > 0) {
+        const firstErr = failed[0].error;
+        const firstMsg = typeof firstErr === 'string' ? firstErr : firstErr?.message;
+        if (firstMsg) return firstMsg;
+      }
+      return t('gallery.uploadFailedMessage', { defaultValue: 'Upload failed. Please try again.' });
+    }
     if (failed.length === 0) {
       return t('gallery.uploadCompleteMessage', { count: successful.length, albumName });
     } else {
+      if (isNetworkIssue) {
+        return "Couldn't complete upload due to network error. " + successful.length + " of " + (successful.length + failed.length) + " photos uploaded.";
+      }
       return t('gallery.uploadPartialMessage', { successCount: successful.length, failedCount: failed.length });
     }
   };
 
   const getStatusColor = () => {
-    return COLORS.PRIMARY; // Default yellow color
+    return isEffectiveError ? '#CC0000' : COLORS.PRIMARY;
   };
 
   const getStatusIcon = () => {
+    if (isEffectiveError) return '❌';
     return failed.length === 0 ? '🟡' : '⚠️';
   };
 
@@ -84,7 +117,7 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
             
             {/* Title - Centered */}
             <Text style={styles.modalTitle}>
-              {failed.length === 0 ? t('gallery.uploadCompleteTitle') : t('gallery.uploadPartialTitle')}
+              {isEffectiveError ? t('gallery.uploadFailedTitle', { defaultValue: 'Upload Failed' }) : failed.length === 0 ? t('gallery.uploadCompleteTitle') : t('gallery.uploadPartialTitle')}
             </Text>
             
             {/* Spacer to balance the close button */}
@@ -92,31 +125,41 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
           </View>
           
           {/* Body */}
-          <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.body}>
+          <View style={styles.bodyContainer}>
             <Text style={styles.message}>{getCompletionMessage()}</Text>
-            
-            {successful.length > 0 && (
+
+            {/* Network warning */}
+            {(isEffectiveError || failed.length > 0) && isNetworkIssue && (
+              <View style={styles.networkWarning}>
+                <Ionicons name="wifi-outline" size={20} color="#B45309" style={{ marginRight: 8 }} />
+                <Text style={styles.networkWarningText}>
+                  {t('gallery.networkWarning', { defaultValue: 'Your internet connection may be unstable. Please check your Wi-Fi or mobile data and try again.' })}
+                </Text>
+              </View>
+            )}
+
+            {!isEffectiveError && successful.length > 0 && (
               <View style={styles.successSection}>
                 <Text style={styles.sectionTitle}>
                   🟡 {t('gallery.successfulCount', { count: successful.length })}
                 </Text>
                 <Text style={styles.sectionText}>
-                  {successful.map(item => item.filename).join(', ')}
+                  {successful.map(item => item.filename || item.photo?.filename || item.photo?.name || 'photo').join(', ')}
                 </Text>
               </View>
             )}
 
-            {failed.length > 0 && (
+            {!isEffectiveError && failed.length > 0 && (
               <View style={styles.failedSection}>
                 <Text style={styles.sectionTitle}>
                   ❌ {t('gallery.failedCount', { count: failed.length })}
                 </Text>
                 <Text style={styles.sectionText}>
-                  {failed.map(item => item.filename).join(', ')}
+                  {failed.map(item => item.filename || item.photo?.filename || item.photo?.name || 'photo').join(', ')}
                 </Text>
               </View>
             )}
-          </ScrollView>
+          </View>
           
           {/* Footer Buttons */}
           <View style={styles.footer}>
@@ -124,8 +167,8 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
               style={[styles.button, styles.primaryButton, { backgroundColor: getStatusColor() }]}
               onPress={handleClose}
             >
-              <Text style={styles.buttonText}>
-                {failed.length === 0 ? t('gallery.great') : t('common.ok')}
+              <Text style={[styles.buttonText, isEffectiveError && { color: '#FFFFFF' }]}>
+                {isEffectiveError ? t('common.ok') : failed.length === 0 ? t('gallery.great') : t('common.ok')}
               </Text>
             </TouchableOpacity>
             
@@ -208,10 +251,7 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 32,
   },
-  bodyScroll: {
-    flex: 1,
-  },
-  body: {
+  bodyContainer: {
     paddingHorizontal: 20,
     paddingBottom: 16,
   },
@@ -221,6 +261,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 22,
+  },
+  networkWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  networkWarningText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
+    lineHeight: 18,
   },
   successSection: {
     marginBottom: 16,

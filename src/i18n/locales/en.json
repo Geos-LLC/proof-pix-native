@@ -11,6 +11,7 @@
     "success": "Success",
     "ok": "OK",
     "cancel": "Cancel",
+    "done": "Done",
     "yes": "Yes",
     "no": "No",
     "close": "Close",
@@ -414,6 +415,8 @@
     "friendsJoined": "Friends Joined",
     "monthsEarned": "Months earned",
     "monthsCount": "{{count}} Months",
+    "daysEarned": "Days earned",
+    "daysCount": "{{count}} Days",
     "outOf": "{{current}} out of {{total}}",
     "enterReferralCode": "Enter referral code",
     "applying": "Applying...",
@@ -817,10 +820,14 @@
     "screenTitle": "Invite Friends",
     "loading": "Loading...",
 
-    "earnFreeMonthsTitle": "Earn Free Months!",
-    "rewardLine1": "1 friend → +1 month free",
-    "rewardLine2": "2 friends → +2 months free",
-    "rewardLine3": "3+ friends → +3 months free",
+    "earnFreeMonthsTitle": "Earn Free Days!",
+    "earnFreeTitle": "Earn Free Days!",
+    "tier1": "1 Friend = 15 Days Free!",
+    "tier2": "2 Friends = 30 Days Free",
+    "tier3": "3 Friends = 45 Days Free",
+    "rewardLine1": "1 Friend = 15 Days Free",
+    "rewardLine2": "2 Friends = 30 Days Free",
+    "rewardLine3": "3 Friends = 45 Days Free",
 
     "codeLabel": "Your Referral Code",
     "copyLinkButton": "Copy Link",
@@ -842,14 +849,14 @@
     "copyErrorMessage": "Failed to copy code.",
 
     "haveCodeTitle": "Have a Referral Code?",
-    "haveCodeSubtitle": "Enter your friend's referral code to get 45 days free trial! Your friend also gets 1 month free.",
+    "haveCodeSubtitle": "Enter your friend's referral code to get 30 days free trial! Your friend also gets 15 days free.",
     "codePlaceholder": "Enter code (e.g., ABC123)",
     "applyAndContinue": "Apply & Continue",
     "continue": "Continue",
     "skip": "Skip",
 
     "codeAppliedTitle": "🎉 Referral Code Applied!",
-    "codeAppliedMessage": "Great! You get 45 days free trial and your friend gets 1 month free!",
+    "codeAppliedMessage": "Great! You get 30 days free trial and your friend gets 15 days free!",
     "alreadyUsedTitle": "Already Used",
     "alreadyUsedMessage": "This device has already used a referral code. Each device can only use one referral code.",
     "unableToApplyTitle": "Unable to Apply Code",
@@ -864,5 +871,16 @@
     "infoModalBenefit2": "✓ Automatic Tracking: Your invite is tracked automatically, so rewards are applied instantly.",
     "infoModalBenefit3": "✓ No Extra Cost: Rewards are free and only require your friends to set up the app.",
     "infoModalButton": "Got it"
+  },
+  "contact": {
+    "title": "Contact us",
+    "heading": "Tell us what you think",
+    "description": "We'd love to hear your feedback, suggestions or answer any questions you may have.",
+    "nameLabel": "Your Name",
+    "emailLabel": "Email Address",
+    "phoneLabel": "Phone number (Optional)",
+    "descriptionLabel": "Tell us about your needs",
+    "submit": "Send Request",
+    "sending": "Sending..."
   }
 }

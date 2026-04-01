@@ -13,6 +13,7 @@ import {
   Platform,
   PixelRatio
 } from 'react-native';
+import * as Sharing from 'expo-sharing';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import { usePhotos } from '../context/PhotoContext';
@@ -443,13 +444,11 @@ export default function PhotoDetailScreen({ route, navigation }) {
       }
 
       // Share the image
-      const shareOptions = {
-        title: `${currentPhoto.mode === 'before' ? 'Before' : 'After'} Photo - ${currentPhoto.name}`,
-        url: tempUri,
-        type: 'image/jpeg'
-      };
-
-      const result = await Share.share(shareOptions);
+      if (Platform.OS === 'android') {
+        await Sharing.shareAsync(tempUri, { mimeType: 'image/jpeg', dialogTitle: `${currentPhoto.mode === 'before' ? 'Before' : 'After'} Photo - ${currentPhoto.name}` });
+      } else {
+        await Share.share({ title: `${currentPhoto.mode === 'before' ? 'Before' : 'After'} Photo - ${currentPhoto.name}`, url: tempUri });
+      }
 
       // Clean up temporary file after sharing
       try {

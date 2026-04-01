@@ -72,19 +72,22 @@ export function getAppStoreLink() {
  */
 export function generateShareContent(token, sessionId, teamName = '') {
   const inviteLink = generateInviteLink(token, sessionId);
+  const deepLink = generateDeepLink(token, sessionId);
+  const inviteCode = generateInviteCode(token, sessionId);
 
   const teamText = teamName ? `my ${teamName} team` : 'my ProofPix team';
 
   const message = `You're invited to join ${teamText}! 🎉
 
-Click this link to get started:
+Tap this link to join:
 ${inviteLink}
 
-This link will:
-• Open the ProofPix app if you have it installed
-• Take you to the app store if you need to download it
+Or enter this invite code manually in the app:
+${inviteCode}
 
-Once you have the app, the invite will be applied automatically!`;
+Download ProofPix:
+iOS: https://apps.apple.com/us/app/proofpix-before-after/id6754261444
+Android: https://play.google.com/store/apps/details?id=com.proofpix.app`;
 
   return {
     title: 'ProofPix Team Invite',

@@ -1,6 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox, Platform, Image } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
+import * as SplashScreen from 'expo-splash-screen';
+
+// Keep the native splash screen visible until we explicitly hide it
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Log app startup
 console.log('[App] ====== APP STARTING ======');
@@ -172,7 +176,7 @@ function AppNavigator() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#000' }
+        contentStyle: { backgroundColor: '#F2C31B' }
       }}
       initialRouteName="AuthLoading"
     >
@@ -346,7 +350,10 @@ function AppNavigator() {
 
 // Linking configuration for deep links (OAuth redirect and invite links)
 const linking = {
-  prefixes: ['proofpix://'],
+  prefixes: [
+    'proofpix://',
+    'https://steadfast-blessing-production.up.railway.app',
+  ],
   config: {
     screens: {
       Invite: 'invite/:token',
@@ -356,8 +363,7 @@ const linking = {
           invite: (invite) => decodeURIComponent(invite),
         },
       },
-      Referral: 'referral',
-      ReferralWithCode: {
+      Referral: {
         path: 'referral/:code',
         parse: {
           code: (code) => code,
@@ -610,26 +616,23 @@ export default function App() {
     setTrialNotification(null);
   };
 
-  if (!fontsLoaded) {
-    // Hide Android navigation bar during splash
+  // Keep the native splash screen visible until AuthLoadingScreen signals it's
+  // ready to navigate (so users see one continuous splash, not two).
+  // AuthLoadingScreen calls SplashScreen.hideAsync() right before navigating.
+  useEffect(() => {
     if (Platform.OS === 'android') {
-      NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('overlay-swipe');
+      if (!fontsLoaded) {
+        NavigationBar.setVisibilityAsync('hidden');
+        NavigationBar.setBehaviorAsync('overlay-swipe');
+      } else {
+        NavigationBar.setVisibilityAsync('visible');
+      }
     }
-    return (
-      <View style={styles.loadingContainer}>
-        <Image
-          source={require('./assets/PP_logo_app.png')}
-          style={styles.loadingLogo}
-          resizeMode="contain"
-        />
-      </View>
-    );
-  }
+  }, [fontsLoaded]);
 
-  // Restore Android navigation bar after loading
-  if (Platform.OS === 'android') {
-    NavigationBar.setVisibilityAsync('visible');
+  if (!fontsLoaded) {
+    // Native splash screen is still visible, render nothing
+    return null;
   }
 
   return (
@@ -642,7 +645,7 @@ export default function App() {
               <NavigationContainer
                 ref={navigationRef}
                 linking={linking}
-                fallback={<Text>Loading...</Text>}
+                fallback={null}
                 onReady={() => {
                   routeNameRef.current = navigationRef.current.getCurrentRoute().name;
                 }}
@@ -730,15 +733,4 @@ export default function App() {
   );
 }
 
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#F2C31B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingLogo: {
-    width: 200,
-    height: 200,
-  },
-});
+const styles = StyleSheet.create({});

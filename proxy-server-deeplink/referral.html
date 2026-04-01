@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProofPix Referral</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #F6F8FA;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 40px 32px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    h1 { font-size: 24px; color: #000; margin-bottom: 8px; }
+    p { font-size: 16px; color: #666; margin-bottom: 24px; line-height: 1.5; }
+    .btn {
+      display: inline-block;
+      background: #F2C31B;
+      color: #000;
+      font-weight: 700;
+      font-size: 18px;
+      padding: 14px 32px;
+      border-radius: 100px;
+      text-decoration: none;
+      margin-bottom: 16px;
+      width: 100%;
+    }
+    .btn-secondary {
+      display: inline-block;
+      background: #000;
+      color: #fff;
+      font-weight: 600;
+      font-size: 16px;
+      padding: 12px 28px;
+      border-radius: 100px;
+      text-decoration: none;
+      width: 100%;
+    }
+    .code {
+      background: #F0F0F0;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 18px;
+      letter-spacing: 2px;
+      margin: 16px 0;
+      color: #333;
+      font-weight: 700;
+    }
+    .reward { font-size: 14px; color: #0B8321; font-weight: 600; margin-bottom: 16px; }
+    .hint { font-size: 13px; color: #999; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>ProofPix Referral</h1>
+    <p>You've been invited to try ProofPix!</p>
+    <p class="reward">Get 15 extra days free with this referral code</p>
+
+    <a id="openApp" class="btn" href="#">Open in App</a>
+    <br />
+    <a id="getApp" class="btn-secondary" href="#">Get ProofPix</a>
+
+    <div class="code" id="referralCode"></div>
+    <p class="hint">If the app doesn't open, download ProofPix and enter the referral code above in the Referral screen.</p>
+  </div>
+
+  <script>
+    (function() {
+      // Extract referral code from URL path: /referral/ABC123
+      var pathParts = window.location.pathname.split('/');
+      var code = pathParts[pathParts.length - 1] || '';
+
+      // Custom scheme deep link (fallback for when universal links don't trigger)
+      var customSchemeLink = 'proofpix://referral/' + encodeURIComponent(code);
+
+      // Display the referral code
+      document.getElementById('referralCode').textContent = code;
+
+      // Set up "Open in App" — use custom scheme as explicit tap target
+      document.getElementById('openApp').href = customSchemeLink;
+
+      // Detect platform for app store link
+      var ua = navigator.userAgent || '';
+      var isIOS = /iPhone|iPad|iPod/i.test(ua);
+      var storeLink = isIOS
+        ? 'https://apps.apple.com/us/app/proofpix-before-after/id6754261444'
+        : 'https://play.google.com/store/apps/details?id=com.proofpix.app';
+
+      document.getElementById('getApp').href = storeLink;
+
+      // On page load, try the custom scheme to open the app.
+      // If universal links are configured correctly, the OS will have already
+      // intercepted this URL and opened the app directly — this page won't load.
+      // If we reach here, universal links didn't fire, so try custom scheme.
+      if (code) {
+        window.location.href = customSchemeLink;
+      }
+    })();
+  </script>
+</body>
+</html>

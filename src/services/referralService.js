@@ -196,9 +196,11 @@ export const processReferralReward = async (referralCode) => {
  * @returns {string} Full referral link
  */
 export const getReferralLink = (referralCode) => {
-  // In production, this would be a proper deep link or web URL
-  // For now, we'll use a custom URL scheme
-  return `proofpix://referral?code=${referralCode}`;
+  // Use web URL (universal link) instead of custom scheme — custom schemes
+  // don't work reliably from browsers/share sheets on iOS and get redirected
+  // to the App Store. The web URL triggers universal links on iOS and intent
+  // filters on Android, falling back to a redirect page if app isn't installed.
+  return `https://steadfast-blessing-production.up.railway.app/referral/${referralCode}`;
 };
 
 /**
@@ -207,8 +209,10 @@ export const getReferralLink = (referralCode) => {
  * @returns {string} Pre-formatted share message
  */
 export const getShareMessage = (referralCode) => {
-  const link = getReferralLink(referralCode);
-  return `Try ProofPix to manage your cleaning jobs effortlessly! Install using my link and I'll earn free months too: ${link}`;
+  const referralLink = getReferralLink(referralCode);
+  const iosLink = 'https://apps.apple.com/us/app/proofpix-before-after/id6754261444';
+  const androidLink = 'https://play.google.com/store/apps/details?id=com.proofpix.app';
+  return `Try ProofPix to manage your cleaning jobs effortlessly!\n\nTap here to get started:\n${referralLink}\n\nDownload ProofPix:\niOS: ${iosLink}\nAndroid: ${androidLink}\n\nUse my referral code: ${referralCode}\nYou'll get 15 extra days free!`;
 };
 
 /**
@@ -312,7 +316,7 @@ export const registerReferralCodeOnServer = async (userId, referralCode) => {
       return false;
     }
   } catch (error) {
-    console.error('[ReferralService] Error registering code on server:', error);
+    console.log('[ReferralService] Could not register code on server (non-critical):', error?.message);
     return false;
   }
 };

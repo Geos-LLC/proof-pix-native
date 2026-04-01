@@ -37,7 +37,8 @@
     "deleteFromStorageWarning": "Checking the \"Delete from phone storage\" box will permanently delete photos from your device. This action cannot be undone.",
     "apply": "Apply",
     "deleteFromPhoneStorage": "Delete from phone storage",
-    "warning": "Advertencia"
+    "warning": "Advertencia",
+    "done": "Listo"
   },
   "firstLoad": {
     "title": "Bienvenido a ProofPix",
@@ -493,7 +494,9 @@
     "data": "Datos",
     "dataDescription": "Esto eliminará todos los proyectos, fotos y ajustes",
     "trialDaysRemaining": "{{days}} días restantes",
-    "trial": "Prueba"
+    "trial": "Prueba",
+    "daysEarned": "Días ganados",
+    "daysCount": "{{count}} Días"
   },
   "rooms": {
     "kitchen": "Cocina",
@@ -891,6 +894,21 @@
     "infoModalBenefit1": "✓ Fácil de Compartir: Envía un enlace de referido único a través de WhatsApp, correo electrónico, SMS o redes sociales.",
     "infoModalBenefit2": "✓ Seguimiento Automático: Tu invitación se rastrea automáticamente, por lo que las recompensas se aplican al instante.",
     "infoModalBenefit3": "✓ Sin Costo Extra: Las recompensas son gratuitas y solo requieren que tus amigos configuren la aplicación.",
-    "infoModalButton": "Entendido"
+    "infoModalButton": "Entendido",
+    "earnFreeTitle": "¡Gana Días Gratis!",
+    "tier1": "1 Amigo = ¡15 Días Gratis!",
+    "tier2": "2 Amigos = 30 Días Gratis",
+    "tier3": "3 Amigos = 45 Días Gratis"
+  },
+  "contact": {
+    "title": "Contáctanos",
+    "heading": "Cuéntanos lo que piensas",
+    "description": "Nos encantaría escuchar tus comentarios, sugerencias o responder cualquier pregunta que tengas.",
+    "nameLabel": "Tu Nombre",
+    "emailLabel": "Correo Electrónico",
+    "phoneLabel": "Número de teléfono (Opcional)",
+    "descriptionLabel": "Cuéntanos sobre tus necesidades",
+    "submit": "Enviar Solicitud",
+    "sending": "Enviando..."
   }
 }

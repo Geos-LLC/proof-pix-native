@@ -25,12 +25,13 @@ import {
   initializeReferralCode,
   getReferralStatsFromServer,
   getUserId,
+  trackReferralInstallation,
 } from '../services/referralService';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
 
-export default function ReferralScreen({ navigation }) {
+export default function ReferralScreen({ navigation, route }) {
   const { t } = useTranslation();
   const [referralCode, setReferralCode] = useState('');
   const [referralInfo, setReferralInfo] = useState({
@@ -50,6 +51,33 @@ export default function ReferralScreen({ navigation }) {
   useEffect(() => {
     loadReferralData();
   }, []);
+
+  // Handle referral code from deep link (proofpix://referral/CODE)
+  useEffect(() => {
+    const incomingCode = route?.params?.code;
+    if (incomingCode && incomingCode !== referralCode) {
+      console.log('[ReferralScreen] Referral code received via deep link:', incomingCode);
+      const applyReferral = async () => {
+        try {
+          const result = await trackReferralInstallation(incomingCode);
+          if (result?.success) {
+            Alert.alert(
+              t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+              t('referral.appliedMessage', { defaultValue: 'Your friend\'s referral code has been applied. Enjoy 15 extra days free!' })
+            );
+          } else if (result?.error?.includes('already used')) {
+            Alert.alert(
+              t('referral.alreadyUsedTitle', { defaultValue: 'Already Applied' }),
+              t('referral.alreadyUsedMessage', { defaultValue: 'A referral code has already been applied to your account.' })
+            );
+          }
+        } catch (error) {
+          console.error('[ReferralScreen] Error applying referral code:', error);
+        }
+      };
+      applyReferral();
+    }
+  }, [route?.params?.code]);
 
   const loadReferralData = async () => {
     try {
@@ -97,12 +125,15 @@ export default function ReferralScreen({ navigation }) {
         // non‑critical
       }
 
+      const deepLink = `https://steadfast-blessing-production.up.railway.app/referral/${referralCode}`;
+
       await Share.share({
         message: t('referral.shareMessage', {
           code: referralCode,
           iosLink: iosAppStoreLink,
           androidLink: androidPlayStoreLink,
-          defaultValue: `Join ProofPix and get organized!\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\n🎁 Use my referral code: ${referralCode}\nYou'll get 15 extra days free!`
+          deepLink: deepLink,
+          defaultValue: `Join ProofPix and get organized!\n\nAlready have the app? Tap here:\n${deepLink}\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\n🎁 Use my referral code: ${referralCode}\nYou'll get 15 extra days free!`
         }),
         title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
       });
@@ -197,13 +228,13 @@ export default function ReferralScreen({ navigation }) {
             </Text>
             <View style={styles.rewardsList}>
               <Text style={styles.rewardText}>
-                1 Friend = 15 Days Free!
+                {t('referral.tier1', { defaultValue: '1 Friend = 15 Days Free!' })}
               </Text>
               <Text style={styles.rewardText}>
-                2 Friends = 30 Days Free
+                {t('referral.tier2', { defaultValue: '2 Friends = 30 Days Free' })}
               </Text>
               <Text style={styles.rewardText}>
-                3 Friends = 45 Days Free
+                {t('referral.tier3', { defaultValue: '3 Friends = 45 Days Free' })}
               </Text>
             </View>
           </View>

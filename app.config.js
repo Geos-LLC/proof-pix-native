@@ -4,7 +4,8 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    version: process.env.VERSION || "1.4.3",
+    owner: "just-web-agency",
+    version: process.env.VERSION || "1.4.8",
     runtimeVersion: {
       policy: "appVersion"
     },
@@ -27,7 +28,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "23",
+      buildNumber: "28",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -49,7 +50,10 @@ export default {
         "com.apple.developer.applesignin": ["Default"],
         "com.apple.developer.icloud-container-identifiers": ["iCloud.com.proofpix.app"],
         "com.apple.developer.ubiquity-container-identifiers": ["iCloud.com.proofpix.app"],
-        "com.apple.developer.icloud-services": ["CloudDocuments"]
+        "com.apple.developer.icloud-services": ["CloudDocuments"],
+        "com.apple.developer.associated-domains": [
+          "applinks:steadfast-blessing-production.up.railway.app"
+        ]
       },
       usesAppleSignIn: true,
       usesIcloudStorage: true
@@ -60,7 +64,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 30,
+      versionCode: 34,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
@@ -77,7 +81,26 @@ export default {
         "android.permission.READ_MEDIA_AUDIO"
       ],
       edgeToEdgeEnabled: true,
-      googleServicesFile: "./google-services.json"
+      googleServicesFile: "./google-services.json",
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "steadfast-blessing-production.up.railway.app",
+              pathPrefix: "/join"
+            },
+            {
+              scheme: "https",
+              host: "steadfast-blessing-production.up.railway.app",
+              pathPrefix: "/referral"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     web: {
       favicon: "./assets/favicon.png"
@@ -128,7 +151,7 @@ export default {
     ],
     extra: {
       eas: {
-        projectId: "3e7ed884-bb3a-4191-bcb0-188386d7e977"
+        projectId: "56b6bd0e-b696-4b6c-bcc4-14714465dd9f"
       },
       // Environment variables accessible in your app
       googleServiceAccountPath: process.env.GOOGLE_SERVICE_ACCOUNT_PATH,

@@ -20,6 +20,7 @@ export default function UserInfoSetupScreen({ navigation }) {
   const { updateUserInfo, updateLabelLanguage, updateSectionLanguage } = useSettings();
 
   const [name, setName] = useState('');
+  const [nameFocused, setNameFocused] = useState(false);
 
   const handleContinue = async () => {
     const trimmed = name.trim();
@@ -96,10 +97,12 @@ export default function UserInfoSetupScreen({ navigation }) {
                 </Text>
                 <TextInput
                   style={styles.input}
-                  placeholder={t('userInfo.namePlaceholder', { defaultValue: 'Alex Bond' })}
-                  placeholderTextColor="rgba(0,0,0,0.35)"
                   value={name}
                   onChangeText={setName}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => setNameFocused(false)}
+                  placeholder={nameFocused ? '' : t('userInfo.namePlaceholder', { defaultValue: 'Alex Bond' })}
+                  placeholderTextColor="rgba(0,0,0,0.35)"
                   autoCapitalize="words"
                   autoCorrect={false}
                   returnKeyType="done"

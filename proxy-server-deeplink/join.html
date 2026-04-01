@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Join ProofPix Team</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #F6F8FA;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 40px 32px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    .logo { width: 80px; height: 80px; margin: 0 auto 20px; }
+    h1 { font-size: 24px; color: #000; margin-bottom: 8px; }
+    p { font-size: 16px; color: #666; margin-bottom: 24px; line-height: 1.5; }
+    .btn {
+      display: inline-block;
+      background: #F2C31B;
+      color: #000;
+      font-weight: 700;
+      font-size: 18px;
+      padding: 14px 32px;
+      border-radius: 100px;
+      text-decoration: none;
+      margin-bottom: 16px;
+      width: 100%;
+    }
+    .btn-secondary {
+      display: inline-block;
+      background: #000;
+      color: #fff;
+      font-weight: 600;
+      font-size: 16px;
+      padding: 12px 28px;
+      border-radius: 100px;
+      text-decoration: none;
+      width: 100%;
+    }
+    .code {
+      background: #F0F0F0;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 14px;
+      word-break: break-all;
+      margin: 16px 0;
+      color: #333;
+    }
+    .hint { font-size: 13px; color: #999; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Join ProofPix Team</h1>
+    <p>You've been invited to join a team on ProofPix!</p>
+
+    <a id="openApp" class="btn" href="#">Open in App</a>
+    <br />
+    <a id="getApp" class="btn-secondary" href="#">Get ProofPix</a>
+
+    <div class="code" id="inviteCode"></div>
+    <p class="hint">If the app doesn't open, copy the code above and paste it in the "Join Team" screen.</p>
+  </div>
+
+  <script>
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      var invite = params.get('invite') || '';
+      var customSchemeLink = 'proofpix://join?invite=' + encodeURIComponent(invite);
+
+      // Display the invite code for manual entry
+      document.getElementById('inviteCode').textContent = decodeURIComponent(invite);
+
+      // Set up the "Open in App" button
+      document.getElementById('openApp').href = customSchemeLink;
+
+      // Detect platform for app store link
+      var ua = navigator.userAgent || '';
+      var isIOS = /iPhone|iPad|iPod/i.test(ua);
+      var storeLink = isIOS
+        ? 'https://apps.apple.com/us/app/proofpix-before-after/id6754261444'
+        : 'https://play.google.com/store/apps/details?id=com.proofpix.app';
+
+      document.getElementById('getApp').href = storeLink;
+
+      // If universal links are configured, the OS intercepts this URL before
+      // the page loads and opens the app directly. If we reach here, universal
+      // links didn't fire — try the custom scheme as fallback.
+      if (invite) {
+        window.location.href = customSchemeLink;
+      }
+    })();
+  </script>
+</body>
+</html>

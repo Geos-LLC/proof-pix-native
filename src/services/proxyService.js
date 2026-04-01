@@ -660,34 +660,49 @@ class ProxyService {
         if (accountType) formData.append('accountType', accountType);
         formData.append('filename', filename); // explicit filename field
 
-        response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            // 'Content-Type': 'multipart/form-data', // DO NOT SET THIS MANUALLY! It breaks the boundary.
-          },
-          body: formData,
-        });
+        // 60s timeout to prevent hanging on bad network
+        const multipartController = new AbortController();
+        const multipartTimeout = setTimeout(() => multipartController.abort(), 60000);
+        try {
+          response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              // 'Content-Type': 'multipart/form-data', // DO NOT SET THIS MANUALLY! It breaks the boundary.
+            },
+            body: formData,
+            signal: multipartController.signal,
+          });
+        } finally {
+          clearTimeout(multipartTimeout);
+        }
       } else {
-        // Legacy Base64 upload
-        response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            filename,
-            contentBase64,
-            albumName,
-            room,
-            type,
-            format,
-            location,
-            cleanerName,
-            flat,
-            accountType
-          }),
-        });
+        // Legacy Base64 upload - 60s timeout
+        const base64Controller = new AbortController();
+        const base64Timeout = setTimeout(() => base64Controller.abort(), 60000);
+        try {
+          response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              filename,
+              contentBase64,
+              albumName,
+              room,
+              type,
+              format,
+              location,
+              cleanerName,
+              flat,
+              accountType
+            }),
+            signal: base64Controller.signal,
+          });
+        } finally {
+          clearTimeout(base64Timeout);
+        }
       }
 
       console.log('[PROXY] Upload response status:', response.status);

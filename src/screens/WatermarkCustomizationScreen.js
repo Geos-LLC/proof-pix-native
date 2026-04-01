@@ -16,6 +16,7 @@ import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../context/SettingsContext';
+import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
 import { getLabelPositions } from '../constants/rooms';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -108,6 +109,15 @@ const SAVED_COLORS = [
 ];
 
 export default function WatermarkCustomizationScreen({ navigation }) {
+  const { canUse } = useFeaturePermissions();
+
+  // Guard: bounce Starter users back
+  useEffect(() => {
+    if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+      navigation.goBack();
+    }
+  }, [canUse, navigation]);
+
   // Get settings from context
   const {
     watermarkOpacity,

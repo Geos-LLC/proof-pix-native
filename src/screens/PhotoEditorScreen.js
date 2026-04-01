@@ -10,11 +10,13 @@ import {
   ScrollView,
   PanResponder,
   Share,
-  Dimensions
+  Dimensions,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
 import { savePhotoToDevice } from '../services/storage';
@@ -532,17 +534,14 @@ export default function PhotoEditorScreen({ route, navigation }) {
       await FileSystem.copyAsync({ from: uri, to: tempUri });
 
       // Share the image
-      const shareOptions = {
-        title: `Combined Photo - ${currentPhotoSet.before.name}`,
-        message: `Check out this before/after comparison from ${currentPhotoSet.before.room}!`,
-        url: tempUri,
-        type: 'image/jpeg'
-      };
-
-      const result = await Share.share(shareOptions);
-      
-      if (result.action === Share.sharedAction) {
-      } else if (result.action === Share.dismissedAction) {
+      if (Platform.OS === 'android') {
+        await Sharing.shareAsync(tempUri, { mimeType: 'image/jpeg', dialogTitle: `Combined Photo - ${currentPhotoSet.before.name}` });
+      } else {
+        await Share.share({
+          title: `Combined Photo - ${currentPhotoSet.before.name}`,
+          message: `Check out this before/after comparison from ${currentPhotoSet.before.room}!`,
+          url: tempUri
+        });
       }
       
       // Clean up temporary file after sharing

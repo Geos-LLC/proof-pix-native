@@ -154,6 +154,15 @@ export const purchaseProduct = async (productId) => {
   console.log('[IAP] Initializing IAP connection...');
   await initIAPIfNeeded();
 
+  // iOS: clear stale transactions before attempting purchase to prevent failures
+  if (Platform.OS === 'ios') {
+    try {
+      await RNIap.clearTransactionIOS();
+    } catch (e) {
+      console.warn('[IAP] iOS: Could not clear transaction queue:', e?.message);
+    }
+  }
+
   return new Promise(async (resolve, reject) => {
     let finished = false;
     let purchaseTimeout = null;
@@ -261,6 +270,18 @@ export const purchaseProduct = async (productId) => {
         return;
       }
 
+      // iOS: "Cannot connect to iTunes Store" or payment queue errors are often transient
+      // Delay briefly before rejecting to allow any pending purchaseUpdated events to fire first
+      if (Platform.OS === 'ios' && (errorMsg.includes('Cannot connect') || errorMsg.includes('Payment Not Allowed') || errorCode === 'E_UNKNOWN')) {
+        console.warn('[IAP] iOS transient error, waiting for possible purchase update...', errorCode, errorMsg);
+        setTimeout(() => {
+          if (!finished) {
+            finish(() => reject(new Error(errorCode || 'IAP_ERROR')));
+          }
+        }, 3000);
+        return;
+      }
+
       // Log other errors
       console.error('[IAP] purchaseErrorListener triggered');
       console.error('[IAP] Error code:', errorCode);
@@ -336,6 +357,20 @@ export const purchaseProduct = async (productId) => {
  */
 export const purchaseOrUpgrade = async (targetProductId) => {
   console.log('[IAP] purchaseOrUpgrade called for:', targetProductId);
+
+  try {
+    return await _purchaseOrUpgradeInner(targetProductId);
+  } catch (err) {
+    // If subscription is already owned (common on iOS upgrades), treat as success
+    if (err?.message === 'already-owned') {
+      console.log('[IAP] Subscription already owned — treating as successful purchase');
+      return { productId: targetProductId, alreadyOwned: true };
+    }
+    throw err;
+  }
+};
+
+const _purchaseOrUpgradeInner = async (targetProductId) => {
 
   if (Platform.OS === 'android') {
     // Check for existing active main plan subscription
@@ -417,6 +452,36 @@ export const purchaseOrUpgrade = async (targetProductId) => {
           finish(() => reject(err));
         }
       });
+    }
+  }
+
+  // iOS: clear any pending/stale transactions before purchasing
+  // This prevents "purchase failed" errors when upgrading between tiers
+  if (Platform.OS === 'ios') {
+    try {
+      console.log('[IAP] iOS: Clearing pending transactions before purchase...');
+      await RNIap.clearTransactionIOS();
+      console.log('[IAP] iOS: Pending transactions cleared');
+    } catch (clearErr) {
+      console.warn('[IAP] iOS: Could not clear pending transactions:', clearErr?.message);
+      // Continue with purchase even if clear fails
+    }
+
+    // Also finish any unfinished purchases
+    try {
+      const pending = await RNIap.getAvailablePurchases();
+      if (pending && pending.length > 0) {
+        console.log('[IAP] iOS: Finishing', pending.length, 'unfinished purchase(s)...');
+        for (const purchase of pending) {
+          try {
+            await RNIap.finishTransaction({ purchase, isConsumable: false });
+          } catch (e) {
+            console.warn('[IAP] iOS: Could not finish pending purchase:', e?.message);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[IAP] iOS: Could not check pending purchases:', e?.message);
     }
   }
 
