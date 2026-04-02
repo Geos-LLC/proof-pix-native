@@ -84,6 +84,7 @@ import PlanSelectionScreen from './src/screens/PlanSelectionScreen';
 import InviteScreen from './src/screens/InviteScreen';
 import JoinTeamScreen from './src/screens/JoinTeamScreen';
 import ReferralScreen from './src/screens/ReferralScreen';
+import AdminReferralScreen from './src/screens/AdminReferralScreen';
 import GoogleSignUpScreen from './src/screens/GoogleSignUpScreen';
 import LabelLanguageSetupScreen from './src/screens/LabelLanguageSetupScreen';
 import SectionLanguageSetupScreen from './src/screens/SectionLanguageSetupScreen';
@@ -340,6 +341,13 @@ function AppNavigator() {
       <Stack.Screen
         name="VisionCameraTest"
         component={VisionCameraTestComponent}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
+        name="AdminReferralLinks"
+        component={AdminReferralScreen}
         options={{
           animation: 'slide_from_right'
         }}

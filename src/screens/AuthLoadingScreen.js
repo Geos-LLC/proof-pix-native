@@ -101,13 +101,34 @@ export default function AuthLoadingScreen({ navigation }) {
   useEffect(() => {
     const initReferralSystem = async () => {
       try {
-        const { initializeReferralCode, checkAndApplyReferralRewards } = await import('../services/referralService');
+        const { initializeReferralCode, checkAndApplyReferralRewards, getUserId } = await import('../services/referralService');
         // Register code on server (idempotent - safe to call every launch)
         await initializeReferralCode();
         // Check if referrer has earned rewards from friends' signups
         const rewardsApplied = await checkAndApplyReferralRewards();
         if (rewardsApplied > 0) {
           console.log(`[AuthLoading] Applied ${rewardsApplied} referral reward(s)`);
+        }
+
+        // Check for pending admin referral code redemption
+        try {
+          const { getAndClearPendingAdminReferralCode, redeemAdminReferralCode, hasRedeemedAdminReferral, markAdminReferralRedeemed } = await import('../services/adminReferralService');
+          const alreadyRedeemed = await hasRedeemedAdminReferral();
+          if (!alreadyRedeemed) {
+            const pendingCode = await getAndClearPendingAdminReferralCode();
+            if (pendingCode) {
+              const userId = await getUserId();
+              const result = await redeemAdminReferralCode(pendingCode, userId);
+              if (result?.success && result?.grantedDays > 0) {
+                const { extendTrial } = await import('../services/trialService');
+                await extendTrial(result.grantedDays);
+                await markAdminReferralRedeemed();
+                console.log(`[AuthLoading] Admin referral redeemed: +${result.grantedDays} days`);
+              }
+            }
+          }
+        } catch (adminError) {
+          console.log('[AuthLoading] Admin referral check (non-critical):', adminError?.message);
         }
       } catch (error) {
         console.log('[AuthLoading] Referral init error (non-critical):', error?.message);
@@ -125,6 +146,20 @@ export default function AuthLoadingScreen({ navigation }) {
       try {
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl) {
+          // Save referral code locally for deferred redemption (before routing)
+          if (initialUrl.includes('referral/')) {
+            try {
+              const codeMatch = initialUrl.match(/referral\/([A-Za-z0-9]+)/);
+              if (codeMatch && codeMatch[1]) {
+                const { saveAdminReferralCodeLocally } = await import('../services/adminReferralService');
+                await saveAdminReferralCodeLocally(codeMatch[1]);
+                console.log('[AuthLoading] Saved referral code for later redemption:', codeMatch[1]);
+              }
+            } catch (e) {
+              console.log('[AuthLoading] Could not save referral code:', e?.message);
+            }
+          }
+
           const isDeepLink = initialUrl.includes('/join') || initialUrl.includes('join?invite') || initialUrl.includes('invite/') || initialUrl.includes('referral/');
           if (isDeepLink) {
             console.log('[AuthLoading] Deep link detected, letting React Navigation handle:', initialUrl);

@@ -70,6 +70,29 @@ export default function ReferralScreen({ navigation, route }) {
               t('referral.alreadyUsedTitle', { defaultValue: 'Already Applied' }),
               t('referral.alreadyUsedMessage', { defaultValue: 'A referral code has already been applied to your account.' })
             );
+          } else {
+            // User referral not found — try admin referral code
+            const { redeemAdminReferralCode, hasRedeemedAdminReferral, markAdminReferralRedeemed } = await import('../services/adminReferralService');
+            const alreadyRedeemed = await hasRedeemedAdminReferral();
+            if (alreadyRedeemed) {
+              Alert.alert(
+                t('referral.alreadyUsedTitle', { defaultValue: 'Already Applied' }),
+                t('referral.alreadyUsedMessage', { defaultValue: 'A referral code has already been applied to your account.' })
+              );
+              return;
+            }
+            const userId = await getUserId();
+            const adminResult = await redeemAdminReferralCode(incomingCode, userId);
+            if (adminResult?.success && adminResult?.grantedDays > 0) {
+              const { extendTrial } = await import('../services/trialService');
+              await extendTrial(adminResult.grantedDays);
+              await markAdminReferralRedeemed();
+              logReferralEvent('admin_link_redeemed', { code: incomingCode, days_added: adminResult.grantedDays });
+              Alert.alert(
+                t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+                t('referral.appliedMessage', { defaultValue: `You've received ${adminResult.grantedDays} extra days free!` })
+              );
+            }
           }
         } catch (error) {
           console.error('[ReferralScreen] Error applying referral code:', error);

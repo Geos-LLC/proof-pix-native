@@ -2149,8 +2149,33 @@ export default function SettingsScreen({ navigation, route }) {
         );
         setReferralCodeInput('');
       } else {
+        // User referral failed — try admin referral code as fallback
+        const { redeemAdminReferralCode, hasRedeemedAdminReferral, markAdminReferralRedeemed } = await import('../services/adminReferralService');
+        const alreadyRedeemed = await hasRedeemedAdminReferral();
+
+        if (!alreadyRedeemed) {
+          const userId = await getUserId();
+          const adminResult = await redeemAdminReferralCode(code, userId);
+          if (adminResult?.success && adminResult?.grantedDays > 0) {
+            const { extendTrial } = await import('../services/trialService');
+            await extendTrial(adminResult.grantedDays);
+            await markAdminReferralRedeemed();
+            Alert.alert(
+              t('referral.successTitle', { defaultValue: 'Success' }),
+              t('referral.codeAppliedSuccess', { defaultValue: `Referral code applied! You've received ${adminResult.grantedDays} extra days free.` })
+            );
+            setReferralCodeInput('');
+            return;
+          }
+        }
+
+        // Neither user nor admin referral worked
         let errorMessage = t('referral.codeAppliedError', { defaultValue: 'Failed to apply referral code. Please try again.' });
-        if (result && result.error) {
+        if (alreadyRedeemed) {
+          errorMessage = t('referral.alreadyUsedMessage', {
+            defaultValue: 'A referral code has already been applied to your account.'
+          });
+        } else if (result && result.error) {
           if (result.error.includes('already used a referral code')) {
             errorMessage = t('referral.alreadyUsedMessage', {
               defaultValue: 'This device has already used a referral code. Each device can only use one referral code.'
@@ -5177,6 +5202,12 @@ export default function SettingsScreen({ navigation, route }) {
                 onPress={() => setShowTestToolsModal(true)}
               >
                 <Text style={styles.testToolsButtonText}>🧪 Test Tools</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.testToolsButton, { marginTop: 8 }]}
+                onPress={() => navigation.navigate('AdminReferralLinks')}
+              >
+                <Text style={styles.testToolsButtonText}>🔗 Referral Links</Text>
               </TouchableOpacity>
             </>
           )}
