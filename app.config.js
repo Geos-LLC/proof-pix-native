@@ -146,7 +146,8 @@ export default {
         }
       ],
       "./plugins/withImageCompositor.js",
-      "./plugins/withMediaStoreSaver.js"
+      "./plugins/withMediaStoreSaver.js",
+      "react-native-iap"
     ],
     extra: {
       eas: {
