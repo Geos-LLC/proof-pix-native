@@ -1,6 +1,6 @@
 {
   "name": "proof-pix-native",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -65,7 +65,7 @@
     "expo-sharing": "~14.0.8",
     "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.8",
-    "expo-tracking-transparency": "^55.0.11",
+    "expo-tracking-transparency": "~6.0.8",
     "expo-updates": "~29.0.16",
     "expo-web-browser": "^15.0.8",
     "i18next": "^23.11.5",
