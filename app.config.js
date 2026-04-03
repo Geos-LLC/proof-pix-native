@@ -4,7 +4,7 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    version: process.env.VERSION || "1.4.9",
+    version: process.env.VERSION || "1.5.0",
     runtimeVersion: {
       policy: "appVersion"
     },
@@ -27,7 +27,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "29",
+      buildNumber: "30",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -63,7 +63,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 35,
+      versionCode: 36,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
@@ -151,7 +151,7 @@ export default {
     ],
     extra: {
       eas: {
-        projectId: "3e7ed884-bb3a-4191-bcb0-188386d7e977"
+        projectId: "56b6bd0e-b696-4b6c-bcc4-14714465dd9f"
       },
       // Environment variables accessible in your app
       googleServiceAccountPath: process.env.GOOGLE_SERVICE_ACCOUNT_PATH,

@@ -2514,7 +2514,7 @@ export default function CameraScreen({ route, navigation }) {
                   onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="checkmark-sharp" size={36} color="#000000" style={{ fontWeight: 'bold' }} />
+                  <Ionicons name="checkmark-sharp" size={36} color="#000000" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -3104,7 +3104,7 @@ export default function CameraScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#FFFFFF',
     width: '100%',
     height: '100%',
     overflow: 'hidden'
@@ -3330,7 +3330,7 @@ const styles = StyleSheet.create({
   bottomControls: {
     alignItems: 'center',
     paddingBottom: 20,
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
     backgroundColor: 'transparent'
   },
   mainControlRow: {
@@ -3339,13 +3339,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     position: 'relative',
-    paddingHorizontal: 20,
+    paddingHorizontal: 10,
   },
   buttonContainer: {
     alignItems: 'center',
     justifyContent: 'flex-end',
     minHeight: 100,
-    width: 70,
+    width: 80,
   },
   modeInfo: {
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -3364,11 +3364,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   controlsRowAboveCapture: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
-    gap: 6,
+    paddingHorizontal: 20,
   },
   aspectRatioSelector: {
     flexDirection: 'row',
@@ -3424,19 +3425,20 @@ const styles = StyleSheet.create({
     color: '#000'
   },
    captureButton: {
-    width: 69,
-    height: 69,
-    borderRadius: 34.5,
-    backgroundColor: '#000000',
+    width: 75,
+    height: 75,
+    borderRadius: 37.5,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
+    borderWidth: 2.5,
     borderColor: '#F2C31B',
+    padding: 3,
   },
   captureButtonInnerCircle: {
-    width: 53,
-    height: 53,
-    borderRadius: 26.5,
+    width: '100%',
+    height: '100%',
+    borderRadius: 34,
     backgroundColor: '#F2C31B',
   },
   captureButtonDisabled: {
@@ -3557,38 +3559,38 @@ const styles = StyleSheet.create({
   },
   // Thumbnail viewer: white outer border (matches Figma design)
   thumbnailViewerContainer: {
-    width: 69,
-    height: 69,
-    borderRadius: 34.5,
+    width: 65,
+    height: 65,
+    borderRadius: 32.5,
     overflow: 'hidden',
     backgroundColor: '#000',
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: 'rgba(255, 255, 255, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   thumbnailInnerRing: {
-    width: 59,
-    height: 59,
-    borderRadius: 29.5,
+    width: 55,
+    height: 55,
+    borderRadius: 27.5,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
   },
   thumbnailLandscape: {
-    width: 69,
-    height: 69,
-    borderRadius: 34.5,
+    width: 65,
+    height: 65,
+    borderRadius: 32.5,
   },
   thumbnailPortrait: {
-    width: 69,
-    height: 69,
-    borderRadius: 34.5,
+    width: 65,
+    height: 65,
+    borderRadius: 32.5,
   },
   thumbnailViewerImage: {
-    width: 59,
-    height: 59,
-    borderRadius: 29.5,
+    width: 55,
+    height: 55,
+    borderRadius: 27.5,
   },
   thumbnailViewerLabel: {
     position: 'absolute',
@@ -3826,7 +3828,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: '#000',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    borderRadius: 30,
   },
   bottomGallery: {
     position: 'absolute',
@@ -4119,11 +4122,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
    checkmarkButtonBorder: {
-    width: 70,
-    height: 70,
-    borderRadius: 39.5,
+    width: 75,
+    height: 75,
+    borderRadius: 37.5,
     borderWidth: 2.5,
-    borderColor: '#FFF',
+    borderColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 3,
@@ -4131,8 +4134,8 @@ const styles = StyleSheet.create({
    checkmarkButton: {
     width: '100%',
     height: '100%',
-    borderRadius: 34.5,
-    backgroundColor:"#FFF",
+    borderRadius: 34,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
