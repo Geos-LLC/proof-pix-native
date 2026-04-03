@@ -15,6 +15,15 @@ try {
   console.warn('[Analytics] Analytics functions will be no-ops. Rebuild app to enable Firebase.');
 }
 
+// Meta (Facebook) SDK imports
+import {
+  metaLogPhotoCapture, metaLogPhotoSave, metaLogPhotoExport, metaLogSignIn,
+  metaLogAccountCreated, metaLogTrialEvent, metaLogPlanChanged, metaLogPurchase,
+  metaLogTeamInvitesCreated, metaLogTeamMemberJoined, metaLogReferralEvent,
+  metaLogCloudAccountConnection, metaLogPhotoUpload, metaLogFeatureGateShown,
+  metaLogInitiateCheckout, metaLogAddPaymentInfo,
+} from './metaAnalytics';
+
 /**
  * Analytics utility for Firebase Analytics
  * Provides helper functions to track user events and screen views
@@ -149,6 +158,7 @@ export const logPhotoCapture = (photoType) => {
     photo_type: photoType,
     timestamp: Date.now(),
   });
+  metaLogPhotoCapture(photoType);
 };
 
 /**
@@ -162,6 +172,7 @@ export const logPhotoSave = (hasLabels = false, labelPosition = null) => {
     label_position: labelPosition,
     timestamp: Date.now(),
   });
+  metaLogPhotoSave(hasLabels);
 };
 
 /**
@@ -173,6 +184,7 @@ export const logPhotoExport = (exportType) => {
     export_type: exportType,
     timestamp: Date.now(),
   });
+  metaLogPhotoExport(exportType);
 };
 
 /**
@@ -197,6 +209,7 @@ export const logSignIn = (method) => {
     method: method,
     timestamp: Date.now(),
   });
+  metaLogSignIn(method);
 };
 
 /**
@@ -265,6 +278,7 @@ export const logAccountCreated = (payload = {}) => {
     is_trial: !!payload.is_trial,
     timestamp: Date.now(),
   });
+  metaLogAccountCreated(payload);
 };
 
 /**
@@ -280,6 +294,7 @@ export const logPlanChanged = (fromPlan, toPlan, sourceScreen = 'unknown') => {
     source: sourceScreen,
     timestamp: Date.now(),
   });
+  metaLogPlanChanged(fromPlan, toPlan);
 };
 
 // Trials -------------------------------------------------------------------
@@ -300,6 +315,7 @@ export const logTrialEvent = (action, payload = {}) => {
     days_remaining: payload.days_remaining ?? null,
     timestamp: Date.now(),
   });
+  metaLogTrialEvent(action, payload);
 };
 
 // Teams & invites ---------------------------------------------------------
@@ -320,6 +336,7 @@ export const logTeamInvitesCreated = (count, payload = {}) => {
     team_size_after: payload.team_size_after ?? null,
     timestamp: Date.now(),
   });
+  metaLogTeamInvitesCreated(count);
 };
 
 /**
@@ -334,6 +351,7 @@ export const logTeamMemberJoined = (payload = {}) => {
     team_size_after: payload.team_size_after ?? null,
     timestamp: Date.now(),
   });
+  metaLogTeamMemberJoined(payload);
 };
 
 // Referrals ----------------------------------------------------------------
@@ -354,6 +372,7 @@ export const logReferralEvent = (action, payload = {}) => {
     days_added: payload.days_added ?? null,
     timestamp: Date.now(),
   });
+  metaLogReferralEvent(action, payload);
 };
 
 // Connected accounts -------------------------------------------------------
@@ -371,6 +390,7 @@ export const logCloudAccountConnection = (provider, action, totalConnected) => {
     total_connected: totalConnected ?? null,
     timestamp: Date.now(),
   });
+  metaLogCloudAccountConnection(provider, action);
 };
 
 // Photos, uploads & sharing -----------------------------------------------
@@ -395,6 +415,7 @@ export const logPhotoUpload = (payload = {}) => {
     shared: !!payload.shared,
     timestamp: Date.now(),
   });
+  metaLogPhotoUpload(payload);
 };
 
 // Feature gates / paywalled features --------------------------------------
@@ -412,6 +433,7 @@ export const logFeatureGateShown = (featureKey, userPlan, screen) => {
     screen: screen || 'unknown',
     timestamp: Date.now(),
   });
+  metaLogFeatureGateShown(featureKey, userPlan);
 };
 
 /**
