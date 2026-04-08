@@ -704,14 +704,38 @@ export default function App() {
                   const previousRouteName = routeNameRef.current;
                   const currentRouteName = navigationRef.current.getCurrentRoute().name;
 
-                  if (previousRouteName !== currentRouteName && firebaseInitialized && getAnalytics && logEvent) {
-                    // Log screen view to Firebase Analytics
+                  if (previousRouteName !== currentRouteName && firebaseInitialized) {
+                    // Manual screen tracking with clean snake_case names
+                    // Replaces default RNSScreen / UIViewController names
+                    const SCREEN_NAME_MAP = {
+                      AuthLoading: 'auth_loading',
+                      FirstLoad: 'first_load',
+                      WelcomeSetup: 'onboarding_welcome',
+                      UserInfoSetup: 'onboarding_user_info',
+                      PermissionsSetup: 'onboarding_permissions',
+                      PlanSelection: 'paywall',
+                      Home: 'home',
+                      Camera: 'camera',
+                      PhotoEditor: 'editor',
+                      Gallery: 'gallery',
+                      Projects: 'projects',
+                      PhotoDetail: 'photo_detail',
+                      Settings: 'settings',
+                      ContactUs: 'contact_us',
+                      LabelCustomization: 'label_customization',
+                      WatermarkCustomization: 'watermark_customization',
+                      Invite: 'invite',
+                      Referral: 'referral',
+                      JoinTeam: 'join_team',
+                      GoogleSignUp: 'google_sign_up',
+                      LabelLanguageSetup: 'label_language_setup',
+                      SectionLanguageSetup: 'section_language_setup',
+                      AdminReferralLinks: 'admin_referral_links',
+                    };
+                    const cleanName = SCREEN_NAME_MAP[currentRouteName] || currentRouteName.toLowerCase();
                     try {
-                      const analytics = getAnalytics();
-                      await logEvent(analytics, 'screen_view', {
-                        screen_name: currentRouteName,
-                        screen_class: currentRouteName,
-                      });
+                      const { logScreenView } = require('./src/utils/analytics');
+                      logScreenView(cleanName);
                     } catch (error) {
                       console.error('[Analytics] Error logging screen view:', error);
                     }
