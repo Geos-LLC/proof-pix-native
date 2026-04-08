@@ -25,6 +25,8 @@ import {
   metaLogInitiateCheckout, metaLogAddPaymentInfo,
 } from './metaAnalytics';
 
+import { mergeAttributionContext, saveAttributionContext } from './attributionContext';
+
 /**
  * Analytics utility for Firebase Analytics
  * Provides helper functions to track user events and screen views
@@ -271,14 +273,15 @@ export const logLanguageChange = (language) => {
  *  - plan: 'starter' | 'pro' | 'business' | 'enterprise' | 'team_member'
  *  - is_trial: boolean
  */
-export const logAccountCreated = (payload = {}) => {
-  logEvent('account_created', {
+export const logAccountCreated = async (payload = {}) => {
+  const params = await mergeAttributionContext({
     method: payload.method || 'unknown',
     is_team: !!payload.is_team,
     plan: payload.plan || 'unknown',
     is_trial: !!payload.is_trial,
     timestamp: Date.now(),
   });
+  logEvent('account_created', params);
   metaLogAccountCreated(payload);
 };
 
@@ -288,13 +291,14 @@ export const logAccountCreated = (payload = {}) => {
  * @param {string} toPlan
  * @param {string} sourceScreen - where the change was initiated (e.g. 'Settings')
  */
-export const logPlanChanged = (fromPlan, toPlan, sourceScreen = 'unknown') => {
-  logEvent('plan_changed', {
+export const logPlanChanged = async (fromPlan, toPlan, sourceScreen = 'unknown') => {
+  const params = await mergeAttributionContext({
     from_plan: fromPlan || 'unknown',
     to_plan: toPlan || 'unknown',
     source: sourceScreen,
     timestamp: Date.now(),
   });
+  logEvent('plan_changed', params);
   metaLogPlanChanged(fromPlan, toPlan);
 };
 
@@ -308,14 +312,15 @@ export const logPlanChanged = (fromPlan, toPlan, sourceScreen = 'unknown') => {
  *  - days_used
  *  - days_remaining
  */
-export const logTrialEvent = (action, payload = {}) => {
-  logEvent('trial_event', {
+export const logTrialEvent = async (action, payload = {}) => {
+  const params = await mergeAttributionContext({
     action,
     plan: payload.plan || 'unknown',
     days_used: payload.days_used ?? null,
     days_remaining: payload.days_remaining ?? null,
     timestamp: Date.now(),
   });
+  logEvent('trial_event', params);
   metaLogTrialEvent(action, payload);
 };
 
@@ -366,6 +371,11 @@ export const logReferralEvent = (action, payload = {}) => {
   logEvent('referral_event', {
     action,
     code: payload.code || null,
+    link_type: payload.link_type || null,
+    channel: payload.channel || null,
+    source: payload.source || null,
+    campaign: payload.campaign || null,
+    placement: payload.placement || null,
     method: payload.method || null,
     from_plan: payload.from_plan || null,
     to_plan: payload.to_plan || null,
@@ -388,12 +398,26 @@ export const logReferralEvent = (action, payload = {}) => {
  *  - label: human-readable label for the link
  *  - days_added: bonus trial days granted
  */
-export const logAdminReferralConversion = (payload = {}) => {
+export const logAdminReferralConversion = async (payload = {}) => {
   if (__DEV__) console.log('[Analytics] admin_referral_conversion:', payload);
+
+  // Persist attribution so downstream events (trial, purchase) carry the same context
+  await saveAttributionContext({
+    referral_code: payload.code,
+    link_type: payload.link_type || 'admin',
+    channel: payload.channel,
+    source: payload.source,
+    campaign: payload.campaign,
+    placement: payload.placement,
+  });
+
   logEvent('admin_referral_conversion', {
     code: payload.code || null,
+    link_type: payload.link_type || 'admin',
     channel: payload.channel || null,
     source: payload.source || null,
+    campaign: payload.campaign || null,
+    placement: payload.placement || null,
     label: payload.label || null,
     days_added: payload.days_added ?? null,
     timestamp: Date.now(),
@@ -495,9 +519,9 @@ export const logFeatureGateAction = (featureKey, userPlan, screen, action) => {
  *  - source: 'paywall' | 'upgrade' | 'settings' (optional)
  *  - transaction_id: store transaction ID for dedup (optional)
  */
-export const logSubscriptionStart = (payload = {}) => {
+export const logSubscriptionStart = async (payload = {}) => {
   if (__DEV__) console.log('[Analytics] subscription_start:', payload);
-  logEvent('subscription_start', {
+  const params = await mergeAttributionContext({
     platform: payload.platform || 'unknown',
     plan: payload.plan || 'unknown',
     price: payload.price ?? null,
@@ -507,6 +531,7 @@ export const logSubscriptionStart = (payload = {}) => {
     transaction_id: payload.transaction_id || null,
     timestamp: Date.now(),
   });
+  logEvent('subscription_start', params);
   metaLogSubscriptionStart(payload.plan, payload.platform);
 };
 
@@ -522,9 +547,9 @@ export const logSubscriptionStart = (payload = {}) => {
  *  - platform: 'ios' | 'android'
  *  - transaction_id: store transaction ID for dedup (optional)
  */
-export const logPurchase = (payload = {}) => {
+export const logPurchase = async (payload = {}) => {
   if (__DEV__) console.log('[Analytics] purchase:', payload);
-  logEvent('purchase', {
+  const params = await mergeAttributionContext({
     value: payload.value ?? null,
     currency: payload.currency || 'USD',
     item_category: payload.item_category || 'subscription',
@@ -533,6 +558,7 @@ export const logPurchase = (payload = {}) => {
     transaction_id: payload.transaction_id || null,
     timestamp: Date.now(),
   });
+  logEvent('purchase', params);
   metaLogPurchase(payload.value || 0, payload.currency || 'USD', payload.item_name);
 };
 

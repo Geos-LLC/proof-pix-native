@@ -87,8 +87,8 @@ export default function ReferralScreen({ navigation, route }) {
               const { extendTrial } = await import('../services/trialService');
               await extendTrial(adminResult.grantedDays);
               await markAdminReferralRedeemed();
-              logReferralEvent('admin_link_redeemed', { code: incomingCode, days_added: adminResult.grantedDays });
-              logAdminReferralConversion({ code: incomingCode, channel: adminResult.channel, source: adminResult.source, label: adminResult.label, days_added: adminResult.grantedDays });
+              logReferralEvent('admin_link_redeemed', { code: incomingCode, link_type: 'admin', channel: adminResult.channel, source: adminResult.source, campaign: adminResult.campaign, days_added: adminResult.grantedDays });
+              logAdminReferralConversion({ code: incomingCode, link_type: 'admin', channel: adminResult.channel, source: adminResult.source, campaign: adminResult.campaign, placement: adminResult.placement, label: adminResult.label, days_added: adminResult.grantedDays });
               Alert.alert(
                 t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
                 t('referral.appliedMessage', { defaultValue: `You've received ${adminResult.grantedDays} extra days free!` })

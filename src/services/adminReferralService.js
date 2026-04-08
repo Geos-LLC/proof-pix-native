@@ -44,6 +44,8 @@ export const createAdminReferralLink = async (payload) => {
         label: payload.label || null,
         channel: payload.channel || null,
         source: payload.source || null,
+        campaign: payload.campaign || null,
+        placement: payload.placement || null,
         notes: payload.notes || null,
         bonusTrialDays: parseInt(payload.bonusDays, 10) || 15,
         maxUses: payload.maxUses ? parseInt(payload.maxUses, 10) : null,

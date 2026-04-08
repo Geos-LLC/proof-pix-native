@@ -35,6 +35,8 @@ const EMPTY_FORM = {
   maxUses: '',
   channel: '',
   source: '',
+  campaign: '',
+  placement: '',
   notes: '',
   expiresAt: '',
 };
@@ -80,7 +82,7 @@ export default function AdminReferralScreen({ navigation }) {
     setSubmitting(true);
     try {
       const result = await createAdminReferralLink({ ...formState, code });
-      logReferralEvent('admin_link_created', { code, channel: formState.channel, source: formState.source });
+      logReferralEvent('admin_link_created', { code, channel: formState.channel, source: formState.source, campaign: formState.campaign });
       setLinks(prev => [result, ...prev]);
       setFormState({ ...EMPTY_FORM });
       setShowCreateForm(false);
@@ -129,6 +131,8 @@ export default function AdminReferralScreen({ navigation }) {
         label: editForm.label || null,
         channel: editForm.channel || null,
         source: editForm.source || null,
+        campaign: editForm.campaign || null,
+        placement: editForm.placement || null,
         notes: editForm.notes || null,
         maxUses: editForm.maxUses ? parseInt(editForm.maxUses, 10) : null,
         bonusTrialDays: parseInt(editForm.bonusDays, 10) || 15,
@@ -146,6 +150,8 @@ export default function AdminReferralScreen({ navigation }) {
       label: link.label || '',
       channel: link.channel || '',
       source: link.source || '',
+      campaign: link.campaign || '',
+      placement: link.placement || '',
       notes: link.notes || '',
       maxUses: link.maxUses ? String(link.maxUses) : '',
       bonusDays: String(link.bonusTrialDays || 15),
@@ -201,6 +207,9 @@ export default function AdminReferralScreen({ navigation }) {
           ) : null}
           {link.source ? (
             <Text style={styles.metaText}>Source: {link.source}</Text>
+          ) : null}
+          {link.campaign ? (
+            <Text style={styles.metaText}>Campaign: {link.campaign}</Text>
           ) : null}
           <Text style={styles.metaText}>
             Bonus: {link.bonusTrialDays || 15} days
@@ -305,6 +314,8 @@ export default function AdminReferralScreen({ navigation }) {
             {renderField('Max Uses', 'maxUses', formState, setFormState, { keyboardType: 'numeric', placeholder: 'Unlimited' })}
             {renderField('Channel', 'channel', formState, setFormState, { placeholder: 'e.g. instagram, email, sms' })}
             {renderField('Source', 'source', formState, setFormState, { placeholder: 'e.g. cold outreach, warm lead' })}
+            {renderField('Campaign', 'campaign', formState, setFormState, { placeholder: 'e.g. launch_april, cleaners_test_1' })}
+            {renderField('Placement', 'placement', formState, setFormState, { placeholder: 'e.g. bio, story, dm (optional)' })}
             {renderField('Notes', 'notes', formState, setFormState, { placeholder: 'Internal notes...', multiline: true })}
             {renderField('Expires At', 'expiresAt', formState, setFormState, { placeholder: 'YYYY-MM-DD (optional)' })}
 
@@ -354,6 +365,8 @@ export default function AdminReferralScreen({ navigation }) {
             {renderField('Label', 'label', editForm, setEditForm)}
             {renderField('Channel', 'channel', editForm, setEditForm)}
             {renderField('Source', 'source', editForm, setEditForm)}
+            {renderField('Campaign', 'campaign', editForm, setEditForm)}
+            {renderField('Placement', 'placement', editForm, setEditForm)}
             {renderField('Notes', 'notes', editForm, setEditForm, { multiline: true })}
             {renderField('Bonus Days', 'bonusDays', editForm, setEditForm, { keyboardType: 'numeric' })}
             {renderField('Max Uses', 'maxUses', editForm, setEditForm, { keyboardType: 'numeric', placeholder: 'Unlimited' })}

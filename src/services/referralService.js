@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Random from 'expo-random';
 import * as Device from 'expo-device';
 import { logReferralEvent } from '../utils/analytics';
+import { saveAttributionContext } from '../utils/attributionContext';
 
 const REFERRAL_STORAGE_KEY = '@user_referral_info';
 const REFERRAL_CODE_KEY = '@user_referral_code';
@@ -136,7 +137,8 @@ export const acceptReferral = async (referralCode) => {
     };
     await AsyncStorage.setItem(REFERRAL_ACCEPTED_KEY, JSON.stringify(referralData));
     console.log('[ReferralService] Referral accepted:', referralCode);
-    logReferralEvent('accepted', { code: referralCode });
+    logReferralEvent('accepted', { code: referralCode, link_type: 'user' });
+    await saveAttributionContext({ referral_code: referralCode, link_type: 'user' });
   } catch (error) {
     console.error('[ReferralService] Error accepting referral:', error);
   }

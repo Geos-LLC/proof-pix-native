@@ -124,7 +124,7 @@ export default function AuthLoadingScreen({ navigation }) {
                 const { extendTrial } = await import('../services/trialService');
                 await extendTrial(result.grantedDays);
                 await markAdminReferralRedeemed();
-                logAdminReferralConversion({ code: pendingCode, channel: result.channel, source: result.source, label: result.label, days_added: result.grantedDays });
+                logAdminReferralConversion({ code: pendingCode, link_type: 'admin', channel: result.channel, source: result.source, campaign: result.campaign, placement: result.placement, label: result.label, days_added: result.grantedDays });
                 console.log(`[AuthLoading] Admin referral redeemed: +${result.grantedDays} days`);
               }
             }
