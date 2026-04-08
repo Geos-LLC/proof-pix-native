@@ -376,6 +376,31 @@ export const logReferralEvent = (action, payload = {}) => {
   metaLogReferralEvent(action, payload);
 };
 
+/**
+ * Log when an admin marketing referral is redeemed.
+ * Dedicated conversion event with channel/source for Google Ads optimization.
+ * Import this into Google Ads as a conversion action to optimize ad spend by channel.
+ *
+ * @param {object} payload
+ *  - code: the referral code
+ *  - channel: marketing channel (e.g. 'instagram', 'facebook', 'flyer', 'google_ads')
+ *  - source: traffic source (e.g. 'bio_link', 'story', 'ad_campaign_spring')
+ *  - label: human-readable label for the link
+ *  - days_added: bonus trial days granted
+ */
+export const logAdminReferralConversion = (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] admin_referral_conversion:', payload);
+  logEvent('admin_referral_conversion', {
+    code: payload.code || null,
+    channel: payload.channel || null,
+    source: payload.source || null,
+    label: payload.label || null,
+    days_added: payload.days_added ?? null,
+    timestamp: Date.now(),
+  });
+  metaLogReferralEvent('admin_referral_conversion', payload);
+};
+
 // Connected accounts -------------------------------------------------------
 
 /**
@@ -535,6 +560,7 @@ export default {
   logTeamInvitesCreated,
   logTeamMemberJoined,
   logReferralEvent,
+  logAdminReferralConversion,
   logCloudAccountConnection,
   logPhotoUpload,
   logFeatureGateShown,

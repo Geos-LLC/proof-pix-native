@@ -7,6 +7,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { logAdminReferralConversion } from '../utils/analytics';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -123,6 +124,7 @@ export default function AuthLoadingScreen({ navigation }) {
                 const { extendTrial } = await import('../services/trialService');
                 await extendTrial(result.grantedDays);
                 await markAdminReferralRedeemed();
+                logAdminReferralConversion({ code: pendingCode, channel: result.channel, source: result.source, label: result.label, days_added: result.grantedDays });
                 console.log(`[AuthLoading] Admin referral redeemed: +${result.grantedDays} days`);
               }
             }

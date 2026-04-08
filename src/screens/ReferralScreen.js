@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
-import { logReferralEvent } from '../utils/analytics';
+import { logReferralEvent, logAdminReferralConversion } from '../utils/analytics';
 import {
   getOrCreateReferralCode,
   getReferralInfo,
@@ -88,6 +88,7 @@ export default function ReferralScreen({ navigation, route }) {
               await extendTrial(adminResult.grantedDays);
               await markAdminReferralRedeemed();
               logReferralEvent('admin_link_redeemed', { code: incomingCode, days_added: adminResult.grantedDays });
+              logAdminReferralConversion({ code: incomingCode, channel: adminResult.channel, source: adminResult.source, label: adminResult.label, days_added: adminResult.grantedDays });
               Alert.alert(
                 t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
                 t('referral.appliedMessage', { defaultValue: `You've received ${adminResult.grantedDays} extra days free!` })

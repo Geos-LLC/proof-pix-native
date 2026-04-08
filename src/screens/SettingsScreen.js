@@ -67,6 +67,7 @@ import {
   logCloudAccountConnection,
   logFeatureGateShown,
   logFeatureGateAction,
+  logAdminReferralConversion,
 } from '../utils/analytics';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan } from '../services/iapService';
 import * as Application from 'expo-application';
@@ -2160,6 +2161,7 @@ export default function SettingsScreen({ navigation, route }) {
             const { extendTrial } = await import('../services/trialService');
             await extendTrial(adminResult.grantedDays);
             await markAdminReferralRedeemed();
+            logAdminReferralConversion({ code, channel: adminResult.channel, source: adminResult.source, label: adminResult.label, days_added: adminResult.grantedDays });
             Alert.alert(
               t('referral.successTitle', { defaultValue: 'Success' }),
               t('referral.codeAppliedSuccess', { defaultValue: `Referral code applied! You've received ${adminResult.grantedDays} extra days free.` })
