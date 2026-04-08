@@ -27,7 +27,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "36",
+      buildNumber: "37",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -68,7 +68,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 42,
+      versionCode: 43,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
