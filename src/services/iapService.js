@@ -1,5 +1,10 @@
 import { Platform, Linking } from 'react-native';
 import * as RNIap from 'react-native-iap';
+import { logSubscriptionStart, logPurchase } from '../utils/analytics';
+
+// Deduplication: prevent duplicate analytics for the same transaction
+// (e.g. if purchaseUpdatedListener fires more than once for the same txn)
+const _loggedTransactions = new Set();
 
 // Platform-specific product IDs
 // iOS: product IDs include .monthly suffix (configured in App Store Connect)
@@ -32,6 +37,35 @@ let connectionInitialized = false;
 
 // Cache for Android subscription offer details (productId -> offerToken)
 let androidOfferCache = {};
+
+/**
+ * Fire subscription_start + purchase analytics after a confirmed store transaction.
+ * Uses transaction ID for deduplication — safe to call multiple times for the same purchase.
+ * Only fires for new conversions, not restores.
+ */
+const _logPurchaseAnalytics = (purchase, productId) => {
+  const txId = purchase?.transactionId || purchase?.purchaseToken || '';
+  if (!txId || _loggedTransactions.has(txId)) return;
+  _loggedTransactions.add(txId);
+
+  const plan = productIdToPlan(productId);
+  const isSeat = (productId || '').includes('seat');
+  const platform = Platform.OS;
+
+  logSubscriptionStart({
+    platform,
+    plan,
+    is_trial: false,
+    transaction_id: txId,
+  });
+
+  logPurchase({
+    item_category: isSeat ? 'seat_addon' : 'subscription',
+    item_name: plan,
+    platform,
+    transaction_id: txId,
+  });
+};
 
 /**
  * Initialize IAP on iOS/Android.
@@ -230,6 +264,8 @@ export const purchaseProduct = async (productId) => {
             console.error('[IAP] Failed to acknowledge Android purchase:', finishErr);
             // Still resolve - user paid, don't block them
           }
+          // Fire analytics after confirmed purchase — not on button click or checkout
+          _logPurchaseAnalytics(purchase, productId);
           console.log('[IAP] Resolving with purchase');
           resolve(purchase);
         });
@@ -246,6 +282,8 @@ export const purchaseProduct = async (productId) => {
         } catch (finishErr) {
           console.error('[IAP] Failed to finish transaction:', finishErr);
         }
+        // Fire analytics after confirmed purchase — not on button click or checkout
+        _logPurchaseAnalytics(purchase, productId);
         console.log('[IAP] Resolving with purchase');
         resolve(purchase);
       });
@@ -416,6 +454,8 @@ const _purchaseOrUpgradeInner = async (targetProductId) => {
               } catch (e) {
                 console.error('[IAP] Failed to acknowledge upgrade:', e);
               }
+              // Fire analytics after confirmed upgrade — not on button click or checkout
+              _logPurchaseAnalytics(purchase, targetProductId);
               resolve(purchase);
             });
           }

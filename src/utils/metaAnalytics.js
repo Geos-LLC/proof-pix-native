@@ -181,6 +181,20 @@ export const metaLogRate = (rating, maxRating = 5, contentType = 'app') => {
   );
 };
 
+/**
+ * SubscriptionStart — confirmed IAP subscription conversion
+ */
+export const metaLogSubscriptionStart = (plan = '', platform = '') => {
+  logMetaEvent(
+    AppEvents?.Subscribe || 'Subscribe',
+    null,
+    {
+      [AppEventParams?.ContentType || 'fb_content_type']: plan,
+      platform,
+    }
+  );
+};
+
 // ═══════════════════════════════════════════════
 // CUSTOM EVENTS (mirror Firebase)
 // ═══════════════════════════════════════════════
@@ -236,6 +250,7 @@ export default {
   metaLogTrialEvent,
   metaLogPlanChanged,
   metaLogPurchase,
+  metaLogSubscriptionStart,
   metaLogSearch,
   metaLogInitiateCheckout,
   metaLogAddPaymentInfo,

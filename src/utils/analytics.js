@@ -19,6 +19,7 @@ try {
 import {
   metaLogPhotoCapture, metaLogPhotoSave, metaLogPhotoExport, metaLogSignIn,
   metaLogAccountCreated, metaLogTrialEvent, metaLogPlanChanged, metaLogPurchase,
+  metaLogSubscriptionStart,
   metaLogTeamInvitesCreated, metaLogTeamMemberJoined, metaLogReferralEvent,
   metaLogCloudAccountConnection, metaLogPhotoUpload, metaLogFeatureGateShown,
   metaLogInitiateCheckout, metaLogAddPaymentInfo,
@@ -453,6 +454,63 @@ export const logFeatureGateAction = (featureKey, userPlan, screen, action) => {
   });
 };
 
+// Subscriptions & purchases ------------------------------------------------
+
+/**
+ * Log when a subscription purchase is confirmed by the store.
+ * Fires ONLY after finishTransaction succeeds — not on button tap or checkout open.
+ * This event powers Google Ads conversion optimization for paid subscribers.
+ *
+ * @param {object} payload
+ *  - platform: 'ios' | 'android'
+ *  - plan: 'pro' | 'business' | 'enterprise'
+ *  - price: numeric value (optional)
+ *  - currency: e.g. 'USD' (optional)
+ *  - is_trial: boolean (optional)
+ *  - source: 'paywall' | 'upgrade' | 'settings' (optional)
+ *  - transaction_id: store transaction ID for dedup (optional)
+ */
+export const logSubscriptionStart = (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] subscription_start:', payload);
+  logEvent('subscription_start', {
+    platform: payload.platform || 'unknown',
+    plan: payload.plan || 'unknown',
+    price: payload.price ?? null,
+    currency: payload.currency || null,
+    is_trial: payload.is_trial ?? false,
+    source: payload.source || null,
+    transaction_id: payload.transaction_id || null,
+    timestamp: Date.now(),
+  });
+  metaLogSubscriptionStart(payload.plan, payload.platform);
+};
+
+/**
+ * Log a confirmed IAP purchase event (Google Ads compatible).
+ * Fires ONLY after finishTransaction succeeds.
+ *
+ * @param {object} payload
+ *  - value: numeric price (optional)
+ *  - currency: e.g. 'USD' (optional)
+ *  - item_category: 'subscription' | 'seat_addon'
+ *  - item_name: plan name
+ *  - platform: 'ios' | 'android'
+ *  - transaction_id: store transaction ID for dedup (optional)
+ */
+export const logPurchase = (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] purchase:', payload);
+  logEvent('purchase', {
+    value: payload.value ?? null,
+    currency: payload.currency || 'USD',
+    item_category: payload.item_category || 'subscription',
+    item_name: payload.item_name || 'unknown',
+    platform: payload.platform || 'unknown',
+    transaction_id: payload.transaction_id || null,
+    timestamp: Date.now(),
+  });
+  metaLogPurchase(payload.value || 0, payload.currency || 'USD', payload.item_name);
+};
+
 export default {
   logEvent,
   logScreenView,
@@ -472,6 +530,8 @@ export default {
   logAccountCreated,
   logPlanChanged,
   logTrialEvent,
+  logSubscriptionStart,
+  logPurchase,
   logTeamInvitesCreated,
   logTeamMemberJoined,
   logReferralEvent,
