@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { FONTS, scaleFontSize } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
+import { logOnboardingStarted, logOnboardingStepCompleted } from '../utils/analytics';
 
 const { width } = Dimensions.get('window');
 const scaled = (size) => scaleFontSize(size, width);
@@ -47,6 +48,8 @@ export default function WelcomeSetupScreen({ navigation }) {
   }, []);
 
   const handleGetStarted = () => {
+    logOnboardingStarted();
+    logOnboardingStepCompleted('welcome');
     navigation.navigate('UserInfoSetup');
   };
 

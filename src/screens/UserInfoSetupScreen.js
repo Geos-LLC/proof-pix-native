@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../context/SettingsContext';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
+import { logOnboardingStepCompleted } from '../utils/analytics';
 
 export default function UserInfoSetupScreen({ navigation }) {
   const { t, i18n } = useTranslation();
@@ -34,6 +35,7 @@ export default function UserInfoSetupScreen({ navigation }) {
     updateLabelLanguage(currentLang);
     updateSectionLanguage(currentLang);
 
+    logOnboardingStepCompleted('user_info');
     navigation.navigate('PermissionsSetup');
   };
 

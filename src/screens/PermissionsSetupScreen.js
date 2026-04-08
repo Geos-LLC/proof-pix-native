@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
+import { logOnboardingStepCompleted } from '../utils/analytics';
 
 export default function PermissionsSetupScreen({ navigation }) {
   const { t } = useTranslation();
@@ -151,6 +152,7 @@ export default function PermissionsSetupScreen({ navigation }) {
       return;
     }
 
+    logOnboardingStepCompleted('permissions');
     // Navigate to plan selection or label language setup
     navigation.navigate('LabelLanguageSetup');
   };

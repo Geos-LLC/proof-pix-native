@@ -25,12 +25,69 @@ import {
   metaLogInitiateCheckout, metaLogAddPaymentInfo,
 } from './metaAnalytics';
 
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { mergeAttributionContext, saveAttributionContext } from './attributionContext';
 
 /**
  * Analytics utility for Firebase Analytics
  * Provides helper functions to track user events and screen views
  */
+
+// Global context attached to every event
+let _globalContext = {
+  platform: Platform.OS,
+  app_version: Constants.expoConfig?.version || Constants.manifest?.version || 'unknown',
+};
+
+// Session ID: unique per app cold start
+const _sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+/**
+ * Set the current user ID for global context (call after auth)
+ */
+export const setGlobalUserId = (userId) => {
+  _globalContext.user_id = userId || null;
+};
+
+/**
+ * Extract and persist UTM params from a deep link URL.
+ * Call once on first open when initial URL is available.
+ */
+export const extractAndSaveUTMParams = async (url) => {
+  if (!url) return;
+  try {
+    const parsed = new URL(url);
+    const utmSource = parsed.searchParams.get('utm_source');
+    const utmCampaign = parsed.searchParams.get('utm_campaign');
+    const utmMedium = parsed.searchParams.get('utm_medium');
+    if (utmSource || utmCampaign || utmMedium) {
+      const utmData = {
+        utm_source: utmSource || null,
+        utm_campaign: utmCampaign || null,
+        utm_medium: utmMedium || null,
+      };
+      await AsyncStorage.setItem('@utm_params', JSON.stringify(utmData));
+      if (__DEV__) console.log('[Analytics] UTM params saved:', utmData);
+    }
+  } catch {
+    // Non-critical — URL may not be parseable
+  }
+};
+
+/** Read stored UTM params (cached after first read) */
+let _cachedUTM = undefined;
+const _getUTMParams = async () => {
+  if (_cachedUTM !== undefined) return _cachedUTM;
+  try {
+    const raw = await AsyncStorage.getItem('@utm_params');
+    _cachedUTM = raw ? JSON.parse(raw) : null;
+  } catch {
+    _cachedUTM = null;
+  }
+  return _cachedUTM;
+};
 
 // Get analytics instance
 let analyticsInstance = null;
@@ -75,8 +132,16 @@ export const logEvent = async (eventName, params = {}) => {
   try {
     const analytics = getAnalyticsInstance();
     if (analytics && firebaseLogEvent) {
-      // Use modular API: logEvent(analytics, eventName, params)
-      await firebaseLogEvent(analytics, eventName, params);
+      // Auto-attach global context + UTM params
+      const utm = await _getUTMParams();
+      const enriched = {
+        ..._globalContext,
+        session_id: _sessionId,
+        ...(utm || {}),
+        ...params,
+      };
+      if (__DEV__) console.log(`[Analytics] ${eventName}:`, enriched);
+      await firebaseLogEvent(analytics, eventName, enriched);
     }
   } catch (error) {
     // Silently fail - analytics errors shouldn't break the app
@@ -562,12 +627,79 @@ export const logPurchase = async (payload = {}) => {
   metaLogPurchase(payload.value || 0, payload.currency || 'USD', payload.item_name);
 };
 
+// App lifecycle ---------------------------------------------------------------
+
+export const logAppOpen = () => {
+  logEvent('app_open', { timestamp: Date.now() });
+};
+
+// Onboarding ------------------------------------------------------------------
+
+export const logOnboardingStarted = () => {
+  logEvent('onboarding_started', { timestamp: Date.now() });
+};
+
+export const logOnboardingStepCompleted = (stepName) => {
+  logEvent('onboarding_step_completed', { step_name: stepName, timestamp: Date.now() });
+};
+
+export const logOnboardingCompleted = () => {
+  logEvent('onboarding_completed', { timestamp: Date.now() });
+};
+
+// Paywall ---------------------------------------------------------------------
+
+export const logPaywallView = () => {
+  logEvent('paywall_view', { timestamp: Date.now() });
+};
+
+export const logPlanSelected = (plan, useTrial = false) => {
+  logEvent('plan_selected', { plan, is_trial: useTrial, timestamp: Date.now() });
+};
+
+export const logTrialSkipped = () => {
+  logEvent('trial_skipped', { timestamp: Date.now() });
+};
+
+// Trial expired (dedup via AsyncStorage flag) ---------------------------------
+
+const TRIAL_EXPIRED_FLAG = '@trial_expired_logged';
+
+export const logTrialExpiredOnce = async () => {
+  try {
+    const already = await AsyncStorage.getItem(TRIAL_EXPIRED_FLAG);
+    if (already) return;
+    await AsyncStorage.setItem(TRIAL_EXPIRED_FLAG, 'true');
+    const params = await mergeAttributionContext({ timestamp: Date.now() });
+    logEvent('trial_expired', params);
+  } catch {
+    // non-critical
+  }
+};
+
+// Core feature usage ----------------------------------------------------------
+
+export const logBeforeAfterCreated = (templateType) => {
+  logEvent('before_after_created', { template_type: templateType || 'default', timestamp: Date.now() });
+};
+
+export const logFeatureUsed = (featureName) => {
+  logEvent('feature_used', { feature_name: featureName, timestamp: Date.now() });
+};
+
+export const logProjectCreated = () => {
+  logEvent('project_created', { timestamp: Date.now() });
+};
+
 export default {
   logEvent,
   logScreenView,
   setUserProperties,
   setUserId,
   setAnalyticsEnabled,
+  setGlobalUserId,
+  extractAndSaveUTMParams,
+  logAppOpen,
   logPhotoCapture,
   logPhotoSave,
   logPhotoExport,
@@ -577,7 +709,20 @@ export default {
   logTeamAction,
   logLabelCustomization,
   logLanguageChange,
-   // Business helpers
+  // Onboarding
+  logOnboardingStarted,
+  logOnboardingStepCompleted,
+  logOnboardingCompleted,
+  // Paywall
+  logPaywallView,
+  logPlanSelected,
+  logTrialSkipped,
+  logTrialExpiredOnce,
+  // Core features
+  logBeforeAfterCreated,
+  logFeatureUsed,
+  logProjectCreated,
+  // Business helpers
   logAccountCreated,
   logPlanChanged,
   logTrialEvent,

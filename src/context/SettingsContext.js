@@ -96,8 +96,14 @@ export const SettingsProvider = ({ children }) => {
   const checkTrialExpiration = async () => {
     try {
       const { isTrialActive } = await import('../services/trialService');
-      // This will automatically mark trial as inactive if expired
-      await isTrialActive();
+      const active = await isTrialActive();
+      // If trial was started but is no longer active, fire trial_expired once
+      if (!active) {
+        try {
+          const { logTrialExpiredOnce } = await import('../utils/analytics');
+          await logTrialExpiredOnce();
+        } catch { /* non-critical */ }
+      }
     } catch (error) {
       console.error('[SettingsContext] Error checking trial expiration:', error);
     }

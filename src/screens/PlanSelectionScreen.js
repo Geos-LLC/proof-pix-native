@@ -44,6 +44,7 @@ import TrialNotificationModal from '../components/TrialNotificationModal';
 import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
+import { logPaywallView, logPlanSelected, logTrialSkipped } from '../utils/analytics';
 
 const { width } = Dimensions.get('window');
 
@@ -70,6 +71,7 @@ export default function PlanSelectionScreen({ navigation }) {
   useEffect(() => {
     console.log('[PlanSelection] 🔵 Component mounted, isMounted set to true');
     isMounted.current = true;
+    logPaywallView();
 
     const checkTrialAvailability = async () => {
       try {
@@ -120,7 +122,10 @@ export default function PlanSelectionScreen({ navigation }) {
   };
 
   const handleSelectPlan = async (plan) => {
+    logPlanSelected(plan, false);
+
     if (plan === 'starter') {
+      logTrialSkipped();
       await proceedWithPlanSelection(plan, false);
       return;
     }

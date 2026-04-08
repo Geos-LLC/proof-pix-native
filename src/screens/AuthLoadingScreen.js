@@ -7,7 +7,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
-import { logAdminReferralConversion } from '../utils/analytics';
+import { logAdminReferralConversion, extractAndSaveUTMParams } from '../utils/analytics';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -148,6 +148,8 @@ export default function AuthLoadingScreen({ navigation }) {
       try {
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl) {
+          // Extract and persist UTM params from the deep link URL
+          extractAndSaveUTMParams(initialUrl);
           // Save referral code locally for deferred redemption (before routing)
           if (initialUrl.includes('referral/')) {
             try {

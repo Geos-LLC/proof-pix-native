@@ -479,6 +479,12 @@ export default function App() {
         const analytics = getAnalytics();
         await setAnalyticsCollectionEnabled(analytics, enableAnalytics);
         setFirebaseInitialized(true);
+
+        // Log app open event
+        try {
+          const { logAppOpen } = require('./src/utils/analytics');
+          logAppOpen();
+        } catch (e) { /* non-critical */ }
       } catch (error) {
         console.error('[Firebase] Initialization error:', error);
         // Set as initialized anyway to not block the app

@@ -32,6 +32,7 @@ import { LOCATIONS, getLocationName } from '../config/locations';
 import { createAlbumName, ensureLabelForPhoto } from '../services/uploadService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import * as ExpoLocation from 'expo-location';
+import { logProjectCreated } from '../utils/analytics';
 import * as FileSystem from 'expo-file-system/legacy';
 import JSZip from 'jszip';
 import Constants from 'expo-constants';
@@ -150,6 +151,7 @@ export default function ProjectsScreen({ navigation }) {
     try {
       setCreating(true);
       const project = await createProject(finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_'));
+      logProjectCreated();
       setNewProjectNamePart('');
       setNewProjectVisible(false);
       setActiveProject(project.id);

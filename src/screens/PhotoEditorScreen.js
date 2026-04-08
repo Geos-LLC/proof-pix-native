@@ -23,6 +23,7 @@ import { savePhotoToDevice } from '../services/storage';
 import { COLORS, TEMPLATE_TYPES, TEMPLATE_CONFIGS, LABEL_POSITIONS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import PhotoLabel from '../components/PhotoLabel';
+import { logBeforeAfterCreated } from '../utils/analytics';
 import PhotoWatermark from '../components/PhotoWatermark';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import { useTranslation } from 'react-i18next';
@@ -528,6 +529,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
         quality: 0.9
       });
 
+      logBeforeAfterCreated(templateType);
       // Copy to cache directory (temporary, not permanent storage)
       const tempFileName = `${currentPhotoSet.before.room}_${currentPhotoSet.before.name}_COMBINED_${templateType}_${Date.now()}.jpg`;
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;

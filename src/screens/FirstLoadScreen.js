@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { COLORS } from '../constants/rooms';
-import { logLanguageChange } from '../utils/analytics';
+import { logLanguageChange, logOnboardingCompleted, logOnboardingStepCompleted } from '../utils/analytics';
 import { FONTS } from '../constants/fonts';
 import { canStartTrial } from '../services/trialService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -223,6 +223,7 @@ export default function FirstLoadScreen({ navigation, route }) {
     if (pendingNavigation === 'referral') {
       setReferralModalVisible(true);
     } else {
+      logOnboardingCompleted();
       navigation.navigate('PlanSelection');
     }
     setPendingNavigation(null);
@@ -230,6 +231,7 @@ export default function FirstLoadScreen({ navigation, route }) {
 
   const handleContinueWithoutReferral = () => {
     setReferralModalVisible(false);
+    logOnboardingCompleted();
     navigation.navigate('PlanSelection');
   };
 
