@@ -43,6 +43,9 @@ import * as ExpoLocation from 'expo-location';
 import { IAP_PRODUCTS, purchaseOrUpgrade, clearPendingTransactions } from '../services/iapService';
 import { isTrialActive } from '../services/trialService';
 import Constants from 'expo-constants';
+import UnfinishedJobBanner from '../components/UnfinishedJobBanner';
+import QualificationPromptModal, { hasCompletedQualification } from '../components/QualificationPromptModal';
+import { logEvent } from '../utils/analytics';
 
 // Ensure a URI has the file:// prefix (expo FileSystem URIs already include it on Android)
 const ensureFileUri = (uri) => uri.startsWith('file://') ? uri : `file://${uri}`;
@@ -105,6 +108,8 @@ export default function HomeScreen({ navigation }) {
   const [openProjectVisible, setOpenProjectVisible] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [showQualification, setShowQualification] = useState(false);
+  const [bannerRefreshKey, setBannerRefreshKey] = useState(0);
   const { projects, getPhotosByProject, deleteProject, setActiveProject, activeProjectId, createProject, renameProject, photos } = usePhotos();
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
   const insets = useSafeAreaInsets();
@@ -163,6 +168,26 @@ export default function HomeScreen({ navigation }) {
     const newRooms = getRooms();
     setRooms(newRooms);
   }, [customRooms]);
+
+  // Show qualification prompt after first landing (with short delay)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      const done = await hasCompletedQualification();
+      if (!done) {
+        logEvent('qualification_prompt_shown');
+        setShowQualification(true);
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Refresh banner when screen focuses (user may have completed a job)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      setBannerRefreshKey(k => k + 1);
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   // Check trial status when plan modal opens
   useEffect(() => {
@@ -1407,6 +1432,16 @@ export default function HomeScreen({ navigation }) {
 
       {renderRoomTabs()}
 
+      <UnfinishedJobBanner
+        refreshKey={bannerRefreshKey}
+        onPress={(job) => {
+          navigation.navigate('Camera', {
+            mode: 'after',
+            room: job.room,
+          });
+        }}
+      />
+
       <View style={styles.content} {...panResponder.panHandlers}>
         <ScrollView
           contentContainerStyle={{ paddingBottom: 20 + insets.bottom + 50 + 80 }}
@@ -2406,6 +2441,11 @@ export default function HomeScreen({ navigation }) {
           longPressTriggered.current = false;
         }}
         deleteFromStorageDefault={true}
+      />
+
+      <QualificationPromptModal
+        visible={showQualification}
+        onClose={() => setShowQualification(false)}
       />
     </SafeAreaView>
   );

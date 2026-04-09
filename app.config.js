@@ -144,6 +144,7 @@ export default {
         }
       ],
       "expo-font",
+      "expo-notifications",
       [
         "@react-native-google-signin/google-signin",
         {
