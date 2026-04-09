@@ -1097,6 +1097,21 @@ export default function HomeScreen({ navigation }) {
               {!activeProjectId ? t('home.selectProject') : t('camera.takePhoto')}
             </Text>
           </TouchableOpacity>
+          {activeProjectId && (
+            <TouchableOpacity
+              style={styles.uploadPhotosButton}
+              delayPressIn={50}
+              onPress={() => {
+                if (isSwiping.current) return;
+                navigation.navigate('UploadPhotos', { room: currentRoom });
+              }}
+            >
+              <Ionicons name="images-outline" size={22} color={COLORS.PRIMARY} />
+              <Text style={styles.uploadPhotosText}>
+                {t('home.uploadPhotos', { defaultValue: 'Upload 2 Photos' })}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       );
     }
@@ -2795,6 +2810,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     marginTop: 12,
+  },
+  uploadPhotosButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 195, 27, 0.3)',
+    backgroundColor: 'rgba(242, 195, 27, 0.08)',
+  },
+  uploadPhotosText: {
+    color: COLORS.PRIMARY,
+    fontSize: 14,
+    fontWeight: '600',
   },
   emptyStateContainer: {
     flex: 1,

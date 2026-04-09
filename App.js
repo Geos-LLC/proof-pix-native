@@ -100,6 +100,7 @@ import AdminReferralScreen from './src/screens/AdminReferralScreen';
 import GoogleSignUpScreen from './src/screens/GoogleSignUpScreen';
 import LabelLanguageSetupScreen from './src/screens/LabelLanguageSetupScreen';
 import SectionLanguageSetupScreen from './src/screens/SectionLanguageSetupScreen';
+import UploadPhotosScreen from './src/screens/UploadPhotosScreen';
 import AuthLoadingScreen from './src/screens/AuthLoadingScreen';
 import WelcomeSetupScreen from './src/screens/WelcomeSetupScreen';
 import UserInfoSetupScreen from './src/screens/UserInfoSetupScreen';
@@ -362,6 +363,13 @@ function AppNavigator() {
         component={AdminReferralScreen}
         options={{
           animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
+        name="UploadPhotos"
+        component={UploadPhotosScreen}
+        options={{
+          animation: 'slide_from_bottom'
         }}
       />
     </Stack.Navigator>
@@ -731,6 +739,7 @@ export default function App() {
                       LabelLanguageSetup: 'label_language_setup',
                       SectionLanguageSetup: 'section_language_setup',
                       AdminReferralLinks: 'admin_referral_links',
+                      UploadPhotos: 'upload_photos',
                     };
                     const cleanName = SCREEN_NAME_MAP[currentRouteName] || currentRouteName.toLowerCase();
                     try {
