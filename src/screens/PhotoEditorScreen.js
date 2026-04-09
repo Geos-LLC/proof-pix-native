@@ -523,11 +523,16 @@ export default function PhotoEditorScreen({ route, navigation }) {
     try {
       setSaving(true);
 
-      // Capture the combined view as an image
-      const uri = await captureRef(combinedRef, {
-        format: 'jpg',
-        quality: 0.9
-      });
+      // Capture the combined view at full template resolution (not preview size)
+      // This ensures Instagram posts/reels get a properly sized image (e.g. 1080x1080)
+      // instead of a small preview that gets cropped
+      const config = getTemplateConfig(templateType);
+      const captureOpts = { format: 'jpg', quality: 0.9 };
+      if (config?.width && config?.height && !templateType.startsWith('original-')) {
+        captureOpts.width = config.width;
+        captureOpts.height = config.height;
+      }
+      const uri = await captureRef(combinedRef, captureOpts);
 
       const sourceType = currentPhotoSet.before.sourceType || 'camera';
       const projectId = currentPhotoSet.before.projectId || null;
