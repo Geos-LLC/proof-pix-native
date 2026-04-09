@@ -47,6 +47,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { onBeforePhotoTaken, onAfterPhotoCompleted } from '../services/jobReminderService';
+import { logBeforePhotoStarted, logAfterPhotoCompleted, logPhotoCapture } from '../utils/analytics';
 
 const initialDimensions = Dimensions.get('window');
 const initialWidth = initialDimensions.width;
@@ -1582,6 +1583,8 @@ export default function CameraScreen({ route, navigation }) {
       };
 
       await addPhoto(newPhoto);
+      logPhotoCapture('before', 'camera', activeProjectId);
+      logBeforePhotoStarted(activeProjectId, 'camera');
       onBeforePhotoTaken(newPhoto).catch(() => {}); // schedule job reminder (non-blocking)
 
       // Update selectedBeforePhoto so thumbnail shows immediately
@@ -1675,6 +1678,9 @@ export default function CameraScreen({ route, navigation }) {
         cameraViewMode: activeBeforePhoto.cameraViewMode || 'portrait'
       };
       await addPhoto(newAfterPhoto);
+      logPhotoCapture('after', 'camera', activeProjectId);
+      const timeSinceBefore = activeBeforePhoto?.timestamp ? Math.round((Date.now() - activeBeforePhoto.timestamp) / 1000) : null;
+      logAfterPhotoCompleted(activeProjectId, timeSinceBefore);
       onAfterPhotoCompleted(beforePhotoId).catch(() => {}); // cancel job reminder (non-blocking)
 
       // Check if all photos are paired BEFORE starting background processing

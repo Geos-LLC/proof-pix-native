@@ -53,7 +53,7 @@ export default function QualificationPromptModal({ visible, onClose }) {
     setTimeout(async () => {
       await AsyncStorage.setItem(QUALIFICATION_KEY, userType);
       setUserProperties({ user_type: userType });
-      logEvent('qualification_completed', { user_type: userType });
+      logEvent('qualification_answered', { user_type: userType });
       onClose();
     }, 300);
   };

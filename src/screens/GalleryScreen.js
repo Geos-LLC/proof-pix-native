@@ -46,6 +46,7 @@ import Constants from 'expo-constants';
 import JSZip from 'jszip';
 import { useTranslation } from 'react-i18next';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+import { logPhotoExport, logJobCompleted } from '../utils/analytics';
 
 // Ensure a URI has the file:// prefix (expo FileSystem URIs already include it on Android)
 const ensureFileUri = (uri) => uri.startsWith('file://') ? uri : `file://${uri}`;
@@ -596,6 +597,11 @@ export default function GalleryScreen({ navigation, route }) {
         mimeType: 'image/jpeg',
         dialogTitle: `Before/After - ${fullScreenPhotoSet.before.name}`,
       });
+      const sourceType = fullScreenPhotoSet.before.sourceType || 'camera';
+      const projectId = fullScreenPhotoSet.before.projectId || null;
+      const timeTotal = fullScreenPhotoSet.before.timestamp ? Math.round((Date.now() - fullScreenPhotoSet.before.timestamp) / 1000) : null;
+      logPhotoExport('share', sourceType, projectId);
+      logJobCompleted(projectId, timeTotal, sourceType);
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
         if (fileInfo.exists) await FileSystem.deleteAsync(tempUri, { idempotent: true });

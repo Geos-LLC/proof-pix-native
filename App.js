@@ -525,6 +525,30 @@ export default function App() {
       }
     };
 
+    // Listen for notification interactions (job reminders)
+    let notificationResponseSub = null;
+    let notificationReceivedSub = null;
+    try {
+      const Notifications = require('expo-notifications');
+      const { logJobReminderOpened, logJobReminderTriggered } = require('./src/utils/analytics');
+
+      notificationReceivedSub = Notifications.addNotificationReceivedListener((notification) => {
+        const data = notification?.request?.content?.data;
+        if (data?.type === 'job_reminder') {
+          logJobReminderTriggered(data.reminderType || 'unknown');
+        }
+      });
+
+      notificationResponseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+        const data = response?.notification?.request?.content?.data;
+        if (data?.type === 'job_reminder') {
+          logJobReminderOpened();
+        }
+      });
+    } catch (e) {
+      // expo-notifications not available
+    }
+
     // Validate and clear old label cache if version changed
     const initializeLabelCache = async () => {
       try {
@@ -582,6 +606,8 @@ export default function App() {
 
     return () => {
       subscription?.remove();
+      notificationResponseSub?.remove();
+      notificationReceivedSub?.remove();
     };
   }, []);
 

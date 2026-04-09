@@ -68,7 +68,7 @@ export default function UploadPhotosScreen({ route, navigation }) {
       }
 
       const assets = result.assets;
-      logEvent('upload_photos_selected', { count: assets.length });
+      logEvent('upload_photos_selected', { selected_count: assets.length, valid_selection: assets.length === 2 });
 
       if (assets.length < 2) {
         logEvent('upload_selection_invalid', { reason: 'less_than_2' });
@@ -190,7 +190,7 @@ export default function UploadPhotosScreen({ route, navigation }) {
       await addPhoto(beforePhoto);
       await addPhoto(afterPhoto);
 
-      logEvent('upload_collage_created', { source_type: 'upload' });
+      logEvent('upload_collage_created', { source_type: 'upload', project_id: activeProjectId || null });
 
       // Navigate to editor
       navigation.replace('PhotoEditor', {

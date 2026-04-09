@@ -221,9 +221,11 @@ export const setAnalyticsEnabled = async (enabled) => {
  * Log when a photo is captured
  * @param {string} photoType - 'before' or 'after'
  */
-export const logPhotoCapture = (photoType) => {
+export const logPhotoCapture = (photoType, sourceType = 'camera', projectId = null) => {
   logEvent('photo_capture', {
     photo_type: photoType,
+    source_type: sourceType,
+    project_id: projectId,
     timestamp: Date.now(),
   });
   metaLogPhotoCapture(photoType);
@@ -234,10 +236,11 @@ export const logPhotoCapture = (photoType) => {
  * @param {boolean} hasLabels - Whether labels were added
  * @param {string} labelPosition - Position of labels if applicable
  */
-export const logPhotoSave = (hasLabels = false, labelPosition = null) => {
+export const logPhotoSave = (hasLabels = false, labelPosition = null, sourceType = 'camera') => {
   logEvent('photo_save', {
     has_labels: hasLabels,
     label_position: labelPosition,
+    source_type: sourceType,
     timestamp: Date.now(),
   });
   metaLogPhotoSave(hasLabels);
@@ -247,9 +250,11 @@ export const logPhotoSave = (hasLabels = false, labelPosition = null) => {
  * Log when a photo is exported
  * @param {string} exportType - Type of export (share, save, etc.)
  */
-export const logPhotoExport = (exportType) => {
+export const logPhotoExport = (exportType, sourceType = 'camera', projectId = null) => {
   logEvent('photo_export', {
     export_type: exportType,
+    source_type: sourceType,
+    project_id: projectId,
     timestamp: Date.now(),
   });
   metaLogPhotoExport(exportType);
@@ -691,6 +696,36 @@ export const logProjectCreated = () => {
   logEvent('project_created', { timestamp: Date.now() });
 };
 
+// Job lifecycle (core product metric) -----------------------------------------
+
+export const logBeforePhotoStarted = (projectId, sourceType = 'camera') => {
+  logEvent('before_photo_started', { project_id: projectId || null, source_type: sourceType });
+};
+
+export const logAfterPhotoCompleted = (projectId, timeSinceBefore = null) => {
+  logEvent('after_photo_completed', { project_id: projectId || null, time_since_before: timeSinceBefore });
+};
+
+export const logCollageCompleted = (projectId, sourceType = 'camera') => {
+  logEvent('collage_completed', { project_id: projectId || null, source_type: sourceType });
+};
+
+export const logJobCompleted = (projectId, timeTotal = null, sourceType = 'camera') => {
+  logEvent('job_completed', { project_id: projectId || null, time_total: timeTotal, source_type: sourceType });
+};
+
+export const logJobCompletedAfterReminder = (timeFromReminder = null) => {
+  logEvent('job_completed_after_reminder', { time_from_reminder: timeFromReminder });
+};
+
+export const logJobReminderTriggered = (reminderType) => {
+  logEvent('job_reminder_triggered', { reminder_type: reminderType });
+};
+
+export const logJobReminderOpened = () => {
+  logEvent('job_reminder_opened');
+};
+
 export default {
   logEvent,
   logScreenView,
@@ -722,6 +757,14 @@ export default {
   logBeforeAfterCreated,
   logFeatureUsed,
   logProjectCreated,
+  // Job lifecycle
+  logBeforePhotoStarted,
+  logAfterPhotoCompleted,
+  logCollageCompleted,
+  logJobCompleted,
+  logJobCompletedAfterReminder,
+  logJobReminderTriggered,
+  logJobReminderOpened,
   // Business helpers
   logAccountCreated,
   logPlanChanged,

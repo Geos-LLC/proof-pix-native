@@ -23,7 +23,7 @@ import { savePhotoToDevice } from '../services/storage';
 import { COLORS, TEMPLATE_TYPES, TEMPLATE_CONFIGS, LABEL_POSITIONS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import PhotoLabel from '../components/PhotoLabel';
-import { logBeforeAfterCreated } from '../utils/analytics';
+import { logBeforeAfterCreated, logCollageCompleted, logJobCompleted, logPhotoExport } from '../utils/analytics';
 import PhotoWatermark from '../components/PhotoWatermark';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import { useTranslation } from 'react-i18next';
@@ -529,7 +529,10 @@ export default function PhotoEditorScreen({ route, navigation }) {
         quality: 0.9
       });
 
+      const sourceType = currentPhotoSet.before.sourceType || 'camera';
+      const projectId = currentPhotoSet.before.projectId || null;
       logBeforeAfterCreated(templateType);
+      logCollageCompleted(projectId, sourceType);
       // Copy to cache directory (temporary, not permanent storage)
       const tempFileName = `${currentPhotoSet.before.room}_${currentPhotoSet.before.name}_COMBINED_${templateType}_${Date.now()}.jpg`;
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
@@ -545,7 +548,12 @@ export default function PhotoEditorScreen({ route, navigation }) {
           url: tempUri
         });
       }
-      
+
+      // Track export/job completion
+      const timeTotal = currentPhotoSet.before.timestamp ? Math.round((Date.now() - currentPhotoSet.before.timestamp) / 1000) : null;
+      logPhotoExport('share', sourceType, projectId);
+      logJobCompleted(projectId, timeTotal, sourceType);
+
       // Clean up temporary file after sharing
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
