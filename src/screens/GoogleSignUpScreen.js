@@ -11,6 +11,7 @@ import dropboxAuthService from '../services/dropboxAuthService';
 import dropboxService from '../services/dropboxService';
 import iCloudService from '../services/iCloudService';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
+import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 
 export default function GoogleSignUpScreen({ navigation, route }) {
   const { t } = useTranslation();
@@ -18,6 +19,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
   const { userPlan, updateUserPlan } = useSettings();
   const { plan } = route.params || {};
   const insets = useSafeAreaInsets();
+  const { prices } = useSubscriptionPrices();
   const [isSigningInGoogle, setIsSigningInGoogle] = useState(false);
   const [isSigningInDropbox, setIsSigningInDropbox] = useState(false);
   const [isSigningInApple, setIsSigningInApple] = useState(false);
@@ -267,7 +269,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
                 >
                   <View style={styles.planButtonRow}>
                     <Text style={[styles.planButtonText, userPlan === 'pro' && styles.planButtonTextSelected]}>{t('firstLoad.pro')}</Text>
-                    <Text style={styles.planPrice}>$8.99/month</Text>
+                    <Text style={styles.planPrice}>{prices.pro || 'Price unavailable'}</Text>
                   </View>
                 </TouchableOpacity>
                 <Text style={styles.planSubtext}>{t('firstLoad.proDesc')}</Text>
@@ -283,11 +285,11 @@ export default function GoogleSignUpScreen({ navigation, route }) {
                 >
                   <View style={styles.planButtonRow}>
                     <Text style={[styles.planButtonText, userPlan === 'business' && styles.planButtonTextSelected]}>{t('firstLoad.business')}</Text>
-                    <Text style={styles.planPrice}>$24.99/month</Text>
+                    <Text style={styles.planPrice}>{prices.business || 'Price unavailable'}</Text>
                   </View>
                 </TouchableOpacity>
                 <Text style={styles.planSubtext}>
-                  For small teams up to 5 members. $5.99 per additional team member
+                  For small teams up to 5 members.{prices.businessSeat ? ` ${prices.businessSeat} per additional team member` : ''}
                 </Text>
               </View>
 
@@ -301,7 +303,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
                 >
                   <View style={styles.planButtonRow}>
                     <Text style={[styles.planButtonText, userPlan === 'enterprise' && styles.planButtonTextSelected]}>{t('firstLoad.enterprise')}</Text>
-                    <Text style={styles.planPrice}>Starts at $69.99/month</Text>
+                    <Text style={styles.planPrice}>{prices.enterprise ? `Starts at ${prices.enterprise}` : 'Price unavailable'}</Text>
                   </View>
                 </TouchableOpacity>
                 <Text style={styles.planSubtext}>

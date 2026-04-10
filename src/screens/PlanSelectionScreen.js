@@ -12,6 +12,7 @@ import {
   Dimensions,
   Modal,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -45,6 +46,7 @@ import { canStartTrial, startTrial } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
 import { logPaywallView, logPlanSelected, logTrialSkipped } from '../utils/analytics';
+import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 
 const { width } = Dimensions.get('window');
 
@@ -67,6 +69,15 @@ export default function PlanSelectionScreen({ navigation }) {
   const isMounted = useRef(true);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
   const isPurchasing = useRef(false);
+
+  // Live store prices + trial info (ADDITION 2: must show before billing)
+  const { loading: pricesLoading, error: pricesError, prices, trialInfo, platformCancelText } = useSubscriptionPrices();
+
+  // ADDITION 1: Prevent hidden re-entry into paywall after dismiss
+  const [paywallDismissed, setPaywallDismissed] = useState(false);
+
+  // Show/hide Business & Enterprise cards (collapsed by default for conversion focus)
+  const [showTeamPlans, setShowTeamPlans] = useState(false);
 
   useEffect(() => {
     console.log('[PlanSelection] 🔵 Component mounted, isMounted set to true');
@@ -258,11 +269,11 @@ export default function PlanSelectionScreen({ navigation }) {
     }
   };
 
-  const handleCancelTrial = async () => {
+  // CRITICAL FIX: Dismiss must NEVER trigger billing — just close the modal
+  const handleDismissTrialModal = () => {
     setShowTrialConfirmation(false);
-    if (selectedPlanForTrial) {
-      await proceedWithPlanSelection(selectedPlanForTrial, false);
-    }
+    setSelectedPlanForTrial(null);
+    // DO NOTHING ELSE — no purchase, no navigation
   };
 
   const handleTrialModalClose = () => {
@@ -355,7 +366,7 @@ export default function PlanSelectionScreen({ navigation }) {
             <Ionicons name="arrow-back-outline" size={22} color="#000000" />
           </View>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('firstLoad.choosePlan', { defaultValue: 'Choose a plan' })}</Text>
+        <Text style={styles.headerTitle}>Turn every job into before & after proof</Text>
        {showTrialModal &&
         <TouchableOpacity
           style={styles.selectButton}
@@ -365,6 +376,8 @@ export default function PlanSelectionScreen({ navigation }) {
           <Text style={styles.selectButtonText}>Select</Text>
         </TouchableOpacity>}
       </View>
+
+      <Text style={styles.subheaderText}>Avoid disputes. Save time. Impress your clients.</Text>
 
       <ScrollView
         style={styles.scrollView}
@@ -382,18 +395,14 @@ export default function PlanSelectionScreen({ navigation }) {
               fallbackColor="#FFFFFF"
             >
               <Text style={styles.trialBannerText}>
-                {trialDays}-Day <Text style={styles.trialBannerBold}>FREE</Text> Trial Available!
+                {trialDays}-day free trial {'\u2022'} No charges today
               </Text>
             </GradientView>
           </View>
         )}
 
-        {/* Starter Plan Card */}
-        <TouchableOpacity
-          style={[styles.planCardWrapper, userPlan === 'starter' && styles.planCardWrapperSelected]}
-          onPress={() => handleSelectPlan('starter')}
-          activeOpacity={0.8}
-        >
+        {/* ===== Pro Plan Card (PRIMARY) ===== */}
+        <View style={[styles.planCardWrapper, styles.planCardWrapperPrimary]}>
           <GradientView
             colors={['rgb(226, 208, 95)', '#FFFFFF']}
             start={{ x: 0, y: 1.9 }}
@@ -401,6 +410,84 @@ export default function PlanSelectionScreen({ navigation }) {
             style={styles.planCard}
             fallbackColor="#FFFFFF"
           >
+            <View style={styles.recommendedBadge}>
+              <Text style={styles.recommendedText}>MOST POPULAR</Text>
+            </View>
+            <View style={styles.planCardHeader}>
+              <Text style={styles.planCardTitle}>{t('firstLoad.pro', { defaultValue: 'Pro' })}</Text>
+              <View style={styles.priceContainer}>
+                <GradientView
+                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.priceBadgeGradient}
+                  fallbackColor="rgba(11, 131, 33, 0.14)"
+                />
+                {pricesLoading ? (
+                  <ActivityIndicator size="small" color="#0B8321" />
+                ) : trialAvailable ? (
+                  <View style={styles.trialPriceRow}>
+                    <Text style={styles.priceText}>Free Trial</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.priceText}>{prices.pro || 'Price unavailable'}</Text>
+                )}
+              </View>
+            </View>
+            {trialAvailable && prices.pro ? (
+              <Text style={styles.trialSubtext}>then {prices.pro}/month</Text>
+            ) : null}
+            <Text style={styles.planCardDescription}>
+              Best for solo cleaners & professionals
+            </Text>
+            <View style={styles.valueBullets}>
+              <Text style={styles.valueBulletText}>Prevent "you didn't clean this" complaints</Text>
+              <Text style={styles.valueBulletText}>Create before & after photos in seconds</Text>
+              <Text style={styles.valueBulletText}>Send proof to clients instantly</Text>
+            </View>
+          </GradientView>
+        </View>
+
+        {/* ===== Primary CTA Button ===== */}
+        <TouchableOpacity
+          style={styles.primaryCTAButton}
+          onPress={() => handleSelectPlan('pro')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.primaryCTAText}>
+            {trialAvailable ? `Start My ${trialDays}-Day Free Trial` : 'Subscribe'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Risk reversal text */}
+        <Text style={styles.riskReversalText}>
+          No charges today {'\u2022'} Cancel anytime
+        </Text>
+
+        {/* Trust element */}
+        <Text style={styles.trustText}>
+          Used by cleaning professionals every day
+        </Text>
+
+        {/* Subtle urgency */}
+        {trialAvailable && (
+          <Text style={styles.urgencyText}>Start your free trial today</Text>
+        )}
+
+        {/* Legal disclosure */}
+        {trialAvailable && prices.pro ? (
+          <Text style={styles.legalDisclosureText}>
+            {trialDays}-day free trial, then {prices.pro}/month.{'\n'}Auto-renews unless canceled.{'\n'}{platformCancelText}.
+          </Text>
+        ) : null}
+
+        {/* ===== Starter Plan (DE-EMPHASIZED) ===== */}
+        <TouchableOpacity
+          style={[styles.planCardWrapperSecondary, userPlan === 'starter' && styles.planCardWrapperSelected]}
+          onPress={() => handleSelectPlan('starter')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.planCardSecondary}>
             <View style={styles.planCardHeader}>
               <Text style={styles.planCardTitle}>{t('firstLoad.starter', { defaultValue: 'Starter' })}</Text>
               <View style={styles.priceContainer}>
@@ -415,132 +502,112 @@ export default function PlanSelectionScreen({ navigation }) {
               </View>
             </View>
             <Text style={styles.planCardDescription}>
-             Free forever. Easily manage your first project and {'\n'}create stunning before/after photos ready for {'\n'}social sharing.
+              Basic before & after photos
             </Text>
-          </GradientView>
+          </View>
         </TouchableOpacity>
 
-        {/* Pro Plan Card */}
+        {/* ===== Business & Enterprise link / expanded cards ===== */}
         <TouchableOpacity
-          style={[styles.planCardWrapper, userPlan === 'pro' && styles.planCardWrapperSelected]}
-          onPress={() => handleSelectPlan('pro')}
-          activeOpacity={0.8}
+          style={styles.businessLinkButton}
+          onPress={() => setShowTeamPlans(!showTeamPlans)}
+          activeOpacity={0.7}
         >
-          <GradientView
-            colors={['rgb(226, 208, 95)', '#FFFFFF']}
-            start={{ x: 0, y: 1.9 }}
-            end={{ x: 0.2, y: 0.2 }}
-            style={styles.planCard}
-            fallbackColor="#FFFFFF"
-          >
-            <View style={styles.planCardHeader}>
-              <Text style={styles.planCardTitle}>{t('firstLoad.pro', { defaultValue: 'Pro' })}</Text>
-              <View style={styles.priceContainer}>
-                <GradientView
-                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={styles.priceBadgeGradient}
-                  fallbackColor="rgba(11, 131, 33, 0.14)"
-                />
-                {trialAvailable ? (
-                  <View style={styles.trialPriceRow}>
-                    <Text style={styles.priceTextStrikethrough}>$8.99/month</Text>
-                    <Text style={styles.priceText}>FREE</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.priceText}>$8.99/month</Text>
-                )}
-              </View>
-            </View>
-            <Text style={styles.planCardDescription}>
-            Everything in Starter &{'\n'}
-            For professionals. Cloud sync + bulk upload.
-            </Text>
-            <View style={styles.recommendedBadge}>
-              <Text style={styles.recommendedIcon}>👍</Text>
-              <Text style={styles.recommendedText}>Recommended</Text>
-            </View>
-          </GradientView>
+          <Text style={styles.businessLinkText}>
+            {showTeamPlans ? 'Hide Business plans' : 'Have a team? See Business plans'}
+          </Text>
+          <Ionicons name={showTeamPlans ? 'chevron-up' : 'arrow-forward'} size={16} color="#000000" />
         </TouchableOpacity>
 
-        {/* Business Plan Card */}
-        <TouchableOpacity
-          style={[styles.planCardWrapper, userPlan === 'business' && styles.planCardWrapperSelected]}
-          onPress={() => handleSelectPlan('business')}
-          activeOpacity={0.8}
-        >
-          <GradientView
-             colors={['rgb(226, 208, 95)', '#FFFFFF']}
-             start={{ x: 0, y: 1.9 }}
-             end={{ x: 0.2, y: 0.2 }}
-            style={styles.planCard}
-            fallbackColor="#FFFFFF"
-          >
-            <View style={styles.planCardHeader}>
-              <Text style={styles.planCardTitle}>{t('firstLoad.business', { defaultValue: 'Business' })}</Text>
-              <View style={styles.priceContainer}>
-                <GradientView
-                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={styles.priceBadgeGradient}
-                  fallbackColor="rgba(11, 131, 33, 0.14)"
-                />
-                {trialAvailable ? (
-                  <View style={styles.trialPriceRow}>
-                    <Text style={styles.priceTextStrikethrough}>$24.99/month</Text>
-                    <Text style={styles.priceText}>FREE</Text>
+        {showTeamPlans && (
+          <>
+            {/* Business Plan Card */}
+            <TouchableOpacity
+              style={[styles.planCardWrapper, userPlan === 'business' && styles.planCardWrapperSelected]}
+              onPress={() => handleSelectPlan('business')}
+              activeOpacity={0.8}
+            >
+              <GradientView
+                colors={['rgb(226, 208, 95)', '#FFFFFF']}
+                start={{ x: 0, y: 1.9 }}
+                end={{ x: 0.2, y: 0.2 }}
+                style={styles.planCard}
+                fallbackColor="#FFFFFF"
+              >
+                <View style={styles.planCardHeader}>
+                  <Text style={styles.planCardTitle}>{t('firstLoad.business', { defaultValue: 'Business' })}</Text>
+                  <View style={styles.priceContainer}>
+                    <GradientView
+                      colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={styles.priceBadgeGradient}
+                      fallbackColor="rgba(11, 131, 33, 0.14)"
+                    />
+                    {pricesLoading ? (
+                      <ActivityIndicator size="small" color="#0B8321" />
+                    ) : trialAvailable ? (
+                      <View style={styles.trialPriceRow}>
+                        <Text style={styles.priceText}>Free Trial</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.priceText}>{prices.business || 'Price unavailable'}</Text>
+                    )}
                   </View>
-                ) : (
-                  <Text style={styles.priceText}>$24.99/month</Text>
-                )}
-              </View>
-            </View>
-            <Text style={styles.planCardDescription}>
-              Everything in Pro &{'\n'}For small teams up to 5 members. $5.99 per {'\n'}additional team member.
-            </Text>
-          </GradientView>
-        </TouchableOpacity>
+                </View>
+                {trialAvailable && prices.business ? (
+                  <Text style={styles.trialSubtext}>then {prices.business}/month</Text>
+                ) : null}
+                <Text style={styles.planCardDescription}>
+                  Everything in Pro &{'\n'}For small teams up to 5 members.{prices.businessSeat ? ` ${prices.businessSeat} per` : ''} {'\n'}additional team member.
+                </Text>
+              </GradientView>
+            </TouchableOpacity>
 
-        {/* Enterprise Plan Card */}
-        <TouchableOpacity
-          style={[styles.planCardWrapper, userPlan === 'enterprise' && styles.planCardWrapperSelected]}
-          onPress={() => handleSelectPlan('enterprise')}
-          activeOpacity={0.8}
-        >
-          <GradientView
-            colors={['rgb(226, 208, 95)', '#FFFFFF']}
-            start={{ x: 0, y: 1.9 }}
-            end={{ x: 0.2, y: 0.2 }}
-            style={styles.planCard}
-            fallbackColor="#FFFFFF"
-          >
-            <View style={styles.planCardHeader}>
-              <Text style={styles.planCardTitle}>{t('firstLoad.enterprise', { defaultValue: 'Enterprise' })}</Text>
-              <View style={[styles.priceContainer, styles.priceContainerWide]}>
-                <GradientView
-                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={styles.priceBadgeGradientWide}
-                  fallbackColor="rgba(11, 131, 33, 0.14)"
-                />
-                {trialAvailable ? (
-                  <View style={styles.trialPriceRow}>
-                    <Text style={styles.priceTextStrikethrough}>$69.99/month</Text>
-                    <Text style={styles.priceText}>FREE</Text>
+            {/* Enterprise Plan Card */}
+            <TouchableOpacity
+              style={[styles.planCardWrapper, userPlan === 'enterprise' && styles.planCardWrapperSelected]}
+              onPress={() => handleSelectPlan('enterprise')}
+              activeOpacity={0.8}
+            >
+              <GradientView
+                colors={['rgb(226, 208, 95)', '#FFFFFF']}
+                start={{ x: 0, y: 1.9 }}
+                end={{ x: 0.2, y: 0.2 }}
+                style={styles.planCard}
+                fallbackColor="#FFFFFF"
+              >
+                <View style={styles.planCardHeader}>
+                  <Text style={styles.planCardTitle}>{t('firstLoad.enterprise', { defaultValue: 'Enterprise' })}</Text>
+                  <View style={[styles.priceContainer, styles.priceContainerWide]}>
+                    <GradientView
+                      colors={['rgba(11, 131, 33, 0)', '#0B8321']}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={styles.priceBadgeGradientWide}
+                      fallbackColor="rgba(11, 131, 33, 0.14)"
+                    />
+                    {pricesLoading ? (
+                      <ActivityIndicator size="small" color="#0B8321" />
+                    ) : trialAvailable ? (
+                      <View style={styles.trialPriceRow}>
+                        <Text style={styles.priceText}>Free Trial</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.priceText}>{prices.enterprise ? `Starts at ${prices.enterprise}` : 'Price unavailable'}</Text>
+                    )}
                   </View>
-                ) : (
-                  <Text style={styles.priceText}>Starts at $69.99/month</Text>
-                )}
-              </View>
-            </View>
-            <Text style={styles.planCardDescription}>
-              Everything in Business &{'\n'}For growing organizations with 15 team members and more
-            </Text>
-          </GradientView>
-        </TouchableOpacity>
+                </View>
+                {trialAvailable && prices.enterprise ? (
+                  <Text style={styles.trialSubtext}>then {prices.enterprise}/month</Text>
+                ) : null}
+                <Text style={styles.planCardDescription}>
+                  Everything in Business &{'\n'}For growing organizations with 15 team members and more
+                </Text>
+              </GradientView>
+            </TouchableOpacity>
+          </>
+        )}
 
         {/* Restore Purchases */}
         <TouchableOpacity
@@ -593,16 +660,16 @@ export default function PlanSelectionScreen({ navigation }) {
         visible={showTrialConfirmation}
         transparent={true}
         animationType="slide"
-        onRequestClose={handleCancelTrial}
+        onRequestClose={handleDismissTrialModal}
         statusBarTranslucent={true}
       >
         <View style={styles.trialModalOverlay}>
-          <TouchableOpacity 
-            style={styles.trialModalOverlayTouchable} 
-            activeOpacity={1} 
-            onPress={handleCancelTrial}
+          <TouchableOpacity
+            style={styles.trialModalOverlayTouchable}
+            activeOpacity={1}
+            onPress={handleDismissTrialModal}
           />
-          
+
           <View style={[styles.trialModalContainer, { paddingBottom: Math.max(40, insets.bottom + 20) }]}>
             {/* Grabber Handle */}
             <View style={styles.trialModalGrabberContainer}>
@@ -613,7 +680,7 @@ export default function PlanSelectionScreen({ navigation }) {
             <View style={styles.trialModalHeader}>
               <TouchableOpacity
                 style={styles.trialModalCloseButton}
-                onPress={handleCancelTrial}
+                onPress={handleDismissTrialModal}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons name="close" size={20} color="#999999" />
@@ -622,10 +689,16 @@ export default function PlanSelectionScreen({ navigation }) {
               <View style={styles.trialModalHeaderSpacer} />
             </View>
 
-            {/* Body Content */}
+            {/* Body Content — Full trial disclosure (ADDITION 2: shown BEFORE billing) */}
             <View style={styles.trialModalBody}>
               <Text style={styles.trialModalBodyText}>
-                You're eligible for a {trialDays}-days free trial of {selectedPlanForTrial ? selectedPlanForTrial.toLowerCase() : 'business'} features. Would you like to start your free trial now?
+                Start your {trialDays}-day free trial of {selectedPlanForTrial ? selectedPlanForTrial.toLowerCase() : 'pro'} features.
+              </Text>
+              <Text style={styles.trialDisclosureText}>
+                {selectedPlanForTrial && prices[selectedPlanForTrial]
+                  ? `After your trial ends, you'll be charged ${prices[selectedPlanForTrial]}/month. `
+                  : ''}
+                Auto-renews unless canceled. {platformCancelText}.
               </Text>
             </View>
 
@@ -633,10 +706,10 @@ export default function PlanSelectionScreen({ navigation }) {
             <View style={styles.trialModalButtonsContainer}>
               <TouchableOpacity
                 style={styles.trialModalSkipButton}
-                onPress={handleCancelTrial}
+                onPress={handleDismissTrialModal}
                 activeOpacity={0.8}
               >
-                <Text style={styles.trialModalSkipButtonText}>Skip</Text>
+                <Text style={styles.trialModalSkipButtonText}>No Thanks</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -644,7 +717,7 @@ export default function PlanSelectionScreen({ navigation }) {
                 onPress={handleUseTrial}
                 activeOpacity={0.8}
               >
-                <Text style={styles.trialModalStartButtonText}>Start</Text>
+                <Text style={styles.trialModalStartButtonText}>Start Free Trial</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -730,6 +803,16 @@ const styles = StyleSheet.create({
     color: '#000000',
     letterSpacing: -0.23,
   },
+  subheaderText: {
+    fontSize: 14,
+    fontWeight: '500',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+    opacity: 0.7,
+  },
   scrollView: {
     flex: 1,
   },
@@ -775,6 +858,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8.2,
     elevation: 4,
     overflow: 'hidden',
+  },
+  planCardWrapperPrimary: {
+    borderWidth: 2,
+    borderColor: '#000000',
+    transform: [{ scale: 1.02 }],
   },
   planCardWrapperSelected: {
     borderWidth: 2.5,
@@ -857,6 +945,13 @@ const styles = StyleSheet.create({
     color: '#000000',
     lineHeight: 18,
   },
+  trialSubtext: {
+    fontSize: 11,
+    fontWeight: '500',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#666666',
+    marginTop: 2,
+  },
   recommendedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -878,6 +973,97 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     color: '#000000',
     lineHeight: 15,
+  },
+  valueBullets: {
+    marginTop: 10,
+  },
+  valueBulletText: {
+    fontSize: 13,
+    fontWeight: '500',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#333333',
+    lineHeight: 22,
+    paddingLeft: 4,
+  },
+  primaryCTAButton: {
+    backgroundColor: '#000000',
+    borderRadius: 100,
+    paddingVertical: 18,
+    marginTop: 4,
+    marginBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryCTAText: {
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  riskReversalText: {
+    fontSize: 13,
+    fontWeight: '500',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 6,
+    opacity: 0.6,
+  },
+  trustText: {
+    fontSize: 12,
+    fontWeight: '400',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 16,
+    opacity: 0.5,
+  },
+  urgencyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 12,
+    opacity: 0.55,
+  },
+  legalDisclosureText: {
+    fontSize: 10,
+    fontWeight: '400',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 15,
+    marginBottom: 20,
+  },
+  planCardWrapperSecondary: {
+    marginBottom: 10,
+    marginTop: 6,
+    borderRadius: 20,
+    overflow: 'hidden',
+    opacity: 0.65,
+  },
+  planCardSecondary: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  businessLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    marginBottom: 8,
+    gap: 6,
+  },
+  businessLinkText: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
   },
   restorePurchasesButton: {
     flexDirection: 'row',
@@ -993,6 +1179,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     letterSpacing: -0.43,
+  },
+  trialDisclosureText: {
+    fontSize: 12,
+    fontWeight: '400',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 10,
   },
   trialModalButtonsContainer: {
     flexDirection: 'row',

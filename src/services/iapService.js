@@ -351,15 +351,25 @@ export const purchaseProduct = async (productId) => {
         console.log('[IAP] Android: Subscription request sent, waiting for response...');
       } else {
         // === iOS purchase flow ===
-        console.log('[IAP] Fetching products for:', [productId]);
-        const products = await RNIap.fetchProducts({
-          skus: [productId],
-          type: 'subs'
-        });
-        console.log('[IAP] Products fetched:', products?.length || 0);
+        // Retry fetchProducts up to 3 times — App Store sometimes needs a moment
+        // after initConnection before products are available
+        let products = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          console.log('[IAP] Fetching products for:', [productId], '(attempt', attempt + ')');
+          products = await RNIap.fetchProducts({
+            skus: [productId],
+            type: 'subs'
+          });
+          console.log('[IAP] Products fetched:', products?.length || 0);
+          if (products && products.length > 0) break;
+          if (attempt < 3) {
+            console.log('[IAP] No products yet, retrying in 1.5s...');
+            await new Promise(r => setTimeout(r, 1500));
+          }
+        }
 
         if (!products || products.length === 0) {
-          console.error('[IAP] No products found for:', productId);
+          console.error('[IAP] No products found for:', productId, 'after 3 attempts');
           throw new Error('PRODUCT_NOT_FOUND');
         }
 
@@ -934,8 +944,26 @@ export const openManageSubscriptions = () => {
 };
 
 /**
- * Get localized prices for all subscription plans from the store.
- * Returns an object with plan keys and their formatted price strings.
+ * Parse ISO 8601 duration string to number of days.
+ * Handles: P3D, P7D, P15D, P1W, P2W, P1M, P3M, P6M, P1Y
+ */
+const isoDurationToDays = (iso) => {
+  if (!iso) return null;
+  const match = iso.match(/^P(\d+)([DWMY])$/);
+  if (!match) return null;
+  const num = parseInt(match[1], 10);
+  switch (match[2]) {
+    case 'D': return num;
+    case 'W': return num * 7;
+    case 'M': return num * 30;
+    case 'Y': return num * 365;
+    default: return null;
+  }
+};
+
+/**
+ * Get localized prices and trial offer metadata for all subscription plans.
+ * Returns { prices: { productId: formattedPrice }, trialOffers: { productId: { hasTrial, trialDays } } }
  * Uses v14 fetchProducts API.
  */
 export const getSubscriptionPrices = async () => {
@@ -949,16 +977,29 @@ export const getSubscriptionPrices = async () => {
     // v14: use fetchProducts with type 'subs' for both platforms
     const products = await RNIap.fetchProducts({ skus: allSkus, type: 'subs' });
     const prices = {};
+    const trialOffers = {};
 
     for (const product of products || []) {
       if (Platform.OS === 'android') {
-        // Android: extract price from subscriptionOfferDetailsAndroid
+        // Android: extract price and trial info from subscriptionOfferDetailsAndroid
         const offers = product.subscriptionOfferDetailsAndroid || [];
         for (const offer of offers) {
           const phases = offer.pricingPhases?.pricingPhaseList || [];
           const recurringPhase = phases.find(p => p.billingPeriod === 'P1M' && p.recurrenceMode === 1);
           if (recurringPhase) {
             prices[product.id] = recurringPhase.formattedPrice;
+
+            // Check for free trial phase (priceAmountMicros === 0 or "0")
+            const freePhase = phases.find(p =>
+              (p.priceAmountMicros === 0 || p.priceAmountMicros === '0' || p.priceAmountMicros === '0.00') &&
+              p.recurrenceMode !== 1
+            );
+            if (freePhase) {
+              trialOffers[product.id] = {
+                hasTrial: true,
+                trialDays: isoDurationToDays(freePhase.billingPeriod) || 15,
+              };
+            }
             break;
           }
         }
@@ -967,15 +1008,31 @@ export const getSubscriptionPrices = async () => {
           prices[product.id] = offers[0].pricingPhases.pricingPhaseList[0].formattedPrice;
         }
       } else {
-        // iOS: use displayPrice
+        // iOS: use displayPrice and check introductoryPrice for trial
         prices[product.id] = product.displayPrice || '';
+
+        const intro = product.introductoryPrice;
+        if (intro && (intro.price === 0 || intro.price === '0' || intro.price === '0.00')) {
+          const periodDays = isoDurationToDays(intro.subscriptionPeriod);
+          const numPeriods = parseInt(intro.numberOfPeriods, 10) || 1;
+          trialOffers[product.id] = {
+            hasTrial: true,
+            trialDays: periodDays ? periodDays * numPeriods : 15,
+          };
+        }
+      }
+
+      // Default: no trial detected
+      if (!trialOffers[product.id]) {
+        trialOffers[product.id] = { hasTrial: false, trialDays: 0 };
       }
     }
 
     console.log('[IAP] Prices:', prices);
-    return prices;
+    console.log('[IAP] Trial offers:', trialOffers);
+    return { prices, trialOffers };
   } catch (error) {
     console.error('[IAP] Failed to fetch prices:', error);
-    return {};
+    return { prices: {}, trialOffers: {} };
   }
 };

@@ -70,6 +70,7 @@ import {
   logAdminReferralConversion,
 } from '../utils/analytics';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan } from '../services/iapService';
+import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
 import * as Updates from 'expo-updates';
@@ -710,6 +711,7 @@ export default function SettingsScreen({ navigation, route }) {
     joinTeam,
     planLimit,
   } = useAdmin();
+  const { loading: pricesLoading, prices } = useSubscriptionPrices();
   const isEnterprisePlan = userPlan === 'enterprise';
   // For enterprise, always use the active account from connectedAccounts
   // For non-enterprise, use adminUserInfo (the currently authenticated account)
@@ -5701,18 +5703,18 @@ export default function SettingsScreen({ navigation, route }) {
                   <View style={styles.planCardHeader}>
                     <Text style={styles.planCardTitle}>Pro</Text>
                     {trialActive ? (
-                      <View style={styles.planBadgeTrialRow}>
-                        <Text style={styles.planBadgeStrikethrough}>$8.99/month</Text>
-                        <View style={styles.planBadgeFree}>
-                          <Text style={styles.planBadgeText}>FREE</Text>
-                        </View>
+                      <View style={styles.planBadgeFree}>
+                        <Text style={styles.planBadgeText}>Free Trial</Text>
                       </View>
                     ) : (
                       <View style={styles.planBadgePrice}>
-                        <Text style={styles.planBadgeText}>$8.99/month</Text>
+                        <Text style={styles.planBadgeText}>{prices.pro || 'Price unavailable'}</Text>
                       </View>
                     )}
                   </View>
+                  {trialActive && prices.pro ? (
+                    <Text style={styles.trialSubtext}>then {prices.pro}/month</Text>
+                  ) : null}
                   <Text style={styles.planCardDescription}>
                     Everything in Starter & For professionals. Cloud sync + bulk upload.
                   </Text>
@@ -5810,20 +5812,20 @@ export default function SettingsScreen({ navigation, route }) {
                   <View style={styles.planCardHeader}>
                     <Text style={styles.planCardTitle}>Business</Text>
                     {trialActive ? (
-                      <View style={styles.planBadgeTrialRow}>
-                        <Text style={styles.planBadgeStrikethrough}>$24.99/month</Text>
-                        <View style={styles.planBadgeFree}>
-                          <Text style={styles.planBadgeText}>FREE</Text>
-                        </View>
+                      <View style={styles.planBadgeFree}>
+                        <Text style={styles.planBadgeText}>Free Trial</Text>
                       </View>
                     ) : (
                       <View style={styles.planBadgePrice}>
-                        <Text style={styles.planBadgeText}>$24.99/month</Text>
+                        <Text style={styles.planBadgeText}>{prices.business || 'Price unavailable'}</Text>
                       </View>
                     )}
                   </View>
+                  {trialActive && prices.business ? (
+                    <Text style={styles.trialSubtext}>then {prices.business}/month</Text>
+                  ) : null}
                   <Text style={styles.planCardDescription}>
-                    Everything in Pro & For small teams up to 5 members. $5.99 per additional team member.
+                    Everything in Pro & For small teams up to 5 members.{prices.businessSeat ? ` ${prices.businessSeat} per additional team member.` : ''}
                   </Text>
                 </TouchableOpacity>
 
@@ -5904,18 +5906,18 @@ export default function SettingsScreen({ navigation, route }) {
                   <View style={styles.planCardHeader}>
                     <Text style={styles.planCardTitle}>Enterprise</Text>
                     {trialActive ? (
-                      <View style={styles.planBadgeTrialRow}>
-                        <Text style={styles.planBadgeStrikethrough}>$69.99/month</Text>
-                        <View style={styles.planBadgeFree}>
-                          <Text style={styles.planBadgeText}>FREE</Text>
-                        </View>
+                      <View style={styles.planBadgeFree}>
+                        <Text style={styles.planBadgeText}>Free Trial</Text>
                       </View>
                     ) : (
                       <View style={styles.planBadgePrice}>
-                        <Text style={styles.planBadgeText}>Starts at $69.99/month</Text>
+                        <Text style={styles.planBadgeText}>{prices.enterprise ? `Starts at ${prices.enterprise}` : 'Price unavailable'}</Text>
                       </View>
                     )}
                   </View>
+                  {trialActive && prices.enterprise ? (
+                    <Text style={styles.trialSubtext}>then {prices.enterprise}/month</Text>
+                  ) : null}
                   <Text style={styles.planCardDescription}>
                     Everything in Business & For growing organizations with 15 team members and more
                   </Text>
@@ -8187,6 +8189,12 @@ const sliderStyles = StyleSheet.create({
       lineHeight: 22,
       marginBottom: 16,
       letterSpacing: -0.2,
+    },
+    trialSubtext: {
+      fontSize: 11,
+      fontWeight: '500',
+      color: '#666666',
+      marginBottom: 4,
     },
     currentPlanButton: {
       backgroundColor: COLORS.PRIMARY,
