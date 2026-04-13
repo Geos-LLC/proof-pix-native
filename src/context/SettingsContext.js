@@ -182,7 +182,15 @@ export const SettingsProvider = ({ children }) => {
 
   const saveSettings = async (newSettings) => {
     try {
-      const settings = {
+      // Read current stored settings first so we never overwrite fields with
+      // stale React defaults (e.g., userPlan='starter' before loadSettings
+      // finishes).  Stored values are the base, then current state, then the
+      // explicit newSettings — but if settings haven't loaded yet, stored
+      // values win for any field not in newSettings.
+      const stored = await AsyncStorage.getItem(SETTINGS_KEY);
+      const existingSettings = stored ? JSON.parse(stored) : {};
+
+      const stateSnapshot = {
         showLabels,
         showWatermark,
         customWatermarkEnabled,
@@ -211,8 +219,14 @@ export const SettingsProvider = ({ children }) => {
         userPlan,
         cleaningServiceEnabled,
         shutterSoundEnabled,
-        ...newSettings
       };
+
+      // If still loading, only write the explicit newSettings on top of stored
+      // values — don't let default state clobber persisted data.
+      const settings = loading
+        ? { ...existingSettings, ...newSettings }
+        : { ...existingSettings, ...stateSnapshot, ...newSettings };
+
       await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     } catch (error) {
 
@@ -418,12 +432,14 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ enabledFolders: newCategories });
   };
 
-  const updateLabelLanguage = (language) => {
+  const updateLabelLanguage = async (language) => {
     setLabelLanguage(language);
+    await saveSettings({ labelLanguage: language });
   };
 
-  const updateSectionLanguage = (language) => {
+  const updateSectionLanguage = async (language) => {
     setSectionLanguage(language);
+    await saveSettings({ sectionLanguage: language });
   };
 
   // Custom rooms management (temporarily global for stability)

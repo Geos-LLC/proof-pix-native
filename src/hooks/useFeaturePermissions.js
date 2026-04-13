@@ -29,19 +29,22 @@ import { getEffectivePlan } from '../services/trialService';
 export const useFeaturePermissions = () => {
   const { userPlan } = useSettings();
   const [effectivePlan, setEffectivePlan] = useState(userPlan);
+  const [planResolved, setPlanResolved] = useState(false);
 
   // Update effective plan when userPlan changes or on mount
   useEffect(() => {
+    setPlanResolved(false);
     const updateEffectivePlan = async () => {
       console.log('[useFeaturePermissions] useEffect running, userPlan:', userPlan);
       // Check trial expiration first (this will mark it inactive if expired)
       const { isTrialActive } = await import('../services/trialService');
       await isTrialActive();
-      
+
       // Then get the effective plan
       const effective = await getEffectivePlan(userPlan);
       console.log('[useFeaturePermissions] getEffectivePlan returned:', effective, 'for userPlan:', userPlan);
       setEffectivePlan(effective);
+      setPlanResolved(true);
     };
     updateEffectivePlan();
   }, [userPlan]);
@@ -85,6 +88,9 @@ export const useFeaturePermissions = () => {
    * @returns {boolean}
    */
   const resourceExceedsLimit = (limitType, currentUsage) => {
+    // Don't block while the async trial/plan check is still resolving —
+    // the effective plan may still be 'starter' even though a trial is active.
+    if (!planResolved) return false;
     return exceedsLimit(limitType, effectivePlan, currentUsage);
   };
 

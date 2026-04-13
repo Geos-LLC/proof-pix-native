@@ -108,6 +108,23 @@ const SAVED_COLORS = [
   '#06B6D4', '#A855F7', '#6366F1', '#F43F5E'
 ];
 
+// Language options for label localization (independent from app language)
+const LABEL_LANGUAGES = [
+  { code: 'en', name: 'English', flag: '🇺🇸' },
+  { code: 'es', name: 'Español', flag: '🇪🇸' },
+  { code: 'fr', name: 'Français', flag: '🇫🇷' },
+  { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
+  { code: 'ru', name: 'Русский', flag: '🇷🇺' },
+  { code: 'be', name: 'Беларуская', flag: '🇧🇾' },
+  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
+  { code: 'zh', name: '中文', flag: '🇨🇳' },
+  { code: 'tl', name: 'Tagalog', flag: '🇵🇭' },
+  { code: 'ar', name: 'العربية', flag: '🇸🇦' },
+  { code: 'ko', name: '한국어', flag: '🇰🇷' },
+  { code: 'pt', name: 'Português', flag: '🇵🇹' },
+  { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
+];
+
 export default function CustomizeLabelsScreen({ navigation }) {
   const { canUse } = useFeaturePermissions();
   const canCustomizeWatermark = canUse(FEATURES.CUSTOM_WATERMARKS);
@@ -145,6 +162,9 @@ export default function CustomizeLabelsScreen({ navigation }) {
     updateWatermarkOpacity,
     updateWatermarkPosition,
     updateWatermarkFontFamily,
+    // Label language (independent of app language)
+    labelLanguage,
+    updateLabelLanguage,
   } = useSettings();
 
   // Local state for UI only (modals, temp values)
@@ -156,6 +176,7 @@ export default function CustomizeLabelsScreen({ navigation }) {
   const [positionModalVisible, setPositionModalVisible] = useState(false);
   const [sizeModalVisible, setSizeModalVisible] = useState(false);
   const [marginModalVisible, setMarginModalVisible] = useState(false);
+  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   // Watermark modal states
   const [watermarkOpacityModalVisible, setWatermarkOpacityModalVisible] = useState(false);
   const [watermarkFontModalVisible, setWatermarkFontModalVisible] = useState(false);
@@ -420,6 +441,11 @@ export default function CustomizeLabelsScreen({ navigation }) {
             label="Margin"
             onPress={() => setMarginModalVisible(true)}
           />
+          <ControlButton
+            icon="language"
+            label="Language"
+            onPress={() => setLanguageModalVisible(true)}
+          />
         </View>
 
         {/* Watermark Section */}
@@ -519,6 +545,37 @@ export default function CustomizeLabelsScreen({ navigation }) {
                   styles.fontListItemText,
                   isSelected && styles.fontListItemTextSelected
                 ]}>{font.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </BottomModal>
+
+      {/* Label Language Modal */}
+      <BottomModal
+        visible={languageModalVisible}
+        onClose={() => setLanguageModalVisible(false)}
+        title="Label Language"
+      >
+        <View style={styles.fontListContainer}>
+          {LABEL_LANGUAGES.map((lang) => {
+            const isSelected = labelLanguage === lang.code;
+            return (
+              <TouchableOpacity
+                key={lang.code}
+                style={[
+                  styles.fontListItem,
+                  isSelected && styles.fontListItemSelected
+                ]}
+                onPress={async () => {
+                  await updateLabelLanguage(lang.code);
+                  setLanguageModalVisible(false);
+                }}
+              >
+                <Text style={[
+                  styles.fontListItemText,
+                  isSelected && styles.fontListItemTextSelected
+                ]}>{lang.flag}  {lang.name}</Text>
               </TouchableOpacity>
             );
           })}

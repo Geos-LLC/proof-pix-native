@@ -40,9 +40,7 @@ import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import * as ExpoLocation from 'expo-location';
-import { IAP_PRODUCTS, purchaseOrUpgrade, clearPendingTransactions } from '../services/iapService';
-import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
-import { isTrialActive } from '../services/trialService';
+// IAP handled by PlanSelectionScreen
 import Constants from 'expo-constants';
 import UnfinishedJobBanner from '../components/UnfinishedJobBanner';
 import QualificationPromptModal, { hasCompletedQualification } from '../components/QualificationPromptModal';
@@ -133,8 +131,7 @@ export default function HomeScreen({ navigation }) {
     labelMarginVertical,
     updateUserInfo,
   } = useSettings();
-  const { userMode, updatePlanLimit } = useAdmin();
-  const { loading: pricesLoading, prices } = useSubscriptionPrices();
+  const { userMode } = useAdmin();
   const fullScreenTopInset = Math.max(insets.top, 25);
   const fullScreenBottomInset = Math.max(insets.bottom, 20);
   const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
@@ -151,8 +148,6 @@ export default function HomeScreen({ navigation }) {
   const [locationLoadingInModal, setLocationLoadingInModal] = useState(false);
   const [pendingCameraAfterCreate, setPendingCameraAfterCreate] = useState(false);
   const [combinedBaseUris, setCombinedBaseUris] = useState({});
-  const [showPlanModal, setShowPlanModal] = useState(false);
-  const [trialActive, setTrialActive] = useState(false);
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [showDeleteProjectsConfirm, setShowDeleteProjectsConfirm] = useState(false);
   const deletedProjectIdsRef = useRef([]);
@@ -191,12 +186,6 @@ export default function HomeScreen({ navigation }) {
     return unsubscribe;
   }, [navigation]);
 
-  // Check trial status when plan modal opens
-  useEffect(() => {
-    if (showPlanModal) {
-      isTrialActive().then(active => setTrialActive(active)).catch(() => setTrialActive(false));
-    }
-  }, [showPlanModal]);
 
   const handleRoomLongPress = (room, event) => {
     setContextMenuRoom(room);
@@ -767,6 +756,11 @@ export default function HomeScreen({ navigation }) {
   };
 
   const panResponder = useMemo(() => {
+    const resetSwiping = () => {
+      setTimeout(() => {
+        isSwiping.current = false;
+      }, 100);
+    };
     return PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (evt, gestureState) => {
@@ -781,22 +775,20 @@ export default function HomeScreen({ navigation }) {
       onPanResponderRelease: (evt, gestureState) => {
         const swipeThreshold = 50;
         const currentIndex = rooms.findIndex(r => r.id === currentRoomRef.current);
-        if (currentIndex === -1) {
-          return;
+        if (currentIndex !== -1) {
+          if (gestureState.dx > swipeThreshold) {
+            const newIndex = currentIndex > 0 ? currentIndex - 1 : rooms.length - 1;
+            setCurrentRoom(rooms[newIndex].id);
+          } else if (gestureState.dx < -swipeThreshold) {
+            const newIndex = currentIndex < rooms.length - 1 ? currentIndex + 1 : 0;
+            setCurrentRoom(rooms[newIndex].id);
+          }
         }
-        
-        if (gestureState.dx > swipeThreshold) {
-          const newIndex = currentIndex > 0 ? currentIndex - 1 : rooms.length - 1;
-          setCurrentRoom(rooms[newIndex].id);
-        } else if (gestureState.dx < -swipeThreshold) {
-          const newIndex = currentIndex < rooms.length - 1 ? currentIndex + 1 : 0;
-          setCurrentRoom(rooms[newIndex].id);
-        }
-        
-        setTimeout(() => {
-          isSwiping.current = false;
-        }, 100);
-      }
+        resetSwiping();
+      },
+      onPanResponderTerminate: () => {
+        resetSwiping();
+      },
     });
   }, [rooms]);
 
@@ -849,7 +841,7 @@ export default function HomeScreen({ navigation }) {
     }
     
     if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
-      setShowPlanModal(true);
+      navigation.navigate('PlanSelection');
       return;
     }
     
@@ -896,7 +888,7 @@ export default function HomeScreen({ navigation }) {
   const handleCreateProject = async () => {
     if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
       setNewProjectVisible(false);
-      setShowPlanModal(true);
+      navigation.navigate('PlanSelection');
       return;
     }
     const namePart = (newProjectNamePart || userName || 'Project').trim();
@@ -1343,7 +1335,7 @@ export default function HomeScreen({ navigation }) {
                 styles.planButtonSelected,
                 styles.planButtonSelectedBackground
               ]}
-              onPress={() => setShowPlanModal(true)}
+              onPress={() => navigation.navigate('PlanSelection')}
             >
               <Text style={[
                 styles.starterButtonText,
@@ -1353,7 +1345,7 @@ export default function HomeScreen({ navigation }) {
             {(!userPlan || userPlan === 'starter') && (
               <TouchableOpacity
                 style={styles.upgradeButton}
-                onPress={() => setShowPlanModal(true)}
+                onPress={() => navigation.navigate('PlanSelection')}
               >
                 <Image source={require('../../assets/Magic_Stick.png')} style={styles.upgradeButtonImage} resizeMode="contain" />
                 <Text style={styles.upgradeButtonText}>Upgrade</Text>
@@ -2128,269 +2120,6 @@ export default function HomeScreen({ navigation }) {
         editRoom={contextMenuRoom}
       />
 
-      {/* Plan Selection Modal */}
-      <Modal
-        visible={showPlanModal}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowPlanModal(false)}
-      >
-        <View style={[styles.planModalContainer, { paddingTop: Platform.OS === 'ios' ? 12 : insets.top }]}>
-          <View style={styles.planModalHeader}>
-            <TouchableOpacity
-              onPress={() => setShowPlanModal(false)}
-              style={styles.planModalBackButton}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Ionicons name="arrow-back" size={24} color="#000000" />
-            </TouchableOpacity>
-            <Text style={styles.planModalTitle}>Choose a Plan</Text>
-            <View style={{ width: 40 }} />
-          </View>
-
-          <View style={styles.planModalBody}>
-            <ScrollView style={styles.planModalScrollView} contentContainerStyle={styles.planModalContent}>
-              {/* Starter Plan Card */}
-              <TouchableOpacity
-                style={[styles.planCard, userPlan === 'starter' && styles.planCardSelected]}
-                onPress={async () => {
-                  await updateUserPlan('starter');
-                  setShowPlanModal(false);
-                }}
-              >
-                <View style={styles.planCardHeader}>
-                  <Text style={styles.planCardTitle}>Starter</Text>
-                  <View style={styles.planBadgeFree}>
-                    <Text style={styles.planBadgeText}>FREE</Text>
-                  </View>
-                </View>
-                <Text style={styles.planCardDescription}>
-                  Free forever. Easily manage your first project and create stunning before/after photos ready for social sharing.
-                </Text>
-              </TouchableOpacity>
-
-              {/* Pro Plan Card */}
-              <TouchableOpacity
-                style={[styles.planCard, userPlan === 'pro' && styles.planCardSelected]}
-                onPress={async () => {
-                  try {
-                    const onTrial = await isTrialActive();
-                    if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
-                      if (userPlan === 'pro') {
-                        Alert.alert('Already Subscribed', 'You already have the Pro plan.', [{ text: 'OK' }]);
-                        return;
-                      }
-                      try {
-                        setShowPlanModal(false);
-                        await new Promise(resolve => setTimeout(resolve, 300));
-                        await purchaseOrUpgrade(IAP_PRODUCTS.PRO_MONTHLY);
-                        await updateUserPlan('pro');
-                        Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.proPlanActivated', { defaultValue: 'Pro plan activated! Enjoy unlimited photos with advanced features.' }));
-                      } catch (err) {
-                        if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        console.error('[IAP] Purchase error:', err?.message);
-                        Alert.alert(
-                          t('common.error', { defaultValue: 'Error' }),
-                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
-                          [
-                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
-                            {
-                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
-                              onPress: async () => {
-                                try {
-                                  await clearPendingTransactions();
-                                } catch (e) {
-                                  console.warn('[IAP] Clear failed:', e?.message);
-                                }
-                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
-                              }
-                            },
-                          ]
-                        );
-                        return;
-                      }
-                    } else {
-                      await updateUserPlan('pro');
-                      setShowPlanModal(false);
-                    }
-                  } catch (error) {
-                    console.error('[HomeScreen] Error changing to Pro plan:', error);
-                    Alert.alert(t('common.error'), t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' }));
-                  }
-                }}
-              >
-                <View style={styles.planCardHeader}>
-                  <Text style={styles.planCardTitle}>Pro</Text>
-                  {trialActive ? (
-                    <View style={styles.planBadgeFree}>
-                      <Text style={styles.planBadgeText}>Free Trial</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.planBadgePrice}>
-                      <Text style={styles.planBadgeText}>{prices.pro || 'Price unavailable'}</Text>
-                    </View>
-                  )}
-                </View>
-                {trialActive && prices.pro ? (
-                  <Text style={styles.trialSubtext}>then {prices.pro}/month</Text>
-                ) : null}
-                <Text style={styles.planCardDescription}>
-                  Everything in Starter & For professionals. Cloud sync + bulk upload.
-                </Text>
-                <View style={styles.recommendedBadge}>
-                  <Text style={styles.recommendedBadgeText}>👍 Recommended</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Business Plan Card */}
-              <TouchableOpacity
-                style={[styles.planCard, userPlan === 'business' && styles.planCardSelected]}
-                onPress={async () => {
-                  try {
-                    const onTrial = await isTrialActive();
-                    if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
-                      if (userPlan === 'business') {
-                        Alert.alert('Already Subscribed', 'You already have the Business plan.', [{ text: 'OK' }]);
-                        return;
-                      }
-                      try {
-                        setShowPlanModal(false);
-                        await new Promise(resolve => setTimeout(resolve, 300));
-                        await purchaseOrUpgrade(IAP_PRODUCTS.BUSINESS_MONTHLY);
-                        await updatePlanLimit(5);
-                        await updateUserPlan('business');
-                        Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.businessPlanActivated', { defaultValue: 'Business plan activated! You can now add up to 5 team members.' }));
-                      } catch (err) {
-                        if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        console.error('[IAP] Purchase error:', err?.message);
-                        Alert.alert(
-                          t('common.error', { defaultValue: 'Error' }),
-                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
-                          [
-                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
-                            {
-                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
-                              onPress: async () => {
-                                try {
-                                  await clearPendingTransactions();
-                                } catch (e) {
-                                  console.warn('[IAP] Clear failed:', e?.message);
-                                }
-                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
-                              }
-                            },
-                          ]
-                        );
-                        return;
-                      }
-                    } else {
-                      await updatePlanLimit(5);
-                      await updateUserPlan('business');
-                      setShowPlanModal(false);
-                    }
-                  } catch (error) {
-                    console.error('[HomeScreen] Error setting up business plan:', error);
-                    Alert.alert(t('common.error'), t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' }));
-                  }
-                }}
-              >
-                <View style={styles.planCardHeader}>
-                  <Text style={styles.planCardTitle}>Business</Text>
-                  {trialActive ? (
-                    <View style={styles.planBadgeFree}>
-                      <Text style={styles.planBadgeText}>Free Trial</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.planBadgePrice}>
-                      <Text style={styles.planBadgeText}>{prices.business || 'Price unavailable'}</Text>
-                    </View>
-                  )}
-                </View>
-                {trialActive && prices.business ? (
-                  <Text style={styles.trialSubtext}>then {prices.business}/month</Text>
-                ) : null}
-                <Text style={styles.planCardDescription}>
-                  Everything in Pro & For small teams up to 5 members.{prices.businessSeat ? ` ${prices.businessSeat} per additional team member.` : ''}
-                </Text>
-              </TouchableOpacity>
-
-              {/* Enterprise Plan Card */}
-              <TouchableOpacity
-                style={[styles.planCard, userPlan === 'enterprise' && styles.planCardSelected]}
-                onPress={async () => {
-                  try {
-                    const onTrial = await isTrialActive();
-                    if ((Platform.OS === 'ios' || Platform.OS === 'android') && !onTrial) {
-                      if (userPlan === 'enterprise') {
-                        Alert.alert('Already Subscribed', 'You already have the Enterprise plan.', [{ text: 'OK' }]);
-                        return;
-                      }
-                      try {
-                        setShowPlanModal(false);
-                        await new Promise(resolve => setTimeout(resolve, 300));
-                        await purchaseOrUpgrade(IAP_PRODUCTS.ENTERPRISE_MONTHLY);
-                        await updatePlanLimit(15);
-                        await updateUserPlan('enterprise');
-                        Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit.' }));
-                      } catch (err) {
-                        if (err?.message === 'USER_CANCELLED' || err?.message === 'user-cancelled') return;
-                        console.error('[IAP] Purchase error:', err?.message);
-                        Alert.alert(
-                          t('common.error', { defaultValue: 'Error' }),
-                          t('settings.purchaseFailedDetail', { defaultValue: 'Purchase failed. This can happen if there are pending transactions. Try clearing them and retry.' }),
-                          [
-                            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
-                            {
-                              text: t('settings.clearAndRetry', { defaultValue: 'Clear & Retry' }),
-                              onPress: async () => {
-                                try {
-                                  await clearPendingTransactions();
-                                } catch (e) {
-                                  console.warn('[IAP] Clear failed:', e?.message);
-                                }
-                                Alert.alert(t('common.info', { defaultValue: 'Info' }), t('settings.transactionsCleared', { defaultValue: 'Pending transactions cleared. Please try the purchase again.' }));
-                              }
-                            },
-                          ]
-                        );
-                        return;
-                      }
-                    } else {
-                      await updatePlanLimit(15);
-                      await updateUserPlan('enterprise');
-                      setShowPlanModal(false);
-                      Alert.alert(t('common.success', { defaultValue: 'Success' }), t('settings.enterprisePlanActivated', { defaultValue: 'Enterprise plan activated with 15 team member limit.' }));
-                    }
-                  } catch (error) {
-                    console.error('[HomeScreen] Error setting up enterprise plan:', error);
-                    Alert.alert(t('common.error'), t('settings.planChangeError', { defaultValue: 'Failed to change plan. Please try again.' }));
-                  }
-                }}
-              >
-                <View style={styles.planCardHeader}>
-                  <Text style={styles.planCardTitle}>Enterprise</Text>
-                  {trialActive ? (
-                    <View style={styles.planBadgeFree}>
-                      <Text style={styles.planBadgeText}>Free Trial</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.planBadgePrice}>
-                      <Text style={styles.planBadgeText}>{prices.enterprise ? `Starts at ${prices.enterprise}` : 'Price unavailable'}</Text>
-                    </View>
-                  )}
-                </View>
-                {trialActive && prices.enterprise ? (
-                  <Text style={styles.trialSubtext}>then {prices.enterprise}/month</Text>
-                ) : null}
-                <Text style={styles.planCardDescription}>
-                  Everything in Business & For growing organizations with 15 team members and more
-                </Text>
-              </TouchableOpacity>
-
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       <EnterpriseContactModal
         visible={showEnterpriseModal}

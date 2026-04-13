@@ -99,7 +99,7 @@
         "appleTeamId": "X46T9F8UMA"
       },
       "android": {
-        "serviceAccountKeyPath": "./proofpix-play-store-service-account.json",
+        "serviceAccountKeyPath": "./proofpix-475818-721120a63511.json",
         "track": "internal",
         "releaseStatus": "draft"
       }

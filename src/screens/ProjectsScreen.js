@@ -12,6 +12,7 @@ import {
   Modal,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Switch,
 } from 'react-native';
@@ -81,7 +82,6 @@ export default function ProjectsScreen({ navigation }) {
   const [creating, setCreating] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState(null);
-  const [showPlanModal, setShowPlanModal] = useState(false);
   const [showUploadDetails, setShowUploadDetails] = useState(false);
   const [isPreparingUpload, setIsPreparingUpload] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -133,7 +133,7 @@ export default function ProjectsScreen({ navigation }) {
     }
 
     if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
-      setShowPlanModal(true);
+      navigation.navigate('PlanSelection');
       return;
     }
 
@@ -643,10 +643,6 @@ export default function ProjectsScreen({ navigation }) {
       <TouchableOpacity
         style={[styles.floatingAddButton, { bottom: 20 + insets.bottom + 50 + 16 }]}
         onPress={() => {
-          if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
-            setShowPlanModal(true);
-            return;
-          }
           const locationDisplay = getLocationName(location);
           setNewProjectNamePart(userName || '');
           setNewProjectLocation(locationDisplay);
@@ -663,6 +659,8 @@ export default function ProjectsScreen({ navigation }) {
         animationType="fade"
         onRequestClose={() => setNewProjectVisible(false)}
       >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.modalOverlayTop}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{t('projects.newProject', { defaultValue: 'New Project' })}</Text>
@@ -764,6 +762,8 @@ export default function ProjectsScreen({ navigation }) {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Delete Confirmation Modal */}

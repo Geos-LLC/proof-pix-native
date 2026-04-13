@@ -143,11 +143,24 @@ export default function CameraScreen({ route, navigation }) {
     location,
   } = useSettings();
 
-  // Vision Camera setup - default to ultra-wide (0.5x)
-  const [cameraType, setCameraType] = useState('ultra-wide-angle-camera'); // 'ultra-wide-angle-camera' or 'wide-angle-camera'
+  // Vision Camera setup - request a multi-physical-lens logical device so we
+  // can seamlessly zoom from the device's widest lens (0.5x on most phones,
+  // 0.6x on Samsung S21 Ultra and similar) through the main + telephoto lenses.
+  // This avoids hard-switching physical devices and lets `device.minZoom`
+  // reflect whatever ultra-wide the actual hardware supports.
   const device = useCameraDevice(facing, {
-    physicalDevices: [cameraType]
+    physicalDevices: [
+      'ultra-wide-angle-camera',
+      'wide-angle-camera',
+      'telephoto-camera',
+    ],
   });
+
+  // Actual widest zoom this device supports (0.5 on iPhone/Pixel, ~0.6 on S21 Ultra, etc.).
+  // Falls back to 1.0 if the device doesn't support ultra-wide.
+  const deviceMinZoom = device?.minZoom ?? 1.0;
+  const deviceNeutralZoom = device?.neutralZoom ?? 1.0;
+  const hasUltraWide = deviceMinZoom < deviceNeutralZoom;
   // Some Samsung/Android lenses (especially ultra-wide) report no flash/torch support.
   // Guard all flash/torch usage by these caps to avoid runtime crashes.
   const supportsFlash = !!device?.hasFlash;
@@ -172,6 +185,15 @@ export default function CameraScreen({ route, navigation }) {
   const { hasPermission, requestPermission } = useCameraPermission();
   const isFocused = useIsFocused();
   const [zoom, setZoom] = useState(1.0);
+  // Once the device is known, snap zoom to the widest lens (ultra-wide) on
+  // first load — matches the original default of opening at 0.5x / 0.6x.
+  const didInitZoomRef = useRef(false);
+  useEffect(() => {
+    if (!didInitZoomRef.current && device && hasUltraWide) {
+      setZoom(deviceMinZoom);
+      didInitZoomRef.current = true;
+    }
+  }, [device, hasUltraWide, deviceMinZoom]);
 
   // Calculate target aspect ratio for format selection
   const targetAspectRatio = useMemo(() => {
@@ -1008,7 +1030,7 @@ export default function CameraScreen({ route, navigation }) {
       if (!hasPermission) {
         requestPermission();
       }
-    }, [hasPermission, requestPermission, dimensions, deviceOrientation, cameraViewMode, aspectRatio, pictureSize, mode, cameraType])
+    }, [hasPermission, requestPermission, dimensions, deviceOrientation, cameraViewMode, aspectRatio, pictureSize, mode])
   );
 
   useEffect(() => {
@@ -2411,34 +2433,30 @@ export default function CameraScreen({ route, navigation }) {
                 </TouchableOpacity>
               </View>
             )}
-            {/* Zoom controls */}
+            {/* Zoom controls — ultra-wide button uses device.minZoom so devices
+                like Samsung S21 Ultra (which only goes to 0.6x) still work. */}
             <View style={styles.zoomControlsBottom}>
+              {hasUltraWide && (
+                <TouchableOpacity
+                  style={[styles.zoomButtonBottom, zoom < deviceNeutralZoom && styles.zoomButtonBottomActive]}
+                  onPress={() => setZoom(deviceMinZoom)}
+                >
+                  <Text style={[styles.zoomButtonBottomText, zoom < deviceNeutralZoom && styles.zoomButtonBottomTextActive]}>
+                    {`${deviceMinZoom.toFixed(1)}X`}
+                  </Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
-                style={[styles.zoomButtonBottom, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonBottomActive]}
-                onPress={() => {
-                  setCameraType('ultra-wide-angle-camera');
-                  setZoom(1.0);
-                }}
+                style={[styles.zoomButtonBottom, zoom >= deviceNeutralZoom && zoom < 2 && styles.zoomButtonBottomActive]}
+                onPress={() => setZoom(deviceNeutralZoom)}
               >
-                <Text style={[styles.zoomButtonBottomText, cameraType === 'ultra-wide-angle-camera' && styles.zoomButtonBottomTextActive]}>0.5X</Text>
+                <Text style={[styles.zoomButtonBottomText, zoom >= deviceNeutralZoom && zoom < 2 && styles.zoomButtonBottomTextActive]}>1X</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.zoomButtonBottom, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonBottomActive]}
-                onPress={() => {
-                  setCameraType('wide-angle-camera');
-                  setZoom(1.0);
-                }}
+                style={[styles.zoomButtonBottom, zoom >= 2 && styles.zoomButtonBottomActive]}
+                onPress={() => setZoom(2.0)}
               >
-                <Text style={[styles.zoomButtonBottomText, cameraType === 'wide-angle-camera' && zoom < 2 && styles.zoomButtonBottomTextActive]}>1X</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.zoomButtonBottom, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonBottomActive]}
-                onPress={() => {
-                  setCameraType('wide-angle-camera');
-                  setZoom(2.0);
-                }}
-              >
-                <Text style={[styles.zoomButtonBottomText, cameraType === 'wide-angle-camera' && zoom >= 2 && styles.zoomButtonBottomTextActive]}>2X</Text>
+                <Text style={[styles.zoomButtonBottomText, zoom >= 2 && styles.zoomButtonBottomTextActive]}>2X</Text>
               </TouchableOpacity>
             </View>
           </View>
