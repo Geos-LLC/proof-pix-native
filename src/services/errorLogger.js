@@ -1,8 +1,43 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 const ERROR_LOG_KEY = 'app-error-logs';
 const MAX_LOGS = 100; // Keep last 100 errors
+
+// LogHub (Grafana) — stream errors to the central log aggregator so they
+// can be viewed from a browser on any machine. Fail silently — local
+// AsyncStorage logging is still the source of truth for export.
+const LOGHUB_URL = process.env.EXPO_PUBLIC_LOGHUB_URL || 'https://geosloghub-production.up.railway.app';
+const LOGHUB_KEY = process.env.EXPO_PUBLIC_LOGHUB_KEY || 'RAILWAY_INGEST_KEY_123';
+const APP_VERSION = Constants?.expoConfig?.version || 'unknown';
+
+const sendToLogHub = async (level, message, extra = {}) => {
+  try {
+    // Keep network work off the hot path
+    fetch(`${LOGHUB_URL}/ingest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-ingest-key': LOGHUB_KEY,
+      },
+      body: JSON.stringify({
+        service: 'proofpix-native',
+        app: 'proofpix',
+        env: __DEV__ ? 'dev' : 'prod',
+        level,
+        message,
+        platform: Platform.OS,
+        app_version: APP_VERSION,
+        timestamp: new Date().toISOString(),
+        ...extra,
+      }),
+    }).catch(() => {});
+  } catch (_) {
+    // swallow — logging must never crash the app
+  }
+};
 
 /**
  * Error Logger Service
@@ -37,8 +72,16 @@ export const logError = async (error, context = {}) => {
     // Save to AsyncStorage
     await AsyncStorage.setItem(ERROR_LOG_KEY, JSON.stringify(updatedLogs));
 
-    // Also log to console in development
+    // Stream to LogHub / Grafana (fire-and-forget)
+    sendToLogHub('error', errorLog.message, {
+      stack: errorLog.stack,
+      screen: errorLog.context.screen,
+      action: errorLog.context.action,
+      is_fatal: !!errorLog.context.isFatal,
+    });
+
     if (__DEV__) {
+      console.error('[errorLogger]', errorLog.message, errorLog.context);
     }
 
     return errorLog;
@@ -187,19 +230,39 @@ export const getErrorStats = async () => {
 };
 
 /**
- * Global error handler wrapper
+ * Global error handler wrapper — catches every uncaught JS error and
+ * unhandled promise rejection, logs to AsyncStorage + LogHub.
  */
 export const setupGlobalErrorHandler = () => {
-  const originalHandler = ErrorUtils.getGlobalHandler();
+  try {
+    // Uncaught JS errors
+    if (typeof ErrorUtils !== 'undefined' && ErrorUtils?.getGlobalHandler) {
+      const originalHandler = ErrorUtils.getGlobalHandler();
+      ErrorUtils.setGlobalHandler(async (error, isFatal) => {
+        try {
+          await logError(error, {
+            screen: 'global',
+            action: 'uncaught_error',
+            isFatal,
+          });
+        } catch (_) {}
+        if (originalHandler) originalHandler(error, isFatal);
+      });
+    }
 
-  ErrorUtils.setGlobalHandler(async (error, isFatal) => {
-    await logError(error, {
-      screen: 'global',
-      action: 'uncaught_error',
-      isFatal
+    // Unhandled promise rejections
+    const tracking = require('promise/setimmediate/rejection-tracking');
+    tracking.enable({
+      allRejections: true,
+      onUnhandled: (id, error) => {
+        logError(error || new Error(`Unhandled rejection (id ${id})`), {
+          screen: 'global',
+          action: 'unhandled_promise_rejection',
+        });
+      },
+      onHandled: () => {},
     });
-
-    // Call original handler
-    originalHandler(error, isFatal);
-  });
+  } catch (setupErr) {
+    console.warn('[errorLogger] Failed to install global handler:', setupErr?.message);
+  }
 };

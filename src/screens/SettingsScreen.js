@@ -74,6 +74,8 @@ import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
 import * as Updates from 'expo-updates';
+import * as Sharing from 'expo-sharing';
+import { exportErrorLogs, getErrorStats, clearErrorLogs } from '../services/errorLogger';
 import { isRTLLanguage } from '../hooks/useRTL';
 import { LOCATIONS, getLocationName } from '../config/locations';
 
@@ -2242,6 +2244,38 @@ export default function SettingsScreen({ navigation, route }) {
         },
       ],
     );
+  };
+
+  const handleExportErrorLogs = async () => {
+    try {
+      const stats = await getErrorStats();
+      const result = await exportErrorLogs();
+      if (!result?.success) {
+        Alert.alert('No logs', result?.message || 'No error logs have been recorded yet.');
+        return;
+      }
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        Alert.alert('Export complete', `Saved to ${result.fileName}`);
+        return;
+      }
+      await Sharing.shareAsync(result.uri, {
+        mimeType: 'application/json',
+        dialogTitle: 'Share ProofPix error logs',
+        UTI: 'public.json',
+      });
+      // After successful share, offer to clear
+      Alert.alert(
+        'Logs shared',
+        `Exported ${result.logsCount} error${result.logsCount === 1 ? '' : 's'}. Clear them from the device?`,
+        [
+          { text: 'Keep', style: 'cancel' },
+          { text: 'Clear', style: 'destructive', onPress: () => clearErrorLogs() },
+        ]
+      );
+    } catch (e) {
+      Alert.alert('Export failed', e?.message || 'Unknown error');
+    }
   };
 
   const handleResetUserData = () => {
@@ -5162,6 +5196,22 @@ export default function SettingsScreen({ navigation, route }) {
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={COLORS.GRAY} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Debug / Error Logs Section */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.contactUsRow}
+            onPress={handleExportErrorLogs}
+          >
+            <View style={styles.contactUsContent}>
+              <Text style={styles.sectionTitle}>{t('settings.exportLogs', { defaultValue: 'Export error logs' })}</Text>
+              <Text style={styles.sectionDescription}>
+                {t('settings.exportLogsDescription', { defaultValue: 'Share a log file with support to help debug issues.' })}
+              </Text>
+            </View>
+            <Ionicons name="share-outline" size={20} color={COLORS.GRAY} />
           </TouchableOpacity>
         </View>
 

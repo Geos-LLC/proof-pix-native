@@ -430,6 +430,16 @@ function GlobalUploadIndicator({ navigationRef }) {
 // Global function to trigger trial notification check (for use after plan selection)
 let globalCheckTrialNotifications = null;
 
+// Install the global JS error + unhandled-rejection handler as early as
+// possible — before any app code runs. Captures everything to AsyncStorage
+// for in-app export and streams to LogHub/Grafana.
+try {
+  const { setupGlobalErrorHandler } = require('./src/services/errorLogger');
+  setupGlobalErrorHandler();
+} catch (e) {
+  console.warn('[App] Failed to install error handler:', e?.message);
+}
+
 export default function App() {
   console.log('[App] App component rendering...');
   const navigationRef = useRef();

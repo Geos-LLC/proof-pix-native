@@ -87,7 +87,9 @@
         "EXPO_PUBLIC_EMAILJS_TEMPLATE_ID": "template_ytpnidr",
         "EXPO_PUBLIC_EMAILJS_PUBLIC_KEY": "RrCIuTQfiMgOC8e9N",
         "EXPO_PUBLIC_IOS_APP_STORE_URL": "https://apps.apple.com/app/6754261444",
-        "EXPO_PUBLIC_ANDROID_PLAY_STORE_URL": "https://play.google.com/store/apps/details?id=com.proofpix.app"
+        "EXPO_PUBLIC_ANDROID_PLAY_STORE_URL": "https://play.google.com/store/apps/details?id=com.proofpix.app",
+        "EXPO_PUBLIC_LOGHUB_URL": "https://geosloghub-production.up.railway.app",
+        "EXPO_PUBLIC_LOGHUB_KEY": "RAILWAY_INGEST_KEY_123"
       }
     }
   },
