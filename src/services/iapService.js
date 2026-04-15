@@ -91,7 +91,7 @@ export const initIAPIfNeeded = async () => {
     console.log('[IAP] Connection initialized successfully');
   } catch (e) {
     console.error('[IAP] Failed to init connection:', e);
-    console.error('[IAP] Error details:', JSON.stringify(e, null, 2));
+    console.error('[IAP] Error details:', JSON.stringify({ message: e?.message, code: e?.code, name: e?.name, stack: e?.stack?.slice(0, 400), debugMessage: e?.debugMessage, responseCode: e?.responseCode }, null, 2));
   }
 };
 
@@ -392,7 +392,7 @@ export const purchaseProduct = async (productId) => {
       }, 120000);
     } catch (err) {
       console.error('[IAP] Error during purchase flow:', err);
-      console.error('[IAP] Error details:', JSON.stringify(err, null, 2));
+      console.error('[IAP] Error details:', JSON.stringify({ message: err?.message, code: err?.code, name: err?.name, stack: err?.stack?.slice(0, 400), debugMessage: err?.debugMessage, responseCode: err?.responseCode }, null, 2));
       finish(() => reject(err));
     }
   });
@@ -927,7 +927,7 @@ export const restorePurchases = async () => {
     return purchases;
   } catch (error) {
     console.error('[IAP] Restore failed:', error);
-    console.error('[IAP] Error details:', JSON.stringify(error, null, 2));
+    console.error('[IAP] Error details:', JSON.stringify({ message: error?.message, code: error?.code, name: error?.name, stack: error?.stack?.slice(0, 400), debugMessage: error?.debugMessage, responseCode: error?.responseCode }, null, 2));
     throw error;
   }
 };
@@ -976,6 +976,12 @@ export const getSubscriptionPrices = async () => {
 
     // v14: use fetchProducts with type 'subs' for both platforms
     const products = await RNIap.fetchProducts({ skus: allSkus, type: 'subs' });
+    console.error('[IAP] fetchProducts returned:', JSON.stringify({
+      requestedSkus: allSkus,
+      returnedCount: products?.length || 0,
+      returnedIds: (products || []).map((p) => p?.id || p?.productId),
+      platform: Platform.OS,
+    }));
     const prices = {};
     const trialOffers = {};
 
