@@ -5213,6 +5213,12 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
             <Ionicons name="share-outline" size={20} color={COLORS.GRAY} />
           </TouchableOpacity>
+          <Text style={{ fontSize: 11, color: '#888', marginTop: 8, paddingHorizontal: 4 }}>
+            OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
+          </Text>
+          <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
+            Build tag: OTA-TEST-1
+          </Text>
         </View>
 
         {/* Data Section */}
