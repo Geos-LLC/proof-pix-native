@@ -1426,16 +1426,6 @@ export default function HomeScreen({ navigation }) {
 
       {renderRoomTabs()}
 
-      <UnfinishedJobBanner
-        refreshKey={bannerRefreshKey}
-        onPress={(job) => {
-          navigation.navigate('Camera', {
-            mode: 'after',
-            room: job.room,
-          });
-        }}
-      />
-
       <View style={styles.content} {...panResponder.panHandlers}>
         <ScrollView
           contentContainerStyle={{ paddingBottom: 20 + insets.bottom + 50 + 80 }}
