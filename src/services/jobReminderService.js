@@ -189,7 +189,28 @@ export const getMostRecentUnfinishedJob = async () => {
 
     // Clean up stale jobs (older than 7 days)
     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const active = jobs.filter(j => j.startedAt > oneWeekAgo);
+    let active = jobs.filter(j => j.startedAt > oneWeekAgo);
+
+    // Cross-check against actual photos: drop jobs whose before photo was
+    // deleted, or for which an after photo already exists.
+    try {
+      const { loadPhotosMetadata } = await import('./storage');
+      const { PHOTO_MODES } = await import('../constants/rooms');
+      const photos = (await loadPhotosMetadata()) || [];
+      const beforeIds = new Set(
+        photos.filter((p) => p?.mode === PHOTO_MODES.BEFORE).map((p) => p.id)
+      );
+      const completedBeforeIds = new Set(
+        photos
+          .filter((p) => p?.mode === PHOTO_MODES.AFTER && p?.beforePhotoId)
+          .map((p) => p.beforePhotoId)
+      );
+      active = active.filter(
+        (j) => beforeIds.has(j.photoId) && !completedBeforeIds.has(j.photoId)
+      );
+    } catch (err) {
+      console.warn('[JobReminder] Photo cross-check skipped:', err?.message);
+    }
 
     if (active.length !== jobs.length) {
       await savePendingJobs(active);
