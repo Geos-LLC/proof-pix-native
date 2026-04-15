@@ -9,7 +9,7 @@ export default {
       policy: "appVersion"
     },
     updates: {
-      url: "https://u.expo.dev/56b6bd0e-b696-4b6c-bcc4-14714465dd9f"
+      url: "https://u.expo.dev/3e7ed884-bb3a-4191-bcb0-188386d7e977"
     },
     orientation: "default",
     icon: "./assets/PP_logo.png",
