@@ -2928,7 +2928,7 @@ export default function SettingsScreen({ navigation, route }) {
           
           <TouchableOpacity
             style={styles.upgradeButton}
-            onPress={() => navigation.navigate('PlanSelection')}
+            onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
           >
             <Text style={styles.upgradeButtonText}>{t('settings.upgrade', { defaultValue: 'Upgrade' })}</Text>
           </TouchableOpacity>

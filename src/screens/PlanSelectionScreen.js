@@ -50,21 +50,21 @@ import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 
 const { width } = Dimensions.get('window');
 
-export default function PlanSelectionScreen({ navigation }) {
+export default function PlanSelectionScreen({ navigation, route }) {
   const { t } = useTranslation();
   const { userPlan, updateUserPlan } = useSettings();
   const { updatePlanLimit } = useAdmin();
   const insets = useSafeAreaInsets();
 
+  const forceUpgradeMode = route?.params?.mode === 'upgrade';
+
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
-  const [trialAvailable, setTrialAvailable] = useState(true);
+  const [trialAvailable, setTrialAvailable] = useState(!forceUpgradeMode);
   const baseTrial = 15;
   const referralBonus = 15;
   const [trialDays, setTrialDays] = useState(baseTrial);
   const [showTrialModal, setShowTrialModal] = useState(false);
   const [trialNotification, setTrialNotification] = useState(null);
-  const [showTrialConfirmation, setShowTrialConfirmation] = useState(false);
-  const [selectedPlanForTrial, setSelectedPlanForTrial] = useState(null);
   const hasShownTrialNotification = useRef(false);
   const isMounted = useRef(true);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
@@ -86,15 +86,11 @@ export default function PlanSelectionScreen({ navigation }) {
 
     const checkTrialAvailability = async () => {
       try {
-        // Always show trial modal for now - comment out the service check
-        // const available = await canStartTrial();
-        // if (isMounted.current) {
-        //   setTrialAvailable(available);
-        // }
-        
-        // Keep trial available as true (set in initial state)
-        if (isMounted.current) {
-          setTrialAvailable(true);
+        if (forceUpgradeMode) {
+          if (isMounted.current) setTrialAvailable(false);
+        } else {
+          const available = await canStartTrial();
+          if (isMounted.current) setTrialAvailable(available);
         }
 
         try {
@@ -111,7 +107,7 @@ export default function PlanSelectionScreen({ navigation }) {
       } catch (error) {
         console.error('[PlanSelection] Error checking trial availability:', error);
         if (isMounted.current) {
-          setTrialAvailable(true);
+          setTrialAvailable(!forceUpgradeMode);
           setTrialDays(baseTrial);
         }
       }
@@ -141,13 +137,8 @@ export default function PlanSelectionScreen({ navigation }) {
       return;
     }
 
-    if (trialAvailable && plan !== 'enterprise') {
-      setSelectedPlanForTrial(plan);
-      setShowTrialConfirmation(true);
-      return;
-    }
-
-    await proceedWithPlanSelection(plan, false);
+    const useTrial = trialAvailable && plan !== 'enterprise';
+    await proceedWithPlanSelection(plan, useTrial);
   };
 
   const proceedWithPlanSelection = async (plan, useTrial = false) => {
@@ -163,7 +154,6 @@ export default function PlanSelectionScreen({ navigation }) {
       let trialJustStarted = false;
 
       setShowTrialModal(false);
-      setShowTrialConfirmation(false);
       setTrialNotification(null);
 
       if (useTrial) {
@@ -261,19 +251,6 @@ export default function PlanSelectionScreen({ navigation }) {
     } finally {
       isPurchasing.current = false;
     }
-  };
-
-  const handleUseTrial = async () => {
-    if (selectedPlanForTrial) {
-      await proceedWithPlanSelection(selectedPlanForTrial, true);
-    }
-  };
-
-  // CRITICAL FIX: Dismiss must NEVER trigger billing — just close the modal
-  const handleDismissTrialModal = () => {
-    setShowTrialConfirmation(false);
-    setSelectedPlanForTrial(null);
-    // DO NOTHING ELSE — no purchase, no navigation
   };
 
   const handleTrialModalClose = () => {
@@ -654,75 +631,6 @@ export default function PlanSelectionScreen({ navigation }) {
         visible={showEnterpriseModal}
         onClose={() => setShowEnterpriseModal(false)}
       />
-
-      {/* Trial Confirmation Modal - Inline */}
-      <Modal
-        visible={showTrialConfirmation}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={handleDismissTrialModal}
-        statusBarTranslucent={true}
-      >
-        <View style={styles.trialModalOverlay}>
-          <TouchableOpacity
-            style={styles.trialModalOverlayTouchable}
-            activeOpacity={1}
-            onPress={handleDismissTrialModal}
-          />
-
-          <View style={[styles.trialModalContainer, { paddingBottom: Math.max(40, insets.bottom + 20) }]}>
-            {/* Grabber Handle */}
-            <View style={styles.trialModalGrabberContainer}>
-              <View style={styles.trialModalGrabber} />
-            </View>
-
-            {/* Header with Close Button and Title */}
-            <View style={styles.trialModalHeader}>
-              <TouchableOpacity
-                style={styles.trialModalCloseButton}
-                onPress={handleDismissTrialModal}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="close" size={20} color="#999999" />
-              </TouchableOpacity>
-              <Text style={styles.trialModalTitle}>START FREE TRIAL</Text>
-              <View style={styles.trialModalHeaderSpacer} />
-            </View>
-
-            {/* Body Content — Full trial disclosure (ADDITION 2: shown BEFORE billing) */}
-            <View style={styles.trialModalBody}>
-              <Text style={styles.trialModalBodyText}>
-                Start your {trialDays}-day free trial of {selectedPlanForTrial ? selectedPlanForTrial.toLowerCase() : 'pro'} features.
-              </Text>
-              <Text style={styles.trialDisclosureText}>
-                {selectedPlanForTrial && prices[selectedPlanForTrial]
-                  ? `After your trial ends, you'll be charged ${prices[selectedPlanForTrial]}/month. `
-                  : ''}
-                Auto-renews unless canceled. {platformCancelText}.
-              </Text>
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.trialModalButtonsContainer}>
-              <TouchableOpacity
-                style={styles.trialModalSkipButton}
-                onPress={handleDismissTrialModal}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.trialModalSkipButtonText}>No Thanks</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.trialModalStartButton}
-                onPress={handleUseTrial}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.trialModalStartButtonText}>Start Free Trial</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Trial Notification Modal */}
       <TrialNotificationModal
