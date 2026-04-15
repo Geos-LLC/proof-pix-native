@@ -35,7 +35,7 @@ export default function useSubscriptionPrices() {
   const [data, setData] = useState(_cache);
 
   useEffect(() => {
-    if (_cache) {
+    if (_cache && Object.values(_cache.prices || {}).some((v) => !!v)) {
       setData(_cache);
       setLoading(false);
       return;
@@ -62,11 +62,15 @@ export default function useSubscriptionPrices() {
           trialInfo[planKey] = trialOffers[productId] || { hasTrial: false, trialDays: 0 };
         }
 
-        _cache = { prices, trialInfo };
+        const hasPrices = Object.values(prices).some((v) => !!v);
+        if (hasPrices) {
+          _cache = { prices, trialInfo };
+        }
 
         if (!cancelled) {
-          setData(_cache);
+          setData({ prices, trialInfo });
           setLoading(false);
+          if (!hasPrices) setError(true);
         }
       } catch (err) {
         _fetchPromise = null;
