@@ -229,9 +229,77 @@ export const getErrorStats = async () => {
   }
 };
 
+// Tag map: route messages with these prefixes through errorLogger.
+// Anything else stays in console only (avoid spamming the log file with
+// info/debug noise).
+const CAPTURE_TAG_PATTERNS = [
+  /^\[IAP\b/,
+  /^\[Analytics\b/i,
+  /^\[Firebase\b/i,
+  /^\[ADMIN\b/,
+  /^\[PROXY\b/,
+  /^\[SETTINGS\b/,
+  /^\[PhotoContext\b/,
+  /^\[BackgroundUpload\b/i,
+  /^\[errorLogger\b/,
+];
+
+const stringifyArg = (arg) => {
+  if (arg == null) return String(arg);
+  if (arg instanceof Error) return `${arg.message}\n${arg.stack || ''}`;
+  if (typeof arg === 'string') return arg;
+  try {
+    return JSON.stringify(arg);
+  } catch {
+    return String(arg);
+  }
+};
+
+const shouldCapture = (firstArg) => {
+  if (typeof firstArg !== 'string') return false;
+  return CAPTURE_TAG_PATTERNS.some((re) => re.test(firstArg));
+};
+
+let consolePatched = false;
+const patchConsole = () => {
+  if (consolePatched) return;
+  consolePatched = true;
+  const origError = console.error.bind(console);
+  const origWarn = console.warn.bind(console);
+
+  console.error = (...args) => {
+    origError(...args);
+    if (shouldCapture(args[0])) {
+      const message = args.map(stringifyArg).join(' ');
+      // Pick stack from the first Error arg if present
+      const errArg = args.find((a) => a instanceof Error);
+      logError(errArg || new Error(message), {
+        screen: 'console',
+        action: 'console.error',
+        tag: typeof args[0] === 'string' ? args[0].split(']')[0] + ']' : '',
+      });
+    }
+  };
+
+  console.warn = (...args) => {
+    origWarn(...args);
+    if (shouldCapture(args[0])) {
+      const message = args.map(stringifyArg).join(' ');
+      const errArg = args.find((a) => a instanceof Error);
+      logError(errArg || new Error(message), {
+        screen: 'console',
+        action: 'console.warn',
+        tag: typeof args[0] === 'string' ? args[0].split(']')[0] + ']' : '',
+      });
+    }
+  };
+};
+
 /**
- * Global error handler wrapper — catches every uncaught JS error and
- * unhandled promise rejection, logs to AsyncStorage + LogHub.
+ * Global error handler wrapper — catches every uncaught JS error,
+ * unhandled promise rejection, AND tagged console.error / console.warn
+ * calls (e.g., [IAP], [Analytics], [Firebase]). Logs to AsyncStorage +
+ * LogHub.
  */
 export const setupGlobalErrorHandler = () => {
   try {
@@ -251,17 +319,24 @@ export const setupGlobalErrorHandler = () => {
     }
 
     // Unhandled promise rejections
-    const tracking = require('promise/setimmediate/rejection-tracking');
-    tracking.enable({
-      allRejections: true,
-      onUnhandled: (id, error) => {
-        logError(error || new Error(`Unhandled rejection (id ${id})`), {
-          screen: 'global',
-          action: 'unhandled_promise_rejection',
-        });
-      },
-      onHandled: () => {},
-    });
+    try {
+      const tracking = require('promise/setimmediate/rejection-tracking');
+      tracking.enable({
+        allRejections: true,
+        onUnhandled: (id, error) => {
+          logError(error || new Error(`Unhandled rejection (id ${id})`), {
+            screen: 'global',
+            action: 'unhandled_promise_rejection',
+          });
+        },
+        onHandled: () => {},
+      });
+    } catch (rejectionErr) {
+      // promise/setimmediate not always available — skip silently
+    }
+
+    // Tagged console.error / console.warn capture
+    patchConsole();
   } catch (setupErr) {
     console.warn('[errorLogger] Failed to install global handler:', setupErr?.message);
   }
