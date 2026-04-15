@@ -163,20 +163,10 @@ export const logEvent = async (eventName, params = {}) => {
  * @param {string} screenClass - Class of the screen (optional)
  */
 export const logScreenView = async (screenName, screenClass = screenName) => {
-  if (!isFirebaseReady()) {
-    return;
-  }
-
-  try {
-    const analytics = getAnalyticsInstance();
-    if (analytics) {
-      await firebaseLogEvent(analytics, 'screen_view', {
-        screen_name: screenName,
-        screen_class: screenClass,
-      });
-    }
-  } catch (error) {
-  }
+  await logEvent('screen_view', {
+    screen_name: screenName,
+    screen_class: screenClass,
+  });
 };
 
 /**
