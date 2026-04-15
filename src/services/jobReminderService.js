@@ -66,10 +66,21 @@ const savePendingJobs = async (jobs) => {
  */
 export const onBeforePhotoTaken = async (photo) => {
   try {
+    const projectKey = photo.projectId || '__noproject__';
+    const jobs = await getPendingJobs();
+
+    // One reminder per project — if this project already has a pending job,
+    // don't schedule another notification.
+    const existing = jobs.find((j) => (j.projectId || '__noproject__') === projectKey);
+    if (existing) {
+      logEvent('job_reminder_skipped', { reason: 'project_already_pending' });
+      return;
+    }
+
     const hasPermission = await ensureNotificationPermission();
 
     const job = {
-      jobId: `job_${photo.id}`,
+      jobId: `job_${photo.projectId || photo.id}`,
       photoId: photo.id,
       projectId: photo.projectId || null,
       room: photo.room || 'General',
@@ -81,7 +92,7 @@ export const onBeforePhotoTaken = async (photo) => {
     };
 
     if (hasPermission) {
-      // Schedule 2-hour reminder
+      // Single 2-hour reminder per project
       const n1Id = await Notifications.scheduleNotificationAsync({
         content: {
           title: "Don't forget your AFTER photos",
@@ -95,25 +106,8 @@ export const onBeforePhotoTaken = async (photo) => {
       });
       job.notification1Id = n1Id;
       logEvent('job_reminder_scheduled', { reminder_type: '2h' });
-
-      // Schedule 24-hour reminder
-      const n2Id = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Still need your AFTER photo?',
-          body: 'Come back and complete your proof for this job.',
-          data: { jobId: job.jobId, type: 'job_reminder' },
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: REMINDER_2_DELAY / 1000,
-        },
-      });
-      job.notification2Id = n2Id;
-      logEvent('job_reminder_scheduled', { reminder_type: '24h' });
     }
 
-    // Save to pending jobs
-    const jobs = await getPendingJobs();
     jobs.push(job);
     await savePendingJobs(jobs);
   } catch (error) {
@@ -128,20 +122,34 @@ export const onBeforePhotoTaken = async (photo) => {
 export const onAfterPhotoCompleted = async (beforePhotoId) => {
   try {
     const jobs = await getPendingJobs();
-    const job = jobs.find(j => j.photoId === beforePhotoId);
 
-    if (!job) return;
+    // Resolve this before-photo's project so we can cancel the project-level
+    // reminder even if it was scheduled off a different before photo.
+    let projectId = null;
+    try {
+      const { loadPhotosMetadata } = await import('./storage');
+      const photos = (await loadPhotosMetadata()) || [];
+      const before = photos.find((p) => p?.id === beforePhotoId);
+      projectId = before?.projectId || null;
+    } catch {}
 
-    // Cancel scheduled notifications
-    if (job.notification1Id) {
-      await Notifications.cancelScheduledNotificationAsync(job.notification1Id).catch(() => {});
+    const matches = jobs.filter((j) =>
+      j.photoId === beforePhotoId ||
+      (projectId && j.projectId === projectId)
+    );
+    if (matches.length === 0) return;
+
+    for (const job of matches) {
+      if (job.notification1Id) {
+        await Notifications.cancelScheduledNotificationAsync(job.notification1Id).catch(() => {});
+      }
+      if (job.notification2Id) {
+        await Notifications.cancelScheduledNotificationAsync(job.notification2Id).catch(() => {});
+      }
     }
-    if (job.notification2Id) {
-      await Notifications.cancelScheduledNotificationAsync(job.notification2Id).catch(() => {});
-    }
 
-    // Remove from pending
-    const updated = jobs.filter(j => j.photoId !== beforePhotoId);
+    const cancelIds = new Set(matches.map((j) => j.jobId));
+    const updated = jobs.filter((j) => !cancelIds.has(j.jobId));
     await savePendingJobs(updated);
 
     logEvent('job_reminder_cancelled', { reason: 'after_completed' });
@@ -197,17 +205,25 @@ export const getMostRecentUnfinishedJob = async () => {
       const { loadPhotosMetadata } = await import('./storage');
       const { PHOTO_MODES } = await import('../constants/rooms');
       const photos = (await loadPhotosMetadata()) || [];
-      const beforeIds = new Set(
-        photos.filter((p) => p?.mode === PHOTO_MODES.BEFORE).map((p) => p.id)
-      );
       const completedBeforeIds = new Set(
         photos
           .filter((p) => p?.mode === PHOTO_MODES.AFTER && p?.beforePhotoId)
           .map((p) => p.beforePhotoId)
       );
-      active = active.filter(
-        (j) => beforeIds.has(j.photoId) && !completedBeforeIds.has(j.photoId)
-      );
+      // A project has unfinished work if it has any BEFORE photo without a
+      // matching AFTER. Jobs without a projectId fall back to photoId lookup.
+      const unfinishedByProject = new Map();
+      for (const p of photos) {
+        if (p?.mode !== PHOTO_MODES.BEFORE) continue;
+        if (completedBeforeIds.has(p.id)) continue;
+        const key = p.projectId || '__noproject__';
+        if (!unfinishedByProject.has(key)) unfinishedByProject.set(key, []);
+        unfinishedByProject.get(key).push(p);
+      }
+      active = active.filter((j) => {
+        const key = j.projectId || '__noproject__';
+        return unfinishedByProject.has(key);
+      });
     } catch (err) {
       console.warn('[JobReminder] Photo cross-check skipped:', err?.message);
     }
