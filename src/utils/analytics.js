@@ -126,6 +126,7 @@ const isFirebaseReady = () => {
  */
 export const logEvent = async (eventName, params = {}) => {
   if (!isFirebaseReady()) {
+    console.warn(`[Analytics] ${eventName} SKIPPED (firebase not ready)`);
     return;
   }
 
@@ -141,10 +142,17 @@ export const logEvent = async (eventName, params = {}) => {
         ...params,
       };
       if (__DEV__) console.log(`[Analytics] ${eventName}:`, enriched);
+      // Mirror to errorLogger so TestFlight users can export+inspect fired events
+      try {
+        const paramSummary = Object.keys(enriched).length
+          ? ` ${JSON.stringify(enriched).slice(0, 400)}`
+          : '';
+        console.warn(`[Analytics] ${eventName}${paramSummary}`);
+      } catch {}
       await firebaseLogEvent(analytics, eventName, enriched);
     }
   } catch (error) {
-    // Silently fail - analytics errors shouldn't break the app
+    console.warn(`[Analytics] ${eventName} FAILED: ${error?.message || 'unknown'}`);
   }
 };
 

@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const ERROR_LOG_KEY = 'app-error-logs';
-const MAX_LOGS = 100; // Keep last 100 errors
+const MAX_LOGS = 500; // Keep last 500 entries (errors + analytics mirror)
 
 // LogHub (Grafana) — stream errors to the central log aggregator so they
 // can be viewed from a browser on any machine. Fail silently — local
