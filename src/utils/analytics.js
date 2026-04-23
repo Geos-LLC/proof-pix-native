@@ -611,6 +611,24 @@ export const logSubscriptionStarted = async (payload = {}) => {
   });
   logEvent('subscription_started', params);
 
+  // Firebase standard `purchase` event — required for revenue reporting in
+  // the Firebase / GA4 Monetization dashboards. Only fires for paid
+  // transactions with a known price.
+  if (subscriptionType === 'paid' && typeof payload.price === 'number' && payload.price > 0) {
+    logEvent('purchase', {
+      value: payload.price,
+      currency: payload.currency || 'USD',
+      transaction_id: payload.transaction_id || null,
+      items: [{
+        item_id: payload.product_id || planId,
+        item_name: planId,
+        item_category: payload.is_seat ? 'seat' : 'subscription',
+        price: payload.price,
+        quantity: 1,
+      }],
+    });
+  }
+
   // Meta (Facebook) SDK: fire standard Subscribe + Purchase events for ads optimization.
   // These are Meta's own standard events (not Firebase) and remain unchanged by the
   // Firebase-side consolidation.

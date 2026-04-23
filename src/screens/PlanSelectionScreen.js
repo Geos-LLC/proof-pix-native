@@ -41,9 +41,7 @@ import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
-import TrialNotificationModal from '../components/TrialNotificationModal';
-import { canStartTrial, startTrial, isTrialExpired } from '../services/trialService';
-import { getNotificationToShow } from '../services/trialNotificationService';
+import { canStartTrial, isTrialExpired } from '../services/trialService';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
 import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted } from '../utils/analytics';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
@@ -59,13 +57,16 @@ export default function PlanSelectionScreen({ navigation, route }) {
   const forceUpgradeMode = route?.params?.mode === 'upgrade';
 
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
-  const [trialAvailable, setTrialAvailable] = useState(!forceUpgradeMode);
-  const baseTrial = 15;
+  // Default to false so returning/expired/active-trial users never see a flash
+  // of "Free Trial" UI before canStartTrial() resolves. Eligible new users will
+  // briefly see "Subscribe" before the trial UI appears — acceptable.
+  const [trialAvailable, setTrialAvailable] = useState(false);
+  // Fallback when store metadata hasn't loaded yet. Actual duration is read
+  // from the store's intro offer below (iOS: 14 days / 2 weeks, Android: 15)
+  // so paywall copy always matches what the store's sheet will show.
+  const FALLBACK_TRIAL_DAYS = Platform.OS === 'android' ? 15 : 14;
   const referralBonus = 15;
-  const [trialDays, setTrialDays] = useState(baseTrial);
-  const [showTrialModal, setShowTrialModal] = useState(false);
-  const [trialNotification, setTrialNotification] = useState(null);
-  const hasShownTrialNotification = useRef(false);
+  const [trialDays, setTrialDays] = useState(FALLBACK_TRIAL_DAYS);
   const isMounted = useRef(true);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
   const isPurchasing = useRef(false);
@@ -97,32 +98,47 @@ export default function PlanSelectionScreen({ navigation, route }) {
           const AsyncStorage = await import('@react-native-async-storage/async-storage');
           const referralData = await AsyncStorage.default.getItem('@referral_accepted');
           if (isMounted.current) {
-            setTrialDays(referralData !== null ? baseTrial + referralBonus : baseTrial);
+            const base = trialInfo?.pro?.trialDays || FALLBACK_TRIAL_DAYS;
+            setTrialDays(referralData !== null ? base + referralBonus : base);
           }
         } catch (error) {
           if (isMounted.current) {
-            setTrialDays(baseTrial);
+            setTrialDays(trialInfo?.pro?.trialDays || FALLBACK_TRIAL_DAYS);
           }
         }
       } catch (error) {
         console.error('[PlanSelection] Error checking trial availability:', error);
         if (isMounted.current) {
           setTrialAvailable(!forceUpgradeMode);
-          setTrialDays(baseTrial);
+          setTrialDays(trialInfo?.pro?.trialDays || FALLBACK_TRIAL_DAYS);
         }
       }
     };
     checkTrialAvailability();
-
-    if (isMounted.current) {
-      setShowTrialModal(false);
-    }
 
     return () => {
       console.log('[PlanSelection] 🔴 Component unmounting, isMounted set to false');
       isMounted.current = false;
     };
   }, []);
+
+  // Re-sync trialDays once store metadata arrives (useSubscriptionPrices is
+  // async — may not be loaded when the mount effect runs).
+  useEffect(() => {
+    const storeDays = trialInfo?.pro?.trialDays;
+    if (!storeDays || !isMounted.current) return;
+    (async () => {
+      try {
+        const AsyncStorage = await import('@react-native-async-storage/async-storage');
+        const referralData = await AsyncStorage.default.getItem('@referral_accepted');
+        if (isMounted.current) {
+          setTrialDays(referralData !== null ? storeDays + referralBonus : storeDays);
+        }
+      } catch {
+        if (isMounted.current) setTrialDays(storeDays);
+      }
+    })();
+  }, [trialInfo?.pro?.trialDays]);
 
   const handleGoBack = () => {
     navigation.goBack();
@@ -142,113 +158,93 @@ export default function PlanSelectionScreen({ navigation, route }) {
           entry_point: 'paywall',
         });
       } catch {}
-      await proceedWithPlanSelection(plan, false);
+      await proceedWithPlanSelection(plan);
       return;
     }
 
-    const useTrial = trialAvailable && plan !== 'enterprise';
-    await proceedWithPlanSelection(plan, useTrial);
+    await proceedWithPlanSelection(plan);
   };
 
-  const proceedWithPlanSelection = async (plan, useTrial = false) => {
+  const proceedWithPlanSelection = async (plan) => {
     if (isPurchasing.current) {
       console.log('[PlanSelection] ⚠️ Purchase already in progress, ignoring duplicate request');
       return;
     }
-    
+
     isPurchasing.current = true;
-    console.log('[PlanSelection] 🟢 proceedWithPlanSelection START - plan:', plan, 'useTrial:', useTrial);
-    
+    console.log('[PlanSelection] 🟢 proceedWithPlanSelection START - plan:', plan);
+
     try {
-      let trialJustStarted = false;
+      // All paid plans — including free-trial signups — go through the store's
+      // IAP flow. The store enforces per-Apple-ID / per-Google-account
+      // eligibility for the intro free trial. Reinstall users who already used
+      // their trial will see the full subscription price in the native sheet.
+      if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        let productId = null;
+        if (plan === 'pro') productId = IAP_PRODUCTS.PRO_MONTHLY;
+        else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
+        else if (plan === 'enterprise') productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
 
-      setShowTrialModal(false);
-      setTrialNotification(null);
+        console.log('[PlanSelection] Selected plan:', plan, 'Product ID:', productId);
 
-      if (useTrial) {
-        console.log('[PlanSelection] 🟡 Using trial flow');
-        try {
-          console.log('[PlanSelection] 🟡 Calling startTrial...');
-          await startTrial(plan);
-          console.log('[PlanSelection] 🟡 startTrial completed, calling updateUserPlan...');
-          await updateUserPlan(plan);
-          console.log('[PlanSelection] 🟡 updateUserPlan completed');
-          trialJustStarted = true;
-        } catch (error) {
-          console.error('[PlanSelection] ❌ Error starting trial:', error);
-          await updateUserPlan(plan);
-        }
-      } else {
-        console.log('[PlanSelection] Regular plan flow (no trial)');
-        if (Platform.OS === 'ios' || Platform.OS === 'android') {
-          let productId = null;
-          if (plan === 'pro') productId = IAP_PRODUCTS.PRO_MONTHLY;
-          else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
-          else if (plan === 'enterprise') productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
-
-          console.log('[PlanSelection] Selected plan:', plan, 'Product ID:', productId);
-
-          if (productId) {
+        if (productId) {
+          try {
+            let entryPoint = 'paywall';
             try {
-              // Determine entry_point: 'trial_expired' if user is converting
-              // after an expired trial, otherwise 'paywall'.
-              let entryPoint = 'paywall';
-              try {
-                if (await isTrialExpired()) entryPoint = 'trial_expired';
-              } catch {}
+              if (await isTrialExpired()) entryPoint = 'trial_expired';
+            } catch {}
 
-              console.log('[PlanSelection] Starting purchase for:', productId, 'entryPoint:', entryPoint);
-              const purchaseResult = await purchaseOrUpgrade(productId, entryPoint);
-              console.log('[PlanSelection] Purchase successful');
+            console.log('[PlanSelection] Starting purchase for:', productId, 'entryPoint:', entryPoint);
+            await purchaseOrUpgrade(productId, entryPoint);
+            console.log('[PlanSelection] Purchase successful');
+            await updateUserPlan(plan);
+
+            return new Promise((resolve) => {
+              InteractionManager.runAfterInteractions(() => {
+                console.log('[PlanSelection] Navigating after successful purchase');
+                isMounted.current = false;
+                navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                resolve();
+              });
+            });
+          } catch (err) {
+            console.log('[PlanSelection] Purchase error caught:', err?.message);
+
+            const errorMsg = err?.message || '';
+            if (errorMsg === 'USER_CANCELLED' || errorMsg === 'user-cancelled' || errorMsg.includes('cancelled') || errorMsg.includes('canceled')) {
+              console.log('[PlanSelection] User cancelled purchase');
+              isPurchasing.current = false;
+              return;
+            }
+
+            if (errorMsg === 'already-owned') {
               await updateUserPlan(plan);
+
+              Alert.alert(
+                t('common.success', { defaultValue: 'Already Subscribed' }),
+                t('settings.alreadySubscribed', { defaultValue: 'You already have an active subscription to this plan!' })
+              );
 
               return new Promise((resolve) => {
                 InteractionManager.runAfterInteractions(() => {
-                  console.log('[PlanSelection] Navigating after successful purchase');
                   isMounted.current = false;
                   navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
                   resolve();
                 });
               });
-            } catch (err) {
-              console.log('[PlanSelection] Purchase error caught:', err?.message);
-
-              const errorMsg = err?.message || '';
-              if (errorMsg === 'USER_CANCELLED' || errorMsg === 'user-cancelled' || errorMsg.includes('cancelled') || errorMsg.includes('canceled')) {
-                console.log('[PlanSelection] User cancelled purchase');
-                isPurchasing.current = false;
-                return;
-              }
-
-              if (errorMsg === 'already-owned') {
-                await updateUserPlan(plan);
-
-                Alert.alert(
-                  t('common.success', { defaultValue: 'Already Subscribed' }),
-                  t('settings.alreadySubscribed', { defaultValue: 'You already have an active subscription to this plan!' })
-                );
-
-                return new Promise((resolve) => {
-                  InteractionManager.runAfterInteractions(() => {
-                    isMounted.current = false;
-                    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-                    resolve();
-                  });
-                });
-              }
-
-              Alert.alert(
-                t('common.error', { defaultValue: 'Error' }),
-                `Purchase failed: ${errorMsg || 'Unknown error'}. Please try again.`
-              );
-              isPurchasing.current = false;
-              return;
             }
+
+            Alert.alert(
+              t('common.error', { defaultValue: 'Error' }),
+              `Purchase failed: ${errorMsg || 'Unknown error'}. Please try again.`
+            );
+            isPurchasing.current = false;
+            return;
           }
         }
-
-        await updateUserPlan(plan);
       }
+
+      await updateUserPlan(plan);
 
       console.log('[PlanSelection] Plan selection complete, navigating...');
       return new Promise((resolve) => {
@@ -267,19 +263,6 @@ export default function PlanSelectionScreen({ navigation, route }) {
     } finally {
       isPurchasing.current = false;
     }
-  };
-
-  const handleTrialModalClose = () => {
-    setShowTrialModal(false);
-  };
-
-  const handleTrialUpgrade = () => {
-    setShowTrialModal(false);
-  };
-
-  const handleTrialRefer = () => {
-    setShowTrialModal(false);
-    navigation.reset({ index: 0, routes: [{ name: 'Settings', params: { openReferral: true } }] });
   };
 
   const handleRestorePurchases = async () => {
@@ -371,14 +354,6 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Turn every job into before & after proof</Text>
-       {showTrialModal &&
-        <TouchableOpacity
-          style={styles.selectButton}
-          onPress={() => {}}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.selectButtonText}>Select</Text>
-        </TouchableOpacity>}
       </View>
 
       <Text style={styles.subheaderText}>Avoid disputes. Save time. Impress your clients.</Text>
@@ -731,26 +706,6 @@ export default function PlanSelectionScreen({ navigation, route }) {
         onClose={() => setShowEnterpriseModal(false)}
       />
 
-      {/* Trial Notification Modal */}
-      <TrialNotificationModal
-        visible={showTrialModal}
-        notification={trialNotification}
-        onClose={handleTrialModalClose}
-        onUpgrade={handleTrialUpgrade}
-        onRefer={handleTrialRefer}
-        onCTA={(notification) => {
-          handleTrialModalClose();
-          let scrollParam = {};
-          if (notification?.key === 'day7_10') {
-            scrollParam = { scrollToWatermark: true };
-          } else if (notification?.key === 'day15') {
-            scrollParam = { scrollToCloudSync: true };
-          } else if (notification?.key === 'day22_24') {
-            scrollParam = { scrollToAccountData: true };
-          }
-          navigation.reset({ index: 0, routes: [{ name: 'Settings', params: scrollParam }] });
-        }}
-      />
     </View>
   );
 }

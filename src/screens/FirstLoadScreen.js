@@ -73,9 +73,6 @@ export default function FirstLoadScreen({ navigation, route }) {
   const [referralModalVisible, setReferralModalVisible] = useState(false);
   const [referralCodeInput, setReferralCodeInput] = useState('');
   const [successModalVisible, setSuccessModalVisible] = useState(false);
-  const [languageInfoModalVisible, setLanguageInfoModalVisible] = useState(false);
-  const [selectedLanguageName, setSelectedLanguageName] = useState('');
-  const [pendingNavigation, setPendingNavigation] = useState(null);
   const scrollViewRef = useRef(null);
   const nameInputRef = useRef(null);
   const inputContainerRef = useRef(null);
@@ -202,31 +199,15 @@ export default function FirstLoadScreen({ navigation, route }) {
     updateLabelLanguage(currentLang);
     updateSectionLanguage(currentLang);
 
-    const selectedLang = LANGUAGES.find(lang => lang.code === currentLang) || LANGUAGES[0];
-    setSelectedLanguageName(selectedLang.name);
-
     const hasPaidSubscription = userPlan && userPlan !== 'starter';
-
     const canTrial = await canStartTrial();
+
     if (!canTrial && !hasPaidSubscription) {
-      setPendingNavigation('referral');
-    } else {
-      setPendingNavigation('planSelection');
-    }
-
-    setLanguageInfoModalVisible(true);
-  };
-
-  const handleLanguageInfoClose = () => {
-    setLanguageInfoModalVisible(false);
-
-    if (pendingNavigation === 'referral') {
       setReferralModalVisible(true);
     } else {
       logOnboardingCompleted();
       navigation.navigate('PlanSelection');
     }
-    setPendingNavigation(null);
   };
 
   const handleContinueWithoutReferral = () => {
@@ -586,92 +567,6 @@ export default function FirstLoadScreen({ navigation, route }) {
         </View>
       </Modal>
 
-      {/* Language Info Modal - Bottom Sheet Style */}
-      <Modal
-        visible={languageInfoModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={handleLanguageInfoClose}
-        statusBarTranslucent={true}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={handleLanguageInfoClose}
-        >
-          <Pressable 
-            style={[styles.languageInfoModalContent, { paddingBottom: Math.max(20, insets.bottom + 10) }]}
-            onPress={(e) => e.stopPropagation()}
-          >
-            {/* Handle Bar */}
-            <View style={styles.modalHandle} />
-            
-            {/* Header */}
-            <View style={styles.modalHeaderBottomSheet}>
-              <TouchableOpacity
-                style={[styles.modalCloseButtonTop, styles.closeButtonCircle]}
-                onPress={handleLanguageInfoClose}
-              >
-                <Ionicons name="close" size={20} color={COLORS.TEXT} />
-              </TouchableOpacity>
-              <Text style={styles.modalTitleBottomSheet}>
-                {t('firstLoad.languageInfoTitle', { defaultValue: 'Language Settings' })}
-              </Text>
-              <View style={styles.modalCloseButtonTop} />
-            </View>
-
-            {/* Content */}
-            <ScrollView 
-              style={styles.languageInfoScrollView}
-              contentContainerStyle={styles.languageInfoContent}
-            >
-              <View style={styles.languageInfoIconContainer}>
-                <Text style={styles.languageInfoIcon}>🌍</Text>
-              </View>
-              
-              <Text style={styles.languageInfoMessage}>
-                {t('firstLoad.languageInfoMessage', { 
-                  defaultValue: `You've selected ${selectedLanguageName}. This will be applied to:`,
-                  language: selectedLanguageName
-                })}
-              </Text>
-
-              <View style={styles.languageInfoBullets}>
-                <Text style={styles.languageInfoBulletItem}>
-                  • {t('firstLoad.languageInfoBullet1', { defaultValue: 'App interface' })}
-                </Text>
-                <Text style={styles.languageInfoBulletItem}>
-                  • {t('firstLoad.languageInfoBullet2', { defaultValue: 'Photo labels' })}
-                </Text>
-                <Text style={styles.languageInfoBulletItem}>
-                  • {t('firstLoad.languageInfoBullet3', { defaultValue: 'Section names' })}
-                </Text>
-              </View>
-
-              <Text style={styles.languageInfoSubtext}>
-                {t('firstLoad.languageInfoSubtext', { 
-                  defaultValue: 'You can change these separately in' 
-                })}
-                {' '}
-                <Text style={styles.languageInfoSettingsHighlight}>
-                  {t('firstLoad.settings', { defaultValue: 'Settings' })}
-                </Text>
-                {' '}
-                {t('firstLoad.languageInfoSubtext2', { defaultValue: 'anytime.' })}
-              </Text>
-            </ScrollView>
-
-            {/* Continue Button */}
-            <TouchableOpacity
-              style={styles.languageInfoButton}
-              onPress={handleLanguageInfoClose}
-            >
-              <Text style={styles.languageInfoButtonText}>
-                {t('common.gotIt', { defaultValue: 'Got it!' })}
-              </Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }

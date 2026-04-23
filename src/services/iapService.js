@@ -1,6 +1,6 @@
 import { Platform, Linking } from 'react-native';
 import * as RNIap from 'react-native-iap';
-import { logSubscriptionStarted } from '../utils/analytics';
+import { logSubscriptionStarted, logTrialStarted } from '../utils/analytics';
 
 // Deduplication: prevent duplicate analytics for the same transaction
 // (e.g. if purchaseUpdatedListener fires more than once for the same txn)
@@ -38,6 +38,56 @@ let connectionInitialized = false;
 // Cache for Android subscription offer details (productId -> offerToken)
 let androidOfferCache = {};
 
+// Cache of product price/currency per productId, populated after fetchProducts
+// so we can attribute revenue on purchase analytics.
+// { [productId]: { price: number, currency: string } }
+let _productPriceCache = {};
+
+/**
+ * Extract numeric price and currency code from an RNIap v14 product object.
+ * Returns { price, currency } or null if the fields aren't available.
+ */
+const _extractPriceAndCurrency = (product) => {
+  if (!product) return null;
+  try {
+    if (Platform.OS === 'ios') {
+      const price = typeof product.price === 'number' ? product.price : parseFloat(product.price);
+      const currency = product.currency || product.priceCurrencyCode || 'USD';
+      if (!isFinite(price)) return null;
+      return { price, currency };
+    }
+    // Android: read the recurring monthly phase price (in micros).
+    const offers = product.subscriptionOfferDetailsAndroid || [];
+    for (const offer of offers) {
+      const phases = offer.pricingPhases?.pricingPhaseList || [];
+      const recurring = phases.find(p => p.billingPeriod === 'P1M' && p.recurrenceMode === 1);
+      const phase = recurring || phases[phases.length - 1];
+      if (phase?.priceAmountMicros != null) {
+        const micros = typeof phase.priceAmountMicros === 'string'
+          ? parseInt(phase.priceAmountMicros, 10)
+          : phase.priceAmountMicros;
+        const price = micros / 1_000_000;
+        const currency = phase.priceCurrencyCode || 'USD';
+        if (isFinite(price) && price > 0) return { price, currency };
+      }
+    }
+  } catch {}
+  return null;
+};
+
+/**
+ * Cache price/currency for each product returned by fetchProducts.
+ * Looks up id (v14) or productId (legacy) fields.
+ */
+const _cacheProductPrices = (products) => {
+  for (const product of products || []) {
+    const id = product?.id || product?.productId;
+    if (!id) continue;
+    const pc = _extractPriceAndCurrency(product);
+    if (pc) _productPriceCache[id] = pc;
+  }
+};
+
 /**
  * Fire the canonical `subscription_started` analytics event after a confirmed
  * store transaction (or restore). Uses transaction ID for deduplication —
@@ -55,6 +105,7 @@ const _logPurchaseAnalytics = (purchase, productId, entryPoint = 'paywall') => {
   const plan = productIdToPlan(productId);
   const isSeat = (productId || '').includes('seat');
   const platform = Platform.OS;
+  const priceInfo = _productPriceCache[productId] || null;
 
   logSubscriptionStarted({
     subscription_type: 'paid',
@@ -63,7 +114,26 @@ const _logPurchaseAnalytics = (purchase, productId, entryPoint = 'paywall') => {
     entry_point: entryPoint,
     transaction_id: txId,
     is_seat: isSeat,
+    product_id: productId,
+    price: priceInfo?.price ?? null,
+    currency: priceInfo?.currency ?? null,
   });
+
+  // Fire `trial_started` when the store has granted the intro free trial on
+  // this first purchase. iOS: `originalTransactionIdentifierIOS === txId`
+  // means this is the opening transaction of a new subscription. Android: the
+  // purchase includes a free trial when the subscription offer's first phase
+  // is priced 0 — `introductoryPriceCyclesAndroid` / `isAcknowledgedAndroid`
+  // alone isn't reliable here, so we skip Android until a clearer signal.
+  if (!isSeat && platform === 'ios') {
+    const originalTxId = purchase?.originalTransactionIdentifierIOS || purchase?.originalTransactionId;
+    const isFirstTxn = !originalTxId || originalTxId === purchase?.transactionId;
+    if (isFirstTxn) {
+      try {
+        logTrialStarted(plan, { entry_point: entryPoint, transaction_id: txId });
+      } catch {}
+    }
+  }
 };
 
 /**
@@ -121,6 +191,7 @@ const getAndroidOfferToken = async (productId) => {
   // v14 API: use fetchProducts with type 'subs' instead of getSubscriptions
   const subscriptions = await RNIap.fetchProducts({ skus: [productId], type: 'subs' });
   console.log('[IAP] Got', subscriptions?.length || 0, 'subscription(s)');
+  _cacheProductPrices(subscriptions);
 
   if (!subscriptions || subscriptions.length === 0) {
     throw new Error('PRODUCT_NOT_FOUND');
@@ -360,7 +431,10 @@ export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
             type: 'subs'
           });
           console.log('[IAP] Products fetched:', products?.length || 0);
-          if (products && products.length > 0) break;
+          if (products && products.length > 0) {
+            _cacheProductPrices(products);
+            break;
+          }
           if (attempt < 3) {
             console.log('[IAP] No products yet, retrying in 1.5s...');
             await new Promise(r => setTimeout(r, 1500));
@@ -975,6 +1049,7 @@ export const getSubscriptionPrices = async () => {
 
     // v14: use fetchProducts with type 'subs' for both platforms
     const products = await RNIap.fetchProducts({ skus: allSkus, type: 'subs' });
+    _cacheProductPrices(products);
     console.error('[IAP] fetchProducts returned:', JSON.stringify({
       requestedSkus: allSkus,
       returnedCount: products?.length || 0,
