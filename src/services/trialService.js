@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import { logTrialEvent } from '../utils/analytics';
+import { logTrialEvent, logTrialStarted } from '../utils/analytics';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
 const TRIAL_DURATION_DAYS = 15;
@@ -118,6 +118,8 @@ export const startTrial = async (plan, durationDays = null) => {
         days_used: 0,
         days_remaining: trialDays,
       });
+      // Canonical trial_started event per analytics spec
+      logTrialStarted(plan, { days_remaining: trialDays });
     } catch (e) {
       // non‑critical
     }

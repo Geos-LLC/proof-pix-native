@@ -573,61 +573,67 @@ export const logFeatureGateAction = (featureKey, userPlan, screen, action) => {
 
 // Subscriptions & purchases ------------------------------------------------
 
-/**
- * Log when a subscription purchase is confirmed by the store.
- * Fires ONLY after finishTransaction succeeds — not on button tap or checkout open.
- * This event powers Google Ads conversion optimization for paid subscribers.
- *
- * @param {object} payload
- *  - platform: 'ios' | 'android'
- *  - plan: 'pro' | 'business' | 'enterprise'
- *  - price: numeric value (optional)
- *  - currency: e.g. 'USD' (optional)
- *  - is_trial: boolean (optional)
- *  - source: 'paywall' | 'upgrade' | 'settings' (optional)
- *  - transaction_id: store transaction ID for dedup (optional)
- */
-export const logSubscriptionStart = async (payload = {}) => {
-  if (__DEV__) console.log('[Analytics] subscription_start:', payload);
-  const params = await mergeAttributionContext({
-    platform: payload.platform || 'unknown',
-    plan: payload.plan || 'unknown',
-    price: payload.price ?? null,
-    currency: payload.currency || null,
-    is_trial: payload.is_trial ?? false,
-    source: payload.source || null,
-    transaction_id: payload.transaction_id || null,
-    timestamp: Date.now(),
-  });
-  logEvent('subscription_start', params);
-  metaLogSubscriptionStart(payload.plan, payload.platform);
-};
+// Trial-expired flag key — used by logSubscriptionStarted to emit trial_converted
+const TRIAL_EXPIRED_SUBSCRIBE_FLAG = '@trial_expired_logged';
 
 /**
- * Log a confirmed IAP purchase event (Google Ads compatible).
- * Fires ONLY after finishTransaction succeeds.
+ * Canonical subscription success event (per analytics spec).
+ * Fires ONLY when a purchase is successful OR a subscription is restored.
+ * Replaces the deprecated `subscription_start` + `purchase` events.
  *
  * @param {object} payload
- *  - value: numeric price (optional)
- *  - currency: e.g. 'USD' (optional)
- *  - item_category: 'subscription' | 'seat_addon'
- *  - item_name: plan name
+ *  - subscription_type: 'paid' | 'free'
+ *  - plan_id: 'starter' | 'pro' | 'business' | 'enterprise'
  *  - platform: 'ios' | 'android'
+ *  - entry_point: 'paywall' | 'restore' | 'trial_expired'
  *  - transaction_id: store transaction ID for dedup (optional)
+ *  - is_seat: boolean — seat add-on purchase (optional)
+ *  - price: numeric value (optional)
+ *  - currency: e.g. 'USD' (optional)
  */
-export const logPurchase = async (payload = {}) => {
-  if (__DEV__) console.log('[Analytics] purchase:', payload);
+export const logSubscriptionStarted = async (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] subscription_started:', payload);
+  const planId = payload.plan_id || payload.plan || 'unknown';
+  const platform = payload.platform || Platform.OS;
+  const entryPoint = payload.entry_point || 'paywall';
+  const subscriptionType = payload.subscription_type || 'paid';
+
   const params = await mergeAttributionContext({
-    value: payload.value ?? null,
-    currency: payload.currency || 'USD',
-    item_category: payload.item_category || 'subscription',
-    item_name: payload.item_name || 'unknown',
-    platform: payload.platform || 'unknown',
+    subscription_type: subscriptionType,
+    plan_id: planId,
+    platform,
+    entry_point: entryPoint,
     transaction_id: payload.transaction_id || null,
+    is_seat: !!payload.is_seat,
+    price: payload.price ?? null,
+    currency: payload.currency || null,
     timestamp: Date.now(),
   });
-  logEvent('purchase', params);
-  metaLogPurchase(payload.value || 0, payload.currency || 'USD', payload.item_name);
+  logEvent('subscription_started', params);
+
+  // Meta (Facebook) SDK: fire standard Subscribe + Purchase events for ads optimization.
+  // These are Meta's own standard events (not Firebase) and remain unchanged by the
+  // Firebase-side consolidation.
+  metaLogSubscriptionStart(planId, platform);
+  if (subscriptionType === 'paid' && payload.price) {
+    metaLogPurchase(payload.price, payload.currency || 'USD', planId);
+  }
+
+  // Derived event: if trial_expired fired previously, emit trial_converted
+  try {
+    const expiredFlag = await AsyncStorage.getItem(TRIAL_EXPIRED_SUBSCRIBE_FLAG);
+    if (expiredFlag && subscriptionType === 'paid') {
+      await logTrialConverted({
+        plan_id: planId,
+        platform,
+        entry_point: entryPoint,
+        subscription_type: subscriptionType,
+        transaction_id: payload.transaction_id || null,
+      });
+    }
+  } catch {
+    // non-critical
+  }
 };
 
 // App lifecycle ---------------------------------------------------------------
@@ -657,11 +663,47 @@ export const logPaywallView = () => {
 };
 
 export const logPlanSelected = (plan, useTrial = false) => {
-  logEvent('plan_selected', { plan, is_trial: useTrial, timestamp: Date.now() });
+  logEvent('plan_selected', {
+    plan,
+    plan_id: plan,
+    is_trial: useTrial,
+    timestamp: Date.now(),
+  });
 };
 
 export const logTrialSkipped = () => {
   logEvent('trial_skipped', { timestamp: Date.now() });
+};
+
+/**
+ * Canonical trial-start event per analytics spec.
+ * Fires in addition to the older `trial_event` (action=start) for continuity.
+ */
+export const logTrialStarted = async (plan, extra = {}) => {
+  const params = await mergeAttributionContext({
+    plan,
+    plan_id: plan,
+    platform: Platform.OS,
+    days_remaining: extra.days_remaining ?? null,
+    timestamp: Date.now(),
+  });
+  logEvent('trial_started', params);
+};
+
+/**
+ * Derived event: fires when a user who had `trial_expired` subsequently
+ * triggers `subscription_started`. Attribution auto-merged.
+ */
+export const logTrialConverted = async (payload = {}) => {
+  const params = await mergeAttributionContext({
+    plan_id: payload.plan_id || 'unknown',
+    platform: payload.platform || Platform.OS,
+    entry_point: payload.entry_point || 'trial_expired',
+    subscription_type: payload.subscription_type || 'paid',
+    transaction_id: payload.transaction_id || null,
+    timestamp: Date.now(),
+  });
+  logEvent('trial_converted', params);
 };
 
 // Trial expired (dedup via AsyncStorage flag) ---------------------------------
@@ -750,6 +792,8 @@ export default {
   logPaywallView,
   logPlanSelected,
   logTrialSkipped,
+  logTrialStarted,
+  logTrialConverted,
   logTrialExpiredOnce,
   // Core features
   logBeforeAfterCreated,
@@ -767,8 +811,7 @@ export default {
   logAccountCreated,
   logPlanChanged,
   logTrialEvent,
-  logSubscriptionStart,
-  logPurchase,
+  logSubscriptionStarted,
   logTeamInvitesCreated,
   logTeamMemberJoined,
   logReferralEvent,

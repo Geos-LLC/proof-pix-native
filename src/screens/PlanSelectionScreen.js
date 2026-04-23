@@ -42,10 +42,10 @@ import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import TrialNotificationModal from '../components/TrialNotificationModal';
-import { canStartTrial, startTrial } from '../services/trialService';
+import { canStartTrial, startTrial, isTrialExpired } from '../services/trialService';
 import { getNotificationToShow } from '../services/trialNotificationService';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
-import { logPaywallView, logPlanSelected, logTrialSkipped } from '../utils/analytics';
+import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted } from '../utils/analytics';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 
 const { width } = Dimensions.get('window');
@@ -133,6 +133,15 @@ export default function PlanSelectionScreen({ navigation, route }) {
 
     if (plan === 'starter') {
       logTrialSkipped();
+      // Canonical free-tier subscription event (no store purchase involved)
+      try {
+        logSubscriptionStarted({
+          subscription_type: 'free',
+          plan_id: 'starter',
+          platform: Platform.OS,
+          entry_point: 'paywall',
+        });
+      } catch {}
       await proceedWithPlanSelection(plan, false);
       return;
     }
@@ -181,8 +190,15 @@ export default function PlanSelectionScreen({ navigation, route }) {
 
           if (productId) {
             try {
-              console.log('[PlanSelection] Starting purchase for:', productId);
-              const purchaseResult = await purchaseOrUpgrade(productId);
+              // Determine entry_point: 'trial_expired' if user is converting
+              // after an expired trial, otherwise 'paywall'.
+              let entryPoint = 'paywall';
+              try {
+                if (await isTrialExpired()) entryPoint = 'trial_expired';
+              } catch {}
+
+              console.log('[PlanSelection] Starting purchase for:', productId, 'entryPoint:', entryPoint);
+              const purchaseResult = await purchaseOrUpgrade(productId, entryPoint);
               console.log('[PlanSelection] Purchase successful');
               await updateUserPlan(plan);
 
@@ -294,6 +310,17 @@ export default function PlanSelectionScreen({ navigation, route }) {
 
         console.log('[PlanSelection] Restored active plan:', restoredPlan);
         await updateUserPlan(restoredPlan);
+
+        // Canonical subscription_started event for restore flow
+        try {
+          logSubscriptionStarted({
+            subscription_type: 'paid',
+            plan_id: restoredPlan,
+            platform: Platform.OS,
+            entry_point: 'restore',
+            transaction_id: activePurchase.transactionId || activePurchase.purchaseToken || null,
+          });
+        } catch {}
 
         setIsRestoringPurchases(false);
 
@@ -422,10 +449,31 @@ export default function PlanSelectionScreen({ navigation, route }) {
               <Text style={styles.valueBulletText}>Create before & after photos in seconds</Text>
               <Text style={styles.valueBulletText}>Send proof to clients instantly</Text>
             </View>
+            {Platform.OS === 'android' && (
+              <>
+                <TouchableOpacity
+                  style={styles.androidCardCTA}
+                  onPress={() => handleSelectPlan('pro')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.androidCardCTAText}>
+                    {trialAvailable ? `Start ${trialDays}-day free trial` : 'Subscribe'}
+                  </Text>
+                </TouchableOpacity>
+                <Text style={styles.androidCardDisclosure}>
+                  {trialAvailable && prices.pro
+                    ? `${trialDays}-day free trial, then ${prices.pro}/month.\nAuto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
+                    : prices.pro
+                      ? `${prices.pro}/month. Auto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
+                      : ''}
+                </Text>
+              </>
+            )}
           </GradientView>
         </View>
 
-        {/* ===== Primary CTA Button ===== */}
+        {/* ===== Primary CTA Button (iOS only — Android uses per-card CTAs for Play policy compliance) ===== */}
+        {Platform.OS !== 'android' && (
         <TouchableOpacity
           style={styles.primaryCTAButton}
           onPress={() => handleSelectPlan('pro')}
@@ -435,7 +483,11 @@ export default function PlanSelectionScreen({ navigation, route }) {
             {trialAvailable ? `Start My ${trialDays}-Day Free Trial` : 'Subscribe'}
           </Text>
         </TouchableOpacity>
+        )}
 
+        {/* Risk reversal, trust, urgency, legal disclosure — iOS only. Android surfaces these per-card. */}
+        {Platform.OS !== 'android' && (
+          <>
         {/* Risk reversal text */}
         <Text style={styles.riskReversalText}>
           No charges today {'\u2022'} Cancel anytime
@@ -457,6 +509,8 @@ export default function PlanSelectionScreen({ navigation, route }) {
             {trialDays}-day free trial, then {prices.pro}/month.{'\n'}Auto-renews unless canceled.{'\n'}{platformCancelText}.
           </Text>
         ) : null}
+          </>
+        )}
 
         {/* ===== Starter Plan (DE-EMPHASIZED) ===== */}
         <TouchableOpacity
@@ -485,24 +539,28 @@ export default function PlanSelectionScreen({ navigation, route }) {
         </TouchableOpacity>
 
         {/* ===== Business & Enterprise link / expanded cards ===== */}
-        <TouchableOpacity
-          style={styles.businessLinkButton}
-          onPress={() => setShowTeamPlans(!showTeamPlans)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.businessLinkText}>
-            {showTeamPlans ? 'Hide Business plans' : 'Have a team? See Business plans'}
-          </Text>
-          <Ionicons name={showTeamPlans ? 'chevron-up' : 'arrow-forward'} size={16} color="#000000" />
-        </TouchableOpacity>
+        {/* Toggle hidden on Android — Play policy requires all plan terms visible adjacent to tap targets. */}
+        {Platform.OS !== 'android' && (
+          <TouchableOpacity
+            style={styles.businessLinkButton}
+            onPress={() => setShowTeamPlans(!showTeamPlans)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.businessLinkText}>
+              {showTeamPlans ? 'Hide Business plans' : 'Have a team? See Business plans'}
+            </Text>
+            <Ionicons name={showTeamPlans ? 'chevron-up' : 'arrow-forward'} size={16} color="#000000" />
+          </TouchableOpacity>
+        )}
 
-        {showTeamPlans && (
+        {(showTeamPlans || Platform.OS === 'android') && (
           <>
             {/* Business Plan Card */}
             <TouchableOpacity
               style={[styles.planCardWrapper, userPlan === 'business' && styles.planCardWrapperSelected]}
-              onPress={() => handleSelectPlan('business')}
-              activeOpacity={0.8}
+              onPress={Platform.OS === 'android' ? undefined : () => handleSelectPlan('business')}
+              activeOpacity={Platform.OS === 'android' ? 1 : 0.8}
+              disabled={Platform.OS === 'android'}
             >
               <GradientView
                 colors={['rgb(226, 208, 95)', '#FFFFFF']}
@@ -538,14 +596,35 @@ export default function PlanSelectionScreen({ navigation, route }) {
                 <Text style={styles.planCardDescription}>
                   Everything in Pro &{'\n'}For small teams up to 5 members.{prices.businessSeat ? ` ${prices.businessSeat} per` : ''} {'\n'}additional team member.
                 </Text>
+                {Platform.OS === 'android' && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.androidCardCTA}
+                      onPress={() => handleSelectPlan('business')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.androidCardCTAText}>
+                        {trialAvailable ? `Start ${trialDays}-day free trial` : 'Subscribe'}
+                      </Text>
+                    </TouchableOpacity>
+                    <Text style={styles.androidCardDisclosure}>
+                      {trialAvailable && prices.business
+                        ? `${trialDays}-day free trial, then ${prices.business}/month.\nAuto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
+                        : prices.business
+                          ? `${prices.business}/month. Auto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
+                          : ''}
+                    </Text>
+                  </>
+                )}
               </GradientView>
             </TouchableOpacity>
 
             {/* Enterprise Plan Card */}
             <TouchableOpacity
               style={[styles.planCardWrapper, userPlan === 'enterprise' && styles.planCardWrapperSelected]}
-              onPress={() => handleSelectPlan('enterprise')}
-              activeOpacity={0.8}
+              onPress={Platform.OS === 'android' ? undefined : () => handleSelectPlan('enterprise')}
+              activeOpacity={Platform.OS === 'android' ? 1 : 0.8}
+              disabled={Platform.OS === 'android'}
             >
               <GradientView
                 colors={['rgb(226, 208, 95)', '#FFFFFF']}
@@ -581,6 +660,26 @@ export default function PlanSelectionScreen({ navigation, route }) {
                 <Text style={styles.planCardDescription}>
                   Everything in Business &{'\n'}For growing organizations with 15 team members and more
                 </Text>
+                {Platform.OS === 'android' && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.androidCardCTA}
+                      onPress={() => handleSelectPlan('enterprise')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.androidCardCTAText}>
+                        {trialAvailable ? `Start ${trialDays}-day free trial` : 'Subscribe'}
+                      </Text>
+                    </TouchableOpacity>
+                    <Text style={styles.androidCardDisclosure}>
+                      {trialAvailable && prices.enterprise
+                        ? `${trialDays}-day free trial, then ${prices.enterprise}/month.\nAuto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
+                        : prices.enterprise
+                          ? `${prices.enterprise}/month. Auto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
+                          : ''}
+                    </Text>
+                  </>
+                )}
               </GradientView>
             </TouchableOpacity>
           </>
@@ -1140,5 +1239,30 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     color: '#FFFFFF',
     textAlign: 'center',
+  },
+  androidCardCTA: {
+    backgroundColor: '#000000',
+    borderRadius: 100,
+    paddingVertical: 14,
+    marginTop: 14,
+    marginBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  androidCardCTAText: {
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  androidCardDisclosure: {
+    fontSize: 10,
+    fontWeight: '400',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 14,
+    paddingHorizontal: 4,
   },
 });

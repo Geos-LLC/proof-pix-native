@@ -1,6 +1,6 @@
 import { Platform, Linking } from 'react-native';
 import * as RNIap from 'react-native-iap';
-import { logSubscriptionStart, logPurchase } from '../utils/analytics';
+import { logSubscriptionStarted } from '../utils/analytics';
 
 // Deduplication: prevent duplicate analytics for the same transaction
 // (e.g. if purchaseUpdatedListener fires more than once for the same txn)
@@ -39,11 +39,15 @@ let connectionInitialized = false;
 let androidOfferCache = {};
 
 /**
- * Fire subscription_start + purchase analytics after a confirmed store transaction.
- * Uses transaction ID for deduplication — safe to call multiple times for the same purchase.
- * Only fires for new conversions, not restores.
+ * Fire the canonical `subscription_started` analytics event after a confirmed
+ * store transaction (or restore). Uses transaction ID for deduplication —
+ * safe to call multiple times for the same purchase.
+ *
+ * @param {object} purchase - RNIap purchase object
+ * @param {string} productId - product being purchased
+ * @param {string} entryPoint - 'paywall' | 'restore' | 'trial_expired'
  */
-const _logPurchaseAnalytics = (purchase, productId) => {
+const _logPurchaseAnalytics = (purchase, productId, entryPoint = 'paywall') => {
   const txId = purchase?.transactionId || purchase?.purchaseToken || '';
   if (!txId || _loggedTransactions.has(txId)) return;
   _loggedTransactions.add(txId);
@@ -52,18 +56,13 @@ const _logPurchaseAnalytics = (purchase, productId) => {
   const isSeat = (productId || '').includes('seat');
   const platform = Platform.OS;
 
-  logSubscriptionStart({
+  logSubscriptionStarted({
+    subscription_type: 'paid',
+    plan_id: plan,
     platform,
-    plan,
-    is_trial: false,
+    entry_point: entryPoint,
     transaction_id: txId,
-  });
-
-  logPurchase({
-    item_category: isSeat ? 'seat_addon' : 'subscription',
-    item_name: plan,
-    platform,
-    transaction_id: txId,
+    is_seat: isSeat,
   });
 };
 
@@ -176,8 +175,8 @@ const getAndroidOfferToken = async (productId) => {
  * Uses react-native-iap v14 unified requestPurchase API.
  * Throws 'user-cancelled' on user cancellation.
  */
-export const purchaseProduct = async (productId) => {
-  console.log('[IAP] purchaseProduct called for:', productId);
+export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
+  console.log('[IAP] purchaseProduct called for:', productId, 'entryPoint:', entryPoint);
   console.log('[IAP] Platform:', Platform.OS);
 
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
@@ -265,7 +264,7 @@ export const purchaseProduct = async (productId) => {
             // Still resolve - user paid, don't block them
           }
           // Fire analytics after confirmed purchase — not on button click or checkout
-          _logPurchaseAnalytics(purchase, productId);
+          _logPurchaseAnalytics(purchase, productId, entryPoint);
           console.log('[IAP] Resolving with purchase');
           resolve(purchase);
         });
@@ -283,7 +282,7 @@ export const purchaseProduct = async (productId) => {
           console.error('[IAP] Failed to finish transaction:', finishErr);
         }
         // Fire analytics after confirmed purchase — not on button click or checkout
-        _logPurchaseAnalytics(purchase, productId);
+        _logPurchaseAnalytics(purchase, productId, entryPoint);
         console.log('[IAP] Resolving with purchase');
         resolve(purchase);
       });
@@ -403,11 +402,11 @@ export const purchaseProduct = async (productId) => {
  * On Android, if user has an active main plan, this will trigger an upgrade flow
  * with immediate proration. Uses v14 requestPurchase with replacementModeAndroid.
  */
-export const purchaseOrUpgrade = async (targetProductId) => {
-  console.log('[IAP] purchaseOrUpgrade called for:', targetProductId);
+export const purchaseOrUpgrade = async (targetProductId, entryPoint = 'paywall') => {
+  console.log('[IAP] purchaseOrUpgrade called for:', targetProductId, 'entryPoint:', entryPoint);
 
   try {
-    return await _purchaseOrUpgradeInner(targetProductId);
+    return await _purchaseOrUpgradeInner(targetProductId, entryPoint);
   } catch (err) {
     // If subscription is already owned (common on iOS upgrades), treat as success
     if (err?.message === 'already-owned') {
@@ -418,7 +417,7 @@ export const purchaseOrUpgrade = async (targetProductId) => {
   }
 };
 
-const _purchaseOrUpgradeInner = async (targetProductId) => {
+const _purchaseOrUpgradeInner = async (targetProductId, entryPoint = 'paywall') => {
 
   if (Platform.OS === 'android') {
     // Check for existing active main plan subscription
@@ -465,7 +464,7 @@ const _purchaseOrUpgradeInner = async (targetProductId) => {
                 console.error('[IAP] Failed to acknowledge upgrade:', e);
               }
               // Fire analytics after confirmed upgrade — not on button click or checkout
-              _logPurchaseAnalytics(purchase, targetProductId);
+              _logPurchaseAnalytics(purchase, targetProductId, entryPoint);
               resolve(purchase);
             });
           }
@@ -536,7 +535,7 @@ const _purchaseOrUpgradeInner = async (targetProductId) => {
   }
 
   // No existing plan or iOS - do normal purchase
-  return purchaseProduct(targetProductId);
+  return purchaseProduct(targetProductId, entryPoint);
 };
 
 /**
