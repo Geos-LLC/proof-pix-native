@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import { logTrialEvent, logTrialStarted } from '../utils/analytics';
+import { logTrialEvent } from '../utils/analytics';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
 const TRIAL_DURATION_DAYS = 15;
@@ -111,15 +111,15 @@ export const startTrial = async (plan, durationDays = null) => {
 
     console.log(`[TrialService] Started ${trialDays}-day trial for plan: ${plan}${hasReferral ? ' (with referral bonus)' : ''}`);
 
-    // Analytics: trial started
+    // Analytics: legacy lifecycle event only. The canonical `trial_started`
+    // event is emitted by iapService when the store grants the intro free
+    // trial — emitting it here as well would double-count any future caller.
     try {
       logTrialEvent('start', {
         plan,
         days_used: 0,
         days_remaining: trialDays,
       });
-      // Canonical trial_started event per analytics spec
-      logTrialStarted(plan, { days_remaining: trialDays });
     } catch (e) {
       // non‑critical
     }

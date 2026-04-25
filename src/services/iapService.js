@@ -1,10 +1,52 @@
 import { Platform, Linking } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as RNIap from 'react-native-iap';
-import { logSubscriptionStarted, logTrialStarted } from '../utils/analytics';
+import {
+  logSubscriptionStarted,
+  logTrialStarted,
+  logSubscriptionUpgraded,
+} from '../utils/analytics';
 
-// Deduplication: prevent duplicate analytics for the same transaction
-// (e.g. if purchaseUpdatedListener fires more than once for the same txn)
-const _loggedTransactions = new Set();
+// Persistent deduplication: prevent duplicate analytics for the same store
+// transaction across cold starts. The previous in-memory `Set` reset every
+// app launch, which let stale unfinished iOS transactions log analytics again.
+const TX_LOG_KEY_PREFIX = 'proofpix_logged_iap_transaction:';
+
+const _txLogKey = (purchase) => {
+  if (!purchase) return null;
+  if (Platform.OS === 'ios') {
+    const id =
+      purchase.originalTransactionIdentifierIOS ||
+      purchase.originalTransactionId ||
+      purchase.transactionId;
+    return id ? `${TX_LOG_KEY_PREFIX}${id}` : null;
+  }
+  // Android: purchaseToken is the canonical per-purchase identifier.
+  const id = purchase.purchaseToken || purchase.transactionId;
+  return id ? `${TX_LOG_KEY_PREFIX}${id}` : null;
+};
+
+const _isTransactionLogged = async (key) => {
+  if (!key) return false;
+  try {
+    const v = await AsyncStorage.getItem(key);
+    return !!v;
+  } catch {
+    return false;
+  }
+};
+
+const _markTransactionLogged = async (key, payload = {}) => {
+  if (!key) return;
+  try {
+    await AsyncStorage.setItem(
+      key,
+      JSON.stringify({ ts: Date.now(), ...payload })
+    );
+  } catch {
+    // non-critical
+  }
+};
 
 // Platform-specific product IDs
 // iOS: product IDs include .monthly suffix (configured in App Store Connect)
@@ -39,9 +81,46 @@ let connectionInitialized = false;
 let androidOfferCache = {};
 
 // Cache of product price/currency per productId, populated after fetchProducts
-// so we can attribute revenue on purchase analytics.
+// so we can attach price context on subscription analytics. The price is the
+// recurring/post-trial price, NOT the amount actually charged on a given
+// transaction — so it must never be sent as `purchase` revenue from the client.
 // { [productId]: { price: number, currency: string } }
 let _productPriceCache = {};
+
+// Cache of "does this product offer a free intro trial". Populated alongside
+// the price cache and used to classify a confirmed transaction as trial vs
+// paid without needing server-side receipt validation.
+// { [productId]: boolean }
+let _productHasTrialCache = {};
+
+/**
+ * Inspect an RNIap v14 product object for a free introductory offer.
+ * iOS: `introductoryPrice.price` is 0.
+ * Android: any subscription offer phase with `priceAmountMicros: 0` that
+ *          is not the recurring phase (recurrenceMode !== 1).
+ */
+const _extractHasTrial = (product) => {
+  if (!product) return false;
+  try {
+    if (Platform.OS === 'ios') {
+      const intro = product.introductoryPrice;
+      if (!intro) return false;
+      const p = intro.price;
+      return p === 0 || p === '0' || p === '0.00';
+    }
+    const offers = product.subscriptionOfferDetailsAndroid || [];
+    for (const offer of offers) {
+      const phases = offer.pricingPhases?.pricingPhaseList || [];
+      const free = phases.find((ph) => {
+        const m = ph.priceAmountMicros;
+        const isZero = m === 0 || m === '0' || m === '0.00';
+        return isZero && ph.recurrenceMode !== 1;
+      });
+      if (free) return true;
+    }
+  } catch {}
+  return false;
+};
 
 /**
  * Extract numeric price and currency code from an RNIap v14 product object.
@@ -76,8 +155,8 @@ const _extractPriceAndCurrency = (product) => {
 };
 
 /**
- * Cache price/currency for each product returned by fetchProducts.
- * Looks up id (v14) or productId (legacy) fields.
+ * Cache price/currency and trial-availability for each product returned by
+ * fetchProducts. Looks up id (v14) or productId (legacy) fields.
  */
 const _cacheProductPrices = (products) => {
   for (const product of products || []) {
@@ -85,55 +164,151 @@ const _cacheProductPrices = (products) => {
     if (!id) continue;
     const pc = _extractPriceAndCurrency(product);
     if (pc) _productPriceCache[id] = pc;
+    _productHasTrialCache[id] = _extractHasTrial(product);
   }
 };
 
 /**
- * Fire the canonical `subscription_started` analytics event after a confirmed
- * store transaction (or restore). Uses transaction ID for deduplication —
- * safe to call multiple times for the same purchase.
- *
- * @param {object} purchase - RNIap purchase object
- * @param {string} productId - product being purchased
- * @param {string} entryPoint - 'paywall' | 'restore' | 'trial_expired'
+ * Decide whether a confirmed transaction represents a free-trial start or a
+ * paid period, using the cached product trial-availability and the purchase
+ * shape. Best-effort client-side classification — server-side receipt
+ * validation will make this authoritative in a future pass.
  */
-const _logPurchaseAnalytics = (purchase, productId, entryPoint = 'paywall') => {
-  const txId = purchase?.transactionId || purchase?.purchaseToken || '';
-  if (!txId || _loggedTransactions.has(txId)) return;
-  _loggedTransactions.add(txId);
+const _classifyTransaction = (purchase, productId) => {
+  const isSeat = (productId || '').includes('seat');
+  if (isSeat) return 'paid'; // seat add-ons never have a trial offer
+
+  const productHasTrial = !!_productHasTrialCache[productId];
+  if (!productHasTrial) return 'paid';
+
+  if (Platform.OS === 'ios') {
+    const original =
+      purchase?.originalTransactionIdentifierIOS ||
+      purchase?.originalTransactionId;
+    const isFirstTxn = !original || original === purchase?.transactionId;
+    return isFirstTxn ? 'trial' : 'paid';
+  }
+
+  // Android: when a product offers a free phase, Google grants it on the
+  // first qualifying purchase. Without server validation we can't tell a
+  // first-time buyer from a returning one, so we conservatively treat any
+  // first-acknowledgement of a trial-eligible product as a trial start.
+  // Subsequent purchases (e.g. resubscribes) will be deduped by purchaseToken.
+  return 'trial';
+};
+
+/**
+ * Fire the correct subscription analytics bundle for a confirmed store
+ * transaction. Persistently deduped by transaction key — safe to call
+ * multiple times across cold starts for the same purchase.
+ *
+ * Trial start  → `trial_started` + `subscription_started` (subscription_type:'trial')
+ * Paid start   → `subscription_started` (subscription_type:'paid')
+ *
+ * NEVER fires the GA4 `purchase` event. Real revenue must come from server
+ * receipt validation (see TODO at the top of analytics.js).
+ *
+ * @param {object} purchase   RNIap purchase object
+ * @param {string} productId  product being purchased
+ * @param {string} entryPoint 'paywall' | 'restore' | 'trial_expired' | 'settings'
+ */
+const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall') => {
+  const txKey = _txLogKey(purchase);
+  if (await _isTransactionLogged(txKey)) {
+    if (__DEV__) console.log('[IAP] Skipping analytics — transaction already logged:', txKey);
+    return;
+  }
 
   const plan = productIdToPlan(productId);
   const isSeat = (productId || '').includes('seat');
   const platform = Platform.OS;
+  const provider = platform === 'ios' ? 'apple' : 'google';
   const priceInfo = _productPriceCache[productId] || null;
+  const txId = purchase?.transactionId || purchase?.purchaseToken || null;
+  const originalTxId =
+    purchase?.originalTransactionIdentifierIOS ||
+    purchase?.originalTransactionId ||
+    null;
 
-  logSubscriptionStarted({
-    subscription_type: 'paid',
+  const kind = _classifyTransaction(purchase, productId);
+  const subscriptionType = kind === 'trial' ? 'trial' : 'paid';
+
+  const baseParams = {
     plan_id: plan,
-    platform,
-    entry_point: entryPoint,
-    transaction_id: txId,
-    is_seat: isSeat,
     product_id: productId,
+    platform,
+    provider,
+    entry_point: entryPoint,
+    subscription_type: subscriptionType,
+    transaction_id: txId,
+    original_transaction_id: originalTxId,
+    is_seat: isSeat,
     price: priceInfo?.price ?? null,
     currency: priceInfo?.currency ?? null,
-  });
+  };
 
-  // Fire `trial_started` when the store has granted the intro free trial on
-  // this first purchase. iOS: `originalTransactionIdentifierIOS === txId`
-  // means this is the opening transaction of a new subscription. Android: the
-  // purchase includes a free trial when the subscription offer's first phase
-  // is priced 0 — `introductoryPriceCyclesAndroid` / `isAcknowledgedAndroid`
-  // alone isn't reliable here, so we skip Android until a clearer signal.
-  if (!isSeat && platform === 'ios') {
-    const originalTxId = purchase?.originalTransactionIdentifierIOS || purchase?.originalTransactionId;
-    const isFirstTxn = !originalTxId || originalTxId === purchase?.transactionId;
-    if (isFirstTxn) {
-      try {
-        logTrialStarted(plan, { entry_point: entryPoint, transaction_id: txId });
-      } catch {}
+  try {
+    if (kind === 'trial') {
+      await logTrialStarted(baseParams);
     }
+    await logSubscriptionStarted(baseParams);
+  } catch (e) {
+    console.warn('[IAP] analytics log failed:', e?.message);
   }
+
+  await _markTransactionLogged(txKey, {
+    productId,
+    plan,
+    kind,
+    entryPoint,
+  });
+};
+
+/**
+ * Fire upgrade analytics when an existing subscriber switches tiers (Android
+ * proration upgrade). Persistently deduped — the new transactionId/token from
+ * the upgrade call is the dedup key.
+ */
+const _logUpgradeAnalytics = async (purchase, productId, fromPlan, entryPoint = 'upgrade') => {
+  const txKey = _txLogKey(purchase);
+  if (await _isTransactionLogged(txKey)) return;
+
+  const plan = productIdToPlan(productId);
+  const platform = Platform.OS;
+  const provider = platform === 'ios' ? 'apple' : 'google';
+  const priceInfo = _productPriceCache[productId] || null;
+  const txId = purchase?.transactionId || purchase?.purchaseToken || null;
+  const originalTxId =
+    purchase?.originalTransactionIdentifierIOS ||
+    purchase?.originalTransactionId ||
+    null;
+
+  try {
+    await logSubscriptionUpgraded({
+      from_plan: fromPlan || null,
+      to_plan: plan,
+      plan_id: plan,
+      product_id: productId,
+      platform,
+      provider,
+      entry_point: entryPoint,
+      subscription_type: 'paid',
+      transaction_id: txId,
+      original_transaction_id: originalTxId,
+      price: priceInfo?.price ?? null,
+      currency: priceInfo?.currency ?? null,
+    });
+  } catch (e) {
+    console.warn('[IAP] upgrade analytics log failed:', e?.message);
+  }
+
+  await _markTransactionLogged(txKey, {
+    productId,
+    plan,
+    kind: 'upgrade',
+    fromPlan,
+    entryPoint,
+  });
 };
 
 /**
@@ -537,8 +712,13 @@ const _purchaseOrUpgradeInner = async (targetProductId, entryPoint = 'paywall') 
               } catch (e) {
                 console.error('[IAP] Failed to acknowledge upgrade:', e);
               }
-              // Fire analytics after confirmed upgrade — not on button click or checkout
-              _logPurchaseAnalytics(purchase, targetProductId, entryPoint);
+              // Fire upgrade analytics after confirmed upgrade — not on button click or checkout
+              _logUpgradeAnalytics(
+                purchase,
+                targetProductId,
+                productIdToPlan(existingMainPlan.productId),
+                entryPoint === 'paywall' ? 'upgrade' : entryPoint
+              );
               resolve(purchase);
             });
           }

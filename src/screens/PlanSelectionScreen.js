@@ -43,7 +43,7 @@ import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import { canStartTrial, isTrialExpired } from '../services/trialService';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
-import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted } from '../utils/analytics';
+import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted, logSubscriptionRestored } from '../utils/analytics';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 
 const { width } = Dimensions.get('window');
@@ -294,14 +294,22 @@ export default function PlanSelectionScreen({ navigation, route }) {
         console.log('[PlanSelection] Restored active plan:', restoredPlan);
         await updateUserPlan(restoredPlan);
 
-        // Canonical subscription_started event for restore flow
+        // Restore — distinct from a fresh subscription_started. We can't tell
+        // client-side whether the restored sub is in trial or paid period
+        // without receipt validation, so subscription_type is 'unknown'.
         try {
-          logSubscriptionStarted({
-            subscription_type: 'paid',
+          logSubscriptionRestored({
             plan_id: restoredPlan,
+            product_id: activePurchase.productId || null,
             platform: Platform.OS,
+            provider: Platform.OS === 'ios' ? 'apple' : 'google',
             entry_point: 'restore',
+            subscription_type: 'unknown',
             transaction_id: activePurchase.transactionId || activePurchase.purchaseToken || null,
+            original_transaction_id:
+              activePurchase.originalTransactionIdentifierIOS ||
+              activePurchase.originalTransactionId ||
+              null,
           });
         } catch {}
 

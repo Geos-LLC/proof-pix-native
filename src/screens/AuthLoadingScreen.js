@@ -7,7 +7,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
-import { logAdminReferralConversion, extractAndSaveUTMParams } from '../utils/analytics';
+import { logAdminReferralConversion, extractAndSaveUTMParams, logSubscriptionActive } from '../utils/analytics';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -75,10 +75,32 @@ export default function AuthLoadingScreen({ navigation }) {
             if (productId.includes('enterprise') && !productId.includes('seat')) planName = 'enterprise';
             else if (productId.includes('business') && !productId.includes('seat')) planName = 'business';
             else if (productId.includes('pro')) planName = 'pro';
-            
+
             // Update user plan
             console.log('[AuthLoading] Updating plan from subscription:', planName);
             await updateUserPlan(planName);
+
+            // Tell analytics the user currently holds an entitlement.
+            // No revenue / no purchase event — this is a launch-time observation,
+            // not a fresh subscription_started.
+            try {
+              logSubscriptionActive({
+                plan_id: planName,
+                product_id: productId,
+                platform: Platform.OS,
+                provider: Platform.OS === 'ios' ? 'apple' : 'google',
+                entry_point: 'app_launch',
+                subscription_type: 'unknown',
+                transaction_id:
+                  activeSubscription.transactionId ||
+                  activeSubscription.purchaseToken ||
+                  null,
+                original_transaction_id:
+                  activeSubscription.originalTransactionIdentifierIOS ||
+                  activeSubscription.originalTransactionId ||
+                  null,
+              });
+            } catch {}
           } else {
             console.log('[AuthLoading] No active subscriptions found');
           }

@@ -68,6 +68,7 @@ import {
   logFeatureGateShown,
   logFeatureGateAction,
   logAdminReferralConversion,
+  logSubscriptionRestored,
 } from '../utils/analytics';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan } from '../services/iapService';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
@@ -1782,7 +1783,25 @@ export default function SettingsScreen({ navigation, route }) {
 
     setIsRestoringPurchases(true);
     try {
-      await restorePurchases();
+      const purchases = await restorePurchases();
+      const active = (purchases || []).find(p => !!p.productId && !p.productId.includes('seat'));
+      if (active) {
+        try {
+          logSubscriptionRestored({
+            plan_id: productIdToPlan(active.productId),
+            product_id: active.productId,
+            platform: Platform.OS,
+            provider: Platform.OS === 'ios' ? 'apple' : 'google',
+            entry_point: 'settings',
+            subscription_type: 'unknown',
+            transaction_id: active.transactionId || active.purchaseToken || null,
+            original_transaction_id:
+              active.originalTransactionIdentifierIOS ||
+              active.originalTransactionId ||
+              null,
+          });
+        } catch {}
+      }
       Alert.alert(
         t('common.success', { defaultValue: 'Success' }),
         t('settings.purchasesRestored', { defaultValue: 'Your purchases have been restored successfully.' })

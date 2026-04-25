@@ -572,86 +572,196 @@ export const logFeatureGateAction = (featureKey, userPlan, screen, action) => {
 };
 
 // Subscriptions & purchases ------------------------------------------------
+//
+// TODO(server-revenue): the client never knows for sure whether Apple/Google
+// actually charged the user. Free-trial starts and paid renewals look very
+// similar from a StoreKit / Play Billing client perspective, and renewals
+// don't fire `purchaseUpdatedListener` at all once the original transaction
+// has been finished. To get accurate revenue we need:
+//   1. Apple App Store Server Notifications V2 webhook on the proxy server
+//   2. Google Real-Time Developer Notifications (RTDN) webhook on the proxy
+//   3. Server-side receipt validation that decides paid vs trial vs renewal
+//   4. Forward `purchase` / `subscription_active` / `subscription_cancelled`
+//      to GA4 via the Measurement Protocol with the resolved revenue.
+// Until that is in place, `purchase` MUST NOT be emitted from the client for
+// trial starts. `logPurchaseCompleted` is gated on `source` precisely so the
+// only legitimate caller, today, is the future server-side pipeline.
 
-// Trial-expired flag key — used by logSubscriptionStarted to emit trial_converted
+// Trial-expired flag key — read by logSubscriptionStarted to emit trial_converted
 const TRIAL_EXPIRED_SUBSCRIBE_FLAG = '@trial_expired_logged';
 
 /**
- * Canonical subscription success event (per analytics spec).
- * Fires ONLY when a purchase is successful OR a subscription is restored.
- * Replaces the deprecated `subscription_start` + `purchase` events.
- *
- * @param {object} payload
- *  - subscription_type: 'paid' | 'free'
- *  - plan_id: 'starter' | 'pro' | 'business' | 'enterprise'
- *  - platform: 'ios' | 'android'
- *  - entry_point: 'paywall' | 'restore' | 'trial_expired'
- *  - transaction_id: store transaction ID for dedup (optional)
- *  - is_seat: boolean — seat add-on purchase (optional)
- *  - price: numeric value (optional)
- *  - currency: e.g. 'USD' (optional)
+ * Build the standard subscription-event param block. Every subscription event
+ * carries the same shape so GA4 / Firebase dashboards can pivot consistently.
  */
-export const logSubscriptionStarted = async (payload = {}) => {
-  if (__DEV__) console.log('[Analytics] subscription_started:', payload);
+const _buildSubscriptionParams = async (payload = {}) => {
   const planId = payload.plan_id || payload.plan || 'unknown';
   const platform = payload.platform || Platform.OS;
-  const entryPoint = payload.entry_point || 'paywall';
-  const subscriptionType = payload.subscription_type || 'paid';
+  const provider =
+    payload.provider ||
+    (platform === 'ios' ? 'apple' : platform === 'android' ? 'google' : 'unknown');
 
-  const params = await mergeAttributionContext({
-    subscription_type: subscriptionType,
+  return mergeAttributionContext({
     plan_id: planId,
+    product_id: payload.product_id || null,
     platform,
-    entry_point: entryPoint,
+    provider,
+    entry_point: payload.entry_point || 'paywall',
+    subscription_type: payload.subscription_type || 'unknown',
     transaction_id: payload.transaction_id || null,
+    original_transaction_id: payload.original_transaction_id || null,
     is_seat: !!payload.is_seat,
     price: payload.price ?? null,
     currency: payload.currency || null,
     timestamp: Date.now(),
   });
+};
+
+/**
+ * Subscription entitlement became active for the user.
+ * Fires for new subscriptions (trial OR paid) AND when the app confirms
+ * an existing entitlement (restore, app relaunch with active sub).
+ *
+ * Does NOT fire the GA4 `purchase` event. Real revenue is reported by
+ * App Store Connect / Play Console (or, in the future, by server-side
+ * receipt validation).
+ *
+ * @param {object} payload — see _buildSubscriptionParams
+ */
+export const logSubscriptionStarted = async (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] subscription_started:', payload);
+  const params = await _buildSubscriptionParams(payload);
   logEvent('subscription_started', params);
 
-  // Firebase standard `purchase` event — required for revenue reporting in
-  // the Firebase / GA4 Monetization dashboards. Only fires for paid
-  // transactions with a known price.
-  if (subscriptionType === 'paid' && typeof payload.price === 'number' && payload.price > 0) {
-    logEvent('purchase', {
-      value: payload.price,
-      currency: payload.currency || 'USD',
-      transaction_id: payload.transaction_id || null,
-      items: [{
-        item_id: payload.product_id || planId,
-        item_name: planId,
-        item_category: payload.is_seat ? 'seat' : 'subscription',
-        price: payload.price,
-        quantity: 1,
-      }],
-    });
-  }
+  // Meta (Facebook) SDK: fire standard Subscribe event for ads optimization.
+  // We intentionally DO NOT fire metaLogPurchase here — Meta `Purchase` is now
+  // emitted only via logPurchaseCompleted, when we know money actually changed
+  // hands.
+  metaLogSubscriptionStart(params.plan_id, params.platform);
 
-  // Meta (Facebook) SDK: fire standard Subscribe + Purchase events for ads optimization.
-  // These are Meta's own standard events (not Firebase) and remain unchanged by the
-  // Firebase-side consolidation.
-  metaLogSubscriptionStart(planId, platform);
-  if (subscriptionType === 'paid' && payload.price) {
-    metaLogPurchase(payload.price, payload.currency || 'USD', planId);
-  }
-
-  // Derived event: if trial_expired fired previously, emit trial_converted
+  // Derived event: if trial_expired previously fired, emit trial_converted
+  // when the user comes back and starts a paid subscription.
   try {
     const expiredFlag = await AsyncStorage.getItem(TRIAL_EXPIRED_SUBSCRIBE_FLAG);
-    if (expiredFlag && subscriptionType === 'paid') {
+    if (expiredFlag && params.subscription_type === 'paid') {
       await logTrialConverted({
-        plan_id: planId,
-        platform,
-        entry_point: entryPoint,
-        subscription_type: subscriptionType,
-        transaction_id: payload.transaction_id || null,
+        plan_id: params.plan_id,
+        platform: params.platform,
+        entry_point: params.entry_point,
+        subscription_type: params.subscription_type,
+        transaction_id: params.transaction_id,
       });
     }
   } catch {
     // non-critical
   }
+};
+
+/**
+ * Real money was charged. This is the ONLY function in the app that may emit
+ * the GA4 standard `purchase` event. Free-trial starts must not call this.
+ *
+ * Source values:
+ *   - 'server_validation' — backend has validated an Apple/Google receipt and
+ *     confirmed a paid period began (intro offer ended OR plan with no trial).
+ *   - 'client_confirmed_paid' — client-side confirmation that the user is on a
+ *     paid (non-trial) period (rare; reserved for plans without trials).
+ */
+export const logPurchaseCompleted = async (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] purchase:', payload);
+
+  const value = typeof payload.value === 'number' ? payload.value : null;
+  if (value == null || value <= 0) {
+    if (__DEV__) console.log('[Analytics] purchase skipped — non-positive value');
+    return;
+  }
+
+  const planId = payload.plan_id || 'unknown';
+  const platform = payload.platform || Platform.OS;
+  const provider =
+    payload.provider ||
+    (platform === 'ios' ? 'apple' : platform === 'android' ? 'google' : 'unknown');
+  const currency = payload.currency || 'USD';
+
+  const params = await mergeAttributionContext({
+    value,
+    currency,
+    transaction_id: payload.transaction_id || null,
+    original_transaction_id: payload.original_transaction_id || null,
+    plan_id: planId,
+    product_id: payload.product_id || planId,
+    platform,
+    provider,
+    source: payload.source || 'unknown',
+    items: [{
+      item_id: payload.product_id || planId,
+      item_name: planId,
+      item_category: payload.is_seat ? 'seat' : 'subscription',
+      price: value,
+      quantity: 1,
+    }],
+    timestamp: Date.now(),
+  });
+  logEvent('purchase', params);
+
+  // Mirror to Meta SDK as standard Purchase
+  metaLogPurchase(value, currency, planId);
+};
+
+/**
+ * User restored an existing subscription (manual Restore Purchases tap or
+ * launch-time auto-restore that ended with an entitlement). Does NOT fire
+ * `purchase` — no money changed hands.
+ */
+export const logSubscriptionRestored = async (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] subscription_restored:', payload);
+  const params = await _buildSubscriptionParams({
+    ...payload,
+    entry_point: payload.entry_point || 'restore',
+  });
+  logEvent('subscription_restored', params);
+};
+
+/**
+ * The app currently sees an active entitlement (e.g. on cold start or when
+ * the user navigates to a gated feature). Useful for cohorts of "DAU with
+ * active sub". Does NOT fire `purchase`.
+ */
+export const logSubscriptionActive = async (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] subscription_active:', payload);
+  const params = await _buildSubscriptionParams(payload);
+  logEvent('subscription_active', params);
+};
+
+/**
+ * User changed plans (cross-tier upgrade or downgrade) on a still-active
+ * subscription. Does NOT fire `purchase` — proration is handled by the store.
+ */
+export const logSubscriptionUpgraded = async (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] subscription_upgraded:', payload);
+  const params = await _buildSubscriptionParams({
+    ...payload,
+    entry_point: payload.entry_point || 'upgrade',
+  });
+  logEvent('subscription_upgraded', {
+    ...params,
+    from_plan: payload.from_plan || null,
+    to_plan: payload.to_plan || params.plan_id,
+  });
+};
+
+/**
+ * Server / receipt validation later observed that a previously active
+ * subscription is no longer active (cancelled, expired, billing failure).
+ * Wired up for a future server pipeline; safe no-op until then.
+ */
+export const logSubscriptionCancelledDetected = async (payload = {}) => {
+  if (__DEV__) console.log('[Analytics] subscription_cancelled_detected:', payload);
+  const params = await _buildSubscriptionParams(payload);
+  logEvent('subscription_cancelled_detected', {
+    ...params,
+    reason: payload.reason || 'unknown',
+  });
 };
 
 // App lifecycle ---------------------------------------------------------------
@@ -694,15 +804,42 @@ export const logTrialSkipped = () => {
 };
 
 /**
- * Canonical trial-start event per analytics spec.
- * Fires in addition to the older `trial_event` (action=start) for continuity.
+ * Canonical trial-start event. Fires when the user begins a free trial,
+ * either via the store's introductory offer (Apple/Google) or — historically —
+ * via the legacy app-side trial. Does NOT fire `purchase` (no money charged).
+ *
+ * Two call shapes are supported:
+ *   logTrialStarted('pro', { days_remaining: 15 })            // legacy
+ *   logTrialStarted({                                          // canonical
+ *     plan_id, platform, provider, transaction_id,
+ *     original_transaction_id, entry_point, subscription_type,
+ *   })
  */
-export const logTrialStarted = async (plan, extra = {}) => {
+export const logTrialStarted = async (planOrPayload, extra = {}) => {
+  const payload =
+    typeof planOrPayload === 'string'
+      ? { plan_id: planOrPayload, ...extra }
+      : (planOrPayload || {});
+
+  const planId = payload.plan_id || payload.plan || 'unknown';
+  const platform = payload.platform || Platform.OS;
+  const provider =
+    payload.provider ||
+    (platform === 'ios' ? 'apple' : platform === 'android' ? 'google' : 'unknown');
+
   const params = await mergeAttributionContext({
-    plan,
-    plan_id: plan,
-    platform: Platform.OS,
-    days_remaining: extra.days_remaining ?? null,
+    plan: planId,
+    plan_id: planId,
+    product_id: payload.product_id || null,
+    platform,
+    provider,
+    entry_point: payload.entry_point || 'paywall',
+    subscription_type: payload.subscription_type || 'trial',
+    transaction_id: payload.transaction_id || null,
+    original_transaction_id: payload.original_transaction_id || null,
+    days_remaining: payload.days_remaining ?? null,
+    price: payload.price ?? null,
+    currency: payload.currency || null,
     timestamp: Date.now(),
   });
   logEvent('trial_started', params);
@@ -830,6 +967,11 @@ export default {
   logPlanChanged,
   logTrialEvent,
   logSubscriptionStarted,
+  logSubscriptionRestored,
+  logSubscriptionActive,
+  logSubscriptionUpgraded,
+  logSubscriptionCancelledDetected,
+  logPurchaseCompleted,
   logTeamInvitesCreated,
   logTeamMemberJoined,
   logReferralEvent,
