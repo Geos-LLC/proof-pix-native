@@ -94,19 +94,67 @@ let _productPriceCache = {};
 let _productHasTrialCache = {};
 
 /**
- * Inspect an RNIap v14 product object for a free introductory offer.
- * iOS: `introductoryPrice.price` is 0.
- * Android: any subscription offer phase with `priceAmountMicros: 0` that
- *          is not the recurring phase (recurrenceMode !== 1).
+ * Decide whether an introductory-offer descriptor represents a free trial.
+ * Accepts the various shapes the iOS side has used across RNIap versions.
+ */
+const _isFreeIntroOffer = (intro) => {
+  if (!intro) return false;
+  const p = intro.price ?? intro.priceAmount ?? intro.priceAmountMicros;
+  if (p === 0 || p === '0' || p === '0.00') return true;
+  const mode = intro.paymentMode || intro.paymentModeIOS;
+  if (mode === 'free_trial' || mode === 'FREE_TRIAL' || mode === 'freeTrial' || mode === 0) return true;
+  if (intro.type === 'introductory' && (p === 0 || p === '0' || p === '0.00')) return true;
+  return false;
+};
+
+/**
+ * Inspect an RNIap product object for a free introductory offer.
+ *
+ * iOS: react-native-iap has shipped this metadata under at least four
+ * different field shapes across major versions and has further split it
+ * between StoreKit 1 and StoreKit 2 in v14. We probe every known shape so
+ * a single library rename doesn't silently disable trial classification.
+ *
+ * Android: any subscription offer phase with `priceAmountMicros: 0` that is
+ * not the recurring phase (recurrenceMode !== 1).
  */
 const _extractHasTrial = (product) => {
   if (!product) return false;
   try {
     if (Platform.OS === 'ios') {
-      const intro = product.introductoryPrice;
-      if (!intro) return false;
-      const p = intro.price;
-      return p === 0 || p === '0' || p === '0.00';
+      const candidates = [
+        product.subscriptionInfoIOS?.introductoryOffer,
+        product.subscriptionInfoIOS?.introductoryPrice,
+        product.introductoryOfferIOS,
+        product.introductoryPriceIOS,
+        product.introductoryPrice,
+        ...(Array.isArray(product.discountsIOS)
+          ? product.discountsIOS.filter((d) => d?.type === 'introductory')
+          : []),
+        ...(Array.isArray(product.subscriptionInfoIOS?.promotionalOffers)
+          ? product.subscriptionInfoIOS.promotionalOffers
+          : []),
+      ];
+      for (const c of candidates) {
+        if (_isFreeIntroOffer(c)) return true;
+      }
+      // Diagnostic: surface the actual product key set so a future RNIap
+      // field rename is fixable in one iteration, not a build cycle each.
+      if (__DEV__ || true) {
+        try {
+          console.warn('[iap-debug] no iOS intro-offer field matched', {
+            productId: product?.id || product?.productId,
+            productKeys: Object.keys(product || {}),
+            subscriptionInfoIOSKeys: product?.subscriptionInfoIOS
+              ? Object.keys(product.subscriptionInfoIOS)
+              : null,
+            hasIntroductoryPrice: 'introductoryPrice' in product,
+            hasIntroductoryPriceIOS: 'introductoryPriceIOS' in product,
+            hasDiscountsIOS: 'discountsIOS' in product,
+          });
+        } catch {}
+      }
+      return false;
     }
     const offers = product.subscriptionOfferDetailsAndroid || [];
     for (const offer of offers) {
@@ -1345,17 +1393,42 @@ export const getSubscriptionPrices = async () => {
           prices[product.id] = offers[0].pricingPhases.pricingPhaseList[0].formattedPrice;
         }
       } else {
-        // iOS: use displayPrice and check introductoryPrice for trial
+        // iOS: use displayPrice for price, then probe every known intro-offer
+        // shape from RNIap (v14 split StoreKit 1 / StoreKit 2 + iOS-suffix
+        // rename means the trial descriptor can live in any of these slots).
         prices[product.id] = product.displayPrice || '';
 
-        const intro = product.introductoryPrice;
-        if (intro && (intro.price === 0 || intro.price === '0' || intro.price === '0.00')) {
-          const periodDays = isoDurationToDays(intro.subscriptionPeriod);
-          const numPeriods = parseInt(intro.numberOfPeriods, 10) || 1;
+        const introCandidates = [
+          product.subscriptionInfoIOS?.introductoryOffer,
+          product.subscriptionInfoIOS?.introductoryPrice,
+          product.introductoryOfferIOS,
+          product.introductoryPriceIOS,
+          product.introductoryPrice,
+          ...(Array.isArray(product.discountsIOS)
+            ? product.discountsIOS.filter((d) => d?.type === 'introductory')
+            : []),
+          ...(Array.isArray(product.subscriptionInfoIOS?.promotionalOffers)
+            ? product.subscriptionInfoIOS.promotionalOffers
+            : []),
+        ];
+        for (const intro of introCandidates) {
+          if (!intro) continue;
+          if (!_isFreeIntroOffer(intro)) continue;
+          const period =
+            intro.subscriptionPeriod ||
+            intro.subscriptionPeriodIOS ||
+            intro.period ||
+            intro.billingPeriod;
+          const periodDays = isoDurationToDays(period);
+          const numPeriods = parseInt(
+            intro.numberOfPeriods ?? intro.numberOfPeriodsIOS ?? '1',
+            10
+          ) || 1;
           trialOffers[product.id] = {
             hasTrial: true,
             trialDays: periodDays ? periodDays * numPeriods : 15,
           };
+          break;
         }
       }
 
