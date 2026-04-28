@@ -176,25 +176,48 @@ const _cacheProductPrices = (products) => {
  */
 const _classifyTransaction = (purchase, productId) => {
   const isSeat = (productId || '').includes('seat');
-  if (isSeat) return 'paid'; // seat add-ons never have a trial offer
+  const hasTrialOffer = !!_productHasTrialCache[productId];
+  const cacheKnowsProduct = Object.prototype.hasOwnProperty.call(
+    _productHasTrialCache,
+    productId
+  );
+  const original =
+    purchase?.originalTransactionIdentifierIOS ||
+    purchase?.originalTransactionId ||
+    null;
+  const transactionId = purchase?.transactionId || null;
+  const isFirstTxn = !original || original === transactionId;
 
-  const productHasTrial = !!_productHasTrialCache[productId];
-  if (!productHasTrial) return 'paid';
-
-  if (Platform.OS === 'ios') {
-    const original =
-      purchase?.originalTransactionIdentifierIOS ||
-      purchase?.originalTransactionId;
-    const isFirstTxn = !original || original === purchase?.transactionId;
-    return isFirstTxn ? 'trial' : 'paid';
+  let result;
+  if (isSeat) {
+    result = 'paid'; // seat add-ons never have a trial offer
+  } else if (!hasTrialOffer) {
+    result = 'paid';
+  } else if (Platform.OS === 'ios') {
+    result = isFirstTxn ? 'trial' : 'paid';
+  } else {
+    // Android: when a product offers a free phase, Google grants it on the
+    // first qualifying purchase. Without server validation we can't tell a
+    // first-time buyer from a returning one, so we conservatively treat any
+    // first-acknowledgement of a trial-eligible product as a trial start.
+    // Subsequent purchases (e.g. resubscribes) will be deduped by purchaseToken.
+    result = 'trial';
   }
 
-  // Android: when a product offers a free phase, Google grants it on the
-  // first qualifying purchase. Without server validation we can't tell a
-  // first-time buyer from a returning one, so we conservatively treat any
-  // first-acknowledgement of a trial-eligible product as a trial start.
-  // Subsequent purchases (e.g. resubscribes) will be deduped by purchaseToken.
-  return 'trial';
+  console.log('[iap-debug] transaction classified', {
+    result,
+    productId,
+    hasTrialOffer,
+    cacheKnowsProduct,
+    cachedProductIds: Object.keys(_productHasTrialCache),
+    transactionId,
+    originalTransactionId: original,
+    isFirstTxn,
+    isSeat,
+    platform: Platform.OS,
+  });
+
+  return result;
 };
 
 /**
@@ -214,8 +237,15 @@ const _classifyTransaction = (purchase, productId) => {
  */
 const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall') => {
   const txKey = _txLogKey(purchase);
-  if (await _isTransactionLogged(txKey)) {
-    if (__DEV__) console.log('[IAP] Skipping analytics — transaction already logged:', txKey);
+  const alreadyLogged = await _isTransactionLogged(txKey);
+  console.log('[iap-debug] transaction dedup check', {
+    transactionId: purchase?.transactionId,
+    purchaseToken: purchase?.purchaseToken,
+    dedupKey: txKey,
+    alreadyLogged,
+  });
+  if (alreadyLogged) {
+    console.log('[iap-debug] analytics SKIPPED — transaction already logged in a prior session', { dedupKey: txKey });
     return;
   }
 
@@ -249,8 +279,28 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
 
   try {
     if (kind === 'trial') {
+      console.log('[analytics-debug] firing trial_started', {
+        plan_id: baseParams.plan_id,
+        product_id: baseParams.product_id,
+        platform: baseParams.platform,
+        provider: baseParams.provider,
+        subscription_type: 'trial',
+        transaction_id: baseParams.transaction_id,
+      });
       await logTrialStarted(baseParams);
+    } else {
+      console.log('[analytics-debug] NOT firing trial_started (paid path)', {
+        plan_id: baseParams.plan_id,
+        product_id: baseParams.product_id,
+        kind,
+      });
     }
+    console.log('[analytics-debug] firing subscription_started', {
+      plan_id: baseParams.plan_id,
+      product_id: baseParams.product_id,
+      subscription_type: baseParams.subscription_type,
+      transaction_id: baseParams.transaction_id,
+    });
     await logSubscriptionStarted(baseParams);
   } catch (e) {
     console.warn('[IAP] analytics log failed:', e?.message);
@@ -466,6 +516,20 @@ export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
       // v14 PurchaseAndroid fields: productId, purchaseState, purchaseToken, isAutoRenewing, isAcknowledgedAndroid
       // v14 PurchaseIOS fields: productId, transactionId, etc.
       const purchasedId = purchase?.productId || '';
+
+      console.log('[iap-debug] transaction received', {
+        transactionId: purchase?.transactionId,
+        originalTransactionId:
+          purchase?.originalTransactionIdentifierIOS ||
+          purchase?.originalTransactionId ||
+          null,
+        purchaseToken: purchase?.purchaseToken || null,
+        productId: purchasedId,
+        expectedProductId: productId,
+        platform: Platform.OS,
+        purchaseState: purchase?.purchaseState,
+        isAcknowledgedAndroid: purchase?.isAcknowledgedAndroid,
+      });
 
       console.log('[IAP] purchaseUpdatedListener triggered');
       console.log('[IAP] Purchased ID:', purchasedId, 'Expected:', productId);
@@ -705,6 +769,19 @@ const _purchaseOrUpgradeInner = async (targetProductId, entryPoint = 'paywall') 
         purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchase) => {
           const purchasedId = purchase?.productId || '';
           const ids = purchase?.ids || [];
+
+          console.log('[iap-debug] transaction received (upgrade flow)', {
+            transactionId: purchase?.transactionId,
+            originalTransactionId:
+              purchase?.originalTransactionIdentifierIOS ||
+              purchase?.originalTransactionId ||
+              null,
+            purchaseToken: purchase?.purchaseToken || null,
+            productId: purchasedId,
+            expectedProductId: targetProductId,
+            platform: Platform.OS,
+          });
+
           if (purchasedId === targetProductId || ids.includes(targetProductId)) {
             finish(async () => {
               try {

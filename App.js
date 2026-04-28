@@ -503,6 +503,13 @@ export default function App() {
           const { logAppOpen } = require('./src/utils/analytics');
           logAppOpen();
         } catch (e) { /* non-critical */ }
+
+        // Build marker — confirms the installed binary contains the v2
+        // subscription analytics chain (logTrialStarted, _classifyTransaction,
+        // _logPurchaseAnalytics, persistent dedup). If this line is absent
+        // from the device console, the binary on the device is older than
+        // v1.5.11 and the rest of the debug logs will not appear either.
+        console.log('[analytics-debug] build includes subscription analytics v2 (v1.5.12)');
       } catch (error) {
         console.error('[Firebase] Initialization error:', error);
         // Set as initialized anyway to not block the app

@@ -145,6 +145,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
   };
 
   const handleSelectPlan = async (plan) => {
+    console.log('[analytics-debug] plan_selected fired', { selectedPlan: plan });
     logPlanSelected(plan, false);
 
     if (plan === 'starter') {
@@ -195,6 +196,12 @@ export default function PlanSelectionScreen({ navigation, route }) {
             } catch {}
 
             console.log('[PlanSelection] Starting purchase for:', productId, 'entryPoint:', entryPoint);
+            console.log('[iap-debug] starting purchase flow', {
+              productId,
+              selectedPlan: plan,
+              entryPoint,
+              platform: Platform.OS,
+            });
             await purchaseOrUpgrade(productId, entryPoint);
             console.log('[PlanSelection] Purchase successful');
             await updateUserPlan(plan);

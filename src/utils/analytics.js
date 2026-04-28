@@ -842,6 +842,10 @@ export const logTrialStarted = async (planOrPayload, extra = {}) => {
     currency: payload.currency || null,
     timestamp: Date.now(),
   });
+  console.log('[firebase-debug] logEvent trial_started called', {
+    firebaseReady: typeof getApps === 'function' ? getApps().length > 0 : 'unknown',
+    params,
+  });
   logEvent('trial_started', params);
 };
 
