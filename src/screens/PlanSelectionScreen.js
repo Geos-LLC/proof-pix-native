@@ -553,7 +553,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
               </View>
             </View>
             <Text style={styles.planCardDescription}>
-              Basic before & after photos
+              Basic before & after photos{'\n'}1 free export every 24 hours
             </Text>
           </View>
         </TouchableOpacity>

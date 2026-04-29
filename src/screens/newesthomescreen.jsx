@@ -38,6 +38,7 @@ import { LOCATIONS, getLocationName } from '../config/locations';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import RoomEditor from '../components/RoomEditor';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import ShareCooldownBanner from '../components/ShareCooldownBanner';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import * as ExpoLocation from 'expo-location';
@@ -107,7 +108,7 @@ export default function HomeScreen({ navigation }) {
   const fullScreenTopInset = Math.max(insets.top, 25);
   const fullScreenBottomInset = Math.max(insets.bottom, 20);
   const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
-  const { exceedsLimit } = useFeaturePermissions();
+  const { exceedsLimit, effectivePlan } = useFeaturePermissions();
   const { uploadStatus, cancelUpload, cancelAllUploads } = useBackgroundUpload();
   const [newProjectVisible, setNewProjectVisible] = useState(false);
   const [showRoomEditor, setShowRoomEditor] = useState(false);
@@ -1290,6 +1291,15 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </View>
+
+      {/* Free-plan share cooldown countdown. Renders only for Starter users
+          who are inside the rolling 24h window since their last share.
+          Pro+ have FEATURES.UNLIMITED_SHARING and the component returns null. */}
+      <ShareCooldownBanner
+        effectivePlan={effectivePlan}
+        t={t}
+        onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
+      />
 
       <View style={styles.projectNameContainer}>
         <View style={styles.projectInfoRow}>
