@@ -27,6 +27,8 @@ import { getCachedLabeledPhoto, calculateSettingsHash } from '../services/labelC
 import backgroundLabelPreparationService from '../services/backgroundLabelPreparationService';
 import { Image as RNImage } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 
 const { width, height } = Dimensions.get('window');
 
@@ -35,6 +37,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
   const { t } = useTranslation();
   const { deletePhoto, getBeforePhotos, getAfterPhotos, activeProjectId } = usePhotos();
   const settings = useSettings();
+  const { effectivePlan } = useFeaturePermissions();
   const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, labelMarginVertical, labelMarginHorizontal, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily } = settings || {};
   const getRooms = settings?.getRooms;
   const [sharing, setSharing] = useState(false);
@@ -409,6 +412,10 @@ export default function PhotoDetailScreen({ route, navigation }) {
   };
 
   const handleShare = async () => {
+    // Free-plan share rate limit: rolling 24h window. Pro/Business/Enterprise
+    // have FEATURES.UNLIMITED_SHARING and bypass.
+    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+    if (!allowed) return;
     try {
       setSharing(true);
 
@@ -449,6 +456,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
       } else {
         await Share.share({ title: `${currentPhoto.mode === 'before' ? 'Before' : 'After'} Photo - ${currentPhoto.name}`, url: tempUri });
       }
+      await recordShare();
 
       // Clean up temporary file after sharing
       try {

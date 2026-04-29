@@ -42,7 +42,7 @@ import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import { canStartTrial, isTrialExpired } from '../services/trialService';
-import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
 import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted, logSubscriptionRestored } from '../utils/analytics';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 
@@ -149,6 +149,36 @@ export default function PlanSelectionScreen({ navigation, route }) {
     logPlanSelected(plan, false);
 
     if (plan === 'starter') {
+      // If the user already has an active Apple/Google subscription, tapping
+      // Starter cannot actually downgrade them — only the store can cancel a
+      // subscription. Surface that explicitly so we don't silently lie about
+      // their plan state and let Apple keep charging them.
+      try {
+        const hasActive = await hasActiveIAPSubscription();
+        if (hasActive) {
+          Alert.alert(
+            t('paywall.cancelFirstTitle', { defaultValue: 'Cancel your subscription first' }),
+            t('paywall.cancelFirstBody', {
+              defaultValue:
+                'You currently have an active subscription. To switch to the Free plan, cancel your subscription in Settings. You\'ll keep your paid features until your current period ends, then move to Free automatically.',
+            }),
+            [
+              {
+                text: t('paywall.cancelSubscriptionCTA', { defaultValue: 'Cancel Subscription' }),
+                onPress: () => {
+                  try { openManageSubscriptions(); } catch {}
+                },
+              },
+              {
+                text: t('paywall.keepSubscriptionCTA', { defaultValue: 'Keep Subscription' }),
+                style: 'cancel',
+              },
+            ]
+          );
+          return;
+        }
+      } catch {}
+
       logTrialSkipped();
       // Canonical free-tier subscription event (no store purchase involved)
       try {

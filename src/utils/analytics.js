@@ -613,6 +613,12 @@ const _buildSubscriptionParams = async (payload = {}) => {
     is_seat: !!payload.is_seat,
     price: payload.price ?? null,
     currency: payload.currency || null,
+    // Funnel attribution: if this subscription started after a trial expired,
+    // these tag the conversion so GA4 can build "trial → paid" funnels and
+    // detect cross-tier switches (e.g. trialed Pro, converted to Business).
+    was_trial: !!payload.was_trial,
+    from_plan: payload.from_plan || null,
+    switched: !!payload.switched,
     timestamp: Date.now(),
   });
 };

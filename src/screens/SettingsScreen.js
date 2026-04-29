@@ -70,7 +70,7 @@ import {
   logAdminReferralConversion,
   logSubscriptionRestored,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
@@ -882,6 +882,20 @@ export default function SettingsScreen({ navigation, route }) {
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   const [editingTeamName, setEditingTeamName] = useState(false);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
+  // Tracks whether the user has an active iOS/Android subscription so we can
+  // surface a "Manage Subscription" button. Only renders when true — Free users
+  // never see it. Refreshed on mount.
+  const [hasActiveSub, setHasActiveSub] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const active = await hasActiveIAPSubscription();
+        if (mounted) setHasActiveSub(!!active);
+      } catch {}
+    })();
+    return () => { mounted = false; };
+  }, []);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
 
   const appLanguageScrollViewRef = useRef(null);
@@ -2951,6 +2965,23 @@ export default function SettingsScreen({ navigation, route }) {
           >
             <Text style={styles.upgradeButtonText}>{t('settings.upgrade', { defaultValue: 'Upgrade' })}</Text>
           </TouchableOpacity>
+
+          {/* Manage Subscription — only visible to users with an active store
+              subscription. Deep-links into iOS/Android subscription manager.
+              This is the only real way for a user on a Pro/Business/Enterprise
+              trial or paid plan to cancel and switch to Free. */}
+          {hasActiveSub && (
+            <TouchableOpacity
+              style={styles.manageSubscriptionButton}
+              onPress={() => {
+                try { openManageSubscriptions(); } catch {}
+              }}
+            >
+              <Text style={styles.manageSubscriptionText}>
+                {t('settings.manageSubscription', { defaultValue: 'Manage Subscription' })}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Folder location - manual pick + Use current location (GPS) */}
@@ -7394,6 +7425,20 @@ const sliderStyles = StyleSheet.create({
       color: '#FFFFFF',
       fontSize: 16,
       fontWeight: '700',
+    },
+    manageSubscriptionButton: {
+      backgroundColor: 'transparent',
+      borderRadius: 32,
+      paddingVertical: 14,
+      alignItems: 'center',
+      marginTop: 8,
+      borderWidth: 1,
+      borderColor: '#000000',
+    },
+    manageSubscriptionText: {
+      color: '#000000',
+      fontSize: 15,
+      fontWeight: '600',
     },
     settingRow: {
       flexDirection: 'row',

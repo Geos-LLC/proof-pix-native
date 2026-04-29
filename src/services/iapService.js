@@ -325,6 +325,27 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
     currency: priceInfo?.currency ?? null,
   };
 
+  // Detect post-trial conversion: if the device previously fired trial_expired
+  // for the same originalTransactionId family, this paid subscription is the
+  // user's conversion event. Annotate subscription_started so GA4 can build
+  // funnels of "trial → same plan" vs "trial → switched plan".
+  let wasTrial = false;
+  let fromPlan = null;
+  let switched = false;
+  if (kind === 'paid') {
+    try {
+      const expiredRaw = await AsyncStorage.getItem('@last_trial_expired_state');
+      if (expiredRaw) {
+        const exp = JSON.parse(expiredRaw);
+        if (exp?.original_transaction_id && exp.original_transaction_id === originalTxId) {
+          wasTrial = true;
+          fromPlan = exp.plan_id || null;
+          switched = !!fromPlan && fromPlan !== plan;
+        }
+      }
+    } catch {}
+  }
+
   try {
     if (kind === 'trial') {
       console.log('[analytics-debug] firing trial_started', {
@@ -336,6 +357,18 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
         transaction_id: baseParams.transaction_id,
       });
       await logTrialStarted(baseParams);
+      // Persist the trial state so SettingsContext can detect a real
+      // active→inactive transition on a future cold start and fire a real
+      // trial_expired event with plan context.
+      try {
+        await AsyncStorage.setItem('@last_trial_state', JSON.stringify({
+          plan_id: plan,
+          product_id: productId,
+          original_transaction_id: originalTxId,
+          transaction_id: txId,
+          started_at: Date.now(),
+        }));
+      } catch {}
     } else {
       console.log('[analytics-debug] NOT firing trial_started (paid path)', {
         plan_id: baseParams.plan_id,
@@ -348,8 +381,21 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
       product_id: baseParams.product_id,
       subscription_type: baseParams.subscription_type,
       transaction_id: baseParams.transaction_id,
+      was_trial: wasTrial,
+      from_plan: fromPlan,
+      switched,
     });
-    await logSubscriptionStarted(baseParams);
+    await logSubscriptionStarted({
+      ...baseParams,
+      was_trial: wasTrial,
+      from_plan: fromPlan,
+      switched,
+    });
+    // Conversion has been recorded — clear the expired-state marker so the
+    // next legitimate trial_expired won't double-attribute.
+    if (wasTrial) {
+      try { await AsyncStorage.removeItem('@last_trial_expired_state'); } catch {}
+    }
   } catch (e) {
     console.warn('[IAP] analytics log failed:', e?.message);
   }

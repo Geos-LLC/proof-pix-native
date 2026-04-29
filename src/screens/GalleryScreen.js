@@ -75,6 +75,7 @@ import {
   invalidateCache,
 } from '../services/labelCacheService';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 import { FEATURES } from '../constants/featurePermissions';
 
 const COLORS = {
@@ -155,7 +156,7 @@ export default function GalleryScreen({ navigation, route }) {
   } = useSettings();
   
   const insets = useSafeAreaInsets();
-  const { canUse } = useFeaturePermissions();
+  const { canUse, effectivePlan } = useFeaturePermissions();
   const { userMode, teamInfo, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType } = useAdmin();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
   
@@ -423,6 +424,10 @@ export default function GalleryScreen({ navigation, route }) {
   ).current;
 
   const shareIndividualPhoto = async (photo) => {
+    // Free-plan share rate limit: rolling 24h window from last share. Pro and
+    // above bypass via FEATURES.UNLIMITED_SHARING.
+    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+    if (!allowed) return;
     try {
       setSharing(true);
 
@@ -448,6 +453,7 @@ export default function GalleryScreen({ navigation, route }) {
         mimeType: 'image/jpeg',
         dialogTitle: `${photo.mode === 'before' ? 'Before' : 'After'} Photo - ${photo.name}`,
       });
+      await recordShare();
 
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
@@ -467,9 +473,11 @@ export default function GalleryScreen({ navigation, route }) {
   };
 
   const shareCombinedPhoto = async (photoSet) => {
+    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+    if (!allowed) return;
     try {
       setSharing(true);
-      
+
       const capturedUri = await captureRef(combinedCaptureRef, {
         format: 'jpg',
         quality: 0.95
@@ -483,7 +491,8 @@ export default function GalleryScreen({ navigation, route }) {
         mimeType: 'image/jpeg',
         dialogTitle: `Before/After - ${photoSet.name}`,
       });
-      
+      await recordShare();
+
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
         if (fileInfo.exists) {
@@ -503,6 +512,8 @@ export default function GalleryScreen({ navigation, route }) {
 
   const shareFullScreenCombined = async () => {
     if (!fullScreenPhotoSet) return;
+    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+    if (!allowed) return;
     try {
       setSharing(true);
       let shareUri = null;
@@ -597,6 +608,7 @@ export default function GalleryScreen({ navigation, route }) {
         mimeType: 'image/jpeg',
         dialogTitle: `Before/After - ${fullScreenPhotoSet.before.name}`,
       });
+      await recordShare();
       const sourceType = fullScreenPhotoSet.before.sourceType || 'camera';
       const projectId = fullScreenPhotoSet.before.projectId || null;
       const timeTotal = fullScreenPhotoSet.before.timestamp ? Math.round((Date.now() - fullScreenPhotoSet.before.timestamp) / 1000) : null;
@@ -616,6 +628,8 @@ export default function GalleryScreen({ navigation, route }) {
   };
 
   const startSharingWithOptions = async () => {
+    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+    if (!allowed) return;
     try {
       setSharing(true);
       setShareOptionsVisible(false);
@@ -705,6 +719,7 @@ export default function GalleryScreen({ navigation, route }) {
           mimeType: 'application/zip',
           dialogTitle: zipFileName,
         });
+        await recordShare();
 
         await FileSystem.deleteAsync(zipUri, { idempotent: true });
       } else {
@@ -715,6 +730,7 @@ export default function GalleryScreen({ navigation, route }) {
             mimeType: 'image/jpeg',
             dialogTitle: 'Share Photo',
           });
+          await recordShare();
         } else if (urls.length > 1) {
           // Share multiple photos via react-native-share using temp file copies
           setShareStatus(t('gallery.preparingPhotos', { defaultValue: `Preparing ${urls.length} photos...`, count: urls.length }));
@@ -732,6 +748,7 @@ export default function GalleryScreen({ navigation, route }) {
             type: 'image/jpeg',
             failOnCancel: false,
           });
+          await recordShare();
           // Clean up temp files
           await FileSystem.deleteAsync(tempDir, { idempotent: true });
         }

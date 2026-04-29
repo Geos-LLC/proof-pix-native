@@ -92,18 +92,45 @@ export const SettingsProvider = ({ children }) => {
     checkTrialExpiration();
   }, []);
 
-  // Check if trial has expired and mark as inactive
+  // Detect trial expiry by comparing previous-session state against current
+  // entitlement. We fire `trial_expired` only when:
+  //   1. A previous session persisted `@last_trial_state` (i.e. the device
+  //      observed a real `trial_started` event), AND
+  //   2. The current session has no active store entitlement.
+  //
+  // This replaces the old logic that fired `trial_expired` on every cold
+  // start where the legacy in-app trial flag was missing — which was every
+  // device, producing meaningless data.
   const checkTrialExpiration = async () => {
     try {
-      const { isTrialActive } = await import('../services/trialService');
-      const active = await isTrialActive();
-      // If trial was started but is no longer active, fire trial_expired once
-      if (!active) {
-        try {
-          const { logTrialExpiredOnce } = await import('../utils/analytics');
-          await logTrialExpiredOnce();
-        } catch { /* non-critical */ }
-      }
+      const lastTrialRaw = await AsyncStorage.getItem('@last_trial_state');
+      if (!lastTrialRaw) return; // never had a store-side trial — nothing to expire
+
+      let lastTrial = null;
+      try { lastTrial = JSON.parse(lastTrialRaw); } catch { return; }
+      if (!lastTrial?.plan_id) return;
+
+      // Ask iapService whether Apple/Google still report an active entitlement.
+      // If they do, the trial hasn't expired (it's either still in trial or
+      // has already converted to paid — either way, not expired).
+      const { hasActiveIAPSubscription } = await import('../services/iapService');
+      const stillActive = await hasActiveIAPSubscription();
+      if (stillActive) return;
+
+      // Real transition: had a trial, no longer entitled. Fire the event with
+      // plan context and persist the snapshot so a subsequent `subscription_started`
+      // (the conversion) can annotate itself with `was_trial: true`.
+      const { logEvent } = await import('../utils/analytics');
+      await logEvent('trial_expired', {
+        plan_id: lastTrial.plan_id,
+        product_id: lastTrial.product_id,
+        original_transaction_id: lastTrial.original_transaction_id,
+        days_in_trial: lastTrial.started_at
+          ? Math.max(0, Math.floor((Date.now() - lastTrial.started_at) / 86400000))
+          : null,
+      });
+      await AsyncStorage.setItem('@last_trial_expired_state', JSON.stringify(lastTrial));
+      await AsyncStorage.removeItem('@last_trial_state');
     } catch (error) {
       console.error('[SettingsContext] Error checking trial expiration:', error);
     }
