@@ -99,6 +99,7 @@ export default function AuthLoadingScreen({ navigation }) {
                   activeSubscription.originalTransactionIdentifierIOS ||
                   activeSubscription.originalTransactionId ||
                   null,
+                analytics_source: 'app_launch',
               });
             } catch {}
           } else {

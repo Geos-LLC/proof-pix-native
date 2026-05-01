@@ -114,6 +114,9 @@ const _isFreeIntroOffer = (intro) => {
  * different field shapes across major versions and has further split it
  * between StoreKit 1 and StoreKit 2 in v14. We probe every known shape so
  * a single library rename doesn't silently disable trial classification.
+ * Returns 'unknown' (not false) when no shape matched, so `_classifyTransaction`
+ * can lean trial on first-txn for expected-trial products instead of silently
+ * misclassifying as paid.
  *
  * Android: any subscription offer phase with `priceAmountMicros: 0` that is
  * not the recurring phase (recurrenceMode !== 1).
@@ -154,7 +157,9 @@ const _extractHasTrial = (product) => {
           });
         } catch {}
       }
-      return false;
+      // Distinguish "no trial offered" from "couldn't tell" so the
+      // classifier can apply the first-txn fallback.
+      return 'unknown';
     }
     const offers = product.subscriptionOfferDetailsAndroid || [];
     for (const offer of offers) {
@@ -169,6 +174,19 @@ const _extractHasTrial = (product) => {
   } catch {}
   return false;
 };
+
+// Products that ship a free trial in App Store Connect / Play Console. Used as
+// the fallback signal when iOS RNIap doesn't surface intro-offer metadata in
+// any known shape — we lean trial for a first transaction rather than
+// silently misclassifying as paid.
+const _EXPECTED_TRIAL_PRODUCT_IDS = new Set([
+  IOS_PRODUCTS.PRO_MONTHLY,
+  IOS_PRODUCTS.BUSINESS_MONTHLY,
+  IOS_PRODUCTS.ENTERPRISE_MONTHLY,
+  ANDROID_PRODUCTS.PRO_MONTHLY,
+  ANDROID_PRODUCTS.BUSINESS_MONTHLY,
+  ANDROID_PRODUCTS.ENTERPRISE_MONTHLY,
+]);
 
 /**
  * Extract numeric price and currency code from an RNIap v14 product object.
@@ -224,11 +242,14 @@ const _cacheProductPrices = (products) => {
  */
 const _classifyTransaction = (purchase, productId) => {
   const isSeat = (productId || '').includes('seat');
-  const hasTrialOffer = !!_productHasTrialCache[productId];
+  const cached = _productHasTrialCache[productId];
+  const hasTrialOffer = cached === true;
+  const trialUnknown = cached === 'unknown';
   const cacheKnowsProduct = Object.prototype.hasOwnProperty.call(
     _productHasTrialCache,
     productId
   );
+  const expectsTrial = _EXPECTED_TRIAL_PRODUCT_IDS.has(productId);
   const original =
     purchase?.originalTransactionIdentifierIOS ||
     purchase?.originalTransactionId ||
@@ -237,25 +258,46 @@ const _classifyTransaction = (purchase, productId) => {
   const isFirstTxn = !original || original === transactionId;
 
   let result;
+  let classifierReason;
   if (isSeat) {
     result = 'paid'; // seat add-ons never have a trial offer
-  } else if (!hasTrialOffer) {
-    result = 'paid';
-  } else if (Platform.OS === 'ios') {
+    classifierReason = 'seat';
+  } else if (hasTrialOffer && Platform.OS === 'ios') {
     result = isFirstTxn ? 'trial' : 'paid';
-  } else {
+    classifierReason = 'ios_known_trial';
+  } else if (hasTrialOffer) {
     // Android: when a product offers a free phase, Google grants it on the
     // first qualifying purchase. Without server validation we can't tell a
     // first-time buyer from a returning one, so we conservatively treat any
     // first-acknowledgement of a trial-eligible product as a trial start.
     // Subsequent purchases (e.g. resubscribes) will be deduped by purchaseToken.
     result = 'trial';
+    classifierReason = 'android_known_trial';
+  } else if (
+    Platform.OS === 'ios' &&
+    trialUnknown &&
+    isFirstTxn &&
+    expectsTrial
+  ) {
+    // RNIap didn't surface intro-offer metadata in any known shape, but this
+    // is a first-time transaction on a product configured with a trial in
+    // App Store Connect — lean trial rather than silently misreporting paid.
+    // Persistent dedup on originalTransactionIdentifierIOS still prevents
+    // re-firing on renewals.
+    result = 'trial';
+    classifierReason = 'ios_unknown_first_txn_fallback';
+  } else {
+    result = 'paid';
+    classifierReason = trialUnknown ? 'unknown_not_first_txn' : 'no_trial_offer';
   }
 
   console.log('[iap-debug] transaction classified', {
     result,
+    classifierReason,
     productId,
     hasTrialOffer,
+    trialUnknown,
+    expectsTrial,
     cacheKnowsProduct,
     cachedProductIds: Object.keys(_productHasTrialCache),
     transactionId,
@@ -323,6 +365,7 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
     is_seat: isSeat,
     price: priceInfo?.price ?? null,
     currency: priceInfo?.currency ?? null,
+    analytics_source: 'purchase_success',
   };
 
   // Detect post-trial conversion: if the device previously fired trial_expired
@@ -441,6 +484,7 @@ const _logUpgradeAnalytics = async (purchase, productId, fromPlan, entryPoint = 
       original_transaction_id: originalTxId,
       price: priceInfo?.price ?? null,
       currency: priceInfo?.currency ?? null,
+      analytics_source: 'upgrade',
     });
   } catch (e) {
     console.warn('[IAP] upgrade analytics log failed:', e?.message);

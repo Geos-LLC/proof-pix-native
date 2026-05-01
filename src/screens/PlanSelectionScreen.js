@@ -145,8 +145,20 @@ export default function PlanSelectionScreen({ navigation, route }) {
   };
 
   const handleSelectPlan = async (plan) => {
-    console.log('[analytics-debug] plan_selected fired', { selectedPlan: plan });
-    logPlanSelected(plan, false);
+    // Real trial eligibility from store metadata. Starter (free tier) is
+    // never a trial; for paid plans the store-side intro offer flag is the
+    // source of truth. Hardcoding `false` here was hiding most trial starts
+    // from the GA4 funnel (`plan_selected → trial_started`).
+    const productHasTrialFromCache =
+      plan !== 'starter' && !!trialInfo?.[plan]?.hasTrial;
+    const isTrial = productHasTrialFromCache;
+    console.log('[analytics-debug] plan_selected source data', {
+      plan,
+      productHasTrialFromCache,
+      trialInfoForPlan: trialInfo?.[plan] || null,
+      isTrial,
+    });
+    logPlanSelected(plan, isTrial);
 
     if (plan === 'starter') {
       // If the user already has an active Apple/Google subscription, tapping
@@ -187,6 +199,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
           plan_id: 'starter',
           platform: Platform.OS,
           entry_point: 'paywall',
+          analytics_source: 'free_plan',
         });
       } catch {}
       await proceedWithPlanSelection(plan);
@@ -347,6 +360,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
               activePurchase.originalTransactionIdentifierIOS ||
               activePurchase.originalTransactionId ||
               null,
+            analytics_source: 'restore',
           });
         } catch {}
 

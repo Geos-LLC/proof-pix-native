@@ -613,6 +613,10 @@ const _buildSubscriptionParams = async (payload = {}) => {
     is_seat: !!payload.is_seat,
     price: payload.price ?? null,
     currency: payload.currency || null,
+    // Provenance tag so GA4 can prove which path a subscription event came
+    // from (purchase_success | free_plan | app_launch | restore | upgrade |
+    // trial_expiration). Helps audit funnel inflation without grepping code.
+    analytics_source: payload.analytics_source || null,
     // Funnel attribution: if this subscription started after a trial expired,
     // these tag the conversion so GA4 can build "trial → paid" funnels and
     // detect cross-tier switches (e.g. trialed Pro, converted to Business).
@@ -846,6 +850,7 @@ export const logTrialStarted = async (planOrPayload, extra = {}) => {
     days_remaining: payload.days_remaining ?? null,
     price: payload.price ?? null,
     currency: payload.currency || null,
+    analytics_source: payload.analytics_source || null,
     timestamp: Date.now(),
   });
   console.log('[firebase-debug] logEvent trial_started called', {

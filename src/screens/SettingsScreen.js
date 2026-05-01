@@ -1813,6 +1813,7 @@ export default function SettingsScreen({ navigation, route }) {
               active.originalTransactionIdentifierIOS ||
               active.originalTransactionId ||
               null,
+            analytics_source: 'restore',
           });
         } catch {}
       }
