@@ -90,8 +90,17 @@ export default function PlanSelectionScreen({ navigation, route }) {
         if (forceUpgradeMode) {
           if (isMounted.current) setTrialAvailable(false);
         } else {
-          const available = await canStartTrial();
-          if (isMounted.current) setTrialAvailable(available);
+          // Three-layer gate: the legacy in-app trial flag alone misses users
+          // who started a trial via StoreKit (Apple writes that to the Apple
+          // ID, not AsyncStorage), and users restored from a prior install on
+          // a paid plan. Without all three signals, the paywall lit up
+          // "Start Free Trial" for users Apple won't actually grant a trial.
+          const [legacyAvailable, hasActive] = await Promise.all([
+            canStartTrial(),
+            hasActiveIAPSubscription().catch(() => false),
+          ]);
+          const trialOK = legacyAvailable && !hasActive && userPlan === 'starter';
+          if (isMounted.current) setTrialAvailable(trialOK);
         }
 
         try {
