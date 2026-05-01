@@ -1522,6 +1522,22 @@ export const getSubscriptionPrices = async () => {
         }
       }
 
+      // iOS unknown-shape fallback: probe didn't surface an intro offer in
+      // any known field shape, but the product is configured with a trial in
+      // App Store Connect. Default hasTrial:true so plan_selected.is_trial,
+      // the paywall UI, and the post-purchase classifier agree (the classifier
+      // already uses `ios_unknown_first_txn_fallback` for the same case).
+      // Apple's StoreKit dialog at checkout is the authoritative source for
+      // whether THIS specific user actually receives the trial.
+      if (
+        Platform.OS === 'ios' &&
+        !trialOffers[product.id] &&
+        _EXPECTED_TRIAL_PRODUCT_IDS.has(product.id) &&
+        _productHasTrialCache[product.id] === 'unknown'
+      ) {
+        trialOffers[product.id] = { hasTrial: true, trialDays: 7 };
+      }
+
       // Default: no trial detected
       if (!trialOffers[product.id]) {
         trialOffers[product.id] = { hasTrial: false, trialDays: 0 };
