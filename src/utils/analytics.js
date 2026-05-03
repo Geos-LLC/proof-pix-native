@@ -15,10 +15,14 @@ try {
   console.warn('[Analytics] Analytics functions will be no-ops. Rebuild app to enable Firebase.');
 }
 
-// Meta (Facebook) SDK imports
+// Meta (Facebook) SDK imports — note: metaLogPurchase is intentionally NOT
+// imported. Real-money `purchase` events are emitted server-side by the Apple
+// webhook (proof-pix-proxy) via GA4 Measurement Protocol; the client must not
+// fire `purchase` (Firebase) or Meta `Purchase` to avoid double-counting and
+// trial-as-paid inflation. Renewals never reach the client at all.
 import {
   metaLogPhotoCapture, metaLogPhotoSave, metaLogPhotoExport, metaLogSignIn,
-  metaLogAccountCreated, metaLogTrialEvent, metaLogPlanChanged, metaLogPurchase,
+  metaLogAccountCreated, metaLogTrialEvent, metaLogPlanChanged,
   metaLogSubscriptionStart,
   metaLogTeamInvitesCreated, metaLogTeamMemberJoined, metaLogReferralEvent,
   metaLogCloudAccountConnection, metaLogPhotoUpload, metaLogFeatureGateShown,
@@ -573,19 +577,16 @@ export const logFeatureGateAction = (featureKey, userPlan, screen, action) => {
 
 // Subscriptions & purchases ------------------------------------------------
 //
-// TODO(server-revenue): the client never knows for sure whether Apple/Google
-// actually charged the user. Free-trial starts and paid renewals look very
-// similar from a StoreKit / Play Billing client perspective, and renewals
-// don't fire `purchaseUpdatedListener` at all once the original transaction
-// has been finished. To get accurate revenue we need:
-//   1. Apple App Store Server Notifications V2 webhook on the proxy server
-//   2. Google Real-Time Developer Notifications (RTDN) webhook on the proxy
-//   3. Server-side receipt validation that decides paid vs trial vs renewal
-//   4. Forward `purchase` / `subscription_active` / `subscription_cancelled`
-//      to GA4 via the Measurement Protocol with the resolved revenue.
-// Until that is in place, `purchase` MUST NOT be emitted from the client for
-// trial starts. `logPurchaseCompleted` is gated on `source` precisely so the
-// only legitimate caller, today, is the future server-side pipeline.
+// The client NEVER emits a GA4 `purchase` or Meta `Purchase` event. The only
+// revenue source of truth is the Apple App Store Server Notifications V2
+// webhook in proof-pix-proxy, which classifies paid vs trial server-side and
+// forwards confirmed paid events to GA4 via the Measurement Protocol.
+// Android Real-Time Developer Notifications (RTDN) is not yet wired — when it
+// lands it will follow the same model. Do not reintroduce a client-side
+// `logPurchaseCompleted` helper: free-trial starts and paid renewals are
+// indistinguishable from a StoreKit/Play Billing client perspective, and
+// renewals never fire `purchaseUpdatedListener` once the original transaction
+// is finished.
 
 // Trial-expired flag key — read by logSubscriptionStarted to emit trial_converted
 const TRIAL_EXPIRED_SUBSCRIBE_FLAG = '@trial_expired_logged';
@@ -644,9 +645,8 @@ export const logSubscriptionStarted = async (payload = {}) => {
   logEvent('subscription_started', params);
 
   // Meta (Facebook) SDK: fire standard Subscribe event for ads optimization.
-  // We intentionally DO NOT fire metaLogPurchase here — Meta `Purchase` is now
-  // emitted only via logPurchaseCompleted, when we know money actually changed
-  // hands.
+  // We do NOT fire Meta `Purchase` from the client at all — see top-of-section
+  // comment. Real revenue events come from the server webhook only.
   metaLogSubscriptionStart(params.plan_id, params.platform);
 
   // Derived event: if trial_expired previously fired, emit trial_converted
@@ -665,57 +665,6 @@ export const logSubscriptionStarted = async (payload = {}) => {
   } catch {
     // non-critical
   }
-};
-
-/**
- * Real money was charged. This is the ONLY function in the app that may emit
- * the GA4 standard `purchase` event. Free-trial starts must not call this.
- *
- * Source values:
- *   - 'server_validation' — backend has validated an Apple/Google receipt and
- *     confirmed a paid period began (intro offer ended OR plan with no trial).
- *   - 'client_confirmed_paid' — client-side confirmation that the user is on a
- *     paid (non-trial) period (rare; reserved for plans without trials).
- */
-export const logPurchaseCompleted = async (payload = {}) => {
-  if (__DEV__) console.log('[Analytics] purchase:', payload);
-
-  const value = typeof payload.value === 'number' ? payload.value : null;
-  if (value == null || value <= 0) {
-    if (__DEV__) console.log('[Analytics] purchase skipped — non-positive value');
-    return;
-  }
-
-  const planId = payload.plan_id || 'unknown';
-  const platform = payload.platform || Platform.OS;
-  const provider =
-    payload.provider ||
-    (platform === 'ios' ? 'apple' : platform === 'android' ? 'google' : 'unknown');
-  const currency = payload.currency || 'USD';
-
-  const params = await mergeAttributionContext({
-    value,
-    currency,
-    transaction_id: payload.transaction_id || null,
-    original_transaction_id: payload.original_transaction_id || null,
-    plan_id: planId,
-    product_id: payload.product_id || planId,
-    platform,
-    provider,
-    source: payload.source || 'unknown',
-    items: [{
-      item_id: payload.product_id || planId,
-      item_name: planId,
-      item_category: payload.is_seat ? 'seat' : 'subscription',
-      price: value,
-      quantity: 1,
-    }],
-    timestamp: Date.now(),
-  });
-  logEvent('purchase', params);
-
-  // Mirror to Meta SDK as standard Purchase
-  metaLogPurchase(value, currency, planId);
 };
 
 /**
@@ -986,7 +935,6 @@ export default {
   logSubscriptionActive,
   logSubscriptionUpgraded,
   logSubscriptionCancelledDetected,
-  logPurchaseCompleted,
   logTeamInvitesCreated,
   logTeamMemberJoined,
   logReferralEvent,
