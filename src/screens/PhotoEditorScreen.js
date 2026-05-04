@@ -25,6 +25,13 @@ import { FONTS } from '../constants/fonts';
 import PhotoLabel from '../components/PhotoLabel';
 import { logBeforeAfterCreated, logCollageCompleted, logJobCompleted, logPhotoExport } from '../utils/analytics';
 import PhotoWatermark from '../components/PhotoWatermark';
+import SoftTrialBadge from '../components/SoftTrialBadge';
+import { canExportNow, recordExport, logBlocked } from '../services/softTrialService';
+import {
+  SOFT_TRIAL_LOW_RES_MAX_DIM,
+  SOFT_TRIAL_QUALITY,
+  PAYWALL_TRIGGERS,
+} from '../constants/softTrial';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import { useTranslation } from 'react-i18next';
 
@@ -111,7 +118,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
   const photoScrollRef = useRef(null);
   const { t } = useTranslation();
   const { getUnpairedBeforePhotos, getBeforePhotos, getAfterPhotos, activeProjectId, deletePhoto } = usePhotos();
-  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms } = useSettings();
+  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms, softTrialActive, softTrialRemaining, refreshSoftTrial, userPlan } = useSettings();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { width, height } = Dimensions.get('window');
   
@@ -521,16 +528,43 @@ export default function PhotoEditorScreen({ route, navigation }) {
 
   const shareCombinedPhoto = async () => {
     try {
+      // Soft-trial export gate: only on free plan. If the soft trial is
+      // exhausted, route to the contextual paywall and abort the share.
+      if (userPlan === 'starter') {
+        const gate = await canExportNow();
+        if (!gate.allowed) {
+          await logBlocked(gate.reason);
+          navigation.navigate('PlanSelection', { trigger: PAYWALL_TRIGGERS.EXPORT_LIMIT });
+          return;
+        }
+      }
+
       setSaving(true);
 
       // Capture the combined view at full template resolution (not preview size)
       // This ensures Instagram posts/reels get a properly sized image (e.g. 1080x1080)
       // instead of a small preview that gets cropped
       const config = getTemplateConfig(templateType);
-      const captureOpts = { format: 'jpg', quality: 0.9 };
+      // Soft-trial exports are downscaled and re-compressed to keep paid
+      // resolution behind the paywall.
+      const captureOpts = softTrialActive
+        ? { format: 'jpg', quality: SOFT_TRIAL_QUALITY }
+        : { format: 'jpg', quality: 0.9 };
       if (config?.width && config?.height && !templateType.startsWith('original-')) {
-        captureOpts.width = config.width;
-        captureOpts.height = config.height;
+        if (softTrialActive) {
+          const longest = Math.max(config.width, config.height);
+          if (longest > SOFT_TRIAL_LOW_RES_MAX_DIM) {
+            const ratio = SOFT_TRIAL_LOW_RES_MAX_DIM / longest;
+            captureOpts.width = Math.round(config.width * ratio);
+            captureOpts.height = Math.round(config.height * ratio);
+          } else {
+            captureOpts.width = config.width;
+            captureOpts.height = config.height;
+          }
+        } else {
+          captureOpts.width = config.width;
+          captureOpts.height = config.height;
+        }
       }
       const uri = await captureRef(combinedRef, captureOpts);
 
@@ -558,6 +592,17 @@ export default function PhotoEditorScreen({ route, navigation }) {
       const timeTotal = currentPhotoSet.before.timestamp ? Math.round((Date.now() - currentPhotoSet.before.timestamp) / 1000) : null;
       logPhotoExport('share', sourceType, projectId);
       logJobCompleted(projectId, timeTotal, sourceType);
+
+      // Soft-trial: increment counter on successful share. If this hits the
+      // limit, recordExport flips soft_trial_used and fires
+      // soft_trial_completed. Refresh context-side state so the counter UI
+      // and forced watermark react immediately.
+      if (userPlan === 'starter') {
+        try {
+          await recordExport();
+          await refreshSoftTrial();
+        } catch {}
+      }
 
       // Clean up temporary file after sharing
       try {
@@ -891,6 +936,8 @@ export default function PhotoEditorScreen({ route, navigation }) {
         </ScrollView>
       </View>
 
+      <SoftTrialBadge navigation={navigation} variant="compact" style={styles.editorBadge} />
+
       <TouchableOpacity
         style={[styles.shareButton, saving && styles.shareButtonDisabled]}
         onPress={shareCombinedPhoto}
@@ -1106,6 +1153,10 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 12,
     alignItems: 'center'
+  },
+  editorBadge: {
+    alignSelf: 'center',
+    marginTop: 8,
   },
   shareButtonDisabled: {
     opacity: 0.5

@@ -45,6 +45,8 @@ import { canStartTrial, isTrialExpired } from '../services/trialService';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
 import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted, logSubscriptionRestored } from '../utils/analytics';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
+import { getSoftTrialState, ensureDeviceId } from '../services/softTrialService';
+import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 
 const { width } = Dimensions.get('window');
 
@@ -55,6 +57,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
 
   const forceUpgradeMode = route?.params?.mode === 'upgrade';
+  const trigger = route?.params?.trigger || null;
 
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
   // Default to false so returning/expired/active-trial users never see a flash
@@ -83,7 +86,22 @@ export default function PlanSelectionScreen({ navigation, route }) {
   useEffect(() => {
     console.log('[PlanSelection] 🔵 Component mounted, isMounted set to true');
     isMounted.current = true;
-    logPaywallView();
+    (async () => {
+      try {
+        const [s, deviceId] = await Promise.all([
+          getSoftTrialState(),
+          ensureDeviceId(),
+        ]);
+        logPaywallView({
+          trigger,
+          trial_type: 'apple',
+          exports_used: s?.exports_used ?? null,
+          device_id: deviceId || null,
+        });
+      } catch {
+        logPaywallView({ trigger });
+      }
+    })();
 
     const checkTrialAvailability = async () => {
       try {
@@ -431,6 +449,28 @@ export default function PlanSelectionScreen({ navigation, route }) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Contextual trigger banner — shown when paywall is opened from a
+            specific feature or limit (e.g. export_limit). Tells the user
+            exactly what they unlock by upgrading. */}
+        {trigger ? (
+          <View style={styles.triggerBanner}>
+            <Text style={styles.triggerBannerTitle}>
+              {trigger === PAYWALL_TRIGGERS.EXPORT_LIMIT
+                ? "You've used your free exports"
+                : trigger === PAYWALL_TRIGGERS.WATERMARK
+                  ? 'Remove the watermark'
+                  : trigger === PAYWALL_TRIGGERS.HD_EXPORT
+                    ? 'Export in HD'
+                    : trigger === PAYWALL_TRIGGERS.UNLIMITED
+                      ? 'Unlimited projects & exports'
+                      : 'Upgrade to keep going'}
+            </Text>
+            <Text style={styles.triggerBannerSubtitle}>
+              Remove watermark {'•'} Export in HD {'•'} Unlimited projects
+            </Text>
+          </View>
+        ) : null}
+
         {/* Trial Banner */}
         {trialAvailable && (
           <View style={styles.trialBannerWrapper}>
@@ -500,8 +540,11 @@ export default function PlanSelectionScreen({ navigation, route }) {
                   activeOpacity={0.8}
                 >
                   <Text style={styles.androidCardCTAText}>
-                    {trialAvailable ? `Start ${trialDays}-day free trial` : 'Subscribe'}
+                    {trialAvailable ? 'Continue — $0 today' : 'Subscribe'}
                   </Text>
+                  {trialAvailable && (
+                    <Text style={styles.androidCardCTASubtext}>Cancel anytime</Text>
+                  )}
                 </TouchableOpacity>
                 <Text style={styles.androidCardDisclosure}>
                   {trialAvailable && prices.pro
@@ -523,8 +566,11 @@ export default function PlanSelectionScreen({ navigation, route }) {
           activeOpacity={0.8}
         >
           <Text style={styles.primaryCTAText}>
-            {trialAvailable ? `Start My ${trialDays}-Day Free Trial` : 'Subscribe'}
+            {trialAvailable ? 'Continue — $0 today' : 'Subscribe'}
           </Text>
+          {trialAvailable && (
+            <Text style={styles.primaryCTASubtext}>Cancel anytime</Text>
+          )}
         </TouchableOpacity>
         )}
 
@@ -533,7 +579,9 @@ export default function PlanSelectionScreen({ navigation, route }) {
           <>
         {/* Risk reversal text */}
         <Text style={styles.riskReversalText}>
-          No charges today {'\u2022'} Cancel anytime
+          {trialAvailable
+            ? 'No charge today. Apple will remind you before billing.'
+            : `No charges today ${'\u2022'} Cancel anytime`}
         </Text>
 
         {/* Trust element */}
@@ -1030,6 +1078,51 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     color: '#FFFFFF',
     textAlign: 'center',
+  },
+  primaryCTASubtext: {
+    fontSize: 12,
+    fontWeight: '500',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    marginTop: 2,
+  },
+  triggerBanner: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#F2C31B',
+  },
+  triggerBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  triggerBannerSubtitle: {
+    fontSize: 12,
+    fontWeight: '400',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#000000',
+    textAlign: 'center',
+    opacity: 0.7,
+  },
+  androidCardCTASubtext: {
+    fontSize: 11,
+    fontWeight: '500',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    opacity: 0.85,
+    marginTop: 2,
   },
   riskReversalText: {
     fontSize: 13,

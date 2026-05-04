@@ -77,6 +77,8 @@ import {
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 import { FEATURES } from '../constants/featurePermissions';
+import { canExportNow, recordExport, logBlocked } from '../services/softTrialService';
+import { PAYWALL_TRIGGERS, SOFT_TRIAL_LOW_RES_MAX_DIM, SOFT_TRIAL_QUALITY } from '../constants/softTrial';
 
 const COLORS = {
   BACKGROUND: '#F6F8FA',
@@ -153,6 +155,8 @@ export default function GalleryScreen({ navigation, route }) {
     cleaningServiceEnabled,
     getRooms,
     updateUserPlan,
+    softTrialActive,
+    refreshSoftTrial,
   } = useSettings();
   
   const insets = useSafeAreaInsets();
@@ -424,10 +428,20 @@ export default function GalleryScreen({ navigation, route }) {
   ).current;
 
   const shareIndividualPhoto = async (photo) => {
-    // Free-plan share rate limit: rolling 24h window from last share. Pro and
-    // above bypass via FEATURES.UNLIMITED_SHARING.
-    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
-    if (!allowed) return;
+    // Soft trial first: while active, free users get N exports without the
+    // 24h cooldown. After the soft trial is consumed, the existing 24h
+    // rate-limit applies again.
+    if (effectivePlan === 'starter' && softTrialActive) {
+      const gate = await canExportNow();
+      if (!gate.allowed) {
+        await logBlocked(gate.reason);
+        navigation.navigate('PlanSelection', { trigger: PAYWALL_TRIGGERS.EXPORT_LIMIT });
+        return;
+      }
+    } else {
+      const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+      if (!allowed) return;
+    }
     try {
       setSharing(true);
 
@@ -453,7 +467,11 @@ export default function GalleryScreen({ navigation, route }) {
         mimeType: 'image/jpeg',
         dialogTitle: `${photo.mode === 'before' ? 'Before' : 'After'} Photo - ${photo.name}`,
       });
-      await recordShare();
+      if (effectivePlan === 'starter' && softTrialActive) {
+        try { await recordExport(); await refreshSoftTrial(); } catch {}
+      } else {
+        await recordShare();
+      }
 
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
@@ -473,15 +491,23 @@ export default function GalleryScreen({ navigation, route }) {
   };
 
   const shareCombinedPhoto = async (photoSet) => {
-    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
-    if (!allowed) return;
+    if (effectivePlan === 'starter' && softTrialActive) {
+      const gate = await canExportNow();
+      if (!gate.allowed) {
+        await logBlocked(gate.reason);
+        navigation.navigate('PlanSelection', { trigger: PAYWALL_TRIGGERS.EXPORT_LIMIT });
+        return;
+      }
+    } else {
+      const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+      if (!allowed) return;
+    }
     try {
       setSharing(true);
 
-      const capturedUri = await captureRef(combinedCaptureRef, {
-        format: 'jpg',
-        quality: 0.95
-      });
+      const capturedUri = await captureRef(combinedCaptureRef, softTrialActive
+        ? { format: 'jpg', quality: SOFT_TRIAL_QUALITY, width: SOFT_TRIAL_LOW_RES_MAX_DIM, height: SOFT_TRIAL_LOW_RES_MAX_DIM }
+        : { format: 'jpg', quality: 0.95 });
       
       const tempFileName = `${photoSet.room}_${photoSet.name}_combined_${Date.now()}.jpg`;
       const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
@@ -491,7 +517,11 @@ export default function GalleryScreen({ navigation, route }) {
         mimeType: 'image/jpeg',
         dialogTitle: `Before/After - ${photoSet.name}`,
       });
-      await recordShare();
+      if (effectivePlan === 'starter' && softTrialActive) {
+        try { await recordExport(); await refreshSoftTrial(); } catch {}
+      } else {
+        await recordShare();
+      }
 
       try {
         const fileInfo = await FileSystem.getInfoAsync(tempUri);
@@ -512,8 +542,17 @@ export default function GalleryScreen({ navigation, route }) {
 
   const shareFullScreenCombined = async () => {
     if (!fullScreenPhotoSet) return;
-    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
-    if (!allowed) return;
+    if (effectivePlan === 'starter' && softTrialActive) {
+      const gate = await canExportNow();
+      if (!gate.allowed) {
+        await logBlocked(gate.reason);
+        navigation.navigate('PlanSelection', { trigger: PAYWALL_TRIGGERS.EXPORT_LIMIT });
+        return;
+      }
+    } else {
+      const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+      if (!allowed) return;
+    }
     try {
       setSharing(true);
       let shareUri = null;
@@ -534,7 +573,9 @@ export default function GalleryScreen({ navigation, route }) {
             Image.getSize(uri, (w, h) => resolve({ w, h }), reject);
           });
           const bSize = await getImageSize(beforePhoto.uri);
-          const squareSize = Math.min(Math.max(bSize.w, 2048), 4096);
+          const squareSize = softTrialActive
+            ? SOFT_TRIAL_LOW_RES_MAX_DIM
+            : Math.min(Math.max(bSize.w, 2048), 4096);
 
           const dims = isStack
             ? { width: squareSize, height: squareSize, topH: Math.round(squareSize / 2), bottomH: squareSize - Math.round(squareSize / 2) }
@@ -587,7 +628,9 @@ export default function GalleryScreen({ navigation, route }) {
           console.warn('[GalleryScreen] Re-composite failed, falling back to captureRef:', compositeErr);
           // Fallback to captureRef if native composite fails
           if (fullScreenCombinedRef.current) {
-            shareUri = await captureRef(fullScreenCombinedRef, { format: 'jpg', quality: 0.95 });
+            shareUri = await captureRef(fullScreenCombinedRef, softTrialActive
+              ? { format: 'jpg', quality: SOFT_TRIAL_QUALITY, width: SOFT_TRIAL_LOW_RES_MAX_DIM, height: SOFT_TRIAL_LOW_RES_MAX_DIM }
+              : { format: 'jpg', quality: 0.95 });
           }
         }
       }
@@ -608,7 +651,11 @@ export default function GalleryScreen({ navigation, route }) {
         mimeType: 'image/jpeg',
         dialogTitle: `Before/After - ${fullScreenPhotoSet.before.name}`,
       });
-      await recordShare();
+      if (effectivePlan === 'starter' && softTrialActive) {
+        try { await recordExport(); await refreshSoftTrial(); } catch {}
+      } else {
+        await recordShare();
+      }
       const sourceType = fullScreenPhotoSet.before.sourceType || 'camera';
       const projectId = fullScreenPhotoSet.before.projectId || null;
       const timeTotal = fullScreenPhotoSet.before.timestamp ? Math.round((Date.now() - fullScreenPhotoSet.before.timestamp) / 1000) : null;

@@ -1,6 +1,6 @@
 {
   "name": "proof-pix-native",
-  "version": "1.5.4",
+  "version": "1.5.19",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -63,6 +63,7 @@
     "expo-notifications": "~0.32.16",
     "expo-random": "^14.0.1",
     "expo-screen-orientation": "~9.0.7",
+    "expo-secure-store": "~15.0.7",
     "expo-sharing": "~14.0.8",
     "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.8",

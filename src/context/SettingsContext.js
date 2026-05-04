@@ -1,7 +1,9 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_AFTER_LABEL_POSITION, DEFAULT_WATERMARK_POSITION } from '../constants/rooms';
+import { isSoftTrialActive, getRemainingExports } from '../services/softTrialService';
+import { SOFT_TRIAL_EXPORT_LIMIT } from '../constants/softTrial';
 
 const SETTINGS_KEY = 'app-settings';
 const CUSTOM_ROOMS_KEY = 'custom-rooms';
@@ -85,12 +87,32 @@ export const SettingsProvider = ({ children }) => {
   const [shutterSoundEnabled, setShutterSoundEnabled] = useState(Platform.OS !== 'android');
   const [loading, setLoading] = useState(true);
 
+  // Soft trial state mirrored into context for synchronous reads in renderers.
+  // Refreshed on mount and via `refreshSoftTrial()` after each export.
+  const [softTrialActive, setSoftTrialActive] = useState(false);
+  const [softTrialRemaining, setSoftTrialRemaining] = useState(SOFT_TRIAL_EXPORT_LIMIT);
+
+  const refreshSoftTrial = useCallback(async () => {
+    try {
+      const [active, remaining] = await Promise.all([
+        isSoftTrialActive(),
+        getRemainingExports(),
+      ]);
+      setSoftTrialActive(active);
+      setSoftTrialRemaining(remaining);
+    } catch (e) {
+      // non-critical
+    }
+  }, []);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
     // Check trial expiration on app startup
     checkTrialExpiration();
-  }, []);
+    // Pull initial soft trial state (initSoftTrial() runs in AuthLoadingScreen)
+    refreshSoftTrial();
+  }, [refreshSoftTrial]);
 
   // Detect trial expiry by comparing previous-session state against current
   // entitlement. We fire `trial_expired` only when:
@@ -583,13 +605,22 @@ export const SettingsProvider = ({ children }) => {
     }
   };
 
-  const shouldShowWatermark = showWatermark && (customWatermarkEnabled ? Boolean(watermarkText?.trim()) : true);
+  // Watermark is forced on for the whole soft trial: even if the user toggles
+  // it off, free exports must carry branding. Once the trial is consumed
+  // (limit reached or Apple/Google trial started), this falls back to the
+  // user's setting.
+  const shouldShowWatermark =
+    softTrialActive ||
+    (showWatermark && (customWatermarkEnabled ? Boolean(watermarkText?.trim()) : true));
 
   const value = {
     showLabels,
     toggleLabels,
     showWatermark,
     shouldShowWatermark,
+    softTrialActive,
+    softTrialRemaining,
+    refreshSoftTrial,
     customWatermarkEnabled,
     watermarkText,
     watermarkLink,

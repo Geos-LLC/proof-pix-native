@@ -8,6 +8,7 @@ import { useAdmin } from '../context/AdminContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { logAdminReferralConversion, extractAndSaveUTMParams, logSubscriptionActive } from '../utils/analytics';
+import { initSoftTrial } from '../services/softTrialService';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -120,6 +121,15 @@ export default function AuthLoadingScreen({ navigation }) {
       autoRestoreSubscriptions();
     }
   }, [settingsLoading, userPlan]);
+
+  // Initialize soft trial state on every launch. Idempotent — first run
+  // writes initial state and fires `soft_trial_started`; subsequent runs are
+  // a no-op. Runs in parallel with referral init.
+  useEffect(() => {
+    initSoftTrial().catch((e) =>
+      console.warn('[AuthLoading] soft trial init failed:', e?.message)
+    );
+  }, []);
 
   // Auto-register referral code on server & check for pending rewards
   useEffect(() => {

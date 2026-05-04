@@ -745,8 +745,52 @@ export const logOnboardingCompleted = () => {
 
 // Paywall ---------------------------------------------------------------------
 
-export const logPaywallView = () => {
-  logEvent('paywall_view', { timestamp: Date.now() });
+export const logPaywallView = (extra = {}) => {
+  logEvent('paywall_view', {
+    trigger: extra.trigger || null,
+    trial_type: extra.trial_type || 'apple',
+    exports_used: extra.exports_used ?? null,
+    device_id: extra.device_id || null,
+    timestamp: Date.now(),
+  });
+};
+
+// Soft Trial events --------------------------------------------------------
+
+export const logSoftTrialStarted = (payload = {}) => {
+  logEvent('soft_trial_started', {
+    trial_type: 'soft',
+    device_id: payload.device_id || null,
+    timestamp: Date.now(),
+  });
+};
+
+export const logSoftTrialCompleted = (payload = {}) => {
+  logEvent('soft_trial_completed', {
+    trial_type: 'soft',
+    exports_used: payload.exports_used ?? null,
+    device_id: payload.device_id || null,
+    timestamp: Date.now(),
+  });
+};
+
+export const logSoftTrialBlocked = (payload = {}) => {
+  logEvent('soft_trial_blocked', {
+    trial_type: 'soft',
+    reason: payload.reason || 'unknown',
+    exports_used: payload.exports_used ?? null,
+    device_id: payload.device_id || null,
+    timestamp: Date.now(),
+  });
+};
+
+export const logFreeExportUsed = (payload = {}) => {
+  logEvent('free_export_used', {
+    trial_type: 'soft',
+    exports_used: payload.exports_used ?? null,
+    remaining: payload.remaining ?? null,
+    timestamp: Date.now(),
+  });
 };
 
 export const logPlanSelected = (plan, useTrial = false) => {

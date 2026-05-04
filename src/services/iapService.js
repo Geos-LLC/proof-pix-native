@@ -412,6 +412,13 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
           started_at: Date.now(),
         }));
       } catch {}
+      // Soft trial: once the store-backed trial starts, the soft trial is
+      // permanently consumed for this device. Prevents users who only
+      // partially used the soft trial from getting both.
+      try {
+        const { markSoftTrialUsed } = await import('./softTrialService');
+        await markSoftTrialUsed();
+      } catch {}
     } else {
       console.log('[analytics-debug] NOT firing trial_started (paid path)', {
         plan_id: baseParams.plan_id,

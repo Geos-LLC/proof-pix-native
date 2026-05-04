@@ -43,6 +43,7 @@ import * as ExpoLocation from 'expo-location';
 // IAP handled by PlanSelectionScreen
 import Constants from 'expo-constants';
 import UnfinishedJobBanner from '../components/UnfinishedJobBanner';
+import SoftTrialBadge from '../components/SoftTrialBadge';
 import QualificationPromptModal, { hasCompletedQualification } from '../components/QualificationPromptModal';
 import { logEvent } from '../utils/analytics';
 
@@ -1354,6 +1355,8 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </View>
+
+      <SoftTrialBadge navigation={navigation} variant="banner" />
 
       <View style={styles.projectNameContainer}>
         <View style={styles.projectInfoRow}>

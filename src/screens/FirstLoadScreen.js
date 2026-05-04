@@ -206,14 +206,14 @@ export default function FirstLoadScreen({ navigation, route }) {
       setReferralModalVisible(true);
     } else {
       logOnboardingCompleted();
-      navigation.navigate('PlanSelection');
+      navigation.replace('Home');
     }
   };
 
   const handleContinueWithoutReferral = () => {
     setReferralModalVisible(false);
     logOnboardingCompleted();
-    navigation.navigate('PlanSelection');
+    navigation.replace('Home');
   };
 
   const handleReferralSubmitAndContinue = async () => {
@@ -256,7 +256,7 @@ export default function FirstLoadScreen({ navigation, route }) {
 
     setReferralModalVisible(false);
     setReferralCodeInput('');
-    navigation.navigate('PlanSelection');
+    navigation.replace('Home');
   };
 
   const handleFormContainerLayout = (event) => {
@@ -533,7 +533,7 @@ export default function FirstLoadScreen({ navigation, route }) {
         animationType="fade"
         onRequestClose={() => {
           setSuccessModalVisible(false);
-          navigation.navigate('PlanSelection');
+          navigation.replace('Home');
         }}
       >
         <View style={styles.modalOverlay}>
@@ -556,7 +556,7 @@ export default function FirstLoadScreen({ navigation, route }) {
               style={styles.successButton}
               onPress={() => {
                 setSuccessModalVisible(false);
-                navigation.navigate('PlanSelection');
+                navigation.replace('Home');
               }}
             >
               <Text style={styles.successButtonText}>
