@@ -2280,6 +2280,17 @@ export default function SettingsScreen({ navigation, route }) {
     );
   };
 
+  const showCloudSyncUpgradeAlert = () => {
+    Alert.alert(
+      t('settings.cloudSyncPaidTitle', { defaultValue: 'Paid feature' }),
+      t('settings.cloudSyncPaidMessage', { defaultValue: 'Cloud sync is available on the Pro plan and above. Upgrade to connect Google Drive, Dropbox, or iCloud and back up your photos automatically.' }),
+      [
+        { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        { text: t('share.upgradeCTA', { defaultValue: 'Upgrade to Pro' }), onPress: () => navigation.navigate('PlanSelection') },
+      ]
+    );
+  };
+
   const handleExportErrorLogs = async () => {
     try {
       const stats = await getErrorStats();
@@ -3855,12 +3866,12 @@ export default function SettingsScreen({ navigation, route }) {
                           // Skip this check if user is on Pro/Business (they already have access)
                           const shouldCheckTier = userPlan !== 'pro' && userPlan !== 'business' && userPlan !== 'enterprise';
                           const canUseGoogle = canUse(FEATURES.GOOGLE_DRIVE_SYNC);
-                          
+
                           if (shouldCheckTier && !canUseGoogle) {
-                            navigation.navigate('PlanSelection');
+                            showCloudSyncUpgradeAlert();
                             return;
                           }
-                          
+
                           setIsSigningIn(true);
                           try {
                             // For Pro, use individual sign-in; for Business/Enterprise, use admin sign-in
@@ -3875,10 +3886,7 @@ export default function SettingsScreen({ navigation, route }) {
                             setIsSigningIn(false);
                           }
                         }}
-                        disabled={(() => {
-                          const isDisabled = (userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise') ? (!isGoogleSignInAvailable || isSigningIn) : (!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || !isGoogleSignInAvailable || isSigningIn);
-                          return isDisabled;
-                        })()}
+                        disabled={!isGoogleSignInAvailable || isSigningIn}
                       >
                         {isSigningIn ? (
                           <ActivityIndicator size="small" color="#fff" />
@@ -3909,7 +3917,7 @@ export default function SettingsScreen({ navigation, route }) {
                         ]}
                         onPress={async () => {
                           if (!canUse(FEATURES.GOOGLE_DRIVE_SYNC)) {
-                            navigation.navigate('PlanSelection');
+                            showCloudSyncUpgradeAlert();
                             return;
                           }
 
@@ -3943,7 +3951,7 @@ export default function SettingsScreen({ navigation, route }) {
                             setIsSigningIn(false);
                           }
                         }}
-                        disabled={!canUse(FEATURES.GOOGLE_DRIVE_SYNC) || isSigningIn}
+                        disabled={isSigningIn}
                       >
                         {isSigningIn ? (
                           <ActivityIndicator size="small" color="#fff" />
@@ -3983,9 +3991,9 @@ export default function SettingsScreen({ navigation, route }) {
                           // Starter tier - show plan popup (only for non-Pro/Business/Enterprise)
                           const shouldCheckTier = userPlan !== 'pro' && userPlan !== 'business' && userPlan !== 'enterprise';
                           const canUseDropbox = canUse(FEATURES.DROPBOX_SYNC);
-                          
+
                           if (shouldCheckTier && !canUseDropbox) {
-                            navigation.navigate('PlanSelection');
+                            showCloudSyncUpgradeAlert();
                             return;
                           }
                           
@@ -4063,11 +4071,7 @@ export default function SettingsScreen({ navigation, route }) {
                             setIsSigningInDropbox(false);
                           }
                         }}
-                        disabled={
-                          (userPlan === 'pro' || userPlan === 'business')
-                            ? isSigningInDropbox
-                            : (!canUse(FEATURES.DROPBOX_SYNC) || isSigningInDropbox)
-                        }
+                        disabled={isSigningInDropbox}
                       >
                         {isSigningInDropbox ? (
                           <ActivityIndicator size="small" color="#fff" />
@@ -5250,27 +5254,29 @@ export default function SettingsScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        {/* Debug / Error Logs Section */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.contactUsRow}
-            onPress={handleExportErrorLogs}
-          >
-            <View style={styles.contactUsContent}>
-              <Text style={styles.sectionTitle}>{t('settings.exportLogs', { defaultValue: 'Export error logs' })}</Text>
-              <Text style={styles.sectionDescription}>
-                {t('settings.exportLogsDescription', { defaultValue: 'Share a log file with support to help debug issues.' })}
-              </Text>
-            </View>
-            <Ionicons name="share-outline" size={20} color={COLORS.GRAY} />
-          </TouchableOpacity>
-          <Text style={{ fontSize: 11, color: '#888', marginTop: 8, paddingHorizontal: 4 }}>
-            OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
-          </Text>
-          <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-            Build tag: OTA-TEST-1
-          </Text>
-        </View>
+        {/* Debug / Error Logs Section — gated behind developer mode (8 taps on Settings title) */}
+        {devToolsUnlocked && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.contactUsRow}
+              onPress={handleExportErrorLogs}
+            >
+              <View style={styles.contactUsContent}>
+                <Text style={styles.sectionTitle}>{t('settings.exportLogs', { defaultValue: 'Export error logs' })}</Text>
+                <Text style={styles.sectionDescription}>
+                  {t('settings.exportLogsDescription', { defaultValue: 'Share a log file with support to help debug issues.' })}
+                </Text>
+              </View>
+              <Ionicons name="share-outline" size={20} color={COLORS.GRAY} />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 11, color: '#888', marginTop: 8, paddingHorizontal: 4 }}>
+              OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
+            </Text>
+            <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
+              Build tag: OTA-TEST-1
+            </Text>
+          </View>
+        )}
 
         {/* Data Section */}
         <View style={styles.section}>

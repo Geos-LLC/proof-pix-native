@@ -34,6 +34,8 @@ import {
 } from '../constants/softTrial';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import { useTranslation } from 'react-i18next';
+import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 
 export default function PhotoEditorScreen({ route, navigation }) {
   const { beforePhoto, afterPhoto, isSelectionMode = false, selectedPhotos = [], onSelectionChange, allPhotoSets: providedPhotoSets } = route.params;
@@ -119,6 +121,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
   const { t } = useTranslation();
   const { getUnpairedBeforePhotos, getBeforePhotos, getAfterPhotos, activeProjectId, deletePhoto } = usePhotos();
   const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms, softTrialActive, softTrialRemaining, refreshSoftTrial, userPlan } = useSettings();
+  const { effectivePlan } = useFeaturePermissions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { width, height } = Dimensions.get('window');
   
@@ -531,11 +534,16 @@ export default function PhotoEditorScreen({ route, navigation }) {
       // Soft-trial export gate: only on free plan. If the soft trial is
       // exhausted, route to the contextual paywall and abort the share.
       if (userPlan === 'starter') {
-        const gate = await canExportNow();
-        if (!gate.allowed) {
-          await logBlocked(gate.reason);
-          navigation.navigate('PlanSelection', { trigger: PAYWALL_TRIGGERS.EXPORT_LIMIT });
-          return;
+        if (softTrialActive) {
+          const gate = await canExportNow();
+          if (!gate.allowed) {
+            await logBlocked(gate.reason);
+            navigation.navigate('PlanSelection', { trigger: PAYWALL_TRIGGERS.EXPORT_LIMIT });
+            return;
+          }
+        } else {
+          const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+          if (!allowed) return;
         }
       }
 
@@ -598,10 +606,14 @@ export default function PhotoEditorScreen({ route, navigation }) {
       // soft_trial_completed. Refresh context-side state so the counter UI
       // and forced watermark react immediately.
       if (userPlan === 'starter') {
-        try {
-          await recordExport();
-          await refreshSoftTrial();
-        } catch {}
+        if (softTrialActive) {
+          try {
+            await recordExport();
+            await refreshSoftTrial();
+          } catch {}
+        } else {
+          try { await recordShare(); } catch {}
+        }
       }
 
       // Clean up temporary file after sharing

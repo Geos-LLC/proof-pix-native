@@ -38,6 +38,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import JSZip from 'jszip';
 import Constants from 'expo-constants';
 import dropboxAuthService from '../services/dropboxAuthService';
+import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 
 // Ensure a URI has the file:// prefix (expo FileSystem URIs already include it on Android)
 const ensureFileUri = (uri) => uri.startsWith('file://') ? uri : `file://${uri}`;
@@ -71,7 +72,7 @@ export default function ProjectsScreen({ navigation }) {
   
   const { userName, userPlan, updateUserPlan, location, updateUserInfo, showLabels, useFolderStructure, enabledFolders } = useSettings();
   const { userMode, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType } = useAdmin();
-  const { exceedsLimit, canUse } = useFeaturePermissions();
+  const { exceedsLimit, canUse, effectivePlan } = useFeaturePermissions();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
   const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
 
@@ -133,6 +134,8 @@ export default function ProjectsScreen({ navigation }) {
     }
 
     if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
+      setNewProjectNamePart('');
+      setNewProjectVisible(false);
       navigation.navigate('PlanSelection');
       return;
     }
@@ -238,6 +241,14 @@ export default function ProjectsScreen({ navigation }) {
 
   const handleFormatToggle = (key) => {
     if (!canUse(FEATURES.ADVANCED_TEMPLATES)) {
+      Alert.alert(
+        t('share.advancedFormatsTitle', { defaultValue: 'Paid feature' }),
+        t('share.advancedFormatsMessage', { defaultValue: 'Advanced templates are available on the Pro plan. Upgrade to unlock all formats and side-by-side layouts.' }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          { text: t('share.upgradeCTA', { defaultValue: 'Upgrade to Pro' }), onPress: () => navigation.navigate('PlanSelection') },
+        ]
+      );
       return;
     }
     setSelectedFormats(prev => ({ ...prev, [key]: !prev[key] }));
@@ -245,6 +256,11 @@ export default function ProjectsScreen({ navigation }) {
 
   const startSharingWithOptions = async () => {
     if (!projectToShare) return;
+    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+    if (!allowed) {
+      setShareOptionsVisible(false);
+      return;
+    }
     try {
       setSharing(true);
       setShareOptionsVisible(false);
@@ -315,12 +331,14 @@ export default function ProjectsScreen({ navigation }) {
           mimeType: 'application/zip',
           dialogTitle: zipFileName,
         });
+        await recordShare();
         await FileSystem.deleteAsync(zipUri, { idempotent: true });
       } else if (urls.length === 1) {
         await Sharing.shareAsync(ensureFileUri(urls[0]), {
           mimeType: 'image/jpeg',
           dialogTitle: 'Share Photo',
         });
+        await recordShare();
       } else if (urls.length > 1) {
         // Share multiple photos via react-native-share using temp file copies
         setShareStatus(t('gallery.preparingPhotos', { defaultValue: `Preparing ${urls.length} photos...`, count: urls.length }));
@@ -338,6 +356,7 @@ export default function ProjectsScreen({ navigation }) {
           type: 'image/jpeg',
           failOnCancel: false,
         });
+        await recordShare();
         // Clean up temp files
         await FileSystem.deleteAsync(tempDir, { idempotent: true });
       }

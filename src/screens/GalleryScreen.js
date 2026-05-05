@@ -339,7 +339,14 @@ export default function GalleryScreen({ navigation, route }) {
   // Handler functions
   const handleFormatToggle = (key) => {
     if (!canUse(FEATURES.ADVANCED_TEMPLATES)) {
-      setShowSharePlanModal(true);
+      Alert.alert(
+        t('share.advancedFormatsTitle', { defaultValue: 'Paid feature' }),
+        t('share.advancedFormatsMessage', { defaultValue: 'Advanced templates are available on the Pro plan. Upgrade to unlock all formats and side-by-side layouts.' }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          { text: t('share.upgradeCTA', { defaultValue: 'Upgrade to Pro' }), onPress: () => navigation.navigate('PlanSelection') },
+        ]
+      );
       return;
     }
     setSelectedFormats(prev => ({ ...prev, [key]: !prev[key] }));
