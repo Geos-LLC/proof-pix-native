@@ -28,6 +28,7 @@ import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS } from '../constants/rooms
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
+import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
@@ -125,6 +126,8 @@ export default function HomeScreen({ navigation }) {
     toggleLabels,
     beforeLabelPosition,
     afterLabelPosition,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
     labelBackgroundColor,
     labelTextColor,
     labelSize,
@@ -1550,7 +1553,19 @@ export default function HomeScreen({ navigation }) {
               {showLabels && fullScreenPhoto.mode && !fullScreenError && (
                 <PhotoLabel
                   label={fullScreenPhoto.mode === 'before' ? 'common.before' : 'common.after'}
-                  position={fullScreenPhoto.mode === 'before' ? (beforeLabelPosition || 'top-left') : (afterLabelPosition || 'top-left')}
+                  position={
+                    fullScreenPhoto.mode === 'before'
+                      ? pickBeforeLabelPosition(
+                          { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                          fullScreenPhoto.width,
+                          fullScreenPhoto.height
+                        )
+                      : pickAfterLabelPosition(
+                          { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                          fullScreenPhoto.width,
+                          fullScreenPhoto.height
+                        )
+                  }
                 />
               )}
             </View>
@@ -1672,7 +1687,11 @@ export default function HomeScreen({ navigation }) {
                 {showLabels && (
                   <PhotoLabel
                     label="common.before"
-                    position={beforeLabelPosition || 'top-left'}
+                    position={pickBeforeLabelPosition(
+                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                      fullScreenPhotoSet.before.width,
+                      fullScreenPhotoSet.before.height
+                    )}
                   />
                 )}
               </View>
@@ -1686,7 +1705,11 @@ export default function HomeScreen({ navigation }) {
                 {showLabels && (
                   <PhotoLabel
                     label="common.after"
-                    position={afterLabelPosition || 'top-right'}
+                    position={pickAfterLabelPosition(
+                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                      fullScreenPhotoSet.after.width,
+                      fullScreenPhotoSet.after.height
+                    )}
                   />
                 )}
               </View>

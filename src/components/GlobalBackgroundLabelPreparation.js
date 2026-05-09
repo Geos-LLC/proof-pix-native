@@ -28,6 +28,8 @@ export default function GlobalBackgroundLabelPreparation() {
     showLabels,
     beforeLabelPosition,
     afterLabelPosition,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
     labelBackgroundColor,
     labelTextColor,
     labelSize,
@@ -49,6 +51,8 @@ export default function GlobalBackgroundLabelPreparation() {
       showLabels,
       beforeLabelPosition,
       afterLabelPosition,
+      beforeLabelPositionLandscape,
+      afterLabelPositionLandscape,
       labelBackgroundColor,
       labelTextColor,
       labelSize,
@@ -62,7 +66,7 @@ export default function GlobalBackgroundLabelPreparation() {
       watermarkPosition,
       watermarkFontFamily,
     };
-  }, [showLabels, beforeLabelPosition, afterLabelPosition, labelBackgroundColor, labelTextColor, labelSize, labelMarginHorizontal, labelMarginVertical, showWatermark, customWatermarkEnabled, watermarkText, watermarkColor, watermarkOpacity, watermarkPosition, watermarkFontFamily]);
+  }, [showLabels, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, labelBackgroundColor, labelTextColor, labelSize, labelMarginHorizontal, labelMarginVertical, showWatermark, customWatermarkEnabled, watermarkText, watermarkColor, watermarkOpacity, watermarkPosition, watermarkFontFamily]);
 
   useEffect(() => {
     tRef.current = t;
@@ -110,12 +114,25 @@ export default function GlobalBackgroundLabelPreparation() {
         return;
       }
 
+      // Pick portrait vs landscape position based on photo aspect ratio. A
+      // photo wider than it is tall (width > height) is landscape; everything
+      // else (square + portrait) uses the portrait setting.
+      const photoW = photoToProcess.width || 0;
+      const photoH = photoToProcess.height || 0;
+      const isLandscapePhoto = photoW > photoH && photoH > 0;
+      const beforePosKey = isLandscapePhoto
+        ? (settings.beforeLabelPositionLandscape || settings.beforeLabelPosition || 'left-top')
+        : (settings.beforeLabelPosition || 'left-top');
+      const afterPosKey = isLandscapePhoto
+        ? (settings.afterLabelPositionLandscape || settings.afterLabelPosition || 'right-top')
+        : (settings.afterLabelPosition || 'right-top');
+
       // Determine label position based on photo mode
       let labelPosition;
       if (photoToProcess.photo.mode === PHOTO_MODES.BEFORE) {
-        labelPosition = convertLabelPosition(settings.beforeLabelPosition || 'left-top');
+        labelPosition = convertLabelPosition(beforePosKey);
       } else if (photoToProcess.photo.mode === PHOTO_MODES.AFTER) {
-        labelPosition = convertLabelPosition(settings.afterLabelPosition || 'right-top');
+        labelPosition = convertLabelPosition(afterPosKey);
       } else if (photoToProcess.isCombined) {
         labelPosition = 'top-left';
       } else {
@@ -187,10 +204,10 @@ export default function GlobalBackgroundLabelPreparation() {
 
         const beforeLabelConfig = {
           ...labelConfig,
-          position: convertLabelPosition(settings.beforeLabelPosition || 'left-top'),
+          position: convertLabelPosition(beforePosKey),
         };
 
-        const afterPosition = convertLabelPosition(settings.afterLabelPosition || 'left-top');
+        const afterPosition = convertLabelPosition(afterPosKey);
         const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPosition, isStack, halfWidth, halfHeight, width, height);
 
         const afterLabelConfig = {
@@ -224,8 +241,8 @@ export default function GlobalBackgroundLabelPreparation() {
         const storedLayout = photoToProcess.photo?.combinedLayout;
         const isStack = storedLayout ? storedLayout === 'STACK' : (format.includes('stack') || height > width);
 
-        const userBeforePosition = convertLabelPosition(settings.beforeLabelPosition || 'left-top');
-        const userAfterPosition = convertLabelPosition(settings.afterLabelPosition || 'left-top');
+        const userBeforePosition = convertLabelPosition(beforePosKey);
+        const userAfterPosition = convertLabelPosition(afterPosKey);
 
         const beforeLabelConfig = { ...labelConfig, position: userBeforePosition };
         const afterLabelConfigBase = { ...labelConfig, position: userAfterPosition };

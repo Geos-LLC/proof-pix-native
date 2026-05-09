@@ -129,6 +129,12 @@ export default function CustomizeLabelsScreen({ navigation }) {
   const { canUse } = useFeaturePermissions();
   const canCustomizeWatermark = canUse(FEATURES.CUSTOM_WATERMARKS);
 
+  // Which orientation tab the position controls are editing.
+  // 'portrait' edits beforeLabelPosition / afterLabelPosition (the legacy
+  // settings, used for portrait + square photos). 'landscape' edits the new
+  // *Landscape variants, which are applied to photos wider than they are tall.
+  const [orientationTab, setOrientationTab] = useState('portrait');
+
   // Get settings from context (these are persisted to AsyncStorage)
   const {
     labelBackgroundColor,
@@ -138,6 +144,8 @@ export default function CustomizeLabelsScreen({ navigation }) {
     labelFontFamily,
     beforeLabelPosition,
     afterLabelPosition,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
     labelMarginVertical,
     labelMarginHorizontal,
     updateLabelBackgroundColor,
@@ -147,6 +155,8 @@ export default function CustomizeLabelsScreen({ navigation }) {
     updateLabelFontFamily,
     updateBeforeLabelPosition,
     updateAfterLabelPosition,
+    updateBeforeLabelPositionLandscape,
+    updateAfterLabelPositionLandscape,
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,
     // Watermark settings
@@ -282,29 +292,54 @@ export default function CustomizeLabelsScreen({ navigation }) {
   const currentFont = FONT_OPTIONS.find(f => f.key === labelFontFamily)?.label || 'Arial Blank';
   const currentSize = SIZE_OPTIONS.find(s => s.key === labelSize);
 
-  // Helper function to get position styles for preview with margin
+  // Position helper: returns absolute-positioning styles relative to the
+  // preview half. Uses percentage + transform for middle/center anchors so
+  // they snap to the true geometric center regardless of preview height
+  // (the previous fixed-pixel math assumed a square preview, which is why
+  // "middle" appeared near the top).
   const getPositionStyle = (position, marginV, marginH) => {
-    // Preview box is roughly square, so we'll use fixed positions
-    const boxSize = SCREEN_WIDTH / 2 - 20; // Approximate box size
-    const centerX = (boxSize - 60) / 2; // Approximate label width is 60
-    const centerY = (boxSize - 30) / 2; // Approximate label height is 30
-    
+    const mv = marginV ?? 8;
+    const mh = marginH ?? 8;
     const positions = {
-      'left-top': { top: marginV || 8, left: marginH || 8 },
-      'center-top': { top: marginV || 8, left: centerX },
-      'right-top': { top: marginV || 8, right: marginH || 8 },
-      'left-middle': { top: centerY, left: marginH || 8 },
-      'center-middle': { top: centerY, left: centerX },
-      'right-middle': { top: centerY, right: marginH || 8 },
-      'left-bottom': { bottom: marginV || 8, left: marginH || 8 },
-      'center-bottom': { bottom: marginV || 8, left: centerX },
-      'right-bottom': { bottom: marginV || 8, right: marginH || 8 },
+      'left-top':      { top: mv, left: mh },
+      'center-top':    { top: mv, left: '50%', transform: [{ translateX: '-50%' }] },
+      'right-top':     { top: mv, right: mh },
+      'left-middle':   { top: '50%', left: mh, transform: [{ translateY: '-50%' }] },
+      'center-middle': { top: '50%', left: '50%', transform: [{ translateX: '-50%' }, { translateY: '-50%' }] },
+      'right-middle':  { top: '50%', right: mh, transform: [{ translateY: '-50%' }] },
+      'left-bottom':   { bottom: mv, left: mh },
+      'center-bottom': { bottom: mv, left: '50%', transform: [{ translateX: '-50%' }] },
+      'right-bottom':  { bottom: mv, right: mh },
     };
     return positions[position] || positions['left-top'];
   };
 
-  const beforePosStyle = getPositionStyle(beforeLabelPosition, labelMarginVertical, labelMarginHorizontal);
-  const afterPosStyle = getPositionStyle(afterLabelPosition, labelMarginVertical, labelMarginHorizontal);
+  // Active before/after positions for the currently-edited orientation tab.
+  const activeBeforePos = orientationTab === 'landscape'
+    ? (beforeLabelPositionLandscape || beforeLabelPosition)
+    : beforeLabelPosition;
+  const activeAfterPos = orientationTab === 'landscape'
+    ? (afterLabelPositionLandscape || afterLabelPosition)
+    : afterLabelPosition;
+  const updateActiveBeforePos = orientationTab === 'landscape'
+    ? updateBeforeLabelPositionLandscape
+    : updateBeforeLabelPosition;
+  const updateActiveAfterPos = orientationTab === 'landscape'
+    ? updateAfterLabelPositionLandscape
+    : updateAfterLabelPosition;
+
+  const portraitBeforeStyle = getPositionStyle(beforeLabelPosition, labelMarginVertical, labelMarginHorizontal);
+  const portraitAfterStyle = getPositionStyle(afterLabelPosition, labelMarginVertical, labelMarginHorizontal);
+  const landscapeBeforeStyle = getPositionStyle(
+    beforeLabelPositionLandscape || beforeLabelPosition,
+    labelMarginVertical,
+    labelMarginHorizontal
+  );
+  const landscapeAfterStyle = getPositionStyle(
+    afterLabelPositionLandscape || afterLabelPosition,
+    labelMarginVertical,
+    labelMarginHorizontal
+  );
 
   // Get watermark position style using the same function as PhotoWatermark
   const watermarkPositions = getLabelPositions(labelMarginVertical ?? 10, labelMarginHorizontal ?? 10);
@@ -335,13 +370,16 @@ export default function CustomizeLabelsScreen({ navigation }) {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-        {/* Preview Section - Combined Before/After with Labels and Watermark */}
+        {/* Preview Section - Portrait + Landscape side-by-side previews. The
+            portrait preview reflects beforeLabelPosition / afterLabelPosition
+            (used for portrait + square photos). The landscape preview reflects
+            the *Landscape variants (used for photos wider than tall). */}
         <View style={styles.previewSection}>
+          <Text style={styles.previewLabelHeader}>Portrait photos</Text>
           <View style={styles.previewCombinedContainer}>
             {/* Before section */}
             <View style={styles.previewCombinedHalf}>
               <Ionicons name="image-outline" size={48} color="#999" />
-              {/* Before Label */}
               <View style={[
                 styles.previewLabel,
                 {
@@ -349,7 +387,7 @@ export default function CustomizeLabelsScreen({ navigation }) {
                   borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
                   padding: currentSize?.padding || 10,
                   position: 'absolute',
-                  ...beforePosStyle,
+                  ...portraitBeforeStyle,
                 }
               ]}>
                 <Text style={[
@@ -361,7 +399,6 @@ export default function CustomizeLabelsScreen({ navigation }) {
             {/* After section */}
             <View style={[styles.previewCombinedHalf, styles.previewCombinedHalfAfter]}>
               <Ionicons name="image-outline" size={48} color="#999" />
-              {/* After Label */}
               <View style={[
                 styles.previewLabel,
                 {
@@ -369,7 +406,7 @@ export default function CustomizeLabelsScreen({ navigation }) {
                   borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
                   padding: currentSize?.padding || 10,
                   position: 'absolute',
-                  ...afterPosStyle,
+                  ...portraitAfterStyle,
                 }
               ]}>
                 <Text style={[
@@ -378,7 +415,56 @@ export default function CustomizeLabelsScreen({ navigation }) {
                 ]}>After</Text>
               </View>
             </View>
-            {/* Single Watermark - appears once on the entire combined image */}
+            <Text style={[
+              styles.previewWatermark,
+              {
+                color: watermarkColor || '#666666',
+                opacity: watermarkOpacity || 0.5,
+                ...watermarkPositionCoords,
+              }
+            ]}>
+              {watermarkText || 'Created with Proofpix.app'}
+            </Text>
+          </View>
+
+          <Text style={[styles.previewLabelHeader, { marginTop: 16 }]}>Landscape photos</Text>
+          <View style={styles.previewLandscapeContainer}>
+            <View style={styles.previewLandscapeHalf}>
+              <Ionicons name="image-outline" size={36} color="#999" />
+              <View style={[
+                styles.previewLabel,
+                {
+                  backgroundColor: labelBackgroundColor,
+                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
+                  padding: currentSize?.padding || 10,
+                  position: 'absolute',
+                  ...landscapeBeforeStyle,
+                }
+              ]}>
+                <Text style={[
+                  styles.previewLabelText,
+                  { color: labelTextColor, fontSize: currentSize?.fontSize || 14 }
+                ]}>Before</Text>
+              </View>
+            </View>
+            <View style={[styles.previewLandscapeHalf, styles.previewLandscapeHalfAfter]}>
+              <Ionicons name="image-outline" size={36} color="#999" />
+              <View style={[
+                styles.previewLabel,
+                {
+                  backgroundColor: labelBackgroundColor,
+                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
+                  padding: currentSize?.padding || 10,
+                  position: 'absolute',
+                  ...landscapeAfterStyle,
+                }
+              ]}>
+                <Text style={[
+                  styles.previewLabelText,
+                  { color: labelTextColor, fontSize: currentSize?.fontSize || 14 }
+                ]}>After</Text>
+              </View>
+            </View>
             <Text style={[
               styles.previewWatermark,
               {
@@ -690,6 +776,34 @@ export default function CustomizeLabelsScreen({ navigation }) {
         title="Label Position"
       >
         <View style={styles.positionContainer}>
+          {/* Orientation tab — switches between portrait and landscape edits */}
+          <View style={styles.orientationTabs}>
+            {[
+              { key: 'portrait', label: 'Portrait' },
+              { key: 'landscape', label: 'Landscape' },
+            ].map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                style={[
+                  styles.orientationTab,
+                  orientationTab === key && styles.orientationTabActive,
+                ]}
+                onPress={() => setOrientationTab(key)}
+              >
+                <Text style={[
+                  styles.orientationTabText,
+                  orientationTab === key && styles.orientationTabTextActive,
+                ]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.orientationHint}>
+            {orientationTab === 'portrait'
+              ? 'Applied to portrait and square photos.'
+              : 'Applied to photos wider than they are tall.'}
+          </Text>
+
           {/* Label Position - Before/After Grids */}
           <View style={styles.positionGrid}>
             {/* Before Grid */}
@@ -705,9 +819,9 @@ export default function CustomizeLabelsScreen({ navigation }) {
                       key={pos}
                       style={[
                         styles.positionCell,
-                        beforeLabelPosition === pos && styles.positionCellSelected
+                        activeBeforePos === pos && styles.positionCellSelected
                       ]}
-                      onPress={async () => await updateBeforeLabelPosition(pos)}
+                      onPress={async () => await updateActiveBeforePos(pos)}
                     />
                   ))}
                 </View>
@@ -730,9 +844,9 @@ export default function CustomizeLabelsScreen({ navigation }) {
                         key={pos}
                         style={[
                           styles.positionCell,
-                          afterLabelPosition === pos && styles.positionCellSelected
+                          activeAfterPos === pos && styles.positionCellSelected
                         ]}
-                        onPress={async () => await updateAfterLabelPosition(pos)}
+                        onPress={async () => await updateActiveAfterPos(pos)}
                       />
                     ))}
                   </View>
@@ -1089,6 +1203,31 @@ const styles = StyleSheet.create({
   },
   previewSection: {
     marginBottom: 24,
+  },
+  previewLabelHeader: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.GRAY,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  previewLandscapeContainer: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    position: 'relative',
+    backgroundColor: '#E0E0E0',
+    borderRadius: 8,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  previewLandscapeHalf: {
+    flex: 1,
+    backgroundColor: '#D1D1D1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewLandscapeHalfAfter: {
+    backgroundColor: '#A0A0A0',
   },
   previewLabel: {
     paddingHorizontal: 12,
@@ -1461,6 +1600,36 @@ const styles = StyleSheet.create({
   positionContainer: {
     padding: 24,
     minHeight: 200,
+  },
+  orientationTabs: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.BACKGROUND,
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 12,
+  },
+  orientationTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  orientationTabActive: {
+    backgroundColor: 'white',
+  },
+  orientationTabText: {
+    fontSize: 14,
+    color: COLORS.GRAY,
+  },
+  orientationTabTextActive: {
+    color: COLORS.TEXT,
+    fontWeight: '600',
+  },
+  orientationHint: {
+    fontSize: 12,
+    color: COLORS.GRAY,
+    textAlign: 'center',
+    marginBottom: 16,
   },
   positionGrid: {
     flexDirection: 'row',

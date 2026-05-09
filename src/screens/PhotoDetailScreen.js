@@ -38,7 +38,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
   const { deletePhoto, getBeforePhotos, getAfterPhotos, activeProjectId } = usePhotos();
   const settings = useSettings();
   const { effectivePlan } = useFeaturePermissions();
-  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, labelMarginVertical, labelMarginHorizontal, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily } = settings || {};
+  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, labelMarginVertical, labelMarginHorizontal, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily } = settings || {};
   const getRooms = settings?.getRooms;
   const [sharing, setSharing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -70,6 +70,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
         showLabels,
         beforeLabelPosition,
         afterLabelPosition,
+        beforeLabelPositionLandscape,
+        afterLabelPositionLandscape,
         labelBackgroundColor,
         labelTextColor,
         labelSize,
@@ -128,7 +130,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
     };
 
     loadAllDisplayImages();
-  }, [allPhotos, showLabels, beforeLabelPosition, afterLabelPosition, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily, labelMarginVertical, labelMarginHorizontal]);
+  }, [allPhotos, showLabels, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily, labelMarginVertical, labelMarginHorizontal]);
 
   // Update displayUri when currentPhoto changes
   useEffect(() => {
@@ -151,6 +153,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
           showLabels,
           beforeLabelPosition,
           afterLabelPosition,
+          beforeLabelPositionLandscape,
+          afterLabelPositionLandscape,
           labelBackgroundColor,
           labelTextColor,
           labelSize,
@@ -179,7 +183,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
     });
 
     return () => unsubscribe();
-  }, [allPhotos, showLabels, beforeLabelPosition, afterLabelPosition, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily, labelMarginVertical, labelMarginHorizontal]);
+  }, [allPhotos, showLabels, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily, labelMarginVertical, labelMarginHorizontal]);
 
   // Sync with route params when they change
   useEffect(() => {

@@ -29,6 +29,7 @@ import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS } from '../constants/rooms
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
+import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useSettings } from '../context/SettingsContext';
@@ -102,8 +103,18 @@ export default function HomeScreen({ navigation }) {
     toggleLabels,
     beforeLabelPosition,
     afterLabelPosition,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
     updateUserInfo,
   } = useSettings();
+  // Build a settings snapshot for the orientation-aware position helper so we
+  // don't rebuild it inline at every render of the full-screen overlay.
+  const labelPosSettings = {
+    beforeLabelPosition,
+    afterLabelPosition,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
+  };
   const { userMode, updatePlanLimit } = useAdmin();
   const fullScreenTopInset = Math.max(insets.top, 25);
   const fullScreenBottomInset = Math.max(insets.bottom, 20);
@@ -1492,7 +1503,11 @@ export default function HomeScreen({ navigation }) {
               {showLabels && fullScreenPhoto.mode && !fullScreenError && (
                 <PhotoLabel
                   label={fullScreenPhoto.mode === 'before' ? 'common.before' : 'common.after'}
-                  position={fullScreenPhoto.mode === 'before' ? (beforeLabelPosition || 'top-left') : (afterLabelPosition || 'top-left')}
+                  position={
+                    fullScreenPhoto.mode === 'before'
+                      ? pickBeforeLabelPosition(labelPosSettings, fullScreenPhoto.width, fullScreenPhoto.height)
+                      : pickAfterLabelPosition(labelPosSettings, fullScreenPhoto.width, fullScreenPhoto.height)
+                  }
                 />
               )}
             </View>
@@ -1601,7 +1616,7 @@ export default function HomeScreen({ navigation }) {
                 {showLabels && (
                   <PhotoLabel
                     label="common.before"
-                    position={beforeLabelPosition || 'top-left'}
+                    position={pickBeforeLabelPosition(labelPosSettings, fullScreenPhotoSet.before.width, fullScreenPhotoSet.before.height)}
                   />
                 )}
               </View>
@@ -1615,7 +1630,7 @@ export default function HomeScreen({ navigation }) {
                 {showLabels && (
                   <PhotoLabel
                     label="common.after"
-                    position={afterLabelPosition || 'top-right'}
+                    position={pickAfterLabelPosition(labelPosSettings, fullScreenPhotoSet.after.width, fullScreenPhotoSet.after.height)}
                   />
                 )}
               </View>

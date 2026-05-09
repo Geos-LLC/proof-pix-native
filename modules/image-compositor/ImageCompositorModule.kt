@@ -250,13 +250,22 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                     isAntiAlias = true
                 }
 
-                // Measure text
+                // Measure text. Width comes from the tight glyph bounds, but
+                // height is derived from Paint.FontMetrics (ascent + descent)
+                // so the label gets typographic line height — i.e. consistent
+                // top/bottom padding regardless of whether the text has
+                // descenders. This matches iOS's NSString.size behavior and
+                // makes the "middle" position visually centered for caps-only
+                // text like BEFORE/AFTER (the previous getTextBounds-based
+                // height was tight to the ink and made labels look top-heavy).
                 val textBounds = Rect()
                 textPaint.getTextBounds(labelText, 0, labelText.length, textBounds)
+                val fontMetrics = textPaint.fontMetrics
+                val fontHeight = fontMetrics.descent - fontMetrics.ascent
 
                 // Calculate label background dimensions
                 val labelWidth = textBounds.width() + (scaledPadding * 2)
-                val labelHeight = textBounds.height() + (scaledPadding * 2)
+                val labelHeight = fontHeight.toInt() + (scaledPadding * 2)
 
                 // Calculate label position based on 9-position grid
                 // Positions: left-top, left-middle, left-bottom, center-top, center-middle, center-bottom, right-top, right-middle, right-bottom
@@ -316,9 +325,13 @@ class ImageCompositorModule(reactContext: ReactApplicationContext) :
                 val cornerRadius = 8f * scale
                 canvas.drawRoundRect(labelRect, cornerRadius, cornerRadius, backgroundPaint)
 
-                // Draw text centered in the label
+                // Draw text centered in the label. textX uses the glyph bounds
+                // (so the visible ink is padded equally on both sides), while
+                // textY is the baseline derived from FontMetrics — placed so
+                // the typographic ascent/descent is split evenly above and
+                // below within the padded label box.
                 val textX = labelRect.left + scaledPadding - textBounds.left
-                val textY = labelRect.top + scaledPadding - textBounds.top
+                val textY = labelRect.top + scaledPadding + (-fontMetrics.ascent)
                 canvas.drawText(labelText, textX, textY, textPaint)
 
                 // Save to file

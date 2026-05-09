@@ -70,7 +70,9 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 //      when the user changes watermark position or font.
 // v24: Added labelCornerStyle, combinedLabelPosition, and labelLanguage to settings hash.
 //      labelLanguage is critical — changing the label language changes BEFORE/AFTER text.
-const CACHE_VERSION = 24;
+// v25: Added beforeLabelPositionLandscape and afterLabelPositionLandscape so cached
+//      labels invalidate when the user changes orientation-specific positions.
+const CACHE_VERSION = 25;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid
@@ -80,6 +82,8 @@ export const calculateSettingsHash = (settings) => {
     showLabels,
     beforeLabelPosition,
     afterLabelPosition,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
     labelBackgroundColor,
     labelTextColor,
     labelSize,
@@ -104,6 +108,8 @@ export const calculateSettingsHash = (settings) => {
     showLabels: showLabels || false,
     beforeLabelPosition: beforeLabelPosition || 'top-left',
     afterLabelPosition: afterLabelPosition || 'top-right',
+    beforeLabelPositionLandscape: beforeLabelPositionLandscape || beforeLabelPosition || 'top-left',
+    afterLabelPositionLandscape: afterLabelPositionLandscape || afterLabelPosition || 'top-right',
     labelBackgroundColor: labelBackgroundColor || '#FFD700',
     labelTextColor: labelTextColor || '#000000',
     labelSize: labelSize || 'medium',

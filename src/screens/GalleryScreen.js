@@ -37,6 +37,7 @@ import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
 import { ensureLabelForPhoto } from '../services/labelService';
+import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadCompletionModal from '../components/UploadCompletionModal';
@@ -142,6 +143,8 @@ export default function GalleryScreen({ navigation, route }) {
     shouldShowWatermark,
     beforeLabelPosition,
     afterLabelPosition,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
     combinedLabelPosition,
     labelMarginVertical,
     labelMarginHorizontal,
@@ -306,6 +309,8 @@ export default function GalleryScreen({ navigation, route }) {
       showLabels,
       beforeLabelPosition,
       afterLabelPosition,
+      beforeLabelPositionLandscape,
+      afterLabelPositionLandscape,
       labelBackgroundColor,
       labelTextColor,
       labelSize,
@@ -321,7 +326,7 @@ export default function GalleryScreen({ navigation, route }) {
         console.error('[GALLERY] Error invalidating cache:', error);
       }
     })();
-  }, [showLabels, beforeLabelPosition, afterLabelPosition, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily, labelMarginVertical, labelMarginHorizontal]);
+  }, [showLabels, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, labelBackgroundColor, labelTextColor, labelSize, labelFontFamily, labelMarginVertical, labelMarginHorizontal]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -2130,7 +2135,19 @@ export default function GalleryScreen({ navigation, route }) {
               {showLabels && fullScreenPhoto.mode && !fullScreenError && (
                 <PhotoLabel
                   label={fullScreenPhoto.mode === 'before' ? 'common.before' : 'common.after'}
-                  position={fullScreenPhoto.mode === 'before' ? (beforeLabelPosition || 'top-left') : (afterLabelPosition || 'top-left')}
+                  position={
+                    fullScreenPhoto.mode === 'before'
+                      ? pickBeforeLabelPosition(
+                          { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                          fullScreenPhoto.width,
+                          fullScreenPhoto.height
+                        )
+                      : pickAfterLabelPosition(
+                          { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                          fullScreenPhoto.width,
+                          fullScreenPhoto.height
+                        )
+                  }
                 />
               )}
             </View>
@@ -2200,7 +2217,16 @@ export default function GalleryScreen({ navigation, route }) {
                   resizeMode="cover"
                   onLoadStart={() => console.log('[GalleryScreen] Combined BEFORE load start:', fullScreenPhotoSet.before.uri?.substring(0, 60))}
                 />
-                {showLabels && <PhotoLabel label="common.before" position={beforeLabelPosition || 'top-left'} />}
+                {showLabels && (
+                  <PhotoLabel
+                    label="common.before"
+                    position={pickBeforeLabelPosition(
+                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                      fullScreenPhotoSet.before.width,
+                      fullScreenPhotoSet.before.height
+                    )}
+                  />
+                )}
               </View>
               <View style={isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio) ? styles.fullScreenCenterDividerHorizontal : styles.fullScreenCenterDivider} pointerEvents="none" />
               <View style={styles.fullScreenHalf}>
@@ -2211,7 +2237,16 @@ export default function GalleryScreen({ navigation, route }) {
                   resizeMode="cover"
                   onLoadStart={() => console.log('[GalleryScreen] Combined AFTER load start:', fullScreenPhotoSet.after.uri?.substring(0, 60))}
                 />
-                {showLabels && <PhotoLabel label="common.after" position={afterLabelPosition || 'top-right'} />}
+                {showLabels && (
+                  <PhotoLabel
+                    label="common.after"
+                    position={pickAfterLabelPosition(
+                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                      fullScreenPhotoSet.after.width,
+                      fullScreenPhotoSet.after.height
+                    )}
+                  />
+                )}
               </View>
             </View>
           </View>

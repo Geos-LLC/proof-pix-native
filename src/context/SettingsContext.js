@@ -72,6 +72,11 @@ export const SettingsProvider = ({ children }) => {
   const [labelFontFamily, setLabelFontFamily] = useState('alexandria');
   const [beforeLabelPosition, setBeforeLabelPosition] = useState(DEFAULT_BEFORE_LABEL_POSITION);
   const [afterLabelPosition, setAfterLabelPosition] = useState(DEFAULT_AFTER_LABEL_POSITION);
+  // Landscape-orientation overrides: when a photo is wider than tall, these
+  // positions are used instead of the portrait ones. They default to the
+  // portrait values so existing users see no behavior change until they tweak.
+  const [beforeLabelPositionLandscape, setBeforeLabelPositionLandscape] = useState(DEFAULT_BEFORE_LABEL_POSITION);
+  const [afterLabelPositionLandscape, setAfterLabelPositionLandscape] = useState(DEFAULT_AFTER_LABEL_POSITION);
   const [combinedLabelPosition, setCombinedLabelPosition] = useState(DEFAULT_LABEL_POSITION);
   const [labelMarginVertical, setLabelMarginVertical] = useState(10); // Top/bottom margin
   const [labelMarginHorizontal, setLabelMarginHorizontal] = useState(10); // Left/right margin
@@ -190,6 +195,16 @@ export const SettingsProvider = ({ children }) => {
         setLabelFontFamily(normalizeFontKey(settings.labelFontFamily));
         setBeforeLabelPosition(settings.beforeLabelPosition ?? DEFAULT_BEFORE_LABEL_POSITION);
         setAfterLabelPosition(settings.afterLabelPosition ?? DEFAULT_AFTER_LABEL_POSITION);
+        setBeforeLabelPositionLandscape(
+          settings.beforeLabelPositionLandscape
+            ?? settings.beforeLabelPosition
+            ?? DEFAULT_BEFORE_LABEL_POSITION
+        );
+        setAfterLabelPositionLandscape(
+          settings.afterLabelPositionLandscape
+            ?? settings.afterLabelPosition
+            ?? DEFAULT_AFTER_LABEL_POSITION
+        );
         setCombinedLabelPosition(settings.combinedLabelPosition ?? DEFAULT_LABEL_POSITION);
         setLabelMarginVertical(settings.labelMarginVertical ?? 10);
         setLabelMarginHorizontal(settings.labelMarginHorizontal ?? 10);
@@ -256,6 +271,8 @@ export const SettingsProvider = ({ children }) => {
         labelCornerStyle,
         beforeLabelPosition,
         afterLabelPosition,
+        beforeLabelPositionLandscape,
+        afterLabelPositionLandscape,
         combinedLabelPosition,
         labelMarginVertical,
         labelMarginHorizontal,
@@ -423,6 +440,16 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ afterLabelPosition: position });
   };
 
+  const updateBeforeLabelPositionLandscape = async (position) => {
+    setBeforeLabelPositionLandscape(position);
+    await saveSettings({ beforeLabelPositionLandscape: position });
+  };
+
+  const updateAfterLabelPositionLandscape = async (position) => {
+    setAfterLabelPositionLandscape(position);
+    await saveSettings({ afterLabelPositionLandscape: position });
+  };
+
   const updateCombinedLabelPosition = async (position) => {
     setCombinedLabelPosition(position);
     await saveSettings({ combinedLabelPosition: position });
@@ -561,6 +588,8 @@ export const SettingsProvider = ({ children }) => {
       setLabelFontFamily('system');
       setBeforeLabelPosition(DEFAULT_BEFORE_LABEL_POSITION);
       setAfterLabelPosition(DEFAULT_AFTER_LABEL_POSITION);
+      setBeforeLabelPositionLandscape(DEFAULT_BEFORE_LABEL_POSITION);
+      setAfterLabelPositionLandscape(DEFAULT_AFTER_LABEL_POSITION);
       setCombinedLabelPosition(DEFAULT_LABEL_POSITION);
       setLabelMarginVertical(10);
       setLabelMarginHorizontal(10);
@@ -588,6 +617,8 @@ export const SettingsProvider = ({ children }) => {
         labelCornerStyle: DEFAULT_LABEL_CORNER_STYLE,
         beforeLabelPosition: DEFAULT_BEFORE_LABEL_POSITION,
         afterLabelPosition: DEFAULT_AFTER_LABEL_POSITION,
+        beforeLabelPositionLandscape: DEFAULT_BEFORE_LABEL_POSITION,
+        afterLabelPositionLandscape: DEFAULT_AFTER_LABEL_POSITION,
         combinedLabelPosition: DEFAULT_LABEL_POSITION,
         labelMarginVertical: 10,
         labelMarginHorizontal: 10,
@@ -643,6 +674,8 @@ export const SettingsProvider = ({ children }) => {
     labelCornerStyle,
     beforeLabelPosition,
     afterLabelPosition,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
     combinedLabelPosition,
     labelMarginVertical,
     labelMarginHorizontal,
@@ -653,6 +686,8 @@ export const SettingsProvider = ({ children }) => {
     updateLabelCornerStyle,
     updateBeforeLabelPosition,
     updateAfterLabelPosition,
+    updateBeforeLabelPositionLandscape,
+    updateAfterLabelPositionLandscape,
     updateCombinedLabelPosition,
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,

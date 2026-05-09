@@ -120,7 +120,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
   const photoScrollRef = useRef(null);
   const { t } = useTranslation();
   const { getUnpairedBeforePhotos, getBeforePhotos, getAfterPhotos, activeProjectId, deletePhoto } = usePhotos();
-  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms, softTrialActive, softTrialRemaining, refreshSoftTrial, userPlan } = useSettings();
+  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms, softTrialActive, softTrialRemaining, refreshSoftTrial, userPlan } = useSettings();
   const { effectivePlan } = useFeaturePermissions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { width, height } = Dimensions.get('window');
@@ -732,33 +732,41 @@ export default function PhotoEditorScreen({ route, navigation }) {
           {/* Show labels overlay on original images if showLabels is true */}
           {/* For STACK: before is on top, after is on bottom */}
           {/* For SIDE: before is on left, after is on right */}
-          {showLabels && (
-            <>
-              {isStackLayout ? (
-                <>
-                  {/* Before label on top half for stacked layout */}
-                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: '50%' }}>
-                    <PhotoLabel label="common.before" position={beforeLabelPosition} />
-                  </View>
-                  {/* After label on bottom half for stacked layout */}
-                  <View style={{ position: 'absolute', top: '50%', left: 0, right: 0, bottom: 0 }}>
-                    <PhotoLabel label="common.after" position={afterLabelPosition} />
-                  </View>
-                </>
-              ) : (
-                <>
-                  {/* Before label on left half for side-by-side layout */}
-                  <View style={{ position: 'absolute', top: 0, left: 0, right: '50%', bottom: 0 }}>
-                    <PhotoLabel label="common.before" position={beforeLabelPosition} />
-                  </View>
-                  {/* After label on right half for side-by-side layout */}
-                  <View style={{ position: 'absolute', top: 0, left: '50%', right: 0, bottom: 0 }}>
-                    <PhotoLabel label="common.after" position={afterLabelPosition} />
-                  </View>
-                </>
-              )}
-            </>
-          )}
+          {showLabels && (() => {
+            // Decide which orientation's saved positions to apply by looking
+            // at the per-half aspect: in STACK each half is wide-and-short
+            // (landscape); in SIDE each half is narrow-and-tall (portrait).
+            const halfIsLandscape = isStackLayout ? (w >= h / 2) : ((w / 2) > h);
+            const beforePos = halfIsLandscape
+              ? (beforeLabelPositionLandscape || beforeLabelPosition)
+              : beforeLabelPosition;
+            const afterPos = halfIsLandscape
+              ? (afterLabelPositionLandscape || afterLabelPosition)
+              : afterLabelPosition;
+            return (
+              <>
+                {isStackLayout ? (
+                  <>
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: '50%' }}>
+                      <PhotoLabel label="common.before" position={beforePos} />
+                    </View>
+                    <View style={{ position: 'absolute', top: '50%', left: 0, right: 0, bottom: 0 }}>
+                      <PhotoLabel label="common.after" position={afterPos} />
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: '50%', bottom: 0 }}>
+                      <PhotoLabel label="common.before" position={beforePos} />
+                    </View>
+                    <View style={{ position: 'absolute', top: 0, left: '50%', right: 0, bottom: 0 }}>
+                      <PhotoLabel label="common.after" position={afterPos} />
+                    </View>
+                  </>
+                )}
+              </>
+            );
+          })()}
           {/* Show watermark if enabled */}
           {shouldShowWatermark && <PhotoWatermark />}
           
