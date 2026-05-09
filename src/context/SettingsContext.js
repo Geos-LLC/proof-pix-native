@@ -73,10 +73,15 @@ export const SettingsProvider = ({ children }) => {
   const [beforeLabelPosition, setBeforeLabelPosition] = useState(DEFAULT_BEFORE_LABEL_POSITION);
   const [afterLabelPosition, setAfterLabelPosition] = useState(DEFAULT_AFTER_LABEL_POSITION);
   // Landscape-orientation overrides: when a photo is wider than tall, these
-  // positions are used instead of the portrait ones. They default to the
-  // portrait values so existing users see no behavior change until they tweak.
-  const [beforeLabelPositionLandscape, setBeforeLabelPositionLandscape] = useState(DEFAULT_BEFORE_LABEL_POSITION);
-  const [afterLabelPositionLandscape, setAfterLabelPositionLandscape] = useState(DEFAULT_AFTER_LABEL_POSITION);
+  // positions are used instead of the portrait ones. Defaults differ from
+  // portrait because landscape photos combine *stacked* (top/bottom halves)
+  // rather than side-by-side, so the convention is BEFORE top-left of the
+  // upper half and AFTER middle-left of the lower half — the labels stack
+  // vertically on the left edge instead of clashing at the top corners.
+  const DEFAULT_LANDSCAPE_BEFORE_LABEL_POSITION = 'left-top';
+  const DEFAULT_LANDSCAPE_AFTER_LABEL_POSITION = 'left-middle';
+  const [beforeLabelPositionLandscape, setBeforeLabelPositionLandscape] = useState(DEFAULT_LANDSCAPE_BEFORE_LABEL_POSITION);
+  const [afterLabelPositionLandscape, setAfterLabelPositionLandscape] = useState(DEFAULT_LANDSCAPE_AFTER_LABEL_POSITION);
   const [combinedLabelPosition, setCombinedLabelPosition] = useState(DEFAULT_LABEL_POSITION);
   const [labelMarginVertical, setLabelMarginVertical] = useState(10); // Top/bottom margin
   const [labelMarginHorizontal, setLabelMarginHorizontal] = useState(10); // Left/right margin

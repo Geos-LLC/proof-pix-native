@@ -328,18 +328,12 @@ export default function CustomizeLabelsScreen({ navigation }) {
     ? updateAfterLabelPositionLandscape
     : updateAfterLabelPosition;
 
-  const portraitBeforeStyle = getPositionStyle(beforeLabelPosition, labelMarginVertical, labelMarginHorizontal);
-  const portraitAfterStyle = getPositionStyle(afterLabelPosition, labelMarginVertical, labelMarginHorizontal);
-  const landscapeBeforeStyle = getPositionStyle(
-    beforeLabelPositionLandscape || beforeLabelPosition,
-    labelMarginVertical,
-    labelMarginHorizontal
-  );
-  const landscapeAfterStyle = getPositionStyle(
-    afterLabelPositionLandscape || afterLabelPosition,
-    labelMarginVertical,
-    labelMarginHorizontal
-  );
+  const activeBeforeStyle = getPositionStyle(activeBeforePos, labelMarginVertical, labelMarginHorizontal);
+  const activeAfterStyle = getPositionStyle(activeAfterPos, labelMarginVertical, labelMarginHorizontal);
+  // Match the rest of the app's convention from isStackedLayout: portrait
+  // photos render side-by-side (row flex, vertical divider), landscape photos
+  // render stacked (column flex, horizontal divider).
+  const isHorizontal = orientationTab === 'landscape';
 
   // Get watermark position style using the same function as PhotoWatermark
   const watermarkPositions = getLabelPositions(labelMarginVertical ?? 10, labelMarginHorizontal ?? 10);
@@ -370,67 +364,38 @@ export default function CustomizeLabelsScreen({ navigation }) {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-        {/* Preview Section - Portrait + Landscape side-by-side previews. The
-            portrait preview reflects beforeLabelPosition / afterLabelPosition
-            (used for portrait + square photos). The landscape preview reflects
-            the *Landscape variants (used for photos wider than tall). */}
+        {/* Preview — single square box that switches between portrait
+            (side-by-side, vertical divider) and landscape (stacked, horizontal
+            divider) per the codebase's isStackedLayout convention: portrait
+            photos combine side-by-side, landscape photos combine stacked. */}
         <View style={styles.previewSection}>
-          <Text style={styles.previewLabelHeader}>Portrait photos</Text>
-          <View style={styles.previewCombinedContainer}>
-            {/* Before section */}
-            <View style={styles.previewCombinedHalf}>
-              <Ionicons name="image-outline" size={48} color="#999" />
-              <View style={[
-                styles.previewLabel,
-                {
-                  backgroundColor: labelBackgroundColor,
-                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
-                  padding: currentSize?.padding || 10,
-                  position: 'absolute',
-                  ...portraitBeforeStyle,
-                }
-              ]}>
+          <View style={styles.orientationTabsRow}>
+            {[
+              { key: 'portrait', label: 'Vertical' },
+              { key: 'landscape', label: 'Horizontal' },
+            ].map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                style={[
+                  styles.orientationTab,
+                  orientationTab === key && styles.orientationTabActive,
+                ]}
+                onPress={() => setOrientationTab(key)}
+              >
                 <Text style={[
-                  styles.previewLabelText,
-                  { color: labelTextColor, fontSize: currentSize?.fontSize || 14 }
-                ]}>Before</Text>
-              </View>
-            </View>
-            {/* After section */}
-            <View style={[styles.previewCombinedHalf, styles.previewCombinedHalfAfter]}>
-              <Ionicons name="image-outline" size={48} color="#999" />
-              <View style={[
-                styles.previewLabel,
-                {
-                  backgroundColor: labelBackgroundColor,
-                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
-                  padding: currentSize?.padding || 10,
-                  position: 'absolute',
-                  ...portraitAfterStyle,
-                }
-              ]}>
-                <Text style={[
-                  styles.previewLabelText,
-                  { color: labelTextColor, fontSize: currentSize?.fontSize || 14 }
-                ]}>After</Text>
-              </View>
-            </View>
-            <Text style={[
-              styles.previewWatermark,
-              {
-                color: watermarkColor || '#666666',
-                opacity: watermarkOpacity || 0.5,
-                ...watermarkPositionCoords,
-              }
-            ]}>
-              {watermarkText || 'Created with Proofpix.app'}
-            </Text>
+                  styles.orientationTabText,
+                  orientationTab === key && styles.orientationTabTextActive,
+                ]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
-          <Text style={[styles.previewLabelHeader, { marginTop: 16 }]}>Landscape photos</Text>
-          <View style={styles.previewLandscapeContainer}>
-            <View style={styles.previewLandscapeHalf}>
-              <Ionicons name="image-outline" size={36} color="#999" />
+          <View style={[
+            styles.previewSquare,
+            { flexDirection: isHorizontal ? 'column' : 'row' },
+          ]}>
+            <View style={styles.previewHalfBefore}>
+              <Ionicons name="image-outline" size={48} color="#999" />
               <View style={[
                 styles.previewLabel,
                 {
@@ -438,7 +403,7 @@ export default function CustomizeLabelsScreen({ navigation }) {
                   borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
                   padding: currentSize?.padding || 10,
                   position: 'absolute',
-                  ...landscapeBeforeStyle,
+                  ...activeBeforeStyle,
                 }
               ]}>
                 <Text style={[
@@ -447,8 +412,9 @@ export default function CustomizeLabelsScreen({ navigation }) {
                 ]}>Before</Text>
               </View>
             </View>
-            <View style={[styles.previewLandscapeHalf, styles.previewLandscapeHalfAfter]}>
-              <Ionicons name="image-outline" size={36} color="#999" />
+            <View style={isHorizontal ? styles.previewDividerHorizontal : styles.previewDividerVertical} />
+            <View style={styles.previewHalfAfter}>
+              <Ionicons name="image-outline" size={48} color="#999" />
               <View style={[
                 styles.previewLabel,
                 {
@@ -456,7 +422,7 @@ export default function CustomizeLabelsScreen({ navigation }) {
                   borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
                   padding: currentSize?.padding || 10,
                   position: 'absolute',
-                  ...landscapeAfterStyle,
+                  ...activeAfterStyle,
                 }
               ]}>
                 <Text style={[
@@ -776,32 +742,8 @@ export default function CustomizeLabelsScreen({ navigation }) {
         title="Label Position"
       >
         <View style={styles.positionContainer}>
-          {/* Orientation tab — switches between portrait and landscape edits */}
-          <View style={styles.orientationTabs}>
-            {[
-              { key: 'portrait', label: 'Portrait' },
-              { key: 'landscape', label: 'Landscape' },
-            ].map(({ key, label }) => (
-              <TouchableOpacity
-                key={key}
-                style={[
-                  styles.orientationTab,
-                  orientationTab === key && styles.orientationTabActive,
-                ]}
-                onPress={() => setOrientationTab(key)}
-              >
-                <Text style={[
-                  styles.orientationTabText,
-                  orientationTab === key && styles.orientationTabTextActive,
-                ]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           <Text style={styles.orientationHint}>
-            {orientationTab === 'portrait'
-              ? 'Applied to portrait and square photos.'
-              : 'Applied to photos wider than they are tall.'}
+            Editing {orientationTab === 'portrait' ? 'vertical (portrait + square)' : 'horizontal (landscape)'} photo positions. Switch in the preview above.
           </Text>
 
           {/* Label Position - Before/After Grids */}
@@ -1204,30 +1146,40 @@ const styles = StyleSheet.create({
   previewSection: {
     marginBottom: 24,
   },
-  previewLabelHeader: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.GRAY,
-    marginBottom: 8,
-    marginTop: 4,
+  orientationTabsRow: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.BACKGROUND,
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 12,
   },
-  previewLandscapeContainer: {
+  previewSquare: {
     width: '100%',
-    aspectRatio: 16 / 9,
+    aspectRatio: 1,
     position: 'relative',
     backgroundColor: '#E0E0E0',
     borderRadius: 8,
-    flexDirection: 'row',
     overflow: 'hidden',
   },
-  previewLandscapeHalf: {
+  previewHalfBefore: {
     flex: 1,
     backgroundColor: '#D1D1D1',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  previewLandscapeHalfAfter: {
+  previewHalfAfter: {
+    flex: 1,
     backgroundColor: '#A0A0A0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewDividerVertical: {
+    width: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  previewDividerHorizontal: {
+    height: 1,
+    backgroundColor: '#FFFFFF',
   },
   previewLabel: {
     paddingHorizontal: 12,
@@ -1314,24 +1266,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
     color: COLORS.TEXT,
-  },
-  previewCombinedContainer: {
-    width: '100%',
-    aspectRatio: 1.2, // Taller combined preview (was 2, now 1.2 for more height)
-    position: 'relative',
-    backgroundColor: '#E0E0E0',
-    borderRadius: 8,
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  previewCombinedHalf: {
-    flex: 1,
-    backgroundColor: '#D1D1D1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  previewCombinedHalfAfter: {
-    backgroundColor: '#A0A0A0',
   },
   previewWatermark: {
     fontSize: 12,
@@ -1600,13 +1534,6 @@ const styles = StyleSheet.create({
   positionContainer: {
     padding: 24,
     minHeight: 200,
-  },
-  orientationTabs: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.BACKGROUND,
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 12,
   },
   orientationTab: {
     flex: 1,

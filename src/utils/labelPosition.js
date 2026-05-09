@@ -24,9 +24,12 @@ export function pickBeforeLabelPosition(settings, width, height) {
 
 export function pickAfterLabelPosition(settings, width, height) {
   if (isLandscape(width, height)) {
+    // Landscape photos combine stacked (top/bottom). The After label sits in
+    // the bottom half — `left-middle` plus the bake-time after-half offset
+    // lands the label below the divider, vertically centered in the bottom
+    // half, on the left edge. Aligns with `DEFAULT_LANDSCAPE_AFTER_LABEL_POSITION`.
     return settings?.afterLabelPositionLandscape
-      || settings?.afterLabelPosition
-      || 'right-top';
+      || 'left-middle';
   }
   return settings?.afterLabelPosition || 'right-top';
 }
