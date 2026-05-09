@@ -114,17 +114,26 @@ export default function GlobalBackgroundLabelPreparation() {
         return;
       }
 
-      // Pick portrait vs landscape position based on photo aspect ratio. A
-      // photo wider than it is tall (width > height) is landscape; everything
-      // else (square + portrait) uses the portrait setting.
-      const photoW = photoToProcess.width || 0;
-      const photoH = photoToProcess.height || 0;
-      const isLandscapePhoto = photoW > photoH && photoH > 0;
+      // Pick portrait vs landscape position based on the photo's orientation.
+      // Prefer numeric width/height; fall back to the photo's `aspectRatio`
+      // string ('16:9', '4:3', etc.) since most stored photos carry that
+      // rather than explicit pixel dimensions.
+      const isLandscapePhoto = (() => {
+        const w = Number(photoToProcess.width);
+        const h = Number(photoToProcess.height);
+        if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return w > h;
+        const ar = photoToProcess.photo?.aspectRatio || photoToProcess.combinedLayout;
+        if (typeof ar === 'string' && ar.includes(':')) {
+          const [aw, ah] = ar.split(':').map(Number);
+          if (Number.isFinite(aw) && Number.isFinite(ah) && aw > 0 && ah > 0) return aw > ah;
+        }
+        return false;
+      })();
       const beforePosKey = isLandscapePhoto
-        ? (settings.beforeLabelPositionLandscape || settings.beforeLabelPosition || 'left-top')
+        ? (settings.beforeLabelPositionLandscape || 'left-top')
         : (settings.beforeLabelPosition || 'left-top');
       const afterPosKey = isLandscapePhoto
-        ? (settings.afterLabelPositionLandscape || settings.afterLabelPosition || 'right-top')
+        ? (settings.afterLabelPositionLandscape || 'left-top')
         : (settings.afterLabelPosition || 'right-top');
 
       // Determine label position based on photo mode

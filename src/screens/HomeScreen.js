@@ -1557,13 +1557,11 @@ export default function HomeScreen({ navigation }) {
                     fullScreenPhoto.mode === 'before'
                       ? pickBeforeLabelPosition(
                           { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                          fullScreenPhoto.width,
-                          fullScreenPhoto.height
+                          fullScreenPhoto
                         )
                       : pickAfterLabelPosition(
                           { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                          fullScreenPhoto.width,
-                          fullScreenPhoto.height
+                          fullScreenPhoto
                         )
                   }
                 />
@@ -1689,8 +1687,7 @@ export default function HomeScreen({ navigation }) {
                     label="common.before"
                     position={pickBeforeLabelPosition(
                       { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                      fullScreenPhotoSet.before.width,
-                      fullScreenPhotoSet.before.height
+                      fullScreenPhotoSet.before
                     )}
                   />
                 )}
@@ -1707,8 +1704,7 @@ export default function HomeScreen({ navigation }) {
                     label="common.after"
                     position={pickAfterLabelPosition(
                       { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                      fullScreenPhotoSet.after.width,
-                      fullScreenPhotoSet.after.height
+                      fullScreenPhotoSet.after
                     )}
                   />
                 )}

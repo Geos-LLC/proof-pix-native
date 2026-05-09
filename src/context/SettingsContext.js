@@ -73,13 +73,15 @@ export const SettingsProvider = ({ children }) => {
   const [beforeLabelPosition, setBeforeLabelPosition] = useState(DEFAULT_BEFORE_LABEL_POSITION);
   const [afterLabelPosition, setAfterLabelPosition] = useState(DEFAULT_AFTER_LABEL_POSITION);
   // Landscape-orientation overrides: when a photo is wider than tall, these
-  // positions are used instead of the portrait ones. Defaults differ from
-  // portrait because landscape photos combine *stacked* (top/bottom halves)
-  // rather than side-by-side, so the convention is BEFORE top-left of the
-  // upper half and AFTER middle-left of the lower half — the labels stack
-  // vertically on the left edge instead of clashing at the top corners.
+  // positions are used instead of the portrait ones. Landscape photos
+  // combine *stacked* (top/bottom halves) rather than side-by-side, so the
+  // convention is BEFORE in the upper-left of the top half and AFTER in
+  // the upper-left of the bottom half — i.e. both `left-top`. The bake-time
+  // after-half offset shifts the AFTER label down by half-height so it
+  // lands just below the divider line on the left edge, instead of clashing
+  // with the BEFORE label at the top.
   const DEFAULT_LANDSCAPE_BEFORE_LABEL_POSITION = 'left-top';
-  const DEFAULT_LANDSCAPE_AFTER_LABEL_POSITION = 'left-middle';
+  const DEFAULT_LANDSCAPE_AFTER_LABEL_POSITION = 'left-top';
   const [beforeLabelPositionLandscape, setBeforeLabelPositionLandscape] = useState(DEFAULT_LANDSCAPE_BEFORE_LABEL_POSITION);
   const [afterLabelPositionLandscape, setAfterLabelPositionLandscape] = useState(DEFAULT_LANDSCAPE_AFTER_LABEL_POSITION);
   const [combinedLabelPosition, setCombinedLabelPosition] = useState(DEFAULT_LABEL_POSITION);

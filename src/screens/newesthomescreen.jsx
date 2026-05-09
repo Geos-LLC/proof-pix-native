@@ -1505,8 +1505,8 @@ export default function HomeScreen({ navigation }) {
                   label={fullScreenPhoto.mode === 'before' ? 'common.before' : 'common.after'}
                   position={
                     fullScreenPhoto.mode === 'before'
-                      ? pickBeforeLabelPosition(labelPosSettings, fullScreenPhoto.width, fullScreenPhoto.height)
-                      : pickAfterLabelPosition(labelPosSettings, fullScreenPhoto.width, fullScreenPhoto.height)
+                      ? pickBeforeLabelPosition(labelPosSettings, fullScreenPhoto)
+                      : pickAfterLabelPosition(labelPosSettings, fullScreenPhoto)
                   }
                 />
               )}
@@ -1616,7 +1616,7 @@ export default function HomeScreen({ navigation }) {
                 {showLabels && (
                   <PhotoLabel
                     label="common.before"
-                    position={pickBeforeLabelPosition(labelPosSettings, fullScreenPhotoSet.before.width, fullScreenPhotoSet.before.height)}
+                    position={pickBeforeLabelPosition(labelPosSettings, fullScreenPhotoSet.before)}
                   />
                 )}
               </View>
@@ -1630,7 +1630,7 @@ export default function HomeScreen({ navigation }) {
                 {showLabels && (
                   <PhotoLabel
                     label="common.after"
-                    position={pickAfterLabelPosition(labelPosSettings, fullScreenPhotoSet.after.width, fullScreenPhotoSet.after.height)}
+                    position={pickAfterLabelPosition(labelPosSettings, fullScreenPhotoSet.after)}
                   />
                 )}
               </View>

@@ -109,7 +109,7 @@ export const calculateSettingsHash = (settings) => {
     beforeLabelPosition: beforeLabelPosition || 'top-left',
     afterLabelPosition: afterLabelPosition || 'top-right',
     beforeLabelPositionLandscape: beforeLabelPositionLandscape || 'left-top',
-    afterLabelPositionLandscape: afterLabelPositionLandscape || 'left-middle',
+    afterLabelPositionLandscape: afterLabelPositionLandscape || 'left-top',
     labelBackgroundColor: labelBackgroundColor || '#FFD700',
     labelTextColor: labelTextColor || '#000000',
     labelSize: labelSize || 'medium',

@@ -2538,7 +2538,7 @@ export default function CameraScreen({ route, navigation }) {
                 ) : isOrientationMismatch() ? (
                   <Text style={styles.captureButtonWarning}>🔄</Text>
                 ) : (
-                  <View style={styles.captureButtonInnerCircle} />
+                  <Ionicons name="camera" size={38} color="#000" />
                 )}
               </TouchableOpacity>
             </View>
@@ -2551,7 +2551,7 @@ export default function CameraScreen({ route, navigation }) {
                   onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="checkmark-sharp" size={36} color="#000000" />
+                  <Ionicons name="arrow-undo" size={32} color="#000000" />
                 </TouchableOpacity>
               </View>
             </View>
