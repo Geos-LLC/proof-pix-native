@@ -42,12 +42,37 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
 
   const handleSelect = async (userType) => {
     setSelected(userType);
-    logEvent('qualification_option_selected', { user_type: userType });
+
+    // Build a richer payload now that there are 18 industries. Keeping
+    // `user_type` for continuity with v1.5.21–v1.5.24 events, then layering:
+    //   industry_id       — same value, modern name
+    //   industry_label    — human-readable for cleaner reports
+    //   folder_count      — how many folders the preset seeded
+    //   context           — 'onboarding' (mandatory) vs 'settings_repick'
+    const industry = getIndustryById(userType);
+    const industryLabel = industry?.defaultLabel || userType;
+    const folderCount = industry?.folders?.length || 0;
+    const context = mandatory ? 'onboarding' : 'settings_repick';
+
+    // Previous selection (if any) so we can attribute switches for the
+    // re-pick case. Null on first-time onboarding.
+    let previousType = null;
+    try { previousType = await AsyncStorage.getItem(QUALIFICATION_KEY); } catch {}
+
+    const payload = {
+      user_type: userType,
+      industry_id: userType,
+      industry_label: industryLabel,
+      folder_count: folderCount,
+      context,
+      previous_industry: previousType && previousType !== userType ? previousType : null,
+    };
+
+    logEvent('qualification_option_selected', payload);
 
     // Apply the industry's folder seed list. The user can still edit them
     // via Settings → Folders afterward. We persist user_type AND folders
     // before closing so they survive an app restart mid-onboarding.
-    const industry = getIndustryById(userType);
     try {
       if (industry?.folders?.length) {
         await saveCustomRooms(industry.folders);
@@ -58,8 +83,21 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
 
     setTimeout(async () => {
       await AsyncStorage.setItem(QUALIFICATION_KEY, userType);
-      setUserProperties({ user_type: userType });
-      logEvent('qualification_answered', { user_type: userType });
+      setUserProperties({
+        user_type: userType,
+        industry_id: userType,
+        industry_label: industryLabel,
+      });
+      logEvent('qualification_answered', payload);
+      // Dedicated industry-change event for the re-pick path so changes
+      // out of the onboarding funnel are easy to slice in Firebase.
+      if (context === 'settings_repick' && previousType && previousType !== userType) {
+        logEvent('industry_changed', {
+          from_industry: previousType,
+          to_industry: userType,
+          to_industry_label: industryLabel,
+        });
+      }
       onClose();
     }, 250);
   };

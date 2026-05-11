@@ -175,7 +175,7 @@ export default function HomeScreen({ navigation }) {
     const timer = setTimeout(async () => {
       const done = await hasCompletedQualification();
       if (!done) {
-        logEvent('qualification_prompt_shown');
+        logEvent('qualification_prompt_shown', { context: 'onboarding' });
         setShowQualification(true);
       }
     }, 1500);

@@ -4,7 +4,7 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    version: process.env.VERSION || "1.5.25",
+    version: process.env.VERSION || "1.5.26",
     runtimeVersion: {
       policy: "appVersion"
     },
@@ -27,7 +27,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "59",
+      buildNumber: "60",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -68,7 +68,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 66,
+      versionCode: 67,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",

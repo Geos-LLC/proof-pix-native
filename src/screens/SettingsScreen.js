@@ -70,6 +70,7 @@ import {
   logFeatureGateAction,
   logAdminReferralConversion,
   logSubscriptionRestored,
+  logEvent,
 } from '../utils/analytics';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
@@ -542,6 +543,11 @@ export default function SettingsScreen({ navigation, route }) {
         >
           {displayRooms.map((room, index) => {
             const isActive = currentRoom === room.id;
+            // Built-in rooms ship with a bundled PNG (`image`). Industry-
+            // seeded and user-added rooms only have an emoji `icon`. Render
+            // whichever the room actually carries; fall back to a generic
+            // folder emoji if neither is set.
+            const hasImage = !!room.image;
             return (
               <TouchableOpacity
                 key={`${room.id}-${index}`}
@@ -551,9 +557,11 @@ export default function SettingsScreen({ navigation, route }) {
                 ]}
                 onPress={() => setCurrentRoom(room.id)}
               >
-                <Image 
-                source={rooms.find(r => r.id === room.id)?.image} 
-                style={{ width: 24, height: 24 }} />
+                {hasImage ? (
+                  <Image source={room.image} style={{ width: 24, height: 24 }} />
+                ) : (
+                  <Text style={{ fontSize: 20, lineHeight: 24 }}>{room.icon || '📁'}</Text>
+                )}
                 <Text style={[
                   styles.roomListItemText,
                   isActive && styles.roomListItemTextActive
@@ -3481,6 +3489,7 @@ export default function SettingsScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[styles.settingRow, {borderTopWidth: 1, borderTopColor: 'rgba(0, 0, 0, 0.1)'}]}
                 onPress={() => {
+                  logEvent('qualification_prompt_shown', { context: 'settings_repick' });
                   setShowIndustryPicker(true);
                 }}
               >
