@@ -2160,6 +2160,7 @@ export default function HomeScreen({ navigation }) {
 
       <QualificationPromptModal
         visible={showQualification}
+        mandatory
         onClose={() => setShowQualification(false)}
       />
     </SafeAreaView>

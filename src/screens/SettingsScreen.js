@@ -33,6 +33,7 @@ import { COLORS, getLabelPositions } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { RoomIcon } from '../utils/roomIcons';
 import RoomEditor from '../components/RoomEditor';
+import QualificationPromptModal from '../components/QualificationPromptModal';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
 import googleDriveService from '../services/googleDriveService';
@@ -861,6 +862,7 @@ export default function SettingsScreen({ navigation, route }) {
     };
   }, [isTeamMember, isAuthenticated]);
   const [showRoomEditor, setShowRoomEditor] = useState(false);
+  const [showIndustryPicker, setShowIndustryPicker] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [referralInfo, setReferralInfo] = useState({
@@ -3473,6 +3475,23 @@ export default function SettingsScreen({ navigation, route }) {
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#666666" />
               </TouchableOpacity>
+
+              {/* Reset folders by industry. Opens the qualification modal in
+                  non-mandatory mode so it can be dismissed without changes. */}
+              <TouchableOpacity
+                style={[styles.settingRow, {borderTopWidth: 1, borderTopColor: 'rgba(0, 0, 0, 0.1)'}]}
+                onPress={() => {
+                  setShowIndustryPicker(true);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.chooseIndustry', { defaultValue: 'Choose industry' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.chooseIndustryDescription', { defaultValue: 'Replace your sections with a preset list for your business type.' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
+              </TouchableOpacity>
             </View>
 
             {/* Upload Structure */}
@@ -5386,6 +5405,11 @@ export default function SettingsScreen({ navigation, route }) {
             }, 100);
           }}
           initialRooms={customRooms}
+        />
+
+        <QualificationPromptModal
+          visible={showIndustryPicker}
+          onClose={() => setShowIndustryPicker(false)}
         />
 
       {/* Edit Name Modal */}

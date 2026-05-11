@@ -5,24 +5,18 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { INDUSTRIES, getIndustryById } from '../constants/industries';
+import { useSettings } from '../context/SettingsContext';
 import { logEvent, setUserProperties } from '../utils/analytics';
 
 const QUALIFICATION_KEY = '@user_qualification';
-
-const USER_TYPES = [
-  { id: 'cleaning', icon: 'sparkles-outline', labelKey: 'qualification.cleaning', defaultLabel: 'Cleaning' },
-  { id: 'contracting', icon: 'construct-outline', labelKey: 'qualification.contracting', defaultLabel: 'Contracting' },
-  { id: 'restoration', icon: 'hammer-outline', labelKey: 'qualification.restoration', defaultLabel: 'Restoration' },
-  { id: 'editing', icon: 'color-palette-outline', labelKey: 'qualification.editing', defaultLabel: 'Editing / Content' },
-  { id: 'personal', icon: 'person-outline', labelKey: 'qualification.personal', defaultLabel: 'Personal Use' },
-  { id: 'other', icon: 'ellipsis-horizontal-outline', labelKey: 'qualification.other', defaultLabel: 'Other' },
-];
 
 export const hasCompletedQualification = async () => {
   try {
@@ -41,27 +35,33 @@ export const getStoredUserType = async () => {
   }
 };
 
-export default function QualificationPromptModal({ visible, onClose }) {
+export default function QualificationPromptModal({ visible, onClose, mandatory = false }) {
   const { t } = useTranslation();
+  const { saveCustomRooms } = useSettings();
   const [selected, setSelected] = useState(null);
 
   const handleSelect = async (userType) => {
     setSelected(userType);
     logEvent('qualification_option_selected', { user_type: userType });
 
-    // Brief visual feedback before closing
+    // Apply the industry's folder seed list. The user can still edit them
+    // via Settings → Folders afterward. We persist user_type AND folders
+    // before closing so they survive an app restart mid-onboarding.
+    const industry = getIndustryById(userType);
+    try {
+      if (industry?.folders?.length) {
+        await saveCustomRooms(industry.folders);
+      }
+    } catch (e) {
+      // Saving folders failing is non-fatal — user can still pick rooms manually.
+    }
+
     setTimeout(async () => {
       await AsyncStorage.setItem(QUALIFICATION_KEY, userType);
       setUserProperties({ user_type: userType });
       logEvent('qualification_answered', { user_type: userType });
       onClose();
-    }, 300);
-  };
-
-  const handleSkip = async () => {
-    await AsyncStorage.setItem(QUALIFICATION_KEY, 'skipped');
-    logEvent('qualification_skipped');
-    onClose();
+    }, 250);
   };
 
   return (
@@ -69,45 +69,60 @@ export default function QualificationPromptModal({ visible, onClose }) {
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={handleSkip}
+      // In mandatory (onboarding) mode the hardware-back must NOT dismiss —
+      // the user has to pick an industry. In non-mandatory (Settings re-pick)
+      // mode it closes cleanly.
+      onRequestClose={() => { if (!mandatory) onClose(); }}
     >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
+          {!mandatory && (
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={onClose}
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
+          )}
           <Text style={styles.title}>
             {t('qualification.title', { defaultValue: 'What do you use ProofPix for?' })}
           </Text>
+          <Text style={styles.subtitle}>
+            {t('qualification.subtitle', {
+              defaultValue: 'Pick the closest match — we\'ll set up your folders. You can edit them anytime in Settings.',
+            })}
+          </Text>
 
-          <View style={styles.options}>
-            {USER_TYPES.map((type) => (
-              <TouchableOpacity
-                key={type.id}
-                style={[
-                  styles.option,
-                  selected === type.id && styles.optionSelected,
-                ]}
-                onPress={() => handleSelect(type.id)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={type.icon}
-                  size={22}
-                  color={selected === type.id ? '#000' : '#ccc'}
-                />
-                <Text style={[
-                  styles.optionText,
-                  selected === type.id && styles.optionTextSelected,
-                ]}>
-                  {t(type.labelKey, { defaultValue: type.defaultLabel })}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-            <Text style={styles.skipText}>
-              {t('common.skip', { defaultValue: 'Skip' })}
-            </Text>
-          </TouchableOpacity>
+          <ScrollView
+            style={styles.scrollArea}
+            contentContainerStyle={styles.options}
+            showsVerticalScrollIndicator={false}
+          >
+            {INDUSTRIES.map((industry) => {
+              const isSelected = selected === industry.id;
+              return (
+                <TouchableOpacity
+                  key={industry.id}
+                  style={[styles.option, isSelected && styles.optionSelected]}
+                  onPress={() => handleSelect(industry.id)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons
+                    name={industry.icon}
+                    size={20}
+                    color={isSelected ? '#000' : COLORS.PRIMARY}
+                  />
+                  <Text style={[
+                    styles.optionText,
+                    isSelected && styles.optionTextSelected,
+                  ]}>
+                    {t(industry.labelKey, { defaultValue: industry.defaultLabel })}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -117,64 +132,86 @@ export default function QualificationPromptModal({ visible, onClose }) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
   },
+  // Yellow + black, paywall-style — bright yellow header backing on black
+  // sheet so the sheet looks branded rather than the previous flat-dark slab.
   sheet: {
-    backgroundColor: '#1a1a1a',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: '#000',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 4,
+    borderTopColor: COLORS.PRIMARY,
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 40,
+    paddingTop: 28,
+    paddingBottom: 32,
+    maxHeight: '85%',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#fff',
+    color: COLORS.PRIMARY,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 8,
     fontFamily: FONTS.BOLD,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#bbb',
+    textAlign: 'center',
+    marginBottom: 18,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+    fontFamily: FONTS.REGULAR,
+  },
+  scrollArea: {
+    maxHeight: 480,
   },
   options: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
     justifyContent: 'center',
-    marginBottom: 20,
+    paddingBottom: 8,
   },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: '#333',
+    borderColor: '#2a2a2a',
     backgroundColor: '#111',
-    minWidth: '45%',
+    minWidth: '47%',
+    flexShrink: 1,
   },
   optionSelected: {
     borderColor: COLORS.PRIMARY,
     backgroundColor: COLORS.PRIMARY,
   },
   optionText: {
-    fontSize: 14,
-    color: '#ccc',
+    fontSize: 13,
+    color: '#eee',
     fontWeight: '600',
     fontFamily: FONTS.SEMIBOLD,
+    flexShrink: 1,
   },
   optionTextSelected: {
     color: '#000',
-  },
-  skipButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  skipText: {
-    fontSize: 14,
-    color: '#666',
-    fontFamily: FONTS.MEDIUM,
   },
 });
