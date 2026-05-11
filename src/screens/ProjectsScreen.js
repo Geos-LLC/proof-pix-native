@@ -663,7 +663,7 @@ export default function ProjectsScreen({ navigation }) {
         style={[styles.floatingAddButton, { bottom: 20 + insets.bottom + 50 + 16 }]}
         onPress={() => {
           const locationDisplay = getLocationName(location);
-          setNewProjectNamePart(userName || '');
+          setNewProjectNamePart(`Project ${(projects?.length || 0) + 1}`);
           setNewProjectLocation(locationDisplay);
           setNewProjectVisible(true);
         }}
@@ -726,35 +726,6 @@ export default function ProjectsScreen({ navigation }) {
                   {locationLoadingInModal ? t('projects.gettingLocation', { defaultValue: 'Getting location…' }) : t('projects.useCurrentLocation', { defaultValue: 'Use current location' })}
                 </Text>
               </TouchableOpacity>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
-                {LOCATIONS.map((loc) => (
-                  <TouchableOpacity
-                    key={loc.id}
-                    onPress={() => setNewProjectLocation(loc.name)}
-                    style={{
-                      paddingHorizontal: 10,
-                      paddingVertical: 4,
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: newProjectLocation === loc.name ? COLORS.PRIMARY : COLORS.BORDER,
-                      marginRight: 6,
-                      marginBottom: 6,
-                      backgroundColor: newProjectLocation === loc.name ? '#FFF7D1' : '#FFFFFF',
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        color: '#000000',
-                      }}
-                    >
-                      {loc.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
             </View>
             <View style={styles.modalButtons}>
               <TouchableOpacity

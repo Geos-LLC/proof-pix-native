@@ -474,22 +474,22 @@ export default function CustomizeLabelsScreen({ navigation }) {
             selected={true}
             onPress={() => openColorModal('bg')}
           />
+        </View>
+
+        {/* Control Buttons Row 2 — keeps an even 4+4 split with row 1 */}
+        <View style={styles.controlsRow}>
           <ColorControlButton
             color={labelTextColor}
             label="Text Color"
             onPress={() => openColorModal('text')}
           />
-        </View>
-
-        {/* Control Buttons Row 2 */}
-        <View style={styles.controlsRow}>
           <ControlButton
             icon="move"
             label="Position"
             onPress={() => setPositionModalVisible(true)}
           />
           <ControlButton
-            icon="resize-outline"
+            icon="swap-horizontal-outline"
             label="Margin"
             onPress={() => setMarginModalVisible(true)}
           />

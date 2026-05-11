@@ -850,7 +850,7 @@ export default function HomeScreen({ navigation }) {
     }
     
     const locationDisplay = getLocationName(location);
-    setNewProjectNamePart(userName || '');
+    setNewProjectNamePart(`Project ${(projects?.length || 0) + 1}`);
     setNewProjectLocation(locationDisplay);
     setPendingCameraAfterCreate(navigateToCamera);
     setNewProjectVisible(true);
@@ -2025,34 +2025,6 @@ export default function HomeScreen({ navigation }) {
                     {locationLoadingInModal ? t('projects.gettingLocation', { defaultValue: 'Getting location…' }) : t('projects.useCurrentLocation', { defaultValue: 'Use current location' })}
                   </Text>
                 </TouchableOpacity>
-                {/* Optional quick picks – location only; name and date stay separate */}
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
-                  {LOCATIONS.map((loc) => (
-                    <TouchableOpacity
-                      key={loc.id}
-                      onPress={() => setNewProjectLocation(loc.name)}
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 4,
-                        borderRadius: 12,
-                        borderWidth: 1,
-                        borderColor: newProjectLocation === loc.name ? COLORS.PRIMARY : COLORS.BORDER,
-                        marginRight: 6,
-                        marginBottom: 6,
-                        backgroundColor: newProjectLocation === loc.name ? '#FFF7D1' : '#FFFFFF',
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          color: '#000000',
-                        }}
-                      >
-                        {loc.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
               </View>
             </View>
             <View style={{ flexDirection: 'row', marginTop: 12 }}>
