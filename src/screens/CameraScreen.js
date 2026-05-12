@@ -1237,6 +1237,8 @@ export default function CameraScreen({ route, navigation }) {
         await handleBeforePhoto(photoUri);
       } else if (mode === 'after') {
         await handleAfterPhoto(photoUri);
+      } else if (mode === 'progress') {
+        await handleProgressPhoto(photoUri);
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to take picture');
@@ -1283,6 +1285,8 @@ export default function CameraScreen({ route, navigation }) {
         } finally {
           setIsProcessingAfter(false);
         }
+      } else if (mode === 'progress') {
+        await handleProgressPhoto(photoUri);
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to pick photo from gallery');
@@ -1643,6 +1647,62 @@ export default function CameraScreen({ route, navigation }) {
       // User can close camera to see photos in home grid
     } catch (error) {
       Alert.alert('Error', 'Failed to save photo');
+    }
+  };
+
+  // Progress capture: single-shot, never paired, never combined. The user
+  // stays in camera after capture so they can take several in a row; a Done
+  // button (rendered when mode === 'progress') returns them to the section
+  // detail screen. No background label preparation is queued — progress
+  // photos are kept clean/raw per spec.
+  const handleProgressPhoto = async (uri) => {
+    try {
+      const currentOrientation = deviceOrientation;
+      let imageInfo = null;
+      try {
+        imageInfo = await new Promise((resolve, reject) => {
+          Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
+        });
+      } catch {}
+
+      let aspectRatio;
+      if (cameraViewMode === 'landscape') {
+        aspectRatio = '4:3';
+      } else if (imageInfo) {
+        if (imageInfo.width > imageInfo.height) {
+          aspectRatio = (imageInfo.width / imageInfo.height) >= 1.7 ? '16:9' : '4:3';
+        } else {
+          aspectRatio = (imageInfo.height / imageInfo.width) >= 1.7 ? '9:16' : '3:4';
+        }
+      } else {
+        aspectRatio = deviceOrientation === 'landscape' ? '4:3' : '3:4';
+      }
+
+      const photoName = `progress_${Date.now()}`;
+      const savedUri = await savePhotoToDevice(
+        uri,
+        `${room}_${photoName}_PROGRESS_${Date.now()}.jpg`,
+        activeProjectId || null
+      );
+
+      const newPhoto = {
+        id: Date.now(),
+        uri: savedUri,
+        room,
+        mode: PHOTO_MODES.PROGRESS,
+        name: photoName,
+        timestamp: Date.now(),
+        aspectRatio,
+        orientation: currentOrientation,
+        cameraViewMode,
+      };
+
+      await addPhoto(newPhoto);
+      logPhotoCapture('progress', 'camera', activeProjectId);
+      // Stay in camera so the user can take more progress photos quickly.
+      // The Done button in the camera UI exits back to the caller.
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save progress photo');
     }
   };
 
@@ -2543,12 +2603,24 @@ export default function CameraScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
 
-            {/* Right container - Checkmark button */}
+            {/* Right container - Done / return button. In Progress mode this
+                returns to the SectionDetail screen instead of resetting to
+                Home, so the user keeps the section context they came from. */}
             <View style={styles.buttonContainer}>
               <View style={styles.checkmarkButtonBorder}>
                 <TouchableOpacity
                   style={styles.checkmarkButton}
-                  onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
+                  onPress={() => {
+                    if (mode === 'progress') {
+                      if (navigation.canGoBack && navigation.canGoBack()) {
+                        navigation.goBack();
+                      } else {
+                        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                      }
+                    } else {
+                      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                    }
+                  }}
                   activeOpacity={0.7}
                 >
                   <Ionicons name="arrow-undo" size={32} color="#000000" />

@@ -86,6 +86,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import PhotoEditorScreen from './src/screens/PhotoEditorScreen';
 import GalleryScreen from './src/screens/GalleryScreen';
 import PhotoDetailScreen from './src/screens/PhotoDetailScreen';
+import SectionDetailScreen from './src/screens/SectionDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ContactUsScreen from './src/screens/ContactUsScreen';
 import ProjectsScreen from './src/screens/ProjectsScreen';
@@ -273,9 +274,16 @@ function AppNavigator() {
           animation: 'slide_from_right'
         }}
       />
-      <Stack.Screen 
-        name="PhotoDetail" 
+      <Stack.Screen
+        name="PhotoDetail"
         component={PhotoDetailScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
+        name="SectionDetail"
+        component={SectionDetailScreen}
         options={{
           animation: 'slide_from_right'
         }}

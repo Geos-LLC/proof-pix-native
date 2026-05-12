@@ -10,7 +10,11 @@ export const ROOMS = [
 export const PHOTO_MODES = {
   BEFORE: 'before',
   AFTER: 'after',
-  COMBINED: 'mix'
+  COMBINED: 'mix',
+  // Progress photos: single shots taken at any point during a job. They are
+  // never paired with a before/after, never generate combined images, and
+  // never carry a baked-in label. Attached to a section/folder + project.
+  PROGRESS: 'progress',
 };
 
 export const TEMPLATE_TYPES = {

@@ -473,6 +473,15 @@ export const PhotoProvider = ({ children }) => {
     return photos.filter(p => p.room === room && p.mode === PHOTO_MODES.COMBINED && (activeProjectId ? p.projectId === activeProjectId : true));
   };
 
+  // Progress photos for a section/folder, newest first. Filtered to the
+  // active project the same way before/after/combined are. Used by the
+  // SectionDetail Progress tab and by the Gallery 'Progress' filter.
+  const getProgressPhotos = (room) => {
+    return photos
+      .filter(p => p.room === room && p.mode === PHOTO_MODES.PROGRESS && (activeProjectId ? p.projectId === activeProjectId : true))
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  };
+
   const getUnpairedBeforePhotos = (room) => {
     const beforePhotos = getBeforePhotos(room);
     const afterPhotos = getAfterPhotos(room);
@@ -507,6 +516,7 @@ export const PhotoProvider = ({ children }) => {
     getBeforePhotos,
     getAfterPhotos,
     getCombinedPhotos,
+    getProgressPhotos,
     getUnpairedBeforePhotos,
     refreshPhotos: loadPhotos,
     refreshAllData: useCallback(async () => {

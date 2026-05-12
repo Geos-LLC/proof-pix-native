@@ -99,6 +99,7 @@ export default function HomeScreen({ navigation }) {
     getBeforePhotos,
     getAfterPhotos,
     getCombinedPhotos,
+    getProgressPhotos,
     deletePhotoSet,
   } = usePhotos();
 
@@ -1156,6 +1157,10 @@ export default function HomeScreen({ navigation }) {
         const thumbnailUri = combinedBaseUris[beforePhoto.name] || combinedPhoto?.uri;
 
         if (thumbnailUri) {
+          // Progress count for this section. Tapping the badge deep-links to
+          // SectionDetail on the Progress tab; tapping anywhere else on the
+          // card lands on the Compare tab.
+          const progressCount = getProgressPhotos ? getProgressPhotos(currentRoom).length : 0;
           gridItems.push(
             <TouchableOpacity
               key={beforePhoto.id}
@@ -1163,7 +1168,7 @@ export default function HomeScreen({ navigation }) {
               activeOpacity={1}
               onPress={() => {
                 if (!isSwiping.current) {
-                  handleDoubleTap(null, beforePhoto, afterPhoto);
+                  navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'compare' });
                 }
               }}
             >
@@ -1182,6 +1187,18 @@ export default function HomeScreen({ navigation }) {
                   <Ionicons name="checkmark-circle-sharp" size={25} color='#22C55E' />
                 </View>
               </View>
+              {progressCount > 0 && (
+                <TouchableOpacity
+                  style={styles.progressCountBadge}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.progressCountBadgeText}>{progressCount}</Text>
+                </TouchableOpacity>
+              )}
               <View style={styles.thumbnailButtonsOverlay}>
                 <TouchableOpacity
                   style={styles.retakeButton}
@@ -1277,6 +1294,10 @@ export default function HomeScreen({ navigation }) {
           );
         }
       } else {
+        // Before-only card: tap navigates to SectionDetail (Compare tab will
+        // show the empty 'no pair yet' state). The Take After button stays
+        // as the explicit way to capture the after photo.
+        const progressCount = getProgressPhotos ? getProgressPhotos(currentRoom).length : 0;
         gridItems.push(
           <TouchableOpacity
             key={beforePhoto.id}
@@ -1284,7 +1305,7 @@ export default function HomeScreen({ navigation }) {
             activeOpacity={1}
             onPress={() => {
               if (!isSwiping.current) {
-                handleDoubleTap(null, beforePhoto, null);
+                navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'compare' });
               }
             }}
           >
@@ -1294,6 +1315,18 @@ export default function HomeScreen({ navigation }) {
               orientation={beforePhoto.orientation || 'portrait'}
               size={PHOTO_SIZE}
             />
+            {progressCount > 0 && (
+              <TouchableOpacity
+                style={styles.progressCountBadge}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.progressCountBadgeText}>{progressCount}</Text>
+              </TouchableOpacity>
+            )}
             <View style={styles.thumbnailButtonsOverlay}>
               <TouchableOpacity
                 style={styles.takeAfterButton}
@@ -2489,6 +2522,32 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // Yellow progress-count badge sits at the top-right of the photo card so it
+  // doesn't collide with the existing checkmark (bottom-right) or the retake
+  // button (bottom-left). Tappable: opens SectionDetail on the Progress tab.
+  progressCountBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    minWidth: 28,
+    height: 28,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: '#F2C31B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 3,
+    zIndex: 11,
+  },
+  progressCountBadgeText: {
+    color: '#000000',
+    fontWeight: '800',
+    fontSize: 14,
   },
   thumbnailButtonsOverlay: {
     position: 'absolute',

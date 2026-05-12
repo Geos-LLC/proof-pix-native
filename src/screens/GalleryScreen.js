@@ -124,6 +124,7 @@ export default function GalleryScreen({ navigation, route }) {
     getBeforePhotos,
     getAfterPhotos,
     getCombinedPhotos,
+    getProgressPhotos,
     deleteAllPhotos,
     deletePhoto,
     deletePhotoSet,
@@ -1621,11 +1622,21 @@ export default function GalleryScreen({ navigation, route }) {
           </View>
         )}
         
-        <View style={styles.modeLabel}>
-          <Text style={styles.modeLabelText}>
-            {photoType === 'before' ? 'BEFORE' : photoType === 'after' ? 'AFTER' : 'COMBINED'}
-          </Text>
-        </View>
+        {photoType === 'progress' ? (
+          // Progress thumbnails get a small yellow 'P' chip instead of the
+          // BEFORE/AFTER/COMBINED text label, so the user can spot timeline
+          // photos at a glance. Per spec, no baked label appears on the
+          // photo itself — this is only the gallery badge.
+          <View style={styles.progressBadge}>
+            <Text style={styles.progressBadgeText}>P</Text>
+          </View>
+        ) : (
+          <View style={styles.modeLabel}>
+            <Text style={styles.modeLabelText}>
+              {photoType === 'before' ? 'BEFORE' : photoType === 'after' ? 'AFTER' : 'COMBINED'}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -1690,6 +1701,25 @@ export default function GalleryScreen({ navigation, route }) {
   };
 
   const renderRoomSection = (room) => {
+    // Progress filter shortcut: when only progress photos are wanted, skip
+    // the before/after pair-building entirely and render the progress timeline
+    // for this section. Progress photos are never paired and never combined.
+    if (photoFilter === 'progress') {
+      const progress = getProgressPhotos ? getProgressPhotos(room.id) : [];
+      if (!progress.length) return null;
+      const rendered = progress.map(p => ({ ...p, photoSet: { before: p, after: null, combined: null } }));
+      return (
+        <View key={room.id} style={styles.roomSection}>
+          <View style={styles.roomHeader}>
+            <Text style={styles.roomName} numberOfLines={1} ellipsizeMode="tail">
+              {t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })}
+            </Text>
+          </View>
+          {renderFilteredPhotos(rendered, 'progress', COLORS.PRIMARY, room.id)}
+        </View>
+      );
+    }
+
     let sets = getPhotoSets(room.id);
     
     if (showOnlySelected) {
@@ -1929,6 +1959,18 @@ export default function GalleryScreen({ navigation, route }) {
         >
           <Text style={[styles.filterButtonText, photoFilter === 'combined' && styles.filterButtonTextActive]}>
             Combined
+          </Text>
+        </TouchableOpacity>
+        {/* Progress filter — narrows to single-shot job-progress photos.
+            Order matters: Combined → Progress so the existing All/Before/
+            After/Combined muscle memory keeps working. */}
+        <TouchableOpacity
+          style={[styles.filterButton, photoFilter === 'progress' && styles.filterButtonActive]}
+          onPress={() => setPhotoFilter('progress')}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.filterButtonText, photoFilter === 'progress' && styles.filterButtonTextActive]}>
+            Progress
           </Text>
         </TouchableOpacity>
       </View>
@@ -3234,6 +3276,27 @@ fontWeight: '700',
 letterSpacing: 0.3,
 textTransform: 'uppercase',
 zIndex: 1000,
+},
+progressBadge: {
+position: 'absolute',
+top: 6,
+right: 6,
+width: 22,
+height: 22,
+borderRadius: 11,
+backgroundColor: '#F2C31B',
+alignItems: 'center',
+justifyContent: 'center',
+shadowColor: '#000',
+shadowOffset: { width: 0, height: 1 },
+shadowOpacity: 0.25,
+shadowRadius: 2,
+elevation: 2,
+},
+progressBadgeText: {
+color: '#000000',
+fontSize: 12,
+fontWeight: '800',
 },
 photoCheckboxContainer: {
 width: 26,
