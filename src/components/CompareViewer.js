@@ -5,37 +5,36 @@ import {
   StyleSheet,
   PanResponder,
   Animated,
-  TouchableWithoutFeedback,
   Text,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 
 /**
  * Three-mode before/after compare viewer.
  *
  * Modes:
+ *   - 'overlay'      : both images stacked at the same position; an opacity
+ *                      slider (0..1) cross-fades from BEFORE to AFTER. This
+ *                      matches the camera's "ghost" UI for taking an after
+ *                      photo — useful for spotting subtle changes.
  *   - 'split'        : draggable vertical divider over a single frame; before
  *                      is the base layer, after is an overlay clipped by the
  *                      divider position. Spec-recommended pattern.
- *   - 'overlay'      : both images share the same frame; tap to toggle.
  *   - 'side-by-side' : two photos in halves with a fixed centre divider,
  *                      contain-fit so neither image distorts.
  *
- * Orientation handling:
- *   The container aspect ratio is derived from the BEFORE photo (preferring
- *   numeric width/height, then `aspectRatio` string '4:3' / '9:16'). Both
- *   images render with resizeMode="contain" so different orientations fit
- *   inside the frame without stretching. Mixed-orientation pairs letterbox
- *   gracefully against the dark background instead of cropping.
+ * Container aspect ratio is derived from the BEFORE photo so the three modes
+ * occupy the same on-screen footprint. Both images render with
+ * resizeMode="contain" so mixed-orientation pairs letterbox gracefully
+ * instead of cropping.
  */
 
 const parseAspect = (input) => {
   if (!input) return null;
-  // Numeric width/height (photo objects have `width` and `height` sometimes)
   const w = Number(input.width);
   const h = Number(input.height);
   if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return w / h;
-  // 'aspectRatio' string like '4:3' or '9:16'
   const ar = typeof input === 'string' ? input : input.aspectRatio;
   if (typeof ar === 'string' && ar.includes(':')) {
     const [aw, ah] = ar.split(':').map(Number);
@@ -49,47 +48,56 @@ export default function CompareViewer({
   afterPhoto,
   mode = 'split',
   style,
-  // initialSplit is the 0..1 fraction for the Split divider. 0.5 = centre.
   initialSplit = 0.5,
-  // Render-prop slots for label/badge overlays inside each layer.
-  // Receives no args; place absolutely-positioned PhotoLabel etc.
+  initialOverlay = 0.5,
   renderBeforeOverlay,
   renderAfterOverlay,
 }) {
   const beforeUri = beforePhoto?.uri;
   const afterUri = afterPhoto?.uri;
 
-  // Container aspect: prefer BEFORE photo's aspect, fall back to AFTER, then 1.
-  // Spec calls for "contain before crop" — a mismatched after letterboxes
-  // within the same frame instead of stretching to fit.
-  const aspectRatio = useMemo(() => {
-    return parseAspect(beforePhoto) || parseAspect(afterPhoto) || 1;
-  }, [beforePhoto, afterPhoto]);
+  // Force a consistent 1:1 square frame for all three modes — matches the
+  // pre-refactor fullScreenCombinedPreview footprint (max 400×400). Both
+  // images render with resizeMode="contain", so portrait/landscape/mixed
+  // pairs letterbox within the square instead of cropping. Caller can still
+  // override via the `style` prop if a non-square container is wanted.
+  const aspectRatio = 1;
 
   // ----- Split mode state -----------------------------------------------------
+  // containerWidth is read inside the PanResponder closure — use a ref so the
+  // closure always sees the live measured width after onLayout fires.
   const [containerWidth, setContainerWidth] = useState(0);
+  const containerWidthRef = useRef(0);
+
   const splitAnim = useRef(new Animated.Value(initialSplit)).current;
   const splitRef = useRef(initialSplit);
-
-  // Keep splitRef in sync so deltas during drag reference the last committed
-  // position rather than the live animated value (avoids drift).
   useEffect(() => {
     const id = splitAnim.addListener(({ value }) => { splitRef.current = value; });
     return () => splitAnim.removeListener(id);
   }, [splitAnim]);
 
-  // PanResponder must be stable. We snapshot the starting split ratio on grant
-  // so each drag is relative to that, not accumulating across drags.
+  // mode is a prop and changes between renders, but PanResponder.create() is
+  // captured once via useRef. Use a ref so the gesture handler reads the
+  // *current* mode instead of the stale one captured at first render —
+  // otherwise the divider stops responding the moment you switch modes
+  // and back.
+  const modeRef = useRef(mode);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
   const dragStartRef = useRef(initialSplit);
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => mode === 'split',
-      onMoveShouldSetPanResponder: () => mode === 'split',
+      onStartShouldSetPanResponder: () => modeRef.current === 'split',
+      onStartShouldSetPanResponderCapture: () => modeRef.current === 'split',
+      onMoveShouldSetPanResponder: () => modeRef.current === 'split',
+      onMoveShouldSetPanResponderCapture: () => modeRef.current === 'split',
       onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => { dragStartRef.current = splitRef.current; },
       onPanResponderMove: (_, gs) => {
-        if (containerWidth <= 0) return;
-        const dx = gs.dx / containerWidth;
+        const w = containerWidthRef.current;
+        if (w <= 0) return;
+        const dx = gs.dx / w;
         const next = Math.max(0, Math.min(1, dragStartRef.current + dx));
         splitAnim.setValue(next);
       },
@@ -97,14 +105,18 @@ export default function CompareViewer({
   ).current;
 
   // ----- Overlay mode state ---------------------------------------------------
-  const [overlayShowingAfter, setOverlayShowingAfter] = useState(false);
-  // Reset overlay to "before" when the photo pair changes so each new pair
-  // starts on a known state.
-  useEffect(() => { setOverlayShowingAfter(false); }, [beforeUri, afterUri]);
+  // 0 = pure BEFORE, 1 = pure AFTER. The slider cross-fades by adjusting the
+  // after image's opacity over the before base. Default 0.5 = ghost view.
+  const [overlayOpacity, setOverlayOpacity] = useState(initialOverlay);
+  useEffect(() => { setOverlayOpacity(initialOverlay); }, [beforeUri, afterUri, initialOverlay]);
 
   if (!beforeUri || !afterUri) return null;
 
-  const handleLayout = (e) => setContainerWidth(e.nativeEvent.layout.width);
+  const handleLayout = (e) => {
+    const w = e.nativeEvent.layout.width;
+    setContainerWidth(w);
+    containerWidthRef.current = w;
+  };
 
   // ----- Render: Side by Side -------------------------------------------------
   if (mode === 'side-by-side') {
@@ -123,33 +135,45 @@ export default function CompareViewer({
     );
   }
 
-  // ----- Render: Overlay (tap to toggle) -------------------------------------
+  // ----- Render: Overlay (ghost with opacity slider) -------------------------
   if (mode === 'overlay') {
+    // Slider at the bottom of the frame overlays absolutely so the image
+    // footprint stays identical to the other two modes. Sits inside the
+    // aspect-ratio'd container.
     return (
-      <TouchableWithoutFeedback onPress={() => setOverlayShowingAfter((v) => !v)}>
-        <View style={[styles.container, styles.containerColumn, { aspectRatio }, style]} onLayout={handleLayout}>
-          <Image source={{ uri: beforeUri }} style={styles.absoluteImage} resizeMode="contain" />
-          {renderBeforeOverlay ? renderBeforeOverlay() : null}
-          {overlayShowingAfter && (
-            <>
-              <Image source={{ uri: afterUri }} style={styles.absoluteImage} resizeMode="contain" />
-              {renderAfterOverlay ? renderAfterOverlay() : null}
-            </>
-          )}
-          {/* Small visual hint showing which photo is currently displayed */}
-          <View style={styles.overlayBadge}>
-            <Text style={styles.overlayBadgeText}>
-              {overlayShowingAfter ? 'AFTER' : 'BEFORE'}  ·  tap to toggle
-            </Text>
-          </View>
+      <View style={[styles.container, styles.containerColumn, { aspectRatio }, style]} onLayout={handleLayout}>
+        {/* Base layer: BEFORE at full opacity */}
+        <Image source={{ uri: beforeUri }} style={styles.absoluteImage} resizeMode="contain" />
+        {renderBeforeOverlay ? renderBeforeOverlay() : null}
+
+        {/* Overlay layer: AFTER, opacity controlled by slider. At 0 → fully
+            BEFORE visible; at 1 → fully AFTER visible; in between → ghost. */}
+        <View style={[styles.absoluteImage, { opacity: overlayOpacity }]} pointerEvents="none">
+          <Image source={{ uri: afterUri }} style={styles.fullImage} resizeMode="contain" />
+          {renderAfterOverlay ? renderAfterOverlay() : null}
         </View>
-      </TouchableWithoutFeedback>
+
+        {/* Opacity slider pinned to the bottom of the frame */}
+        <View style={styles.overlaySliderRow}>
+          <Text style={styles.overlaySliderLabelLeft}>Before</Text>
+          <Slider
+            style={styles.overlaySlider}
+            minimumValue={0}
+            maximumValue={1}
+            step={0.01}
+            value={overlayOpacity}
+            onValueChange={setOverlayOpacity}
+            minimumTrackTintColor="#F2C31B"
+            maximumTrackTintColor="rgba(255,255,255,0.45)"
+            thumbTintColor="#F2C31B"
+          />
+          <Text style={styles.overlaySliderLabelRight}>After</Text>
+        </View>
+      </View>
     );
   }
 
   // ----- Render: Split (draggable divider) -----------------------------------
-  // Animate overlay width as a percentage so it scales when the container
-  // resizes (orientation change, layout reflow). Same for divider position.
   const overlayWidthPct = splitAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0%', '100%'],
@@ -161,23 +185,16 @@ export default function CompareViewer({
 
   return (
     <View style={[styles.container, styles.containerColumn, { aspectRatio }, style]} onLayout={handleLayout}>
-      {/* Base layer: BEFORE image (full frame) */}
       <Image source={{ uri: beforeUri }} style={styles.absoluteImage} resizeMode="contain" />
       {renderBeforeOverlay ? renderBeforeOverlay() : null}
 
-      {/* Overlay layer: AFTER image, clipped by overlay width (left portion).
-          The inner image is sized to the *full* container so the visible left
-          slice matches the BEFORE image's geometry pixel-for-pixel — i.e. it
-          doesn't squish to fit the clipped width. */}
-      <Animated.View style={[styles.splitOverlay, { width: overlayWidthPct }]}>
+      <Animated.View style={[styles.splitOverlay, { width: overlayWidthPct }]} pointerEvents="none">
         <View style={[styles.splitOverlayInner, { width: containerWidth || '100%' }]}>
           <Image source={{ uri: afterUri }} style={styles.fullImage} resizeMode="contain" />
           {renderAfterOverlay ? renderAfterOverlay() : null}
         </View>
       </Animated.View>
 
-      {/* Divider line + drag handle. PanResponder lives on a wider hit area
-          centered on the divider line so users don't have to hit the 2px line. */}
       <Animated.View
         style={[styles.splitDividerHitArea, { left: dividerLeftPct }]}
         {...panResponder.panHandlers}
@@ -195,6 +212,9 @@ export default function CompareViewer({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
+    maxWidth: 400,
+    maxHeight: 400,
+    alignSelf: 'center',
     position: 'relative',
     backgroundColor: '#1a1a1a',
     borderRadius: 12,
@@ -203,9 +223,6 @@ const styles = StyleSheet.create({
     borderColor: '#F2C31B',
     flexDirection: 'row',
   },
-  // For Split + Overlay modes the layers stack absolutely; flex direction
-  // doesn't matter, but use column so any non-absolute children flow
-  // naturally and don't interact with the row layout used by side-by-side.
   containerColumn: {
     flexDirection: 'column',
   },
@@ -235,19 +252,32 @@ const styles = StyleSheet.create({
   },
 
   // Overlay -----------------------------------------------------------------
-  overlayBadge: {
+  overlaySliderRow: {
     position: 'absolute',
+    left: 12,
+    right: 12,
     bottom: 10,
-    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 14,
   },
-  overlayBadgeText: {
+  overlaySlider: {
+    flex: 1,
+    marginHorizontal: 6,
+  },
+  overlaySliderLabelLeft: {
     color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  overlaySliderLabelRight: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
 
@@ -269,8 +299,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: 44,
-    marginLeft: -22,
+    width: 56,
+    marginLeft: -28,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -282,17 +312,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   splitDividerKnob: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 3,
+    shadowOpacity: 0.4,
+    shadowRadius: 3,
+    elevation: 4,
   },
 });

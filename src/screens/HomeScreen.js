@@ -1157,9 +1157,11 @@ export default function HomeScreen({ navigation }) {
         const thumbnailUri = combinedBaseUris[beforePhoto.name] || combinedPhoto?.uri;
 
         if (thumbnailUri) {
-          // Progress count for this section. Tapping the badge deep-links to
-          // SectionDetail on the Progress tab; tapping anywhere else on the
-          // card lands on the Compare tab.
+          // Tap behaviour on the card:
+          //   single tap → Camera in After mode (most common contractor action)
+          //   double tap → full-screen preview viewer (handleDoubleTap)
+          //   eye icon (top-left) → same as double tap, a discoverable UI cue
+          //   progress badge (top-right) → SectionDetail Progress tab
           const progressCount = getProgressPhotos ? getProgressPhotos(currentRoom).length : 0;
           gridItems.push(
             <TouchableOpacity
@@ -1167,8 +1169,24 @@ export default function HomeScreen({ navigation }) {
               style={styles.photoItem}
               activeOpacity={1}
               onPress={() => {
-                if (!isSwiping.current) {
-                  navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'compare' });
+                if (longPressTriggered.current || isSwiping.current) return;
+                tapCount.current += 1;
+                if (tapCount.current === 1) {
+                  setTimeout(() => {
+                    if (tapCount.current === 1) {
+                      navigation.navigate('Camera', {
+                        mode: 'after',
+                        beforePhoto,
+                        afterPhoto,
+                        combinedPhoto,
+                        room: currentRoom,
+                      });
+                    }
+                    tapCount.current = 0;
+                  }, 280);
+                } else if (tapCount.current === 2) {
+                  handleDoubleTap(null, beforePhoto, afterPhoto);
+                  tapCount.current = 0;
                 }
               }}
             >
@@ -1182,23 +1200,40 @@ export default function HomeScreen({ navigation }) {
                 style={styles.photoCenterDivider}
                 pointerEvents="none"
               />
+              {/* Eye icon top-left: opens the full-screen preview viewer.
+                  Same destination as a double-tap on the card body — exists
+                  as a discoverable UI cue. */}
+              <TouchableOpacity
+                style={styles.previewIconBadge}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleDoubleTap(null, beforePhoto, afterPhoto);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="eye-outline" size={16} color="#000" />
+              </TouchableOpacity>
+              {/* Existing green checkmark stays where it is (bottom-right) */}
               <View style={styles.photoOverlayBadge}>
                 <View style={styles.checkmarkBadge}>
                   <Ionicons name="checkmark-circle-sharp" size={25} color='#22C55E' />
                 </View>
               </View>
-              {progressCount > 0 && (
-                <TouchableOpacity
-                  style={styles.progressCountBadge}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.progressCountBadgeText}>{progressCount}</Text>
-                </TouchableOpacity>
-              )}
+              {/* Progress badge top-right — always visible. Shows a trending
+                  chart icon plus the count when progress photos exist; shows
+                  the chart + a small + when none yet, so users see the entry
+                  point to the Progress tab before they've taken any. */}
+              <TouchableOpacity
+                style={styles.progressCountBadge}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trending-up" size={12} color="#000" style={{ marginRight: 3 }} />
+                <Text style={styles.progressCountBadgeText}>{progressCount > 0 ? progressCount : '+'}</Text>
+              </TouchableOpacity>
               <View style={styles.thumbnailButtonsOverlay}>
                 <TouchableOpacity
                   style={styles.retakeButton}
@@ -1267,6 +1302,34 @@ export default function HomeScreen({ navigation }) {
                 <Image source={{ uri: beforePhoto.uri }} style={styles.halfPreviewImage} resizeMode="cover" />
                 <Image source={{ uri: afterPhoto.uri }} style={styles.halfPreviewImage} resizeMode="cover" />
               </View>
+              <TouchableOpacity
+                style={styles.previewIconBadge}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleDoubleTap(null, beforePhoto, afterPhoto);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="eye-outline" size={16} color="#000" />
+              </TouchableOpacity>
+              {/* Progress badge — always visible, same behaviour as the other
+                  card paths. Uses the section's current progress photo count. */}
+              {(() => {
+                const cnt = getProgressPhotos ? getProgressPhotos(currentRoom).length : 0;
+                return (
+                  <TouchableOpacity
+                    style={styles.progressCountBadge}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="trending-up" size={12} color="#000" style={{ marginRight: 3 }} />
+                    <Text style={styles.progressCountBadgeText}>{cnt > 0 ? cnt : '+'}</Text>
+                  </TouchableOpacity>
+                );
+              })()}
               <View style={styles.photoOverlayBadge}>
                 <View style={styles.checkmarkBadge}>
                   <Ionicons name="checkmark" size={14} color="#FFF" />
@@ -1294,9 +1357,11 @@ export default function HomeScreen({ navigation }) {
           );
         }
       } else {
-        // Before-only card: tap navigates to SectionDetail (Compare tab will
-        // show the empty 'no pair yet' state). The Take After button stays
-        // as the explicit way to capture the after photo.
+        // Before-only card. Same tap rules as the before+after card:
+        //   single tap → Camera in After mode
+        //   double tap → full-screen preview (single before photo)
+        //   eye icon (top-left) → same as double tap
+        //   progress badge (top-right) → SectionDetail Progress tab
         const progressCount = getProgressPhotos ? getProgressPhotos(currentRoom).length : 0;
         gridItems.push(
           <TouchableOpacity
@@ -1304,8 +1369,22 @@ export default function HomeScreen({ navigation }) {
             style={[styles.photoItem]}
             activeOpacity={1}
             onPress={() => {
-              if (!isSwiping.current) {
-                navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'compare' });
+              if (longPressTriggered.current || isSwiping.current) return;
+              tapCount.current += 1;
+              if (tapCount.current === 1) {
+                setTimeout(() => {
+                  if (tapCount.current === 1) {
+                    navigation.navigate('Camera', {
+                      mode: 'after',
+                      beforePhoto,
+                      room: currentRoom,
+                    });
+                  }
+                  tapCount.current = 0;
+                }, 280);
+              } else if (tapCount.current === 2) {
+                handleDoubleTap(null, beforePhoto, null);
+                tapCount.current = 0;
               }
             }}
           >
@@ -1315,18 +1394,27 @@ export default function HomeScreen({ navigation }) {
               orientation={beforePhoto.orientation || 'portrait'}
               size={PHOTO_SIZE}
             />
-            {progressCount > 0 && (
-              <TouchableOpacity
-                style={styles.progressCountBadge}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.progressCountBadgeText}>{progressCount}</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.previewIconBadge}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleDoubleTap(null, beforePhoto, null);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="eye-outline" size={16} color="#000" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.progressCountBadge}
+              onPress={(e) => {
+                e.stopPropagation();
+                navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trending-up" size={12} color="#000" style={{ marginRight: 3 }} />
+              <Text style={styles.progressCountBadgeText}>{progressCount > 0 ? progressCount : '+'}</Text>
+            </TouchableOpacity>
             <View style={styles.thumbnailButtonsOverlay}>
               <TouchableOpacity
                 style={styles.takeAfterButton}
@@ -2523,6 +2611,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // Eye / preview icon sits at the top-LEFT of the photo card. Tapping opens
+  // the full-screen preview viewer (same as a double-tap on the card body —
+  // exists as a discoverable UI affordance).
+  previewIconBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
+    zIndex: 11,
+  },
   // Yellow progress-count badge sits at the top-right of the photo card so it
   // doesn't collide with the existing checkmark (bottom-right) or the retake
   // button (bottom-left). Tappable: opens SectionDetail on the Progress tab.
@@ -2530,11 +2638,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     right: 8,
-    minWidth: 28,
+    minWidth: 36,
     height: 28,
     paddingHorizontal: 8,
     borderRadius: 14,
     backgroundColor: '#F2C31B',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
