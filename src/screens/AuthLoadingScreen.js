@@ -234,19 +234,12 @@ export default function AuthLoadingScreen({ navigation }) {
           console.log('[AuthLoading] Could not check clipboard:', error?.message);
         }
 
-        // No invite code found - continue with normal flow
-        // User needs to set up - check if they have an active subscription
-        const hasPaidPlan = userPlan && userPlan !== 'starter';
-
-        if (hasPaidPlan) {
-          // User has an active subscription (from auto-restore) but needs to set up account
-          // Skip plan selection and go directly to Home
-          console.log('[AuthLoading] Active subscription detected, skipping to Home');
-          navigation.replace('Home');
-        } else {
-          // New user or free plan - show FirstLoad screen (Let's start with your name)
-          navigation.replace('FirstLoad');
-        }
+        // No invite code found - continue with normal flow.
+        // userName is empty here, so the user has not entered their name yet —
+        // always show FirstLoad regardless of restored subscription state.
+        // FirstLoadScreen.handleSelectIndividual already routes paid-subscription
+        // users straight to Home after they enter a name (no referral prompt).
+        navigation.replace('FirstLoad');
       }
     };
 
