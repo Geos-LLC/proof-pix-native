@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../context/SettingsContext';
-import { SOFT_TRIAL_EXPORT_LIMIT, PAYWALL_TRIGGERS } from '../constants/softTrial';
+import { SOFT_TRIAL_EXPORT_LIMIT, SOFT_TRIAL_LOW_RES_MAX_DIM, PAYWALL_TRIGGERS } from '../constants/softTrial';
 
 /**
  * Compact "X of N free exports remaining" badge. Visible only while the soft
@@ -32,9 +32,14 @@ export default function SoftTrialBadge({ navigation, variant = 'compact', style 
     return (
       <Pressable onPress={handlePress} style={[styles.banner, style]}>
         <Ionicons name="gift-outline" size={16} color="#000" style={{ marginRight: 8 }} />
-        <Text style={styles.bannerText}>
-          {remaining} of {SOFT_TRIAL_EXPORT_LIMIT} free exports left
-        </Text>
+        <View style={styles.bannerTextWrap}>
+          <Text style={styles.bannerText}>
+            {remaining} of {SOFT_TRIAL_EXPORT_LIMIT} free exports left
+          </Text>
+          <Text style={styles.bannerSubtext}>
+            {SOFT_TRIAL_LOW_RES_MAX_DIM}px low-resolution + watermark
+          </Text>
+        </View>
         <Text style={styles.bannerCta}>Upgrade</Text>
       </Pressable>
     );
@@ -80,11 +85,21 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 8,
   },
-  bannerText: {
+  bannerTextWrap: {
     flex: 1,
+    marginRight: 8,
+  },
+  bannerText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#000',
+    fontFamily: 'Alexandria_400Regular',
+  },
+  bannerSubtext: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#5A4500',
+    marginTop: 2,
     fontFamily: 'Alexandria_400Regular',
   },
   bannerCta: {

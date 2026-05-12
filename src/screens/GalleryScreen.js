@@ -26,6 +26,8 @@ import { PHOTO_MODES, ROOMS, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constan
 import { RoomIcon } from '../utils/roomIcons';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
+import CompareViewer from '../components/CompareViewer';
+import CompareModeSwitcher from '../components/CompareModeSwitcher';
 import { uploadPhotoBatch, createAlbumName } from '../services/uploadService';
 import { getLocationConfig } from '../config/locations';
 import googleDriveService from '../services/googleDriveService';
@@ -175,6 +177,8 @@ export default function GalleryScreen({ navigation, route }) {
   const [fullScreenLoading, setFullScreenLoading] = useState(false);
   const [fullScreenError, setFullScreenError] = useState(null);
   const [sharing, setSharing] = useState(false);
+  // Compare mode for the full-screen before/after viewer (persists per session).
+  const [compareMode, setCompareMode] = useState('split');
   const [shareStatus, setShareStatus] = useState('');
   const swipeStartX = useRef(null);
   const fullScreenCombinedRef = useRef(null);
@@ -2199,23 +2203,15 @@ export default function GalleryScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
           <View style={styles.fullScreenPhotoArea}>
-            <View
-              ref={fullScreenCombinedRef}
-              collapsable={false}
-              style={[
-                styles.fullScreenCombinedPreview,
-                isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio) ? styles.fullScreenStacked : styles.fullScreenSideBySide
-              ]}
-            >
-              <View style={styles.fullScreenHalf}>
-                <Image
-                  key={`before-${fullScreenPhotoSet.before.uri}`}
-                  source={{ uri: fullScreenPhotoSet.before.uri }}
-                  style={styles.fullScreenHalfImage}
-                  resizeMode="cover"
-                  onLoadStart={() => console.log('[GalleryScreen] Combined BEFORE load start:', fullScreenPhotoSet.before.uri?.substring(0, 60))}
-                />
-                {showLabels && (
+            {/* Wrapper keeps the captureRef used by shareFullScreenCombined's
+                fallback path; the rich share path uses compositeImages first
+                and only falls back to capturing whatever is on-screen. */}
+            <View ref={fullScreenCombinedRef} collapsable={false}>
+              <CompareViewer
+                beforePhoto={fullScreenPhotoSet.before}
+                afterPhoto={fullScreenPhotoSet.after}
+                mode={compareMode}
+                renderBeforeOverlay={() => (showLabels ? (
                   <PhotoLabel
                     label="common.before"
                     position={pickBeforeLabelPosition(
@@ -2223,18 +2219,8 @@ export default function GalleryScreen({ navigation, route }) {
                       fullScreenPhotoSet.before
                     )}
                   />
-                )}
-              </View>
-              <View style={isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio) ? styles.fullScreenCenterDividerHorizontal : styles.fullScreenCenterDivider} pointerEvents="none" />
-              <View style={styles.fullScreenHalf}>
-                <Image
-                  key={`after-${fullScreenPhotoSet.after.uri}`}
-                  source={{ uri: fullScreenPhotoSet.after.uri }}
-                  style={styles.fullScreenHalfImage}
-                  resizeMode="cover"
-                  onLoadStart={() => console.log('[GalleryScreen] Combined AFTER load start:', fullScreenPhotoSet.after.uri?.substring(0, 60))}
-                />
-                {showLabels && (
+                ) : null)}
+                renderAfterOverlay={() => (showLabels ? (
                   <PhotoLabel
                     label="common.after"
                     position={pickAfterLabelPosition(
@@ -2242,9 +2228,14 @@ export default function GalleryScreen({ navigation, route }) {
                       fullScreenPhotoSet.after
                     )}
                   />
-                )}
-              </View>
+                ) : null)}
+              />
             </View>
+            <CompareModeSwitcher
+              mode={compareMode}
+              onChange={setCompareMode}
+              style={{ marginTop: 12 }}
+            />
           </View>
           <View style={styles.fullScreenRoomNameRow}>
             <Text style={styles.fullScreenRoomName} numberOfLines={1} ellipsizeMode="tail">

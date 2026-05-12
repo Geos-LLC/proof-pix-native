@@ -28,6 +28,8 @@ import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS } from '../constants/rooms
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
+import CompareViewer from '../components/CompareViewer';
+import CompareModeSwitcher from '../components/CompareModeSwitcher';
 import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
@@ -159,6 +161,9 @@ export default function HomeScreen({ navigation }) {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
   const [sharing, setSharing] = useState(false);
+  // Compare mode for the full-screen before/after viewer. Persists across
+  // swipes within a session; default to 'split' (the draggable divider).
+  const [compareMode, setCompareMode] = useState('split');
   const [showDeletePhotoConfirm, setShowDeletePhotoConfirm] = useState(false);
   const pendingDeletePhotoIdRef = useRef(null);
 
@@ -1668,48 +1673,39 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Photo area: yellow border, before/after with white center divider */}
+          {/* Photo area: CompareViewer with mode switcher (overlay / split /
+              side-by-side). Replaces the prior static side-by-side render so
+              landscape, portrait, and mixed-orientation pairs all stay
+              undistorted regardless of compare mode. */}
           <View style={styles.fullScreenPhotoArea}>
-            <View style={[
-              styles.fullScreenCombinedPreview,
-              isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio)
-                ? styles.fullScreenStacked
-                : styles.fullScreenSideBySide
-            ]}>
-              <View style={styles.fullScreenHalf}>
-                <Image
-                  source={{ uri: fullScreenPhotoSet.before.uri }}
-                  style={styles.fullScreenHalfImage}
-                  resizeMode="cover"
+            <CompareViewer
+              beforePhoto={fullScreenPhotoSet.before}
+              afterPhoto={fullScreenPhotoSet.after}
+              mode={compareMode}
+              renderBeforeOverlay={() => (showLabels ? (
+                <PhotoLabel
+                  label="common.before"
+                  position={pickBeforeLabelPosition(
+                    { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                    fullScreenPhotoSet.before
+                  )}
                 />
-                {showLabels && (
-                  <PhotoLabel
-                    label="common.before"
-                    position={pickBeforeLabelPosition(
-                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                      fullScreenPhotoSet.before
-                    )}
-                  />
-                )}
-              </View>
-              <View style={isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio) ? styles.fullScreenCenterDividerHorizontal : styles.fullScreenCenterDivider} pointerEvents="none" />
-              <View style={styles.fullScreenHalf}>
-                <Image
-                  source={{ uri: fullScreenPhotoSet.after.uri }}
-                  style={styles.fullScreenHalfImage}
-                  resizeMode="cover"
+              ) : null)}
+              renderAfterOverlay={() => (showLabels ? (
+                <PhotoLabel
+                  label="common.after"
+                  position={pickAfterLabelPosition(
+                    { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                    fullScreenPhotoSet.after
+                  )}
                 />
-                {showLabels && (
-                  <PhotoLabel
-                    label="common.after"
-                    position={pickAfterLabelPosition(
-                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                      fullScreenPhotoSet.after
-                    )}
-                  />
-                )}
-              </View>
-            </View>
+              ) : null)}
+            />
+            <CompareModeSwitcher
+              mode={compareMode}
+              onChange={setCompareMode}
+              style={{ marginTop: 12 }}
+            />
           </View>
 
           {/* Room name + pagination dots */}

@@ -29,6 +29,8 @@ import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS } from '../constants/rooms
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
+import CompareViewer from '../components/CompareViewer';
+import CompareModeSwitcher from '../components/CompareModeSwitcher';
 import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -142,6 +144,8 @@ export default function HomeScreen({ navigation }) {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
   const [sharing, setSharing] = useState(false);
+  // Compare mode for the full-screen before/after viewer (persists per session).
+  const [compareMode, setCompareMode] = useState('split');
   const [initialProjectCreated, setInitialProjectCreated] = useState(false);
 
   const { customRooms, saveCustomRooms, resetCustomRooms } = useSettings();
@@ -1601,42 +1605,32 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Photo area: yellow border, before/after with white center divider */}
+          {/* Photo area: CompareViewer with mode switcher. Orientation-aware
+              container preserves aspect for portrait, landscape, and mixed
+              pairs without cropping or stretching. */}
           <View style={styles.fullScreenPhotoArea}>
-            <View style={[
-              styles.fullScreenCombinedPreview,
-              isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio)
-                ? styles.fullScreenStacked
-                : styles.fullScreenSideBySide
-            ]}>
-              <View style={styles.fullScreenHalf}>
-                <Image
-                  source={{ uri: fullScreenPhotoSet.before.uri }}
-                  style={styles.fullScreenHalfImage}
-                  resizeMode="cover"
+            <CompareViewer
+              beforePhoto={fullScreenPhotoSet.before}
+              afterPhoto={fullScreenPhotoSet.after}
+              mode={compareMode}
+              renderBeforeOverlay={() => (showLabels ? (
+                <PhotoLabel
+                  label="common.before"
+                  position={pickBeforeLabelPosition(labelPosSettings, fullScreenPhotoSet.before)}
                 />
-                {showLabels && (
-                  <PhotoLabel
-                    label="common.before"
-                    position={pickBeforeLabelPosition(labelPosSettings, fullScreenPhotoSet.before)}
-                  />
-                )}
-              </View>
-              <View style={isStackedLayout(fullScreenPhotos[fullScreenIndex]?.templateType, fullScreenPhotoSet.before.aspectRatio) ? styles.fullScreenCenterDividerHorizontal : styles.fullScreenCenterDivider} pointerEvents="none" />
-              <View style={styles.fullScreenHalf}>
-                <Image
-                  source={{ uri: fullScreenPhotoSet.after.uri }}
-                  style={styles.fullScreenHalfImage}
-                  resizeMode="cover"
+              ) : null)}
+              renderAfterOverlay={() => (showLabels ? (
+                <PhotoLabel
+                  label="common.after"
+                  position={pickAfterLabelPosition(labelPosSettings, fullScreenPhotoSet.after)}
                 />
-                {showLabels && (
-                  <PhotoLabel
-                    label="common.after"
-                    position={pickAfterLabelPosition(labelPosSettings, fullScreenPhotoSet.after)}
-                  />
-                )}
-              </View>
-            </View>
+              ) : null)}
+            />
+            <CompareModeSwitcher
+              mode={compareMode}
+              onChange={setCompareMode}
+              style={{ marginTop: 12 }}
+            />
           </View>
 
           {/* Room name + pagination dots */}

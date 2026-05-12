@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect, useCallback } fr
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_AFTER_LABEL_POSITION, DEFAULT_WATERMARK_POSITION } from '../constants/rooms';
+import { INDUSTRIES } from '../constants/industries';
 import { isSoftTrialActive, getRemainingExports } from '../services/softTrialService';
 import { SOFT_TRIAL_EXPORT_LIMIT } from '../constants/softTrial';
 
@@ -545,9 +546,12 @@ export const SettingsProvider = ({ children }) => {
   };
 
   const getRooms = () => {
-    const result = customRooms || ROOMS;
-    //  || 'null', 'result:', result.map(r => r.name));
-    return result;
+    if (customRooms) return customRooms;
+    // Default when no industry has been picked yet: the generic Section 1–5
+    // set from the 'Other' industry, so the home screen visible behind the
+    // qualification modal looks industry-neutral rather than cleaning-themed.
+    const other = INDUSTRIES.find((i) => i.id === 'other');
+    return other?.folders || ROOMS;
   };
 
   const resetCustomRooms = async () => {
