@@ -126,6 +126,7 @@ export default function WatermarkCustomizationScreen({ navigation }) {
     watermarkColor,
     watermarkPosition,
     watermarkFontFamily,
+    watermarkShowMetadata,
     labelMarginVertical,
     labelMarginHorizontal,
     labelBackgroundColor,
@@ -141,6 +142,7 @@ export default function WatermarkCustomizationScreen({ navigation }) {
     updateWatermarkColor,
     updateWatermarkPosition,
     updateWatermarkFontFamily,
+    updateWatermarkShowMetadata,
     updateLabelBackgroundColor,
     updateLabelTextColor,
     updateLabelCornerStyle,
@@ -497,6 +499,19 @@ export default function WatermarkCustomizationScreen({ navigation }) {
             autoCorrect={false}
             keyboardType="url"
           />
+
+          {/* Show metadata toggle — when enabled, the watermark renders the
+              capture time and saved location in place of the static text. */}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => updateWatermarkShowMetadata(!watermarkShowMetadata)}
+            style={styles.metadataRow}
+          >
+            <View style={[styles.metadataCheckbox, watermarkShowMetadata && styles.metadataCheckboxChecked]}>
+              {watermarkShowMetadata && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+            </View>
+            <Text style={styles.metadataLabel}>Show metadata (time and place)</Text>
+          </TouchableOpacity>
 
           {/* Watermark Controls */}
           <View style={styles.controlsRow}>
@@ -996,6 +1011,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.TEXT,
     marginBottom: 16,
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  metadataCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: COLORS.BORDER,
+    backgroundColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  metadataCheckboxChecked: {
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: COLORS.PRIMARY,
+  },
+  metadataLabel: {
+    fontSize: 14,
+    color: COLORS.TEXT,
+    fontWeight: '500',
   },
   controlsRow: {
     flexDirection: 'row',

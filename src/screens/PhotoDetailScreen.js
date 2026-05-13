@@ -549,7 +549,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
           }}
         />
         {/* Show watermark if enabled - PhotoWatermark handles its own positioning from settings */}
-        {shouldShowWatermark && <PhotoWatermark />}
+        {shouldShowWatermark && <PhotoWatermark photo={photoToRender} />}
 
         {/* Checkbox overlay in selection mode */}
         {isSelectionMode && (
@@ -656,6 +656,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
 
             return (
               <PhotoWatermark
+                photo={currentPhoto}
                 style={{
                   paddingHorizontal: 10 * scaleFactor,
                   paddingVertical: 4 * scaleFactor,

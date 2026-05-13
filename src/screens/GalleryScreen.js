@@ -97,6 +97,19 @@ const PHOTO_SPACING = 16;
 const AVAILABLE_WIDTH = width - CONTAINER_PADDING - PHOTO_SPACING;
 const COLUMN_WIDTH = AVAILABLE_WIDTH / 3;
 
+// Capture-time + place caption rendered under the preview photo. Uses the
+// photo's stored timestamp and the user's saved location setting (the app
+// does not record GPS coordinates separately).
+const formatPhotoMetaLine = (photo, place) => {
+  if (!photo) return '';
+  const ts = photo.timestamp ? new Date(photo.timestamp) : null;
+  const datePart = ts ? ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const timePart = ts ? ts.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+  const when = [datePart, timePart].filter(Boolean).join(' ');
+  const where = (place || '').trim();
+  return [when, where].filter(Boolean).join(' · ');
+};
+
 // Helper to check if aspect ratio is portrait (height > width)
 const isPortraitAspectRatio = (aspectRatio) => {
   if (!aspectRatio) return true; // Default to portrait if unknown
@@ -1645,26 +1658,46 @@ export default function GalleryScreen({ navigation, route }) {
     const showBefore = photoFilter === 'all' || photoFilter === 'before';
     const showAfter = photoFilter === 'all' || photoFilter === 'after';
     const showCombined = photoFilter === 'all' || photoFilter === 'combined';
+    const showProgress = photoFilter === 'all' || photoFilter === 'progress';
     const setKey = set.before?.id ?? `set-${roomId}-${index}`;
+
+    // Sequential progression: when a retake demotes the previous after, the
+    // demoted photo keeps its beforePhotoId so we can group it back with this
+    // set. Sort oldest-first so the row reads before → progress → after.
+    const setProgress = (showProgress && set.before && getProgressPhotos)
+      ? getProgressPhotos(roomId)
+          .filter(p => p.beforePhotoId === set.before.id)
+          .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+      : [];
+
+    const cards = [];
+    if (showBefore && set.before) {
+      cards.push({ key: `${setKey}-before`, photo: set.before, border: '#4CAF50', type: 'before' });
+    }
+    setProgress.forEach((p) => {
+      cards.push({ key: `${setKey}-progress-${p.id}`, photo: p, border: COLORS.PRIMARY, type: 'progress' });
+    });
+    if (showAfter && set.after) {
+      cards.push({ key: `${setKey}-after`, photo: set.after, border: '#2196F3', type: 'after' });
+    }
+    if (showCombined && set.before && set.after) {
+      cards.push({ key: `${setKey}-combined`, photo: null, border: COLORS.PRIMARY, type: 'combined' });
+    }
+    if (cards.length === 0) return null;
+
     return (
       <View key={`${roomId}-${setKey}`} style={styles.photoSetRow}>
-        <View style={styles.threeColumnRow}>
-          {showBefore && (
-            <View key={`${setKey}-before`}>
-              {renderPhotoCard(set.before, '#4CAF50', 'before', set, false, isSelectionMode, selectedPhotos)}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.setHorizontalRow}
+        >
+          {cards.map((c, i) => (
+            <View key={c.key}>
+              {renderPhotoCard(c.photo, c.border, c.type, set, i === cards.length - 1, isSelectionMode, selectedPhotos)}
             </View>
-          )}
-          {showAfter && (
-            <View key={`${setKey}-after`}>
-              {renderPhotoCard(set.after, '#2196F3', 'after', set, false, isSelectionMode, selectedPhotos)}
-            </View>
-          )}
-          {showCombined && (
-            <View key={`${setKey}-combined`}>
-              {renderPhotoCard(set.combined, COLORS.PRIMARY, 'combined', set, true, isSelectionMode, selectedPhotos)}
-            </View>
-          )}
-        </View>
+          ))}
+        </ScrollView>
       </View>
     );
   };
@@ -2139,8 +2172,14 @@ export default function GalleryScreen({ navigation, route }) {
               <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
               <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.fullScreenCloseButton} onPress={handleGalleryFullScreenClose}>
-              <Ionicons name="close" size={20} color="rgba(255, 0, 0, 0.82)" />
+            <TouchableOpacity
+              style={styles.fullScreenHeaderDeleteButton}
+              onPress={() => {
+                pendingDeletePhotoRef.current = { id: fullScreenPhoto.id, name: fullScreenPhoto.name, type: 'photo' };
+                setShowDeletePhotoConfirm(true);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
           <View style={styles.fullScreenPhotoArea}>
@@ -2180,7 +2219,13 @@ export default function GalleryScreen({ navigation, route }) {
               />
               {showLabels && fullScreenPhoto.mode && !fullScreenError && (
                 <PhotoLabel
-                  label={fullScreenPhoto.mode === 'before' ? 'common.before' : 'common.after'}
+                  label={
+                    fullScreenPhoto.mode === 'before'
+                      ? 'common.before'
+                      : fullScreenPhoto.mode === 'progress'
+                        ? 'common.progress'
+                        : 'common.after'
+                  }
                   position={
                     fullScreenPhoto.mode === 'before'
                       ? pickBeforeLabelPosition(
@@ -2195,6 +2240,9 @@ export default function GalleryScreen({ navigation, route }) {
                 />
               )}
             </View>
+            <Text style={styles.fullScreenMetaLine} numberOfLines={1}>
+              {formatPhotoMetaLine(fullScreenPhoto, location)}
+            </Text>
           </View>
           <View style={styles.fullScreenRoomNameRow}>
             <Text style={styles.fullScreenRoomName} numberOfLines={1} ellipsizeMode="tail">
@@ -2210,13 +2258,10 @@ export default function GalleryScreen({ navigation, route }) {
           </View>
           <View style={[styles.fullScreenBottomBar, { paddingBottom: bottomInset }]}>
             <TouchableOpacity
-              style={styles.fullScreenDeleteCircle}
-              onPress={() => {
-                pendingDeletePhotoRef.current = { id: fullScreenPhoto.id, name: fullScreenPhoto.name, type: 'photo' };
-                setShowDeletePhotoConfirm(true);
-              }}
+              style={styles.fullScreenReturnCircle}
+              onPress={handleGalleryFullScreenClose}
             >
-              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="arrow-undo" size={20} color="#000000" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.fullScreenShareCircle}
@@ -2240,8 +2285,14 @@ export default function GalleryScreen({ navigation, route }) {
               <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
               <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.fullScreenCloseButton} onPress={handleGalleryFullScreenClose}>
-              <Ionicons name="close" size={20} color="red" />
+            <TouchableOpacity
+              style={styles.fullScreenHeaderDeleteButton}
+              onPress={() => {
+                pendingDeletePhotoRef.current = { id: fullScreenPhotoSet.before.id, name: fullScreenPhotoSet.before.name, type: 'set' };
+                setShowDeletePhotoConfirm(true);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
           <View style={styles.fullScreenPhotoArea}>
@@ -2293,13 +2344,10 @@ export default function GalleryScreen({ navigation, route }) {
           </View>
           <View style={[styles.fullScreenBottomBar, { paddingBottom: bottomInset }]}>
             <TouchableOpacity
-              style={styles.fullScreenDeleteCircle}
-              onPress={() => {
-                pendingDeletePhotoRef.current = { id: fullScreenPhotoSet.before.id, name: fullScreenPhotoSet.before.name, type: 'set' };
-                setShowDeletePhotoConfirm(true);
-              }}
+              style={styles.fullScreenReturnCircle}
+              onPress={handleGalleryFullScreenClose}
             >
-              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="arrow-undo" size={20} color="#000000" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.fullScreenShareCircle}
@@ -2776,6 +2824,33 @@ borderWidth: 1,
 borderColor: 'grey',
 zIndex: 1002
 },
+fullScreenHeaderDeleteButton: {
+width: 35,
+height: 35,
+borderRadius: 17,
+backgroundColor: '#000',
+borderWidth: 1,
+borderColor: 'grey',
+alignItems: 'center',
+justifyContent: 'center',
+zIndex: 1002,
+},
+fullScreenReturnCircle: {
+width: 35,
+height: 35,
+borderRadius: 17,
+backgroundColor: '#FFFFFF',
+borderWidth: 1,
+borderColor: 'grey',
+alignItems: 'center',
+justifyContent: 'center',
+},
+fullScreenMetaLine: {
+color: 'rgba(255,255,255,0.85)',
+fontSize: 12,
+marginTop: 8,
+textAlign: 'center',
+},
 fullScreenPhotoArea: {
 flex: 1,
 justifyContent: 'center',
@@ -3199,6 +3274,11 @@ threeColumnRow: {
 flex: 1,
 flexDirection: 'row',
 flexWrap: 'nowrap',
+},
+setHorizontalRow: {
+flexDirection: 'row',
+alignItems: 'flex-start',
+paddingRight: 8,
 },
 photoCard: {
 width: (width - 38 - 30) / 3,

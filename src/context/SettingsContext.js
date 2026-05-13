@@ -66,6 +66,7 @@ export const SettingsProvider = ({ children }) => {
   const [watermarkOpacity, setWatermarkOpacity] = useState(DEFAULT_WATERMARK_OPACITY);
   const [watermarkPosition, setWatermarkPosition] = useState(DEFAULT_WATERMARK_POSITION);
   const [watermarkFontFamily, setWatermarkFontFamily] = useState('alexandria');
+  const [watermarkShowMetadata, setWatermarkShowMetadata] = useState(false);
   const [labelBackgroundColor, setLabelBackgroundColor] = useState(DEFAULT_LABEL_BACKGROUND);
   const [labelTextColor, setLabelTextColor] = useState(DEFAULT_LABEL_TEXT);
   const [labelSize, setLabelSize] = useState(DEFAULT_LABEL_SIZE);
@@ -192,6 +193,7 @@ export const SettingsProvider = ({ children }) => {
         );
         setWatermarkPosition(settings.watermarkPosition ?? DEFAULT_WATERMARK_POSITION);
         setWatermarkFontFamily(normalizeFontKey(settings.watermarkFontFamily));
+        setWatermarkShowMetadata(settings.watermarkShowMetadata ?? false);
         setLabelBackgroundColor(
           normalizeColorHex(settings.labelBackgroundColor, DEFAULT_LABEL_BACKGROUND)
         );
@@ -272,6 +274,7 @@ export const SettingsProvider = ({ children }) => {
         watermarkOpacity,
         watermarkPosition,
         watermarkFontFamily,
+        watermarkShowMetadata,
         labelBackgroundColor,
         labelTextColor,
         labelFontFamily,
@@ -404,6 +407,12 @@ export const SettingsProvider = ({ children }) => {
     const normalized = normalizeFontKey(font);
     setWatermarkFontFamily(normalized);
     await saveSettings({ watermarkFontFamily: normalized });
+  };
+
+  const updateWatermarkShowMetadata = async (value) => {
+    const next = Boolean(value);
+    setWatermarkShowMetadata(next);
+    await saveSettings({ watermarkShowMetadata: next });
   };
 
   const updateLabelBackgroundColor = async (color) => {
@@ -621,6 +630,7 @@ export const SettingsProvider = ({ children }) => {
         watermarkOpacity: DEFAULT_WATERMARK_OPACITY,
         watermarkPosition: DEFAULT_WATERMARK_POSITION,
         watermarkFontFamily: 'alexandria',
+        watermarkShowMetadata: false,
         labelBackgroundColor: DEFAULT_LABEL_BACKGROUND,
         labelTextColor: DEFAULT_LABEL_TEXT,
         labelFontFamily: 'alexandria',
@@ -678,6 +688,8 @@ export const SettingsProvider = ({ children }) => {
     watermarkFontFamily,
     updateWatermarkPosition,
     updateWatermarkFontFamily,
+    watermarkShowMetadata,
+    updateWatermarkShowMetadata,
     labelBackgroundColor,
     labelTextColor,
     labelFontFamily,

@@ -4,7 +4,7 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    version: process.env.VERSION || "1.6.4",
+    version: process.env.VERSION || "1.6.5",
     runtimeVersion: {
       policy: "appVersion"
     },
@@ -27,7 +27,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "64",
+      buildNumber: "65",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {

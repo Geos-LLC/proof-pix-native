@@ -2,6 +2,7 @@
   "common": {
     "before": "Before",
     "after": "After",
+    "progress": "Progress",
     "combined": "Combined",
     "back": "Back",
     "save": "Save",

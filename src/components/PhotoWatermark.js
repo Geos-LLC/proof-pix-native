@@ -25,7 +25,7 @@ const FONT_FAMILY_MAP = {
  * Positioned at the bottom-right corner of photos by default, or as configured
  * Uses same styling as PhotoLabel with configurable opacity
  */
-export default function PhotoWatermark({ style = {}, textStyle = {}, onPress }) {
+export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, photo = null }) {
   const {
     customWatermarkEnabled,
     watermarkText,
@@ -34,14 +34,28 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress }) 
     watermarkOpacity,
     watermarkPosition,
     watermarkFontFamily,
+    watermarkShowMetadata,
     labelBackgroundColor,
     labelMarginVertical,
     labelMarginHorizontal,
+    location,
   } = useSettings();
 
   const fallbackUrl = process.env.EXPO_PUBLIC_WATERMARK_URL || 'https://geos-ai.com/';
 
   const { displayText, targetUrl } = useMemo(() => {
+    // "Show metadata" mode replaces the watermark text with the capture
+    // time + the user's saved location. The link is suppressed so the
+    // overlay reads as a passive caption, not a CTA.
+    if (watermarkShowMetadata) {
+      const ts = photo?.timestamp ? new Date(photo.timestamp) : new Date();
+      const datePart = ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const timePart = ts.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      const place = (location || '').trim();
+      const composed = place ? `${datePart} ${timePart} · ${place}` : `${datePart} ${timePart}`;
+      return { displayText: composed, targetUrl: null };
+    }
+
     const rawText = customWatermarkEnabled ? watermarkText : DEFAULT_WATERMARK_TEXT;
     const resolvedText = rawText?.trim() || '';
     const rawUrl = customWatermarkEnabled ? watermarkLink : fallbackUrl;
@@ -53,7 +67,7 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress }) 
       displayText: resolvedText,
       targetUrl: normalizedUrl,
     };
-  }, [customWatermarkEnabled, watermarkLink, watermarkText, fallbackUrl]);
+  }, [watermarkShowMetadata, photo, location, customWatermarkEnabled, watermarkLink, watermarkText, fallbackUrl]);
 
   console.log('[PhotoWatermark] Rendering watermark:', { 
     displayText, 

@@ -48,6 +48,19 @@ import Constants from 'expo-constants';
 import UnfinishedJobBanner from '../components/UnfinishedJobBanner';
 import SoftTrialBadge from '../components/SoftTrialBadge';
 import QualificationPromptModal, { hasCompletedQualification } from '../components/QualificationPromptModal';
+
+// Capture-time + place caption rendered under the preview photo. Uses the
+// photo's stored timestamp and the user's saved location setting (the app
+// does not record GPS coordinates separately).
+const formatPhotoMetaLine = (photo, place) => {
+  if (!photo) return '';
+  const ts = photo.timestamp ? new Date(photo.timestamp) : null;
+  const datePart = ts ? ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const timePart = ts ? ts.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+  const when = [datePart, timePart].filter(Boolean).join(' ');
+  const where = (place || '').trim();
+  return [when, where].filter(Boolean).join(' · ');
+};
 import { logEvent } from '../utils/analytics';
 
 // Ensure a URI has the file:// prefix (expo FileSystem URIs already include it on Android)
@@ -1636,8 +1649,14 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
               <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.fullScreenCloseButton} onPress={handleLongPressEnd}>
-              <Ionicons name="close" size={20} color="rgba(255, 0, 0, 0.82)" />
+            <TouchableOpacity
+              style={styles.fullScreenHeaderDeleteButton}
+              onPress={() => {
+                pendingDeletePhotoIdRef.current = fullScreenPhoto.id;
+                setShowDeletePhotoConfirm(true);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
 
@@ -1678,7 +1697,13 @@ export default function HomeScreen({ navigation }) {
               />
               {showLabels && fullScreenPhoto.mode && !fullScreenError && (
                 <PhotoLabel
-                  label={fullScreenPhoto.mode === 'before' ? 'common.before' : 'common.after'}
+                  label={
+                    fullScreenPhoto.mode === 'before'
+                      ? 'common.before'
+                      : fullScreenPhoto.mode === 'progress'
+                        ? 'common.progress'
+                        : 'common.after'
+                  }
                   position={
                     fullScreenPhoto.mode === 'before'
                       ? pickBeforeLabelPosition(
@@ -1693,6 +1718,10 @@ export default function HomeScreen({ navigation }) {
                 />
               )}
             </View>
+            {/* Capture metadata under the photo: short time + saved location */}
+            <Text style={styles.fullScreenMetaLine} numberOfLines={1}>
+              {formatPhotoMetaLine(fullScreenPhoto, location)}
+            </Text>
           </View>
 
           {/* Room name + pagination dots */}
@@ -1712,16 +1741,13 @@ export default function HomeScreen({ navigation }) {
             )}
           </View>
 
-          {/* Bottom bar: black delete circle, yellow share circle */}
+          {/* Bottom bar: white return circle, yellow share circle */}
           <View style={[styles.fullScreenBottomBar, { paddingBottom: fullScreenBottomInset }]}>
             <TouchableOpacity
-              style={styles.fullScreenDeleteCircle}
-              onPress={() => {
-                pendingDeletePhotoIdRef.current = fullScreenPhoto.id;
-                setShowDeletePhotoConfirm(true);
-              }}
+              style={styles.fullScreenReturnCircle}
+              onPress={handleLongPressEnd}
             >
-              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="arrow-undo" size={20} color="#000000" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.fullScreenShareCircle}
@@ -1789,8 +1815,14 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
               <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.fullScreenCloseButton} onPress={handleLongPressEnd}>
-              <Ionicons name="close" size={20} color="red" />
+            <TouchableOpacity
+              style={styles.fullScreenHeaderDeleteButton}
+              onPress={() => {
+                pendingDeletePhotoIdRef.current = fullScreenPhotoSet.before.id;
+                setShowDeletePhotoConfirm(true);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
 
@@ -1846,16 +1878,13 @@ export default function HomeScreen({ navigation }) {
             )}
           </View>
 
-          {/* Bottom bar: black delete circle, yellow share circle */}
+          {/* Bottom bar: white return circle, yellow share circle */}
           <View style={[styles.fullScreenBottomBar, { paddingBottom: fullScreenBottomInset }]}>
             <TouchableOpacity
-              style={styles.fullScreenDeleteCircle}
-              onPress={() => {
-                pendingDeletePhotoIdRef.current = fullScreenPhotoSet.before.id;
-                setShowDeletePhotoConfirm(true);
-              }}
+              style={styles.fullScreenReturnCircle}
+              onPress={handleLongPressEnd}
             >
-              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="arrow-undo" size={20} color="#000000" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.fullScreenShareCircle}
@@ -2868,6 +2897,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'grey',
     zIndex: 1002
+  },
+  // Top-right delete button in the full-screen preview header. Replaces the
+  // former red close-X. Same dimensions as the bottom share/return circles so
+  // the row reads as a deliberate destructive action, not a chrome control.
+  fullScreenHeaderDeleteButton: {
+    width: 35,
+    height: 35,
+    borderRadius: 17,
+    backgroundColor: '#000',
+    borderWidth: 1,
+    borderColor: 'grey',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1002
+  },
+  // Bottom-left return button in the full-screen preview. Pair with
+  // fullScreenShareCircle on the right. Light fill keeps the back affordance
+  // distinct from the destructive top-right delete.
+  fullScreenReturnCircle: {
+    width: 35,
+    height: 35,
+    borderRadius: 17,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'grey',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullScreenMetaLine: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center',
   },
   fullScreenPhotoArea: {
     flex: 1,

@@ -124,7 +124,7 @@ export default function CameraScreen({ route, navigation }) {
   const showEnlargedGalleryRef = useRef(showEnlargedGallery);
   const enlargedGalleryPhotoRef = useRef(enlargedGalleryPhoto);
   const isGalleryAnimatingRef = useRef(false);
-  const { addPhoto, getBeforePhotos, getUnpairedBeforePhotos, deletePhoto, setCurrentRoom, activeProjectId, createProject, setActiveProject, projects } = usePhotos();
+  const { addPhoto, updatePhoto, getBeforePhotos, getUnpairedBeforePhotos, deletePhoto, setCurrentRoom, activeProjectId, createProject, setActiveProject, projects } = usePhotos();
   const {
     showLabels,
     shouldShowWatermark,
@@ -1719,11 +1719,13 @@ export default function CameraScreen({ route, navigation }) {
       }
 
       const beforePhotoId = activeBeforePhoto.id;
-      // If replacing existing photos, delete them first
+      // Sequential progression: a previous after becomes a progress photo in
+      // the same set (retains beforePhotoId so the gallery still groups it).
+      // The combined image is rebuilt from the new after, so the old one goes.
       if (existingAfterPhoto) {
         const deleteStart = Date.now();
-        await deletePhoto(existingAfterPhoto.id);
-        console.log(`[DEBUG] â±ï¸ Delete existing after photo: ${Date.now() - deleteStart}ms`);
+        await updatePhoto(existingAfterPhoto.id, { mode: PHOTO_MODES.PROGRESS });
+        console.log(`[DEBUG] â±ï¸Demote previous after to progress: ${Date.now() - deleteStart}ms`);
       }
       if (existingCombinedPhoto) {
         const deleteStart = Date.now();
