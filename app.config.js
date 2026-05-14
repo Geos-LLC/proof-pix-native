@@ -142,7 +142,11 @@ export default {
         }
       ],
       "expo-font",
-      "expo-notifications",
+      // expo-notifications config plugin omitted intentionally: the app only
+      // schedules LOCAL notifications (trial / job reminders) via the JS
+      // module, and including the plugin auto-adds an aps-environment
+      // entitlement that the production provisioning profile under goscha01
+      // does not carry. Local notifications work without the plugin.
       [
         "@react-native-google-signin/google-signin",
         {
