@@ -168,7 +168,10 @@ export default {
           "iosUserTrackingPermission": "This identifier will be used to deliver personalized ads and measure campaign performance."
         }
       ],
-      "expo-tracking-transparency"
+      "expo-tracking-transparency",
+      // Strip aps-environment last so any earlier autolinked module that
+      // re-injected it gets cleared before Xcode codesigns.
+      "./plugins/withStripPushEntitlement.js"
     ],
     extra: {
       eas: {
