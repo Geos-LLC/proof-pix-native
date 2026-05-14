@@ -4,7 +4,11 @@ export default {
   expo: {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
-    version: process.env.VERSION || "1.7.0",
+    // Hardcoded — DO NOT use `process.env.VERSION || "..."` here. The EAS
+    // production environment had VERSION=1.2.0 stored as a secret, which
+    // silently overrode the fallback and shipped 1.2.0 IPAs that Apple
+    // rejected (already deleted from EAS env, but keep this guard).
+    version: "1.7.0",
     runtimeVersion: "1.7.0",
     updates: {
       url: "https://u.expo.dev/c65badb3-ddbc-4bb8-9de5-fab32a427f16"
