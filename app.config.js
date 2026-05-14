@@ -9,7 +9,7 @@ export default {
       policy: "appVersion"
     },
     updates: {
-      url: "https://u.expo.dev/3e7ed884-bb3a-4191-bcb0-188386d7e977"
+      url: "https://u.expo.dev/c65badb3-ddbc-4bb8-9de5-fab32a427f16"
     },
     orientation: "default",
     icon: "./assets/PP_logo.png",
@@ -170,7 +170,7 @@ export default {
     ],
     extra: {
       eas: {
-        projectId: "3e7ed884-bb3a-4191-bcb0-188386d7e977"
+        projectId: "c65badb3-ddbc-4bb8-9de5-fab32a427f16"
       },
       // Environment variables accessible in your app
       googleServiceAccountPath: process.env.GOOGLE_SERVICE_ACCOUNT_PATH,
