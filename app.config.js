@@ -5,9 +5,7 @@ export default {
     name: process.env.APP_NAME || "ProofPix",
     slug: "proof-pix-native",
     version: process.env.VERSION || "1.6.5",
-    runtimeVersion: {
-      policy: "appVersion"
-    },
+    runtimeVersion: "1.6.5",
     updates: {
       url: "https://u.expo.dev/c65badb3-ddbc-4bb8-9de5-fab32a427f16"
     },
