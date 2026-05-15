@@ -59,7 +59,9 @@ export default function CompareViewer({
   // Viewport mode — 'fit' (default 1:1, photos letterboxed) or 'wide' (16:9
   // frame, photos use cover so they fill the wider frame and crop top/bottom).
   // In wide mode users can drag vertically on the viewer to reframe (panY
-  // shifts both photos in lockstep).
+  // shifts both photos in lockstep). Pinch (2 fingers) is always active
+  // regardless of wide mode — it scales both photos in lockstep so the user
+  // can zoom in/out on details.
   const [wideMode, setWideMode] = useState(false);
   const panY = useRef(new Animated.Value(0)).current;
   const panYRef = useRef(0);
@@ -69,8 +71,24 @@ export default function CompareViewer({
   }, [panY]);
   const panYStart = useRef(0);
 
+  const scale = useRef(new Animated.Value(1)).current;
+  const scaleRef = useRef(1);
+  useEffect(() => {
+    const id = scale.addListener(({ value }) => { scaleRef.current = value; });
+    return () => scale.removeListener(id);
+  }, [scale]);
+  const pinchStartDistRef = useRef(0);
+  const pinchStartScaleRef = useRef(1);
+
   const aspectRatio = wideMode ? 16 / 9 : 1;
   const imageResize = wideMode ? 'cover' : 'contain';
+
+  const distanceBetween = (touches) => {
+    if (!touches || touches.length < 2) return 0;
+    const dx = touches[0].pageX - touches[1].pageX;
+    const dy = touches[0].pageY - touches[1].pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
 
   // ----- Split mode state -----------------------------------------------------
   // containerWidth is read inside the PanResponder closure — use a ref so the
@@ -99,23 +117,39 @@ export default function CompareViewer({
 
   const panResponder = useRef(
     PanResponder.create({
-      // Split mode owns horizontal drags for the divider. Wide mode (in any
-      // other mode) owns vertical drags to reframe both photos. We pick
-      // direction by which delta is larger so both can coexist.
-      onStartShouldSetPanResponder: () => modeRef.current === 'split',
-      onMoveShouldSetPanResponder: (_, gs) => {
+      // Two-finger touches → pinch zoom (always available). One-finger:
+      // split mode owns horizontal drags for the divider; wide mode owns
+      // vertical drags to reframe both photos. We pick direction by which
+      // delta is larger so split-drag and wide-pan can coexist.
+      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 2 || modeRef.current === 'split',
+      onMoveShouldSetPanResponder: (evt, gs) => {
+        if (evt.nativeEvent.touches.length === 2) return true;
         if (modeRef.current === 'split' && Math.abs(gs.dx) >= Math.abs(gs.dy)) return true;
         if (wideModeRef.current && modeRef.current !== 'split' && Math.abs(gs.dy) > Math.abs(gs.dx)) return true;
         return false;
       },
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
-      onPanResponderGrant: () => {
+      onPanResponderGrant: (evt) => {
         dragStartRef.current = splitRef.current;
         panYStart.current = panYRef.current;
+        if (evt.nativeEvent.touches.length === 2) {
+          pinchStartDistRef.current = distanceBetween(evt.nativeEvent.touches);
+          pinchStartScaleRef.current = scaleRef.current;
+        }
       },
-      onPanResponderMove: (_, gs) => {
-        // Split divider — horizontal drag
+      onPanResponderMove: (evt, gs) => {
+        // Pinch — 2 fingers, scale both photos in lockstep.
+        if (evt.nativeEvent.touches.length === 2) {
+          const dist = distanceBetween(evt.nativeEvent.touches);
+          if (pinchStartDistRef.current > 0 && dist > 0) {
+            const ratio = dist / pinchStartDistRef.current;
+            const next = Math.max(0.5, Math.min(3, pinchStartScaleRef.current * ratio));
+            scale.setValue(next);
+          }
+          return;
+        }
+        // Split divider — horizontal drag.
         if (modeRef.current === 'split' && Math.abs(gs.dx) >= Math.abs(gs.dy)) {
           const w = containerWidthRef.current;
           if (w <= 0) return;
@@ -131,6 +165,9 @@ export default function CompareViewer({
           const next = Math.max(-maxTravel, Math.min(maxTravel, panYStart.current + gs.dy));
           panY.setValue(next);
         }
+      },
+      onPanResponderRelease: () => {
+        pinchStartDistRef.current = 0;
       },
     })
   ).current;
@@ -151,12 +188,15 @@ export default function CompareViewer({
 
   // Toggle button — rendered in the top-right corner of every mode. Tap to
   // switch between fit (1:1 letterboxed) and wide (16:9 cover with vertical
-  // pan to reframe both photos in lockstep). Reset panY back to 0 every time
-  // the user turns wide mode off so the next entry starts centered.
+  // pan to reframe both photos in lockstep). Reset pan AND zoom every time
+  // the user turns wide mode off so the next entry starts centered at 1×.
   const toggleWide = () => {
     setWideMode((prev) => {
       const next = !prev;
-      if (!next) panY.setValue(0);
+      if (!next) {
+        panY.setValue(0);
+        scale.setValue(1);
+      }
       return next;
     });
   };
@@ -174,10 +214,10 @@ export default function CompareViewer({
     </TouchableOpacity>
   );
 
-  // Animated transform applied to both photos in wide mode so a vertical
-  // drag pans the framing in lockstep — same offset before/after means
-  // the comparison stays aligned.
-  const panTransform = wideMode ? [{ translateY: panY }] : [];
+  // Animated transform applied to both photos. translateY is the wide-mode
+  // reframe pan; scale is the pinch-zoom (always active, default 1). Same
+  // values applied to both before/after so the comparison stays aligned.
+  const panTransform = [{ translateY: panY }, { scale }];
 
   // ----- Render: Side by Side -------------------------------------------------
   if (mode === 'side-by-side') {

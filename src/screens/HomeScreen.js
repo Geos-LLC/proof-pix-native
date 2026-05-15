@@ -1633,6 +1633,13 @@ export default function HomeScreen({ navigation }) {
 
           {/* Photo area: yellow border, single image */}
           <View style={styles.fullScreenPhotoArea}>
+            {/* Capture metadata above the photo so the mode-switcher and
+                action buttons below the image never hide it. */}
+            {showPreviewMetadata && (
+              <Text style={[styles.fullScreenMetaLine, { marginBottom: 6 }]} numberOfLines={1}>
+                {formatPhotoMetaLine(fullScreenPhoto, location)}
+              </Text>
+            )}
             <View style={styles.fullScreenSinglePreview}>
               {fullScreenLoading && (
                 <View style={styles.fullScreenLoadingOverlay}>
@@ -1689,13 +1696,6 @@ export default function HomeScreen({ navigation }) {
                 />
               )}
             </View>
-            {/* Capture metadata under the photo: short time + saved location.
-                Gated on the per-preview Meta toggle in the header. */}
-            {showPreviewMetadata && (
-              <Text style={styles.fullScreenMetaLine} numberOfLines={1}>
-                {formatPhotoMetaLine(fullScreenPhoto, location)}
-              </Text>
-            )}
           </View>
 
           {/* Room name + pagination dots */}
@@ -1805,6 +1805,15 @@ export default function HomeScreen({ navigation }) {
               landscape, portrait, and mixed-orientation pairs all stay
               undistorted regardless of compare mode. */}
           <View style={styles.fullScreenPhotoArea}>
+            {/* Metadata sits ABOVE the comparison frame — the mode-switcher
+                pills already occupy the space directly below. Uses the After
+                photo's timestamp + saved location since that's the most
+                recent capture in the set. */}
+            {showPreviewMetadata && fullScreenPhotoSet?.after && (
+              <Text style={[styles.fullScreenMetaLine, { marginBottom: 6 }]} numberOfLines={1}>
+                {formatPhotoMetaLine(fullScreenPhotoSet.after, location)}
+              </Text>
+            )}
             <View ref={fullScreenCompareRef} collapsable={false}>
               <CompareViewer
                 beforePhoto={fullScreenPhotoSet.before}

@@ -2200,6 +2200,11 @@ export default function GalleryScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
           <View style={styles.fullScreenPhotoArea}>
+            {showPreviewMetadata && (
+              <Text style={[styles.fullScreenMetaLine, { marginBottom: 6 }]} numberOfLines={1}>
+                {formatPhotoMetaLine(fullScreenPhoto, location)}
+              </Text>
+            )}
             <View style={styles.fullScreenSinglePreview}>
               {fullScreenLoading && (
                 <View style={styles.fullScreenLoadingOverlay}>
@@ -2257,11 +2262,6 @@ export default function GalleryScreen({ navigation, route }) {
                 />
               )}
             </View>
-            {showPreviewMetadata && (
-              <Text style={styles.fullScreenMetaLine} numberOfLines={1}>
-                {formatPhotoMetaLine(fullScreenPhoto, location)}
-              </Text>
-            )}
           </View>
           <View style={styles.fullScreenRoomNameRow}>
             <Text style={styles.fullScreenRoomName} numberOfLines={1} ellipsizeMode="tail">
@@ -2317,6 +2317,14 @@ export default function GalleryScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
           <View style={styles.fullScreenPhotoArea}>
+            {/* Metadata sits ABOVE the comparison frame so the mode-switcher
+                pills below don't hide it. Uses the After photo's timestamp +
+                saved location (most recent capture in the set). */}
+            {showPreviewMetadata && fullScreenPhotoSet?.after && (
+              <Text style={[styles.fullScreenMetaLine, { marginBottom: 6 }]} numberOfLines={1}>
+                {formatPhotoMetaLine(fullScreenPhotoSet.after, location)}
+              </Text>
+            )}
             {/* Wrapper keeps the captureRef used by shareFullScreenCombined's
                 fallback path; the rich share path uses compositeImages first
                 and only falls back to capturing whatever is on-screen. */}
