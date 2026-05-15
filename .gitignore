@@ -52,3 +52,6 @@ yarn-error.*
 
 # proxy server (should be in separate repo)
 /proxy-server
+
+# Claude Code runtime artifacts (not source)
+.claude/scheduled_tasks.lock
