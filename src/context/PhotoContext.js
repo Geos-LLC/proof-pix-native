@@ -222,8 +222,14 @@ export const PhotoProvider = ({ children }) => {
     }
   };
 
+  // IMPORTANT: read from photosRef.current, not the closure `photos`. When
+  // callers await several of these in sequence (e.g. CameraScreen demoting an
+  // after to progress and then deleting the combined), React state hasn't
+  // re-rendered yet, so closure `photos` would be the pre-update value and
+  // the second call would silently overwrite the first. photosRef is sync.
   const updatePhoto = async (photoId, updates) => {
-    const newPhotos = photos.map(p =>
+    const current = photosRef.current;
+    const newPhotos = current.map(p =>
       p.id === photoId ? { ...p, ...updates } : p
     );
     await savePhotos(newPhotos);
@@ -232,7 +238,7 @@ export const PhotoProvider = ({ children }) => {
   const deletePhoto = async (photoId, options = {}) => {
     try {
       console.log('[PhotoContext] deletePhoto called with options:', options);
-      const target = photos.find(p => p.id === photoId);
+      const target = photosRef.current.find(p => p.id === photoId);
       if (target) {
         const shouldDeleteFromStorage = options.deleteFromStorage !== false;
         console.log('[PhotoContext] Photo found, deleteFromStorage:', shouldDeleteFromStorage);
@@ -243,7 +249,7 @@ export const PhotoProvider = ({ children }) => {
         }
       }
     } finally {
-      const newPhotos = photos.filter(p => p.id !== photoId);
+      const newPhotos = photosRef.current.filter(p => p.id !== photoId);
       await savePhotos(newPhotos);
     }
   };

@@ -1,11 +1,11 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   View,
-  Image,
   StyleSheet,
   PanResponder,
   Animated,
   Text,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -56,12 +56,21 @@ export default function CompareViewer({
   const beforeUri = beforePhoto?.uri;
   const afterUri = afterPhoto?.uri;
 
-  // Force a consistent 1:1 square frame for all three modes — matches the
-  // pre-refactor fullScreenCombinedPreview footprint (max 400×400). Both
-  // images render with resizeMode="contain", so portrait/landscape/mixed
-  // pairs letterbox within the square instead of cropping. Caller can still
-  // override via the `style` prop if a non-square container is wanted.
-  const aspectRatio = 1;
+  // Viewport mode — 'fit' (default 1:1, photos letterboxed) or 'wide' (16:9
+  // frame, photos use cover so they fill the wider frame and crop top/bottom).
+  // In wide mode users can drag vertically on the viewer to reframe (panY
+  // shifts both photos in lockstep).
+  const [wideMode, setWideMode] = useState(false);
+  const panY = useRef(new Animated.Value(0)).current;
+  const panYRef = useRef(0);
+  useEffect(() => {
+    const id = panY.addListener(({ value }) => { panYRef.current = value; });
+    return () => panY.removeListener(id);
+  }, [panY]);
+  const panYStart = useRef(0);
+
+  const aspectRatio = wideMode ? 16 / 9 : 1;
+  const imageResize = wideMode ? 'cover' : 'contain';
 
   // ----- Split mode state -----------------------------------------------------
   // containerWidth is read inside the PanResponder closure — use a ref so the
@@ -85,21 +94,43 @@ export default function CompareViewer({
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
   const dragStartRef = useRef(initialSplit);
+  const wideModeRef = useRef(false);
+  useEffect(() => { wideModeRef.current = wideMode; }, [wideMode]);
+
   const panResponder = useRef(
     PanResponder.create({
+      // Split mode owns horizontal drags for the divider. Wide mode (in any
+      // other mode) owns vertical drags to reframe both photos. We pick
+      // direction by which delta is larger so both can coexist.
       onStartShouldSetPanResponder: () => modeRef.current === 'split',
-      onStartShouldSetPanResponderCapture: () => modeRef.current === 'split',
-      onMoveShouldSetPanResponder: () => modeRef.current === 'split',
-      onMoveShouldSetPanResponderCapture: () => modeRef.current === 'split',
+      onMoveShouldSetPanResponder: (_, gs) => {
+        if (modeRef.current === 'split' && Math.abs(gs.dx) >= Math.abs(gs.dy)) return true;
+        if (wideModeRef.current && modeRef.current !== 'split' && Math.abs(gs.dy) > Math.abs(gs.dx)) return true;
+        return false;
+      },
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
-      onPanResponderGrant: () => { dragStartRef.current = splitRef.current; },
+      onPanResponderGrant: () => {
+        dragStartRef.current = splitRef.current;
+        panYStart.current = panYRef.current;
+      },
       onPanResponderMove: (_, gs) => {
-        const w = containerWidthRef.current;
-        if (w <= 0) return;
-        const dx = gs.dx / w;
-        const next = Math.max(0, Math.min(1, dragStartRef.current + dx));
-        splitAnim.setValue(next);
+        // Split divider — horizontal drag
+        if (modeRef.current === 'split' && Math.abs(gs.dx) >= Math.abs(gs.dy)) {
+          const w = containerWidthRef.current;
+          if (w <= 0) return;
+          const dx = gs.dx / w;
+          const next = Math.max(0, Math.min(1, dragStartRef.current + dx));
+          splitAnim.setValue(next);
+          return;
+        }
+        // Wide-mode reframe — vertical drag, clamped so users don't run the
+        // photo entirely out of frame.
+        if (wideModeRef.current) {
+          const maxTravel = 200; // px from center; covers most portrait crops
+          const next = Math.max(-maxTravel, Math.min(maxTravel, panYStart.current + gs.dy));
+          panY.setValue(next);
+        }
       },
     })
   ).current;
@@ -118,19 +149,54 @@ export default function CompareViewer({
     containerWidthRef.current = w;
   };
 
+  // Toggle button — rendered in the top-right corner of every mode. Tap to
+  // switch between fit (1:1 letterboxed) and wide (16:9 cover with vertical
+  // pan to reframe both photos in lockstep). Reset panY back to 0 every time
+  // the user turns wide mode off so the next entry starts centered.
+  const toggleWide = () => {
+    setWideMode((prev) => {
+      const next = !prev;
+      if (!next) panY.setValue(0);
+      return next;
+    });
+  };
+  const renderWideToggle = () => (
+    <TouchableOpacity
+      onPress={toggleWide}
+      style={styles.wideToggle}
+      activeOpacity={0.8}
+    >
+      <Ionicons
+        name={wideMode ? 'contract-outline' : 'expand-outline'}
+        size={16}
+        color="#000"
+      />
+    </TouchableOpacity>
+  );
+
+  // Animated transform applied to both photos in wide mode so a vertical
+  // drag pans the framing in lockstep — same offset before/after means
+  // the comparison stays aligned.
+  const panTransform = wideMode ? [{ translateY: panY }] : [];
+
   // ----- Render: Side by Side -------------------------------------------------
   if (mode === 'side-by-side') {
     return (
-      <View style={[styles.container, { aspectRatio }, style]} onLayout={handleLayout}>
+      <View
+        style={[styles.container, { aspectRatio }, style]}
+        onLayout={handleLayout}
+        {...panResponder.panHandlers}
+      >
         <View style={styles.sideHalf}>
-          <Image source={{ uri: beforeUri }} style={styles.fullImage} resizeMode="contain" />
+          <Animated.Image source={{ uri: beforeUri }} style={[styles.fullImage, { transform: panTransform }]} resizeMode={imageResize} />
           {renderBeforeOverlay ? renderBeforeOverlay() : null}
         </View>
         <View style={styles.sideDivider} pointerEvents="none" />
         <View style={styles.sideHalf}>
-          <Image source={{ uri: afterUri }} style={styles.fullImage} resizeMode="contain" />
+          <Animated.Image source={{ uri: afterUri }} style={[styles.fullImage, { transform: panTransform }]} resizeMode={imageResize} />
           {renderAfterOverlay ? renderAfterOverlay() : null}
         </View>
+        {renderWideToggle()}
       </View>
     );
   }
@@ -141,16 +207,20 @@ export default function CompareViewer({
     // footprint stays identical to the other two modes. Sits inside the
     // aspect-ratio'd container.
     return (
-      <View style={[styles.container, styles.containerColumn, { aspectRatio }, style]} onLayout={handleLayout}>
+      <View
+        style={[styles.container, styles.containerColumn, { aspectRatio }, style]}
+        onLayout={handleLayout}
+        {...panResponder.panHandlers}
+      >
         {/* Base layer: BEFORE at full opacity */}
-        <Image source={{ uri: beforeUri }} style={styles.absoluteImage} resizeMode="contain" />
+        <Animated.Image source={{ uri: beforeUri }} style={[styles.absoluteImage, { transform: panTransform }]} resizeMode={imageResize} />
 
         {/* Overlay layer: AFTER image only — opacity controlled by slider.
             At 0 → fully BEFORE visible; at 1 → fully AFTER visible. The
             labels are rendered OUTSIDE this opacity wrapper so they stay
             fully visible regardless of slider position. */}
         <View style={[styles.absoluteImage, { opacity: overlayOpacity }]} pointerEvents="none">
-          <Image source={{ uri: afterUri }} style={styles.fullImage} resizeMode="contain" />
+          <Animated.Image source={{ uri: afterUri }} style={[styles.fullImage, { transform: panTransform }]} resizeMode={imageResize} />
         </View>
 
         {/* Both labels render at full opacity, layered above all images. */}
@@ -173,6 +243,8 @@ export default function CompareViewer({
           />
           <Text style={styles.overlaySliderLabelRight}>After</Text>
         </View>
+
+        {renderWideToggle()}
       </View>
     );
   }
@@ -188,20 +260,29 @@ export default function CompareViewer({
   });
 
   return (
-    <View style={[styles.container, styles.containerColumn, { aspectRatio }, style]} onLayout={handleLayout}>
-      <Image source={{ uri: beforeUri }} style={styles.absoluteImage} resizeMode="contain" />
-      {renderBeforeOverlay ? renderBeforeOverlay() : null}
+    <View
+      style={[styles.container, styles.containerColumn, { aspectRatio }, style]}
+      onLayout={handleLayout}
+      {...panResponder.panHandlers}
+    >
+      <Animated.Image source={{ uri: beforeUri }} style={[styles.absoluteImage, { transform: panTransform }]} resizeMode={imageResize} />
 
+      {/* AFTER image inside a divider-clipped overlay. Labels render OUTSIDE
+          this clip (below) so the divider position never hides them. */}
       <Animated.View style={[styles.splitOverlay, { width: overlayWidthPct }]} pointerEvents="none">
         <View style={[styles.splitOverlayInner, { width: containerWidth || '100%' }]}>
-          <Image source={{ uri: afterUri }} style={styles.fullImage} resizeMode="contain" />
-          {renderAfterOverlay ? renderAfterOverlay() : null}
+          <Animated.Image source={{ uri: afterUri }} style={[styles.fullImage, { transform: panTransform }]} resizeMode={imageResize} />
         </View>
       </Animated.View>
 
+      {/* Both labels render at the frame level above the clip, so the After
+          label stays put regardless of where the divider sits. */}
+      {renderBeforeOverlay ? renderBeforeOverlay() : null}
+      {renderAfterOverlay ? renderAfterOverlay() : null}
+
       <Animated.View
         style={[styles.splitDividerHitArea, { left: dividerLeftPct }]}
-        {...panResponder.panHandlers}
+        pointerEvents="none"
       >
         <View style={styles.splitDividerLine} pointerEvents="none" />
         <View style={styles.splitDividerKnob} pointerEvents="none">
@@ -209,6 +290,8 @@ export default function CompareViewer({
           <Ionicons name="chevron-forward" size={14} color="#000" />
         </View>
       </Animated.View>
+
+      {renderWideToggle()}
     </View>
   );
 }
@@ -328,5 +411,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 3,
     elevation: 4,
+  },
+
+  // Viewport-shape toggle pinned to the top-right corner of every mode.
+  wideToggle: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 3,
   },
 });
