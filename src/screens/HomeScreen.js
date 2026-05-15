@@ -31,6 +31,7 @@ import PhotoLabel from '../components/PhotoLabel';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
 import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
+import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
@@ -182,6 +183,10 @@ export default function HomeScreen({ navigation }) {
   const [compareMode, setCompareMode] = useState('split');
   const [showDeletePhotoConfirm, setShowDeletePhotoConfirm] = useState(false);
   const pendingDeletePhotoIdRef = useRef(null);
+  // captureRef target for the fullscreen CompareViewer. Used by the Share
+  // button to capture whatever mode (overlay / split / side-by-side) is
+  // currently rendered instead of forcing the combined re-composite.
+  const fullScreenCompareRef = useRef(null);
 
   const { customRooms, saveCustomRooms, resetCustomRooms } = useSettings();
   const [rooms, setRooms] = useState(() => getRooms());
@@ -1179,8 +1184,6 @@ export default function HomeScreen({ navigation }) {
           //   single tap → Camera in After mode (most common contractor action)
           //   double tap → full-screen preview viewer (handleDoubleTap)
           //   eye icon (top-left) → same as double tap, a discoverable UI cue
-          //   progress badge (top-right) → SectionDetail Progress tab
-          const progressCount = getProgressPhotos ? getProgressPhotos(currentRoom).length : 0;
           gridItems.push(
             <TouchableOpacity
               key={beforePhoto.id}
@@ -1237,21 +1240,6 @@ export default function HomeScreen({ navigation }) {
                   <Ionicons name="checkmark-circle-sharp" size={25} color='#22C55E' />
                 </View>
               </View>
-              {/* Progress badge top-right — always visible. Shows a trending
-                  chart icon plus the count when progress photos exist; shows
-                  the chart + a small + when none yet, so users see the entry
-                  point to the Progress tab before they've taken any. */}
-              <TouchableOpacity
-                style={styles.progressCountBadge}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trending-up" size={12} color="#000" style={{ marginRight: 3 }} />
-                <Text style={styles.progressCountBadgeText}>{progressCount > 0 ? progressCount : '+'}</Text>
-              </TouchableOpacity>
               <View style={styles.thumbnailButtonsOverlay}>
                 <TouchableOpacity
                   style={styles.retakeButton}
@@ -1332,22 +1320,6 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
               {/* Progress badge — always visible, same behaviour as the other
                   card paths. Uses the section's current progress photo count. */}
-              {(() => {
-                const cnt = getProgressPhotos ? getProgressPhotos(currentRoom).length : 0;
-                return (
-                  <TouchableOpacity
-                    style={styles.progressCountBadge}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="trending-up" size={12} color="#000" style={{ marginRight: 3 }} />
-                    <Text style={styles.progressCountBadgeText}>{cnt > 0 ? cnt : '+'}</Text>
-                  </TouchableOpacity>
-                );
-              })()}
               <View style={styles.photoOverlayBadge}>
                 <View style={styles.checkmarkBadge}>
                   <Ionicons name="checkmark" size={14} color="#FFF" />
@@ -1379,8 +1351,6 @@ export default function HomeScreen({ navigation }) {
         //   single tap → Camera in After mode
         //   double tap → full-screen preview (single before photo)
         //   eye icon (top-left) → same as double tap
-        //   progress badge (top-right) → SectionDetail Progress tab
-        const progressCount = getProgressPhotos ? getProgressPhotos(currentRoom).length : 0;
         gridItems.push(
           <TouchableOpacity
             key={beforePhoto.id}
@@ -1421,17 +1391,6 @@ export default function HomeScreen({ navigation }) {
               activeOpacity={0.7}
             >
               <Ionicons name="eye-outline" size={16} color="#000" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.progressCountBadge}
-              onPress={(e) => {
-                e.stopPropagation();
-                navigation.navigate('SectionDetail', { sectionId: currentRoom, initialTab: 'progress' });
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="trending-up" size={12} color="#000" style={{ marginRight: 3 }} />
-              <Text style={styles.progressCountBadgeText}>{progressCount > 0 ? progressCount : '+'}</Text>
             </TouchableOpacity>
             <View style={styles.thumbnailButtonsOverlay}>
               <TouchableOpacity
@@ -1846,29 +1805,31 @@ export default function HomeScreen({ navigation }) {
               landscape, portrait, and mixed-orientation pairs all stay
               undistorted regardless of compare mode. */}
           <View style={styles.fullScreenPhotoArea}>
-            <CompareViewer
-              beforePhoto={fullScreenPhotoSet.before}
-              afterPhoto={fullScreenPhotoSet.after}
-              mode={compareMode}
-              renderBeforeOverlay={() => (showLabels ? (
-                <PhotoLabel
-                  label="common.before"
-                  position={pickBeforeLabelPosition(
-                    { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                    fullScreenPhotoSet.before
-                  )}
-                />
-              ) : null)}
-              renderAfterOverlay={() => (showLabels ? (
-                <PhotoLabel
-                  label="common.after"
-                  position={pickAfterLabelPosition(
-                    { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                    fullScreenPhotoSet.after
-                  )}
-                />
-              ) : null)}
-            />
+            <View ref={fullScreenCompareRef} collapsable={false}>
+              <CompareViewer
+                beforePhoto={fullScreenPhotoSet.before}
+                afterPhoto={fullScreenPhotoSet.after}
+                mode={compareMode}
+                renderBeforeOverlay={() => (showLabels ? (
+                  <PhotoLabel
+                    label="common.before"
+                    position={pickBeforeLabelPosition(
+                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                      fullScreenPhotoSet.before
+                    )}
+                  />
+                ) : null)}
+                renderAfterOverlay={() => (showLabels ? (
+                  <PhotoLabel
+                    label="common.after"
+                    position={pickAfterLabelPosition(
+                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                      fullScreenPhotoSet.after
+                    )}
+                  />
+                ) : null)}
+              />
+            </View>
             <CompareModeSwitcher
               mode={compareMode}
               onChange={setCompareMode}
@@ -1904,13 +1865,46 @@ export default function HomeScreen({ navigation }) {
             <TouchableOpacity
               style={styles.fullScreenShareCircle}
               disabled={sharing}
-              onPress={() => {
-                const combinedPhoto = getCombinedPhotos(fullScreenPhotoSet.before.room).find(
-                  (p) => p.name === fullScreenPhotoSet.before.name
-                );
-                const thumbnailUri = combinedBaseUris[fullScreenPhotoSet.before.name] || combinedPhoto?.uri;
-                if (thumbnailUri) {
-                  shareCombinedPhoto(thumbnailUri, fullScreenPhotoSet.before.name, fullScreenPhotoSet.before.room, combinedPhoto, fullScreenPhotoSet.before, fullScreenPhotoSet.after);
+              onPress={async () => {
+                // Phase B share-respects-mode: capture the on-screen
+                // CompareViewer so the share output reflects the active mode
+                // (overlay / split / side-by-side). Fall back to the legacy
+                // pre-rendered combined photo if capture fails.
+                try {
+                  setSharing(true);
+                  let shareUri = null;
+                  if (fullScreenCompareRef.current) {
+                    try {
+                      shareUri = await captureRef(fullScreenCompareRef, { format: 'jpg', quality: 0.95 });
+                    } catch (capErr) {
+                      console.warn('[HomeScreen] captureRef of compare failed, falling back to combined:', capErr);
+                    }
+                  }
+                  if (!shareUri) {
+                    const combinedPhoto = getCombinedPhotos(fullScreenPhotoSet.before.room).find(
+                      (p) => p.name === fullScreenPhotoSet.before.name
+                    );
+                    const thumbnailUri = combinedBaseUris[fullScreenPhotoSet.before.name] || combinedPhoto?.uri;
+                    if (thumbnailUri) {
+                      shareCombinedPhoto(thumbnailUri, fullScreenPhotoSet.before.name, fullScreenPhotoSet.before.room, combinedPhoto, fullScreenPhotoSet.before, fullScreenPhotoSet.after);
+                      return;
+                    }
+                    throw new Error('No share URI available');
+                  }
+                  const tempFileName = `${fullScreenPhotoSet.before.room}_${fullScreenPhotoSet.before.name}_${compareMode}_${Date.now()}.jpg`;
+                  const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
+                  await FileSystem.copyAsync({ from: shareUri, to: tempUri });
+                  await Share.open({
+                    url: ensureFileUri(tempUri),
+                    type: 'image/jpeg',
+                    title: `${fullScreenPhotoSet.before.name} — ${compareMode}`,
+                  });
+                } catch (e) {
+                  if (e?.message !== 'User did not share') {
+                    Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
+                  }
+                } finally {
+                  setSharing(false);
                 }
               }}
             >

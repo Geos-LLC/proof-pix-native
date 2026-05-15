@@ -592,7 +592,22 @@ export default function GalleryScreen({ navigation, route }) {
       const beforePhoto = fullScreenPhotoSet.before;
       const afterPhoto = fullScreenPhotoSet.after;
 
-      if (beforePhoto?.uri && afterPhoto?.uri) {
+      // Phase B share-respects-mode: capture whatever's currently rendered in
+      // the CompareViewer (overlay / split / side-by-side) instead of always
+      // re-compositing a 1:1 combined square. The user's active compare mode
+      // is what they see, so it's what they should share. The legacy combined
+      // re-composite path lives below as a fallback when captureRef fails.
+      if (fullScreenCombinedRef.current) {
+        try {
+          shareUri = await captureRef(fullScreenCombinedRef, softTrialActive
+            ? { format: 'jpg', quality: SOFT_TRIAL_QUALITY, width: SOFT_TRIAL_LOW_RES_MAX_DIM, height: SOFT_TRIAL_LOW_RES_MAX_DIM }
+            : { format: 'jpg', quality: 0.95 });
+        } catch (captureErr) {
+          console.warn('[GalleryScreen] captureRef of current compare mode failed, falling back to combined re-composite:', captureErr);
+        }
+      }
+
+      if (!shareUri && beforePhoto?.uri && afterPhoto?.uri) {
         try {
           // Determine layout from stored metadata or aspect ratio
           const currentFullScreenPhoto = fullScreenPhotos[fullScreenIndex];
@@ -1978,6 +1993,18 @@ export default function GalleryScreen({ navigation, route }) {
             Before
           </Text>
         </TouchableOpacity>
+        {/* Order matches the per-set photo row: Before → Progress → After →
+            Combined. Mirrors the sequential progression model so the filters
+            read in the same direction as the photos they show. */}
+        <TouchableOpacity
+          style={[styles.filterButton, photoFilter === 'progress' && styles.filterButtonActive]}
+          onPress={() => setPhotoFilter('progress')}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.filterButtonText, photoFilter === 'progress' && styles.filterButtonTextActive]}>
+            Progress
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.filterButton, photoFilter === 'after' && styles.filterButtonActive]}
           onPress={() => setPhotoFilter('after')}
@@ -1994,18 +2021,6 @@ export default function GalleryScreen({ navigation, route }) {
         >
           <Text style={[styles.filterButtonText, photoFilter === 'combined' && styles.filterButtonTextActive]}>
             Combined
-          </Text>
-        </TouchableOpacity>
-        {/* Progress filter — narrows to single-shot job-progress photos.
-            Order matters: Combined → Progress so the existing All/Before/
-            After/Combined muscle memory keeps working. */}
-        <TouchableOpacity
-          style={[styles.filterButton, photoFilter === 'progress' && styles.filterButtonActive]}
-          onPress={() => setPhotoFilter('progress')}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.filterButtonText, photoFilter === 'progress' && styles.filterButtonTextActive]}>
-            Progress
           </Text>
         </TouchableOpacity>
       </View>
