@@ -140,6 +140,8 @@ export default function HomeScreen({ navigation }) {
     updateUserPlan,
     showLabels,
     toggleLabels,
+    showPreviewMetadata,
+    togglePreviewMetadata,
     beforeLabelPosition,
     afterLabelPosition,
     beforeLabelPositionLandscape,
@@ -868,9 +870,12 @@ export default function HomeScreen({ navigation }) {
       return;
     }
     
-    const locationDisplay = getLocationName(location);
-    setNewProjectNamePart(`Project ${(projects?.length || 0) + 1}`);
-    setNewProjectLocation(locationDisplay);
+    // Match the auto-filled "Project N" name with a "Location N" default so
+    // each new project gets a unique location label out of the box. The user
+    // can still override either field in the modal.
+    const nextNum = (projects?.length || 0) + 1;
+    setNewProjectNamePart(`Project ${nextNum}`);
+    setNewProjectLocation(`Location ${nextNum}`);
     setPendingCameraAfterCreate(navigateToCamera);
     setNewProjectVisible(true);
   };
@@ -1638,6 +1643,13 @@ export default function HomeScreen({ navigation }) {
                 trackColor={{ false: '#767577', true: '#34C759' }}
                 thumbColor={showLabels ? '#fff' : '#f4f3f4'}
               />
+              <Text style={[styles.fullScreenLabelsText, { marginLeft: 12 }]}>Meta</Text>
+              <Switch
+                value={!!showPreviewMetadata}
+                onValueChange={() => togglePreviewMetadata && togglePreviewMetadata()}
+                trackColor={{ false: '#767577', true: '#34C759' }}
+                thumbColor={showPreviewMetadata ? '#fff' : '#f4f3f4'}
+              />
             </View>
             <TouchableOpacity
               style={styles.fullScreenCustomizeButton}
@@ -1718,10 +1730,13 @@ export default function HomeScreen({ navigation }) {
                 />
               )}
             </View>
-            {/* Capture metadata under the photo: short time + saved location */}
-            <Text style={styles.fullScreenMetaLine} numberOfLines={1}>
-              {formatPhotoMetaLine(fullScreenPhoto, location)}
-            </Text>
+            {/* Capture metadata under the photo: short time + saved location.
+                Gated on the per-preview Meta toggle in the header. */}
+            {showPreviewMetadata && (
+              <Text style={styles.fullScreenMetaLine} numberOfLines={1}>
+                {formatPhotoMetaLine(fullScreenPhoto, location)}
+              </Text>
+            )}
           </View>
 
           {/* Room name + pagination dots */}

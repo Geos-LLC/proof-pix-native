@@ -144,14 +144,18 @@ export default function CompareViewer({
       <View style={[styles.container, styles.containerColumn, { aspectRatio }, style]} onLayout={handleLayout}>
         {/* Base layer: BEFORE at full opacity */}
         <Image source={{ uri: beforeUri }} style={styles.absoluteImage} resizeMode="contain" />
-        {renderBeforeOverlay ? renderBeforeOverlay() : null}
 
-        {/* Overlay layer: AFTER, opacity controlled by slider. At 0 → fully
-            BEFORE visible; at 1 → fully AFTER visible; in between → ghost. */}
+        {/* Overlay layer: AFTER image only — opacity controlled by slider.
+            At 0 → fully BEFORE visible; at 1 → fully AFTER visible. The
+            labels are rendered OUTSIDE this opacity wrapper so they stay
+            fully visible regardless of slider position. */}
         <View style={[styles.absoluteImage, { opacity: overlayOpacity }]} pointerEvents="none">
           <Image source={{ uri: afterUri }} style={styles.fullImage} resizeMode="contain" />
-          {renderAfterOverlay ? renderAfterOverlay() : null}
         </View>
+
+        {/* Both labels render at full opacity, layered above all images. */}
+        {renderBeforeOverlay ? renderBeforeOverlay() : null}
+        {renderAfterOverlay ? renderAfterOverlay() : null}
 
         {/* Opacity slider pinned to the bottom of the frame */}
         <View style={styles.overlaySliderRow}>

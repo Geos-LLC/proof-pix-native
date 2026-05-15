@@ -101,7 +101,7 @@
     "deleteFolderConfirm": "هل أنت متأكد من حذف {{name}}؟",
     "addFolder": "إضافة مجلد",
     "duplicateFolder": "تكرار المجلد",
-    "takeAfter": "التقاط بعد",
+    "takeAfter": "التقاط صورة",
     "retake": "إعادة التقاط",
     "preview": "معاينة"
   },

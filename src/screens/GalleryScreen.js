@@ -156,6 +156,8 @@ export default function GalleryScreen({ navigation, route }) {
     enabledFolders,
     showLabels,
     toggleLabels,
+    showPreviewMetadata,
+    togglePreviewMetadata,
     shouldShowWatermark,
     beforeLabelPosition,
     afterLabelPosition,
@@ -2240,9 +2242,11 @@ export default function GalleryScreen({ navigation, route }) {
                 />
               )}
             </View>
-            <Text style={styles.fullScreenMetaLine} numberOfLines={1}>
-              {formatPhotoMetaLine(fullScreenPhoto, location)}
-            </Text>
+            {showPreviewMetadata && (
+              <Text style={styles.fullScreenMetaLine} numberOfLines={1}>
+                {formatPhotoMetaLine(fullScreenPhoto, location)}
+              </Text>
+            )}
           </View>
           <View style={styles.fullScreenRoomNameRow}>
             <Text style={styles.fullScreenRoomName} numberOfLines={1} ellipsizeMode="tail">
@@ -2280,6 +2284,8 @@ export default function GalleryScreen({ navigation, route }) {
             <View style={styles.fullScreenLabelsToggle}>
               <Text style={styles.fullScreenLabelsText}>{t('settings.labels', { defaultValue: 'Labels' })}</Text>
               <Switch value={showLabels} onValueChange={toggleLabels} trackColor={{ false: '#767577', true: '#34C759' }} thumbColor={showLabels ? '#fff' : '#f4f3f4'} />
+              <Text style={[styles.fullScreenLabelsText, { marginLeft: 12 }]}>Meta</Text>
+              <Switch value={!!showPreviewMetadata} onValueChange={() => togglePreviewMetadata && togglePreviewMetadata()} trackColor={{ false: '#767577', true: '#34C759' }} thumbColor={showPreviewMetadata ? '#fff' : '#f4f3f4'} />
             </View>
             <TouchableOpacity style={styles.fullScreenCustomizeButton} onPress={() => { handleGalleryFullScreenClose(); navigation.navigate('LabelCustomization'); }}>
               <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>

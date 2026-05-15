@@ -103,7 +103,7 @@
     "deleteFolderConfirm": "Are you sure you want to delete {{name}}?",
     "addFolder": "Add Folder",
     "duplicateFolder": "Duplicate Folder",
-    "takeAfter": "Take After",
+    "takeAfter": "Take Photo",
     "retake": "Retake",
     "preview": "Preview"
   },

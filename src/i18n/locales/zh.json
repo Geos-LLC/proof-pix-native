@@ -101,7 +101,7 @@
     "deleteFolderConfirm": "您确定要删除{{name}}吗？",
     "addFolder": "添加文件夹",
     "duplicateFolder": "复制文件夹",
-    "takeAfter": "拍摄之后",
+    "takeAfter": "拍照",
     "retake": "重拍",
     "preview": "预览"
   },

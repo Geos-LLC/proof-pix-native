@@ -58,6 +58,10 @@ export const useSettings = () => {
 
 export const SettingsProvider = ({ children }) => {
   const [showLabels, setShowLabels] = useState(true);
+  // Per-user toggle for showing the "date · location" caption under photos in
+  // the full-screen preview. Separate from `watermarkShowMetadata` (which
+  // controls the SHARED watermark output, not the on-screen caption).
+  const [showPreviewMetadata, setShowPreviewMetadata] = useState(false);
   const [showWatermark, setShowWatermark] = useState(true);
   const [customWatermarkEnabled, setCustomWatermarkEnabled] = useState(false);
   const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
@@ -90,7 +94,7 @@ export const SettingsProvider = ({ children }) => {
   const [labelMarginVertical, setLabelMarginVertical] = useState(10); // Top/bottom margin
   const [labelMarginHorizontal, setLabelMarginHorizontal] = useState(10); // Left/right margin
   const [userName, setUserName] = useState('');
-  const [location, setLocation] = useState('tampa'); // Default to Tampa
+  const [location, setLocation] = useState('Location 1'); // Default for fresh installs; project creation auto-fills "Location N" matching project count
   const [useFolderStructure, setUseFolderStructure] = useState(false); // Default OFF - flat structure
   const [enabledFolders, setEnabledFolders] = useState({ before: true, after: true, combined: true });
   const [labelLanguage, setLabelLanguage] = useState('en');
@@ -179,6 +183,7 @@ export const SettingsProvider = ({ children }) => {
       if (stored) {
         const settings = JSON.parse(stored);
         setShowLabels(settings.showLabels ?? true);
+        setShowPreviewMetadata(settings.showPreviewMetadata ?? false);
         setShowWatermark(settings.showWatermark ?? true);
         setCustomWatermarkEnabled(settings.customWatermarkEnabled ?? false);
         setWatermarkText(settings.watermarkText ?? DEFAULT_WATERMARK_TEXT);
@@ -219,7 +224,7 @@ export const SettingsProvider = ({ children }) => {
         setLabelMarginVertical(settings.labelMarginVertical ?? 10);
         setLabelMarginHorizontal(settings.labelMarginHorizontal ?? 10);
         setUserName(settings.userName ?? '');
-        setLocation(settings.location ?? 'tampa');
+        setLocation(settings.location ?? 'Location 1');
         setUseFolderStructure(settings.useFolderStructure ?? false); // Default OFF - flat structure
         if (settings.enabledFolders) {
           const categories = settings.enabledFolders;
@@ -266,6 +271,7 @@ export const SettingsProvider = ({ children }) => {
 
       const stateSnapshot = {
         showLabels,
+        showPreviewMetadata,
         showWatermark,
         customWatermarkEnabled,
         watermarkText,
@@ -314,6 +320,12 @@ export const SettingsProvider = ({ children }) => {
     const newValue = !showLabels;
     setShowLabels(newValue);
     await saveSettings({ showLabels: newValue });
+  };
+
+  const togglePreviewMetadata = async (value) => {
+    const next = typeof value === 'boolean' ? value : !showPreviewMetadata;
+    setShowPreviewMetadata(next);
+    await saveSettings({ showPreviewMetadata: next });
   };
 
   const toggleWatermark = async (value) => {
@@ -591,7 +603,7 @@ export const SettingsProvider = ({ children }) => {
       await AsyncStorage.removeItem('@stored_individual_mode');
       await AsyncStorage.removeItem('@pending_trial_notification');
       setUserName('');
-      setLocation('tampa');
+      setLocation('Location 1');
       setShowLabels(true);
       setShowWatermark(true);
       setCustomWatermarkEnabled(false);
@@ -644,7 +656,7 @@ export const SettingsProvider = ({ children }) => {
         labelMarginVertical: 10,
         labelMarginHorizontal: 10,
         userName: '',
-        location: 'tampa',
+        location: 'Location 1',
         useFolderStructure: true,
         enabledFolders: { before: true, after: true, combined: true },
         labelLanguage: 'en',
@@ -668,6 +680,8 @@ export const SettingsProvider = ({ children }) => {
   const value = {
     showLabels,
     toggleLabels,
+    showPreviewMetadata,
+    togglePreviewMetadata,
     showWatermark,
     shouldShowWatermark,
     softTrialActive,
