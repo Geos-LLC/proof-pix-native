@@ -212,10 +212,38 @@ export const PhotoProvider = ({ children }) => {
     }
   };
 
+  // Polls photosLoadedRef every 50ms up to `timeoutMs`. Resolves true when
+  // the ref flips, false on timeout. Used by mutating helpers (addPhoto,
+  // assignPhotosToProject, etc.) so they don't run on the empty initial
+  // array if a user action fires during the cold-start window.
+  const waitForPhotosLoaded = async (timeoutMs = 2000) => {
+    if (photosLoadedRef.current) return true;
+    const start = Date.now();
+    return new Promise((resolve) => {
+      const tick = () => {
+        if (photosLoadedRef.current) return resolve(true);
+        if (Date.now() - start >= timeoutMs) return resolve(false);
+        setTimeout(tick, 50);
+      };
+      tick();
+    });
+  };
+
   const savePhotos = async (newPhotos) => {
     try {
       // Reassign names sequentially before saving
       const renamedPhotos = reassignPhotoNames(newPhotos);
+      // Sanity guard: refuse to persist a wipe (saving []) when we know the
+      // app has previously loaded photos. This catches any remaining stale-
+      // closure caller that would otherwise nuke AsyncStorage. Surface to
+      // the caller so the underlying bug is visible in logs.
+      if (renamedPhotos.length === 0 && photosLoadedRef.current && photosRef.current.length > 0) {
+        console.warn(
+          '[PhotoContext] savePhotos blocked — refusing to write [] over',
+          photosRef.current.length, 'existing photos. Caller likely passed stale state.'
+        );
+        return;
+      }
       photosRef.current = renamedPhotos; // Sync ref immediately so addPhoto always reads latest
       setPhotos(renamedPhotos);
       await savePhotosMetadata(renamedPhotos);
@@ -225,7 +253,17 @@ export const PhotoProvider = ({ children }) => {
 
   const addPhoto = async (photo) => {
     try {
-      // Use ref to always read latest photos (avoids stale closure when called from setTimeout)
+      // If load hasn't finished, the ref is still the empty initial array.
+      // Saving here would persist [newPhoto] alone over the user's library.
+      // Defer until load completes (poll briefly, then save). If load never
+      // completes, the call is dropped — better than wiping.
+      if (!photosLoadedRef.current) {
+        const waited = await waitForPhotosLoaded(2000);
+        if (!waited) {
+          console.warn('[PhotoContext] addPhoto skipped — loadPhotos did not complete in time');
+          return;
+        }
+      }
       const currentPhotos = photosRef.current;
       const newPhotos = [...currentPhotos, { ...photo, projectId: photo.projectId ?? activeProjectId ?? null }];
       await savePhotos(newPhotos);
@@ -338,9 +376,11 @@ export const PhotoProvider = ({ children }) => {
             deleteFromStorage: shouldDeleteFromStorage
         });
 
-        // 4. Remove from metadata
+        // 4. Remove from metadata. Read from photosRef.current (not the
+        // closure `photos`) so concurrent saves don't see stale state and
+        // overwrite each other.
         const photoIdsToDelete = new Set(photosToDelete.map(p => p.id));
-        const newPhotos = photos.filter(p => !photoIdsToDelete.has(p.id));
+        const newPhotos = photosRef.current.filter(p => !photoIdsToDelete.has(p.id));
         await savePhotos(newPhotos);
 
     } catch (error) {
@@ -366,10 +406,13 @@ export const PhotoProvider = ({ children }) => {
       await saveProjects(updatedProjects);
       
       // Reset custom rooms to default when new project is created
-      // Auto-assign only unassigned photos to the new project
-      const unassigned = photos.filter(p => !p.projectId);
+      // Auto-assign only unassigned photos to the new project — read from
+      // photosRef.current so we don't operate on stale state and accidentally
+      // drop newer photos that haven't propagated to the React state yet.
+      const current = photosRef.current;
+      const unassigned = current.filter(p => !p.projectId);
       if (unassigned.length > 0) {
-        const updated = photos.map(p => (!p.projectId ? { ...p, projectId: newProject.id } : p));
+        const updated = current.map(p => (!p.projectId ? { ...p, projectId: newProject.id } : p));
         await savePhotos(updated);
       }
       return newProject;
@@ -379,8 +422,12 @@ export const PhotoProvider = ({ children }) => {
   };
 
   const assignPhotosToProject = async (projectId) => {
+    if (!photosLoadedRef.current) {
+      console.warn('[PhotoContext] assignPhotosToProject skipped — loadPhotos not complete');
+      return;
+    }
     // Assign only unassigned photos to avoid moving between projects implicitly
-    const updated = photos.map(p => (!p.projectId ? { ...p, projectId } : p));
+    const updated = photosRef.current.map(p => (!p.projectId ? { ...p, projectId } : p));
     await savePhotos(updated);
   };
 
@@ -471,15 +518,17 @@ export const PhotoProvider = ({ children }) => {
         }
       }
 
-      // Remove photo metadata only when deleting from storage
-      const remaining = photos.filter(p => p.projectId !== projectId);
+      // Remove photo metadata only when deleting from storage. Read from
+      // the ref to avoid stale-closure overwrites.
+      const remaining = photosRef.current.filter(p => p.projectId !== projectId);
       await savePhotos(remaining);
     } else {
       // When keeping photos, clear their projectId so they become "unassigned"
       // This way they'll still be visible in the app and can be reassigned to another project
-      const updatedPhotos = photos.map(p =>
+      const updatedPhotos = photosRef.current.map(p =>
         p.projectId === projectId ? { ...p, projectId: null } : p
       );
+      photosRef.current = updatedPhotos;
       setPhotos(updatedPhotos);
       await savePhotosMetadata(updatedPhotos);
       console.log(`[PhotoContext] ✅ Cleared projectId for ${related.length} photos (project deleted, photos kept)`);

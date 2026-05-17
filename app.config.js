@@ -8,8 +8,8 @@ export default {
     // production environment had VERSION=1.2.0 stored as a secret, which
     // silently overrode the fallback and shipped 1.2.0 IPAs that Apple
     // rejected (already deleted from EAS env, but keep this guard).
-    version: "1.7.4",
-    runtimeVersion: "1.7.4",
+    version: "1.7.5",
+    runtimeVersion: "1.7.5",
     updates: {
       url: "https://u.expo.dev/c65badb3-ddbc-4bb8-9de5-fab32a427f16"
     },
@@ -29,7 +29,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "71",
+      buildNumber: "72",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {

@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { RoomIcon } from '../utils/roomIcons';
 import { usePhotos } from '../context/PhotoContext';
-import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS } from '../constants/rooms';
+import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
@@ -50,6 +50,50 @@ import Constants from 'expo-constants';
 import UnfinishedJobBanner from '../components/UnfinishedJobBanner';
 import SoftTrialBadge from '../components/SoftTrialBadge';
 import QualificationPromptModal, { hasCompletedQualification } from '../components/QualificationPromptModal';
+
+// Pair-preview template helpers — orientation-aware list and aspect-ratio
+// lookup. Mirrors the existing PhotoEditor logic but stripped down to what
+// the live preview needs (just the frame aspect; no image compositing).
+const getAvailablePairTemplates = (beforePhoto) => {
+  const phoneOrientation = beforePhoto?.orientation || 'portrait';
+  const cameraViewMode = beforePhoto?.cameraViewMode || 'portrait';
+  const isLandscape = phoneOrientation === 'landscape' || cameraViewMode === 'landscape';
+
+  // Portrait shots → side-by-side templates feel natural. Landscape shots
+  // (or letterbox) → stacked templates plus a few square options. Match
+  // the legacy editor's filtering.
+  if (isLandscape) {
+    return [
+      { key: 'original-stack', name: 'Original (stack)' },
+      { key: TEMPLATE_TYPES.STACK_LANDSCAPE, name: 'Stack (16:9)' },
+      { key: TEMPLATE_TYPES.STACK_PORTRAIT, name: 'Stack (9:16)' },
+      { key: TEMPLATE_TYPES.SQUARE_STACK, name: 'Square Stack (1:1)' },
+    ];
+  }
+  return [
+    { key: 'original-side', name: 'Original (side)' },
+    { key: TEMPLATE_TYPES.SIDE_BY_SIDE_LANDSCAPE, name: 'Side-by-Side (16:9)' },
+    { key: TEMPLATE_TYPES.SIDE_BY_SIDE_WIDE, name: 'Wide (2:1)' },
+    { key: TEMPLATE_TYPES.SQUARE_SIDE, name: 'Square Side (1:1)' },
+    { key: TEMPLATE_TYPES.BLOG_FORMAT, name: 'Blog (16:9)' },
+  ];
+};
+
+const getPairTemplateAspect = (templateKey, beforePhoto) => {
+  if (templateKey === 'original-side') {
+    // Two portrait photos side-by-side → 2× wider than tall (rough).
+    return 2 / 3 * 2; // 4/3
+  }
+  if (templateKey === 'original-stack') {
+    // Two landscape photos stacked → half as tall as wide.
+    return 16 / 9 / 2; // ~0.89
+  }
+  const cfg = TEMPLATE_CONFIGS[templateKey];
+  if (cfg && cfg.width && cfg.height) {
+    return cfg.width / cfg.height;
+  }
+  return 1;
+};
 
 // Capture-time + place caption rendered under the preview photo. Uses the
 // photo's stored timestamp and the user's saved location setting (the app
@@ -119,6 +163,14 @@ export default function HomeScreen({ navigation }) {
   } = usePhotos();
 
   const [fullScreenPhoto, setFullScreenPhoto] = useState(null);
+  // Bare mode = preview with all chrome hidden (just the photo + a small
+  // return arrow). Entered by double-tapping the photo INSIDE the preview;
+  // exited by tapping the return arrow or swiping the preview closed.
+  const [bareMode, setBareMode] = useState(false);
+  // Template-driven frame aspect for the comparison-pair preview. Mirrors
+  // the legacy PhotoEditor's "Choose Template" row but applied to the live
+  // CompareViewer frame so the share output matches what the user sees.
+  const [pairTemplate, setPairTemplate] = useState('original-side');
   const [fullScreenPhotoSet, setFullScreenPhotoSet] = useState(null);
   const [fullScreenIndex, setFullScreenIndex] = useState(0);
   const [fullScreenPhotos, setFullScreenPhotos] = useState([]);
@@ -605,6 +657,7 @@ export default function HomeScreen({ navigation }) {
     }
 
     setFullScreenPhoto(null);
+    setBareMode(false);
     setFullScreenPhotoSet(null);
     setFullScreenLoading(false);
     setFullScreenError(null);
@@ -682,6 +735,7 @@ export default function HomeScreen({ navigation }) {
     if (newPhoto.type === 'combined' || newPhoto.type === 'split') {
       setFullScreenPhotoSet({ before: newPhoto.beforePhoto, after: newPhoto.afterPhoto });
       setFullScreenPhoto(null);
+    setBareMode(false);
     } else {
       setFullScreenPhoto(newPhoto);
       setFullScreenPhotoSet(null);
@@ -1121,6 +1175,9 @@ export default function HomeScreen({ navigation }) {
   const renderPhotoGrid = () => {
     const gridItems = [];
     const combinedPhotos = getCombinedPhotos(currentRoom);
+    // Fetched once per render — progress photos for the current room, used
+    // to overlay a "N progress" badge on each card's main thumbnail.
+    const progressPhotosForRoom = getProgressPhotos ? getProgressPhotos(currentRoom) : [];
     const hasPhotos = beforePhotos.length > 0;
 
     if (!hasPhotos || !activeProjectId) {
@@ -1173,6 +1230,13 @@ export default function HomeScreen({ navigation }) {
       const afterPhoto = afterPhotos.find(
         (p) => p.beforePhotoId === beforePhoto.id
       );
+      // Number of progress photos linked to THIS set (demoted afters retain
+      // beforePhotoId so they're still grouped). Rendered as a yellow chip
+      // at the top-right of the thumbnail so the user can see how many
+      // intermediate captures the set has at a glance.
+      const progressCount = progressPhotosForRoom.filter(
+        (p) => p.beforePhotoId === beforePhoto.id
+      ).length;
 
       if (afterPhoto) {
         const combinedPhoto = combinedPhotos.find(
@@ -1218,6 +1282,11 @@ export default function HomeScreen({ navigation }) {
                 orientation={beforePhoto.orientation || 'portrait'}
                 size={PHOTO_SIZE}
               />
+              {progressCount > 0 && (
+                <View style={styles.progressCountBadge} pointerEvents="none">
+                  <Text style={styles.progressCountBadgeText}>{progressCount}</Text>
+                </View>
+              )}
               <View
                 style={styles.photoCenterDivider}
                 pointerEvents="none"
@@ -1309,6 +1378,11 @@ export default function HomeScreen({ navigation }) {
                 <Image source={{ uri: beforePhoto.uri }} style={styles.halfPreviewImage} resizeMode="cover" />
                 <Image source={{ uri: afterPhoto.uri }} style={styles.halfPreviewImage} resizeMode="cover" />
               </View>
+              {progressCount > 0 && (
+                <View style={styles.progressCountBadge} pointerEvents="none">
+                  <Text style={styles.progressCountBadgeText}>{progressCount}</Text>
+                </View>
+              )}
               <TouchableOpacity
                 style={styles.previewIconBadge}
                 onPress={(e) => {
@@ -1593,7 +1667,10 @@ export default function HomeScreen({ navigation }) {
 
       {fullScreenPhoto && (
         <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
-          {/* Header: Labels toggle | Customize Labels > | Red X close */}
+          {/* Header: Labels toggle | Customize Labels > | Red X close.
+              Hidden in bareMode — the user double-tapped to enter clean
+              fullscreen and only wants to see the photo. */}
+          {!bareMode && (
           <View style={[styles.fullScreenHeaderRow, { paddingTop: fullScreenTopInset }]}>
             <View style={styles.fullScreenLabelsToggle}>
               <Text style={styles.fullScreenLabelsText}>{t('Labels')}</Text>
@@ -1631,12 +1708,27 @@ export default function HomeScreen({ navigation }) {
               <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
+          )}
+
+          {/* Small return arrow shown ONLY in bareMode — there's no header
+              with a close button while bare, but the user still needs an
+              affordance to exit besides the swipe-down gesture. */}
+          {bareMode && (
+            <TouchableOpacity
+              style={styles.bareReturnButton}
+              onPress={() => setBareMode(false)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="arrow-undo" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
 
           {/* Photo area: yellow border, single image */}
           <View style={styles.fullScreenPhotoArea}>
             {/* Capture metadata above the photo so the mode-switcher and
-                action buttons below the image never hide it. */}
-            {showPreviewMetadata && (
+                action buttons below the image never hide it. Hidden in
+                bareMode to clear all chrome away from the image. */}
+            {!bareMode && showPreviewMetadata && (
               <Text style={[styles.fullScreenMetaLine, { marginBottom: 6 }]} numberOfLines={1}>
                 {formatPhotoMetaLine(fullScreenPhoto, location)}
               </Text>
@@ -1656,6 +1748,8 @@ export default function HomeScreen({ navigation }) {
               <PannableImage
                 imageKey={fullScreenPhoto.uri || fullScreenPhoto.id}
                 source={{ uri: fullScreenPhoto.uri }}
+                onDoubleTap={() => setBareMode((prev) => !prev)}
+                showResetButton={!bareMode}
                 style={styles.fullScreenPhoto}
                 resizeMode="contain"
                 onError={(e) => {
@@ -1700,7 +1794,8 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Room name + pagination dots */}
+          {/* Room name + pagination dots — hidden in bareMode */}
+          {!bareMode && (
           <View style={styles.fullScreenRoomNameRow}>
             <Text style={styles.fullScreenRoomName}>
               {rooms.find(r => r.id === fullScreenPhoto.room)?.name || fullScreenPhoto.room || ''}
@@ -1716,8 +1811,10 @@ export default function HomeScreen({ navigation }) {
               </View>
             )}
           </View>
+          )}
 
-          {/* Bottom bar: white return circle, yellow share circle */}
+          {/* Bottom bar: white return circle, yellow share circle — hidden in bareMode */}
+          {!bareMode && (
           <View style={[styles.fullScreenBottomBar, { paddingBottom: fullScreenBottomInset }]}>
             <TouchableOpacity
               style={styles.fullScreenReturnCircle}
@@ -1765,6 +1862,7 @@ export default function HomeScreen({ navigation }) {
               )}
             </TouchableOpacity>
           </View>
+          )}
         </View>
       )}
 
@@ -1779,6 +1877,13 @@ export default function HomeScreen({ navigation }) {
                 onValueChange={toggleLabels}
                 trackColor={{ false: '#767577', true: '#34C759' }}
                 thumbColor={showLabels ? '#fff' : '#f4f3f4'}
+              />
+              <Text style={[styles.fullScreenLabelsText, { marginLeft: 12 }]}>Meta</Text>
+              <Switch
+                value={!!showPreviewMetadata}
+                onValueChange={() => togglePreviewMetadata && togglePreviewMetadata()}
+                trackColor={{ false: '#767577', true: '#34C759' }}
+                thumbColor={showPreviewMetadata ? '#fff' : '#f4f3f4'}
               />
             </View>
             <TouchableOpacity
@@ -1821,6 +1926,7 @@ export default function HomeScreen({ navigation }) {
                 beforePhoto={fullScreenPhotoSet.before}
                 afterPhoto={fullScreenPhotoSet.after}
                 mode={compareMode}
+                frameAspectRatio={getPairTemplateAspect(pairTemplate, fullScreenPhotoSet.before)}
                 renderBeforeOverlay={() => (showLabels ? (
                   <PhotoLabel
                     label="common.before"
@@ -1841,6 +1947,31 @@ export default function HomeScreen({ navigation }) {
                 ) : null)}
               />
             </View>
+            {/* Choose Template — same row from the legacy editor, lifted
+                onto the live pair preview. Picking a template reshapes the
+                CompareViewer's frame so the user previews the exact share
+                output. Template set is orientation-aware. */}
+            {!bareMode && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}
+              >
+                {getAvailablePairTemplates(fullScreenPhotoSet.before).map((tpl) => {
+                  const active = pairTemplate === tpl.key;
+                  return (
+                    <TouchableOpacity
+                      key={tpl.key}
+                      onPress={() => setPairTemplate(tpl.key)}
+                      style={[styles.pairTemplateChip, active && styles.pairTemplateChipActive]}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.pairTemplateChipText, active && styles.pairTemplateChipTextActive]}>{tpl.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
             <CompareModeSwitcher
               mode={compareMode}
               onChange={setCompareMode}
@@ -2917,6 +3048,42 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'grey',
     zIndex: 1002
+  },
+  pairTemplateChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  pairTemplateChipActive: {
+    backgroundColor: '#F2C31B',
+    borderColor: '#F2C31B',
+  },
+  pairTemplateChipText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  pairTemplateChipTextActive: {
+    color: '#000000',
+  },
+  // Small return arrow shown only when the preview is in bareMode (no
+  // chrome, just the photo). Positioned top-left, semi-transparent so it
+  // doesn't pull focus from the photo.
+  bareReturnButton: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1003,
   },
   // Top-right delete button in the full-screen preview header. Replaces the
   // former red close-X. Same dimensions as the bottom share/return circles so

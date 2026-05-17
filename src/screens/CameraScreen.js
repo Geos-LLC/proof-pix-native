@@ -2236,13 +2236,14 @@ export default function CameraScreen({ route, navigation }) {
         })();
       }, 100); // 100ms delay to give UI time to become responsive
 
-      // If we're replacing an existing combined photo, navigate to PhotoEditor to recreate it
+      // NOTE: Pre-v1.7 retake used to navigate to PhotoEditor here to let
+      // the user pick a new combined-image template. That flow contradicts
+      // the sequential-progression model — a retake demotes the prior
+      // after to progress and the background composite job regenerates the
+      // combined automatically. Keep the user in the capture flow instead
+      // of dumping them into the legacy editor.
       if (existingCombinedPhoto) {
-        navigation.navigate('PhotoEditor', {
-          beforePhoto: activeBeforePhoto,
-          afterPhoto: newAfterPhoto
-        });
-        return;
+        // Fall through to the normal post-capture handling below.
       }
 
       // Show "All Photos Taken" alert or advance to next photo

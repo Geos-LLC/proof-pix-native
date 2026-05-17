@@ -52,6 +52,16 @@ export default function CompareViewer({
   initialOverlay = 0.5,
   renderBeforeOverlay,
   renderAfterOverlay,
+  // Template-driven frame aspect ratio. Default 1 keeps the existing
+  // square frame; pair preview passes 16/9, 2/1, etc. based on the
+  // user's "Choose Template" selection so the live preview matches the
+  // share output.
+  frameAspectRatio: frameAspectRatioProp,
+  // Stack vs side-by-side layout hint for stack templates (landscape
+  // photos). Default 'sidebyside' keeps existing behavior. 'stack' renders
+  // before above after in the same frame (only relevant for split / pair
+  // modes — overlay/side-by-side use their own layouts).
+  templateLayout = 'sidebyside',
 }) {
   const beforeUri = beforePhoto?.uri;
   const afterUri = afterPhoto?.uri;
@@ -80,9 +90,12 @@ export default function CompareViewer({
   const pinchStartDistRef = useRef(0);
   const pinchStartScaleRef = useRef(1);
 
-  // Fixed viewport — 1:1 frame, photos letterboxed. The user manipulates the
-  // photo position/zoom via gestures, not the frame shape.
-  const aspectRatio = 1;
+  // Frame aspect ratio is driven by the parent (template picker). Default
+  // 1:1 keeps the previous behavior. Photos letterbox inside the frame so
+  // pinch-zoom and pan still give the user full control over what's shown.
+  const aspectRatio = typeof frameAspectRatioProp === 'number' && frameAspectRatioProp > 0
+    ? frameAspectRatioProp
+    : 1;
   const imageResize = 'contain';
 
   const distanceBetween = (touches) => {
@@ -113,17 +126,33 @@ export default function CompareViewer({
   const modeRef = useRef(mode);
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
-  // Outer-frame PanResponder — handles 2-finger pinch and 1-finger pan
-  // (translate both photos in lockstep). Split's divider drag is NOT here
-  // anymore; it lives on the circular knob (knobPanResponder below) so the
-  // user can pan/zoom the photos without snagging the divider.
+  // Long-press arm for 1-finger drag. Matches PannableImage so the gesture
+  // model is consistent across single-photo and compare previews.
+  const LONG_PRESS_MS = 350;
+  const dragArmedRef = useRef(false);
+  const longPressTimerRef = useRef(null);
+  const [dragArmed, setDragArmed] = useState(false);
+
+  const armDrag = () => { dragArmedRef.current = true; setDragArmed(true); };
+  const cancelArm = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    dragArmedRef.current = false;
+    setDragArmed(false);
+  };
+
+  // Outer-frame PanResponder — pinch (2-finger) always; 1-finger drag only
+  // after the long-press timer has armed it. Split's divider drag lives on
+  // the circular knob (knobPanResponder below).
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 2,
       onMoveShouldSetPanResponder: (evt, gs) => {
         if (evt.nativeEvent.touches.length === 2) return true;
-        // Any 1-finger drag that moved beyond a tiny threshold is a pan.
-        return Math.abs(gs.dx) > 4 || Math.abs(gs.dy) > 4;
+        if (dragArmedRef.current) return true;
+        return false;
       },
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
@@ -133,10 +162,10 @@ export default function CompareViewer({
         if (evt.nativeEvent.touches.length === 2) {
           pinchStartDistRef.current = distanceBetween(evt.nativeEvent.touches);
           pinchStartScaleRef.current = scaleRef.current;
+          cancelArm();
         }
       },
       onPanResponderMove: (evt, gs) => {
-        // Pinch — 2 fingers, scale both photos in lockstep.
         if (evt.nativeEvent.touches.length === 2) {
           const dist = distanceBetween(evt.nativeEvent.touches);
           if (pinchStartDistRef.current > 0 && dist > 0) {
@@ -146,17 +175,27 @@ export default function CompareViewer({
           }
           return;
         }
-        // 1-finger pan — translate both photos along X and Y. Bounded so the
-        // photo can't be dragged entirely out of the frame.
         const maxTravel = 300;
         panX.setValue(Math.max(-maxTravel, Math.min(maxTravel, panXStart.current + gs.dx)));
         panY.setValue(Math.max(-maxTravel, Math.min(maxTravel, panYStart.current + gs.dy)));
       },
       onPanResponderRelease: () => {
         pinchStartDistRef.current = 0;
+        cancelArm();
+      },
+      onPanResponderTerminate: () => {
+        pinchStartDistRef.current = 0;
+        cancelArm();
       },
     })
   ).current;
+
+  const handleTouchStart = () => {
+    cancelArm();
+    longPressTimerRef.current = setTimeout(armDrag, LONG_PRESS_MS);
+  };
+  const handleTouchMove = () => { if (!dragArmedRef.current) cancelArm(); };
+  const handleTouchEnd = () => { cancelArm(); };
 
   // Dedicated PanResponder for the split divider knob. Only attaches to the
   // knob's hit area, so dragging anywhere else in the frame goes to the pan/
@@ -227,6 +266,10 @@ export default function CompareViewer({
         style={[styles.container, { aspectRatio }, style]}
         onLayout={handleLayout}
         {...panResponder.panHandlers}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
       >
         <View style={styles.sideHalf}>
           <Animated.Image source={{ uri: beforeUri }} style={[styles.fullImage, { transform: panTransform }]} resizeMode={imageResize} />
@@ -252,6 +295,10 @@ export default function CompareViewer({
         style={[styles.container, styles.containerColumn, { aspectRatio }, style]}
         onLayout={handleLayout}
         {...panResponder.panHandlers}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
       >
         {/* Base layer: BEFORE at full opacity */}
         <Animated.Image source={{ uri: beforeUri }} style={[styles.absoluteImage, { transform: panTransform }]} resizeMode={imageResize} />
@@ -305,6 +352,10 @@ export default function CompareViewer({
       style={[styles.container, styles.containerColumn, { aspectRatio }, style]}
       onLayout={handleLayout}
       {...panResponder.panHandlers}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
     >
       <Animated.Image source={{ uri: beforeUri }} style={[styles.absoluteImage, { transform: panTransform }]} resizeMode={imageResize} />
 

@@ -118,6 +118,86 @@ const isPortraitAspectRatio = (aspectRatio) => {
   return h > w; // 3:4, 9:16 etc are portrait
 };
 
+// One row of photos for a single before/after set. Renders the horizontal
+// scroll plus left/right arrow buttons that fade in based on scroll
+// position so the user sees there's more content on the other side. Tap an
+// arrow OR swipe — both work. Stored as its own component so each row has
+// independent scroll state.
+function GallerySetRow({ cards, set, renderPhotoCard, isSelectionMode, selectedPhotos }) {
+  const scrollRef = React.useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
+  const [canScrollRight, setCanScrollRight] = React.useState(false);
+  const contentWidthRef = React.useRef(0);
+  const viewportWidthRef = React.useRef(0);
+  const offsetRef = React.useRef(0);
+
+  const refreshArrows = () => {
+    const offset = offsetRef.current;
+    const content = contentWidthRef.current;
+    const viewport = viewportWidthRef.current;
+    setCanScrollLeft(offset > 4);
+    setCanScrollRight(content - offset - viewport > 4);
+  };
+
+  const handleScroll = (e) => {
+    offsetRef.current = e.nativeEvent.contentOffset.x;
+    refreshArrows();
+  };
+  const handleContentSizeChange = (w) => {
+    contentWidthRef.current = w;
+    refreshArrows();
+  };
+  const handleLayout = (e) => {
+    viewportWidthRef.current = e.nativeEvent.layout.width;
+    refreshArrows();
+  };
+
+  const STEP = 120;
+  const scrollBy = (delta) => {
+    const next = Math.max(0, offsetRef.current + delta);
+    scrollRef.current?.scrollTo({ x: next, animated: true });
+  };
+
+  return (
+    <View style={styles.photoSetRow}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.setHorizontalRow}
+        scrollEventThrottle={32}
+        onScroll={handleScroll}
+        onContentSizeChange={handleContentSizeChange}
+        onLayout={handleLayout}
+      >
+        {cards.map((c, i) => (
+          <View key={c.key}>
+            {renderPhotoCard(c.photo, c.border, c.type, set, i === cards.length - 1, isSelectionMode, selectedPhotos)}
+          </View>
+        ))}
+      </ScrollView>
+      {canScrollLeft && (
+        <TouchableOpacity
+          style={[styles.setRowArrow, styles.setRowArrowLeft]}
+          onPress={() => scrollBy(-STEP)}
+          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        >
+          <Ionicons name="chevron-back" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+      {canScrollRight && (
+        <TouchableOpacity
+          style={[styles.setRowArrow, styles.setRowArrowRight]}
+          onPress={() => scrollBy(STEP)}
+          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        >
+          <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
 // Helper to check if layout should be stacked based on template or aspect ratio
 const isStackedLayout = (templateType, aspectRatio) => {
   // First check templateType if available
@@ -1654,7 +1734,12 @@ export default function GalleryScreen({ navigation, route }) {
         )}
         
         <View style={styles.modeLabel}>
-          <Text style={styles.modeLabelText}>
+          <Text
+            style={styles.modeLabelText}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+          >
             {photoType === 'before' ? 'BEFORE'
               : photoType === 'after' ? 'AFTER'
               : photoType === 'progress' ? 'PROGRESS'
@@ -1696,6 +1781,20 @@ export default function GalleryScreen({ navigation, route }) {
     }
     if (cards.length === 0) return null;
 
+    // Sub-component so each row has its own scroll-position state for the
+    // left/right arrow visibility. Tapping an arrow scrolls one step.
+    return (
+      <GallerySetRow
+        key={`${roomId}-${setKey}`}
+        cards={cards}
+        set={set}
+        renderPhotoCard={renderPhotoCard}
+        isSelectionMode={isSelectionMode}
+        selectedPhotos={selectedPhotos}
+      />
+    );
+
+    // eslint-disable-next-line no-unreachable
     return (
       <View key={`${roomId}-${setKey}`} style={styles.photoSetRow}>
         <ScrollView
@@ -2171,6 +2270,13 @@ export default function GalleryScreen({ navigation, route }) {
                 onValueChange={toggleLabels}
                 trackColor={{ false: '#767577', true: '#34C759' }}
                 thumbColor={showLabels ? '#fff' : '#f4f3f4'}
+              />
+              <Text style={[styles.fullScreenLabelsText, { marginLeft: 12 }]}>Meta</Text>
+              <Switch
+                value={!!showPreviewMetadata}
+                onValueChange={() => togglePreviewMetadata && togglePreviewMetadata()}
+                trackColor={{ false: '#767577', true: '#34C759' }}
+                thumbColor={showPreviewMetadata ? '#fff' : '#f4f3f4'}
               />
             </View>
             <TouchableOpacity
@@ -3302,7 +3408,29 @@ flexWrap: 'nowrap',
 setHorizontalRow: {
 flexDirection: 'row',
 alignItems: 'flex-start',
-paddingRight: 8,
+paddingRight: 24,
+paddingLeft: 4,
+},
+// Left/right arrow chips overlaid on the horizontal photo row. Tappable
+// alternative to swiping; visibility is driven by GallerySetRow's scroll
+// position state so they only appear when there's more content to scroll.
+setRowArrow: {
+position: 'absolute',
+top: '50%',
+marginTop: -16,
+width: 32,
+height: 32,
+borderRadius: 16,
+backgroundColor: 'rgba(0,0,0,0.55)',
+alignItems: 'center',
+justifyContent: 'center',
+zIndex: 5,
+},
+setRowArrowLeft: {
+left: 0,
+},
+setRowArrowRight: {
+right: 0,
 },
 photoCard: {
 width: (width - 38 - 30) / 3,

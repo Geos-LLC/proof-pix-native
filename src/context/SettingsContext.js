@@ -254,11 +254,28 @@ export const SettingsProvider = ({ children }) => {
         );
       }
       
-      // EMERGENCY: Clear all corrupted custom rooms data
-      // 
-      await AsyncStorage.removeItem(CUSTOM_ROOMS_KEY);
-      setCustomRooms(null);
-      
+      // Hydrate custom folder names from AsyncStorage. This used to be an
+      // "EMERGENCY: Clear all corrupted custom rooms data" block that
+      // unconditionally deleted CUSTOM_ROOMS_KEY on every app start — which
+      // is why folder names disappeared on close+reopen. Now we read the
+      // stored array (if present and well-formed) and rehydrate it.
+      try {
+        const storedRooms = await AsyncStorage.getItem(CUSTOM_ROOMS_KEY);
+        if (storedRooms) {
+          const parsed = JSON.parse(storedRooms);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCustomRooms(parsed);
+          } else {
+            setCustomRooms(null);
+          }
+        } else {
+          setCustomRooms(null);
+        }
+      } catch (e) {
+        console.warn('[SettingsContext] custom rooms hydrate failed — leaving null:', e?.message);
+        setCustomRooms(null);
+      }
+
     } catch (error) {
 
     } finally {
