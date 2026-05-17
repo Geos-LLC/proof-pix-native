@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_AFTER_LABEL_POSITION, DEFAULT_WATERMARK_POSITION } from '../constants/rooms';
@@ -104,6 +104,13 @@ export const SettingsProvider = ({ children }) => {
   const [cleaningServiceEnabled, setCleaningServiceEnabled] = useState(true);
   const [shutterSoundEnabled, setShutterSoundEnabled] = useState(Platform.OS !== 'android');
   const [loading, setLoading] = useState(true);
+  // Ref-backed mirror of the loaded flag so saveSettings called from stale
+  // closures (e.g. a useEffect scheduled before loadSettings finished) still
+  // sees the up-to-date value. Without this, the React state `loading` is
+  // captured per-render — stale closures would treat the empty initial
+  // state as truth and overwrite the user's real userName / location in
+  // AsyncStorage with '' on the first save after launch.
+  const loadedRef = useRef(false);
 
   // Soft trial state mirrored into context for synchronous reads in renderers.
   // Refreshed on mount and via `refreshSoftTrial()` after each export.
@@ -255,6 +262,7 @@ export const SettingsProvider = ({ children }) => {
     } catch (error) {
 
     } finally {
+      loadedRef.current = true;
       setLoading(false);
     }
   };
@@ -304,9 +312,13 @@ export const SettingsProvider = ({ children }) => {
         shutterSoundEnabled,
       };
 
-      // If still loading, only write the explicit newSettings on top of stored
-      // values — don't let default state clobber persisted data.
-      const settings = loading
+      // Use the synchronous loadedRef instead of the React state `loading`.
+      // A stale closure could still hold `loading=true` AFTER loadSettings
+      // actually finished, which is fine. The dangerous direction is the
+      // opposite — `loading=false` in a closure that captured empty initial
+      // state. loadedRef.current is set inside loadSettings's finally, so
+      // any save after that point is guaranteed to see the latest value.
+      const settings = !loadedRef.current
         ? { ...existingSettings, ...newSettings }
         : { ...existingSettings, ...stateSnapshot, ...newSettings };
 

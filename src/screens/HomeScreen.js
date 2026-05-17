@@ -28,6 +28,7 @@ import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS } from '../constants/rooms
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
+import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
 import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
@@ -1652,8 +1653,8 @@ export default function HomeScreen({ navigation }) {
                   <Text style={styles.fullScreenErrorText}>{t('gallery.imageLoadError', { defaultValue: 'Failed to load image' })}</Text>
                 </View>
               )}
-              <Image
-                key={fullScreenPhoto.uri || fullScreenPhoto.id}
+              <PannableImage
+                imageKey={fullScreenPhoto.uri || fullScreenPhoto.id}
                 source={{ uri: fullScreenPhoto.uri }}
                 style={styles.fullScreenPhoto}
                 resizeMode="contain"
@@ -1672,29 +1673,30 @@ export default function HomeScreen({ navigation }) {
                   setFullScreenLoading(false);
                   setFullScreenError(null);
                 }}
-              />
-              {showLabels && fullScreenPhoto.mode && !fullScreenError && (
-                <PhotoLabel
-                  label={
-                    fullScreenPhoto.mode === 'before'
-                      ? 'common.before'
-                      : fullScreenPhoto.mode === 'progress'
-                        ? 'common.progress'
-                        : 'common.after'
-                  }
-                  position={
-                    fullScreenPhoto.mode === 'before'
-                      ? pickBeforeLabelPosition(
-                          { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                          fullScreenPhoto
-                        )
-                      : pickAfterLabelPosition(
-                          { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                          fullScreenPhoto
-                        )
-                  }
-                />
-              )}
+              >
+                {showLabels && fullScreenPhoto.mode && !fullScreenError && (
+                  <PhotoLabel
+                    label={
+                      fullScreenPhoto.mode === 'before'
+                        ? 'common.before'
+                        : fullScreenPhoto.mode === 'progress'
+                          ? 'common.progress'
+                          : 'common.after'
+                    }
+                    position={
+                      fullScreenPhoto.mode === 'before'
+                        ? pickBeforeLabelPosition(
+                            { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                            fullScreenPhoto
+                          )
+                        : pickAfterLabelPosition(
+                            { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                            fullScreenPhoto
+                          )
+                    }
+                  />
+                )}
+              </PannableImage>
             </View>
           </View>
 

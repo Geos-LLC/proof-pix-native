@@ -56,19 +56,19 @@ export default function CompareViewer({
   const beforeUri = beforePhoto?.uri;
   const afterUri = afterPhoto?.uri;
 
-  // Viewport mode — 'fit' (default 1:1, photos letterboxed) or 'wide' (16:9
-  // frame, photos use cover so they fill the wider frame and crop top/bottom).
-  // In wide mode users can drag vertically on the viewer to reframe (panY
-  // shifts both photos in lockstep). Pinch (2 fingers) is always active
-  // regardless of wide mode — it scales both photos in lockstep so the user
-  // can zoom in/out on details.
-  const [wideMode, setWideMode] = useState(false);
+  // Pan + zoom values shared between both photos so the comparison stays
+  // aligned. Single-finger drag updates panX/panY (always available).
+  // Two-finger pinch updates scale, clamped 0.5×–3×.
+  const panX = useRef(new Animated.Value(0)).current;
   const panY = useRef(new Animated.Value(0)).current;
+  const panXRef = useRef(0);
   const panYRef = useRef(0);
   useEffect(() => {
-    const id = panY.addListener(({ value }) => { panYRef.current = value; });
-    return () => panY.removeListener(id);
-  }, [panY]);
+    const idX = panX.addListener(({ value }) => { panXRef.current = value; });
+    const idY = panY.addListener(({ value }) => { panYRef.current = value; });
+    return () => { panX.removeListener(idX); panY.removeListener(idY); };
+  }, [panX, panY]);
+  const panXStart = useRef(0);
   const panYStart = useRef(0);
 
   const scale = useRef(new Animated.Value(1)).current;
@@ -80,8 +80,10 @@ export default function CompareViewer({
   const pinchStartDistRef = useRef(0);
   const pinchStartScaleRef = useRef(1);
 
-  const aspectRatio = wideMode ? 16 / 9 : 1;
-  const imageResize = wideMode ? 'cover' : 'contain';
+  // Fixed viewport — 1:1 frame, photos letterboxed. The user manipulates the
+  // photo position/zoom via gestures, not the frame shape.
+  const aspectRatio = 1;
+  const imageResize = 'contain';
 
   const distanceBetween = (touches) => {
     if (!touches || touches.length < 2) return 0;
@@ -111,27 +113,22 @@ export default function CompareViewer({
   const modeRef = useRef(mode);
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
-  const dragStartRef = useRef(initialSplit);
-  const wideModeRef = useRef(false);
-  useEffect(() => { wideModeRef.current = wideMode; }, [wideMode]);
-
+  // Outer-frame PanResponder — handles 2-finger pinch and 1-finger pan
+  // (translate both photos in lockstep). Split's divider drag is NOT here
+  // anymore; it lives on the circular knob (knobPanResponder below) so the
+  // user can pan/zoom the photos without snagging the divider.
   const panResponder = useRef(
     PanResponder.create({
-      // Two-finger touches → pinch zoom (always available). One-finger:
-      // split mode owns horizontal drags for the divider; wide mode owns
-      // vertical drags to reframe both photos. We pick direction by which
-      // delta is larger so split-drag and wide-pan can coexist.
-      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 2 || modeRef.current === 'split',
+      onStartShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 2,
       onMoveShouldSetPanResponder: (evt, gs) => {
         if (evt.nativeEvent.touches.length === 2) return true;
-        if (modeRef.current === 'split' && Math.abs(gs.dx) >= Math.abs(gs.dy)) return true;
-        if (wideModeRef.current && modeRef.current !== 'split' && Math.abs(gs.dy) > Math.abs(gs.dx)) return true;
-        return false;
+        // Any 1-finger drag that moved beyond a tiny threshold is a pan.
+        return Math.abs(gs.dx) > 4 || Math.abs(gs.dy) > 4;
       },
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: (evt) => {
-        dragStartRef.current = splitRef.current;
+        panXStart.current = panXRef.current;
         panYStart.current = panYRef.current;
         if (evt.nativeEvent.touches.length === 2) {
           pinchStartDistRef.current = distanceBetween(evt.nativeEvent.touches);
@@ -149,25 +146,35 @@ export default function CompareViewer({
           }
           return;
         }
-        // Split divider — horizontal drag.
-        if (modeRef.current === 'split' && Math.abs(gs.dx) >= Math.abs(gs.dy)) {
-          const w = containerWidthRef.current;
-          if (w <= 0) return;
-          const dx = gs.dx / w;
-          const next = Math.max(0, Math.min(1, dragStartRef.current + dx));
-          splitAnim.setValue(next);
-          return;
-        }
-        // Wide-mode reframe — vertical drag, clamped so users don't run the
-        // photo entirely out of frame.
-        if (wideModeRef.current) {
-          const maxTravel = 200; // px from center; covers most portrait crops
-          const next = Math.max(-maxTravel, Math.min(maxTravel, panYStart.current + gs.dy));
-          panY.setValue(next);
-        }
+        // 1-finger pan — translate both photos along X and Y. Bounded so the
+        // photo can't be dragged entirely out of the frame.
+        const maxTravel = 300;
+        panX.setValue(Math.max(-maxTravel, Math.min(maxTravel, panXStart.current + gs.dx)));
+        panY.setValue(Math.max(-maxTravel, Math.min(maxTravel, panYStart.current + gs.dy)));
       },
       onPanResponderRelease: () => {
         pinchStartDistRef.current = 0;
+      },
+    })
+  ).current;
+
+  // Dedicated PanResponder for the split divider knob. Only attaches to the
+  // knob's hit area, so dragging anywhere else in the frame goes to the pan/
+  // pinch responder above. Horizontal motion translates to splitAnim 0..1.
+  const dragStartRef = useRef(initialSplit);
+  const knobPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => modeRef.current === 'split',
+      onMoveShouldSetPanResponder: () => modeRef.current === 'split',
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: () => { dragStartRef.current = splitRef.current; },
+      onPanResponderMove: (_, gs) => {
+        const w = containerWidthRef.current;
+        if (w <= 0) return;
+        const dx = gs.dx / w;
+        const next = Math.max(0, Math.min(1, dragStartRef.current + dx));
+        splitAnim.setValue(next);
       },
     })
   ).current;
@@ -186,38 +193,32 @@ export default function CompareViewer({
     containerWidthRef.current = w;
   };
 
-  // Toggle button — rendered in the top-right corner of every mode. Tap to
-  // switch between fit (1:1 letterboxed) and wide (16:9 cover with vertical
-  // pan to reframe both photos in lockstep). Reset pan AND zoom every time
-  // the user turns wide mode off so the next entry starts centered at 1×.
-  const toggleWide = () => {
-    setWideMode((prev) => {
-      const next = !prev;
-      if (!next) {
-        panY.setValue(0);
-        scale.setValue(1);
-      }
-      return next;
-    });
+  // Reset button — top-right corner of every mode. Tap to return both photos
+  // to their default framing: scale=1, panX=panY=0. Replaces the previous
+  // "wide" aspect toggle since pinch already gives the user zoom control.
+  const resetPanZoom = () => {
+    panX.setValue(0);
+    panY.setValue(0);
+    scale.setValue(1);
   };
-  const renderWideToggle = () => (
+  const renderResetButton = () => (
     <TouchableOpacity
-      onPress={toggleWide}
+      onPress={resetPanZoom}
       style={styles.wideToggle}
       activeOpacity={0.8}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
-      <Ionicons
-        name={wideMode ? 'contract-outline' : 'expand-outline'}
-        size={16}
-        color="#000"
-      />
+      <Ionicons name="refresh-outline" size={16} color="#000" />
     </TouchableOpacity>
   );
 
-  // Animated transform applied to both photos. translateY is the wide-mode
-  // reframe pan; scale is the pinch-zoom (always active, default 1). Same
-  // values applied to both before/after so the comparison stays aligned.
-  const panTransform = [{ translateY: panY }, { scale }];
+  // Animated transform applied to both photos in lockstep — same translate
+  // and scale on before/after keeps the comparison aligned.
+  const panTransform = [
+    { translateX: panX },
+    { translateY: panY },
+    { scale },
+  ];
 
   // ----- Render: Side by Side -------------------------------------------------
   if (mode === 'side-by-side') {
@@ -236,7 +237,7 @@ export default function CompareViewer({
           <Animated.Image source={{ uri: afterUri }} style={[styles.fullImage, { transform: panTransform }]} resizeMode={imageResize} />
           {renderAfterOverlay ? renderAfterOverlay() : null}
         </View>
-        {renderWideToggle()}
+        {renderResetButton()}
       </View>
     );
   }
@@ -284,7 +285,7 @@ export default function CompareViewer({
           <Text style={styles.overlaySliderLabelRight}>After</Text>
         </View>
 
-        {renderWideToggle()}
+        {renderResetButton()}
       </View>
     );
   }
@@ -320,18 +321,23 @@ export default function CompareViewer({
       {renderBeforeOverlay ? renderBeforeOverlay() : null}
       {renderAfterOverlay ? renderAfterOverlay() : null}
 
+      {/* Divider stays visible across the whole frame, but only the circular
+          knob captures touch — knobPanResponder attaches just to the knob.
+          Drags anywhere else in the frame fall through to the outer
+          pan/pinch responder, so photos can be panned/zoomed without
+          accidentally moving the divider. */}
       <Animated.View
         style={[styles.splitDividerHitArea, { left: dividerLeftPct }]}
-        pointerEvents="none"
+        pointerEvents="box-none"
       >
         <View style={styles.splitDividerLine} pointerEvents="none" />
-        <View style={styles.splitDividerKnob} pointerEvents="none">
+        <View style={styles.splitDividerKnob} {...knobPanResponder.panHandlers}>
           <Ionicons name="chevron-back" size={14} color="#000" />
           <Ionicons name="chevron-forward" size={14} color="#000" />
         </View>
       </Animated.View>
 
-      {renderWideToggle()}
+      {renderResetButton()}
     </View>
   );
 }

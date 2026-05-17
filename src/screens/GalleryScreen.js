@@ -26,6 +26,7 @@ import { PHOTO_MODES, ROOMS, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constan
 import { RoomIcon } from '../utils/roomIcons';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
+import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
 import { uploadPhotoBatch, createAlbumName } from '../services/uploadService';
@@ -1652,21 +1653,14 @@ export default function GalleryScreen({ navigation, route }) {
           </View>
         )}
         
-        {photoType === 'progress' ? (
-          // Progress thumbnails get a small yellow 'P' chip instead of the
-          // BEFORE/AFTER/COMBINED text label, so the user can spot timeline
-          // photos at a glance. Per spec, no baked label appears on the
-          // photo itself — this is only the gallery badge.
-          <View style={styles.progressBadge}>
-            <Text style={styles.progressBadgeText}>P</Text>
-          </View>
-        ) : (
-          <View style={styles.modeLabel}>
-            <Text style={styles.modeLabelText}>
-              {photoType === 'before' ? 'BEFORE' : photoType === 'after' ? 'AFTER' : 'COMBINED'}
-            </Text>
-          </View>
-        )}
+        <View style={styles.modeLabel}>
+          <Text style={styles.modeLabelText}>
+            {photoType === 'before' ? 'BEFORE'
+              : photoType === 'after' ? 'AFTER'
+              : photoType === 'progress' ? 'PROGRESS'
+              : 'COMBINED'}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -2218,8 +2212,8 @@ export default function GalleryScreen({ navigation, route }) {
                   <Text style={styles.fullScreenErrorUri}>{fullScreenPhoto.uri?.substring(0, 60)}...</Text>
                 </View>
               )}
-              <Image
-                key={fullScreenPhoto.uri || fullScreenPhoto.id}
+              <PannableImage
+                imageKey={fullScreenPhoto.uri || fullScreenPhoto.id}
                 source={{ uri: fullScreenPhoto.uri }}
                 style={styles.fullScreenPhoto}
                 resizeMode="contain"
@@ -2238,29 +2232,30 @@ export default function GalleryScreen({ navigation, route }) {
                   setFullScreenLoading(false);
                   setFullScreenError(null);
                 }}
-              />
-              {showLabels && fullScreenPhoto.mode && !fullScreenError && (
-                <PhotoLabel
-                  label={
-                    fullScreenPhoto.mode === 'before'
-                      ? 'common.before'
-                      : fullScreenPhoto.mode === 'progress'
-                        ? 'common.progress'
-                        : 'common.after'
-                  }
-                  position={
-                    fullScreenPhoto.mode === 'before'
-                      ? pickBeforeLabelPosition(
-                          { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                          fullScreenPhoto
-                        )
-                      : pickAfterLabelPosition(
-                          { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                          fullScreenPhoto
-                        )
-                  }
-                />
-              )}
+              >
+                {showLabels && fullScreenPhoto.mode && !fullScreenError && (
+                  <PhotoLabel
+                    label={
+                      fullScreenPhoto.mode === 'before'
+                        ? 'common.before'
+                        : fullScreenPhoto.mode === 'progress'
+                          ? 'common.progress'
+                          : 'common.after'
+                    }
+                    position={
+                      fullScreenPhoto.mode === 'before'
+                        ? pickBeforeLabelPosition(
+                            { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                            fullScreenPhoto
+                          )
+                        : pickAfterLabelPosition(
+                            { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
+                            fullScreenPhoto
+                          )
+                    }
+                  />
+                )}
+              </PannableImage>
             </View>
           </View>
           <View style={styles.fullScreenRoomNameRow}>

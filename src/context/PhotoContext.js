@@ -18,6 +18,11 @@ export const usePhotos = () => {
 export const PhotoProvider = ({ children }) => {
   const [photos, setPhotos] = useState([]);
   const photosRef = useRef(photos);
+  // Set to true once loadPhotos has finished hydrating from AsyncStorage.
+  // Until then, mutating helpers (updatePhoto / deletePhoto) must NOT call
+  // savePhotos because photosRef.current is still the empty initial array
+  // — saving would persist [] over the user's real data on AsyncStorage.
+  const photosLoadedRef = useRef(false);
   // Keep ref in sync so addPhoto always reads the latest photos
   useEffect(() => { photosRef.current = photos; }, [photos]);
   const [currentRoom, setCurrentRoom] = useState('kitchen');
@@ -185,8 +190,15 @@ export const PhotoProvider = ({ children }) => {
         await savePhotosMetadata(renamedPhotos);
       }
 
+      // Sync the ref synchronously BEFORE setPhotos so mutating helpers
+      // that fire between this point and the [photos] useEffect (e.g. a
+      // background label callback completing immediately after load) read
+      // the hydrated array, not the stale initial [].
+      photosRef.current = renamedPhotos;
       setPhotos(renamedPhotos);
+      photosLoadedRef.current = true;
     } catch (error) {
+      console.warn('[PhotoContext] loadPhotos failed — keeping in-memory photos to avoid wiping AsyncStorage:', error?.message);
     } finally {
       setLoading(false);
     }
@@ -227,8 +239,19 @@ export const PhotoProvider = ({ children }) => {
   // after to progress and then deleting the combined), React state hasn't
   // re-rendered yet, so closure `photos` would be the pre-update value and
   // the second call would silently overwrite the first. photosRef is sync.
+  //
+  // Guard: if photosLoadedRef is false, the ref still holds the empty initial
+  // array. Running savePhotos here would persist [] over the user's real
+  // AsyncStorage data. Skip — the caller's edit is dropped, which is the
+  // lesser evil vs. wiping the library.
   const updatePhoto = async (photoId, updates) => {
+    if (!photosLoadedRef.current) {
+      console.warn('[PhotoContext] updatePhoto called before loadPhotos completed — skipping to avoid wiping storage', photoId);
+      return;
+    }
     const current = photosRef.current;
+    // No-op if the photo isn't in the current array — saves the unchanged
+    // array regardless, but at least we don't strip it.
     const newPhotos = current.map(p =>
       p.id === photoId ? { ...p, ...updates } : p
     );
@@ -236,6 +259,10 @@ export const PhotoProvider = ({ children }) => {
   };
 
   const deletePhoto = async (photoId, options = {}) => {
+    if (!photosLoadedRef.current) {
+      console.warn('[PhotoContext] deletePhoto called before loadPhotos completed — skipping to avoid wiping storage', photoId);
+      return;
+    }
     try {
       console.log('[PhotoContext] deletePhoto called with options:', options);
       const target = photosRef.current.find(p => p.id === photoId);

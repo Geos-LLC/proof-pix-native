@@ -1729,7 +1729,12 @@ export default function CameraScreen({ route, navigation }) {
       }
       if (existingCombinedPhoto) {
         const deleteStart = Date.now();
-        await deletePhoto(existingCombinedPhoto.id);
+        // deleteFromStorage: false → only drop the app's metadata reference.
+        // Skipping the iOS Photos library delete call avoids the system
+        // "Allow ProofPix to delete this photo?" dialog that was interrupting
+        // the retake flow. Stale combined remains on disk; user can delete
+        // manually if they want.
+        await deletePhoto(existingCombinedPhoto.id, { deleteFromStorage: false });
         console.log(`[DEBUG] â±ï¸ Delete existing combined photo: ${Date.now() - deleteStart}ms`);
       }
 
