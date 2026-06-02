@@ -322,7 +322,10 @@ function BottomModal({ visible, onClose, title, theme, children }) {
   if (!visible) return null;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
+      <Pressable
+        style={[styles.modalOverlay, { backgroundColor: theme.scrim || 'rgba(0,0,0,0.5)' }]}
+        onPress={onClose}
+      >
         <View
           style={[styles.modalContent, { backgroundColor: theme.surface }]}
           onStartShouldSetResponder={() => true}

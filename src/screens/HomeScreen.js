@@ -3326,6 +3326,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.TEXT,
   },
+  // Home camera FAB — matches design spec (right:20 bottom:~84 + safe area,
+  // 60×60 yellow circle with warm glow). Bottom value is applied inline using
+  // insets so the FAB clears the floating bottom-nav pill on every device.
   fab: {
     position: 'absolute',
     bottom: 90,
@@ -3337,10 +3340,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#F2C31B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
     shadowRadius: 24,
-    elevation: 8,
+    elevation: 10,
     zIndex: 100,
   },
   bottomNavPill: {

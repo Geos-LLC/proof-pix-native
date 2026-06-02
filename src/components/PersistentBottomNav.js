@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { FONTS } from '../constants/fonts';
+import { useTheme } from '../hooks/useTheme';
 
 // Routes where the bottom nav stays invisible — only the auth /
 // onboarding flow, where there's no app shell yet to navigate
@@ -45,8 +46,10 @@ const resolveActiveTab = (routeName) => {
 
 export default function PersistentBottomNav({ currentRoute, navigationRef }) {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   if (!currentRoute || HIDDEN_ON.has(currentRoute)) return null;
   const activeTab = resolveActiveTab(currentRoute);
+  const isDark = theme.mode === 'dark';
 
   const go = (tab) => {
     if (activeTab === tab) return;
@@ -59,37 +62,93 @@ export default function PersistentBottomNav({ currentRoute, navigationRef }) {
     navigationRef.current?.reset({ index: 0, routes: [{ name: tab }] });
   };
 
+  const inactiveTint = theme.textSecondary;
+  const activeTint = isDark ? theme.accent : theme.textPrimary;
+
   return (
-    <View style={[styles.pill, { bottom: 4 + insets.bottom }]} pointerEvents="box-none">
-      <TouchableOpacity
-        style={[styles.item, activeTab === 'Home' && styles.itemActive]}
+    <View
+      style={[
+        styles.pill,
+        {
+          bottom: 4 + insets.bottom,
+          backgroundColor: theme.navBar,
+          borderColor: theme.border,
+          ...theme.shadowPop,
+        },
+      ]}
+      pointerEvents="box-none"
+    >
+      <NavItem
+        active={activeTab === 'Home'}
         onPress={() => go('Home')}
-      >
-        <Image source={require('../../assets/icons/home.png')} style={styles.icon} resizeMode="contain" />
-        <Text style={[styles.text, activeTab === 'Home' && styles.textActive]}>Capture</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.item, activeTab === 'Projects' && styles.itemActive]}
+        iconSource={require('../../assets/icons/home.png')}
+        label="Capture"
+        inactiveTint={inactiveTint}
+        activeTint={activeTint}
+        activeBg={theme.navActive}
+        isDark={isDark}
+      />
+      <NavItem
+        active={activeTab === 'Projects'}
         onPress={() => go('Projects')}
-      >
-        <Image source={require('../../assets/icons/projects.png')} style={styles.icon} resizeMode="contain" />
-        <Text style={[styles.text, activeTab === 'Projects' && styles.textActive]}>Projects</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.item, activeTab === 'Studio' && styles.itemActive]}
+        iconSource={require('../../assets/icons/projects.png')}
+        label="Projects"
+        inactiveTint={inactiveTint}
+        activeTint={activeTint}
+        activeBg={theme.navActive}
+        isDark={isDark}
+      />
+      <NavItem
+        active={activeTab === 'Studio'}
         onPress={() => go('Studio')}
-      >
-        <Ionicons name="brush-outline" size={22} color="#1E1E1E" />
-        <Text style={[styles.text, activeTab === 'Studio' && styles.textActive]}>Edit</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.item, activeTab === 'Settings' && styles.itemActive]}
+        ionicon="brush-outline"
+        label="Edit"
+        inactiveTint={inactiveTint}
+        activeTint={activeTint}
+        activeBg={theme.navActive}
+        isDark={isDark}
+      />
+      <NavItem
+        active={activeTab === 'Settings'}
         onPress={() => go('Settings')}
-      >
-        <Image source={require('../../assets/icons/settings.png')} style={styles.icon} resizeMode="contain" />
-        <Text style={[styles.text, activeTab === 'Settings' && styles.textActive]}>Settings</Text>
-      </TouchableOpacity>
+        iconSource={require('../../assets/icons/settings.png')}
+        label="Settings"
+        inactiveTint={inactiveTint}
+        activeTint={activeTint}
+        activeBg={theme.navActive}
+        isDark={isDark}
+      />
     </View>
+  );
+}
+
+function NavItem({ active, onPress, iconSource, ionicon, label, inactiveTint, activeTint, activeBg, isDark }) {
+  const tint = active ? activeTint : inactiveTint;
+  return (
+    <TouchableOpacity
+      style={[styles.item, active && { backgroundColor: activeBg }, active && styles.itemActive]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {iconSource ? (
+        <Image
+          source={iconSource}
+          style={[
+            styles.icon,
+            // PNG icons are dark-on-light. In dark mode we tint them by
+            // hiding the underlying alpha-mask via a colored overlay.
+            isDark && { tintColor: tint, opacity: active ? 1 : 0.9 },
+            !isDark && !active && { opacity: 0.62 },
+          ]}
+          resizeMode="contain"
+        />
+      ) : (
+        <Ionicons name={ionicon} size={22} color={tint} />
+      )}
+      <Text style={[styles.text, { color: tint }, active && styles.textActive]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -101,14 +160,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f4f4f4',
-    borderRadius: 296,
-    height: 50,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
+    borderRadius: 999,
+    height: 54,
+    borderWidth: StyleSheet.hairlineWidth,
     zIndex: 100,
   },
   item: {
@@ -118,23 +172,23 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 8,
     gap: 1,
-    height: 50,
+    height: 46,
+    marginVertical: 4,
+    marginHorizontal: 4,
+    borderRadius: 999,
   },
   itemActive: {
-    backgroundColor: '#E0E0E0',
-    borderRadius: 100,
-    marginHorizontal: -7,
+    marginHorizontal: 4,
   },
   icon: { width: 22, height: 22 },
   text: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 10,
     fontWeight: '510',
-    color: '#1E1E1E',
     marginTop: 1,
     textAlign: 'center',
     letterSpacing: -0.1,
     lineHeight: 12,
   },
-  textActive: { fontWeight: '590' },
+  textActive: { fontWeight: '700' },
 });
