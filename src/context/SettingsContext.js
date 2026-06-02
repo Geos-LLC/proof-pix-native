@@ -5,6 +5,7 @@ import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_A
 import { INDUSTRIES } from '../constants/industries';
 import { isSoftTrialActive, getRemainingExports } from '../services/softTrialService';
 import { SOFT_TRIAL_EXPORT_LIMIT } from '../constants/softTrial';
+import { readSecureJSON, writeSecureJSON, deleteSecure } from '../services/secureStorageService';
 
 const SETTINGS_KEY = 'app-settings';
 const CUSTOM_ROOMS_KEY = 'custom-rooms';
@@ -19,11 +20,22 @@ const DEFAULT_LABEL_CORNER_STYLE = 'rounded';
 // Helper function to get project-specific custom rooms key
 const getProjectRoomsKey = (projectId) => `custom-rooms-${projectId}`;
 
+// Font keys accepted by PhotoLabel / PhotoWatermark's FONT_FAMILY_MAP.
+// Anything else is collapsed to 'alexandria' so a stale legacy value
+// doesn't crash the renderer.
+const FONT_KEYS = new Set([
+  'alexandria', 'system',
+  'shadow', 'shanatel', 'sf', 'share',
+  'montserratBold', 'playfairBold', 'robotoMonoBold',
+  'latoBold', 'poppinsSemiBold', 'oswaldSemiBold',
+  'serif', 'monospace', 'seriflegacy', 'monospacelegacy',
+]);
 const normalizeFontKey = (value) => {
-  // All fonts are Alexandria; map any legacy key to alexandria
   if (!value) return 'alexandria';
-  const mapped = String(value).toLowerCase();
-  if (mapped === 'alexandria') return 'alexandria';
+  const raw = String(value);
+  if (FONT_KEYS.has(raw)) return raw;
+  const lc = raw.toLowerCase();
+  if (FONT_KEYS.has(lc)) return lc;
   return 'alexandria';
 };
 
@@ -62,6 +74,36 @@ export const SettingsProvider = ({ children }) => {
   // the full-screen preview. Separate from `watermarkShowMetadata` (which
   // controls the SHARED watermark output, not the on-screen caption).
   const [showPreviewMetadata, setShowPreviewMetadata] = useState(false);
+  // Per-field toggles for what the metadata badge in Studio shows. The
+  // user can turn date / time / address / gps on individually. All four
+  // default on so existing exports keep their current metadata footprint.
+  const [metaShowDate, setMetaShowDate] = useState(true);
+  const [metaShowTime, setMetaShowTime] = useState(true);
+  const [metaShowAddress, setMetaShowAddress] = useState(true);
+  const [metaShowGps, setMetaShowGps] = useState(false);
+  // Brand logo overlay — separate from the watermark text. URI is the
+  // file:// path to the user-uploaded image; null means no custom logo
+  // has been uploaded yet, so the toggle does nothing.
+  const [brandLogoUri, setBrandLogoUri] = useState(null);
+  const [showBrandLogo, setShowBrandLogo] = useState(false);
+  const [brandLogoPosition, setBrandLogoPosition] = useState('right-bottom');
+  // Accepts the legacy small|medium|large strings OR a numeric pixel side
+  // from the new slider (60 by default).
+  const [brandLogoSize, setBrandLogoSize] = useState(60);
+  const [brandLogoOffset, setBrandLogoOffset] = useState(null);
+  // Metadata overlay styling — independent from the watermark's. Driven
+  // by the dedicated Metadata Customization screen.
+  const [metaPosition, setMetaPosition] = useState('left-bottom');
+  const [metaColor, setMetaColor] = useState('#FFFFFF');
+  const [metaOpacity, setMetaOpacity] = useState(0.85);
+  // Accepts the legacy small|medium|large strings OR a numeric font size.
+  const [metaFontSize, setMetaFontSize] = useState(14);
+  const [metaFontFamily, setMetaFontFamily] = useState('alexandria');
+  const [metaOffset, setMetaOffset] = useState(null);
+  // Watermark freeform offset + numeric font size. The legacy `watermarkPosition`
+  // grid key stays around as a fallback when no freeform drop has been saved.
+  const [watermarkOffset, setWatermarkOffset] = useState(null);
+  const [watermarkFontSize, setWatermarkFontSize] = useState(14);
   const [showWatermark, setShowWatermark] = useState(true);
   const [customWatermarkEnabled, setCustomWatermarkEnabled] = useState(false);
   const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
@@ -91,18 +133,39 @@ export const SettingsProvider = ({ children }) => {
   const [beforeLabelPositionLandscape, setBeforeLabelPositionLandscape] = useState(DEFAULT_LANDSCAPE_BEFORE_LABEL_POSITION);
   const [afterLabelPositionLandscape, setAfterLabelPositionLandscape] = useState(DEFAULT_LANDSCAPE_AFTER_LABEL_POSITION);
   const [combinedLabelPosition, setCombinedLabelPosition] = useState(DEFAULT_LABEL_POSITION);
+  // Freeform fractional offsets ({x: 0..1, y: 0..1}) — when set, override
+  // the corresponding position key so labels can be dropped anywhere
+  // instead of snapping to one of 9 grid cells. null = use position key.
+  const [beforeLabelOffset, setBeforeLabelOffset] = useState(null);
+  const [afterLabelOffset, setAfterLabelOffset] = useState(null);
+  const [beforeLabelOffsetLandscape, setBeforeLabelOffsetLandscape] = useState(null);
+  const [afterLabelOffsetLandscape, setAfterLabelOffsetLandscape] = useState(null);
+  const [combinedLabelOffset, setCombinedLabelOffset] = useState(null);
   const [labelMarginVertical, setLabelMarginVertical] = useState(10); // Top/bottom margin
   const [labelMarginHorizontal, setLabelMarginHorizontal] = useState(10); // Left/right margin
   const [userName, setUserName] = useState('');
   const [location, setLocation] = useState('Location 1'); // Default for fresh installs; project creation auto-fills "Location N" matching project count
   const [useFolderStructure, setUseFolderStructure] = useState(false); // Default OFF - flat structure
   const [enabledFolders, setEnabledFolders] = useState({ before: true, after: true, combined: true });
+  // New simplified upload-structure toggle: when true, uploaded
+  // photos are grouped into per-date subfolders. Replaces the old
+  // before/after/combined sub-toggle UI from Settings — those still
+  // exist in storage for backward compat but the user-facing
+  // control now is just this one switch.
+  const [splitPhotosByDate, setSplitPhotosByDate] = useState(false);
   const [labelLanguage, setLabelLanguage] = useState('en');
   const [sectionLanguage, setSectionLanguage] = useState('en');
   const [customRooms, setCustomRooms] = useState(null); // null means use default rooms
   const [userPlan, setUserPlan] = useState('starter'); // Add userPlan state
   const [cleaningServiceEnabled, setCleaningServiceEnabled] = useState(true);
   const [shutterSoundEnabled, setShutterSoundEnabled] = useState(Platform.OS !== 'android');
+  // Persistent "use current location for new projects" toggle. When
+  // true, the New Project modal auto-fills the name with the current
+  // address as soon as it opens. The checkbox in the modal flips
+  // this value; tapping the one-shot Use-current-location BUTTON in
+  // the modal does NOT flip it (one-time fill only).
+  const [autoUseCurrentLocationForProjects, setAutoUseCurrentLocationForProjects] = useState(false);
+  const [themeMode, setThemeModeState] = useState('light');
   const [loading, setLoading] = useState(true);
   // Ref-backed mirror of the loaded flag so saveSettings called from stale
   // closures (e.g. a useEffect scheduled before loadSettings finished) still
@@ -185,12 +248,27 @@ export const SettingsProvider = ({ children }) => {
 
   const loadSettings = async () => {
     try {
-      const stored = await AsyncStorage.getItem(SETTINGS_KEY);
-      
-      if (stored) {
-        const settings = JSON.parse(stored);
+      // Keychain-backed on iOS so settings (labels/watermarks/language/plan)
+      // survive app reinstall.
+      const settings = await readSecureJSON(SETTINGS_KEY);
+
+      if (settings) {
         setShowLabels(settings.showLabels ?? true);
         setShowPreviewMetadata(settings.showPreviewMetadata ?? false);
+        setMetaShowDate(settings.metaShowDate ?? true);
+        setMetaShowTime(settings.metaShowTime ?? true);
+        setMetaShowAddress(settings.metaShowAddress ?? true);
+        setMetaShowGps(settings.metaShowGps ?? false);
+        setBrandLogoUri(settings.brandLogoUri ?? null);
+        setShowBrandLogo(settings.showBrandLogo ?? false);
+        setBrandLogoPosition(settings.brandLogoPosition ?? 'right-bottom');
+        setBrandLogoSize(settings.brandLogoSize ?? 60);
+        setMetaPosition(settings.metaPosition ?? 'left-bottom');
+        setMetaColor(settings.metaColor ?? '#FFFFFF');
+        setMetaOpacity(typeof settings.metaOpacity === 'number' ? settings.metaOpacity : 0.85);
+        setMetaFontSize(settings.metaFontSize ?? 14);
+        setMetaFontFamily(settings.metaFontFamily ?? 'alexandria');
+        setWatermarkFontSize(typeof settings.watermarkFontSize === 'number' ? settings.watermarkFontSize : 14);
         setShowWatermark(settings.showWatermark ?? true);
         setCustomWatermarkEnabled(settings.customWatermarkEnabled ?? false);
         setWatermarkText(settings.watermarkText ?? DEFAULT_WATERMARK_TEXT);
@@ -228,11 +306,36 @@ export const SettingsProvider = ({ children }) => {
             ?? DEFAULT_AFTER_LABEL_POSITION
         );
         setCombinedLabelPosition(settings.combinedLabelPosition ?? DEFAULT_LABEL_POSITION);
+        const sanitizeOffset = (o) =>
+          o && typeof o === 'object' && typeof o.x === 'number' && typeof o.y === 'number'
+            ? { x: Math.max(0, Math.min(1, o.x)), y: Math.max(0, Math.min(1, o.y)) }
+            : null;
+        setBeforeLabelOffset(sanitizeOffset(settings.beforeLabelOffset));
+        setAfterLabelOffset(sanitizeOffset(settings.afterLabelOffset));
+        setBeforeLabelOffsetLandscape(sanitizeOffset(settings.beforeLabelOffsetLandscape));
+        setAfterLabelOffsetLandscape(sanitizeOffset(settings.afterLabelOffsetLandscape));
+        setCombinedLabelOffset(sanitizeOffset(settings.combinedLabelOffset));
+        setBrandLogoOffset(sanitizeOffset(settings.brandLogoOffset));
+        setMetaOffset(sanitizeOffset(settings.metaOffset));
+        setWatermarkOffset(sanitizeOffset(settings.watermarkOffset));
         setLabelMarginVertical(settings.labelMarginVertical ?? 10);
         setLabelMarginHorizontal(settings.labelMarginHorizontal ?? 10);
         setUserName(settings.userName ?? '');
+        // If the main settings blob lost userName for any reason, fall
+        // back to the dedicated backup key so the user isn't sent back
+        // through onboarding. updateUserInfo writes both, so the
+        // backup is always the latest known value.
+        if (!settings.userName || !String(settings.userName).trim()) {
+          try {
+            const backupName = await AsyncStorage.getItem('@proofpix_username');
+            if (backupName && backupName.trim()) {
+              setUserName(backupName.trim());
+            }
+          } catch {}
+        }
         setLocation(settings.location ?? 'Location 1');
         setUseFolderStructure(settings.useFolderStructure ?? false); // Default OFF - flat structure
+        setSplitPhotosByDate(settings.splitPhotosByDate ?? false);
         if (settings.enabledFolders) {
           const categories = settings.enabledFolders;
           if (typeof categories.before === 'boolean' && typeof categories.after === 'boolean' && typeof categories.combined === 'boolean') {
@@ -252,8 +355,27 @@ export const SettingsProvider = ({ children }) => {
             ? settings.shutterSoundEnabled
             : Platform.OS !== 'android'
         );
+        setAutoUseCurrentLocationForProjects(
+          typeof settings.autoUseCurrentLocationForProjects === 'boolean'
+            ? settings.autoUseCurrentLocationForProjects
+            : false
+        );
+        setThemeModeState(settings.themeMode === 'dark' ? 'dark' : 'light');
       }
       
+      // Even when the main settings blob is entirely missing (first
+      // launch after a partial wipe / Keychain reset), recover the
+      // user's name from the dedicated backup key. Without this the
+      // user would land back on the FirstLoad screen every launch.
+      if (!settings) {
+        try {
+          const backupName = await AsyncStorage.getItem('@proofpix_username');
+          if (backupName && backupName.trim()) {
+            setUserName(backupName.trim());
+          }
+        } catch {}
+      }
+
       // Hydrate custom folder names from AsyncStorage. This used to be an
       // "EMERGENCY: Clear all corrupted custom rooms data" block that
       // unconditionally deleted CUSTOM_ROOMS_KEY on every app start — which
@@ -291,8 +413,7 @@ export const SettingsProvider = ({ children }) => {
       // finishes).  Stored values are the base, then current state, then the
       // explicit newSettings — but if settings haven't loaded yet, stored
       // values win for any field not in newSettings.
-      const stored = await AsyncStorage.getItem(SETTINGS_KEY);
-      const existingSettings = stored ? JSON.parse(stored) : {};
+      const existingSettings = (await readSecureJSON(SETTINGS_KEY)) || {};
 
       const stateSnapshot = {
         showLabels,
@@ -316,17 +437,32 @@ export const SettingsProvider = ({ children }) => {
         beforeLabelPositionLandscape,
         afterLabelPositionLandscape,
         combinedLabelPosition,
+        beforeLabelOffset,
+        afterLabelOffset,
+        beforeLabelOffsetLandscape,
+        afterLabelOffsetLandscape,
+        combinedLabelOffset,
+        brandLogoOffset,
+        brandLogoSize,
+        metaOffset,
+        metaFontFamily,
+        metaFontSize,
+        watermarkOffset,
+        watermarkFontSize,
         labelMarginVertical,
         labelMarginHorizontal,
         userName,
         location,
         useFolderStructure,
         enabledFolders,
+        splitPhotosByDate,
         labelLanguage,
         sectionLanguage,
         userPlan,
         cleaningServiceEnabled,
         shutterSoundEnabled,
+        themeMode,
+        autoUseCurrentLocationForProjects,
       };
 
       // Use the synchronous loadedRef instead of the React state `loading`.
@@ -339,7 +475,7 @@ export const SettingsProvider = ({ children }) => {
         ? { ...existingSettings, ...newSettings }
         : { ...existingSettings, ...stateSnapshot, ...newSettings };
 
-      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      await writeSecureJSON(SETTINGS_KEY, settings);
     } catch (error) {
 
     }
@@ -351,10 +487,115 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ showLabels: newValue });
   };
 
+  const setThemeMode = async (mode) => {
+    const next = mode === 'dark' ? 'dark' : 'light';
+    setThemeModeState(next);
+    await saveSettings({ themeMode: next });
+  };
+
   const togglePreviewMetadata = async (value) => {
     const next = typeof value === 'boolean' ? value : !showPreviewMetadata;
     setShowPreviewMetadata(next);
     await saveSettings({ showPreviewMetadata: next });
+  };
+
+  // Per-field metadata toggles + brand-logo updaters. All of these are
+  // simple boolean / string round-trips through saveSettings — kept
+  // grouped so the BrandingPanel can pull them via useSettings().
+  const setMetaField = async (key, value) => {
+    if (key === 'date') { setMetaShowDate(value); await saveSettings({ metaShowDate: value }); }
+    else if (key === 'time') { setMetaShowTime(value); await saveSettings({ metaShowTime: value }); }
+    else if (key === 'address') { setMetaShowAddress(value); await saveSettings({ metaShowAddress: value }); }
+    else if (key === 'gps') { setMetaShowGps(value); await saveSettings({ metaShowGps: value }); }
+  };
+  const updateBrandLogoUri = async (uri) => {
+    const next = typeof uri === 'string' && uri ? uri : null;
+    setBrandLogoUri(next);
+    await saveSettings({ brandLogoUri: next });
+    // Auto-enable the toggle the first time a logo is uploaded so the
+    // user immediately sees the result, without having to flip the
+    // switch separately.
+    if (next && !showBrandLogo) {
+      setShowBrandLogo(true);
+      await saveSettings({ showBrandLogo: true });
+    }
+  };
+  const updateShowBrandLogo = async (value) => {
+    const next = !!value;
+    setShowBrandLogo(next);
+    await saveSettings({ showBrandLogo: next });
+  };
+  const updateBrandLogoPosition = async (pos) => {
+    setBrandLogoPosition(pos);
+    await saveSettings({ brandLogoPosition: pos });
+  };
+  const updateBrandLogoSize = async (size) => {
+    // Accept numeric pixel sizes from the slider AND legacy strings.
+    let normalized;
+    if (typeof size === 'number' && isFinite(size)) {
+      normalized = Math.max(20, Math.min(200, Math.round(size)));
+    } else if (typeof size === 'string' && ['small', 'medium', 'large'].includes(size)) {
+      normalized = size;
+    } else {
+      normalized = 60;
+    }
+    setBrandLogoSize(normalized);
+    await saveSettings({ brandLogoSize: normalized });
+  };
+  const updateBrandLogoOffset = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setBrandLogoOffset(next);
+    await saveSettings({ brandLogoOffset: next });
+  };
+  const updateMetaPosition = async (pos) => {
+    setMetaPosition(pos);
+    await saveSettings({ metaPosition: pos });
+  };
+  const updateMetaColor = async (color) => {
+    setMetaColor(color);
+    await saveSettings({ metaColor: color });
+  };
+  const updateMetaOpacity = async (value) => {
+    const clamped = Math.max(0, Math.min(1, typeof value === 'number' ? value : 0.85));
+    setMetaOpacity(clamped);
+    await saveSettings({ metaOpacity: clamped });
+  };
+  const updateMetaFontSize = async (size) => {
+    let normalized;
+    if (typeof size === 'number' && isFinite(size)) {
+      normalized = Math.max(8, Math.min(48, Math.round(size)));
+    } else if (typeof size === 'string' && ['small', 'medium', 'large'].includes(size)) {
+      normalized = size;
+    } else {
+      normalized = 14;
+    }
+    setMetaFontSize(normalized);
+    await saveSettings({ metaFontSize: normalized });
+  };
+  const updateMetaFontFamily = async (font) => {
+    const normalized = normalizeFontKey(font);
+    setMetaFontFamily(normalized);
+    await saveSettings({ metaFontFamily: normalized });
+  };
+  const updateMetaOffset = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setMetaOffset(next);
+    await saveSettings({ metaOffset: next });
+  };
+  const updateWatermarkFontSize = async (size) => {
+    let normalized;
+    if (typeof size === 'number' && isFinite(size)) {
+      normalized = Math.max(8, Math.min(48, Math.round(size)));
+    } else {
+      normalized = 14;
+    }
+    setWatermarkFontSize(normalized);
+    await saveSettings({ watermarkFontSize: normalized });
+  };
+  const updateWatermarkOffset = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setWatermarkOffset(next);
+    await saveSettings({ watermarkOffset: next });
   };
 
   const toggleWatermark = async (value) => {
@@ -469,8 +710,16 @@ export const SettingsProvider = ({ children }) => {
   };
 
   const updateLabelSize = async (size) => {
-    const allowed = ['small', 'medium', 'large'];
-    const normalized = allowed.includes(size) ? size : DEFAULT_LABEL_SIZE;
+    // Accept either the legacy small/medium/large pills OR a numeric font
+    // size from the slider. Anything else falls back to the default.
+    let normalized;
+    if (typeof size === 'number' && isFinite(size)) {
+      normalized = Math.max(8, Math.min(64, Math.round(size)));
+    } else if (typeof size === 'string' && ['small', 'medium', 'large'].includes(size)) {
+      normalized = size;
+    } else {
+      normalized = DEFAULT_LABEL_SIZE;
+    }
     setLabelSize(normalized);
     await saveSettings({ labelSize: normalized });
   };
@@ -513,6 +762,38 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ combinedLabelPosition: position });
   };
 
+  // Freeform offset updaters. Pass null to clear and fall back to the
+  // position key; pass {x, y} (each 0..1) to pin the label to that point.
+  const sanitizeOffsetIn = (o) =>
+    o && typeof o === 'object' && typeof o.x === 'number' && typeof o.y === 'number'
+      ? { x: Math.max(0, Math.min(1, o.x)), y: Math.max(0, Math.min(1, o.y)) }
+      : null;
+  const updateBeforeLabelOffset = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setBeforeLabelOffset(next);
+    await saveSettings({ beforeLabelOffset: next });
+  };
+  const updateAfterLabelOffset = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setAfterLabelOffset(next);
+    await saveSettings({ afterLabelOffset: next });
+  };
+  const updateBeforeLabelOffsetLandscape = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setBeforeLabelOffsetLandscape(next);
+    await saveSettings({ beforeLabelOffsetLandscape: next });
+  };
+  const updateAfterLabelOffsetLandscape = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setAfterLabelOffsetLandscape(next);
+    await saveSettings({ afterLabelOffsetLandscape: next });
+  };
+  const updateCombinedLabelOffset = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setCombinedLabelOffset(next);
+    await saveSettings({ combinedLabelOffset: next });
+  };
+
   const updateLabelMarginVertical = async (margin) => {
     setLabelMarginVertical(margin);
     await saveSettings({ labelMarginVertical: margin });
@@ -530,6 +811,22 @@ export const SettingsProvider = ({ children }) => {
     if (name !== undefined) updates.userName = name;
     if (newLocation !== undefined) updates.location = newLocation;
     if (Object.keys(updates).length) await saveSettings(updates);
+    // Backup name to a dedicated AsyncStorage key. The main settings
+    // blob lives in Keychain on iOS and has grown large; if anything
+    // ever truncates / corrupts it, the user would land back on the
+    // name-entry screen every launch. This redundant write lets
+    // loadSettings recover the name even when the primary blob loses
+    // the field.
+    try {
+      if (name !== undefined) {
+        const trimmed = (name || '').trim();
+        if (trimmed) {
+          await AsyncStorage.setItem('@proofpix_username', trimmed);
+        } else {
+          await AsyncStorage.removeItem('@proofpix_username');
+        }
+      }
+    } catch {}
   };
 
   // Reload settings from AsyncStorage (useful when external changes are made)
@@ -554,10 +851,22 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ shutterSoundEnabled: newValue });
   };
 
+  const updateAutoUseCurrentLocationForProjects = async (value) => {
+    const next = !!value;
+    setAutoUseCurrentLocationForProjects(next);
+    await saveSettings({ autoUseCurrentLocationForProjects: next });
+  };
+
   const toggleUseFolderStructure = async () => {
     const newValue = !useFolderStructure;
     setUseFolderStructure(newValue);
     await saveSettings({ useFolderStructure: newValue });
+  };
+
+  const updateSplitPhotosByDate = async (value) => {
+    const next = !!value;
+    setSplitPhotosByDate(next);
+    await saveSettings({ splitPhotosByDate: next });
   };
   
   const updateEnabledFolders = async (updates) => {
@@ -611,20 +920,34 @@ export const SettingsProvider = ({ children }) => {
 
   const resetUserData = async () => {
     try {
-      await AsyncStorage.removeItem(SETTINGS_KEY);
+      // Wipe from BOTH AsyncStorage and Keychain — the latter is required
+      // because settings/projects/photos/trial now persist in Keychain on iOS
+      // so a "reset" left only on AsyncStorage would resurrect on next launch.
+      await deleteSecure(SETTINGS_KEY);
       await AsyncStorage.removeItem(CUSTOM_ROOMS_KEY);
       // Clear developer tools unlock state when resetting data
       await AsyncStorage.removeItem('@dev_tools_unlocked');
       // Clear photos, projects, trial, and referral data
-      await AsyncStorage.removeItem('cleaning-photos-metadata');
-      await AsyncStorage.removeItem('tracked-projects');
-      await AsyncStorage.removeItem('@user_trial_info');
+      await deleteSecure('cleaning-photos-metadata');
+      await deleteSecure('tracked-projects');
+      await deleteSecure('@user_trial_info');
       await AsyncStorage.removeItem('@user_referral_code');
       await AsyncStorage.removeItem('@referral_accepted');
       await AsyncStorage.removeItem('@referral_rewards_applied');
       await AsyncStorage.removeItem('@trial_notifications_shown');
+      // Clear the qualification flag so the industry picker modal
+      // re-prompts on the next Home render. Without this the user
+      // would land back on the default rooms with no way to re-seed
+      // them from an industry preset short of a fresh install.
+      await AsyncStorage.removeItem('@user_qualification');
+      // Drop the username backup too — keeping it would re-hydrate
+      // the user name on next launch and skip FirstLoad, defeating
+      // the whole reset.
+      await AsyncStorage.removeItem('@proofpix_username');
       // NOTE: intentionally NOT removing @proofpix_language — language preference should persist across resets
-      await AsyncStorage.removeItem('active-project-id');
+      await deleteSecure('active-project-id');
+      await deleteSecure('asset-id-map');
+      await deleteSecure('user-preferences');
       await AsyncStorage.removeItem('label-cache-metadata');
       await AsyncStorage.removeItem('@team_name');
       await AsyncStorage.removeItem('@stored_individual_name');
@@ -711,6 +1034,37 @@ export const SettingsProvider = ({ children }) => {
     toggleLabels,
     showPreviewMetadata,
     togglePreviewMetadata,
+    metaShowDate,
+    metaShowTime,
+    metaShowAddress,
+    metaShowGps,
+    setMetaField,
+    brandLogoUri,
+    showBrandLogo,
+    updateBrandLogoUri,
+    updateShowBrandLogo,
+    brandLogoPosition,
+    brandLogoSize,
+    brandLogoOffset,
+    updateBrandLogoPosition,
+    updateBrandLogoSize,
+    updateBrandLogoOffset,
+    metaPosition,
+    metaColor,
+    metaOpacity,
+    metaFontSize,
+    metaFontFamily,
+    metaOffset,
+    updateMetaPosition,
+    updateMetaColor,
+    updateMetaOpacity,
+    updateMetaFontSize,
+    updateMetaFontFamily,
+    updateMetaOffset,
+    watermarkOffset,
+    watermarkFontSize,
+    updateWatermarkOffset,
+    updateWatermarkFontSize,
     showWatermark,
     shouldShowWatermark,
     softTrialActive,
@@ -755,6 +1109,16 @@ export const SettingsProvider = ({ children }) => {
     updateBeforeLabelPositionLandscape,
     updateAfterLabelPositionLandscape,
     updateCombinedLabelPosition,
+    beforeLabelOffset,
+    afterLabelOffset,
+    beforeLabelOffsetLandscape,
+    afterLabelOffsetLandscape,
+    combinedLabelOffset,
+    updateBeforeLabelOffset,
+    updateAfterLabelOffset,
+    updateBeforeLabelOffsetLandscape,
+    updateAfterLabelOffsetLandscape,
+    updateCombinedLabelOffset,
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,
     userName,
@@ -764,6 +1128,8 @@ export const SettingsProvider = ({ children }) => {
     toggleUseFolderStructure,
     enabledFolders,
     updateEnabledFolders,
+    splitPhotosByDate,
+    updateSplitPhotosByDate,
     labelLanguage,
     updateLabelLanguage,
     sectionLanguage,
@@ -780,6 +1146,10 @@ export const SettingsProvider = ({ children }) => {
     toggleCleaningServiceEnabled,
     shutterSoundEnabled,
     toggleShutterSoundEnabled,
+    autoUseCurrentLocationForProjects,
+    updateAutoUseCurrentLocationForProjects,
+    themeMode,
+    setThemeMode,
     reloadSettings, // Expose reloadSettings
   };
 

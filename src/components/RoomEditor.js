@@ -393,30 +393,33 @@ export default function RoomEditor({ visible, onClose, onSave, initialRooms = nu
   }, [visible]);
 
   const handleAddRoom = () => {
-    if (rooms.length >= 10) {
-      Alert.alert(t('roomEditor.limitReached'), t('roomEditor.limitReachedMessage'));
-      return;
-    }
-
+    // Use functional setState so we always read the LATEST rooms list.
+    // Previously this closed over `rooms` from the render where the
+    // setTimeout in the mode-handler effect was scheduled — that
+    // render's `rooms` was still the empty initial state, so
+    // [...rooms, newRoom] = [newRoom] and the save wiped every
+    // existing folder. The functional updater fixes that race by
+    // computing the new list against whatever's in state right now.
     const newRoom = {
       id: `room_${Date.now()}`,
       name: '',
       icon: '🏠',
-      isDefault: markAsDefault
+      isDefault: markAsDefault,
     };
-    const updatedRooms = [...rooms, newRoom];
-    setRooms(updatedRooms);
-
-    // Immediately save the changes
-    //
-    onSave(updatedRooms);
+    setRooms((prev) => {
+      if (prev.length >= 10) {
+        Alert.alert(t('roomEditor.limitReached'), t('roomEditor.limitReachedMessage'));
+        return prev;
+      }
+      const updatedRooms = [...prev, newRoom];
+      onSave(updatedRooms);
+      return updatedRooms;
+    });
 
     setEditingRoom(newRoom.id);
     setRoomName('');
     setSelectedIcon('🏠');
     setIsEditingName(false);
-
-    // 
   };
 
   const handleEditRoom = (room) => {

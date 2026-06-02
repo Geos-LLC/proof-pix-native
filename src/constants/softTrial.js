@@ -6,7 +6,12 @@
  * Counts ONLY exports — no time-based expiry.
  */
 
-export const SOFT_TRIAL_EXPORT_LIMIT = 3;
+// Soft-trial export limit removed per the user's spec — starter
+// plan now has unlimited single-photo share. The huge sentinel
+// value keeps the existing isAvailable/getRemaining/tryConsume
+// plumbing intact (so the keychain counter still increments) but
+// the badge + paywall trigger never fire in practice.
+export const SOFT_TRIAL_EXPORT_LIMIT = 1000000;
 
 export const SOFT_TRIAL_LOW_RES_MAX_DIM = 720;
 export const SOFT_TRIAL_QUALITY = 0.6;

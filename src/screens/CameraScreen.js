@@ -15,17 +15,22 @@ import {
   Animated,
   StatusBar,
   Modal,
-  ActivityIndicator
+  ActivityIndicator,
+  Share,
+  TextInput,
 } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import Slider from '@react-native-community/slider';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { RoomIcon } from '../utils/roomIcons';
 import { compositeImages, isNativeCompositorAvailable } from '../utils/imageCompositor';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
+import * as ExpoLocation from 'expo-location';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 import { savePhotoToDevice } from '../services/storage';
 import { createAlbumName } from '../services/uploadService';
 import { getLocationName } from '../config/locations';
@@ -64,14 +69,35 @@ const getInitialSpecificOrientation = () => {
   }
 };
 
+// [CAMDIAG] Module-load build marker. Fires once when CameraScreen.js
+// is first imported (typically at app startup when React Navigation
+// registers screens, or on first nav to Camera). Fires BEFORE any
+// component render, so it's the most reliable "I have this bundle"
+// signal. If this line doesn't appear in logs after opening Camera,
+// the device is NOT running this bundle.
+console.warn('[CAMDIAG] MODULE LOAD BUILD=2026-05-26-photodel-v4');
+
 export default function CameraScreen({ route, navigation }) {
   const { mode, beforePhoto, afterPhoto: existingAfterPhoto, combinedPhoto: existingCombinedPhoto, room: initialRoom } = route.params || {};
   const insets = useSafeAreaInsets();
-  const [room, setRoom] = useState(initialRoom);
+  const theme = useTheme();
+  // Default to a non-empty string so capture handlers never read `.charAt`
+  // on undefined when CameraScreen is entered without a room param (e.g. the
+  // post-create reset from ProjectsScreen). The useEffect below replaces this
+  // with the first valid room from the user's industry once getRooms() is ready.
+  const [room, setRoom] = useState(initialRoom || 'kitchen');
   const [facing, setFacing] = useState('back');
   const [enableTorch, setEnableTorch] = useState(false);
   const [aspectRatio, setAspectRatio] = useState('4:3'); // '4:3' or '2:3'
   const [selectedBeforePhoto, setSelectedBeforePhoto] = useState(beforePhoto);
+  // Ghost overlay opacity for After mode. Default 0.4 matches the prior
+  // hardcoded value; the side slider lets the user dial it up or down.
+  const [ghostOpacity, setGhostOpacity] = useState(0.4);
+  // Auto-hide for the ghost slider — visible for ~1.5s after Camera
+  // mounts and after every camera-area touch, then fades out so it
+  // doesn't permanently cover the viewfinder.
+  const [showGhostSlider, setShowGhostSlider] = useState(true);
+  const ghostSliderHideTimerRef = useRef(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessingAfter, setIsProcessingAfter] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -83,7 +109,13 @@ export default function CameraScreen({ route, navigation }) {
   const [showEnlargedGallery, setShowEnlargedGallery] = useState(false);
   const [enlargedGalleryIndex, setEnlargedGalleryIndex] = useState(0);
   const [enlargedGalleryPhoto, setEnlargedGalleryPhoto] = useState(null);
-  const [cameraViewMode, setCameraViewMode] = useState('portrait'); // 'portrait' or 'landscape'
+  const [cameraViewMode, setCameraViewMode] = useState('portrait'); // 'portrait' (9:16 fill) | 'landscape' (3:4 letterbox)
+  // True for ~600ms after an aspect-mode change. While true, an opaque
+  // overlay sits on top of the camera area to mask the visual blink
+  // that happens when vision-camera reconfigures its native session
+  // for the new sensor format.
+  const [aspectTransitioning, setAspectTransitioning] = useState(false);
+  const aspectTransitionTimerRef = useRef(null);
   const [deviceOrientation, setDeviceOrientation] = useState(initialOrientation);
   const [specificOrientation, setSpecificOrientation] = useState(getInitialSpecificOrientation()); // 1=PORTRAIT, 3=LANDSCAPE_LEFT, 4=LANDSCAPE_RIGHT
   const [isGalleryAnimating, setIsGalleryAnimating] = useState(false);
@@ -91,10 +123,45 @@ export default function CameraScreen({ route, navigation }) {
   const [tempPhotoLabel, setTempPhotoLabel] = useState(null);
   const [tempPhotoDimensions, setTempPhotoDimensions] = useState({ width: 1080, height: 1920 });
   const [showRoomIndicator, setShowRoomIndicator] = useState(false);
+  // Per-photo note modal: opens when the user taps "Add Note" in the
+  // half-screen gallery panel. noteDraft holds the live text while the
+  // modal is open; on save we updatePhoto({ note }) so the note is
+  // persisted with the photo metadata (used later in the report).
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteTargetPhotoId, setNoteTargetPhotoId] = useState(null);
   const longPressGalleryTimer = useRef(null);
   const roomIndicatorTimer = useRef(null);
   const enlargedGalleryScrollRef = useRef(null);
+  // After-mode strip: index of the currently-matched item in the
+  // real-items list ([Before, ...progresses, After]). Updated when
+  // the user's swipe momentum settles on a new half-offset snap
+  // point. Drives the Match label position only — items do NOT
+  // rearrange, so the user sees one smooth scroll, no re-render flash.
+  const [matchedItemIdx, setMatchedItemIdx] = useState(-1);
+  // Set true while a side-arrow tap is animating the carousel to a
+  // new index. onScroll consults this ref to skip its live-index
+  // update so the in-flight programmatic scroll isn't clobbered by
+  // the intermediate offsets (which round back to the old index).
+  const arrowScrollingRef = useRef(false);
+  const arrowScrollingTargetRef = useRef(null);
+  const arrowScrollClearTimer = useRef(null);
   const completionAlertTimer = useRef(null); // Timer for "All Photos Taken" alert
+  // Set of beforePhoto IDs that have already received a progress photo in
+  // THIS Progress-mode session. The Progress flow advances through every
+  // set in the room one-at-a-time (mirroring After mode); to take a second
+  // progress photo for a set, the user exits and re-enters Progress mode,
+  // which resets this ref. Lives in a ref (not state) so the post-capture
+  // advance can read the freshest value without waiting for re-render.
+  const progressedBeforeIdsRef = useRef(new Set());
+  // Same idea for After mode. Each capture marks the set as visited and
+  // advances to the next un-visited Before across the whole project; the
+  // "All Photos Taken" popup only fires once every set has been visited
+  // in this session. To re-cycle, the user exits and re-enters Camera.
+  // Without this tracker, taking a 3rd photo on a fully-paired room fired
+  // the popup immediately (no Befores were "unpaired") even when other
+  // rooms still had sets the user wanted to walk through.
+  const visitedAfterBeforeIdsRef = useRef(new Set());
   const tapStartTime = useRef(null);
   const [dimensions, setDimensions] = useState({ width: initialWidth, height: initialHeight });
   const lastTap = useRef(null);
@@ -106,6 +173,13 @@ export default function CameraScreen({ route, navigation }) {
   const carouselScrollRef = useRef(null);
   const fullScreenScrollRef = useRef(null);
   const galleryScrollRef = useRef(null);
+  // Tracks whether the small gallery strip is currently being scrolled
+  // (drag-in-progress OR coasting to the next snap). Each TouchableOpacity
+  // in the strip starts a long-press timer + tap action on press; if the
+  // user's finger was actually scrolling, those would fire on release —
+  // opening the enlarged view instead of just panning. We consult this
+  // ref in onPressOut and skip the tap action whenever a scroll was active.
+  const isScrollingGalleryRef = useRef(false);
   const carouselTranslateY = useRef(new Animated.Value(0)).current;
   const enlargedGalleryTranslateY = useRef(new Animated.Value(0)).current;
   const galleryOpacity = useRef(new Animated.Value(0)).current;
@@ -124,7 +198,7 @@ export default function CameraScreen({ route, navigation }) {
   const showEnlargedGalleryRef = useRef(showEnlargedGallery);
   const enlargedGalleryPhotoRef = useRef(enlargedGalleryPhoto);
   const isGalleryAnimatingRef = useRef(false);
-  const { addPhoto, updatePhoto, getBeforePhotos, getUnpairedBeforePhotos, deletePhoto, setCurrentRoom, activeProjectId, createProject, setActiveProject, projects } = usePhotos();
+  const { addPhoto, updatePhoto, getBeforePhotos, getUnpairedBeforePhotos, getAfterPhotos, getProgressPhotos, getCombinedPhotos, deletePhoto, setCurrentRoom, activeProjectId, createProject, setActiveProject, projects } = usePhotos();
   const {
     showLabels,
     shouldShowWatermark,
@@ -160,9 +234,76 @@ export default function CameraScreen({ route, navigation }) {
 
   // Actual widest zoom this device supports (0.5 on iPhone/Pixel, ~0.6 on S21 Ultra, etc.).
   // Falls back to 1.0 if the device doesn't support ultra-wide.
+  //
+  // Vision-camera uses LOGICAL zoom values that don't match the UX
+  // numbers iOS users expect: `neutralZoom` is the "1x" point (main
+  // wide camera) and on iPhones is typically 2.0; the ultra-wide
+  // (display "0.5x") is at minZoom (typically 1.0); the telephoto
+  // (display "2x") is at 2 * neutralZoom. So we always derive UX
+  // numbers as multiples of neutralZoom, never as raw zoom values.
   const deviceMinZoom = device?.minZoom ?? 1.0;
   const deviceNeutralZoom = device?.neutralZoom ?? 1.0;
+  const deviceMaxZoom = device?.maxZoom ?? deviceNeutralZoom * 4;
   const hasUltraWide = deviceMinZoom < deviceNeutralZoom;
+  const hasTelephoto = !!device?.physicalDevices?.includes?.('telephoto-camera');
+
+  // Declared BEFORE activePresetIndex below — the IIFE that picks the
+  // active chip reads `zoom`, so the state declaration must precede it
+  // or `zoom` is in the TDZ and the IIFE silently treats it as
+  // undefined (NaN distance → bestIdx stuck at 0, no chip highlight).
+  const [zoom, setZoom] = useState(1.0);
+  // Once the device is known, snap zoom to the widest lens (ultra-wide) on
+  // first load — matches the original default of opening at 0.5x / 0.6x.
+  const didInitZoomRef = useRef(false);
+  useEffect(() => {
+    if (!didInitZoomRef.current && device && hasUltraWide) {
+      setZoom(deviceMinZoom);
+      didInitZoomRef.current = true;
+    }
+  }, [device, hasUltraWide, deviceMinZoom]);
+
+  // Three fixed presets: .5, 1×, 2×. The min-zoom chip is only shown
+  // when the device actually has an ultra-wide lens (otherwise it'd
+  // duplicate 1×). Each preset stores its DISPLAY value and the
+  // LOGICAL value vision-camera's setZoom needs.
+  const zoomPresets = useMemo(() => {
+    const presets = [];
+    const neutral = deviceNeutralZoom;
+    if (hasUltraWide) {
+      const disp = Math.round((deviceMinZoom / neutral) * 10) / 10;
+      presets.push({ display: disp, logical: deviceMinZoom });
+    }
+    presets.push({ display: 1, logical: neutral });
+    presets.push({ display: 2, logical: Math.min(neutral * 2, deviceMaxZoom) });
+    return presets;
+  }, [deviceMinZoom, deviceNeutralZoom, deviceMaxZoom, hasUltraWide]);
+
+  // Label format matches the original UI: "0.5X" / "1X" / "2X".
+  const formatZoomLabel = (display) => {
+    if (Number.isInteger(display)) return `${display}X`;
+    return `${display.toFixed(1)}X`;
+  };
+
+  // Active-preset detection: pick the preset whose LOGICAL zoom is
+  // closest to the current zoom state. Comparing logicals directly
+  // avoids any dependency on deviceNeutralZoom (the previous version
+  // divided zoom by neutralZoom to get a "display zoom" and matched
+  // on display values — on some devices neutralZoom reports a value
+  // that makes every actual zoom round down to the smallest preset,
+  // so activeIdx was stuck at 0 forever and no chip ever highlighted).
+  const activePresetIndex = (() => {
+    if (!zoomPresets.length) return -1;
+    let bestIdx = 0;
+    let bestDiff = Infinity;
+    for (let i = 0; i < zoomPresets.length; i++) {
+      const d = Math.abs(zoomPresets[i].logical - zoom);
+      if (d < bestDiff) {
+        bestDiff = d;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  })();
   // Some Samsung/Android lenses (especially ultra-wide) report no flash/torch support.
   // Guard all flash/torch usage by these caps to avoid runtime crashes.
   const supportsFlash = !!device?.hasFlash;
@@ -186,45 +327,37 @@ export default function CameraScreen({ route, navigation }) {
 
   const { hasPermission, requestPermission } = useCameraPermission();
   const isFocused = useIsFocused();
-  const [zoom, setZoom] = useState(1.0);
-  // Once the device is known, snap zoom to the widest lens (ultra-wide) on
-  // first load — matches the original default of opening at 0.5x / 0.6x.
-  const didInitZoomRef = useRef(false);
-  useEffect(() => {
-    if (!didInitZoomRef.current && device && hasUltraWide) {
-      setZoom(deviceMinZoom);
-      didInitZoomRef.current = true;
-    }
-  }, [device, hasUltraWide, deviceMinZoom]);
 
-  // Calculate target aspect ratio for format selection
-  const targetAspectRatio = useMemo(() => {
-    // Letterbox mode: always use 4:3 ratio
-    if (cameraViewMode === 'landscape') {
-      return 4 / 3;
-    }
-
-    // Full screen mode: match screen ratio
-    const screenWidth = dimensions.width;
-    const screenHeight = dimensions.height;
-    const isLandscape = screenWidth > screenHeight;
-    const ratio = isLandscape
-      ? screenWidth / screenHeight
-      : screenHeight / screenWidth;
-    return ratio;
-  }, [dimensions, cameraViewMode]);
+  // Per-mode sensor format (restored from v1.6.5 behavior):
+  //   'landscape' (3:4 letterbox) → 4:3 sensor → full sensor area, native FoV
+  //   'portrait'  (9:16 fullscreen) → 16:9 sensor → native iPhone 9:16 FoV
+  // Each mode uses the sensor format that captures its target aspect
+  // natively, so the captured photo always matches what's framed in
+  // the viewfinder — no post-capture cropping needed.
+  // Trade-off: toggling between modes triggers a vision-camera native
+  // session reconfig (~200-400ms). The transition mask hides the blink.
+  const targetAspectRatio = useMemo(
+    () => (cameraViewMode === 'landscape' ? 4 / 3 : 16 / 9),
+    [cameraViewMode],
+  );
 
   // Select best camera format
-  // IMPORTANT: Consider BOTH photo resolution AND video/preview resolution
-  // The preview stream uses video resolution, so low video resolution = blurry preview
+  // IMPORTANT: The preview stream uses VIDEO resolution, not photo.
+  // Filtering only on photoWidth/photoHeight could pick a "16:9 photo
+  // / 4:3 video" combo, in which case the preview stays 4:3 and the
+  // mode toggle has no visible effect (which is exactly what we
+  // observed). We now require BOTH the photo *and* the video aspect
+  // to be within tolerance of the target. Tolerance 0.15 to absorb
+  // device-format rounding (1.778 vs e.g. 1.77).
   const format = useMemo(() => {
     if (!device?.formats) return undefined;
 
-    // Find formats close to target aspect ratio
+    // Simple 4:3 filter — target is constant 4/3 now, so we just want
+    // formats close to that. Tight tolerance so we don't accidentally
+    // pick a 16:9 format.
     const matchingFormats = device.formats.filter(f => {
-      const formatRatio = Math.max(f.photoWidth, f.photoHeight) / Math.min(f.photoWidth, f.photoHeight);
-      const diff = Math.abs(formatRatio - targetAspectRatio);
-      return diff < 0.5;
+      const photoRatio = Math.max(f.photoWidth, f.photoHeight) / Math.min(f.photoWidth, f.photoHeight);
+      return Math.abs(photoRatio - targetAspectRatio) < 0.05;
     });
 
     let selected;
@@ -273,16 +406,149 @@ export default function CameraScreen({ route, navigation }) {
     }
 
     if (selected) {
-      const ratio = Math.max(selected.photoWidth, selected.photoHeight) / Math.min(selected.photoWidth, selected.photoHeight);
-      console.log(`[CameraScreen] Selected format: photo=${selected.photoWidth}x${selected.photoHeight}, video=${selected.videoWidth || 'N/A'}x${selected.videoHeight || 'N/A'}, ratio=${ratio.toFixed(2)}`);
+      const photoR = Math.max(selected.photoWidth, selected.photoHeight) / Math.min(selected.photoWidth, selected.photoHeight);
+      const vw = selected.videoWidth || selected.photoWidth;
+      const vh = selected.videoHeight || selected.photoHeight;
+      const videoR = Math.max(vw, vh) / Math.min(vw, vh);
+      console.warn(
+        `[CAMDIAG] selected photo=${selected.photoWidth}x${selected.photoHeight} (r=${photoR.toFixed(3)}) ` +
+        `video=${selected.videoWidth || '?'}x${selected.videoHeight || '?'} (r=${videoR.toFixed(3)}) ` +
+        `target=${targetAspectRatio.toFixed(3)}`,
+      );
+    } else {
+      console.warn(`[CAMDIAG] NO FORMAT SELECTED target=${targetAspectRatio.toFixed(3)}`);
     }
 
     return selected;
+    // targetAspectRatio flips (4/3 ⇄ 16/9) with cameraViewMode, so
+    // the format useMemo re-runs and vision-camera reconfigures the
+    // native session on each aspect toggle. The transition mask
+    // covers the ~200-400ms blink.
   }, [device, targetAspectRatio]);
 
   // Get rooms from settings (custom or default)
   const rooms = getRooms();
+
+  // If the screen was entered without a valid room (e.g. post-create reset
+  // from ProjectsScreen passes only { mode: 'before' }), or the provided room
+  // isn't in the user's current industry folder list, fall back to the first
+  // available room. Without this, capture handlers used to throw on
+  // `room.charAt` and surface as a generic "Failed to save photo".
+  useEffect(() => {
+    if (!rooms || rooms.length === 0) return;
+    if (!room || !rooms.some(r => r.id === room)) {
+      setRoom(rooms[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room]);
   const labelViewRef = useRef(null);
+
+  // Clear the per-session "progressed sets" tracker every time the user
+  // (re)enters Progress mode. Without this the second pass through
+  // Progress would inherit the first pass's "already done" set and
+  // immediately fire the "All Sets Progressed" alert with no captures.
+  useEffect(() => {
+    if (mode === 'progress') {
+      progressedBeforeIdsRef.current = new Set();
+    }
+    if (mode === 'after') {
+      visitedAfterBeforeIdsRef.current = new Set();
+    }
+  }, [mode]);
+
+  // Shows the ghost slider and (re)starts the auto-hide countdown.
+  // Called on mount when entering After mode, on every camera-area
+  // touch, and on every slider value change so it stays visible while
+  // the user is actively adjusting opacity.
+  const pingGhostSlider = useCallback(() => {
+    setShowGhostSlider(true);
+    if (ghostSliderHideTimerRef.current) {
+      clearTimeout(ghostSliderHideTimerRef.current);
+    }
+    ghostSliderHideTimerRef.current = setTimeout(() => {
+      setShowGhostSlider(false);
+      ghostSliderHideTimerRef.current = null;
+    }, 1500);
+  }, []);
+
+  // [CAMDIAG] Wraps setCameraViewMode so every chip tap is timestamped
+  // in the log. Pair this with the STATE log in the effect below to see
+  // the press → state-flip latency (JS side). Anything noticeable after
+  // STATE log = native session reconfig in vision-camera.
+  const handleViewModeChange = useCallback((nextMode) => {
+    const t = Date.now();
+    console.warn(`[CAMDIAG] CHIP PRESS at ${t} -> ${nextMode}`);
+    setAspectTransitioning(true);
+    // Safety fallback: if the Camera's onStarted callback doesn't fire
+    // within 2s for any reason (session error, callback not delivered),
+    // clear the mask anyway so the UI doesn't stay stuck black.
+    if (aspectTransitionTimerRef.current) {
+      clearTimeout(aspectTransitionTimerRef.current);
+    }
+    aspectTransitionTimerRef.current = setTimeout(() => {
+      console.warn('[CAMDIAG] mask cleared by SAFETY TIMEOUT (onStarted never fired)');
+      setAspectTransitioning(false);
+      aspectTransitionTimerRef.current = null;
+    }, 2000);
+    setCameraViewMode(nextMode);
+  }, []);
+
+  // Event-driven mask clear: when vision-camera signals the new
+  // session is streaming frames (onStarted), drop the mask. This
+  // syncs the mask removal to the exact moment the new format is
+  // ready, instead of guessing with a fixed timer.
+  const handleCameraStarted = useCallback(() => {
+    console.warn(`[CAMDIAG] Camera onStarted at ${Date.now()}`);
+    if (aspectTransitionTimerRef.current) {
+      clearTimeout(aspectTransitionTimerRef.current);
+      aspectTransitionTimerRef.current = null;
+    }
+    setAspectTransitioning(false);
+  }, []);
+
+  const handleCameraStopped = useCallback(() => {
+    console.warn(`[CAMDIAG] Camera onStopped at ${Date.now()}`);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (aspectTransitionTimerRef.current) {
+        clearTimeout(aspectTransitionTimerRef.current);
+        aspectTransitionTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // [CAMDIAG] Build marker — bump the version string with every new
+  // OTA so it's trivial to verify which bundle the device is running.
+  useEffect(() => {
+    console.warn('[CAMDIAG] MOUNT BUILD=2026-05-26-photodel-v4');
+  }, []);
+
+  // [CAMDIAG] Same idea for zoom chips — confirms the press fires and
+  // tells us when setZoom was called.
+  const handleZoomPresetPress = useCallback((logical, display) => {
+    const t = Date.now();
+    console.warn(`[CAMDIAG] ZOOM PRESS at ${t} -> ${display} (logical=${logical})`);
+    setZoom(logical);
+  }, []);
+
+  // Show the slider for ~1.5s whenever After mode becomes active with
+  // a valid before photo (mount or switching into After). Cleanup
+  // cancels the pending hide if the screen unmounts mid-countdown.
+  useEffect(() => {
+    if (mode === 'after' && getActiveBeforePhoto()) {
+      pingGhostSlider();
+    }
+    return () => {
+      if (ghostSliderHideTimerRef.current) {
+        clearTimeout(ghostSliderHideTimerRef.current);
+        ghostSliderHideTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
   // Hidden vertical side-by-side base renderer
   const [isTakingPicture, setIsTakingPicture] = useState(false);
   const [showFullScreenPhoto, setShowFullScreenPhoto] = useState(null);
@@ -290,9 +556,16 @@ export default function CameraScreen({ route, navigation }) {
 
   // Helper function to get the active before photo based on current room and mode
   const getActiveBeforePhoto = () => {
-    if (mode === 'after') {
-      // After mode: show selectedBeforePhoto if set, otherwise beforePhoto if it matches current room
-      return selectedBeforePhoto || (beforePhoto?.room === room ? beforePhoto : null);
+    if (mode === 'after' || mode === 'progress') {
+      // After / Progress mode: both attach to an existing set's Before.
+      // Use selectedBeforePhoto if set (driven by horizontal-swipe set
+      // switching), otherwise fall back to the route-param beforePhoto
+      // for the current room, otherwise the first Before in the room
+      // so capture has something to link to.
+      if (selectedBeforePhoto?.room === room) return selectedBeforePhoto;
+      if (beforePhoto?.room === room) return beforePhoto;
+      const list = getBeforePhotos(room);
+      return list.length > 0 ? list[0] : null;
     } else {
       // Before mode: show selectedBeforePhoto if matches room, otherwise show last photo from gallery
       if (selectedBeforePhoto?.room === room) {
@@ -355,47 +628,135 @@ export default function CameraScreen({ route, navigation }) {
     enlargedGalleryPhotoRef.current = enlargedGalleryPhoto;
   }, [enlargedGalleryPhoto]);
 
-  // Scroll gallery to correct position when opening
+  // Mirror selectedBeforePhoto into a ref. cameraViewPanResponder is
+  // built once via useRef(PanResponder.create(...)) so any direct
+  // reference to selectedBeforePhoto inside its handlers stays frozen
+  // at the first render's value — and set-switching swipes would then
+  // bounce between only the first two sets instead of cycling all of
+  // them. Reading from this ref instead picks up every state update.
+  const selectedBeforePhotoRef = useRef(selectedBeforePhoto);
   useEffect(() => {
-    if (showGallery && galleryScrollRef.current) {
-      setTimeout(() => {
-        if (!galleryScrollRef.current) return;
-        
-        if (mode === 'after' && selectedBeforePhoto) {
-          // In after mode, scroll to selected photo
-          const photos = getUnpairedBeforePhotos(room);
-          const index = photos.findIndex(p => p.id === selectedBeforePhoto.id);
-          if (index !== -1) {
-            galleryScrollRef.current.scrollTo({ x: index * 112, animated: false });
-          }
-        } else if (mode === 'before') {
-          // In before mode, scroll to the LAST photo (newest, on the right)
-          const photos = getBeforePhotos(room);
-          if (photos.length > 0) {
-            const lastIndex = photos.length - 1;
-            const scrollX = lastIndex * 112;
-            galleryScrollRef.current.scrollTo({ x: scrollX, animated: false });
-          }
-        }
-      }, 50);
-    }
-  }, [showGallery, mode, room, selectedBeforePhoto]);
+    selectedBeforePhotoRef.current = selectedBeforePhoto;
+  }, [selectedBeforePhoto]);
 
-  // Scroll enlarged gallery to correct position when opening
+  // Scroll gallery to correct position when opening
+  // Initialize `galleryIndex` to the centered slot when the strip
+  // first opens. The ScrollView's `contentOffset` prop pre-positions
+  // the view without firing a scroll event, so without this effect
+  // galleryIndex stays at 0 and downstream pieces (header pill set
+  // number, "Retake" label, corner-thumbnail mirror, "Match" badge)
+  // read the wrong slot. Mirrors the same case branches as
+  // initialScrollX — default to the LAST item in both modes.
+  useEffect(() => {
+    if (!showGallery) return;
+    if (mode === 'before') {
+      // Strip is [...befores, placeholder]. Placeholder lives at
+      // index = befores.length; that's the "next capture" slot, and
+      // it's the default centered slot so shutter taps land on a
+      // fresh capture (not a retake of the last Before).
+      const befores = getBeforePhotos(room) || [];
+      setGalleryIndex(befores.length);
+    } else if (mode === 'after' || mode === 'progress') {
+      const activeBefore = selectedBeforePhoto && selectedBeforePhoto.room === room
+        ? selectedBeforePhoto
+        : (getBeforePhotos(room)[0] || null);
+      if (!activeBefore) {
+        setGalleryIndex(0);
+        if (mode === 'after') setMatchedItemIdx(-1);
+        return;
+      }
+      const progressesCount = (getProgressPhotos?.(room) || [])
+        .filter((p) => p.beforePhotoId === activeBefore.id).length;
+      const afterCount = (getAfterPhotos?.(room) || [])
+        .find((p) => p.beforePhotoId === activeBefore.id) ? 1 : 0;
+      const realLen = 1 + progressesCount + afterCount;
+      const lastIdx = Math.max(0, realLen - 1);
+      setGalleryIndex(lastIdx);
+      // After mode: Match badge tracks the centered card. When the
+      // strip reopens (e.g. after closing the enlarged view + reopening
+      // from the camera), matchedItemIdx can hold a stale index from
+      // the previous session — sync it here so the badge lands on the
+      // same card the center frame is highlighting.
+      if (mode === 'after') setMatchedItemIdx(lastIdx);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showGallery, mode, room, selectedBeforePhoto?.id]);
+
+  // Reset the matched item index when the active set changes so the
+  // strip opens with the After (default last item) marked.
+  useEffect(() => {
+    setMatchedItemIdx(-1);
+  }, [room, selectedBeforePhoto?.id, mode]);
+
+  // When the enlarged carousel closes back into the half-screen
+  // strip, restore the strip's scroll position to the slot the user
+  // was just looking at. The strip is conditionally rendered
+  // (showGallery && !showEnlargedGallery), so flipping
+  // showEnlargedGallery off remounts a fresh ScrollView at offset 0 —
+  // which surfaced as "active thumbnail becomes Set 1" in Before mode
+  // and "jumps to the Before" in After mode. The setTimeout lets RN
+  // commit the remount before we issue the scroll.
+  //
+  // Guard against firing on the *initial* gallery open, where
+  // showEnlargedGallery has always been false and there's no position
+  // to restore — without the guard we'd scroll to enlargedGalleryIndex
+  // (initial 0 = first item) and override the placeholder-centering
+  // effect that's supposed to land the user on the empty next-set
+  // slot when the gallery first opens.
+  const enlargedWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (showEnlargedGallery) {
+      enlargedWasOpenRef.current = true;
+      return;
+    }
+    if (!showEnlargedGallery && showGallery && enlargedWasOpenRef.current) {
+      // The strip is fresh-mounted with `contentOffset` already
+      // positioned at enlargedGalleryIndex (see the inline calc in the
+      // ScrollView), so no scrollTo call is needed here — that was the
+      // source of the visible jump when closing the enlarged carousel.
+      // We still mirror the index into galleryIndex so the center-
+      // frame label, Retake state, and After-mode "Match" badge stay
+      // in sync with the slot the user was just looking at.
+      setGalleryIndex(enlargedGalleryIndex);
+      if (mode === 'after') {
+        setMatchedItemIdx(enlargedGalleryIndex);
+      }
+    }
+    // Intentionally not depending on enlargedGalleryIndex — we only
+    // want to fire this restore once per enlarged-close transition,
+    // using whatever index was last viewed in the enlarged carousel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showEnlargedGallery, showGallery]);
+
+  // Clear the "enlarged was open" memory once the user closes the
+  // small gallery entirely, so the next fresh open lands on the
+  // placeholder again.
+  useEffect(() => {
+    if (!showGallery) {
+      enlargedWasOpenRef.current = false;
+    }
+  }, [showGallery]);
+
+  // Scroll enlarged gallery to correct position when opening.
+  // Uses the same peek-pagination math as the render path so the
+  // landing offset matches a snap boundary instead of overshooting.
   useEffect(() => {
     if (showEnlargedGallery && enlargedGalleryScrollRef.current) {
       setTimeout(() => {
         if (enlargedGalleryScrollRef.current) {
-          // Scroll to the tapped photo index
-          const scrollX = enlargedGalleryIndex * dimensions.width;
-          enlargedGalleryScrollRef.current.scrollTo({ 
-            x: scrollX, 
-            animated: false 
+          const PEEK = 18;
+          const GAP = 12;
+          const cardWidth = dimensions.width - 2 * (PEEK + GAP);
+          const snapInterval = cardWidth + GAP;
+          const scrollX = enlargedGalleryIndex * snapInterval;
+          enlargedGalleryScrollRef.current.scrollTo({
+            x: scrollX,
+            animated: false,
           });
         }
       }, 50);
     }
-  }, [showEnlargedGallery, enlargedGalleryIndex]);
+  }, [showEnlargedGallery, enlargedGalleryIndex, dimensions.width]);
 
 
   // Handle double tap
@@ -453,23 +814,14 @@ export default function CameraScreen({ route, navigation }) {
 
   // Handle thumbnail tap to toggle gallery (open/close)
   const handleThumbnailPress = () => {
-    // If enlarged gallery is open, close it and return to full screen
+    // If enlarged carousel is open, tapping the corner thumbnail
+    // collapses the enlarged view ONLY — strip stays open so the
+    // user lands back on the thumbnails view. Previous behavior
+    // closed everything (back to full camera), which the user
+    // reported as wrong.
     if (showEnlargedGalleryRef.current) {
       setEnlargedGalleryPhoto(null);
       setShowEnlargedGallery(false);
-      setShowGallery(false);
-
-      isGalleryAnimatingRef.current = true;
-      setIsGalleryAnimating(true);
-
-      Animated.timing(galleryOpacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true
-      }).start(() => {
-        isGalleryAnimatingRef.current = false;
-        setIsGalleryAnimating(false);
-      });
       return;
     }
 
@@ -805,52 +1157,37 @@ export default function CameraScreen({ route, navigation }) {
             return;
           }
           
-          // Horizontal swipe - switch rooms (in half-screen mode, reduced threshold)
+          // Horizontal swipe — switches SET, not room, while either
+          // gallery panel is open. The "set" navigation walks through
+          // each Before photo in the current room (each Before = one
+          // capture session). The thumbnails row + enlarged carousel
+          // both re-derive their contents from selectedBeforePhoto, so
+          // updating it here is enough to swap the visible set.
           if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
-            // Only switch rooms if the gesture started in the TOP camera area
+            // Only react to gestures that started in the TOP camera area
+            // — the bottom thumbnails strip has its own horizontal
+            // scroll and must not be hijacked here.
             const startY = gestureState.y0;
             const galleryTop = dimensionsRef.current.height * 0.6;
             if (startY >= galleryTop) {
               return;
             }
-            const currentIndex = rooms.findIndex(r => r.id === currentRoomRef.current);
-            
-            if (dx > 0) {
-              // Swipe right - previous room
-              const newIndex = currentIndex > 0 ? currentIndex - 1 : rooms.length - 1;
-              const newRoom = rooms[newIndex].id;
-              setRoom(newRoom);
-              if (mode === 'after') {
-                const beforePhotos = getBeforePhotos(newRoom);
-                if (beforePhotos.length > 0) {
-                  setSelectedBeforePhoto(beforePhotos[0]);
-                } else {
-                  setSelectedBeforePhoto(null);
-                  Alert.alert(
-                    'No Before Photos',
-                    `There are no before photos in ${rooms[newIndex].name}. Please take a before photo first.`,
-                    [{ text: 'OK' }]
-                  );
-                }
-              }
-            } else {
-              // Swipe left - next room
-              const newIndex = currentIndex < rooms.length - 1 ? currentIndex + 1 : 0;
-              const newRoom = rooms[newIndex].id;
-              setRoom(newRoom);
-              if (mode === 'after') {
-                const beforePhotos = getBeforePhotos(newRoom);
-                if (beforePhotos.length > 0) {
-                  setSelectedBeforePhoto(beforePhotos[0]);
-                } else {
-                  setSelectedBeforePhoto(null);
-                  Alert.alert(
-                    'No Before Photos',
-                    `There are no before photos in ${rooms[newIndex].name}. Please take a before photo first.`,
-                    [{ text: 'OK' }]
-                  );
-                }
-              }
+            // Set-switching applies to any mode that operates on an
+            // existing Before (After + Progress). In Before mode each
+            // capture creates a NEW set, so there's nothing to switch.
+            if (mode !== 'after' && mode !== 'progress') return;
+            const roomBefores = getBeforePhotos(currentRoomRef.current) || [];
+            if (roomBefores.length < 2) return; // nothing to swipe between
+            const liveSelected = selectedBeforePhotoRef.current;
+            const currentBeforeId = liveSelected?.id || roomBefores[0]?.id;
+            const idx = Math.max(0, roomBefores.findIndex((b) => b.id === currentBeforeId));
+            const nextIdx = dx > 0
+              ? (idx > 0 ? idx - 1 : roomBefores.length - 1)
+              : (idx < roomBefores.length - 1 ? idx + 1 : 0);
+            const nextBefore = roomBefores[nextIdx];
+            if (nextBefore) {
+              setSelectedBeforePhoto(nextBefore);
+              setEnlargedGalleryIndex(0); // reset to the new set's Before
             }
             return;
           }
@@ -860,9 +1197,20 @@ export default function CameraScreen({ route, navigation }) {
         if (!showGalleryRef.current) {
           // Check for vertical swipe
           if (Math.abs(dy) > Math.abs(dx)) {
-            // Swipe down - close camera
+            // Swipe down - close camera. Mirror the Done button: prefer
+            // navigate('Home') so the existing Home screen isn't re-
+            // mounted (avoids the brief layout glitch). Camera screen
+            // has animation: 'none' globally so this is instant.
             if (dy > 100) {
-              navigation.goBack();
+              try {
+                const state = navigation.getState?.();
+                const hasHome = state?.routes?.some?.((r) => r.name === 'Home');
+                if (hasHome) {
+                  navigation.navigate('Home');
+                  return;
+                }
+              } catch {}
+              navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
               return;
             }
             // Swipe up - show gallery
@@ -887,50 +1235,25 @@ export default function CameraScreen({ route, navigation }) {
             }
           }
           
-          // Check for horizontal swipe (room switching, reduced threshold)
+          // Horizontal swipe on the camera area — switches SET (the
+          // active Before within the current room). Replaces the
+          // previous room-switching behavior per user spec; set
+          // switching matches what happens when the gallery panel is
+          // open, so the gesture is now consistent across both states.
           if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
-            const currentIndex = rooms.findIndex(r => r.id === currentRoomRef.current);
-            
-            if (dx > 0) {
-              // Swipe right - previous room
-              const newIndex = currentIndex > 0 ? currentIndex - 1 : rooms.length - 1;
-              const newRoom = rooms[newIndex].id;
-              setRoom(newRoom);
-              if (mode === 'after') {
-                const beforePhotos = getBeforePhotos(newRoom);
-                if (beforePhotos.length > 0) {
-                  setSelectedBeforePhoto(beforePhotos[0]);
-                } else {
-                  setSelectedBeforePhoto(null);
-                  Alert.alert(
-                    'No Before Photos',
-                    `There are no before photos in ${rooms[newIndex].name}. Please take a before photo first.`,
-                    [{ text: 'OK' }]
-                  );
-                }
-              } else {
-                setSelectedBeforePhoto(null);
-              }
-            } else {
-              // Swipe left - next room
-              const newIndex = currentIndex < rooms.length - 1 ? currentIndex + 1 : 0;
-              const newRoom = rooms[newIndex].id;
-              setRoom(newRoom);
-              if (mode === 'after') {
-                const beforePhotos = getBeforePhotos(newRoom);
-                if (beforePhotos.length > 0) {
-                  setSelectedBeforePhoto(beforePhotos[0]);
-                } else {
-                  setSelectedBeforePhoto(null);
-                  Alert.alert(
-                    'No Before Photos',
-                    `There are no before photos in ${rooms[newIndex].name}. Please take a before photo first.`,
-                    [{ text: 'OK' }]
-                  );
-                }
-              } else {
-                setSelectedBeforePhoto(null);
-              }
+            if (mode !== 'after' && mode !== 'progress') return;
+            const roomBefores = getBeforePhotos(currentRoomRef.current) || [];
+            if (roomBefores.length < 2) return; // nothing to swipe between
+            const liveSelected = selectedBeforePhotoRef.current;
+            const currentBeforeId = liveSelected?.id || roomBefores[0]?.id;
+            const idx = Math.max(0, roomBefores.findIndex((b) => b.id === currentBeforeId));
+            const nextIdx = dx > 0
+              ? (idx > 0 ? idx - 1 : roomBefores.length - 1)
+              : (idx < roomBefores.length - 1 ? idx + 1 : 0);
+            const nextBefore = roomBefores[nextIdx];
+            if (nextBefore) {
+              setSelectedBeforePhoto(nextBefore);
+              setEnlargedGalleryIndex(0);
             }
           }
         }
@@ -954,11 +1277,16 @@ export default function CameraScreen({ route, navigation }) {
       onPanResponderRelease: (evt, gestureState) => {
         const { dy } = gestureState;
         const threshold = 80;
-        
+
         if (dy > threshold) {
-          // Clear both states immediately (same as cross button)
+          // Swipe-down from the enlarged carousel goes ALL the way back to
+          // the full camera view (closes the thumbnail row too), so the
+          // user doesn't have to dismiss two layers manually. The top-left
+          // back arrow handles the partial close back to thumbnails.
           setEnlargedGalleryPhoto(null);
           setShowEnlargedGallery(false);
+          setShowGallery(false);
+          galleryOpacity.setValue(0);
         }
         // If swipe wasn't strong enough, just ignore it (no spring back animation needed)
       }
@@ -969,6 +1297,7 @@ export default function CameraScreen({ route, navigation }) {
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       const newOrientation = window.width > window.height ? 'landscape' : 'portrait';
+      console.warn(`[CAMDIAG] DIMS change w=${window.width} h=${window.height} -> ${newOrientation} at ${Date.now()}`);
       // Update dimensions immediately for instant response
       setDimensions({ width: window.width, height: window.height });
       setDeviceOrientation(newOrientation);
@@ -1018,9 +1347,58 @@ export default function CameraScreen({ route, navigation }) {
     };
   }, []);
 
-  // Track when cameraViewMode state changes
+  // [CAMDIAG] Log every cameraViewMode change with timestamp so we can
+  // measure how long the actual state flip → visible re-render takes.
   useEffect(() => {
+    console.warn(`[CAMDIAG] STATE cameraViewMode=${cameraViewMode} at ${Date.now()}`);
   }, [cameraViewMode]);
+
+  // [CAMDIAG] Log every format-reference change. If the format prop is
+  // STABLE across a toggle (same object identity), vision-camera won't
+  // reconfigure the native session — toggles should feel instant. If it
+  // changes, we know reconfig is happening and the delay is native.
+  useEffect(() => {
+    console.warn(`[CAMDIAG] FORMAT ref changed at ${Date.now()} hasFormat=${!!format}`);
+  }, [format]);
+
+  // [CAMDIAG] Log when the Camera wrapper's React key would change. The
+  // wrapper only remounts when key changes (letterbox toggle or rotation
+  // inside letterbox). If we see this fire on every 9:16⇄3:4 toggle the
+  // wrapper logic is wrong; if it doesn't, the toggle is layout-only.
+  useEffect(() => {
+    const cameraKey = `cam-${deviceOrientation}`;
+    console.warn(`[CAMDIAG] CAMERA wrapper key="${cameraKey}" mode=${cameraViewMode} at ${Date.now()}`);
+  }, [cameraViewMode, deviceOrientation]);
+
+  // [CAMDIAG] Confirms zoom state actually flips after a chip press.
+  // If ZOOM PRESS fires but this doesn't, setZoom isn't being applied.
+  useEffect(() => {
+    console.warn(`[CAMDIAG] ZOOM state=${zoom} activeIdx=${activePresetIndex} at ${Date.now()}`);
+  }, [zoom, activePresetIndex]);
+
+  // [CAMDIAG] Logs the device's reported zoom capabilities once so we
+  // can verify the preset math matches the actual hardware. If
+  // neutralZoom or minZoom differ from the assumed values, the
+  // activePresetIndex calculation will pick the wrong chip and the
+  // highlight will look broken.
+  useEffect(() => {
+    if (device) {
+      const presetSummary = zoomPresets
+        .map((p) => `(disp=${p.display},log=${p.logical})`)
+        .join(' ');
+      console.warn(
+        `[CAMDIAG] DEVICE min=${device.minZoom} neutral=${device.neutralZoom} ` +
+        `max=${device.maxZoom} hasUW=${hasUltraWide} presets=${presetSummary}`,
+      );
+    }
+  }, [device, hasUltraWide, zoomPresets]);
+
+  // [CAMDIAG] Confirms deviceOrientation state flips on rotation. If
+  // this never fires when the phone rotates, the Dimensions listener
+  // is not propagating to React state.
+  useEffect(() => {
+    console.warn(`[CAMDIAG] ORIENT state=${deviceOrientation} at ${Date.now()}`);
+  }, [deviceOrientation]);
 
   // Track when aspectRatio state changes
   useEffect(() => {
@@ -1139,19 +1517,35 @@ export default function CameraScreen({ route, navigation }) {
     }
   }, [selectedBeforePhoto, mode, beforePhoto]);
 
-  // In after mode, camera view mode should match the before photo's camera view mode
+  // In After / Progress mode, default the camera view mode AND the
+  // zoom to whatever the previous photo in this set used. The user
+  // can still override either; this only seeds the initial values
+  // when the active set changes (or on mount). For Progress mode
+  // we look at the most recent photo (the user's latest capture in
+  // the set), so consecutive progress shots stay framed the same.
   useEffect(() => {
-    if (mode === 'after') {
-      const activeBeforePhoto = getActiveBeforePhoto();
-      if (activeBeforePhoto && activeBeforePhoto.cameraViewMode) {
-        // Prefer the camera view mode that was used when taking the before photo
-        setCameraViewMode(activeBeforePhoto.cameraViewMode);
-      } else {
-        // Fallback: keep current mode but align with device orientation if unset
-        setCameraViewMode(prev => prev || deviceOrientation);
-      }
+    if (mode !== 'after' && mode !== 'progress') return;
+    const activeBeforePhoto = getActiveBeforePhoto();
+    if (!activeBeforePhoto) return;
+
+    const progresses = (getProgressPhotos?.(room) || [])
+      .filter((p) => p.beforePhotoId === activeBeforePhoto.id);
+    const after = (getAfterPhotos?.(room) || [])
+      .find((p) => p.beforePhotoId === activeBeforePhoto.id);
+    const setMembers = [activeBeforePhoto, ...progresses, ...(after ? [after] : [])]
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const previous = setMembers[0] || activeBeforePhoto;
+
+    if (previous.cameraViewMode) {
+      setCameraViewMode(previous.cameraViewMode);
+    } else {
+      setCameraViewMode((prev) => prev || deviceOrientation);
     }
-  }, [mode, deviceOrientation, selectedBeforePhoto]);
+    if (typeof previous.zoom === 'number' && !Number.isNaN(previous.zoom)) {
+      setZoom(previous.zoom);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, deviceOrientation, selectedBeforePhoto, room]);
 
   // Log when selectedBeforePhoto changes in after mode
   useEffect(() => {
@@ -1229,19 +1623,54 @@ export default function CameraScreen({ route, navigation }) {
         enableShutterSound: shutterSoundEnabled
       });
       const photoUri = `file://${photo.path}`;
+      // No post-capture crop needed: each cameraViewMode uses the
+      // sensor format that natively produces the target aspect (4:3
+      // for landscape/3:4 letterbox, 16:9 for portrait/9:16 full).
 
       // Start capture animation (runs in parallel with photo processing)
       runCaptureAnimation(photoUri);
 
       if (mode === 'before') {
-        await handleBeforePhoto(photoUri);
+        // Retake context: when the gallery strip is open and the user
+        // has scrolled it back onto an existing Set, shutter ought to
+        // ask whether to replace that set's Before or save the new
+        // shot as a brand new set. Without the strip open (or with the
+        // placeholder centered) it's always a new set.
+        const beforesForRetake = getBeforePhotos(room) || [];
+        const isRetakeContext =
+          showGalleryRef.current && galleryIndex >= 0 && galleryIndex < beforesForRetake.length;
+        if (isRetakeContext) {
+          const target = beforesForRetake[galleryIndex];
+          const choice = await new Promise((resolve) => {
+            Alert.alert(
+              'Replace or new set?',
+              `You're viewing Set ${galleryIndex + 1}. Replace this Before with the new photo, or save it as a new set?`,
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+                { text: 'Save as new', onPress: () => resolve('new') },
+                { text: 'Replace', style: 'destructive', onPress: () => resolve('replace') },
+              ],
+              { cancelable: false },
+            );
+          });
+          if (!choice) return; // user canceled — drop the captured frame
+          if (choice === 'replace') {
+            await handleBeforePhoto(photoUri, { replaceId: target?.id });
+          } else {
+            await handleBeforePhoto(photoUri);
+          }
+        } else {
+          await handleBeforePhoto(photoUri);
+        }
       } else if (mode === 'after') {
         await handleAfterPhoto(photoUri);
       } else if (mode === 'progress') {
         await handleProgressPhoto(photoUri);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to take picture');
+      const msg = error?.message || String(error) || 'unknown error';
+      console.error('[CameraScreen] takePicture failed:', msg, error?.stack || error);
+      Alert.alert('Error', `Failed to take picture: ${msg}`);
     } finally {
       setIsCapturing(false);
     }
@@ -1289,7 +1718,9 @@ export default function CameraScreen({ route, navigation }) {
         await handleProgressPhoto(photoUri);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick photo from gallery');
+      const msg = error?.message || String(error) || 'unknown error';
+      console.error('[CameraScreen] pickFromGallery failed:', msg, error?.stack || error);
+      Alert.alert('Error', `Failed to pick photo from gallery: ${msg}`);
     }
   };
 
@@ -1530,8 +1961,73 @@ export default function CameraScreen({ route, navigation }) {
     }
   };
 
-  const handleBeforePhoto = async (uri) => {
+  // Best-effort GPS snapshot. Returns { lat, lng } or null if
+  // permission denied / lookup fails / times out. Bounded to ~3 s
+  // so a slow GPS lock can't stall the save.
+  const captureGpsForPhoto = async () => {
     try {
+      const perm = await ExpoLocation.getForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        const req = await ExpoLocation.requestForegroundPermissionsAsync();
+        if (req.status !== 'granted') return null;
+      }
+      const loc = await Promise.race([
+        ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced }),
+        new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
+      if (!loc || !loc.coords) return null;
+      return { lat: loc.coords.latitude, lng: loc.coords.longitude };
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const handleBeforePhoto = async (uri, options = {}) => {
+    const { replaceId = null } = options;
+    try {
+      // Retake / replace branch: the user scrolled the gallery strip
+      // onto a previous set, hit shutter, and picked "Replace" in the
+      // confirm popup. Keep the existing Before record (id, name,
+      // timestamp, ordering) but swap its photo file + freshly-
+      // captured orientation/aspect/zoom values. Cleans up the old
+      // file in Documents; the PhotoKit asset stays on the device to
+      // avoid an interrupting iOS delete prompt — same trade-off the
+      // After demote path makes.
+      if (replaceId) {
+        const existing = (getBeforePhotos(room) || []).find((b) => b.id === replaceId);
+        if (!existing) {
+          // The target vanished between popup and save — fall through
+          // to the default "new set" path so the photo isn't lost.
+        } else {
+          const currentOrientation = deviceOrientation;
+          const aspectRatio = cameraViewMode === 'landscape'
+            ? (currentOrientation === 'landscape' ? '4:3' : '3:4')
+            : (currentOrientation === 'landscape' ? '16:9' : '9:16');
+          const oldUri = existing.uri;
+          const savedUri = await savePhotoToDevice(
+            uri,
+            `${room}_${existing.name}_BEFORE_${Date.now()}.jpg`,
+            activeProjectId || null,
+          );
+          await updatePhoto(replaceId, {
+            uri: savedUri,
+            aspectRatio,
+            orientation: currentOrientation,
+            cameraViewMode,
+            zoom,
+          });
+          // Best-effort cleanup of the prior Documents file. We don't
+          // touch the iOS Photos library entry here.
+          try {
+            if (oldUri && oldUri.startsWith('file://')) {
+              await FileSystem.deleteAsync(oldUri, { idempotent: true });
+            }
+          } catch {}
+          setSelectedBeforePhoto({ ...existing, uri: savedUri, aspectRatio, orientation: currentOrientation, cameraViewMode, zoom });
+          return;
+        }
+      }
+
       // Generate photo name
       const roomPhotos = getBeforePhotos(room);
       const photoNumber = roomPhotos.length + 1;
@@ -1539,65 +2035,34 @@ export default function CameraScreen({ route, navigation }) {
 
       // Capture device orientation (actual phone orientation)
       const currentOrientation = deviceOrientation;
-
-
-      // Calculate aspect ratio and crop if needed
-      let aspectRatio;
       let processedUri = uri;
 
-      // Get original image dimensions first
-      let imageInfo;
-      try {
-        imageInfo = await new Promise((resolve, reject) => {
-          Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-        });
-      } catch (error) {
-        console.error('[CameraScreen] Failed to get image dimensions:', error);
-        imageInfo = null;
-      }
-
-      if (cameraViewMode === 'landscape') {
-        // Letterbox mode: Camera captures at native 4:3, no cropping needed
-        aspectRatio = '4:3';
-        processedUri = uri;
-
-        if (imageInfo) {
-          console.log('[CameraScreen] Letterbox - Device orientation:', deviceOrientation);
-          console.log('[CameraScreen] Letterbox - Photo dimensions (native 4:3):', imageInfo);
-        }
-      } else {
-        // Full screen mode: Save the full sensor output without cropping
-        // Determine aspect ratio based on actual photo dimensions
-        if (imageInfo) {
-          if (imageInfo.width > imageInfo.height) {
-            // Landscape photo
-            const ratio = imageInfo.width / imageInfo.height;
-            if (ratio >= 1.7) {
-              aspectRatio = '16:9';
-            } else {
-              aspectRatio = '4:3';
-            }
-          } else {
-            // Portrait photo
-            const ratio = imageInfo.height / imageInfo.width;
-            if (ratio >= 1.7) {
-              aspectRatio = '9:16';
-            } else {
-              aspectRatio = '3:4';
-            }
-          }
-        } else {
-          // Fallback if we can't get dimensions
-          aspectRatio = deviceOrientation === 'landscape' ? '4:3' : '3:4';
-        }
-        // No cropping - save full sensor output
-        processedUri = uri;
-      }
+      // Aspect ratio is derived deterministically from the user's
+      // chosen mode + the device's physical orientation at capture
+      // time. No need to probe the captured image's dimensions —
+      // they always reflect the same combination, and Image.getSize
+      // adds latency. The values stored are the user-facing aspect:
+      //   3:4 mode portrait device  → '3:4'   (portrait letterbox)
+      //   3:4 mode landscape device → '4:3'   (landscape letterbox)
+      //   9:16 mode portrait device → '9:16'  (portrait full screen)
+      //   9:16 mode landscape device→ '16:9'  (landscape full screen)
+      const aspectRatio = cameraViewMode === 'landscape'
+        ? (currentOrientation === 'landscape' ? '4:3' : '3:4')
+        : (currentOrientation === 'landscape' ? '16:9' : '9:16');
 
       // Save processed photo to device
       const savedUri = await savePhotoToDevice(processedUri, `${room}_${photoName}_BEFORE_${Date.now()}.jpg`, activeProjectId || null);
 
+      // GPS snapshot (best-effort, non-blocking). Stored on the
+      // Before record so the project's Location-tab map can drop
+      // a pin per capture session. After / Progress photos in the
+      // same set will inherit this Before's lat/lng — see
+      // handleAfterPhoto / handleProgressPhoto.
+      const gps = await captureGpsForPhoto();
+
       // Add to photos with device orientation AND camera view mode
+      // AND zoom — saved so the next photo in this set (After /
+      // Progress) can default to the same framing.
       const newPhoto = {
         id: Date.now(),
         uri: savedUri,
@@ -1607,7 +2072,9 @@ export default function CameraScreen({ route, navigation }) {
         timestamp: Date.now(),
         aspectRatio: aspectRatio,
         orientation: currentOrientation,
-        cameraViewMode: cameraViewMode // Save the camera view mode
+        cameraViewMode: cameraViewMode, // Save the camera view mode
+        zoom,
+        ...(gps ? { lat: gps.lat, lng: gps.lng } : null),
       };
 
       await addPhoto(newPhoto);
@@ -1617,6 +2084,24 @@ export default function CameraScreen({ route, navigation }) {
 
       // Update selectedBeforePhoto so thumbnail shows immediately
       setSelectedBeforePhoto(newPhoto);
+
+      // Strip just grew by 1 — the new Before pushed the placeholder
+      // one slot to the right. Snap the strip back to the placeholder
+      // so the user's next shutter tap stays a fresh capture (instead
+      // of accidentally hitting "Retake" on the brand-new Before).
+      // The 120 ms delay lets React commit the photo-store update so
+      // the new count is reflected before we read it.
+      if (!options?.replaceId) {
+        setTimeout(() => {
+          const newBeforeCount = (getBeforePhotos(room) || []).length;
+          const placeholderIdx = newBeforeCount; // placeholder sits at the end
+          const SNAP = 100 + 12; // ITEM_WIDTH + ITEM_GAP
+          if (galleryScrollRef.current?.scrollTo) {
+            galleryScrollRef.current.scrollTo({ x: placeholderIdx * SNAP, animated: false });
+          }
+          setGalleryIndex(placeholderIdx);
+        }, 120);
+      }
 
       // Prepare labeled photo in background immediately after before photo is captured
       // This ensures it's ready when user clicks share, making sharing instant
@@ -1646,7 +2131,9 @@ export default function CameraScreen({ route, navigation }) {
       // Stay in before mode to allow taking more photos
       // User can close camera to see photos in home grid
     } catch (error) {
-      Alert.alert('Error', 'Failed to save photo');
+      const msg = error?.message || String(error) || 'unknown error';
+      console.error('[CameraScreen] handleBeforePhoto failed:', msg, error?.stack || error);
+      Alert.alert('Error', `Failed to save photo: ${msg}`);
     }
   };
 
@@ -1658,25 +2145,20 @@ export default function CameraScreen({ route, navigation }) {
   const handleProgressPhoto = async (uri) => {
     try {
       const currentOrientation = deviceOrientation;
-      let imageInfo = null;
-      try {
-        imageInfo = await new Promise((resolve, reject) => {
-          Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
-        });
-      } catch {}
+      // Same deterministic derivation as handleBeforePhoto — no
+      // Image.getSize probe, no branchy ratio guessing. The stored
+      // aspectRatio reflects exactly the user's chosen mode + device
+      // orientation at capture time.
+      const aspectRatio = cameraViewMode === 'landscape'
+        ? (currentOrientation === 'landscape' ? '4:3' : '3:4')
+        : (currentOrientation === 'landscape' ? '16:9' : '9:16');
 
-      let aspectRatio;
-      if (cameraViewMode === 'landscape') {
-        aspectRatio = '4:3';
-      } else if (imageInfo) {
-        if (imageInfo.width > imageInfo.height) {
-          aspectRatio = (imageInfo.width / imageInfo.height) >= 1.7 ? '16:9' : '4:3';
-        } else {
-          aspectRatio = (imageInfo.height / imageInfo.width) >= 1.7 ? '9:16' : '3:4';
-        }
-      } else {
-        aspectRatio = deviceOrientation === 'landscape' ? '4:3' : '3:4';
-      }
+      // Link the progress photo to the active SET (the currently-
+      // selected Before in this room). Without a beforePhotoId the
+      // photo floats around unattached and never appears under any
+      // set, defeating the set-based flow.
+      const activeBefore = getActiveBeforePhoto();
+      const beforePhotoId = activeBefore?.id || null;
 
       const photoName = `progress_${Date.now()}`;
       const savedUri = await savePhotoToDevice(
@@ -1695,14 +2177,64 @@ export default function CameraScreen({ route, navigation }) {
         aspectRatio,
         orientation: currentOrientation,
         cameraViewMode,
+        zoom,
+        beforePhotoId,
+        // Progress photos belong to the same physical session as the
+        // Before — inherit its GPS so map markers stay clustered.
+        ...(typeof activeBefore?.lat === 'number' && typeof activeBefore?.lng === 'number'
+          ? { lat: activeBefore.lat, lng: activeBefore.lng }
+          : null),
       };
 
       await addPhoto(newPhoto);
       logPhotoCapture('progress', 'camera', activeProjectId);
-      // Stay in camera so the user can take more progress photos quickly.
-      // The Done button in the camera UI exits back to the caller.
+
+      // Progress flow: one photo per set, auto-advance through EVERY
+      // set in the project (every room, every Before within it), exit
+      // only when the user has visited each set once. To shoot a
+      // second round, the user re-enters Progress mode (which resets
+      // the tracker via the useEffect above).
+      if (beforePhotoId) {
+        progressedBeforeIdsRef.current.add(beforePhotoId);
+      }
+      // Flatten every Before across every room in the order the rooms
+      // appear in the user's room list, then by capture order within
+      // each room. This is the same order the rest of the UI presents.
+      const allBefores = [];
+      for (const r of rooms || []) {
+        const list = getBeforePhotos(r.id) || [];
+        for (const b of list) allBefores.push(b);
+      }
+      const remaining = allBefores.filter(
+        (b) => !progressedBeforeIdsRef.current.has(b.id),
+      );
+      if (remaining.length === 0) {
+        Alert.alert(
+          'All Sets Progressed',
+          'A progress photo has been added to every set in this project.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                if (navigation.canGoBack()) {
+                  navigation.goBack();
+                } else {
+                  navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                }
+              },
+            },
+          ],
+        );
+      }
+      // Auto-advance to the next un-progressed set was REMOVED per
+      // the user's UX rule: stay on the current set after capture so
+      // the user can take multiple progresses in a row if they want.
+      // They can navigate to other sets manually via the set-switching
+      // horizontal swipe on the camera area.
     } catch (error) {
-      Alert.alert('Error', 'Failed to save progress photo');
+      const msg = error?.message || String(error) || 'unknown error';
+      console.error('[CameraScreen] handleProgressPhoto failed:', msg, error?.stack || error);
+      Alert.alert('Error', `Failed to save progress photo: ${msg}`);
     }
   };
 
@@ -1722,19 +2254,32 @@ export default function CameraScreen({ route, navigation }) {
       // Sequential progression: a previous after becomes a progress photo in
       // the same set (retains beforePhotoId so the gallery still groups it).
       // The combined image is rebuilt from the new after, so the old one goes.
-      if (existingAfterPhoto) {
+      //
+      // Derive the current set's existing After / Combined from the live
+      // photo list rather than the route params: with cross-room session
+      // cycling, the route's `existingAfterPhoto` / `existingCombinedPhoto`
+      // are the FIRST set's references and become stale after the first
+      // auto-advance. Using them to demote/delete on a later set would
+      // either no-op (already demoted) or — worse — touch the wrong set,
+      // which is exactly why the user wasn't seeing a progress counter on
+      // subsequent sets.
+      const currentSetAfter = (getAfterPhotos?.(activeBeforePhoto.room) || [])
+        .find((p) => p.beforePhotoId === beforePhotoId);
+      const currentSetCombined = (getCombinedPhotos?.(activeBeforePhoto.room) || [])
+        .find((p) => p.name === activeBeforePhoto.name);
+      if (currentSetAfter) {
         const deleteStart = Date.now();
-        await updatePhoto(existingAfterPhoto.id, { mode: PHOTO_MODES.PROGRESS });
+        await updatePhoto(currentSetAfter.id, { mode: PHOTO_MODES.PROGRESS });
         console.log(`[DEBUG] â±ï¸Demote previous after to progress: ${Date.now() - deleteStart}ms`);
       }
-      if (existingCombinedPhoto) {
+      if (currentSetCombined) {
         const deleteStart = Date.now();
         // deleteFromStorage: false → only drop the app's metadata reference.
         // Skipping the iOS Photos library delete call avoids the system
         // "Allow ProofPix to delete this photo?" dialog that was interrupting
         // the retake flow. Stale combined remains on disk; user can delete
         // manually if they want.
-        await deletePhoto(existingCombinedPhoto.id, { deleteFromStorage: false });
+        await deletePhoto(currentSetCombined.id, { deleteFromStorage: false });
         console.log(`[DEBUG] â±ï¸ Delete existing combined photo: ${Date.now() - deleteStart}ms`);
       }
 
@@ -1757,7 +2302,17 @@ export default function CameraScreen({ route, navigation }) {
         activeProjectId || null
       );
 
-      // Add after photo (use same aspect ratio, orientation, and camera view mode as before photo)
+      // Add after photo. Aspect / orientation / cameraViewMode are
+      // derived from the LIVE camera state, not blindly inherited
+      // from the Before — so if the user overrides the aspect chip
+      // (or rotates the phone) before capturing, the After reflects
+      // that choice. The default-from-previous useEffect seeds these
+      // values from the Before on entry, so the common case still
+      // produces a matched pair.
+      const currentOrientation = deviceOrientation;
+      const aspectRatio = cameraViewMode === 'landscape'
+        ? (currentOrientation === 'landscape' ? '4:3' : '3:4')
+        : (currentOrientation === 'landscape' ? '16:9' : '9:16');
       const newAfterPhoto = {
         id: Date.now(),
         uri: savedUri,
@@ -1766,9 +2321,16 @@ export default function CameraScreen({ route, navigation }) {
         name: activeBeforePhoto.name,
         timestamp: Date.now(),
         beforePhotoId: beforePhotoId,
-        aspectRatio: activeBeforePhoto.aspectRatio || '4:3',
-        orientation: activeBeforePhoto.orientation || deviceOrientation,
-        cameraViewMode: activeBeforePhoto.cameraViewMode || 'portrait'
+        aspectRatio,
+        orientation: currentOrientation,
+        cameraViewMode,
+        zoom,
+        // Inherit Before's GPS so map markers cluster correctly
+        // even when the After was taken minutes / hours later
+        // without re-locking GPS.
+        ...(typeof activeBeforePhoto.lat === 'number' && typeof activeBeforePhoto.lng === 'number'
+          ? { lat: activeBeforePhoto.lat, lng: activeBeforePhoto.lng }
+          : null),
       };
       await addPhoto(newAfterPhoto);
       logPhotoCapture('after', 'camera', activeProjectId);
@@ -1776,11 +2338,18 @@ export default function CameraScreen({ route, navigation }) {
       logAfterPhotoCompleted(activeProjectId, timeSinceBefore);
       onAfterPhotoCompleted(beforePhotoId).catch(() => {}); // cancel job reminder (non-blocking)
 
-      // Check if all photos are paired BEFORE starting background processing
-      // This prevents UI freeze when showing the "All Photos Taken" alert
-      const remainingUnpaired = getUnpairedBeforePhotos(activeBeforePhoto.room);
-      const nextUnpaired = remainingUnpaired.filter(p => p.id !== beforePhotoId);
-      const allPhotosPaired = nextUnpaired.length === 0;
+      // Sequential auto-advance: next Before in the CURRENT ROOM's
+      // capture order, regardless of pair state. "Unpaired-first" used
+      // to skip Set 4 → Set 6 if Set 4 already had an After from a
+      // previous session — surprising when the user just expects
+      // Set N → Set N+1. The modal fires only when the just-captured
+      // set is the last one in the row (no nextSequential).
+      const roomBefores = getBeforePhotos(activeBeforePhoto.room) || [];
+      const currentRoomIdx = roomBefores.findIndex((b) => b.id === beforePhotoId);
+      const nextSequential = currentRoomIdx >= 0 && currentRoomIdx < roomBefores.length - 1
+        ? roomBefores[currentRoomIdx + 1]
+        : null;
+      const allPhotosPaired = !nextSequential;
 
       // Mark that we're processing after photo (for visual feedback)
       // Button is now active, but we show different visual state to indicate background processing
@@ -2246,10 +2815,27 @@ export default function CameraScreen({ route, navigation }) {
         // Fall through to the normal post-capture handling below.
       }
 
-      // Show "All Photos Taken" alert or advance to next photo
-      // This happens immediately without waiting for background processing
+      // Show "All Photos Taken" alert when every set in the project
+      // has been visited this session. Otherwise auto-advance to the
+      // next un-visited Before so the user keeps shooting Afters back-
+      // to-back without manually switching sets.
       if (allPhotosPaired) {
-        // All photos paired - show alert and navigate immediately
+        // No more sets to advance to — stay on the just-captured set
+        // so the user can see their After in the strip with the Match
+        // badge. Snap the strip there directly (onMomentumScrollEnd
+        // doesn't fire reliably for programmatic scrolls). The 120 ms
+        // delay lets React commit the photo-store updates first.
+        setTimeout(() => {
+          const newProgressesCount = (getProgressPhotos?.(activeBeforePhoto.room) || [])
+            .filter((p) => p.beforePhotoId === beforePhotoId).length;
+          const newAfterIdx = 1 + newProgressesCount;
+          const SNAP = 100 + 12; // ITEM_WIDTH + ITEM_GAP
+          if (galleryScrollRef.current?.scrollTo) {
+            galleryScrollRef.current.scrollTo({ x: newAfterIdx * SNAP, animated: false });
+          }
+          setGalleryIndex(newAfterIdx);
+          setMatchedItemIdx(newAfterIdx);
+        }, 120);
         Alert.alert(
           'All Photos Taken',
           'All after photos have been captured!',
@@ -2267,12 +2853,16 @@ export default function CameraScreen({ route, navigation }) {
           ]
         );
       } else {
-        // Auto-advance to next unpaired photo (immediate)
-        setSelectedBeforePhoto(nextUnpaired[0]);
+        // Auto-advance to the next sequential Before in this room.
+        // The strip-init useEffect re-fires on selectedBeforePhoto?.id
+        // change and lands the strip on the new set's last item.
+        setSelectedBeforePhoto(nextSequential);
       }
       console.log('[DEBUG] [OK] handleAfterPhoto completed');
     } catch (error) {
-      Alert.alert('Error', 'Failed to save photo');
+      const msg = error?.message || String(error) || 'unknown error';
+      console.error('[CameraScreen] handleAfterPhoto failed:', msg, error?.stack || error);
+      Alert.alert('Error', `Failed to save photo: ${msg}`);
     }
   };
 
@@ -2316,8 +2906,12 @@ export default function CameraScreen({ route, navigation }) {
       style={styles.container}
       {...cameraViewPanResponder.panHandlers}
     >
-      {/* Camera view content - scale transform is applied by parent Animated.View */}
-      <View style={styles.cameraWrapper}>
+      {/* Camera view content - scale transform is applied by parent Animated.View.
+          onTouchStart lives HERE (not on the outer container) so the
+          ghost-opacity slider only re-surfaces on taps inside the
+          camera preview itself — pressing the shutter, the thumbnail
+          circle, or the Done button at the bottom no longer pings it. */}
+      <View style={styles.cameraWrapper} onTouchStart={pingGhostSlider}>
         {/* Orientation mismatch warning */}
         {(() => {
           const mismatch = isOrientationMismatch();
@@ -2333,27 +2927,44 @@ export default function CameraScreen({ route, navigation }) {
         </View>
         )}
 
-      {/* Camera preview with before photo overlay (for after mode) */}
+      {/* Camera preview with before photo overlay (for after mode).
+          ONE Camera component is rendered regardless of aspect mode —
+          only its container reshapes. This is what makes the 9:16 ⇄ 3:4
+          toggle feel instant: the native capture session stays alive
+          (no mount/unmount), only JS layout changes. */}
       <View style={styles.cameraContainer}>
-          {/* Letterbox container for landscape mode */}
-          {(() => {
-            const showLetterbox = cameraViewMode === 'landscape';
-            return showLetterbox;
-          })() ? (
-            <View
-              key={`letterbox-${deviceOrientation}`}
-              style={[
-                styles.letterboxContainer,
-                deviceOrientation === 'landscape' ? styles.letterboxContainerLandscape : null
-              ]}>
-              {/* First bar - top for portrait, left for landscape */}
-              <View style={deviceOrientation === 'landscape' ? styles.letterboxBarHorizontal : styles.letterboxBar} />
-              
-              {/* Camera in landscape aspect ratio */}
-              <View style={[
+        {(() => {
+          const showLetterbox = cameraViewMode === 'landscape';
+          const innerCameraStyle = showLetterbox
+            ? [
                 styles.letterboxCamera,
-                deviceOrientation === 'landscape' ? styles.letterboxCameraLandscape : null
-              ]}>
+                deviceOrientation === 'landscape' ? styles.letterboxCameraLandscape : null,
+              ]
+            : { flex: 1 };
+          const outerStyle = showLetterbox
+            ? [
+                styles.letterboxContainer,
+                deviceOrientation === 'landscape' ? styles.letterboxContainerLandscape : null,
+              ]
+            : { flex: 1 };
+          return (
+            <View style={outerStyle}>
+              {showLetterbox && (
+                <View style={deviceOrientation === 'landscape' ? styles.letterboxBarHorizontal : styles.letterboxBar} />
+              )}
+              <View
+                // Key on orientation ONLY — not on cameraViewMode.
+                // Previously this also flipped on 9:16⇄3:4 toggle
+                // (`cam-fill` ⇄ `cam-letterbox-*`), which remounted
+                // the Camera and tore down the native capture session
+                // on every toggle. That was the ~1s perceived delay.
+                // Keeping the key stable across cameraViewMode lets
+                // the Camera component reshape via style change only
+                // (no native re-init). Rotation still remounts so the
+                // letterbox box rebuilds with the correct aspect.
+                key={`cam-${deviceOrientation}`}
+                style={innerCameraStyle}
+              >
                 {layout && device && (
                   <Camera
                     ref={cameraRef}
@@ -2363,61 +2974,229 @@ export default function CameraScreen({ route, navigation }) {
                     isActive={isFocused}
                     photo={true}
                     zoom={zoom}
+                    // Pinch-to-zoom disabled — vision-camera doesn't
+                    // notify React when the pinch changes zoom, so the
+                    // chip row would silently desync (chip says ".5",
+                    // actual zoom is at 1×, etc.). Chip-only zoom keeps
+                    // state and UI in lockstep.
                     enableZoomGesture={false}
-                // Only enable torch when the current device reports torch/flash support
-                torch={enableTorch && supportsTorch ? 'on' : 'off'}
+                    torch={enableTorch && supportsTorch ? 'on' : 'off'}
                     resizeMode="cover"
+                    onStarted={handleCameraStarted}
+                    onStopped={handleCameraStopped}
                   />
                 )}
-
-                {/* Before photo overlay (for after mode) */}
-                {mode === 'after' && getActiveBeforePhoto() && (
-                  <View style={styles.beforePhotoOverlay}>
-                    <Image
-                      source={{ uri: getActiveBeforePhoto().uri }}
-                      style={styles.beforePhotoImage}
-                      resizeMode="cover"
-                    />
-                  </View>
-                )}
+                {mode === 'after' && getActiveBeforePhoto() && (() => {
+                  // Ghost source = whichever thumbnail the user has
+                  // currently centered in the half-screen strip
+                  // (galleryIndex). When the strip isn't open or the
+                  // centered slot is the trailing placeholder, fall
+                  // back to the LATEST real photo in the set (After if
+                  // present, else last Progress, else the Before). The
+                  // corner-circle thumbnail mirrors this same value so
+                  // ghost + circle + highlighted strip thumb agree.
+                  const activeBefore = getActiveBeforePhoto();
+                  const progresses = (getProgressPhotos?.(room) || [])
+                    .filter((p) => p.beforePhotoId === activeBefore.id)
+                    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                  const after = (getAfterPhotos?.(room) || [])
+                    .find((p) => p.beforePhotoId === activeBefore.id);
+                  const realPhotos = [activeBefore, ...progresses, ...(after ? [after] : [])];
+                  const latest = realPhotos[realPhotos.length - 1] || activeBefore;
+                  const ghost = (() => {
+                    if (showEnlargedGallery) {
+                      if (
+                        enlargedGalleryIndex >= 0 &&
+                        enlargedGalleryIndex < realPhotos.length
+                      ) {
+                        return realPhotos[enlargedGalleryIndex];
+                      }
+                      return latest;
+                    }
+                    if (
+                      showGallery &&
+                      galleryIndex >= 0 &&
+                      galleryIndex < realPhotos.length
+                    ) {
+                      return realPhotos[galleryIndex];
+                    }
+                    return latest;
+                  })();
+                  return (
+                    <View style={[styles.beforePhotoOverlay, { opacity: ghostOpacity }]}>
+                      <Image
+                        source={{ uri: ghost.uri }}
+                        style={styles.beforePhotoImage}
+                        resizeMode="cover"
+                      />
+                    </View>
+                  );
+                })()}
               </View>
-
-              {/* Second bar - bottom for portrait, right for landscape */}
-              <View style={deviceOrientation === 'landscape' ? styles.letterboxBarHorizontal : styles.letterboxBar} />
-            </View>
-          ) : (
-            // Full-screen camera preview on both platforms when not in letterbox mode
-            <View style={{ flex: 1 }}>
-              {layout && device && (
-                <Camera
-                  ref={cameraRef}
-                  style={styles.camera}
-                  device={device}
-                  format={format}
-                  isActive={isFocused}
-                  photo={true}
-                  zoom={zoom}
-                  enableZoomGesture={false}
-                  // Only enable torch when the current device reports torch/flash support
-                  torch={enableTorch && supportsTorch ? 'on' : 'off'}
-                  resizeMode="cover"
-                />
-              )}
-              
-              {/* Before photo overlay (for after mode) */}
-              {mode === 'after' && getActiveBeforePhoto() && (
-                <View style={styles.beforePhotoOverlay}>
-                  <Image
-                    source={{ uri: getActiveBeforePhoto().uri }}
-                    style={styles.beforePhotoImage}
-                    resizeMode="cover"
-                  />
-                </View>
+              {showLetterbox && (
+                <View style={deviceOrientation === 'landscape' ? styles.letterboxBarHorizontal : styles.letterboxBar} />
               )}
             </View>
-          )}
-        </View>
+          );
+        })()}
+        {aspectTransitioning && (
+          <View style={styles.aspectTransitionMask} pointerEvents="none" />
+        )}
       </View>
+      </View>
+
+      {/* Ghost-opacity slider — vertical pill on the right edge of the
+          camera preview. Top = camera-only (no ghost); bottom = the
+          BEFORE photo fully overlaid. The camera icon caps the top of
+          the pill, the picture icon caps the bottom, so the mapping is
+          obvious. Hidden while the enlarged carousel is open. */}
+      {/* Floating control row — rendered while EITHER gallery panel is
+          open (small thumbnail row OR enlarged carousel). Matches the
+          full-camera bottom row layout: 9:16 / 3:4 on the LEFT, zoom on
+          the RIGHT. Positioned at the lower edge of the shrunk camera
+          area — just above whichever gallery panel is open. */}
+      {(showEnlargedGallery || showGallery) && (
+        <View
+          style={[
+            styles.floatingZoomRow,
+            // Anchor target depends on which surface is open below:
+            //   - Enlarged carousel: dimensions.height * 0.41 tall,
+            //     sits ON TOP of the strip's reserved space and at
+            //     a higher zIndex (250), so chips need to clear the
+            //     top of the enlarged container — anything lower
+            //     gets covered.
+            //   - Strip only: chips snap to the gallery panel's top
+            //     edge (the yellow split line) with a 4 px gap.
+            {
+              bottom: showEnlargedGallery
+                ? dimensions.height * 0.41 + 4
+                : Math.max(20, insets.bottom + 10) + 75 + 28 + 180 + 4,
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          {/* Aspect ratio cluster — left. Same chips as on the full
+              camera screen, shown in both Before and After modes here so
+              the user has the controls handy while reviewing photos. */}
+          <View style={styles.floatingZoomCluster}>
+            <TouchableOpacity
+              style={[styles.aspectRatioButtonBottom, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomActive]}
+              onPress={() => handleViewModeChange('portrait')}
+            >
+              <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomTextActive]}>9:16</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.aspectRatioButtonBottom, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomActive]}
+              onPress={() => handleViewModeChange('landscape')}
+            >
+              <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomTextActive]}>3:4</Text>
+            </TouchableOpacity>
+          </View>
+          {/* Zoom cluster — right. Dynamic preset list driven by
+              actual device lenses (see zoomPresets useMemo). On iPhone
+              Pro w/ telephoto this expands to 4 chips; on a basic
+              device with no ultra-wide it collapses to fewer. Active
+              chip follows pinch as well as taps via activePresetIndex. */}
+          <View style={styles.floatingZoomCluster}>
+            {zoomPresets.map((preset, i) => {
+              const active = i === activePresetIndex;
+              return (
+                <TouchableOpacity
+                  key={`fz-${preset.display}`}
+                  style={[styles.zoomButtonBottom, active && styles.zoomButtonBottomActive]}
+                  onPress={() => handleZoomPresetPress(preset.logical, preset.display)}
+                >
+                  <Text style={[styles.zoomButtonBottomText, active && styles.zoomButtonBottomTextActive]}>
+                    {formatZoomLabel(preset.display)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {mode === 'after' && getActiveBeforePhoto() && showGhostSlider && (() => {
+        // The slider tracks the SAME PHYSICAL EDGE of the phone across
+        // rotations — the "long" edge that sits under the user's right
+        // hand in portrait. In landscape, that edge maps to either the
+        // top of the screen (CCW / LANDSCAPE_LEFT) or the bottom
+        // (CW / LANDSCAPE_RIGHT). The slider re-orients to horizontal
+        // in landscape so the camera/picture icons read in the user's
+        // natural reading direction along that edge.
+        const isLandscape = specificOrientation === 3 || specificOrientation === 4;
+        // Per user spec: swap the landscape edges so the slider sits
+        // on the OPPOSITE long edge from before.
+        //   LANDSCAPE_LEFT (3, CCW) → bottom edge.
+        //   LANDSCAPE_RIGHT (4, CW) → top edge.
+        const landscapeTopEdge = specificOrientation === 4;
+
+        // Camera-area height in portrait: ~45% (full) or ~38% (gallery
+        // panel open). In landscape we span most of the long edge.
+        const portraitContainerStyle = (showEnlargedGallery || showGallery)
+          ? {
+              top: Math.max(
+                insets.top + 60,
+                (dimensions.height * 0.59 - dimensions.height * 0.38) / 2,
+              ),
+              height: dimensions.height * 0.38,
+            }
+          : { top: insets.top + 80, height: dimensions.height * 0.45 };
+
+        const landscapeContainerStyle = landscapeTopEdge
+          ? {
+              top: insets.top + 8,
+              left: 0,
+              right: 0,
+              width: undefined,
+              height: 44,
+              alignItems: 'stretch',
+            }
+          : {
+              bottom: insets.bottom + 8,
+              top: undefined,
+              left: 0,
+              right: 0,
+              width: undefined,
+              height: 44,
+              alignItems: 'stretch',
+            };
+
+        return (
+          <View
+            style={[
+              styles.ghostSliderContainer,
+              isLandscape ? landscapeContainerStyle : portraitContainerStyle,
+            ]}
+            pointerEvents="box-none"
+          >
+            <View style={[
+              styles.ghostSliderPill,
+              isLandscape && styles.ghostSliderPillLandscape,
+            ]}>
+              <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
+              {/* In portrait the Slider is rotated 90° (vertical column);
+                  in landscape it stays in its natural horizontal axis so
+                  drag direction matches the icons' left-to-right reading. */}
+              <Slider
+                style={isLandscape ? styles.ghostSliderLandscape : styles.ghostSlider}
+                minimumValue={0}
+                maximumValue={1}
+                step={0.01}
+                value={ghostOpacity}
+                onValueChange={(v) => {
+                  setGhostOpacity(v);
+                  pingGhostSlider();
+                }}
+                minimumTrackTintColor="#F2C31B"
+                maximumTrackTintColor="rgba(255,255,255,0.45)"
+                thumbTintColor="#F2C31B"
+              />
+              <Ionicons name="image-outline" size={16} color="#FFFFFF" />
+            </View>
+          </View>
+        );
+      })()}
 
 
       {/* Fixed UI Layer - doesn't rotate with device */}
@@ -2441,14 +3220,58 @@ export default function CameraScreen({ route, navigation }) {
           top: (dimensions.height - dimensions.width) / 2
         }
       ]} pointerEvents="box-none">
-        {/* Room name and mode - single segmented pill (Kitchen | Before) */}
+        {/* Room name + set number - single segmented pill (e.g. "Kitchen | Set 2").
+            Replaces the legacy "Before / After" mode label: every capture
+            session ultimately walks through sets in sequence, and the
+            mode is implicit from the set's state, so showing which set
+            we're on is more useful than the mode word. */}
         <View style={styles.roomModeContainer}>
           <View style={styles.roomModePillWrapper}>
             <TouchableOpacity style={styles.roomButton} activeOpacity={0.8}>
               <Text style={styles.roomButtonText}>{getCurrentRoomInfo().name}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.modeButton} activeOpacity={0.8}>
-              <Text style={styles.modeButtonText}>{mode.charAt(0).toUpperCase() + mode.slice(1)}</Text>
+              <Text style={styles.modeButtonText}>{(() => {
+                const roomBefores = getBeforePhotos(room) || [];
+                // Role label: "Before" in Before mode, "After" in
+                // After/Progress mode. Shown alongside the set number
+                // in the same pill ("Before Set 1", "After Set 2") so
+                // the user sees what they're capturing AND which set
+                // it lands in without leaving the camera view.
+                const roleLabel = mode === 'before' ? 'Before' : 'After';
+                // When the enlarged carousel is open, the pill should
+                // reflect the SET the enlarged is anchored on (the
+                // selectedBeforePhoto), not the strip's centered slot
+                // — otherwise the pill says "Set 9" (strip on the
+                // next-set placeholder) while the enlarged shows a
+                // different set's photo (e.g. "Set 7 Before").
+                if (mode === 'before' && showEnlargedGalleryRef.current) {
+                  const activeBefore = getActiveBeforePhoto();
+                  const idx = activeBefore
+                    ? roomBefores.findIndex((b) => b.id === activeBefore.id)
+                    : -1;
+                  const setNumber = idx >= 0 ? idx + 1 : roomBefores.length + 1;
+                  return `${roleLabel} Set ${setNumber}`;
+                }
+                // In Before mode with the strip open, the centered slot
+                // determines the set number — including the trailing
+                // placeholder, which represents "the next set". Without
+                // this branch the pill stayed on the previous Before's
+                // number even after scrolling the placeholder under the
+                // active-slot frame ("Set 7" while looking at Set 8).
+                if (mode === 'before' && showGalleryRef.current) {
+                  const centered = Math.max(0, Math.min(galleryIndex, roomBefores.length));
+                  return `${roleLabel} Set ${centered + 1}`;
+                }
+                const activeBefore = getActiveBeforePhoto();
+                const idx = activeBefore
+                  ? roomBefores.findIndex((b) => b.id === activeBefore.id)
+                  : -1;
+                // Before mode with no Before yet → we're about to create
+                // the next set, so show the next ordinal.
+                const setNumber = idx >= 0 ? idx + 1 : roomBefores.length + 1;
+                return `${roleLabel} Set ${setNumber}`;
+              })()}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2492,65 +3315,123 @@ export default function CameraScreen({ route, navigation }) {
 
 
         <View style={[styles.bottomControls, { paddingBottom: Math.max(20, insets.bottom + 10) }]}>
-          {/* Controls row above capture - aspect ratio & zoom */}
+          {/* Controls row above capture - aspect ratio & zoom.
+              Hidden while the enlarged gallery is open because the row
+              sits visually on top of the enlarged photo; a duplicated
+              floating zoom pill is rendered in the camera viewfinder
+              area in that case (see below). */}
+          {!showEnlargedGallery && !showGallery && (
           <View style={styles.controlsRowAboveCapture}>
-            {/* Aspect ratio selector - only in before mode */}
-            {mode === 'before' && (
-              <View style={styles.aspectRatioSelector}>
-                <TouchableOpacity
-                  style={[styles.aspectRatioButtonBottom, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomActive]}
-                  onPress={() => setCameraViewMode('portrait')}
-                >
-                  <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomTextActive]}>9:16</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.aspectRatioButtonBottom, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomActive]}
-                  onPress={() => setCameraViewMode('landscape')}
-                >
-                  <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomTextActive]}>3:4</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            {/* Zoom controls — ultra-wide button uses device.minZoom so devices
-                like Samsung S21 Ultra (which only goes to 0.6x) still work. */}
-            <View style={styles.zoomControlsBottom}>
-              {hasUltraWide && (
-                <TouchableOpacity
-                  style={[styles.zoomButtonBottom, zoom < deviceNeutralZoom && styles.zoomButtonBottomActive]}
-                  onPress={() => setZoom(deviceMinZoom)}
-                >
-                  <Text style={[styles.zoomButtonBottomText, zoom < deviceNeutralZoom && styles.zoomButtonBottomTextActive]}>
-                    {`${deviceMinZoom.toFixed(1)}X`}
-                  </Text>
-                </TouchableOpacity>
-              )}
+            {/* Aspect ratio selector — shown in both Before and After
+                modes so the layout (left cluster + right cluster) stays
+                identical across every camera state. */}
+            <View style={styles.aspectRatioSelector}>
               <TouchableOpacity
-                style={[styles.zoomButtonBottom, zoom >= deviceNeutralZoom && zoom < 2 && styles.zoomButtonBottomActive]}
-                onPress={() => setZoom(deviceNeutralZoom)}
+                style={[styles.aspectRatioButtonBottom, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomActive]}
+                onPress={() => handleViewModeChange('portrait')}
               >
-                <Text style={[styles.zoomButtonBottomText, zoom >= deviceNeutralZoom && zoom < 2 && styles.zoomButtonBottomTextActive]}>1X</Text>
+                <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'portrait' && styles.aspectRatioButtonBottomTextActive]}>9:16</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.zoomButtonBottom, zoom >= 2 && styles.zoomButtonBottomActive]}
-                onPress={() => setZoom(2.0)}
+                style={[styles.aspectRatioButtonBottom, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomActive]}
+                onPress={() => handleViewModeChange('landscape')}
               >
-                <Text style={[styles.zoomButtonBottomText, zoom >= 2 && styles.zoomButtonBottomTextActive]}>2X</Text>
+                <Text style={[styles.aspectRatioButtonBottomText, cameraViewMode === 'landscape' && styles.aspectRatioButtonBottomTextActive]}>3:4</Text>
               </TouchableOpacity>
             </View>
+            {/* Zoom controls — dynamic preset list driven by actual
+                device lenses (zoomPresets). 4 chips on iPhone Pro w/
+                telephoto, 3 on most phones with ultra-wide+wide, 2 on
+                basic phones. Labels: ".5", "1×", "2×", "3×" matching
+                iOS native Camera. */}
+            <View style={[styles.zoomControlsBottom, showGallery && styles.zoomControlsBottomWithGallery]}>
+              {zoomPresets.map((preset, i) => {
+                const active = i === activePresetIndex;
+                return (
+                  <TouchableOpacity
+                    key={`bz-${preset.display}`}
+                    style={[styles.zoomButtonBottom, active && styles.zoomButtonBottomActive]}
+                    onPress={() => handleZoomPresetPress(preset.logical, preset.display)}
+                  >
+                    <Text style={[styles.zoomButtonBottomText, active && styles.zoomButtonBottomTextActive]}>
+                      {formatZoomLabel(preset.display)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
+          )}
+
+
           {/* Main control row */}
           <View style={styles.mainControlRow}>
             {/* Left container - Thumbnail */}
             <View style={styles.buttonContainer}>
               {(() => {
                 const activePhoto = getActiveBeforePhoto();
+                // The corner thumbnail mirrors whatever slot is
+                // currently highlighted under the active-slot frame
+                // in the half-screen strip (driven by galleryIndex).
+                // That way the circle and the centered thumbnail
+                // always agree — if the user has scrolled the strip
+                // onto "Progress 1", the circle shows Progress 1.
+                // We rebuild the strip's photos array here (without
+                // the trailing placeholder) and index into it.
+                const stripPhotos = (() => {
+                  if (mode === 'before') {
+                    return getBeforePhotos(room) || [];
+                  }
+                  if (mode === 'after' || mode === 'progress') {
+                    if (!activePhoto?.id) return [];
+                    const progresses = (getProgressPhotos?.(room) || [])
+                      .filter((p) => p.beforePhotoId === activePhoto.id)
+                      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    const after = (getAfterPhotos?.(room) || [])
+                      .find((p) => p.beforePhotoId === activePhoto.id);
+                    return [activePhoto, ...progresses, ...(after ? [after] : [])];
+                  }
+                  return [];
+                })();
+                const centeredPhoto = (() => {
+                  // When the enlarged carousel is open, the circle
+                  // follows the currently visible enlarged slide
+                  // (driven by enlargedGalleryIndex). The enlarged
+                  // photos array adds a trailing placeholder, so if
+                  // the user has swiped to that slot we fall back to
+                  // the last real photo in the set — same logic as
+                  // the strip-centered fallback below.
+                  if (showEnlargedGallery) {
+                    if (
+                      enlargedGalleryIndex >= 0 &&
+                      enlargedGalleryIndex < stripPhotos.length
+                    ) {
+                      return stripPhotos[enlargedGalleryIndex];
+                    }
+                    return stripPhotos[stripPhotos.length - 1] || null;
+                  }
+                  if (galleryIndex >= 0 && galleryIndex < stripPhotos.length) {
+                    return stripPhotos[galleryIndex];
+                  }
+                  // Fallback: the last real photo in the set if the
+                  // index points past the strip's last item (e.g. the
+                  // placeholder slot in Before/After mode).
+                  return stripPhotos[stripPhotos.length - 1] || null;
+                })();
+                const thumbPhoto = centeredPhoto
+                  || activePhoto
+                  || ((getBeforePhotos(room) || [])[((getBeforePhotos(room) || []).length - 1)] || null);
 
-                if (activePhoto) {
+                if (thumbPhoto) {
                   return (
                     <TouchableOpacity
                       style={[
                         styles.thumbnailViewerContainer,
-                        cameraViewMode === 'landscape' ? styles.thumbnailLandscape : styles.thumbnailPortrait
+                        cameraViewMode === 'landscape' ? styles.thumbnailLandscape : styles.thumbnailPortrait,
+                        // White border reads on dark surfaces; on a
+                        // light theme it disappears against the panel,
+                        // so switch to brand yellow there.
+                        { borderColor: theme.mode === 'light' ? '#F2C31B' : '#FFFFFF' },
                       ]}
                       activeOpacity={1}
                       onPress={handleThumbnailPress}
@@ -2559,7 +3440,7 @@ export default function CameraScreen({ route, navigation }) {
                     >
                       <View style={styles.thumbnailInnerRing}>
                         <Image
-                          source={{ uri: activePhoto.uri }}
+                          source={{ uri: thumbPhoto.uri }}
                           style={styles.thumbnailViewerImage}
                           resizeMode="cover"
                         />
@@ -2572,7 +3453,11 @@ export default function CameraScreen({ route, navigation }) {
                     <TouchableOpacity
                       style={[
                         styles.thumbnailViewerContainer,
-                        cameraViewMode === 'landscape' ? styles.thumbnailLandscape : styles.thumbnailPortrait
+                        cameraViewMode === 'landscape' ? styles.thumbnailLandscape : styles.thumbnailPortrait,
+                        // White border reads on dark surfaces; on a
+                        // light theme it disappears against the panel,
+                        // so switch to brand yellow there.
+                        { borderColor: theme.mode === 'light' ? '#F2C31B' : '#FFFFFF' },
                       ]}
                       activeOpacity={0.7}
                       onPress={handleThumbnailPress}
@@ -2584,8 +3469,42 @@ export default function CameraScreen({ route, navigation }) {
               })()}
             </View>
 
+            {/* Mid slot — host for the Record Audio mini icon, sized
+                flex:1 so the icon centers in the dead space BETWEEN
+                the thumbnail circle (left) and the capture button
+                (middle). Rendered unconditionally so the 5-column row
+                stays balanced in full-camera mode too; the icon
+                itself only appears in half-screen mode. */}
+            <View style={styles.midIconSlot}>
+              {(showGallery || showEnlargedGallery) && (() => {
+                // Light theme: solid-black pill with a white icon so
+                // it reads on the white panel surface. Dark theme:
+                // translucent dark pill with a yellow icon (existing
+                // chrome on the dark background).
+                const isLight = theme.mode === 'light';
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.inlineMidIcon,
+                      isLight
+                        ? { backgroundColor: '#000', borderColor: '#000' }
+                        : null,
+                    ]}
+                    onPress={() => { /* recording wiring lands later */ }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="mic-outline"
+                      size={22}
+                      color={isLight ? '#FFFFFF' : '#F2C31B'}
+                    />
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
+
             {/* Center container - Capture button */}
-            <View style={[styles.buttonContainer, styles.captureButtonContainer]}>
+            <View style={styles.buttonContainer}>
               {/* Capture button */}
               <TouchableOpacity
                 style={[
@@ -2611,27 +3530,87 @@ export default function CameraScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
 
+            {/* Mid slot — host for the Add Note mini icon, centered
+                in the dead space BETWEEN the capture button and the
+                done button. Same flex:1 sizing as the left slot for
+                visual balance. */}
+            <View style={styles.midIconSlot}>
+              {(showGallery || showEnlargedGallery) && (() => {
+                const activeBefore = getActiveBeforePhoto();
+                const stripPhotos = mode === 'before'
+                  ? (getBeforePhotos(room) || [])
+                  : (activeBefore
+                      ? [
+                          activeBefore,
+                          ...(getProgressPhotos?.(room) || [])
+                            .filter((p) => p.beforePhotoId === activeBefore.id)
+                            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)),
+                          ...((getAfterPhotos?.(room) || []).filter((p) => p.beforePhotoId === activeBefore.id)),
+                        ]
+                      : []);
+                const idx = showEnlargedGallery ? enlargedGalleryIndex : galleryIndex;
+                const centeredPhoto = (idx >= 0 && idx < stripPhotos.length)
+                  ? stripPhotos[idx]
+                  : (stripPhotos[stripPhotos.length - 1] || activeBefore || null);
+                const hasNote = !!(centeredPhoto && centeredPhoto.note && String(centeredPhoto.note).trim());
+                const isLight = theme.mode === 'light';
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.inlineMidIcon,
+                      isLight
+                        ? { backgroundColor: '#000', borderColor: '#000' }
+                        : null,
+                    ]}
+                    onPress={() => {
+                      if (!centeredPhoto?.id) return;
+                      setNoteTargetPhotoId(centeredPhoto.id);
+                      setNoteDraft(centeredPhoto.note || '');
+                      setShowNoteModal(true);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={hasNote ? 'document-text' : 'document-text-outline'}
+                      size={22}
+                      color={isLight ? '#FFFFFF' : '#F2C31B'}
+                    />
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
+
             {/* Right container - Done / return button. In Progress mode this
                 returns to the SectionDetail screen instead of resetting to
                 Home, so the user keeps the section context they came from. */}
             <View style={styles.buttonContainer}>
-              <View style={styles.checkmarkButtonBorder}>
+              <View style={[styles.checkmarkButtonBorder, { borderColor: theme.mode === 'light' ? '#F2C31B' : '#FFFFFF' }]}>
                 <TouchableOpacity
                   style={styles.checkmarkButton}
                   onPress={() => {
-                    if (mode === 'progress') {
-                      if (navigation.canGoBack && navigation.canGoBack()) {
-                        navigation.goBack();
-                      } else {
-                        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-                      }
-                    } else {
-                      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                    if (mode === 'progress' && navigation.canGoBack && navigation.canGoBack()) {
+                      navigation.goBack();
+                      return;
                     }
+                    // Prefer navigate('Home') when Home is already in the
+                    // stack — it pops Camera off without re-mounting Home,
+                    // which avoids the brief layout glitch (folders un-
+                    // scrolled, nav missing) caused by reset's full
+                    // remount. Falls back to reset if Home isn't in the
+                    // stack (e.g. when Camera was reset-pushed directly).
+                    try {
+                      const state = navigation.getState?.();
+                      const hasHome = state?.routes?.some?.((r) => r.name === 'Home');
+                      if (hasHome) {
+                        navigation.navigate('Home');
+                        return;
+                      }
+                    } catch {}
+                    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
                   }}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="arrow-undo" size={32} color="#000000" />
+                  <Text style={styles.doneButtonText}>Done</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -2641,68 +3620,337 @@ export default function CameraScreen({ route, navigation }) {
 
       {/* Gallery at bottom - shown when swiping up (hidden when enlarged gallery is open) */}
       {showGallery && !showEnlargedGallery && (
-        <Animated.View 
+        <Animated.View
           style={[
             styles.bottomGallery,
             {
               opacity: galleryOpacity,
-              height: dimensions.height * 0.41
+              // Surface color follows the active theme — light theme
+              // panel reads as white, dark theme as near-black, so the
+              // strip doesn't look out of place against either app
+              // background.
+              backgroundColor: theme.background,
+              // Height = bottomControls reservation (paddingBottom +
+              // 75 capture row) + 28 px breathing room ABOVE the
+              // capture row + 180 px of in-panel content (4 paddingTop
+              // + 38 header row + 138 strip with name + date labels).
+              // Strip allocation grew from 120 → 138 to accommodate
+              // the new date row beneath each thumbnail's name.
+              height: Math.max(20, insets.bottom + 10) + 75 + 28 + 180,
             }
           ]}
         >
-          <Text style={styles.galleryTitle}>
-            {mode === 'before' ? `${getCurrentRoomInfo().name} Photos` : 'Before Photos'}
+          {/* Row that hosts BOTH the down-chevron and the Set title
+              so the two share a single line at the very top of the
+              panel. Title sits in the normal flex flow on the left;
+              the chevron is absolutely centered within the row so it
+              stays optically aligned regardless of title length. */}
+          <View style={styles.galleryHeaderRow}>
+            <Text style={styles.galleryTitleInline}>
+            {(() => {
+              if (mode === 'before') return `${getCurrentRoomInfo().name} Photos`;
+              // After mode: title reflects which set is currently active
+              // (matches the "Set N" labels on the capture screen tiles).
+              // Falls back to "Before Photos" only when no Befores exist
+              // in the room yet — nothing to enumerate.
+              const roomBefores = getBeforePhotos(room) || [];
+              if (roomBefores.length === 0) return 'Before Photos';
+              const activeBefore = selectedBeforePhoto && selectedBeforePhoto.room === room
+                ? selectedBeforePhoto
+                : roomBefores[0];
+              const idx = roomBefores.findIndex((b) => b.id === activeBefore?.id);
+              return `Set ${(idx >= 0 ? idx : 0) + 1}`;
+            })()}
           </Text>
+            <TouchableOpacity
+              style={styles.galleryHeaderChevron}
+              onPress={() => {
+                setShowGallery(false);
+                galleryOpacity.setValue(0);
+              }}
+              hitSlop={{ top: 8, bottom: 12, left: 24, right: 24 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-down" size={22} color={COLORS.PRIMARY} />
+            </TouchableOpacity>
+            {/* "Match Before" header button — top-RIGHT of the panel,
+                mirroring "Set N" on the left. Always visible in After
+                mode; snaps the strip back to the Before (index 0) so
+                the ghost overlay + corner circle re-anchor to it. */}
+            {mode === 'after' && (
+              <TouchableOpacity
+                style={styles.matchBeforeHeaderBtn}
+                activeOpacity={0.7}
+                onPress={() => {
+                  if (galleryScrollRef.current?.scrollTo) {
+                    galleryScrollRef.current.scrollTo({ x: 0, animated: true });
+                  }
+                  setGalleryIndex(0);
+                }}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Ionicons name="arrow-undo" size={12} color="#000" />
+                <Text style={styles.matchBeforeHeaderBtnText}>Match Before</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.galleryStripWrap}>
           {(() => {
-            const photos = mode === 'before' ? getBeforePhotos(room) : getUnpairedBeforePhotos(room);
-            
+            // In Before mode the gallery shows every Before in the room.
+            // In After mode it normally shows only Befores still waiting
+            // for an After (the user is picking which one to pair), but
+            // when every Before is already paired we fall back to all
+            // individual room photos so the gallery isn't empty — the
+            // user can long-press any of them to enlarge and review what
+            // they've already shot. Combined photos are intentionally
+            // excluded from the thumbnail row — only the originals show.
+            const tsOf = (p) =>
+              typeof p?.timestamp === 'number'
+                ? p.timestamp
+                : (p?.createdAt ? new Date(p.createdAt).getTime() : 0);
+            let photos;
+            if (mode === 'before') {
+              // Strip is [...befores, placeholder]. The trailing
+              // placeholder is the "next capture" slot — tapping
+              // shutter while centered on it adds a NEW Before; the
+              // shutter handler's `isRetakeContext` check leaves it
+              // out of bounds so it doesn't trigger the retake prompt.
+              // Centering on any real Before instead lets the user
+              // retake (or save-as-new) that specific set.
+              const befores = getBeforePhotos(room) || [];
+              photos = [
+                ...befores,
+                { id: '__next_set_placeholder__', __placeholder: true, mode: 'placeholder' },
+              ];
+            } else {
+              // After mode: show ONLY the active set's members (Before
+              // + its Progresses + its After). The "set" is identified
+              // by the active Before; switching sets happens via
+              // horizontal swipe on the camera area (see panResponder).
+              const activeBefore = selectedBeforePhoto && selectedBeforePhoto.room === room
+                ? selectedBeforePhoto
+                : (getBeforePhotos(room)[0] || null);
+              if (activeBefore) {
+                const progresses = (getProgressPhotos?.(room) || [])
+                  .filter((p) => p.beforePhotoId === activeBefore.id)
+                  .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                const after = (getAfterPhotos?.(room) || [])
+                  .find((p) => p.beforePhotoId === activeBefore.id);
+                photos = [
+                  activeBefore,
+                  ...progresses,
+                  ...(after ? [after] : []),
+                ];
+              } else {
+                photos = [];
+              }
+            }
+
             if (photos.length === 0) {
               return (
                 <View style={styles.galleryEmpty}>
                   <Text style={styles.galleryEmptyText}>
-                    {mode === 'before' ? 'No photos yet' : 'All photos paired'}
+                    {mode === 'before' ? 'No photos yet' : 'No photos yet'}
                   </Text>
-      </View>
+                </View>
               );
             }
-            
+
+            // Friendly thumbnail label. Mode-driven so the set number
+            // shows up exactly once on screen:
+            //   - Before mode: each slide is a different set, so "Set N"
+            //     by the room's capture order is the only useful label.
+            //   - After / Progress mode: the strip walks one set's
+            //     chronological members, and the active set number is
+            //     already shown in the header pill (top-left). Each
+            //     slide here gets its role label only: Before /
+            //     Progress N / After.
+            const roomBeforesForLabel = getBeforePhotos(room) || [];
+            const labelForPhoto = (p, slotIndex) => {
+              if (!p) return '';
+              if (mode === 'before') {
+                if (p.mode === PHOTO_MODES.BEFORE) {
+                  const idx = roomBeforesForLabel.findIndex((b) => b.id === p.id);
+                  // Centered Before → "Retake" instead of "Set N". The
+                  // strip's center frame highlights the same slot, so
+                  // both visual cues line up: ring + word both tell
+                  // the user "shutter on this one will offer to retake".
+                  if (slotIndex === galleryIndex) return 'Retake';
+                  return idx >= 0 ? `Set ${idx + 1}` : 'Set';
+                }
+                return p.name || '';
+              }
+              // After / Progress mode — role-only labels.
+              if (p.mode === PHOTO_MODES.BEFORE) return 'Before';
+              if (p.mode === PHOTO_MODES.AFTER) return 'After';
+              if (p.mode === PHOTO_MODES.PROGRESS) {
+                const setProgresses = (getProgressPhotos?.(room) || [])
+                  .filter((pp) => pp.beforePhotoId === p.beforePhotoId)
+                  .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                const pIdx = setProgresses.findIndex((pp) => pp.id === p.id);
+                return pIdx >= 0 ? `Progress ${pIdx + 1}` : 'Progress';
+              }
+              return p.name || '';
+            };
+
+            // Short capture-time string shown beneath each thumbnail's
+            // name. Format mirrors the design reference ("May 27, 1:58 PM")
+            // — month + day, then hour:minute with AM/PM. Callers pass
+            // `{ timestamp: Date.now() }` for the placeholder card so
+            // the user sees the time the NEXT shutter tap will land at.
+            const formatThumbDate = (p) => {
+              if (!p) return '';
+              const ts = typeof p.timestamp === 'number'
+                ? p.timestamp
+                : (p.createdAt ? new Date(p.createdAt).getTime() : 0);
+              if (!ts) return '';
+              try {
+                return new Date(ts).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                });
+              } catch (_) {
+                return '';
+              }
+            };
+
+            // Center-as-active pattern, mirroring the enlarged gallery:
+            // the photo sitting in the screen center is the active one
+            // (ghost on the camera view). The user can scroll any photo
+            // into the center to make it active. paddingHorizontal lets
+            // the first/last items reach the center without overshoot.
+            const ITEM_WIDTH = 100;
+            const ITEM_GAP = 12;
+            const SNAP_INTERVAL = ITEM_WIDTH + ITEM_GAP;
+            const sidePadding = Math.max(16, (dimensions.width - ITEM_WIDTH) / 2);
+            // Both modes use the same center-on-item snap: the
+            // currently centered card is the "active" one. In Before
+            // mode it's the retake target; in After mode it's the
+            // ghost / Match source.
+            const initialScrollX = (() => {
+              if (enlargedWasOpenRef.current) {
+                return Math.max(0, enlargedGalleryIndex * SNAP_INTERVAL);
+              }
+              // Default to the last item — most recent Before in
+              // Before mode; the After (or latest Progress, else the
+              // Before) in After mode.
+              const targetIdx = Math.max(0, photos.length - 1);
+              return Math.max(0, targetIdx * SNAP_INTERVAL);
+            })();
             return (
               <ScrollView
                 ref={galleryScrollRef}
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                snapToInterval={112} // Gallery item width (100) + gap (12)
+                snapToInterval={SNAP_INTERVAL}
+                bounces={false}
                 decelerationRate="fast"
-                snapToAlignment="center"
+                snapToAlignment="start"
                 scrollEventThrottle={16}
                 directionalLockEnabled={true}
-                onMomentumScrollEnd={(event) => {
-                  // Only update state in after mode (for auto-selection)
-                  if (mode === 'after') {
-                    const offsetX = event.nativeEvent.contentOffset.x;
-                    const index = Math.round(offsetX / 112);
-                    if (photos[index]) {
-                      setSelectedBeforePhoto(photos[index]);
-                    }
+                contentOffset={{ x: initialScrollX, y: 0 }}
+                onScrollBeginDrag={() => {
+                  // Mark this touch as a scroll. onPressOut consults
+                  // this ref and skips the tap action so a panning
+                  // gesture doesn't open the enlarged view. The flag
+                  // stays set until the NEXT onPressIn clears it; we
+                  // don't clear it on scroll-end because onPressOut
+                  // may fire after onScrollEndDrag and we still want
+                  // it to count as "was scrolling this touch."
+                  isScrollingGalleryRef.current = true;
+                  // Cancel any pending long-press capture started by a
+                  // touch that's now turning into a scroll.
+                  if (longPressGalleryTimer.current) {
+                    clearTimeout(longPressGalleryTimer.current);
+                    longPressGalleryTimer.current = null;
                   }
                 }}
-                contentContainerStyle={styles.galleryContent}
+                onMomentumScrollEnd={(event) => {
+                  const offsetX = event.nativeEvent.contentOffset.x;
+                  const index = Math.max(
+                    0,
+                    Math.min(photos.length - 1, Math.round(offsetX / SNAP_INTERVAL)),
+                  );
+                  setGalleryIndex(index);
+                  if (mode === 'after') {
+                    // matchedItemIdx drives the "Match" corner badge.
+                    // Centered = active = match source.
+                    setMatchedItemIdx(index);
+                    return;
+                  }
+                  if (mode !== 'progress') return;
+                  const centered = photos[index];
+                  if (centered && centered.mode === PHOTO_MODES.BEFORE && centered.id !== selectedBeforePhoto?.id) {
+                    setSelectedBeforePhoto(centered);
+                  }
+                }}
+                contentContainerStyle={[
+                  styles.galleryContent,
+                  {
+                    paddingLeft: sidePadding,
+                    paddingRight: sidePadding,
+                    gap: ITEM_GAP,
+                  },
+                ]}
               >
-                {photos.map((photo, index) => (
+                {photos.map((photo, index) => {
+                if (photo.__placeholder) {
+                  // "Next capture" tile — empty dashed card with a
+                  // camera icon. Not tappable: a tap on the strip's
+                  // empty slot would conflict with the snap-to-center
+                  // behavior. Label is the next set's ordinal so the
+                  // user sees what they're about to create. After mode
+                  // never receives a placeholder in the photos array
+                  // (per the user's design), so this branch only fires
+                  // for Before mode now.
+                  //
+                  // The dashed border + camera box gets the yellow
+                  // accent permanently so the user can always identify
+                  // the "next capture" slot — even if they scrolled
+                  // a real Before into the center to retake, the
+                  // placeholder remains visually marked.
+                  const placeholderLabel = `Set ${(getBeforePhotos(room) || []).length + 1}`;
+                  return (
+                    <View
+                      key={photo.id}
+                      style={[
+                        styles.galleryItem,
+                        { width: ITEM_WIDTH, marginRight: 0 },
+                      ]}
+                    >
+                      <View style={[styles.galleryPlaceholderItem, { borderColor: COLORS.PRIMARY, borderStyle: 'solid', width: ITEM_WIDTH, height: ITEM_WIDTH }]}>
+                        <Ionicons name="camera-outline" size={28} color={COLORS.PRIMARY} />
+                      </View>
+                      <Text style={[styles.galleryItemName, { color: theme.textPrimary, width: ITEM_WIDTH }]} numberOfLines={1}>
+                        {placeholderLabel}
+                      </Text>
+                      <Text style={[styles.galleryItemDate, { color: theme.textSecondary, width: ITEM_WIDTH }]} numberOfLines={1}>
+                        {formatThumbDate({ timestamp: Date.now() })}
+                      </Text>
+                    </View>
+                  );
+                }
+                return (
                 <View
                   key={photo.id}
                   style={[
                     styles.galleryItem,
-                    mode === 'after' && selectedBeforePhoto?.id === photo.id && styles.galleryItemSelected
+                    { width: ITEM_WIDTH, marginRight: 0 },
                   ]}
                 >
       <TouchableOpacity
                     activeOpacity={0.7}
                     delayPressIn={50}
                     onPressIn={() => {
+                      // Fresh touch — clear the "was scrolling" flag so
+                      // a previous pan doesn't bleed into this gesture.
+                      isScrollingGalleryRef.current = false;
                       // Track tap start time
                       tapStartTime.current = Date.now();
-                      
+
                       // Start long press timer for full-screen
                       longPressGalleryTimer.current = setTimeout(() => {
                         setEnlargedGalleryPhoto(photo);
@@ -2710,33 +3958,67 @@ export default function CameraScreen({ route, navigation }) {
                     }}
                     onPressOut={() => {
                       const pressDuration = Date.now() - (tapStartTime.current || 0);
-                      
+                      const wasScrolling = isScrollingGalleryRef.current;
+
                       // Cancel long press timer
                       if (longPressGalleryTimer.current) {
                         clearTimeout(longPressGalleryTimer.current);
                         longPressGalleryTimer.current = null;
                       }
-                      
+
                       // If full-screen photo is showing, close it
                       if (enlargedGalleryPhoto) {
                         setEnlargedGalleryPhoto(null);
                       }
+                      // Suppress the tap action when this touch was
+                      // actually a scroll gesture — otherwise releasing
+                      // after a quick pan would still satisfy the
+                      // <300ms condition and open the enlarged view.
+                      else if (wasScrolling) {
+                        tapStartTime.current = null;
+                        return;
+                      }
                       // If it was a quick tap (< 300ms)
                       else if (pressDuration < 300) {
                         if (mode === 'before') {
-                          // Before mode: tap opens enlarged carousel immediately
-                          setEnlargedGalleryIndex(index);
-                          setShowEnlargedGallery(true);
-                        } else if (mode === 'after') {
-                          // After mode: first tap selects, second tap (on already selected) opens enlarged carousel
-                          if (selectedBeforePhoto?.id === photo.id) {
-                            // Already selected - open enlarged carousel
-                            setEnlargedGalleryIndex(index);
+                          // Before mode: two-step tap, same as After
+                          //   1st tap on a non-centered slot → scroll
+                          //     it into the active-slot frame.
+                          //   2nd tap on the already-centered slot →
+                          //     open the enlarged view.
+                          // The placeholder card isn't wrapped in a
+                          // TouchableOpacity, so it never reaches this
+                          // handler — taps on it are no-ops.
+                          if (galleryIndex === index) {
+                            // Re-anchor the active set to the tapped
+                            // Before so the enlarged carousel renders
+                            // THAT set's members (Before → Progresses
+                            // → After), not the room's list of
+                            // Befores. Index resets to 0 so the
+                            // carousel lands on the Before itself.
+                            if (photo.mode === PHOTO_MODES.BEFORE) {
+                              setSelectedBeforePhoto(photo);
+                            }
+                            setEnlargedGalleryIndex(0);
                             setShowEnlargedGallery(true);
                           } else {
-                            // Not selected yet - just select it
-                            setSelectedBeforePhoto(photo);
+                            if (galleryScrollRef.current?.scrollTo) {
+                              galleryScrollRef.current.scrollTo({
+                                x: index * SNAP_INTERVAL,
+                                animated: true,
+                              });
+                            }
+                            setGalleryIndex(index);
                           }
+                        } else if (mode === 'after') {
+                          // After mode: a tap on any thumbnail opens
+                          // the enlarged carousel anchored on that
+                          // photo. SCROLLING is the only way to change
+                          // which item is the "matched" right card —
+                          // taps must not snap the strip or change
+                          // matchedItemIdx (per the user's UX rule).
+                          setEnlargedGalleryIndex(index);
+                          setShowEnlargedGallery(true);
                         }
                       }
                       
@@ -2746,153 +4028,598 @@ export default function CameraScreen({ route, navigation }) {
                     <View>
                 <Image
                         source={{ uri: photo.uri }}
-                        style={styles.galleryImage}
+                        style={[styles.galleryImage, { width: ITEM_WIDTH, height: ITEM_WIDTH }]}
                   resizeMode="cover"
                 />
-                      <Text style={styles.galleryItemName} numberOfLines={1}>
-                        {photo.name}
+                      {/* "Match" tag — follows the scroll. Default to
+                          the last item (After). After a swipe, lands
+                          on whichever item is currently flanking the
+                          placeholder on its right. */}
+                      {mode === 'after' && (() => {
+                        const targetIdx = matchedItemIdx >= 0
+                          ? matchedItemIdx
+                          : Math.max(0, photos.length - 1);
+                        if (index !== targetIdx) return null;
+                        return (
+                          <View style={styles.matchCorner} pointerEvents="none">
+                            <Text style={styles.matchCornerText}>Match</Text>
+                          </View>
+                        );
+                      })()}
+                      {/* Per-set photo count badge — Before-mode only.
+                          Shows how many photos belong to THIS set
+                          (Before + every Progress + the After, if
+                          any). Sits top-right on the thumbnail. */}
+                      {mode === 'before' && photo.mode === PHOTO_MODES.BEFORE && (() => {
+                        const setProgresses = (getProgressPhotos?.(room) || [])
+                          .filter((p) => p.beforePhotoId === photo.id);
+                        const setAfter = (getAfterPhotos?.(room) || [])
+                          .find((p) => p.beforePhotoId === photo.id);
+                        const count = 1 + setProgresses.length + (setAfter ? 1 : 0);
+                        return (
+                          <View style={styles.galleryItemCountBadge}>
+                            <Text style={styles.galleryItemCountText}>{count}</Text>
+                          </View>
+                        );
+                      })()}
+                      <Text style={[styles.galleryItemName, { color: theme.textPrimary, width: ITEM_WIDTH }]} numberOfLines={1}>
+                        {labelForPhoto(photo, index)}
+                      </Text>
+                      <Text style={[styles.galleryItemDate, { color: theme.textSecondary, width: ITEM_WIDTH }]} numberOfLines={1}>
+                        {formatThumbDate(photo)}
                       </Text>
                     </View>
               </TouchableOpacity>
                 </View>
-              ))}
+                );
+              })}
               </ScrollView>
+            );
+          })()}
+          {/* Static "active slot" frame — sits in the dead center of
+              the strip area (parent wrapper has position:relative so
+              centerFrame's top:0 aligns with the strip items' top
+              automatically, no manual pixel math). Photos scroll past
+              it; whichever photo lines up under the frame is the
+              active one. */}
+          {(mode === 'after' || mode === 'before') && (
+            <View pointerEvents="none" style={styles.galleryCenterFrame} />
+          )}
+          </View>
+
+          {/*
+            Record Audio + Add Note row used to live here (inside the
+            gallery's Animated.View, zIndex 150). It got rendered
+            beneath the 3 round buttons because the fixedUILayer
+            wrapping those buttons sits at zIndex 260. The row has
+            since been moved into bottomControls right above
+            mainControlRow so it floats correctly between the thumb
+            strip and the round buttons.
+          */}
+          {false && (() => {
+            // Figure out which photo gets the note (or audio later):
+            // the currently centered slot in the strip, falling back to
+            // the active Before if the centered slot is a placeholder.
+            const centeredPhoto = (() => {
+              const activeBefore = getActiveBeforePhoto();
+              const stripPhotos = mode === 'before'
+                ? (getBeforePhotos(room) || [])
+                : (activeBefore
+                    ? [
+                        activeBefore,
+                        ...(getProgressPhotos?.(room) || [])
+                          .filter((p) => p.beforePhotoId === activeBefore.id)
+                          .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)),
+                        ...((getAfterPhotos?.(room) || []).filter((p) => p.beforePhotoId === activeBefore.id)),
+                      ]
+                    : []);
+              if (galleryIndex >= 0 && galleryIndex < stripPhotos.length) {
+                return stripPhotos[galleryIndex];
+              }
+              return stripPhotos[stripPhotos.length - 1] || activeBefore || null;
+            })();
+            const hasNote = !!(centeredPhoto && centeredPhoto.note && String(centeredPhoto.note).trim());
+            return (
+              <View style={styles.notesAudioRow}>
+                <TouchableOpacity
+                  style={styles.notesAudioBtn}
+                  onPress={() => {
+                    // Placeholder — recording wiring lands in a later
+                    // task. For now we just acknowledge the tap so the
+                    // button doesn't feel dead.
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="mic-outline" size={16} color="#F2C31B" />
+                  <Text style={styles.notesAudioBtnText}>Record Audio</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.notesAudioBtn}
+                  onPress={() => {
+                    if (!centeredPhoto?.id) return;
+                    setNoteTargetPhotoId(centeredPhoto.id);
+                    setNoteDraft(centeredPhoto.note || '');
+                    setShowNoteModal(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={hasNote ? 'document-text' : 'document-text-outline'}
+                    size={16}
+                    color="#F2C31B"
+                  />
+                  <Text style={styles.notesAudioBtnText}>{hasNote ? 'Edit Note' : 'Add Note'}</Text>
+                </TouchableOpacity>
+              </View>
             );
           })()}
         </Animated.View>
       )}
 
+      {/* Add Note modal — text input that writes the note onto the
+          targeted photo's metadata when saved. */}
+      <Modal
+        visible={showNoteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNoteModal(false)}
+      >
+        <View style={styles.noteModalOverlay}>
+          <View style={styles.noteModalCard}>
+            <Text style={styles.noteModalTitle}>Add Note</Text>
+            <TextInput
+              style={styles.noteModalInput}
+              value={noteDraft}
+              onChangeText={setNoteDraft}
+              placeholder="Type your note…"
+              placeholderTextColor="#888"
+              multiline
+              autoFocus
+              textAlignVertical="top"
+            />
+            <View style={styles.noteModalActions}>
+              <TouchableOpacity
+                style={[styles.noteModalBtn, { backgroundColor: '#333' }]}
+                onPress={() => {
+                  setShowNoteModal(false);
+                  setNoteDraft('');
+                  setNoteTargetPhotoId(null);
+                }}
+              >
+                <Text style={[styles.noteModalBtnText, { color: '#FFF' }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.noteModalBtn, { backgroundColor: '#F2C31B' }]}
+                onPress={async () => {
+                  if (noteTargetPhotoId) {
+                    try {
+                      await updatePhoto(noteTargetPhotoId, { note: noteDraft });
+                    } catch (e) {
+                      console.warn('[CameraScreen] failed to save note:', e?.message);
+                    }
+                  }
+                  setShowNoteModal(false);
+                  setNoteDraft('');
+                  setNoteTargetPhotoId(null);
+                }}
+              >
+                <Text style={[styles.noteModalBtnText, { color: '#000' }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Android combined photos are now handled by GlobalBackgroundCombinedPhotoCreator */}
 
       {/* Enlarged gallery carousel - shown when tapping a gallery item */}
       {showEnlargedGallery && (() => {
-        const photos = mode === 'before' ? getBeforePhotos(room) : getUnpairedBeforePhotos(room);
-        
+        // Mirror the small gallery's photo source so swiping the enlarged
+        // carousel lines up 1:1 with the thumbnails underneath. Combined
+        // photos are excluded — only the originals (Before / Progress /
+        // After) are shown.
+        const tsOf = (p) =>
+          typeof p?.timestamp === 'number'
+            ? p.timestamp
+            : (p?.createdAt ? new Date(p.createdAt).getTime() : 0);
+        let photos;
+        // Both modes now show the SAME set-scoped slide list: the
+        // active set's Before → Progresses → After → "next capture"
+        // placeholder. In Before mode the small-strip tap re-anchors
+        // selectedBeforePhoto on the tapped tile, so this branch
+        // surfaces that exact set's members instead of every Before
+        // in the room.
+        const activeBefore = selectedBeforePhoto && selectedBeforePhoto.room === room
+          ? selectedBeforePhoto
+          : (getBeforePhotos(room)[0] || null);
+        if (activeBefore) {
+          const progresses = (getProgressPhotos?.(room) || [])
+            .filter((p) => p.beforePhotoId === activeBefore.id)
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+          const after = (getAfterPhotos?.(room) || [])
+            .find((p) => p.beforePhotoId === activeBefore.id);
+          // Enlarged carousel = REAL photos only (Before → Progresses
+          // → After). The "next capture" placeholder is intentionally
+          // omitted — showing a giant empty dashed-box card here is
+          // not useful; the user already sees the live camera above.
+          photos = [
+            activeBefore,
+            ...progresses,
+            ...(after ? [after] : []),
+          ];
+        } else {
+          photos = [];
+        }
+        const currentPhoto = photos[enlargedGalleryIndex];
+        const closeEnlarged = () => {
+          setEnlargedGalleryPhoto(null);
+          setShowEnlargedGallery(false);
+        };
+        const handleEditCurrent = () => {
+          if (!currentPhoto) return;
+          closeEnlarged();
+          // Studio is the photo-edit destination — same route the photo-set
+          // preview uses, so the user lands on the same Studio surface
+          // whether they came from the capture screen gallery or from the
+          // project timeline.
+          navigation.navigate('StudioDetail', { photoId: currentPhoto.id });
+        };
+        const handleShareCurrent = async () => {
+          if (!currentPhoto?.uri) return;
+          try {
+            await Share.share({ url: currentPhoto.uri, message: currentPhoto.name || '' });
+          } catch (_) {
+            // user dismissed
+          }
+        };
+        const handleDeleteCurrent = () => {
+          if (!currentPhoto) return;
+          Alert.alert(
+            'Delete photo?',
+            'This photo will be removed permanently.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                  await deletePhoto(currentPhoto.id);
+                  closeEnlarged();
+                  const remainingPhotos = mode === 'before' ? getBeforePhotos(room) : getUnpairedBeforePhotos(room);
+                  if (remainingPhotos.length === 0) setShowGallery(false);
+                },
+              },
+            ]
+          );
+        };
+
         return (
-          <Animated.View 
+          <Animated.View
             style={[
               styles.enlargedGalleryContainer,
               {
-                height: dimensions.height * 0.41
-              }
+                height: dimensions.height * 0.41,
+                backgroundColor: theme.background,
+                borderTopColor: theme.border,
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderBottomWidth: 0,
+                borderLeftWidth: 0,
+                borderRightWidth: 0,
+              },
             ]}
             {...enlargedGalleryPanResponder.panHandlers}
           >
-            {/* Close button - top right */}
+            {/* Down-chevron close button — sits at the top of the
+                enlarged panel. Now styled as a brand-yellow pill with
+                a black icon (same chrome as the old top-left back
+                button, which is removed) so it reads as a deliberate
+                primary action rather than a faint hint. Tap or swipe
+                both jump back to the full camera (also closes the
+                small thumbnail row). */}
             <TouchableOpacity
-              style={styles.enlargedGalleryCloseButton}
+              style={styles.gallerySwipeHintBtn}
               onPress={() => {
-                // Clear both states immediately
                 setEnlargedGalleryPhoto(null);
                 setShowEnlargedGallery(false);
+                setShowGallery(false);
+                galleryOpacity.setValue(0);
               }}
+              hitSlop={{ top: 8, bottom: 12, left: 24, right: 24 }}
+              activeOpacity={0.7}
             >
-              <Text style={styles.enlargedGalleryCloseText}>X</Text>
+              <Ionicons name="chevron-down" size={22} color="#000" />
             </TouchableOpacity>
-
-            {/* Delete button - top left */}
-      <TouchableOpacity
-              style={styles.enlargedGalleryDeleteButton}
-        onPress={async () => {
-                const currentPhoto = photos[enlargedGalleryIndex];
-                if (!currentPhoto) return;
-                await deletePhoto(currentPhoto.id);
-
-                // Close enlarged gallery and refresh
-                setEnlargedGalleryPhoto(null);
-                setShowEnlargedGallery(false);
-
-                // If no more photos, close gallery
-                const remainingPhotos = mode === 'before' ? getBeforePhotos(room) : getUnpairedBeforePhotos(room);
-                if (remainingPhotos.length === 0) {
-                  setShowGallery(false);
+            {(() => {
+              // Peek pagination — show edges of the previous/next photo on
+              // either side so the user sees there's more to swipe through.
+              // PEEK is how much of a neighbor pokes in; GAP is the visual
+              // separator between cards.
+              const PEEK = 18;
+              const GAP = 12;
+              const cardWidth = dimensions.width - 2 * (PEEK + GAP);
+              const snapInterval = cardWidth + GAP;
+              const canGoLeft = enlargedGalleryIndex > 0;
+              const canGoRight = enlargedGalleryIndex < photos.length - 1;
+              const scrollToIndex = (i) => {
+                if (i < 0 || i >= photos.length) return;
+                // Suppress onScroll's live index updates for the
+                // duration of this animation. Without this guard,
+                // the ScrollView's intermediate offsets during the
+                // programmatic scroll round to the OLD index for a
+                // few frames and call setEnlargedGalleryIndex(old)
+                // — overwriting our setEnlargedGalleryIndex(new)
+                // and snapping the carousel right back. Cleared on
+                // onMomentumScrollEnd or via a safety timeout.
+                arrowScrollingRef.current = true;
+                arrowScrollingTargetRef.current = i;
+                setEnlargedGalleryIndex(i);
+                requestAnimationFrame(() => {
+                  enlargedGalleryScrollRef.current?.scrollTo?.({
+                    x: i * snapInterval,
+                    y: 0,
+                    animated: true,
+                  });
+                });
+                if (arrowScrollClearTimer.current) {
+                  clearTimeout(arrowScrollClearTimer.current);
                 }
-              }}
-            >
-              <Ionicons name="trash-outline" size={24} color="#EF4444" />
-      </TouchableOpacity>
-            <ScrollView
-              ref={enlargedGalleryScrollRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              style={{ flex: 1 }}
-              scrollEventThrottle={16}
-              onMomentumScrollEnd={(event) => {
-                // Only update state in after mode (for auto-selection)
-                if (mode === 'after') {
-                  const offsetX = event.nativeEvent.contentOffset.x;
-                  const index = Math.round(offsetX / dimensions.width);
-                  if (photos[index]) {
-                    setSelectedBeforePhoto(photos[index]);
-                  }
-                }
-              }}
-            >
-              {photos.map((photo, index) => (
-                <TouchableWithoutFeedback
-                  key={photo.id}
-                  onPressIn={() => {
-                    // Track when the press started
-                    tapStartTime.current = Date.now();
-                    
-                    // Start long press timer for full-screen
-                    longPressGalleryTimer.current = setTimeout(() => {
-                      setEnlargedGalleryPhoto(photo);
-                    }, 300);
+                arrowScrollClearTimer.current = setTimeout(() => {
+                  arrowScrollingRef.current = false;
+                  arrowScrollClearTimer.current = null;
+                }, 500);
+              };
+              return (
+                <View style={{ flex: 1, position: 'relative' }}>
+                <ScrollView
+                  ref={enlargedGalleryScrollRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={snapInterval}
+                  decelerationRate="fast"
+                  snapToAlignment="start"
+                  contentContainerStyle={{ paddingHorizontal: PEEK + GAP }}
+                  style={{ flex: 1 }}
+                  scrollEventThrottle={16}
+                  onScroll={(event) => {
+                    // Live index update during scroll so the side
+                    // arrows toggle visibility immediately when the
+                    // user pans into the first/last page — previously
+                    // only onMomentumScrollEnd updated the index, so
+                    // the "available" arrow appeared with a visible
+                    // delay after the snap completed.
+                    // SKIP during a programmatic arrow-tap scroll —
+                    // the intermediate offsets round to the OLD
+                    // index for several frames and would clobber the
+                    // setEnlargedGalleryIndex(new) we just queued.
+                    if (arrowScrollingRef.current) return;
+                    const offsetX = event.nativeEvent.contentOffset.x;
+                    const idx = Math.round(offsetX / snapInterval);
+                    if (idx !== enlargedGalleryIndex && idx >= 0 && idx < photos.length) {
+                      setEnlargedGalleryIndex(idx);
+                    }
                   }}
-                  onPressOut={() => {
-                    const pressDuration = Date.now() - (tapStartTime.current || 0);
-                    
-                    // Cancel long press timer if released early
-                    if (longPressGalleryTimer.current) {
-                      clearTimeout(longPressGalleryTimer.current);
-                      longPressGalleryTimer.current = null;
+                  onMomentumScrollEnd={(event) => {
+                    // Programmatic arrow scroll just finished — clear
+                    // the guard so user-driven scrolls update the
+                    // index live again.
+                    if (arrowScrollingRef.current) {
+                      arrowScrollingRef.current = false;
+                      if (arrowScrollClearTimer.current) {
+                        clearTimeout(arrowScrollClearTimer.current);
+                        arrowScrollClearTimer.current = null;
+                      }
                     }
-                    
-                    // If full-screen photo is showing, close it on release
-                    if (enlargedGalleryPhoto) {
-                      setEnlargedGalleryPhoto(null);
-                    } 
-                    // If it was a quick tap (< 300ms) and in after mode, select the photo
-                    else if (pressDuration < 300 && mode === 'after') {
-                      setSelectedBeforePhoto(photo);
+                    const offsetX = event.nativeEvent.contentOffset.x;
+                    const index = Math.round(offsetX / snapInterval);
+                    if (photos[index]) {
                       setEnlargedGalleryIndex(index);
+                      // The enlarged carousel walks through the ACTIVE
+                      // set's chronological members (Before → Progresses
+                      // → After). Scrolling within that set must NOT
+                      // re-anchor selectedBeforePhoto to a non-Before —
+                      // doing so leaves the room with no findable
+                      // active Before (header pill jumps to "Set N+1"),
+                      // the thumbnail row collapses to just the
+                      // centered photo, and the active set is lost.
                     }
-                    
-                    tapStartTime.current = null;
                   }}
                 >
-                  <View style={[styles.enlargedGallerySlide, { width: dimensions.width }]}>
-                    {(() => {
-                      // Match the camera's aspect ratio from the upper half
-                      // Upper half: width x (height x 0.6)
-                      // Camera aspect ratio: width / (height x 0.6)
-                      const cameraAspect = dimensions.width / (dimensions.height * 0.6);
-
-                      // Lower container height is 40% of screen
-                      const containerHeight = dimensions.height * 0.41;
-                      
-                      // Calculate width to fit height while maintaining camera aspect
-                      const photoWidth = containerHeight * cameraAspect;
+                  {photos.map((photo, index) => {
+                    if (photo.__placeholder) {
+                      // "Next photo" placeholder card — same dashed-
+                      // camera tile the small strip uses, sized to
+                      // the enlarged slide. No trash, no tap action.
                       return (
-                        <View style={{
-                          width: photoWidth,
-                          height: containerHeight,
-                          overflow: 'hidden'
-                        }}>
-                          <Image
-                            source={{ uri: photo.uri }}
-                            style={styles.enlargedGalleryImage}
-                            resizeMode="cover"
-                          />
+                        <View
+                          key={photo.id}
+                          style={[
+                            styles.enlargedGallerySlide,
+                            { width: cardWidth, marginRight: index === photos.length - 1 ? 0 : GAP },
+                          ]}
+                        >
+                          <View style={styles.enlargedGalleryPlaceholder}>
+                            <Ionicons name="camera-outline" size={48} color="#888" />
+                          </View>
                         </View>
                       );
-                    })()}
-                  </View>
-                </TouchableWithoutFeedback>
-              ))}
-            </ScrollView>
+                    }
+                    return (
+                    <TouchableWithoutFeedback
+                      key={photo.id}
+                      onPressIn={() => {
+                        tapStartTime.current = Date.now();
+                        longPressGalleryTimer.current = setTimeout(() => {
+                          setEnlargedGalleryPhoto(photo);
+                        }, 300);
+                      }}
+                      onPressOut={() => {
+                        const pressDuration = Date.now() - (tapStartTime.current || 0);
+                        if (longPressGalleryTimer.current) {
+                          clearTimeout(longPressGalleryTimer.current);
+                          longPressGalleryTimer.current = null;
+                        }
+                        if (enlargedGalleryPhoto) {
+                          setEnlargedGalleryPhoto(null);
+                        } else if (pressDuration < 300 && mode === 'after') {
+                          // Just track the centered index; do not write
+                          // a non-Before into selectedBeforePhoto (see
+                          // the matching comment in onMomentumScrollEnd
+                          // above for why this breaks the active set).
+                          setEnlargedGalleryIndex(index);
+                        }
+                        tapStartTime.current = null;
+                      }}
+                    >
+                      <View style={[
+                        styles.enlargedGallerySlide,
+                        { width: cardWidth, marginRight: index === photos.length - 1 ? 0 : GAP },
+                      ]}>
+                        <Image
+                          source={{ uri: photo.uri }}
+                          style={styles.enlargedGalleryImage}
+                          resizeMode="cover"
+                        />
+                        {/* Top-center label on the photo itself: "Set N
+                            Before" / "Set N Progress X" / "Set N After".
+                            Per-card so swiping pages updates the label
+                            in lockstep with the photo. */}
+                        {(() => {
+                          const roomBefores = getBeforePhotos(room) || [];
+                          let setIdx;
+                          if (photo.mode === PHOTO_MODES.BEFORE) {
+                            setIdx = roomBefores.findIndex((b) => b.id === photo.id);
+                          } else {
+                            setIdx = roomBefores.findIndex((b) => b.id === photo.beforePhotoId);
+                          }
+                          const setLabel = setIdx >= 0 ? `Set ${setIdx + 1}` : '';
+                          let roleLabel = '';
+                          if (photo.mode === PHOTO_MODES.BEFORE) roleLabel = 'Before';
+                          else if (photo.mode === PHOTO_MODES.AFTER) roleLabel = 'After';
+                          else if (photo.mode === PHOTO_MODES.PROGRESS) {
+                            const setProgresses = (getProgressPhotos?.(room) || [])
+                              .filter((pp) => pp.beforePhotoId === photo.beforePhotoId)
+                              .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                            const pIdx = setProgresses.findIndex((pp) => pp.id === photo.id);
+                            roleLabel = pIdx >= 0 ? `Progress ${pIdx + 1}` : 'Progress';
+                          }
+                          const text = `${setLabel} ${roleLabel}`.trim();
+                          if (!text) return null;
+                          return (
+                            <View style={styles.enlargedPhotoTopLabel} pointerEvents="none">
+                              <Text style={styles.enlargedPhotoTopLabelText} numberOfLines={1}>
+                                {text}
+                              </Text>
+                            </View>
+                          );
+                        })()}
+                        {/* Eye (top-left) — opens Home's modern in-
+                            screen preview modal (same one that appears
+                            when tapping a card on the home grid).
+                            Resolves the photo's set members (Before /
+                            After / Progresses) so the modal lands on
+                            the exact slide the user was viewing. We
+                            avoid PhotoSetPreviewScreen — that's the
+                            legacy "old view" still wired to Projects. */}
+                        <TouchableOpacity
+                          style={styles.enlargedGalleryPhotoEye}
+                          onPress={() => {
+                            const targetRoom = photo?.room || room;
+                            let previewBeforeId = null;
+                            let previewAfterId = null;
+                            if (photo.mode === PHOTO_MODES.BEFORE) {
+                              previewBeforeId = photo.id;
+                              const afterMatch = (getAfterPhotos?.(targetRoom) || [])
+                                .find((p) => p.beforePhotoId === photo.id);
+                              previewAfterId = afterMatch?.id || null;
+                            } else if (photo.mode === PHOTO_MODES.AFTER) {
+                              previewBeforeId = photo.beforePhotoId || null;
+                              previewAfterId = photo.id;
+                            } else if (photo.mode === PHOTO_MODES.PROGRESS) {
+                              previewBeforeId = photo.beforePhotoId || null;
+                              const afterMatch = previewBeforeId
+                                ? (getAfterPhotos?.(targetRoom) || [])
+                                    .find((p) => p.beforePhotoId === previewBeforeId)
+                                : null;
+                              previewAfterId = afterMatch?.id || null;
+                            }
+                            closeEnlarged();
+                            setShowGallery(false);
+                            galleryOpacity.setValue(0);
+                            navigation.navigate('Home', {
+                              previewBeforeId,
+                              previewAfterId,
+                              previewRoom: targetRoom,
+                              previewProjectId: photo?.projectId || activeProjectId || null,
+                              previewPhotoId: photo.id,
+                            });
+                          }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="eye-outline" size={20} color="#FFFFFF" />
+                        </TouchableOpacity>
+                        {/* Trash overlay — top-right of THIS photo. Per
+                            card so swiping to another page and tapping
+                            delete removes the visible photo, not whatever
+                            the global "currentPhoto" ref still pointed at. */}
+                        <TouchableOpacity
+                          style={[styles.enlargedGalleryPhotoTrash, { backgroundColor: theme.danger }]}
+                          onPress={() => {
+                            Alert.alert(
+                              'Delete photo?',
+                              'This photo will be removed permanently.',
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Delete',
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    await deletePhoto(photo.id);
+                                    closeEnlarged();
+                                    const remainingPhotos = mode === 'before' ? getBeforePhotos(room) : getUnpairedBeforePhotos(room);
+                                    if (remainingPhotos.length === 0) setShowGallery(false);
+                                  },
+                                },
+                              ]
+                            );
+                          }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableWithoutFeedback>
+                    );
+                  })}
+                </ScrollView>
+                {/* Side arrows — hint there are more photos in the
+                    row and act as a one-tap "next/prev" without
+                    requiring a swipe. Hidden at the row's edges so
+                    they only show when there's somewhere to go.
+                    Renders for both Before-mode (multiple sets) and
+                    After/Progress-mode (set members), since both
+                    cases can have more than one photo in the row. */}
+                {canGoLeft && (
+                  <TouchableOpacity
+                    style={[styles.enlargedGalleryArrow, styles.enlargedGalleryArrowLeft, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
+                    onPress={() => scrollToIndex(enlargedGalleryIndex - 1)}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
+                {canGoRight && (
+                  <TouchableOpacity
+                    style={[styles.enlargedGalleryArrow, styles.enlargedGalleryArrowRight, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
+                    onPress={() => scrollToIndex(enlargedGalleryIndex + 1)}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons name="chevron-forward" size={22} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
+                </View>
+              );
+            })()}
           </Animated.View>
         );
       })()}
@@ -3300,13 +5027,24 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    opacity: 0.4,
+    // Opacity comes from `ghostOpacity` state via the inline style on
+    // the rendered View — kept dynamic so the side slider can dial it.
     justifyContent: 'center',
     alignItems: 'center'
   },
   beforePhotoImage: {
     width: '100%',
     height: '100%'
+  },
+  // Opaque black overlay on top of the camera area for ~600ms after
+  // an aspect-mode change, masking the format-reconfig blink.
+  aspectTransitionMask: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
   },
   fixedUILayer: {
     position: 'absolute',
@@ -3461,7 +5199,12 @@ const styles = StyleSheet.create({
   buttonContainer: {
     alignItems: 'center',
     justifyContent: 'flex-end',
-    minHeight: 100,
+    // Buttons (thumbnail, capture, done) are all 75 px tall, so the
+    // container is sized to match — no extra empty space above the
+    // capture button. Combined with notesAudioRow.paddingBottom = 10
+    // this gives the 10 px gap the layout spec asks for between the
+    // record/note row and the capture button.
+    minHeight: 75,
     width: 80,
   },
   modeInfo: {
@@ -3479,6 +5222,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     flex: 1,
+  },
+  // Flex slot between two of the big circle buttons. Renders empty
+  // in full-camera mode (keeps the row layout consistent) and hosts
+  // the Record Audio / Add Note mini icon in half-screen mode. Equal
+  // flex with its sibling slot so the icons land at the visual
+  // midpoint between the circles on either side.
+  midIconSlot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    minHeight: 75,
+  },
+  // Small round button that sits centered in midIconSlot — the dead
+  // space BETWEEN the big circles (thumbnail / capture / done). Used
+  // for Record Audio + Add Note in half-screen mode. mainControlRow
+  // uses align-items: flex-end, so the marginBottom roughly centers
+  // the 44 px button vertically against the 75 px circles.
+  inlineMidIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(242, 195, 27, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 15,
   },
   controlsRowAboveCapture: {
     width: '100%',
@@ -3518,8 +5288,8 @@ const styles = StyleSheet.create({
   },
   aspectRatioButtonBottomTextActive: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: '#1E1E1E', // dark text on yellow PRIMARY bg — was white (invisible on yellow)
+    fontWeight: '700',
   },
   aspectRatioButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
@@ -3957,9 +5727,62 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
     borderTopWidth: 2,
     borderTopColor: COLORS.PRIMARY,
-    paddingTop: 10,
+    paddingTop: 4,
     zIndex: 150,
     elevation: 150
+  },
+  gallerySwipeHint: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 2,
+    paddingBottom: 2,
+  },
+  // Pill version of the close chevron used on the enlarged panel.
+  // Brand-yellow background + black icon — inherited chrome from
+  // the removed top-left back button so the close action stays
+  // visually obvious without that extra control on screen.
+  gallerySwipeHintBtn: {
+    alignSelf: 'center',
+    marginTop: 6,
+    width: 56,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F2C31B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 3,
+    zIndex: 5,
+  },
+  // Combined header row: chevron centered, "Set N" left-aligned, both
+  // at the same vertical baseline. 6 px top padding puts the row's
+  // content the same 6 px below the split line as the standalone
+  // chevron used to be.
+  galleryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 10,
+    position: 'relative',
+  },
+  galleryTitleInline: {
+    fontFamily: FONTS.ALEXANDRIA,
+    color: COLORS.PRIMARY,
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'left',
+  },
+  galleryHeaderChevron: {
+    position: 'absolute',
+    top: 6,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   galleryTitle: {
     fontFamily: FONTS.ALEXANDRIA,
@@ -3971,16 +5794,346 @@ const styles = StyleSheet.create({
     textAlign: 'left'
   },
   galleryContent: {
+    // paddingHorizontal is set inline so it can react to screen width
+    // (centers the first/last items in the visible viewport).
+    gap: 12,
+  },
+  // Static yellow ring at the dead center of the gallery panel, sized
+  // to wrap a single 100x100 thumbnail (100 photo + 3px border on each
+  // side = 106). Vertical offset matches where the thumbnail image
+  // starts within the panel (paddingTop + swipe hint + title +
+  // ScrollView padding ≈ 60). Only the border is visible; the inside
+  // is transparent so the centered photo shows through.
+  // Wrapper around the strip ScrollView + the centered active-slot
+  // frame. position:relative so the centerFrame's `top:0` lands at
+  // the same y as the ScrollView's first row of items — eliminates
+  // the manual `top: 36/42` pixel guessing that drifted whenever
+  // the header row's font metrics or padding changed.
+  galleryStripWrap: {
+    position: 'relative',
+  },
+  galleryCenterFrame: {
+    position: 'absolute',
+    // Anchored to the wrapper's top (which is the ScrollView's top),
+    // so the ring naturally aligns with the centered thumbnail's
+    // outer top edge. Height = photo (100) + name row (~21) + date
+    // row (~16) + 6 px border = 143 px, matches the thumbnail box.
+    top: 0,
+    width: 106,
+    height: 143,
+    left: '50%',
+    marginLeft: -53,
+    borderWidth: 3,
+    borderColor: COLORS.PRIMARY,
+    borderRadius: 11,
+    zIndex: 1,
+  },
+  // Pinned "next capture" placeholder — After mode only. Sized
+  // identically to a galleryItem (100 wide, padding for label + date
+  // rows) and anchored to the dead center of the strip area. Real
+  // photos in the ScrollView slide past behind it; the spacer slot
+  // in the photos array keeps snap math correct.
+  pinnedPlaceholder: {
+    position: 'absolute',
+    // 100 wide matches a real thumbnail's content rect (the 3 px
+    // border is transparent so it doesn't need covering). Height
+    // matches the full galleryItem so labels under the date row
+    // can't peek beneath the placeholder either.
+    top: 0,
+    width: 100,
+    height: 143,
+    left: '50%',
+    marginLeft: -50,
+    alignItems: 'center',
+    paddingTop: 3,
+    zIndex: 5,
+    elevation: 5,
+  },
+  // Wrapper that hosts both the center-frame border AND the After-
+  // mode "Match" / "Match Before" badge. Sized + positioned identically
+  // to galleryCenterFrame; the border is rendered as an inner View so
+  // the badge can sit as a sibling and attach to the border edge.
+  galleryCenterFrameWrap: {
+    position: 'absolute',
+    top: 36,
+    width: 106,
+    height: 106,
+    left: '50%',
+    marginLeft: -53,
+    zIndex: 2,
+  },
+  galleryCenterFrameBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 3,
+    borderColor: COLORS.PRIMARY,
+    borderRadius: 11,
+  },
+  // Top-LEFT corner tag mounted INSIDE the thumbnail / placeholder
+  // box. top:0 / left:0 anchors the badge at the inside corner of
+  // the surrounding 3 px transparent (or dashed) border, so the
+  // badge's top + left edges sit flush against the inner edges of
+  // the border. Bottom-right corner is slightly rounded so the
+  // badge reads as a clipped corner tag rather than a square chip.
+  // Width is bounded by the 100 px thumbnail; text size is dialed
+  // in so the longer "Match Before" still fits.
+  // Match tag clipped to the TOP-LEFT corner of the centered real
+  // thumbnail. Straddles the upper border — bottom half overlaps the
+  // photo's top area, top half sticks above. Left edge sits ~3 px
+  // outside the photo's left edge so it visually "clips" the corner.
+  // Match tag clipped to the TOP-LEFT corner of the centered real
+  // thumbnail. Anchored top:0 / left:0 INSIDE the photo area so the
+  // badge's top + left edges sit flush against the inner edges of
+  // the yellow border. Bottom-right corner rounded so it reads as a
+  // clipped corner tag instead of a square chip. Previous straddle
+  // (top:-16) got clipped by the ScrollView's viewport — keeping the
+  // badge inside the thumbnail box guarantees it always renders.
+  matchCorner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    backgroundColor: '#F2C31B',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderBottomRightRadius: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 4,
+    zIndex: 6,
+  },
+  matchCornerText: {
+    color: '#000',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  // Match Before — promoted to a HEADER-ROW button at the TOP-RIGHT
+  // of the gallery panel (mirroring "Set N" on the left, where the
+  // user circled in red). Renders inside galleryHeaderRow, absolutely
+  // positioned so it doesn't interfere with the centered chevron.
+  // Always tappable in After mode regardless of which thumbnail is
+  // currently centered.
+  matchBeforeHeaderBtn: {
+    position: 'absolute',
+    right: 12,
+    top: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F2C31B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 4,
+    zIndex: 6,
+  },
+  matchBeforeHeaderBtnText: {
+    color: '#000',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  // Record Audio + Add Note row beneath the thumbnail strip in the
+  // half-screen view. Both buttons share a chrome that mirrors the
+  // brand yellow outline on a dark fill so they read clearly over
+  // the gallery panel without competing with the photos above.
+  notesAudioRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    gap: 12
+    paddingTop: 12,
+    // 10 px gap between the bottom of these pills and the top of the
+    // capture row (buttonContainer minHeight matches button height,
+    // so there's no extra empty space below this padding).
+    paddingBottom: 10,
+    gap: 12,
+  },
+  notesAudioBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#F2C31B',
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  notesAudioBtnText: {
+    color: '#F2C31B',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Add Note modal — centered card with a multiline text input and
+  // Cancel/Save actions. Save calls updatePhoto({ note }) on the
+  // targeted photo so the note persists in the photo metadata for
+  // the report.
+  noteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  noteModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 18,
+    padding: 20,
+  },
+  noteModalTitle: {
+    color: '#FFFFFF',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  noteModalInput: {
+    minHeight: 120,
+    maxHeight: 240,
+    color: '#FFFFFF',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    backgroundColor: '#262626',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  noteModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 16,
+  },
+  noteModalBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 22,
+  },
+  noteModalBtnText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '700',
   },
   galleryItem: {
     borderRadius: 8,
-    overflow: 'hidden',
+    // overflow: visible so the Match / Match Before corner tag can
+    // straddle the top border (extends ~10 px above the thumbnail).
+    // Image + placeholder children get their own inner borderRadius
+    // so rounded corners are preserved without the parent clipping.
+    overflow: 'visible',
     borderWidth: 3,
     borderColor: 'transparent',
     width: 100,
     alignSelf: 'flex-start'
+  },
+  // Small yellow badge in the top-right corner of a Before-mode
+  // strip thumbnail, showing how many photos exist in that set
+  // (1 = Before only, 2 = Before + After, etc.).
+  galleryItemCountBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    backgroundColor: '#F2C31B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 3,
+    zIndex: 4,
+  },
+  galleryItemCountText: {
+    color: '#000',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  // Yellow "Match" label — After-mode strip thumbnail, top-left
+  // corner. Marks the photo that the camera ghost overlay (and the
+  // corner circle thumbnail) are currently mirroring.
+  matchLabelBadge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: '#F2C31B',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 3,
+    zIndex: 4,
+  },
+  matchLabelText: {
+    color: '#000',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  // "Match Before" return button — sits inside the After-mode
+  // placeholder card under the camera icon. Tapping snaps the strip
+  // to index 0 so the Before becomes the centered / ghost source.
+  matchBeforeBtn: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    backgroundColor: '#F2C31B',
+    borderRadius: 4,
+  },
+  matchBeforeBtnText: {
+    color: '#000',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  // Top-center label inside the enlarged carousel slide showing
+  // "Set N Before" / "Set N Progress X" / "Set N After". Floats on
+  // top of the photo with a translucent dark chip so it reads on any
+  // background.
+  enlargedPhotoTopLabel: {
+    position: 'absolute',
+    top: 10,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  enlargedPhotoTopLabelText: {
+    color: '#FFFFFF',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '700',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   galleryItemSelected: {
     borderColor: COLORS.PRIMARY
@@ -3988,17 +6141,50 @@ const styles = StyleSheet.create({
   galleryImage: {
     width: 100,
     height: 100,
-    backgroundColor: '#333'
+    backgroundColor: '#333',
+    // Inner radius = outer (8) - border (3). Preserves the rounded
+    // photo corners now that galleryItem no longer overflow:hidden.
+    borderRadius: 5,
+  },
+  // "Next set" placeholder tile shown at the end of the Before-mode
+  // strip. Sized identically to galleryImage so it lines up with the
+  // active-slot frame. Dashed border + camera icon read as "the next
+  // capture lands here".
+  galleryPlaceholderItem: {
+    width: 100,
+    height: 100,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+    borderStyle: 'dashed',
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   galleryItemName: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: 'white',
+    // color set inline via theme.textPrimary so the name reads on
+    // both light + dark panel surfaces.
     fontSize: 11,
     fontWeight: '600',
     textAlign: 'center',
-    padding: 6,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    width: 100
+    paddingHorizontal: 6,
+    paddingTop: 6,
+    paddingBottom: 1,
+    width: 100,
+  },
+  // Capture-time line that sits right below the name. Smaller font +
+  // secondary color so the name remains the dominant label. Width
+  // matches the thumbnail so long timestamps clip cleanly.
+  galleryItemDate: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 9,
+    fontWeight: '500',
+    textAlign: 'center',
+    paddingHorizontal: 4,
+    paddingTop: 0,
+    paddingBottom: 4,
+    width: 100,
   },
   galleryEmpty: {
     flex: 1,
@@ -4027,33 +6213,149 @@ const styles = StyleSheet.create({
     zIndex: 250,
     elevation: 250
   },
-  enlargedGalleryCloseButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: COLORS.PRIMARY,
+  // Single style for every enlarged-gallery control button (back, share,
+  // edit, delete). Light/dark colors are passed in via inline `backgroundColor`
+  // so the same shape works in both themes.
+  enlargedGalleryCtrlBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 260
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+    zIndex: 260,
   },
-  enlargedGalleryDeleteButton: {
+  enlargedGalleryCtrlLeft: {
     position: 'absolute',
     top: 10,
     left: 10,
+  },
+  // Close-enlarged "back" button — sits at the top-right of the
+  // enlarged container, immediately to the LEFT of the per-slide
+  // trash button so the two form a top-right action cluster.
+  // Trash is at right: 10; this sits at right: 56 (36 button + 10 gap).
+  enlargedGalleryCtrlBack: {
+    position: 'absolute',
+    top: 10,
+    right: 56,
+  },
+  // Eye icon — top-left of the enlarged photo slide. Taps navigate
+  // to the project's Photo Set preview screen, anchored to THIS
+  // slide's photo via initialPhotoId so the preview lands on the
+  // same photo the user was looking at.
+  enlargedGalleryPhotoEye: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+    zIndex: 5,
+  },
+  enlargedGalleryCtrlRight: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    gap: 8,
+    zIndex: 260,
+  },
+  // Side navigation arrows centered vertically over the enlarged
+  // carousel. Visible only when there is somewhere to go in that
+  // direction (computed from enlargedGalleryIndex).
+  enlargedGalleryArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -20,
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: COLORS.PRIMARY,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 260
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+    zIndex: 270,
+  },
+  // The pager wraps each photo in a card that's narrower than the
+  // outer wrapper by PEEK (18) + GAP (12) on each side — so 30 px in
+  // from the wrapper edges. Sitting the chevrons at 30+8 px puts them
+  // ON the photo itself (just inside its edge), matching the project
+  // detail screen's arrow placement instead of floating in the peek
+  // strip outside the card.
+  enlargedGalleryArrowLeft: {
+    left: 38,
+  },
+  enlargedGalleryArrowRight: {
+    right: 38,
+  },
+  // "Next photo" placeholder card inside the enlarged carousel. Sized
+  // identically to enlargedGalleryImage so the dashed box fills the
+  // pager slot. Matches the small-strip placeholder visually.
+  enlargedGalleryPlaceholder: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Centered title bar above the enlarged pager — reads
+  // "Kitchen Before Set 1" / "Kitchen After Set 2" etc. Pulled out
+  // of pointerEvents so it never blocks the back button or pager.
+  enlargedGalleryTitleRow: {
+    position: 'absolute',
+    top: 10,
+    left: 60,
+    right: 60,
+    zIndex: 250,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  enlargedGalleryTitleText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  // Trash icon overlaid on the top-right of each card in the enlarged
+  // pager. Per-card so it always targets the visible photo.
+  enlargedGalleryPhotoTrash: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+    zIndex: 270,
   },
   enlargedGallerySlide: {
     flex: 1,
@@ -4165,15 +6467,22 @@ const styles = StyleSheet.create({
     flex: 1
   },
   letterboxCamera: {
+    // Portrait device: the camera output (after vision-camera rotates
+    // the sensor frame to match the device) is 3:4 portrait. The box
+    // matches that ratio (3/4 = 0.75) so the preview fills it exactly
+    // — no cover-crop zoom. The captured photo also reads as 3:4
+    // portrait, mirroring how iOS native Camera behaves in 4:3 mode
+    // when the phone is held vertically.
     width: '100%',
-    aspectRatio: 1.333, // Portrait device: full width, black bars top/bottom (4/3 = 1.333)
+    aspectRatio: 0.75,
     position: 'relative',
-    overflow: 'hidden'
+    overflow: 'hidden',
   },
   letterboxCameraLandscape: {
+    // Landscape device: sensor output is 4:3 landscape, box matches.
     width: undefined,
     height: '100%',
-    aspectRatio: 1.333, // Landscape device: full height, black bars left/right (4/3 = 1.333)
+    aspectRatio: 1.333,
   },
   camera: {
     flex: 1,
@@ -4197,6 +6506,39 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   zoomControlsBottom: {
+    flexDirection: 'row',
+    gap: 5,
+    alignItems: 'center',
+    // No marginTop here — the row must stay vertically aligned with the
+    // aspect ratio cluster on the opposite side of controlsRowAboveCapture.
+    // The breathing room above the row when the thumbnail gallery is
+    // open is added inline via `zoomControlsBottomWithGallery` instead.
+  },
+  zoomControlsBottomWithGallery: {
+    marginTop: 28,
+  },
+  // Used only while the enlarged gallery is open — relocates the zoom
+  // chips out of the bottom row (which sits underneath the enlarged
+  // photo) and onto the lower edge of the shrunk camera viewfinder.
+  // Two clusters: aspect ratio on the LEFT (Before mode only), zoom on
+  // the RIGHT — same layout as the full-camera bottom row.
+  floatingZoomRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    // Above the enlarged carousel container (zIndex 250) so the
+    // chips stay tappable + visible when that panel is open.
+    zIndex: 265,
+    elevation: 265,
+  },
+  // Just a flex row — no background. The dark pill behind each label
+  // comes from the individual button styles (zoomButtonBottom /
+  // aspectRatioButtonBottom), matching the look of the full-camera row.
+  floatingZoomCluster: {
     flexDirection: 'row',
     gap: 5,
     alignItems: 'center',
@@ -4226,8 +6568,8 @@ const styles = StyleSheet.create({
   },
   zoomButtonBottomTextActive: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: '#1E1E1E', // dark text on yellow PRIMARY bg — was white (invisible on yellow)
+    fontWeight: '700',
   },
   galleryPickerButton: {
     width: 40,
@@ -4256,6 +6598,57 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  doneButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  // Ghost overlay opacity slider — vertical column on the right edge.
+  // The Slider widget itself is rotated 90deg so a horizontal slider
+  // reads vertically: up = max opacity, down = 0.
+  ghostSliderContainer: {
+    position: 'absolute',
+    right: 8,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 200,
+  },
+  ghostSliderPill: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 24,
+    paddingHorizontal: 4,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: '100%',
+    width: 40,
+  },
+  ghostSlider: {
+    // Rotate +90deg so the slider's natural left-to-right axis becomes
+    // top-to-bottom: dragging the thumb DOWN raises the underlying
+    // value, which (after the 1 - v inversion in JSX) RAISES ghost
+    // opacity — i.e. shows more of the BEFORE picture. Width becomes
+    // the visible vertical length after the rotation.
+    transform: [{ rotate: '90deg' }],
+    width: 220,
+    height: 32,
+  },
+  // Landscape: pill spans the long edge of the screen as a horizontal
+  // strip and the Slider keeps its native horizontal axis (no rotate).
+  ghostSliderPillLandscape: {
+    flexDirection: 'row',
+    height: 40,
+    width: undefined,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  ghostSliderLandscape: {
+    flex: 1,
+    height: 32,
+    marginHorizontal: 8,
   },
   // Photo capture animation styles
   captureAnimationOverlay: {

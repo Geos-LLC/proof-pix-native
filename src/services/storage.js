@@ -5,6 +5,13 @@ import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
 import { saveImageToGalleryNative, deleteImagesFromGalleryNative } from '../utils/mediaStoreSaver';
 import { testMediaStoreSaverModule } from '../utils/testMediaStoreSaver';
+import {
+  readSecure,
+  writeSecure,
+  readSecureJSON,
+  writeSecureJSON,
+  deleteSecure,
+} from './secureStorageService';
 
 // Test if MediaStoreSaver module is available on startup
 if (Platform.OS === 'android') {
@@ -23,22 +30,23 @@ const ASSET_ID_MAP_KEY = 'asset-id-map';
 const UPLOAD_COUNTERS_KEY = 'upload-counters';
 
 /**
- * Loads photo metadata from AsyncStorage
+ * Loads photo metadata. Backed by secure storage (Keychain on iOS) so the list
+ * survives app reinstall on iOS. AsyncStorage acts as a same-install cache.
  */
 export const loadPhotosMetadata = async () => {
   try {
-    const saved = await AsyncStorage.getItem(PHOTOS_METADATA_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-    return [];
+    const saved = await readSecureJSON(PHOTOS_METADATA_KEY);
+    return saved || [];
   } catch (error) {
     return [];
   }
 };
 
 /**
- * Saves photo metadata to AsyncStorage
+ * Saves photo metadata. Writes to both Keychain (iOS reinstall-safe) and
+ * AsyncStorage (fast in-session reads). On Android, Keychain equivalent
+ * (EncryptedSharedPreferences) is not auto-backed-up — Android persistence
+ * across reinstall depends on Google Auto Backup config.
  */
 export const savePhotosMetadata = async (photos) => {
   try {
@@ -51,9 +59,12 @@ export const savePhotosMetadata = async (photos) => {
       timestamp: p.timestamp,
       beforePhotoId: p.beforePhotoId,
       aspectRatio: p.aspectRatio,
-      // Persist orientation and camera view mode to preserve layout after reloads
+      // Persist orientation, camera view mode, and zoom so the next
+      // shot in a set (After / Progress) can default to the same
+      // framing the user chose when capturing the previous photo.
       orientation: p.orientation,
       cameraViewMode: p.cameraViewMode,
+      zoom: p.zoom,
       templateType: p.templateType,
       originalWidth: p.originalWidth,
       originalHeight: p.originalHeight,
@@ -61,10 +72,8 @@ export const savePhotosMetadata = async (photos) => {
       projectId: p.projectId || null
     }));
 
-    const jsonString = JSON.stringify(metadata);
-    
-    await AsyncStorage.setItem(PHOTOS_METADATA_KEY, jsonString);
-    
+    await writeSecureJSON(PHOTOS_METADATA_KEY, metadata);
+
     return true;
   } catch (error) {
     throw error; // Re-throw to let caller know save failed
@@ -72,11 +81,11 @@ export const savePhotosMetadata = async (photos) => {
 };
 
 /**
- * Clears all photos from storage
+ * Clears all photos from storage (both Keychain and AsyncStorage)
  */
 export const clearPhotos = async () => {
   try {
-    await AsyncStorage.removeItem(PHOTOS_METADATA_KEY);
+    await deleteSecure(PHOTOS_METADATA_KEY);
   } catch (error) {
   }
 };
@@ -85,6 +94,7 @@ export const clearPhotos = async () => {
  * Saves a photo to device storage
  */
 export const savePhotoToDevice = async (uri, filename, projectId = null) => {
+  console.warn(`[PHOTODEL] savePhotoToDevice called filename=${filename} projectId=${projectId || 'NULL'}`);
   try {
     // First, copy to app's document directory (for reliable access)
     const fileUri = `${FileSystem.documentDirectory}${filename}`;
@@ -158,6 +168,7 @@ export const savePhotoToDevice = async (uri, filename, projectId = null) => {
         } else {
           // iOS: use expo-media-library as usual
           asset = await MediaLibrary.createAssetAsync(finalFileUri);
+          console.warn(`[PHOTODEL] createAssetAsync returned id=${asset?.id || 'NONE'} for ${filename}`);
         }
 
         // Only handle album and asset ID mapping if we used expo-media-library
@@ -170,18 +181,21 @@ export const savePhotoToDevice = async (uri, filename, projectId = null) => {
             await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
           }
 
-          // Store a mapping from filename -> assetId for reliable deletion later
+          // Store a mapping from filename -> assetId for reliable deletion later.
+          // Use the shared helpers so the write hits BOTH Keychain and
+          // AsyncStorage — the read path (getAssetIdMap) checks both, so
+          // writing to only one of them silently breaks project deletion.
           if (asset?.id) {
             try {
-              const stored = await AsyncStorage.getItem(ASSET_ID_MAP_KEY);
-              const map = stored ? JSON.parse(stored) : {};
+              const map = await getAssetIdMap();
               const justName = (finalFileUri.split('/').pop() || '').split('?')[0];
               if (justName) {
                 const prev = map[justName];
                 map[justName] = typeof prev === 'string'
                   ? { id: asset.id, projectId }
                   : { id: asset.id, projectId: prev?.projectId ?? projectId };
-                await AsyncStorage.setItem(ASSET_ID_MAP_KEY, JSON.stringify(map));
+                await setAssetIdMap(map);
+                console.warn(`[PHOTODEL] map WRITE name=${justName} id=${asset.id} projectId=${map[justName].projectId || 'NULL'}`);
               }
             } catch (mapErr) {
               console.warn('[Storage] Could not update asset id map:', mapErr);
@@ -258,15 +272,14 @@ export const deletePhotoFromDevice = async (photo, options = {}) => {
 
       // Try direct assetId from stored mapping
       try {
-        const stored = await AsyncStorage.getItem(ASSET_ID_MAP_KEY);
-        const map = stored ? JSON.parse(stored) : {};
+        const map = await getAssetIdMap();
         const entry = map[filename];
         const assetId = typeof entry === 'string' ? entry : entry?.id;
         if (assetId) {
           try {
             await MediaLibrary.deleteAssetsAsync([assetId]);
             delete map[filename];
-            await AsyncStorage.setItem(ASSET_ID_MAP_KEY, JSON.stringify(map));
+            await setAssetIdMap(map);
             console.log('[Storage] ✅ Deleted from media library by assetId:', filename);
             return; // deletion done
           } catch (byIdErr) {
@@ -327,20 +340,22 @@ export const deletePhotoFromDevice = async (photo, options = {}) => {
   }
 };
 
-// Helper: get/set asset ID map
+// Helper: get/set asset ID map in secure storage (Keychain on iOS,
+// EncryptedSharedPreferences on Android). Keychain survives app reinstall on
+// iOS so the filename -> MediaLibrary assetId mapping persists alongside the
+// photos in the system "ProofPix" album. Android reinstall persistence
+// depends on Auto Backup config and isn't a requirement.
 export const getAssetIdMap = async () => {
   try {
-    const stored = await AsyncStorage.getItem(ASSET_ID_MAP_KEY);
-    return stored ? JSON.parse(stored) : {};
+    const stored = await readSecureJSON(ASSET_ID_MAP_KEY);
+    return stored || {};
   } catch {
     return {};
   }
 };
 
 const setAssetIdMap = async (map) => {
-  try {
-    await AsyncStorage.setItem(ASSET_ID_MAP_KEY, JSON.stringify(map));
-  } catch {}
+  try { await writeSecureJSON(ASSET_ID_MAP_KEY, map); } catch {}
 };
 
 // Sanitize filename for loose matching (remove spaces and non-alphanumerics, lowercase)
@@ -461,33 +476,45 @@ export const deleteAssetsByPrefixes = async (prefixes, projectIdFilter = null) =
 export const deleteProjectAssets = async (projectId) => {
   try {
     if (!projectId) {
-      console.warn('[Storage] deleteProjectAssets called with no projectId');
+      console.warn('[PHOTODEL] deleteProjectAssets called with no projectId');
       return;
     }
 
-    console.log('[Storage] deleteProjectAssets for projectId:', projectId);
+    console.warn(`[PHOTODEL] start projectId=${projectId} platform=${Platform.OS}`);
     const map = await getAssetIdMap();
+    const totalMapEntries = Object.keys(map || {}).length;
     const filenames = [];
     const assetIds = [];
+    // Audit how the map looks: how many entries are strings (legacy), how
+    // many have projectId, how many match this project.
+    let stringEntries = 0;
+    let withProject = 0;
+    let matchedProject = 0;
     for (const [name, entry] of Object.entries(map)) {
       const pid = typeof entry === 'string' ? null : entry?.projectId;
       const id = typeof entry === 'string' ? entry : entry?.id;
+      if (typeof entry === 'string') stringEntries++;
+      if (pid) withProject++;
       if (pid && pid === projectId) {
+        matchedProject++;
         filenames.push(name);
         if (id) assetIds.push(id);
       }
     }
 
-    console.log(`[Storage] Found ${assetIds.length} assets for project ${projectId}`);
-    console.log('[Storage] Asset IDs to delete:', assetIds);
-    console.log('[Storage] Filenames to delete:', filenames);
+    console.warn(
+      `[PHOTODEL] map totalEntries=${totalMapEntries} strings=${stringEntries} ` +
+      `withProjectId=${withProject} matchedThisProject=${matchedProject}`,
+    );
+    console.warn(`[PHOTODEL] assetIds count=${assetIds.length} firstId=${assetIds[0] || 'none'}`);
+    console.warn(`[PHOTODEL] filenames count=${filenames.length} first=${filenames[0] || 'none'}`);
 
     // Delete media assets in a single batch
     if (assetIds.length > 0 || filenames.length > 0) {
       try {
-        console.log('[Storage] Requesting permission for deletion...');
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        console.log('[Storage] Permission status:', status);
+        console.warn('[PHOTODEL] requesting MediaLibrary permission...');
+        const { status, accessPrivileges } = await MediaLibrary.requestPermissionsAsync();
+        console.warn(`[PHOTODEL] permission status=${status} accessPrivileges=${accessPrivileges || 'n/a'}`);
 
         if (status === 'granted') {
           // On Android, try native MediaStore deletion first (more reliable)
@@ -504,11 +531,9 @@ export const deleteProjectAssets = async (projectId) => {
             }
           }
 
-          console.log(`[Storage] Attempting to delete ${assetIds.length} assets from media library...`);
-          console.log('[Storage] Asset IDs:', JSON.stringify(assetIds));
-
+          console.warn(`[PHOTODEL] calling MediaLibrary.deleteAssetsAsync with ${assetIds.length} ids`);
           const deleteResult = await MediaLibrary.deleteAssetsAsync(assetIds);
-          console.log('[Storage] MediaLibrary.deleteAssetsAsync result:', deleteResult);
+          console.warn(`[PHOTODEL] deleteAssetsAsync returned=${deleteResult}`);
 
           // Verify deletion by trying to fetch the assets
           for (const assetId of assetIds) {
@@ -749,25 +774,24 @@ export const deleteAssetsBatch = async ({ filenames = [], prefixes = [], deleteF
 // ===== Projects store =====
 
 /**
- * Load tracked projects
- * Shape: [{ id, name, createdAt }]
+ * Load tracked projects. Backed by secure storage (Keychain on iOS) so the
+ * project list survives reinstall on iOS. Shape: [{ id, name, createdAt }]
  */
 export const loadProjects = async () => {
   try {
-    const saved = await AsyncStorage.getItem(PROJECTS_KEY);
-    return saved ? JSON.parse(saved) : [];
+    const saved = await readSecureJSON(PROJECTS_KEY);
+    return saved || [];
   } catch (e) {
     return [];
   }
 };
 
 /**
- * Save tracked projects
+ * Save tracked projects. Writes to both Keychain and AsyncStorage.
  */
 export const saveProjects = async (projects) => {
   try {
-    const jsonString = JSON.stringify(projects);
-    await AsyncStorage.setItem(PROJECTS_KEY, jsonString);
+    await writeSecureJSON(PROJECTS_KEY, projects);
   } catch (e) {
     throw e;
   }
@@ -799,10 +823,10 @@ export const deleteProjectEntry = async (projectId) => {
   await saveProjects(filtered);
 };
 
-// Active project persistence
+// Active project persistence (Keychain-mirrored so it survives iOS reinstall)
 export const loadActiveProjectId = async () => {
   try {
-    return await AsyncStorage.getItem(ACTIVE_PROJECT_ID_KEY);
+    return await readSecure(ACTIVE_PROJECT_ID_KEY);
   } catch (e) {
     return null;
   }
@@ -811,9 +835,9 @@ export const loadActiveProjectId = async () => {
 export const saveActiveProjectId = async (projectId) => {
   try {
     if (projectId == null) {
-      await AsyncStorage.removeItem(ACTIVE_PROJECT_ID_KEY);
+      await deleteSecure(ACTIVE_PROJECT_ID_KEY);
     } else {
-      await AsyncStorage.setItem(ACTIVE_PROJECT_ID_KEY, projectId);
+      await writeSecure(ACTIVE_PROJECT_ID_KEY, projectId);
     }
   } catch (e) {
     // noop
@@ -821,15 +845,12 @@ export const saveActiveProjectId = async (projectId) => {
 };
 
 /**
- * Gets stored user data (cleaner name, location)
+ * Gets stored user data (cleaner name, location). Keychain-mirrored.
  */
 export const getStoredUserData = async () => {
   try {
-    const stored = await AsyncStorage.getItem(USER_PREFS_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    return {};
+    const stored = await readSecureJSON(USER_PREFS_KEY);
+    return stored || {};
   } catch (error) {
     return {};
   }
@@ -845,34 +866,32 @@ export const saveUserData = async (cleaner, location) => {
       location,
       savedAt: Date.now()
     };
-    await AsyncStorage.setItem(USER_PREFS_KEY, JSON.stringify(userData));
+    await writeSecureJSON(USER_PREFS_KEY, userData);
   } catch (error) {
   }
 };
 
 /**
- * Loads app settings
+ * Loads app settings. Keychain-mirrored so labels/watermarks/language survive
+ * iOS reinstall.
  */
 export const loadSettings = async () => {
   try {
-    const saved = await AsyncStorage.getItem(SETTINGS_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-    return {};
+    const saved = await readSecureJSON(SETTINGS_KEY);
+    return saved || {};
   } catch (error) {
     return {};
   }
 };
 
 /**
- * Saves app settings
+ * Saves app settings (shallow-merged with existing)
  */
 export const saveSettings = async (settings) => {
   try {
     const existing = await loadSettings();
     const updated = { ...existing, ...settings };
-    await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
+    await writeSecureJSON(SETTINGS_KEY, updated);
   } catch (error) {
   }
 };

@@ -90,6 +90,20 @@ import SectionDetailScreen from './src/screens/SectionDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ContactUsScreen from './src/screens/ContactUsScreen';
 import ProjectsScreen from './src/screens/ProjectsScreen';
+import StudioScreen from './src/screens/StudioScreen';
+import LogoCustomizationScreen from './src/screens/LogoCustomizationScreen';
+import MetadataCustomizationScreen from './src/screens/MetadataCustomizationScreen';
+import MarkupEditorScreen from './src/screens/MarkupEditorScreen';
+import {
+  StudioLayoutScreen,
+  StudioLabelsScreen,
+  StudioNotesScreen,
+  StudioBrandingScreen,
+  StudioExportScreen,
+} from './src/screens/StudioToolScreens';
+import PersistentBottomNav from './src/components/PersistentBottomNav';
+import ProjectDetailScreen from './src/screens/ProjectDetailScreen';
+import PhotoSetPreviewScreen from './src/screens/PhotoSetPreviewScreen';
 import LabelCustomizationScreen from './src/screens/LabelCustomizationScreen';
 import WatermarkCustomizationScreen from './src/screens/WatermarkCustomizationScreen';
 import FirstLoadScreen from './src/screens/FirstLoadScreen';
@@ -241,13 +255,17 @@ function AppNavigator() {
           animation: 'none'
         }}
       />
-      <Stack.Screen 
-        name="Camera" 
+      <Stack.Screen
+        name="Camera"
         component={CameraScreenComponent}
         options={{
           presentation: 'card',
-          animation: 'slide_from_bottom',
-          animationDuration: 300,
+          // No animation — both entering and leaving Camera should be
+          // instant. The previous slide_from_bottom added a perceptible
+          // ~300ms delay on Done/swipe-down and forced the bottom nav
+          // to mask itself for an animation that no longer plays.
+          animation: 'none',
+          animationDuration: 0,
           contentStyle: { backgroundColor: '#000' },
           orientation: 'all',
           autoHideHomeIndicator: false
@@ -296,6 +314,62 @@ function AppNavigator() {
         }}
       />
       <Stack.Screen
+        name="Studio"
+        component={StudioScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      {/* Photo-edit view of Studio. Same component, different route name so
+          PersistentBottomNav can hide the tab bar here (route names are the
+          only handle the nav has — params aren't visible to it). */}
+      <Stack.Screen
+        name="StudioDetail"
+        component={StudioScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
+        name="StudioLayout"
+        component={StudioLayoutScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="StudioLabels"
+        component={StudioLabelsScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="StudioNotes"
+        component={StudioNotesScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="StudioBranding"
+        component={StudioBrandingScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="StudioExport"
+        component={StudioExportScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="ProjectDetail"
+        component={ProjectDetailScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
+        name="PhotoSetPreview"
+        component={PhotoSetPreviewScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
         name="ContactUs"
         component={ContactUsScreen}
         options={{
@@ -315,6 +389,21 @@ function AppNavigator() {
         options={{
           animation: 'slide_from_right'
         }}
+      />
+      <Stack.Screen
+        name="LogoCustomization"
+        component={LogoCustomizationScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="MetadataCustomization"
+        component={MetadataCustomizationScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="MarkupEditor"
+        component={MarkupEditorScreen}
+        options={{ animation: 'slide_from_bottom' }}
       />
       <Stack.Screen
         name="Invite"
@@ -452,6 +541,7 @@ export default function App() {
   console.log('[App] App component rendering...');
   const navigationRef = useRef();
   const routeNameRef = useRef();
+  const [currentRouteName, setCurrentRouteName] = useState(null);
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
   const [trialNotification, setTrialNotification] = useState(null);
   const [showTrialModal, setShowTrialModal] = useState(false);
@@ -757,11 +847,14 @@ export default function App() {
                 linking={linking}
                 fallback={null}
                 onReady={() => {
-                  routeNameRef.current = navigationRef.current.getCurrentRoute().name;
+                  const initial = navigationRef.current.getCurrentRoute().name;
+                  routeNameRef.current = initial;
+                  setCurrentRouteName(initial);
                 }}
                 onStateChange={async () => {
                   const previousRouteName = routeNameRef.current;
                   const currentRouteName = navigationRef.current.getCurrentRoute().name;
+                  setCurrentRouteName(currentRouteName);
 
                   if (previousRouteName !== currentRouteName && firebaseInitialized) {
                     // Manual screen tracking with clean snake_case names
@@ -843,6 +936,10 @@ export default function App() {
                 }}
               >
                 <AppNavigator />
+                <PersistentBottomNav
+                  currentRoute={currentRouteName}
+                  navigationRef={navigationRef}
+                />
               </NavigationContainer>
               {/* Global background components - stay mounted regardless of navigation */}
               <GlobalBackgroundLabelPreparation />

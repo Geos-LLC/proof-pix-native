@@ -4,19 +4,29 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
 import { LABEL_POSITIONS, getLabelPositions } from '../constants/rooms';
 
+// Map font keys to the actual font families loaded in App.js. Previously
+// everything was aliased to Alexandria, which is why the font-picker
+// "did nothing" — every option rendered the same. Each key here matches
+// a real font name registered with `useFonts({...})`.
 const FONT_FAMILY_MAP = {
   alexandria: 'Alexandria_400Regular',
   system: 'Alexandria_400Regular',
-  montserratBold: 'Alexandria_400Regular',
-  playfairBold: 'Alexandria_400Regular',
-  robotoMonoBold: 'Alexandria_400Regular',
-  latoBold: 'Alexandria_400Regular',
-  poppinsSemiBold: 'Alexandria_400Regular',
-  oswaldSemiBold: 'Alexandria_400Regular',
-  serif: 'Alexandria_400Regular',
-  monospace: 'Alexandria_400Regular',
-  seriflegacy: 'Alexandria_400Regular',
-  monospacelegacy: 'Alexandria_400Regular',
+  montserratBold: 'Montserrat_700Bold',
+  playfairBold: 'PlayfairDisplay_700Bold',
+  robotoMonoBold: 'RobotoMono_700Bold',
+  latoBold: 'Lato_700Bold',
+  poppinsSemiBold: 'Poppins_600SemiBold',
+  oswaldSemiBold: 'Oswald_600SemiBold',
+  // Friendlier aliases used by the WatermarkCustomization screen.
+  shadow: 'PlayfairDisplay_700Bold',
+  shanatel: 'Quicksand_400Regular',
+  sf: 'Lato_700Bold',
+  share: 'RobotoMono_700Bold',
+  // Legacy keys → reasonable substitutes (still using loaded fonts).
+  serif: 'PlayfairDisplay_700Bold',
+  monospace: 'RobotoMono_700Bold',
+  seriflegacy: 'PlayfairDisplay_700Bold',
+  monospacelegacy: 'RobotoMono_700Bold',
 };
 
 const LABEL_SIZE_MAP = {
@@ -51,7 +61,7 @@ const LABEL_SIZE_MAP = {
  * @param {object} style - Additional custom styles to override
  * @param {object} textStyle - Additional custom text styles
  */
-export default function PhotoLabel({ label, position = 'left-top', style = {}, textStyle = {}, backgroundColor, textColor, size }) {
+export default function PhotoLabel({ label, position = 'left-top', style = {}, textStyle = {}, backgroundColor, textColor, size, freeformOffset = null }) {
   const {
     labelBackgroundColor,
     labelTextColor,
@@ -84,8 +94,23 @@ export default function PhotoLabel({ label, position = 'left-top', style = {}, t
     FONT_FAMILY_MAP[`${normalizedKey}legacy`] ||
     null;
 
+  // Derive the size config. Backwards compatible: accepts the old
+  // 'small' | 'medium' | 'large' string keys OR a numeric font size
+  // (the new slider sets a number directly). Numeric → padding +
+  // border radius + minWidth all derived from the font size so a
+  // single slider drives the whole proportion.
+  const explicitNumeric = typeof size === 'number' ? size : (typeof labelSize === 'number' ? labelSize : null);
   const sizeKey = (size && LABEL_SIZE_MAP[size]) ? size : (labelSize && LABEL_SIZE_MAP[labelSize] ? labelSize : 'medium');
-  const sizeStyle = LABEL_SIZE_MAP[sizeKey];
+  const sizeConfigFromNumber = explicitNumeric != null
+    ? {
+        fontSize: explicitNumeric,
+        paddingHorizontal: Math.max(6, Math.round(explicitNumeric * 0.7)),
+        paddingVertical: Math.max(2, Math.round(explicitNumeric * 0.35)),
+        borderRadius: Math.max(3, Math.round(explicitNumeric * 0.35)),
+        minWidth: Math.max(40, Math.round(explicitNumeric * 5)),
+      }
+    : null;
+  const sizeStyle = sizeConfigFromNumber || LABEL_SIZE_MAP[sizeKey];
   const cornerRadius = labelCornerStyle === 'square' ? 0 : sizeStyle.borderRadius;
 
   // Get position styles with custom margins
@@ -93,11 +118,31 @@ export default function PhotoLabel({ label, position = 'left-top', style = {}, t
   const positionStyle = positions[position] || positions['left-top'];
   const { name, horizontalAlign, verticalAlign, ...positionCoordinates } = positionStyle;
 
+  // Freeform offset overrides the grid position when present. x/y are
+  // fractions (0 = flush left/top, 1 = flush right/bottom). The
+  // translate(-x*100%, -y*100%) pulls the label back by its own width
+  // and height in proportion to the offset, so x=1 lands the label's
+  // right edge at the right edge of the parent.
+  const useFreeform = freeformOffset
+    && typeof freeformOffset.x === 'number'
+    && typeof freeformOffset.y === 'number';
+  const freeformStyle = useFreeform
+    ? {
+        left: `${freeformOffset.x * 100}%`,
+        top: `${freeformOffset.y * 100}%`,
+        transform: [
+          { translateX: `${-freeformOffset.x * 100}%` },
+          { translateY: `${-freeformOffset.y * 100}%` },
+        ],
+      }
+    : null;
+
   return (
     <View
       style={[
         styles.label,
-        positionCoordinates,
+        useFreeform ? null : positionCoordinates,
+        freeformStyle,
         {
           backgroundColor: backgroundColor || labelBackgroundColor,
           paddingHorizontal: sizeStyle.paddingHorizontal,

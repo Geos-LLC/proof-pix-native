@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import backgroundLabelPreparationService from './backgroundLabelPreparationService';
 import { getCachedLabeledPhoto, calculateSettingsHash } from './labelCacheService';
+import { readSecureJSON } from './secureStorageService';
 
 /**
  * Ensure a photo has its label applied (either from cache or prepare it)
@@ -30,9 +31,9 @@ export async function ensureLabelForPhoto(photo, opts = {}) {
 
   if (!opts.skipCacheCheck) {
     try {
-      // First, check if labels are already cached from background preparation
-      const settingsJson = await AsyncStorage.getItem('app-settings');
-      const settings = settingsJson ? JSON.parse(settingsJson) : {};
+      // First, check if labels are already cached from background preparation.
+      // Reads from Keychain on iOS so settings survive reinstall.
+      const settings = (await readSecureJSON('app-settings')) || {};
 
       // If labels are disabled, return original (default to true if not set)
       if (settings.showLabels === false) {
@@ -87,8 +88,7 @@ export async function ensureLabelForPhoto(photo, opts = {}) {
         let prepSettingsHash = settingsHash;
         if (!prepSettingsHash) {
           try {
-            const prepSettingsJson = await AsyncStorage.getItem('app-settings');
-            const prepSettings = prepSettingsJson ? JSON.parse(prepSettingsJson) : {};
+            const prepSettings = (await readSecureJSON('app-settings')) || {};
             prepSettingsHash = calculateSettingsHash(prepSettings);
           } catch (e) {
             console.warn('[LABEL] Failed to get settings hash for preparation:', e);
@@ -144,8 +144,7 @@ export async function ensureLabelsForPhotoBatch(photos, opts = {}) {
   let labelsEnabled = true;
 
   try {
-    const settingsJson = await AsyncStorage.getItem('app-settings');
-    settings = settingsJson ? JSON.parse(settingsJson) : {};
+    settings = (await readSecureJSON('app-settings')) || {};
     labelsEnabled = settings.showLabels !== false;
     if (labelsEnabled) {
       settingsHash = calculateSettingsHash(settings);

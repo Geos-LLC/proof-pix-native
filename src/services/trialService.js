@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { logTrialEvent } from '../utils/analytics';
+import {
+  readSecureJSON,
+  writeSecureJSON,
+} from './secureStorageService';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
 const TRIAL_DURATION_DAYS = 15;
@@ -18,9 +22,19 @@ const REFERRAL_BONUS_DAYS = 15;
  */
 export const getTrialInfo = async () => {
   try {
+    // Prefer secure storage so trial state survives app reinstall on iOS
+    // (Keychain entries persist across uninstall). secureStorageService falls
+    // back to AsyncStorage automatically when keychain is unavailable.
+    const secure = await readSecureJSON(TRIAL_STORAGE_KEY);
+    if (secure) return secure;
+
+    // Legacy fallback: migrate a previously-AsyncStorage-only trial into
+    // secure storage so the next reinstall keeps it.
     const stored = await AsyncStorage.getItem(TRIAL_STORAGE_KEY);
     if (stored) {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored);
+      try { await writeSecureJSON(TRIAL_STORAGE_KEY, parsed); } catch {}
+      return parsed;
     }
     return null;
   } catch (error) {
@@ -107,7 +121,7 @@ export const startTrial = async (plan, durationDays = null) => {
       hasReferral: hasReferral,
     };
 
-    await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(trialInfo));
+    await writeSecureJSON(TRIAL_STORAGE_KEY, trialInfo);
 
     console.log(`[TrialService] Started ${trialDays}-day trial for plan: ${plan}${hasReferral ? ' (with referral bonus)' : ''}`);
 
@@ -164,7 +178,7 @@ export const setTrialInactive = async () => {
         ...trialInfo,
         active: false,
       };
-      await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(updated));
+      await writeSecureJSON(TRIAL_STORAGE_KEY, updated);
     }
   } catch (error) {
     console.error('[TrialService] Error setting trial inactive:', error);
@@ -284,7 +298,7 @@ export const extendTrial = async (additionalDays) => {
       durationDays: (trialInfo.durationDays || 15) + additionalDays,
     };
 
-    await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(updatedTrialInfo));
+    await writeSecureJSON(TRIAL_STORAGE_KEY, updatedTrialInfo);
 
     console.log(`[TrialService] Trial extended by ${additionalDays} days. New end date: ${newEndDate.toISOString()}`);
 

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   View,
+  Image,
   StyleSheet,
   PanResponder,
   Animated,
@@ -96,7 +97,17 @@ export default function CompareViewer({
   const aspectRatio = typeof frameAspectRatioProp === 'number' && frameAspectRatioProp > 0
     ? frameAspectRatioProp
     : 1;
-  const imageResize = 'contain';
+  // Side-by-side renders each photo into its own half so 'contain' there
+  // keeps each picture undistorted. Split + Overlay share one viewport,
+  // and we want the "original photo, framed to format" UX — same as
+  // PannableImage. We measure the BEFORE bitmap, size the rendered
+  // element so it covers the frame in one dimension and overflows the
+  // other, then let pan/zoom move that overflow into view. Both before
+  // and after share the BEFORE photo's natural aspect so the comparison
+  // stays aligned. resizeMode is unused for the sized split/overlay
+  // elements (we render at the bitmap's aspect with stretch).
+  const isFramed = mode === 'split' || mode === 'overlay';
+  const imageResize = isFramed ? 'cover' : 'contain';
 
   const distanceBetween = (touches) => {
     if (!touches || touches.length < 2) return 0;
@@ -105,10 +116,70 @@ export default function CompareViewer({
     return Math.sqrt(dx * dx + dy * dy);
   };
 
-  // ----- Split mode state -----------------------------------------------------
-  // containerWidth is read inside the PanResponder closure — use a ref so the
-  // closure always sees the live measured width after onLayout fires.
-  const [containerWidth, setContainerWidth] = useState(0);
+  // Container measurements and bitmap size of the BEFORE photo. We use
+  // these to compute a "cover-fit with overflow" element size for split
+  // and overlay modes — same trick PannableImage uses to give the user a
+  // natural pan-around-the-photo feel.
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+  const [bitmapSize, setBitmapSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!beforeUri) return;
+    let cancelled = false;
+    Image.getSize(
+      beforeUri,
+      (w, h) => { if (!cancelled) setBitmapSize({ w, h }); },
+      () => { /* fall back to wrapper-sized element until size resolves */ },
+    );
+    return () => { cancelled = true; };
+  }, [beforeUri]);
+
+  // Element size that the BEFORE photo (and the AFTER overlay, aligned
+  // to it) renders at. Picks the dimension that needs to overflow so the
+  // bitmap's natural aspect is preserved AND the frame is fully covered
+  // at scale=1. Falls back to 100%-of-container until both measurements
+  // are known so the photo doesn't pop on mount.
+  const elementSize = useMemo(() => {
+    const wW = containerSize.w;
+    const wH = containerSize.h;
+    const bW = bitmapSize.w;
+    const bH = bitmapSize.h;
+    if (!wW || !wH || !bW || !bH) return { w: 0, h: 0 };
+    const bA = bW / bH;
+    const wA = wW / wH;
+    if (bA > wA) return { w: wH * bA, h: wH };
+    return { w: wW, h: wW / bA };
+  }, [containerSize, bitmapSize]);
+  const elementSizeRef = useRef({ w: 0, h: 0 });
+  useEffect(() => { elementSizeRef.current = elementSize; }, [elementSize]);
+
+  // Pan clamping that keeps at least one edge of the rendered element
+  // touching the viewport. Same scheme PannableImage uses. Falls back to
+  // the legacy ±300px clamp when we haven't measured yet.
+  const clampPanX = (raw, s) => {
+    const es = elementSizeRef.current;
+    if (!es.w || !containerSize.w) return Math.max(-300, Math.min(300, raw));
+    const max = Math.max(0, (es.w * s - containerSize.w) / 2);
+    return Math.max(-max, Math.min(max, raw));
+  };
+  const clampPanY = (raw, s) => {
+    const es = elementSizeRef.current;
+    if (!es.h || !containerSize.h) return Math.max(-300, Math.min(300, raw));
+    const max = Math.max(0, (es.h * s - containerSize.h) / 2);
+    return Math.max(-max, Math.min(max, raw));
+  };
+
+  // Reset transforms whenever the viewport or bitmap changes, so a new
+  // photo / new format starts at the natural framing.
+  useEffect(() => {
+    panX.setValue(0);
+    panY.setValue(0);
+    scale.setValue(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerSize.w, containerSize.h, bitmapSize.w, bitmapSize.h]);
+
+  // Legacy alias kept for the split-knob math below — same value as
+  // containerSize.w, just exposed under the old name and ref.
+  const containerWidth = containerSize.w;
   const containerWidthRef = useRef(0);
 
   const splitAnim = useRef(new Animated.Value(initialSplit)).current;
@@ -172,12 +243,27 @@ export default function CompareViewer({
             const ratio = dist / pinchStartDistRef.current;
             const next = Math.max(0.5, Math.min(3, pinchStartScaleRef.current * ratio));
             scale.setValue(next);
+            // Re-clamp pan against the new scale so zooming out doesn't
+            // leave the photo offset beyond its new natural overflow.
+            if (isFramed) {
+              panX.setValue(clampPanX(panXRef.current, next));
+              panY.setValue(clampPanY(panYRef.current, next));
+            }
           }
           return;
         }
-        const maxTravel = 300;
-        panX.setValue(Math.max(-maxTravel, Math.min(maxTravel, panXStart.current + gs.dx)));
-        panY.setValue(Math.max(-maxTravel, Math.min(maxTravel, panYStart.current + gs.dy)));
+        // Scale-aware clamping in split/overlay so the user can pan up to
+        // the natural overflow of the photo and no further (cleaner UX
+        // than the legacy ±300px slab). Side-by-side falls back to the
+        // legacy clamp because it has no shared element.
+        if (isFramed) {
+          panX.setValue(clampPanX(panXStart.current + gs.dx, scaleRef.current));
+          panY.setValue(clampPanY(panYStart.current + gs.dy, scaleRef.current));
+        } else {
+          const maxTravel = 300;
+          panX.setValue(Math.max(-maxTravel, Math.min(maxTravel, panXStart.current + gs.dx)));
+          panY.setValue(Math.max(-maxTravel, Math.min(maxTravel, panYStart.current + gs.dy)));
+        }
       },
       onPanResponderRelease: () => {
         pinchStartDistRef.current = 0;
@@ -227,9 +313,9 @@ export default function CompareViewer({
   if (!beforeUri || !afterUri) return null;
 
   const handleLayout = (e) => {
-    const w = e.nativeEvent.layout.width;
-    setContainerWidth(w);
-    containerWidthRef.current = w;
+    const { width, height } = e.nativeEvent.layout;
+    setContainerSize((prev) => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+    containerWidthRef.current = width;
   };
 
   // Reset button — top-right corner of every mode. Tap to return both photos
@@ -258,6 +344,22 @@ export default function CompareViewer({
     { translateY: panY },
     { scale },
   ];
+
+  // Style for the sized split/overlay element. Once we have both wrapper
+  // and bitmap measurements, the element gets its real pixel size and is
+  // centered absolutely so pan/scale animate it within the overflow.
+  // Until then, fall back to absoluteFill + the resizeMode prop so the
+  // photo doesn't pop in at a wrong scale on first paint.
+  const framedSizedStyle = elementSize.w && elementSize.h
+    ? {
+        position: 'absolute',
+        width: elementSize.w,
+        height: elementSize.h,
+        left: (containerSize.w - elementSize.w) / 2,
+        top: (containerSize.h - elementSize.h) / 2,
+      }
+    : null;
+  const framedResizeMode = framedSizedStyle ? 'stretch' : imageResize;
 
   // ----- Render: Side by Side -------------------------------------------------
   if (mode === 'side-by-side') {
@@ -300,15 +402,26 @@ export default function CompareViewer({
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
       >
-        {/* Base layer: BEFORE at full opacity */}
-        <Animated.Image source={{ uri: beforeUri }} style={[styles.absoluteImage, { transform: panTransform }]} resizeMode={imageResize} />
+        {/* Base layer: BEFORE at full opacity. Sized to the bitmap's
+            natural aspect so pan/zoom reveals the overflow instead of
+            stretching the picture. */}
+        <Animated.Image
+          source={{ uri: beforeUri }}
+          style={[framedSizedStyle || styles.absoluteImage, { transform: panTransform }]}
+          resizeMode={framedResizeMode}
+        />
 
         {/* Overlay layer: AFTER image only — opacity controlled by slider.
             At 0 → fully BEFORE visible; at 1 → fully AFTER visible. The
             labels are rendered OUTSIDE this opacity wrapper so they stay
-            fully visible regardless of slider position. */}
+            fully visible regardless of slider position. After uses the
+            same sized style as the base so the two stay aligned. */}
         <View style={[styles.absoluteImage, { opacity: overlayOpacity }]} pointerEvents="none">
-          <Animated.Image source={{ uri: afterUri }} style={[styles.fullImage, { transform: panTransform }]} resizeMode={imageResize} />
+          <Animated.Image
+            source={{ uri: afterUri }}
+            style={[framedSizedStyle || styles.fullImage, { transform: panTransform }]}
+            resizeMode={framedResizeMode}
+          />
         </View>
 
         {/* Both labels render at full opacity, layered above all images. */}
@@ -357,13 +470,25 @@ export default function CompareViewer({
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
     >
-      <Animated.Image source={{ uri: beforeUri }} style={[styles.absoluteImage, { transform: panTransform }]} resizeMode={imageResize} />
+      {/* Base = AFTER fills the whole frame. The BEFORE overlay clips it
+          from the left up to the divider, so LEFT of divider = BEFORE
+          and RIGHT of divider = AFTER (the conventional reading order).
+          Both images render at the BEFORE bitmap's natural aspect (via
+          framedSizedStyle) so pan/zoom reveals the photo's real
+          overflow instead of just sliding a flat crop. */}
+      <Animated.Image
+        source={{ uri: afterUri }}
+        style={[framedSizedStyle || styles.absoluteImage, { transform: panTransform }]}
+        resizeMode={framedResizeMode}
+      />
 
-      {/* AFTER image inside a divider-clipped overlay. Labels render OUTSIDE
-          this clip (below) so the divider position never hides them. */}
       <Animated.View style={[styles.splitOverlay, { width: overlayWidthPct }]} pointerEvents="none">
-        <View style={[styles.splitOverlayInner, { width: containerWidth || '100%' }]}>
-          <Animated.Image source={{ uri: afterUri }} style={[styles.fullImage, { transform: panTransform }]} resizeMode={imageResize} />
+        <View style={[styles.splitOverlayInner, { width: containerWidth || '100%', height: containerSize.h || '100%' }]}>
+          <Animated.Image
+            source={{ uri: beforeUri }}
+            style={[framedSizedStyle || styles.fullImage, { transform: panTransform }]}
+            resizeMode={framedResizeMode}
+          />
         </View>
       </Animated.View>
 

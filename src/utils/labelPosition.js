@@ -53,6 +53,32 @@ export function pickLabelPosition(settings, mode, photo) {
     : pickAfterLabelPosition(settings, photo);
 }
 
+// Orientation-aware freeform offset pickers. Mirror the position pickers
+// above: when a photo is landscape, use the *Landscape variant. Returns
+// null when no freeform offset is set, in which case the renderer falls
+// back to the position key.
+export function pickBeforeLabelOffset(settings, photo) {
+  if (!settings) return null;
+  if (isLandscape(photo)) {
+    return settings.beforeLabelOffsetLandscape || null;
+  }
+  return settings.beforeLabelOffset || null;
+}
+
+export function pickAfterLabelOffset(settings, photo) {
+  if (!settings) return null;
+  if (isLandscape(photo)) {
+    return settings.afterLabelOffsetLandscape || null;
+  }
+  return settings.afterLabelOffset || null;
+}
+
+export function pickLabelOffset(settings, mode, photo) {
+  return mode === 'before'
+    ? pickBeforeLabelOffset(settings, photo)
+    : pickAfterLabelOffset(settings, photo);
+}
+
 export function isLandscapePhoto(photo) {
   return isLandscape(photo);
 }

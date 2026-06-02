@@ -3,6 +3,7 @@ import { AppState, Platform } from 'react-native';
 import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch } from '../services/storage';
 import { deleteImagesFromGalleryNative, deleteImagesByProjectIdNative } from '../utils/mediaStoreSaver';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
 import { PHOTO_MODES, ROOMS } from '../constants/rooms';
 
 const PhotoContext = createContext();
@@ -180,12 +181,80 @@ export const PhotoProvider = ({ children }) => {
         await savePhotosMetadata(migratedPhotos);
       }
 
+      // After reinstall on iOS the Documents directory is wiped, so the
+      // rewritten file:// URIs above point to files that no longer
+      // exist — the rendered Images show as black squares. The actual
+      // photos still live in the iOS Photos library (the ProofPix
+      // album) because their PhotoKit asset IDs were mirrored to
+      // Keychain. Walk the photo list, re-resolve any missing file via
+      // its asset ID, and rewrite the URI to the PhotoKit-provided
+      // localUri so Image can load it again.
+      let urisResolvedFromAssets = false;
+      const baseForResolve = urisMigrated ? migratedPhotos : validPhotos;
+      const resolvedPhotos = Platform.OS === 'ios' ? await (async () => {
+        try {
+          const assetMap = await getAssetIdMap();
+          if (!assetMap || Object.keys(assetMap).length === 0) return baseForResolve;
+          // Only attempt PhotoKit lookups if we have permission. We
+          // explicitly do not REQUEST permission here — that would
+          // surface a dialog on a cold start. If permission was already
+          // granted (it is for any user who has saved photos before),
+          // we resolve; otherwise we leave the URIs alone.
+          const perm = await MediaLibrary.getPermissionsAsync();
+          if (perm.status !== 'granted') return baseForResolve;
+          const out = [];
+          for (const photo of baseForResolve) {
+            if (!photo.uri || !photo.uri.startsWith('file://')) {
+              out.push(photo);
+              continue;
+            }
+            const filename = photo.uri.split('/').pop();
+            if (!filename) {
+              out.push(photo);
+              continue;
+            }
+            // Cheap existence probe: if the file is still on disk
+            // (in-session, same install), skip the PhotoKit roundtrip.
+            try {
+              const info = await FileSystem.getInfoAsync(photo.uri);
+              if (info && info.exists) {
+                out.push(photo);
+                continue;
+              }
+            } catch {}
+            const entry = assetMap[filename];
+            const assetId = typeof entry === 'string' ? entry : entry?.id;
+            if (!assetId) {
+              out.push(photo);
+              continue;
+            }
+            try {
+              const asset = await MediaLibrary.getAssetInfoAsync(assetId);
+              const newUri = asset?.localUri || asset?.uri;
+              if (newUri && newUri !== photo.uri) {
+                urisResolvedFromAssets = true;
+                out.push({ ...photo, uri: newUri });
+                continue;
+              }
+            } catch {}
+            out.push(photo);
+          }
+          return out;
+        } catch (e) {
+          console.warn('[PhotoContext] asset-id re-resolve failed:', e?.message);
+          return baseForResolve;
+        }
+      })() : baseForResolve;
+      if (urisResolvedFromAssets) {
+        console.log('[PhotoContext] Re-resolved photo URIs from PhotoKit asset IDs');
+        await savePhotosMetadata(resolvedPhotos);
+      }
+
       // Reassign photo names sequentially
-      const renamedPhotos = reassignPhotoNames(urisMigrated ? migratedPhotos : validPhotos);
+      const renamedPhotos = reassignPhotoNames(resolvedPhotos);
 
       // Save if names changed
-      const sourceForComparison = urisMigrated ? migratedPhotos : validPhotos;
-      const namesChanged = renamedPhotos.some((photo, idx) => photo.name !== sourceForComparison[idx]?.name);
+      const namesChanged = renamedPhotos.some((photo, idx) => photo.name !== resolvedPhotos[idx]?.name);
       if (namesChanged) {
         await savePhotosMetadata(renamedPhotos);
       }
@@ -510,11 +579,24 @@ export const PhotoProvider = ({ children }) => {
           }
         }
       } else {
-        // iOS or no filenames: use asset map method
+        // iOS: try the asset map first (fast path when projectId is
+        // present in the map), then fall back to a filename scan of
+        // the media library. The scan handles legacy entries written
+        // before projectId tracking existed — without it, those photos
+        // stay in the gallery and we log "No assets found to delete".
         try {
           await deleteProjectAssets(projectId);
         } catch (projErr) {
           console.error(`[PhotoContext] ❌ Error deleting project assets:`, projErr);
+        }
+        if (filenamesSet.size > 0) {
+          try {
+            const filenames = Array.from(filenamesSet);
+            console.log(`[PhotoContext] 🗑️ iOS filename-scan fallback for ${filenames.length} files`);
+            await deleteAssetsBatch({ filenames, deleteFromStorage: true });
+          } catch (batchErr) {
+            console.error(`[PhotoContext] ❌ deleteAssetsBatch fallback failed:`, batchErr);
+          }
         }
       }
 

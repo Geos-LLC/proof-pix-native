@@ -2164,36 +2164,7 @@ export default function GalleryScreen({ navigation, route }) {
 
       {!isSelectionMode && (
         <>
-          <View style={[styles.bottomNavPill, { bottom: 20 + insets.bottom }]}>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
-        >
-          <Image source={require('../../assets/icons/home.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Projects' }] })}
-        >
-          <Image source={require('../../assets/icons/projects.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Projects</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-         style={[styles.navItem, styles.navItemActive]}
-
-        >
-          <Image source={require('../../assets/icons/gallery.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Gallery</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Settings' }] })}
-        >
-          <Image source={require('../../assets/icons/settings.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Settings</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Bottom nav moved to PersistentBottomNav (App.js root). */}
 
 
           <TouchableOpacity

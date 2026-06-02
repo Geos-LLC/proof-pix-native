@@ -6,7 +6,11 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
+      "distribution": "store",
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "channel": "development",
       "env": {
         "EXPO_PUBLIC_PROXY_URL": "https://steadfast-blessing-production.up.railway.app",
         "EXPO_PUBLIC_WATERMARK_URL": "https://geos-ai.com/",
@@ -95,6 +99,13 @@
     }
   },
   "submit": {
+    "development": {
+      "ios": {
+        "appleId": "adeniyiadejuwon0@gmail.com",
+        "ascAppId": "6754261444",
+        "appleTeamId": "X46T9F8UMA"
+      }
+    },
     "production": {
       "ios": {
         "appleId": "adeniyiadejuwon0@gmail.com",

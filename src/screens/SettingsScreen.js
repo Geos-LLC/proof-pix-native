@@ -51,6 +51,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import proxyService from '../services/proxyService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { INDUSTRIES, getIndustryById } from '../constants/industries';
 import { generateInviteLink, generateShareContent, generateInviteCode } from '../utils/inviteLinkGenerator';
 import Modal from 'react-native-modal';
 import ColorPicker from 'react-native-wheel-color-picker';
@@ -310,6 +311,8 @@ export default function SettingsScreen({ navigation, route }) {
     toggleUseFolderStructure,
     enabledFolders,
     updateEnabledFolders,
+    splitPhotosByDate,
+    updateSplitPhotosByDate,
     resetUserData,
     customRooms,
     saveCustomRooms,
@@ -323,6 +326,8 @@ export default function SettingsScreen({ navigation, route }) {
     updateSectionLanguage,
     cleaningServiceEnabled,
     toggleCleaningServiceEnabled,
+    themeMode,
+    setThemeMode,
   } = useSettings();
 
   const { canUse, exceedsLimit, getLimit, effectivePlan } = useFeaturePermissions();
@@ -871,6 +876,21 @@ export default function SettingsScreen({ navigation, route }) {
   }, [isTeamMember, isAuthenticated]);
   const [showRoomEditor, setShowRoomEditor] = useState(false);
   const [showIndustryPicker, setShowIndustryPicker] = useState(false);
+  // Inline industry dropdown in the Sections row — distinct from the
+  // full-screen industry picker modal (`showIndustryPicker` above).
+  // Currently-selected industry id is loaded from the persisted
+  // qualification key on mount and refreshed when the user picks a
+  // different one from this dropdown.
+  const [industryDropdownOpen, setIndustryDropdownOpen] = useState(false);
+  const [currentIndustryId, setCurrentIndustryId] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem('@user_qualification');
+        if (stored) setCurrentIndustryId(stored);
+      } catch (_) {}
+    })();
+  }, []);
   const [editingName, setEditingName] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [referralInfo, setReferralInfo] = useState({
@@ -3009,9 +3029,9 @@ export default function SettingsScreen({ navigation, route }) {
         {/* Folder location - manual pick + Use current location (GPS) */}
         {userMode !== 'team_member' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('settings.folderLocation', { defaultValue: 'Folder location' })}</Text>
+            <Text style={styles.sectionTitle}>{t('settings.folderName', { defaultValue: 'Folder name' })}</Text>
             <Text style={styles.sectionDescription}>
-              {t('settings.folderLocationDescription', { defaultValue: 'Location used in project and upload folder names.' })}
+              {t('settings.folderNameDescription', { defaultValue: 'Defaults to the name you create for each project; falls back to this saved location when none is set.' })}
             </Text>
             <TouchableOpacity
               style={styles.locationPicker}
@@ -3087,21 +3107,12 @@ export default function SettingsScreen({ navigation, route }) {
                 />
               </View>
 
-              {/* Customize Labels Option */}
-              <TouchableOpacity
-                style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}
-                onPress={() => {
-                  navigation.navigate('LabelCustomization');
-                }}
-              >
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
-                  <Text style={styles.settingDescription}>
-                    {t('settings.customizeLabelsDescription', { defaultValue: 'Customize the labels on photos' })}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#666666" />
-              </TouchableOpacity>
+              {/* Customize Labels link removed — label customization
+                  now lives in the editor (Studio → Labels tab). Per
+                  the user's spec, Settings keeps only the on/off
+                  toggle for labels; the deeper customization for
+                  Watermark / Logo / Timestamp stays as navigation
+                  links below (still gated for pro). */}
 
               {/* Customize Watermark Option */}
               <TouchableOpacity
@@ -3155,7 +3166,72 @@ export default function SettingsScreen({ navigation, route }) {
                   <Ionicons name="chevron-forward" size={20} color="#666666" />
                 )}
               </TouchableOpacity>
-              {customWatermarkEnabled && canUse(FEATURES.CUSTOM_WATERMARKS) && (
+
+              {/* Customize Logo — gated by the same pro feature flag
+                  as watermark (no separate logo capability today).
+                  Navigates to LogoCustomization which lets the user
+                  upload + place a brand logo overlay. */}
+              <TouchableOpacity
+                style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}
+                onPress={() => {
+                  if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                    navigation.navigate('LogoCustomization');
+                  } else {
+                    navigation.navigate('PlanSelection');
+                  }
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.customizeLogo', { defaultValue: 'Customize Logo' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.customizeLogoDescription', { defaultValue: 'Upload and position a brand logo on photos.' })}
+                  </Text>
+                </View>
+                {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                    <Ionicons name="lock-closed" size={16} color="#EAB308" />
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color="#666666" />
+                )}
+              </TouchableOpacity>
+
+              {/* Customize Timestamp (Metadata overlay) — pro gated
+                  too. Navigates to MetadataCustomization for field
+                  toggles + styling. */}
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => {
+                  if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                    navigation.navigate('MetadataCustomization');
+                  } else {
+                    navigation.navigate('PlanSelection');
+                  }
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.customizeTimestamp', { defaultValue: 'Customize Timestamp' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.customizeTimestampDescription', { defaultValue: 'Pick which date / time / location fields appear on photos.' })}
+                  </Text>
+                </View>
+                {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                    <Ionicons name="lock-closed" size={16} color="#EAB308" />
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color="#666666" />
+                )}
+              </TouchableOpacity>
+
+              {/* Inline watermark customization fields removed — the
+                  user spec wants the deep watermark editor only in
+                  the dedicated WatermarkCustomization screen. Keeping
+                  the inline rendering below would surface the same
+                  controls twice. */}
+              {false && customWatermarkEnabled && canUse(FEATURES.CUSTOM_WATERMARKS) && (
                 <View style={styles.watermarkCustomization}>
                   {/* Add Watermark Checkbox */}
                   <View style={styles.settingRow}>
@@ -3444,6 +3520,25 @@ export default function SettingsScreen({ navigation, route }) {
 
             </View>
 
+            {/* Appearance */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('settings.appearance', { defaultValue: 'Appearance' })}</Text>
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.darkMode', { defaultValue: 'Dark mode' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.darkModeDescription', { defaultValue: 'Use a dark color scheme. Applies to redesigned screens.' })}
+                  </Text>
+                </View>
+                <Switch
+                  value={themeMode === 'dark'}
+                  onValueChange={(v) => setThemeMode(v ? 'dark' : 'light')}
+                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+                  thumbColor="white"
+                />
+              </View>
+            </View>
+
             {/* Sections */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t('settings.folderCustomization_short', { defaultValue: 'Sections' })}</Text>
@@ -3451,20 +3546,65 @@ export default function SettingsScreen({ navigation, route }) {
                 {t('settings.folderCustomizationDescription', { defaultValue: 'Customize the names and default status of your project sections.' })}
               </Text>
 
+              {/* Industry dropdown — replaces the old Cleaning
+                  Service toggle. Defaults to the industry the user
+                  picked during onboarding (loaded from
+                  @user_qualification); picking a different one
+                  re-seeds the project's room folders with that
+                  industry's preset list. */}
               <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>{t('settings.cleaningService', { defaultValue: 'Cleaning Service' })}</Text>
+                  <Text style={styles.settingLabel}>{t('settings.industry', { defaultValue: 'Industry' })}</Text>
                   <Text style={styles.settingDescription}>
-                    {t('settings.cleaningServiceDescription', { defaultValue: 'Show real room names (Kitchen, Bathroom etc.)' })}
+                    {t('settings.industryDescription', { defaultValue: 'Used to seed your section names. Customize any section after selecting.' })}
                   </Text>
                 </View>
-                <Switch
-                  value={cleaningServiceEnabled}
-                  onValueChange={toggleCleaningServiceEnabled}
-                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                  thumbColor="white"
-                />
+                <TouchableOpacity
+                  style={styles.locationPicker}
+                  onPress={() => setIndustryDropdownOpen((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.locationPickerText} numberOfLines={1}>
+                    {(getIndustryById(currentIndustryId)?.defaultLabel) || t('settings.industryPick', { defaultValue: 'Pick an industry' })}
+                  </Text>
+                  <Ionicons
+                    name={industryDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={COLORS.GRAY}
+                    style={styles.locationPickerArrow}
+                  />
+                </TouchableOpacity>
               </View>
+              {industryDropdownOpen && (
+                <View style={styles.locationDropdown}>
+                  {INDUSTRIES.map((ind) => {
+                    const isActive = currentIndustryId === ind.id;
+                    return (
+                      <TouchableOpacity
+                        key={ind.id}
+                        style={[styles.locationOption, isActive && styles.locationOptionSelected]}
+                        onPress={async () => {
+                          setIndustryDropdownOpen(false);
+                          setCurrentIndustryId(ind.id);
+                          try {
+                            await AsyncStorage.setItem('@user_qualification', ind.id);
+                          } catch (_) {}
+                          if (ind.folders?.length) {
+                            try { await saveCustomRooms(ind.folders); } catch (_) {}
+                          }
+                        }}
+                      >
+                        <Text style={[styles.locationOptionText, isActive && styles.locationOptionTextSelected]}>
+                          {ind.defaultLabel}
+                        </Text>
+                        {isActive && (
+                          <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={styles.locationOptionCheck} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
 
               {renderRoomTabs()}
 
@@ -3503,70 +3643,31 @@ export default function SettingsScreen({ navigation, route }) {
               </TouchableOpacity>
             </View>
 
-            {/* Upload Structure */}
+            {/* Upload Structure — collapsed down to a single
+                Split-by-date switch per the user's spec. The old
+                Before / After / Combined sub-toggles still exist in
+                Settings storage (for upload-service back-compat) but
+                are no longer surfaced in the UI. */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t('settings.uploadStructure', { defaultValue: 'Upload Structure' })}</Text>
               <Text style={styles.sectionDescription}>
                 {t('settings.uploadStructureDescription', { defaultValue: 'Configure how photos are organized in cloud storage.' })}
               </Text>
 
-              <View style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}>
+              <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>{t('settings.useFolderStructure', { defaultValue: "Use 'Before/After/Combined' folder structure" })}</Text>
+                  <Text style={styles.settingLabel}>{t('settings.splitByDate', { defaultValue: 'Split photos by date' })}</Text>
                   <Text style={styles.settingDescription}>
-                    {t('settings.useFolderStructureDescription', { defaultValue: 'Auto create subfolders for different photo states.' })}
+                    {t('settings.splitByDateDescription', { defaultValue: 'Group uploaded photos into per-day subfolders.' })}
                   </Text>
                 </View>
                 <Switch
-                  value={useFolderStructure}
-                  onValueChange={toggleUseFolderStructure}
+                  value={splitPhotosByDate}
+                  onValueChange={updateSplitPhotosByDate}
                   trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
                   thumbColor="white"
                 />
               </View>
-
-              {useFolderStructure && (
-                <>
-                  <View style={styles.settingRow}>
-                    <View style={styles.settingInfo}>
-                      <Text style={styles.settingLabel}>{t('settings.beforeFolder', { defaultValue: "'Before' Folder" })}</Text>
-                      <Text style={styles.settingDescription}>{t('settings.beforeFolderDescription', { defaultValue: 'Enable the folder for original photos.' })}</Text>
-                    </View>
-                    <Switch
-                      value={enabledFolders.before}
-                      onValueChange={(v) => updateEnabledFolders({ before: v })}
-                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                      thumbColor="white"
-                    />
-                  </View>
-
-                  <View style={styles.settingRow}>
-                    <View style={styles.settingInfo}>
-                      <Text style={styles.settingLabel}>{t('settings.afterFolder', { defaultValue: "'After' Folder" })}</Text>
-                      <Text style={styles.settingDescription}>{t('settings.afterFolderDescription', { defaultValue: 'Upload after photos to this folder.' })}</Text>
-                    </View>
-                    <Switch
-                      value={enabledFolders.after}
-                      onValueChange={(v) => updateEnabledFolders({ after: v })}
-                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                      thumbColor="white"
-                    />
-                  </View>
-
-                  <View style={styles.settingRow}>
-                    <View style={styles.settingInfo}>
-                      <Text style={styles.settingLabel}>{t('settings.combinedFolder', { defaultValue: "'Combined' Folder" })}</Text>
-                      <Text style={styles.settingDescription}>{t('settings.combinedFolderDescription', { defaultValue: 'Upload combined photos to this folder.' })}</Text>
-                    </View>
-                    <Switch
-                      value={enabledFolders.combined}
-                      onValueChange={(v) => updateEnabledFolders({ combined: v })}
-                      trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                      thumbColor="white"
-                    />
-                  </View>
-                </>
-              )}
             </View>
           </>
         )}
@@ -5368,41 +5469,25 @@ export default function SettingsScreen({ navigation, route }) {
           <Text style={styles.versionText}>
             Version {Application.nativeApplicationVersion} ({Application.nativeBuildVersion})
           </Text>
+          {/* OTA load indicator. Embedded = running the JS bundle that
+              shipped inside the TestFlight/App Store binary. Otherwise we
+              show the short update ID + creation date so you can confirm
+              the latest `eas update` actually loaded. */}
+          <Text style={styles.versionText}>
+            {Updates.isEmbeddedLaunch
+              ? 'Embedded (no OTA loaded)'
+              : `Update ${Updates.updateId ? String(Updates.updateId).slice(0, 8) : '—'}${
+                  Updates.createdAt
+                    ? ' · ' + new Date(Updates.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : ''
+                }`}
+          </Text>
         </View>
 
         </ScrollView>
 
-        <View style={[styles.bottomNavPill, { bottom: 20 + insets.bottom }]}>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
-        >
-          <Image source={require('../../assets/icons/home.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Projects' }] })}
-        >
-          <Image source={require('../../assets/icons/projects.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Projects</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] })}
-        >
-          <Image source={require('../../assets/icons/gallery.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Gallery</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          onPress={handleTitleTap}
-          style={[styles.navItem, styles.navItemActive]}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Image source={require('../../assets/icons/settings.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Settings</Text>
-        </TouchableOpacity>
-      </View>
+        {/* Bottom nav moved to PersistentBottomNav (App.js root). Dev-tools
+            8-tap unlock is still handled via the screen title (see handleTitleTap). */}
 
         <RoomEditor
           visible={showRoomEditor}

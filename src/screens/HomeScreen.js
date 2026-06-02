@@ -16,7 +16,10 @@ import {
   Switch,
   InteractionManager,
   Platform,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  Linking,
+  Animated,
+  Share as RNShare,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -28,6 +31,7 @@ import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '..
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import PhotoLabel from '../components/PhotoLabel';
+import { StudioEditOverlays } from '../components/StudioOverlays';
 import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
@@ -35,6 +39,7 @@ import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelP
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 import { useAdmin } from '../context/AdminContext';
 import { createAlbumName, ensureLabelForPhoto } from '../services/uploadService';
 import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
@@ -150,7 +155,32 @@ const isStackedLayout = (templateType, aspectRatio) => {
   return !isPortraitAspectRatio(aspectRatio);
 };
 
-export default function HomeScreen({ navigation }) {
+// Aspect helpers — hoisted to module scope so both the pager IIFE and
+// the tap-to-fullscreen modal can resolve a photo's display aspect the
+// same way: Studio pairTemplate first, then the capture-time aspectRatio
+// string saved by CameraScreen ("9:16" / "16:9" / "4:3" / "3:4"), then
+// originalWidth/Height, finally 0 (fill height fallback).
+const PAIR_TEMPLATE_ASPECTS = { square: 1, 'wide-16-9': 16 / 9, 'tall-9-16': 9 / 16, 'wide-2-1': 2, 'tall-1-2': 0.5 };
+const parseAspectString = (s) => {
+  if (typeof s !== 'string') return null;
+  const m = s.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  const w = parseFloat(m[1]);
+  const h = parseFloat(m[2]);
+  if (!w || !h) return null;
+  return w / h;
+};
+const aspectForPhoto = (p) => {
+  if (!p) return 0;
+  const tpl = PAIR_TEMPLATE_ASPECTS[p.pairTemplate];
+  if (tpl) return tpl;
+  const fromStr = parseAspectString(p.aspectRatio);
+  if (fromStr) return fromStr;
+  if (p.originalWidth && p.originalHeight) return p.originalWidth / p.originalHeight;
+  return 0;
+};
+
+export default function HomeScreen({ navigation, route }) {
   const { t } = useTranslation();
   const {
     currentRoom,
@@ -160,6 +190,7 @@ export default function HomeScreen({ navigation }) {
     getCombinedPhotos,
     getProgressPhotos,
     deletePhotoSet,
+    deletePhoto,
   } = usePhotos();
 
   const [fullScreenPhoto, setFullScreenPhoto] = useState(null);
@@ -176,6 +207,62 @@ export default function HomeScreen({ navigation }) {
   const [fullScreenPhotos, setFullScreenPhotos] = useState([]);
   const [fullScreenLoading, setFullScreenLoading] = useState(false);
   const [fullScreenError, setFullScreenError] = useState(null);
+  // Individual photos in the active set (Before → Progress(es) → After
+  // → Combined). Drives the pager + thumb strip in the simple preview.
+  const [setMembers, setSetMembers] = useState([]);
+  const [setMemberIndex, setSetMemberIndex] = useState(0);
+  // Per-preview toggle that reveals the labels Studio bakes onto the
+  // share output. Kept local so flipping it here doesn't change the
+  // global Settings flag — the user just wants a visual preview of
+  // the edits without committing them anywhere.
+  const [showStudioEdits, setShowStudioEdits] = useState(false);
+  // Photo opened via tap inside the preview pager — drives a simple
+  // full-screen modal viewer (image only, tap or chevron to close).
+  const [tappedFullPhoto, setTappedFullPhoto] = useState(null);
+  // Off-screen composite renderer used by Share when the "Edited"
+  // toggle is on. We mount a hidden View containing the Image + the
+  // same StudioEditOverlays stack, captureRef it to a file, and share
+  // that file instead of the raw photo URI.
+  const [shareCaptureContext, setShareCaptureContext] = useState(null);
+  const shareCaptureRef = useRef(null);
+  // Transient big-title that flashes over the pager when the user
+  // crosses into a new set (replaces the old "Previous / Next set"
+  // sentinel cards). Holds for 500 ms then fades out.
+  const [flashTitle, setFlashTitle] = useState(null);
+  const flashOpacity = useRef(new Animated.Value(0)).current;
+  const flashTimerRef = useRef(null);
+  const flashSetTitle = (text) => {
+    if (!text) return;
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    setFlashTitle(text);
+    flashOpacity.setValue(0);
+    Animated.timing(flashOpacity, {
+      toValue: 1,
+      duration: 120,
+      useNativeDriver: true,
+    }).start();
+    flashTimerRef.current = setTimeout(() => {
+      Animated.timing(flashOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setFlashTitle(null);
+      });
+    }, 500);
+  };
+  // Use state for the pager width so the first render already uses a
+  // sane width (the screen width) — a ref would leave the pages at 0px
+  // wide until onLayout fires, which was making the very first preview
+  // open blank until the user closed and reopened it.
+  const [previewWidth, setPreviewWidth] = useState(() => Dimensions.get('window').width);
+  // Measured body height — used by the preview pager to fit the photo
+  // container EXACTLY to the photo's rendered size (no letterbox bars),
+  // so the trash + share icons land on the photo edges instead of on
+  // the surrounding grey surface.
+  const [previewHeight, setPreviewHeight] = useState(0);
+  const previewPagerRef = useRef(null);
+  const previewPagerScrolling = useRef(false);
   const [openProjectVisible, setOpenProjectVisible] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -183,7 +270,36 @@ export default function HomeScreen({ navigation }) {
   const [bannerRefreshKey, setBannerRefreshKey] = useState(0);
   const { projects, getPhotosByProject, deleteProject, setActiveProject, activeProjectId, createProject, renameProject, photos } = usePhotos();
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
+  // Derived: setMembers re-mapped against the LIVE photos store on
+  // every render. setMembers caches snapshot photo objects from the
+  // moment the preview opened — when the user jumps to Edit (Studio),
+  // changes pairTemplate / metadata / etc., and comes back, those
+  // snapshots stay stale. Re-resolving by id every render keeps the
+  // pager + everything downstream (aspectForPhoto, overlays, share
+  // composite) pinned to the latest store data. Must live AFTER the
+  // usePhotos() destructure above — earlier the useMemo was declared
+  // before `photos` was in scope, which hit a TDZ ReferenceError on
+  // first render of the preview.
+  const liveSetMembers = useMemo(() => {
+    if (!setMembers || setMembers.length === 0) return setMembers;
+    const byId = new Map(photos.map((p) => [p.id, p]));
+    return setMembers.map((m) => byId.get(m.id) || m).filter(Boolean);
+  }, [setMembers, photos]);
+  const liveTappedFullPhoto = useMemo(() => {
+    if (!tappedFullPhoto?.id) return tappedFullPhoto;
+    return photos.find((p) => p.id === tappedFullPhoto.id) || tappedFullPhoto;
+  }, [tappedFullPhoto, photos]);
+  // Locate the merged Before/After composite for a given Before. The
+  // camera capture flow names combined photos after their source
+  // Before (same `name`), so a name match in the room's combined list
+  // is the link. Returns null when no composite exists yet.
+  const findCombinedForBefore = (beforePhoto, roomOverride) => {
+    if (!beforePhoto) return null;
+    const cs = getCombinedPhotos?.(roomOverride || beforePhoto.room || currentRoom) || [];
+    return cs.find((c) => c?.name === beforePhoto.name) || null;
+  };
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const {
     userName,
     location,
@@ -200,12 +316,35 @@ export default function HomeScreen({ navigation }) {
     afterLabelPosition,
     beforeLabelPositionLandscape,
     afterLabelPositionLandscape,
+    beforeLabelOffset,
+    afterLabelOffset,
+    beforeLabelOffsetLandscape,
+    afterLabelOffsetLandscape,
     labelBackgroundColor,
     labelTextColor,
     labelSize,
     labelMarginHorizontal,
     labelMarginVertical,
     updateUserInfo,
+    // Extra Settings the preview's "Edited" toggle reads to mirror
+    // the Studio screen's overlay stack (watermark, brand logo,
+    // metadata caption).
+    showWatermark,
+    showBrandLogo,
+    brandLogoUri,
+    brandLogoPosition,
+    brandLogoSize,
+    brandLogoOffset,
+    metaShowDate,
+    metaShowTime,
+    metaShowAddress,
+    metaShowGps,
+    metaPosition,
+    metaColor,
+    metaOpacity,
+    metaFontSize,
+    metaFontFamily,
+    metaOffset,
   } = useSettings();
   const { userMode } = useAdmin();
   const fullScreenTopInset = Math.max(insets.top, 25);
@@ -222,6 +361,7 @@ export default function HomeScreen({ navigation }) {
   const [newProjectNamePart, setNewProjectNamePart] = useState('');
   const [newProjectLocation, setNewProjectLocation] = useState(location);
   const [locationLoadingInModal, setLocationLoadingInModal] = useState(false);
+  const [locationDenied, setLocationDenied] = useState(false);
   const [pendingCameraAfterCreate, setPendingCameraAfterCreate] = useState(false);
   const [combinedBaseUris, setCombinedBaseUris] = useState({});
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
@@ -249,16 +389,18 @@ export default function HomeScreen({ navigation }) {
     setRooms(newRooms);
   }, [customRooms]);
 
-  // Show qualification prompt after first landing (with short delay)
+  // Show qualification prompt immediately on first landing.
   useEffect(() => {
-    const timer = setTimeout(async () => {
+    let cancelled = false;
+    (async () => {
       const done = await hasCompletedQualification();
+      if (cancelled) return;
       if (!done) {
         logEvent('qualification_prompt_shown', { context: 'onboarding' });
         setShowQualification(true);
       }
-    }, 1500);
-    return () => clearTimeout(timer);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Refresh banner when screen focuses (user may have completed a job)
@@ -384,6 +526,10 @@ export default function HomeScreen({ navigation }) {
     }
   }, [rooms, currentRoom]);
 
+  // (Studio's old "Test" tab used to hand off to this screen via
+  // previewPhotoId / previewBeforeId / previewAfterId params. Tab was
+  // removed; the handoff is dead code now.)
+
   useEffect(() => {
     if (activeProjectId && projects.length > 0) {
       const activeProjectExists = projects.some(p => p.id === activeProjectId);
@@ -405,11 +551,16 @@ export default function HomeScreen({ navigation }) {
   const lastTap = useRef(null);
   const swipeStartX = useRef(null);
   const tapCount = useRef(0);
-  
+
   const beforePhotos = getBeforePhotos(currentRoom);
   const afterPhotos = getAfterPhotos(currentRoom);
   const currentRoomRef = useRef(currentRoom);
   const roomTabsScrollRef = useRef(null);
+  // Stores the measured x + width of the currently-rendered "middle" tab
+  // (the active room, after circular rotation). Updated by onLayout
+  // every time the row re-renders. Lets us center the active room
+  // exactly, regardless of variable tab widths driven by label length.
+  const activeTabLayoutRef = useRef({ x: 0, width: 0 });
 
   // Create circular room arrangement with active room in center
   const getCircularRooms = useCallback(() => {
@@ -434,23 +585,53 @@ export default function HomeScreen({ navigation }) {
     return circularRooms;
   }, [rooms, currentRoom]);
 
-  // Scroll to center after room change
+  // Slide-in animation for the main content (photo grid) on room
+  // change. When the user picks a room AFTER the previous one in the
+  // list, content slides in from the right; BEFORE → from the left.
+  // Comparison runs against the previous room id, kept in a ref so it
+  // doesn't trigger renders.
+  const contentSlideX = useRef(new Animated.Value(0)).current;
+  const prevRoomIdRef = useRef(currentRoom);
   useEffect(() => {
-    if (!roomTabsScrollRef.current || !rooms.length) return;
+    if (!rooms.length) return;
+    if (prevRoomIdRef.current === currentRoom) return;
+    const prevIdx = rooms.findIndex((r) => r.id === prevRoomIdRef.current);
+    const nextIdx = rooms.findIndex((r) => r.id === currentRoom);
+    prevRoomIdRef.current = currentRoom;
+    if (prevIdx < 0 || nextIdx < 0) return;
+    const direction = nextIdx > prevIdx ? 1 : -1;
+    const screenW = Dimensions.get('window').width;
+    contentSlideX.setValue(direction * screenW * 0.18);
+    Animated.timing(contentSlideX, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [currentRoom, rooms, contentSlideX]);
 
-    const TAB_WIDTH = 79; // minWidth(69) + gap(10)
-    const PADDING = 16;
+  // Smooth-scroll the room row so the active card lands in the visible
+  // centre. We can't rely on a fixed TAB_WIDTH because tab widths vary
+  // by label length (e.g. "Living Room" vs "Office") — the previous
+  // hardcoded 79 left the active card off-center. Instead the active
+  // tab reports its measured x + width via onLayout (see
+  // activeTabLayoutRef), and we scroll to put that exact pixel center
+  // under the screen center.
+  const scrollActiveTabToCenter = useCallback((animated = true) => {
+    if (!roomTabsScrollRef.current) return;
+    const { x, width } = activeTabLayoutRef.current;
+    if (!width) return;
     const screenWidth = Dimensions.get('window').width;
-    const middleIndex = Math.floor(rooms.length / 2);
+    const scrollX = Math.max(0, x + width / 2 - screenWidth / 2);
+    roomTabsScrollRef.current.scrollTo({ x: scrollX, animated });
+  }, []);
 
-    // Calculate scroll position to center the middle tab (which is now the active one)
-    const tabCenterX = PADDING + (middleIndex * TAB_WIDTH) + (TAB_WIDTH / 2);
-    const scrollX = Math.max(0, tabCenterX - (screenWidth / 2));
-
-    setTimeout(() => {
-      roomTabsScrollRef.current?.scrollTo({ x: scrollX, animated: false });
-    }, 50);
-  }, [currentRoom, rooms]);
+  useEffect(() => {
+    if (!rooms.length) return;
+    // Defer so the new circular array has laid out and onLayout fired
+    // with the new active tab's coordinates before we scroll.
+    const timer = setTimeout(() => scrollActiveTabToCenter(true), 60);
+    return () => clearTimeout(timer);
+  }, [currentRoom, rooms, scrollActiveTabToCenter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -661,6 +842,8 @@ export default function HomeScreen({ navigation }) {
     setFullScreenPhotoSet(null);
     setFullScreenLoading(false);
     setFullScreenError(null);
+    setSetMembers([]);
+    setSetMemberIndex(0);
 
     if (wasLongPress) {
       setTimeout(() => {
@@ -683,7 +866,7 @@ export default function HomeScreen({ navigation }) {
         beforeToAfterMap.set(afterPhoto.beforePhotoId, afterPhoto);
       }
     });
-    
+
     beforePhotos.forEach(beforePhoto => {
       const afterPhoto = beforeToAfterMap.get(beforePhoto.id);
       if (afterPhoto) {
@@ -697,7 +880,7 @@ export default function HomeScreen({ navigation }) {
         allPhotos.push({ ...beforePhoto, type: 'before' });
       }
     });
-    
+
     let photoIndex = 0;
     if (photo) {
       photoIndex = allPhotos.findIndex(p => p.id === photo.id);
@@ -714,8 +897,151 @@ export default function HomeScreen({ navigation }) {
       } else {
         setFullScreenPhoto(allPhotos[photoIndex]);
       }
+      // Build the set members for the simple preview pager: every
+      // individual photo that belongs to the same capture session,
+      // ordered Before → Progress(es) → After → Combined. Lets the user
+      // swipe through originals + the merged result instead of being
+      // pinned to a single static view.
+      const anchorBefore =
+        beforePhoto
+          || (photo?.type === 'before' ? photo : null)
+          || (photo?.beforePhoto || null)
+          || (photo?.beforePhotoId ? beforePhotos.find(b => b.id === photo.beforePhotoId) : null)
+          || photo;
+      const members = [];
+      if (anchorBefore?.mode === 'before' || anchorBefore?.type === 'before') {
+        members.push(anchorBefore);
+      } else if (anchorBefore) {
+        // Standalone photo — just preview that one.
+        members.push(anchorBefore);
+      }
+      if (anchorBefore?.id) {
+        const progresses = (getProgressPhotos?.(currentRoom) || []).filter(
+          (p) => p.beforePhotoId === anchorBefore.id
+        );
+        progresses.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        members.push(...progresses);
+        const after = beforeToAfterMap.get(anchorBefore.id);
+        if (after) members.push(after);
+        // Append the merged combined composite at the END so the user
+        // can swipe past After to see the share/export artifact too.
+        const combined = findCombinedForBefore(anchorBefore, currentRoom);
+        if (combined) members.push(combined);
+      }
+      const startMemberIndex = (() => {
+        if (!photo) return 0;
+        const i = members.findIndex((m) => m.id === photo.id);
+        return i >= 0 ? i : 0;
+      })();
+      setSetMembers(members);
+      setSetMemberIndex(startMemberIndex);
     }
   };
+
+  // Camera's enlarged "eye" icon navigates here with previewBeforeId /
+  // previewRoom / previewProjectId / previewPhotoId so the user lands
+  // on the SAME modal preview that taps from the home photo grid
+  // use — not the older PhotoSetPreview screen (which still serves
+  // ProjectDetail). On arrival, we switch project + room if needed
+  // and replicate handleDoubleTap's state setup against the target
+  // room directly (handleDoubleTap reads `currentRoom` from closure,
+  // which is stale until the next render).
+  useFocusEffect(
+    React.useCallback(() => {
+      const params = route?.params;
+      if (!params?.previewBeforeId) return;
+
+      const targetRoom = params.previewRoom || currentRoom;
+      const targetProjectId = params.previewProjectId;
+      const targetPhotoId = params.previewPhotoId;
+
+      if (targetProjectId && targetProjectId !== activeProjectId) {
+        setActiveProject(targetProjectId);
+      }
+      if (targetRoom && targetRoom !== currentRoom) {
+        setCurrentRoom(targetRoom);
+      }
+
+      const beforePhotos = getBeforePhotos(targetRoom);
+      const afterPhotos = getAfterPhotos(targetRoom);
+      const combinedPhotos = getCombinedPhotos(targetRoom);
+      const beforePhoto = beforePhotos.find((p) => p.id === params.previewBeforeId);
+      const afterPhoto = params.previewAfterId
+        ? afterPhotos.find((p) => p.id === params.previewAfterId)
+        : null;
+
+      const clearParams = () => {
+        navigation.setParams({
+          previewBeforeId: undefined,
+          previewAfterId: undefined,
+          previewRoom: undefined,
+          previewProjectId: undefined,
+          previewPhotoId: undefined,
+        });
+      };
+
+      if (!beforePhoto) {
+        clearParams();
+        return;
+      }
+
+      const beforeToAfterMap = new Map();
+      afterPhotos.forEach((ap) => {
+        if (ap.beforePhotoId) beforeToAfterMap.set(ap.beforePhotoId, ap);
+      });
+
+      const allPhotos = [];
+      beforePhotos.forEach((bp) => {
+        const ap = beforeToAfterMap.get(bp.id);
+        if (ap) {
+          const cp = combinedPhotos.find((p) => p.name === bp.name);
+          if (cp) {
+            allPhotos.push({ ...cp, type: 'combined', beforePhoto: bp, afterPhoto: ap });
+          } else {
+            allPhotos.push({ ...bp, type: 'split', beforePhoto: bp, afterPhoto: ap });
+          }
+        } else {
+          allPhotos.push({ ...bp, type: 'before' });
+        }
+      });
+
+      const photoIndex = allPhotos.findIndex(
+        (p) => p.id === beforePhoto.id || p.beforePhoto?.id === beforePhoto.id,
+      );
+      if (photoIndex < 0) {
+        clearParams();
+        return;
+      }
+
+      setFullScreenPhotos(allPhotos);
+      setFullScreenIndex(photoIndex);
+      setFullScreenLoading(false);
+      setFullScreenError(null);
+      if (afterPhoto) {
+        setFullScreenPhotoSet({ before: beforePhoto, after: afterPhoto });
+      } else {
+        setFullScreenPhoto(allPhotos[photoIndex]);
+      }
+
+      const members = [beforePhoto];
+      const progresses = (getProgressPhotos?.(targetRoom) || []).filter(
+        (p) => p.beforePhotoId === beforePhoto.id,
+      );
+      progresses.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      members.push(...progresses);
+      if (afterPhoto) members.push(afterPhoto);
+      const combinedRestore = findCombinedForBefore(beforePhoto, targetRoom);
+      if (combinedRestore) members.push(combinedRestore);
+      setSetMembers(members);
+      const startMemberIndex = Math.max(
+        0,
+        members.findIndex((m) => m.id === (targetPhotoId || beforePhoto.id)),
+      );
+      setSetMemberIndex(startMemberIndex);
+
+      clearParams();
+    }, [route?.params, currentRoom, activeProjectId])
+  );
 
   const handleSwipeNavigation = (direction) => {
     if (fullScreenPhotos.length === 0) {
@@ -877,6 +1203,31 @@ export default function HomeScreen({ navigation }) {
     });
   }, [rooms]);
 
+  // Swipe-down-to-close gesture for the simple preview. Only claims
+  // gestures that are clearly vertical-downward; horizontal swipes fall
+  // through to the inner pager so paging keeps working.
+  const previewDismissPanResponder = useMemo(() => {
+    // A clearly-vertical downward drag dismisses the preview. The
+    // *Capture variants let this PanResponder claim the gesture even
+    // when it starts on the inner photo pager — without them the
+    // horizontal ScrollView often grabs the touch first and the
+    // vertical swipe never registers. Thresholds lowered so a flick
+    // works (was dy > 14 / release dy > 80; now 6 / 50).
+    const isVerticalDown = (g) =>
+      g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 1.2;
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => isVerticalDown(g),
+      onMoveShouldSetPanResponderCapture: (_, g) => isVerticalDown(g),
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 50 && Math.abs(g.dy) > Math.abs(g.dx)) {
+          handleLongPressEnd();
+        }
+      },
+      onPanResponderTerminationRequest: () => false,
+    });
+  }, [handleLongPressEnd]);
+
   const fullScreenPanResponder = useMemo(() => {
     return PanResponder.create({
       onStartShouldSetPanResponder: () => {
@@ -924,32 +1275,53 @@ export default function HomeScreen({ navigation }) {
       );
       return;
     }
-    
+
     if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
       navigation.navigate('PlanSelection');
       return;
     }
-    
-    // Match the auto-filled "Project N" name with a "Location N" default so
-    // each new project gets a unique location label out of the box. The user
-    // can still override either field in the modal.
-    const nextNum = (projects?.length || 0) + 1;
-    setNewProjectNamePart(`Project ${nextNum}`);
-    setNewProjectLocation(`Location ${nextNum}`);
-    setPendingCameraAfterCreate(navigateToCamera);
-    setNewProjectVisible(true);
+
+    // Single source of truth: defer to ProjectsScreen's New Project
+    // modal (the one with the industry picker + precise location).
+    // The route params tell that screen to auto-open the modal on
+    // focus and — if `navigateToCamera` — push Camera right after the
+    // user creates the project, preserving the FAB → Camera flow.
+    navigation.navigate('Projects', {
+      openNewProject: true,
+      navigateToCameraAfter: !!navigateToCamera,
+    });
   };
 
-  const handleUseCurrentLocationInModal = async () => {
+  const handleUseCurrentLocationInModal = async (opts = {}) => {
+    const { interactive = true } = opts;
+    // Same flow as ProjectsScreen: silent on open (no Alert), interactive
+    // when user taps the button. Granted → fetch and prefill name. Denied →
+    // offer Settings (interactive). Undetermined → triggers system prompt.
     setLocationLoadingInModal(true);
     try {
-      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      let { status } = await ExpoLocation.getForegroundPermissionsAsync();
+      if (status === 'undetermined') {
+        const res = await ExpoLocation.requestForegroundPermissionsAsync();
+        status = res.status;
+      }
+      if (status === 'denied') {
+        setLocationDenied(true);
+        if (interactive) {
+          Alert.alert(
+            t('settings.locationPermissionTitle', { defaultValue: 'Location access' }),
+            t('settings.locationPermissionMessage', {
+              defaultValue: 'Enable Location in Settings to auto-fill the project name with your current place.',
+            }),
+            [
+              { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+              { text: t('common.openSettings', { defaultValue: 'Open Settings' }), onPress: () => Linking.openSettings() },
+            ]
+          );
+        }
+        return;
+      }
       if (status !== 'granted') {
-        Alert.alert(
-          t('settings.locationPermissionTitle', { defaultValue: 'Location access' }),
-          t('settings.locationPermissionMessage', { defaultValue: 'Permission to use location is required to set folder location from GPS.' }),
-          [{ text: 'OK', style: 'cancel' }]
-        );
+        setLocationDenied(true);
         return;
       }
       const position = await ExpoLocation.getCurrentPositionAsync({
@@ -959,15 +1331,20 @@ export default function HomeScreen({ navigation }) {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
       });
-      const locationDisplay = address?.city || address?.region || address?.subregion || address?.country || t('projects.unknownLocation', { defaultValue: 'Unknown' });
-      setNewProjectLocation(locationDisplay);
+      const locationDisplay =
+        address?.city || address?.region || address?.subregion || address?.country;
+      if (!locationDisplay) {
+        setLocationDenied(true);
+        return;
+      }
+      setLocationDenied(false);
+      const defaultName = `Project ${(projects?.length || 0) + 1}`;
+      setNewProjectNamePart((current) =>
+        !current?.trim() || current === defaultName ? locationDisplay : current
+      );
     } catch (error) {
       console.error('[HomeScreen] Use current location in modal:', error);
-      Alert.alert(
-        t('common.error', { defaultValue: 'Error' }),
-        t('settings.locationError', { defaultValue: 'Could not get current location. Please try again or select a location manually.' }),
-        [{ text: 'OK', style: 'cancel' }]
-      );
+      setLocationDenied(true);
     } finally {
       setLocationLoadingInModal(false);
     }
@@ -984,7 +1361,8 @@ export default function HomeScreen({ navigation }) {
       Alert.alert(t('common.error'), t('projects.enterProjectName'));
       return;
     }
-    const fullName = createAlbumName(namePart, new Date(), null, newProjectLocation || getLocationName(location));
+    // Single field: the user's input IS the folder name. No date suffix.
+    const fullName = namePart;
     const normalize = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[^a-z0-9_\- ]/gi, '_');
     const existing = projects.map(p => p.name);
     const existingNorm = new Set(existing.map(normalize));
@@ -1109,6 +1487,15 @@ export default function HomeScreen({ navigation }) {
 
   const renderRoomTabs = () => {
     const circularRooms = getCircularRooms();
+    // Mark rooms that have at least one photo in the active project — they
+    // get a bolder border so the user can see at a glance which rooms have
+    // already been shot.
+    const projectRoomIds = new Set();
+    for (const p of (photos || [])) {
+      if (!activeProjectId || p.projectId === activeProjectId) {
+        if (p.room) projectRoomIds.add(p.room);
+      }
+    }
 
     return (
       <View style={styles.roomTabsContainer}>
@@ -1125,15 +1512,32 @@ export default function HomeScreen({ navigation }) {
         >
           {circularRooms.map((room, index) => {
             const isActive = room.id === currentRoom;
+            const hasPhotos = projectRoomIds.has(room.id);
             return (
               <TouchableOpacity
                 key={room.id}
                 style={[
                   styles.roomTab,
-                  isActive && styles.roomTabActive
+                  // Three visual states:
+                  //   • Active room    → yellow fill + dark border
+                  //   • Has photos     → no border, full opacity
+                  //   • No photos      → dimmed, dashed outline
+                  isActive && styles.roomTabActive,
+                  !isActive && hasPhotos && styles.roomTabFilled,
+                  !isActive && !hasPhotos && styles.roomTabEmpty,
                 ]}
                 onPress={() => setCurrentRoom(room.id)}
                 onLongPress={(event) => handleRoomLongPress(room, event)}
+                // Only the active tab needs its layout for centering.
+                // Captures the real (variable) width so the scroll math
+                // doesn't depend on a hardcoded TAB_WIDTH guess.
+                onLayout={isActive ? (e) => {
+                  activeTabLayoutRef.current = {
+                    x: e.nativeEvent.layout.x,
+                    width: e.nativeEvent.layout.width,
+                  };
+                  scrollActiveTabToCenter(false);
+                } : undefined}
               >
                 {room.image ? (
                   <Image
@@ -1243,6 +1647,22 @@ export default function HomeScreen({ navigation }) {
           (p) => p.name === beforePhoto.name
         );
         const thumbnailUri = combinedBaseUris[beforePhoto.name] || combinedPhoto?.uri;
+        // Mirror the layout decision used when the combined image was
+        // built (handleAfterPhoto → "STACK" for true-landscape pairs):
+        // landscape pairs are stitched top/bottom, so the on-thumbnail
+        // divider needs to run horizontally to match what the user sees
+        // in the stitched image. Portrait pairs stay side-by-side and
+        // keep the original vertical divider.
+        const phoneOrientationCombined = beforePhoto.orientation || 'portrait';
+        const cameraViewModeCombined = beforePhoto.cameraViewMode || 'portrait';
+        const isLetterboxCombined =
+          beforePhoto.templateType === 'letterbox' ||
+          (phoneOrientationCombined === 'portrait' && cameraViewModeCombined === 'landscape');
+        const isTrueLandscapeCombined = phoneOrientationCombined === 'landscape';
+        const useStackedLayoutCombined =
+          isTrueLandscapeCombined && !isLetterboxCombined
+            ? true
+            : isLetterboxCombined && isTrueLandscapeCombined;
 
         if (thumbnailUri) {
           // Tap behaviour on the card:
@@ -1284,11 +1704,17 @@ export default function HomeScreen({ navigation }) {
               />
               {progressCount > 0 && (
                 <View style={styles.progressCountBadge} pointerEvents="none">
+                  <Ionicons
+                    name="trending-up"
+                    size={14}
+                    color="#000"
+                    style={{ marginRight: 3 }}
+                  />
                   <Text style={styles.progressCountBadgeText}>{progressCount}</Text>
                 </View>
               )}
               <View
-                style={styles.photoCenterDivider}
+                style={useStackedLayoutCombined ? styles.photoCenterDividerHorizontal : styles.photoCenterDivider}
                 pointerEvents="none"
               />
               {/* Eye icon top-left: opens the full-screen preview viewer.
@@ -1301,15 +1727,22 @@ export default function HomeScreen({ navigation }) {
                   handleDoubleTap(null, beforePhoto, afterPhoto);
                 }}
                 activeOpacity={0.7}
+                // Bigger hit area than the visible 28×28 circle so the
+                // preview tap is forgiving — the visible icon stays
+                // small, but a much larger surrounding zone responds.
+                hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
               >
                 <Ionicons name="eye-outline" size={16} color="#000" />
               </TouchableOpacity>
-              {/* Existing green checkmark stays where it is (bottom-right) */}
-              <View style={styles.photoOverlayBadge}>
-                <View style={styles.checkmarkBadge}>
-                  <Ionicons name="checkmark-circle-sharp" size={25} color='#22C55E' />
+              {/* Green completion check at TOP-RIGHT — only when the
+                  set has its After AND there are no Progress photos.
+                  Once the user adds a 3rd shot, the yellow progress-
+                  count badge (also top-right) takes over the slot. */}
+              {progressCount === 0 && (
+                <View style={styles.photoOverlayBadgeTopRight} pointerEvents="none">
+                  <Ionicons name="checkmark-circle-sharp" size={25} color="#22C55E" />
                 </View>
-              </View>
+              )}
               <View style={styles.thumbnailButtonsOverlay}>
                 <TouchableOpacity
                   style={styles.retakeButton}
@@ -1327,7 +1760,7 @@ export default function HomeScreen({ navigation }) {
                   }}
                 >
                   <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.retakeButtonText}>{t('home.retake')}</Text>
+                  <Text style={styles.retakeButtonText}>{t('home.updateAfter', { defaultValue: 'Update After' })}</Text>
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
@@ -1380,6 +1813,12 @@ export default function HomeScreen({ navigation }) {
               </View>
               {progressCount > 0 && (
                 <View style={styles.progressCountBadge} pointerEvents="none">
+                  <Ionicons
+                    name="trending-up"
+                    size={14}
+                    color="#000"
+                    style={{ marginRight: 3 }}
+                  />
                   <Text style={styles.progressCountBadgeText}>{progressCount}</Text>
                 </View>
               )}
@@ -1390,16 +1829,22 @@ export default function HomeScreen({ navigation }) {
                   handleDoubleTap(null, beforePhoto, afterPhoto);
                 }}
                 activeOpacity={0.7}
+                // Bigger hit area than the visible 28×28 circle so the
+                // preview tap is forgiving — the visible icon stays
+                // small, but a much larger surrounding zone responds.
+                hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
               >
                 <Ionicons name="eye-outline" size={16} color="#000" />
               </TouchableOpacity>
-              {/* Progress badge — always visible, same behaviour as the other
-                  card paths. Uses the section's current progress photo count. */}
-              <View style={styles.photoOverlayBadge}>
-                <View style={styles.checkmarkBadge}>
-                  <Ionicons name="checkmark" size={14} color="#FFF" />
+              {/* Green completion check at TOP-RIGHT — only when the
+                  set has its After AND no Progress photos. Once a 3rd
+                  shot exists the yellow progress-count badge (also
+                  top-right) replaces this in the same slot. */}
+              {progressCount === 0 && (
+                <View style={styles.photoOverlayBadgeTopRight} pointerEvents="none">
+                  <Ionicons name="checkmark-circle-sharp" size={25} color="#22C55E" />
                 </View>
-              </View>
+              )}
               <View style={styles.thumbnailButtonsOverlay}>
                 <TouchableOpacity
                   style={styles.retakeButton}
@@ -1415,7 +1860,7 @@ export default function HomeScreen({ navigation }) {
                   }}
                 >
                   <Ionicons name="camera-outline" size={14} color="#FFFFFF" />
-                  <Text style={styles.retakeButtonText}>{t('home.retake')}</Text>
+                  <Text style={styles.retakeButtonText}>{t('home.updateAfter', { defaultValue: 'Update After' })}</Text>
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
@@ -1464,6 +1909,7 @@ export default function HomeScreen({ navigation }) {
                 handleDoubleTap(null, beforePhoto, null);
               }}
               activeOpacity={0.7}
+              hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
             >
               <Ionicons name="eye-outline" size={16} color="#000" />
             </TouchableOpacity>
@@ -1482,10 +1928,10 @@ export default function HomeScreen({ navigation }) {
                 }}
               >
                 <Ionicons name="camera" size={14} color="#000" />
-                <Text style={styles.takeAfterButtonText}>{t('home.takeAfter')}</Text>
+                <Text style={styles.takeAfterButtonText}>{t('home.takeNext', { defaultValue: 'Take Next' })}</Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.photoOverlayBadge}>
+            <View style={styles.photoOverlayBadgeTopRight}>
               <View style={styles.clockBadge}>
                 <Ionicons name="timer-outline" size={20} color="#FFFFFF" fill="#FFFFFF" />
               </View>
@@ -1495,7 +1941,23 @@ export default function HomeScreen({ navigation }) {
       }
     });
 
-    return <View style={styles.photoGrid}>{gridItems}</View>;
+    // Wrap each tile with a "Set N" label beneath it. The numbering
+    // follows the same order as beforePhotos (oldest → newest), so it
+    // matches the chronological capture order. Done at the very end so
+    // the three different gridItems.push paths above don't each need
+    // to know about the label.
+    return (
+      <View style={styles.photoGrid}>
+        {gridItems.map((item, i) => (
+          <View key={item.key || `set-wrap-${i}`} style={styles.setTileWrapper}>
+            {item}
+            <Text style={styles.setTileLabel} numberOfLines={1}>
+              {`Set ${i + 1}`}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
   };
 
   return (
@@ -1537,7 +1999,9 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      <SoftTrialBadge navigation={navigation} variant="banner" />
+      {/* SoftTrialBadge banner removed — starter plan now has
+          unlimited single-photo share, so the "X of 3 free exports"
+          banner has no information to surface. */}
 
       <View style={styles.projectNameContainer}>
         <View style={styles.projectInfoRow}>
@@ -1585,9 +2049,13 @@ export default function HomeScreen({ navigation }) {
 
               return (
                 <TouchableOpacity
+                  // Tapping the name opens the same project menu the
+                  // 3-dot button opens. Inline rename was the previous
+                  // behavior; rename now lives in the menu's "Edit"
+                  // action so the user has a single consistent entry
+                  // point for managing the active project.
                   onPress={() => {
-                    setEditedProjectName(displayName);
-                    setIsEditingProjectName(true);
+                    setOpenProjectVisible(true);
                   }}
                   style={styles.projectNameTouchable}
                 >
@@ -1611,12 +2079,14 @@ export default function HomeScreen({ navigation }) {
       {renderRoomTabs()}
 
       <View style={styles.content} {...panResponder.panHandlers}>
-        <ScrollView
-          contentContainerStyle={{ paddingBottom: 20 + insets.bottom + 50 + 80 }}
-          showsVerticalScrollIndicator={false}
-        >
-          {renderPhotoGrid()}
-        </ScrollView>
+        <Animated.View style={{ flex: 1, transform: [{ translateX: contentSlideX }] }}>
+          <ScrollView
+            contentContainerStyle={{ paddingBottom: 20 + insets.bottom + 50 + 80 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {renderPhotoGrid()}
+          </ScrollView>
+        </Animated.View>
       </View>
 
       <TouchableOpacity
@@ -1635,430 +2105,841 @@ export default function HomeScreen({ navigation }) {
         <Ionicons name="camera" size={38} color="#000" />
       </TouchableOpacity>
 
-      <View style={[styles.bottomNavPill, { bottom: 20 + insets.bottom }]}>
-        <TouchableOpacity 
-          style={[styles.navItem, styles.navItemActive]}
-        >
-          <Image source={require('../../assets/icons/home.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Projects' }] })}
-        >
-          <Image source={require('../../assets/icons/projects.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Projects</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] })}
-        >
-          <Image source={require('../../assets/icons/gallery.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Gallery</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Settings' }] })}
-        >
-          <Image source={require('../../assets/icons/settings.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Settings</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Bottom nav moved to PersistentBottomNav (App.js root). */}
 
-      {fullScreenPhoto && (
-        <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
-          {/* Header: Labels toggle | Customize Labels > | Red X close.
-              Hidden in bareMode — the user double-tapped to enter clean
-              fullscreen and only wants to see the photo. */}
-          {!bareMode && (
-          <View style={[styles.fullScreenHeaderRow, { paddingTop: fullScreenTopInset }]}>
-            <View style={styles.fullScreenLabelsToggle}>
-              <Text style={styles.fullScreenLabelsText}>{t('Labels')}</Text>
-              <Switch
-                value={showLabels}
-                onValueChange={toggleLabels}
-                trackColor={{ false: '#767577', true: '#34C759' }}
-                thumbColor={showLabels ? '#fff' : '#f4f3f4'}
-              />
-              <Text style={[styles.fullScreenLabelsText, { marginLeft: 12 }]}>Meta</Text>
-              <Switch
-                value={!!showPreviewMetadata}
-                onValueChange={() => togglePreviewMetadata && togglePreviewMetadata()}
-                trackColor={{ false: '#767577', true: '#34C759' }}
-                thumbColor={showPreviewMetadata ? '#fff' : '#f4f3f4'}
-              />
-            </View>
-            <TouchableOpacity
-              style={styles.fullScreenCustomizeButton}
-              onPress={() => {
-                handleLongPressEnd();
-                navigation.navigate('LabelCustomization');
-              }}
-            >
-              <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
-              <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fullScreenHeaderDeleteButton}
-              onPress={() => {
-                pendingDeletePhotoIdRef.current = fullScreenPhoto.id;
-                setShowDeletePhotoConfirm(true);
-              }}
-            >
-              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-          )}
+      {(fullScreenPhoto || fullScreenPhotoSet) && liveSetMembers.length > 0 && (() => {
+        // aspectForPhoto + helpers are hoisted to module scope; see top
+        // of file. Pager + tap-to-fullscreen share the same precedence
+        // (Studio pairTemplate → capture aspectRatio → original W/H).
+        //
+        // Shadow `setMembers` with the live, store-resolved version so
+        // every read inside this render uses the latest photo data
+        // (pairTemplate, metadata, etc.) — fixes the case where edits
+        // saved in Studio didn't reflect back in the preview because
+        // setMembers held snapshot objects from when the preview
+        // opened.
+        const setMembers = liveSetMembers;
+        const activeMember = setMembers[setMemberIndex] || setMembers[0];
+        const memberAspect = aspectForPhoto(activeMember);
+        // Shared peek constants — used both by the pager render and by
+        // scroll-to calls below so onLayout + thumb taps snap to the
+        // exact same offsets the pager itself uses.
+        const PREVIEW_PEEK = 18;
+        const PREVIEW_GAP = 12;
+        const pagerCardWidth = Math.max(0, previewWidth - 2 * (PREVIEW_PEEK + PREVIEW_GAP));
+        const pagerSnapInterval = pagerCardWidth + PREVIEW_GAP;
+        const memberLabel = (m) => {
+          if (!m) return '';
+          if (m.mode === 'before') return 'Before';
+          if (m.mode === 'after') return 'After';
+          if (m.mode === 'progress') return 'Progress';
+          if (m.mode === 'combined' || m.mode === 'mix') return 'Combined';
+          return '';
+        };
+        return (
+          <View
+            style={[
+              styles.simplePreviewContainer,
+              {
+                backgroundColor: theme.background,
+                // Top inset moved onto the container itself now that
+                // the old top bar (back button + center swipe-down
+                // hint) is gone — keeps the rest of the preview clear
+                // of the notch without needing a dedicated header.
+                paddingTop: fullScreenTopInset,
+              },
+            ]}
+            {...previewDismissPanResponder.panHandlers}
+          >
 
-          {/* Small return arrow shown ONLY in bareMode — there's no header
-              with a close button while bare, but the user still needs an
-              affordance to exit besides the swipe-down gesture. */}
-          {bareMode && (
-            <TouchableOpacity
-              style={styles.bareReturnButton}
-              onPress={() => setBareMode(false)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="arrow-undo" size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-
-          {/* Photo area: yellow border, single image */}
-          <View style={styles.fullScreenPhotoArea}>
-            {/* Capture metadata above the photo so the mode-switcher and
-                action buttons below the image never hide it. Hidden in
-                bareMode to clear all chrome away from the image. */}
-            {!bareMode && showPreviewMetadata && (
-              <Text style={[styles.fullScreenMetaLine, { marginBottom: 6 }]} numberOfLines={1}>
-                {formatPhotoMetaLine(fullScreenPhoto, location)}
-              </Text>
-            )}
-            <View style={styles.fullScreenSinglePreview}>
-              {fullScreenLoading && (
-                <View style={styles.fullScreenLoadingOverlay}>
-                  <ActivityIndicator size="large" color="#F2C31B" />
-                </View>
-              )}
-              {fullScreenError && (
-                <View style={styles.fullScreenErrorOverlay}>
-                  <Ionicons name="image-outline" size={48} color="#666" />
-                  <Text style={styles.fullScreenErrorText}>{t('gallery.imageLoadError', { defaultValue: 'Failed to load image' })}</Text>
-                </View>
-              )}
-              <PannableImage
-                imageKey={fullScreenPhoto.uri || fullScreenPhoto.id}
-                source={{ uri: fullScreenPhoto.uri }}
-                onDoubleTap={() => setBareMode((prev) => !prev)}
-                showResetButton={!bareMode}
-                style={styles.fullScreenPhoto}
-                resizeMode="contain"
-                onError={(e) => {
-                  console.log('[HomeScreen] Image load error:', e.nativeEvent?.error, 'URI:', fullScreenPhoto.uri);
-                  setFullScreenLoading(false);
-                  setFullScreenError(e.nativeEvent?.error || 'Unknown error');
-                }}
-                onLoadStart={() => {
-                  console.log('[HomeScreen] Image load start:', fullScreenPhoto.uri?.substring(0, 80));
-                  setFullScreenLoading(true);
-                  setFullScreenError(null);
-                }}
-                onLoad={() => {
-                  console.log('[HomeScreen] Image loaded successfully');
-                  setFullScreenLoading(false);
-                  setFullScreenError(null);
-                }}
-              >
-                {showLabels && fullScreenPhoto.mode && !fullScreenError && (
-                  <PhotoLabel
-                    label={
-                      fullScreenPhoto.mode === 'before'
-                        ? 'common.before'
-                        : fullScreenPhoto.mode === 'progress'
-                          ? 'common.progress'
-                          : 'common.after'
-                    }
-                    position={
-                      fullScreenPhoto.mode === 'before'
-                        ? pickBeforeLabelPosition(
-                            { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                            fullScreenPhoto
-                          )
-                        : pickAfterLabelPosition(
-                            { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                            fullScreenPhoto
-                          )
-                    }
-                  />
-                )}
-              </PannableImage>
-            </View>
-          </View>
-
-          {/* Room name + pagination dots — hidden in bareMode */}
-          {!bareMode && (
-          <View style={styles.fullScreenRoomNameRow}>
-            <Text style={styles.fullScreenRoomName}>
-              {rooms.find(r => r.id === fullScreenPhoto.room)?.name || fullScreenPhoto.room || ''}
-            </Text>
-            {fullScreenPhotos.length > 1 && (
-              <View style={styles.fullScreenPaginationDots}>
-                {fullScreenPhotos.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[styles.fullScreenDot, i === fullScreenIndex && styles.fullScreenDotActive]}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-          )}
-
-          {/* Bottom bar: white return circle, yellow share circle — hidden in bareMode */}
-          {!bareMode && (
-          <View style={[styles.fullScreenBottomBar, { paddingBottom: fullScreenBottomInset }]}>
-            <TouchableOpacity
-              style={styles.fullScreenReturnCircle}
-              onPress={handleLongPressEnd}
-            >
-              <Ionicons name="arrow-undo" size={20} color="#000000" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fullScreenShareCircle}
-              disabled={sharing}
-              onPress={async () => {
-                try {
-                  setSharing(true);
-                  let shareUri = fullScreenPhoto.uri;
-                  // Apply label if labels are enabled
-                  if (showLabels && fullScreenPhoto.mode) {
-                    try {
-                      const photoWithType = { ...fullScreenPhoto, type: fullScreenPhoto.mode };
-                      const labeledUri = await ensureLabelForPhoto(photoWithType);
-                      if (labeledUri && labeledUri !== fullScreenPhoto.uri) {
-                        shareUri = labeledUri;
-                      }
-                    } catch (labelErr) {
-                      console.warn('[HomeScreen] Label lookup failed for single photo:', labelErr?.message);
-                    }
+            {/* Sets bar — three-column row that mirrors the project
+                detail screen's pattern: previous-set link on the left,
+                current photo position (X / Y) in the middle, next-set
+                link on the right. Tapping the side labels jumps the
+                pager to that set's first photo. Hidden when the room
+                has only one set (nothing to switch to). */}
+            {(() => {
+              const roomBefores = getBeforePhotos(currentRoom) || [];
+              if (roomBefores.length < 2) return null;
+              const afters = getAfterPhotos(currentRoom) || [];
+              const afterByBeforeId = new Map();
+              for (const a of afters) {
+                if (a.beforePhotoId) afterByBeforeId.set(a.beforePhotoId, a);
+              }
+              const activeSetId = setMembers.find((mm) => mm?.mode === 'before')?.id
+                || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
+              const setIdx = Math.max(0, roomBefores.findIndex((b) => b.id === activeSetId));
+              const setPosition = setIdx + 1;
+              const setCount = roomBefores.length;
+              const switchToSet = (before) => {
+                if (!before) return;
+                const members = [before];
+                const progresses = (getProgressPhotos?.(currentRoom) || [])
+                  .filter((p) => p.beforePhotoId === before.id)
+                  .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                members.push(...progresses);
+                const after = afterByBeforeId.get(before.id);
+                if (after) members.push(after);
+                const combined = findCombinedForBefore(before, currentRoom);
+                if (combined) members.push(combined);
+                setSetMembers(members);
+                setSetMemberIndex(0);
+                setFullScreenPhotoSet({ before, after: after || null });
+                // Flash the destination set's title on the first photo
+                // — replaces the old "Previous / Next set" sentinel
+                // cards with a transient label.
+                const newIdx = roomBefores.findIndex((b) => b.id === before.id);
+                flashSetTitle(`Set ${newIdx >= 0 ? newIdx + 1 : setPosition}`);
+                requestAnimationFrame(() => {
+                  if (previewPagerRef.current && previewWidth > 0) {
+                    previewPagerRef.current.scrollTo({ x: 0, animated: false });
                   }
-                  await Share.open({
-                    url: ensureFileUri(shareUri),
-                    type: 'image/jpeg',
-                    title: fullScreenPhoto.name || t('gallery.share'),
+                });
+              };
+              const prevBefore = setPosition > 1 ? roomBefores[setIdx - 1] : null;
+              const nextBefore = setPosition < setCount ? roomBefores[setIdx + 1] : null;
+              const positionInSet = Math.min(setMemberIndex + 1, Math.max(1, setMembers.length));
+              return (
+                <View style={styles.simplePreviewSetsBar}>
+                  <TouchableOpacity
+                    style={styles.simplePreviewSetsBarSide}
+                    disabled={!prevBefore}
+                    onPress={() => switchToSet(prevBefore)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    {prevBefore && (
+                      <>
+                        <Ionicons name="chevron-back" size={14} color={theme.textSecondary} />
+                        <Text style={[styles.simplePreviewSetsBarText, { color: theme.textSecondary }]}>
+                          Set {setPosition - 1}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <View style={styles.simplePreviewSetsBarCenter}>
+                    <View style={[styles.simplePreviewPositionPill, { backgroundColor: theme.surface }]}>
+                      <Text style={[styles.simplePreviewPositionText, { color: theme.textPrimary }]}>
+                        {positionInSet} / {Math.max(1, setMembers.length)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.simplePreviewSetsBarSide, styles.simplePreviewSetsBarSideRight]}
+                    disabled={!nextBefore}
+                    onPress={() => switchToSet(nextBefore)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    {nextBefore && (
+                      <>
+                        <Text style={[styles.simplePreviewSetsBarText, { color: theme.textSecondary }]}>
+                          Set {setPosition + 1}
+                        </Text>
+                        <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
+
+            {/* Project name + capture date — sits above the photo so
+                the user can see which project and when each photo was
+                taken without leaving the preview. The date comes from
+                the active member's timestamp (falls back to its
+                createdAt if no timestamp was recorded). */}
+            <View style={styles.simplePreviewInfoRow}>
+              <Text
+                style={[styles.simplePreviewProjectName, { color: theme.textPrimary }]}
+                numberOfLines={1}
+              >
+                {activeProject?.name || ''}
+              </Text>
+              <Text style={[styles.simplePreviewPhotoDate, { color: theme.textSecondary }]}>
+                {(() => {
+                  const ts = typeof activeMember?.timestamp === 'number'
+                    ? activeMember.timestamp
+                    : (activeMember?.createdAt ? new Date(activeMember.createdAt).getTime() : null);
+                  if (!ts) return '';
+                  try {
+                    return new Date(ts).toLocaleString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    });
+                  } catch {
+                    return '';
+                  }
+                })()}
+              </Text>
+            </View>
+
+            {/* Pager — horizontal swipe through the set members. Each
+                page renders the photo at its own pairTemplate aspect so
+                the framing matches what the user picked in Studio.
+                The body reserves bottom padding for both the thumb
+                strip and the bottom nav so neither overlaps the photo
+                or each other. */}
+            <View
+              style={[
+                styles.simplePreviewBody,
+                {
+                  // No padding here — the compact swipe-down chevron
+                  // below the body now reserves nav clearance via its
+                  // own paddingBottom. Letting the body extend all the
+                  // way down makes the photo noticeably larger,
+                  // especially on portrait captures where the picture
+                  // used to leave a wide empty strip below itself.
+                  paddingBottom: 0,
+                },
+              ]}
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                const h = e.nativeEvent.layout.height;
+                if (w > 0 && w !== previewWidth) setPreviewWidth(w);
+                if (h > 0 && h !== previewHeight) setPreviewHeight(h);
+                // Snap to the active page using the SAME interval the
+                // pager uses internally; using `w` directly would over-
+                // scroll past each card since the card is narrower
+                // than the container.
+                requestAnimationFrame(() => {
+                  if (previewPagerRef.current && w > 0) {
+                    const cardW = Math.max(0, w - 2 * (PREVIEW_PEEK + PREVIEW_GAP));
+                    const snap = cardW + PREVIEW_GAP;
+                    // Offset by 1 when a prev-set sentinel is the
+                    // first slide so the layout lands on the first
+                    // REAL photo, not the sentinel.
+                    const roomBeforesNow = getBeforePhotos(currentRoom) || [];
+                    const activeSetIdNow = setMembers.find((mm) => mm?.mode === 'before')?.id
+                      || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
+                    const activeIdxNow = roomBeforesNow.findIndex((b) => b.id === activeSetIdNow);
+                    const hasPrevSentinel = activeIdxNow > 0;
+                    const startOffset = (hasPrevSentinel ? 1 : 0) + setMemberIndex;
+                    previewPagerRef.current.scrollTo({
+                      x: startOffset * snap,
+                      animated: false,
+                    });
+                  }
+                });
+              }}
+            >
+              {(() => {
+                // Card-style pagination with peek: each photo is rendered
+                // narrower than the container, so the previous/next
+                // photo's edge is visible on the sides as a cue to swipe.
+                // snapToInterval = card + gap so the pager still snaps
+                // crisply to each photo. Constants live in the outer
+                // scope so onLayout + thumb taps stay in sync.
+                const sideInset = (previewWidth - pagerCardWidth) / 2;
+                // Identify the prev/next sets (if any) so we can
+                // bracket the pager with sentinel pages that trigger
+                // auto-advance when the user swipes past either end.
+                const roomBeforesForPager = getBeforePhotos(currentRoom) || [];
+                const activePagerSetId = setMembers.find((mm) => mm?.mode === 'before')?.id
+                  || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
+                const activePagerSetIdx = Math.max(0, roomBeforesForPager.findIndex((b) => b.id === activePagerSetId));
+                const nextPagerBefore = activePagerSetIdx < roomBeforesForPager.length - 1
+                  ? roomBeforesForPager[activePagerSetIdx + 1]
+                  : null;
+                const prevPagerBefore = activePagerSetIdx > 0
+                  ? roomBeforesForPager[activePagerSetIdx - 1]
+                  : null;
+                const switchToPagerSet = (before, opts = {}) => {
+                  if (!before) return;
+                  const { landOnLast = false } = opts;
+                  const aftersForRoom = getAfterPhotos(currentRoom) || [];
+                  const afterEntry = aftersForRoom.find((p) => p.beforePhotoId === before.id);
+                  const members = [before];
+                  const progresses = (getProgressPhotos?.(currentRoom) || [])
+                    .filter((p) => p.beforePhotoId === before.id)
+                    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                  members.push(...progresses);
+                  if (afterEntry) members.push(afterEntry);
+                  const combinedSwitch = findCombinedForBefore(before, currentRoom);
+                  if (combinedSwitch) members.push(combinedSwitch);
+                  setSetMembers(members);
+                  const landIdx = landOnLast ? members.length - 1 : 0;
+                  setSetMemberIndex(landIdx);
+                  setFullScreenPhotoSet({ before, after: afterEntry || null });
+                  // Flash the destination set's title — the user spec'd
+                  // a transient (≈500 ms) big label on the set's
+                  // start/finish photo in place of the old sentinel
+                  // "Previous / Next set" cards.
+                  const newRoomBefores = getBeforePhotos(currentRoom) || [];
+                  const newIdx = newRoomBefores.findIndex((b) => b.id === before.id);
+                  flashSetTitle(`Set ${newIdx >= 0 ? newIdx + 1 : 1}`);
+                  requestAnimationFrame(() => {
+                    if (previewPagerRef.current && previewWidth > 0) {
+                      previewPagerRef.current.scrollTo({
+                        x: landIdx * pagerSnapInterval,
+                        animated: false,
+                      });
+                    }
                   });
-                } catch (e) {
-                  if (e?.message !== 'User did not share') {
-                    Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
-                  }
-                } finally {
-                  setSharing(false);
-                }
-              }}
-            >
-              {sharing ? (
-                <ActivityIndicator size="small" color="#000" />
-              ) : (
-                <Ionicons name="paper-plane-outline" size={20} color="#000" />
-              )}
-            </TouchableOpacity>
-          </View>
-          )}
-        </View>
-      )}
-
-      {fullScreenPhotoSet && (
-        <View style={styles.fullScreenPhotoContainer} {...fullScreenPanResponder.panHandlers}>
-          {/* Header: Labels toggle | Customize Labels > | Red X close */}
-          <View style={[styles.fullScreenHeaderRow, { paddingTop: fullScreenTopInset }]}>
-            <View style={styles.fullScreenLabelsToggle}>
-              <Text style={styles.fullScreenLabelsText}>{t('settings.labels', { defaultValue: 'Labels' })}</Text>
-              <Switch
-                value={showLabels}
-                onValueChange={toggleLabels}
-                trackColor={{ false: '#767577', true: '#34C759' }}
-                thumbColor={showLabels ? '#fff' : '#f4f3f4'}
-              />
-              <Text style={[styles.fullScreenLabelsText, { marginLeft: 12 }]}>Meta</Text>
-              <Switch
-                value={!!showPreviewMetadata}
-                onValueChange={() => togglePreviewMetadata && togglePreviewMetadata()}
-                trackColor={{ false: '#767577', true: '#34C759' }}
-                thumbColor={showPreviewMetadata ? '#fff' : '#f4f3f4'}
-              />
-            </View>
-            <TouchableOpacity
-              style={styles.fullScreenCustomizeButton}
-              onPress={() => {
-                handleLongPressEnd();
-                navigation.navigate('LabelCustomization');
-              }}
-            >
-              <Text style={styles.fullScreenCustomizeText}>{t('settings.customizeLabels', { defaultValue: 'Customize Labels' })}</Text>
-              <Ionicons name="chevron-forward" size={14} color="white" style={{ marginLeft: 1 }} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fullScreenHeaderDeleteButton}
-              onPress={() => {
-                pendingDeletePhotoIdRef.current = fullScreenPhotoSet.before.id;
-                setShowDeletePhotoConfirm(true);
-              }}
-            >
-              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Photo area: CompareViewer with mode switcher (overlay / split /
-              side-by-side). Replaces the prior static side-by-side render so
-              landscape, portrait, and mixed-orientation pairs all stay
-              undistorted regardless of compare mode. */}
-          <View style={styles.fullScreenPhotoArea}>
-            {/* Metadata sits ABOVE the comparison frame — the mode-switcher
-                pills already occupy the space directly below. Uses the After
-                photo's timestamp + saved location since that's the most
-                recent capture in the set. */}
-            {showPreviewMetadata && fullScreenPhotoSet?.after && (
-              <Text style={[styles.fullScreenMetaLine, { marginBottom: 6 }]} numberOfLines={1}>
-                {formatPhotoMetaLine(fullScreenPhotoSet.after, location)}
-              </Text>
-            )}
-            <View ref={fullScreenCompareRef} collapsable={false}>
-              <CompareViewer
-                beforePhoto={fullScreenPhotoSet.before}
-                afterPhoto={fullScreenPhotoSet.after}
-                mode={compareMode}
-                frameAspectRatio={getPairTemplateAspect(pairTemplate, fullScreenPhotoSet.before)}
-                renderBeforeOverlay={() => (showLabels ? (
-                  <PhotoLabel
-                    label="common.before"
-                    position={pickBeforeLabelPosition(
-                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                      fullScreenPhotoSet.before
-                    )}
-                  />
-                ) : null)}
-                renderAfterOverlay={() => (showLabels ? (
-                  <PhotoLabel
-                    label="common.after"
-                    position={pickAfterLabelPosition(
-                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                      fullScreenPhotoSet.after
-                    )}
-                  />
-                ) : null)}
-              />
-            </View>
-            {/* Choose Template — same row from the legacy editor, lifted
-                onto the live pair preview. Picking a template reshapes the
-                CompareViewer's frame so the user previews the exact share
-                output. Template set is orientation-aware. */}
-            {!bareMode && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' }}
-              >
-                {getAvailablePairTemplates(fullScreenPhotoSet.before).map((tpl) => {
-                  const active = pairTemplate === tpl.key;
-                  return (
-                    <TouchableOpacity
-                      key={tpl.key}
-                      onPress={() => setPairTemplate(tpl.key)}
-                      style={[styles.pairTemplateChip, active && styles.pairTemplateChipActive]}
-                      activeOpacity={0.85}
+                };
+                // Sentinels stay in pagerSlides as INVISIBLE pages so
+                // the user can still swipe past the start / end of a
+                // set to trigger the next-set transition. The visible
+                // "Previous / Next set" card is replaced by a brief
+                // big title that flashes over the new set's first /
+                // last photo (see flashSetTitle + the render branch
+                // for `m.__prevSet || m.__nextSet`).
+                const pagerSlides = [
+                  ...(prevPagerBefore ? [{ id: '__prev_set_sentinel__', __prevSet: true }] : []),
+                  ...setMembers,
+                  ...(nextPagerBefore ? [{ id: '__next_set_sentinel__', __nextSet: true }] : []),
+                ];
+                const realStartIdx = prevPagerBefore ? 1 : 0;
+                return (
+                  <View style={{ flex: 1, position: 'relative' }}>
+                  <ScrollView
+                    ref={previewPagerRef}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    snapToInterval={pagerSnapInterval}
+                    snapToAlignment="start"
+                    decelerationRate="fast"
+                    bounces={false}
+                    onScrollBeginDrag={() => { previewPagerScrolling.current = true; }}
+                    onMomentumScrollEnd={(e) => {
+                      previewPagerScrolling.current = false;
+                      const idx = Math.round(e.nativeEvent.contentOffset.x / pagerSnapInterval);
+                      // Edge sentinels — at the leftmost slot when a
+                      // prev set exists, or the rightmost slot when a
+                      // next set exists. Landing on either triggers
+                      // the switch; "prev" lands on the previous set's
+                      // LAST photo so the user perceives continuous
+                      // backward navigation.
+                      if (prevPagerBefore && idx === 0) {
+                        switchToPagerSet(prevPagerBefore, { landOnLast: true });
+                        return;
+                      }
+                      if (nextPagerBefore && idx === pagerSlides.length - 1) {
+                        switchToPagerSet(nextPagerBefore);
+                        return;
+                      }
+                      const realIdx = idx - realStartIdx;
+                      if (realIdx !== setMemberIndex && realIdx >= 0 && realIdx < setMembers.length) {
+                        setSetMemberIndex(realIdx);
+                      }
+                    }}
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{
+                      paddingHorizontal: sideInset,
+                      alignItems: 'center',
+                    }}
+                  >
+                    {pagerSlides.map((m) => {
+                      if (m.__prevSet || m.__nextSet) {
+                        // Invisible swipe-trigger page. The card chrome
+                        // ("Previous / Next set" label) is gone — the
+                        // user now sees a brief title flash on the new
+                        // set's start/finish photo (flashSetTitle) the
+                        // moment switchToPagerSet fires.
+                        return (
+                          <View
+                            key={m.id}
+                            style={{
+                              width: pagerCardWidth,
+                              height: '100%',
+                              marginRight: PREVIEW_GAP,
+                            }}
+                          />
+                        );
+                      }
+                      // Size the photo container to its EXACT rendered
+                      // dimensions (computed from aspect + available
+                      // body w/h). With the container matching the
+                      // photo's aspect, resizeMode="cover" fills it
+                      // edge-to-edge — no letterbox bars — and the
+                      // trash/share icons land on the photo itself.
+                      // Top-align so the photo sits up under the
+                      // header info row instead of being centered with
+                      // a big empty strip above it.
+                      const aspect = aspectForPhoto(m);
+                      // previewHeight is the body's full layout height.
+                      // Action rows above + below the photo each take
+                      // ~48 px (40 px button + 8 px breathing); reserve
+                      // their combined height plus a tiny gap so the
+                      // photo shrinks to fit and the rows aren't
+                      // overlapped by the picture.
+                      const ACTION_ROW_HEIGHT = 40;
+                      const ACTION_ROW_GAP = 8;
+                      const reservedRows = (ACTION_ROW_HEIGHT + ACTION_ROW_GAP) * 2;
+                      const availW = Math.max(0, pagerCardWidth);
+                      const availH = Math.max(0, previewHeight - reservedRows);
+                      let cardW = availW;
+                      let cardH = availH;
+                      if (aspect > 0 && availW > 0 && availH > 0) {
+                        // Fit to whichever dimension is the binding
+                        // constraint, preserving the photo's aspect.
+                        if (aspect >= availW / availH) {
+                          // Wider than the slot — width-bound.
+                          cardW = availW;
+                          cardH = availW / aspect;
+                        } else {
+                          // Taller than the slot — height-bound.
+                          cardH = availH;
+                          cardW = availH * aspect;
+                        }
+                      }
+                      return (
+                        <View
+                          key={m.id}
+                          style={{
+                            width: pagerCardWidth,
+                            height: '100%',
+                            marginRight: PREVIEW_GAP,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {/* TOP action row — Edit on the left, Trash
+                              on the right. Sits ABOVE the photo, sized
+                              to the photo's width so both buttons line
+                              up with the picture's edges. */}
+                          <View style={[styles.simplePreviewActionRow, { width: cardW, marginBottom: ACTION_ROW_GAP }]}>
+                            <TouchableOpacity
+                              style={[styles.simplePreviewActionBtn, { backgroundColor: theme.surface }]}
+                              onPress={() => {
+                                if (!m?.id) return;
+                                navigation.navigate('StudioDetail', { photoId: m.id });
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Ionicons name="create-outline" size={18} color={theme.textPrimary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.simplePreviewActionBtn, { backgroundColor: theme.danger }]}
+                              onPress={() => {
+                                if (!m?.id) return;
+                                pendingDeletePhotoIdRef.current = m.id;
+                                setShowDeletePhotoConfirm(true);
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+                            </TouchableOpacity>
+                          </View>
+                          {/* Photo card — only the picture (and the
+                              Studio overlay stack when the Edited
+                              switch is on) lives here. Action chrome
+                              moved out to the rows above and below so
+                              the buttons no longer overlap the image. */}
+                          <View
+                            style={{
+                              width: cardW,
+                              height: cardH,
+                              backgroundColor: theme.surface,
+                              borderRadius: 12,
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <TouchableOpacity
+                              activeOpacity={0.95}
+                              onPress={() => setTappedFullPhoto(m)}
+                              style={{ width: '100%', height: '100%' }}
+                            >
+                              <Image
+                                source={{ uri: m.uri }}
+                                style={{ width: '100%', height: '100%' }}
+                                resizeMode="cover"
+                              />
+                            </TouchableOpacity>
+                            {showStudioEdits && (
+                              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                                <StudioEditOverlays
+                                  photo={m}
+                                  theme={theme}
+                                  showLabels={showLabels}
+                                  labelPositionSettings={{
+                                    beforeLabelPosition,
+                                    afterLabelPosition,
+                                    beforeLabelPositionLandscape,
+                                    afterLabelPositionLandscape,
+                                    beforeLabelOffset,
+                                    afterLabelOffset,
+                                    beforeLabelOffsetLandscape,
+                                    afterLabelOffsetLandscape,
+                                  }}
+                                  showWatermark={showWatermark}
+                                  showBrandLogo={showBrandLogo}
+                                  brandLogoUri={brandLogoUri}
+                                  brandLogoPosition={brandLogoPosition}
+                                  brandLogoSize={brandLogoSize}
+                                  brandLogoOffset={brandLogoOffset}
+                                  showPreviewMetadata={showPreviewMetadata}
+                                  location={location}
+                                  metaShowDate={metaShowDate}
+                                  metaShowTime={metaShowTime}
+                                  metaShowAddress={metaShowAddress}
+                                  metaShowGps={metaShowGps}
+                                  metaPosition={metaPosition}
+                                  metaColor={metaColor}
+                                  metaOpacity={metaOpacity}
+                                  metaFontSize={metaFontSize}
+                                  metaFontFamily={metaFontFamily}
+                                  metaOffset={metaOffset}
+                                  combinedLabelLayout={{
+                                    LeftHalf: ({ children }) => (
+                                      <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
+                                        {children}
+                                      </View>
+                                    ),
+                                    RightHalf: ({ children }) => (
+                                      <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
+                                        {children}
+                                      </View>
+                                    ),
+                                  }}
+                                />
+                              </View>
+                            )}
+                          </View>
+                          {/* BOTTOM action row — Edited toggle on the
+                              left, Share on the right. Same width as
+                              the photo so buttons sit flush with the
+                              picture's edges. */}
+                          <View style={[styles.simplePreviewActionRow, { width: cardW, marginTop: ACTION_ROW_GAP }]}>
+                            <View style={[styles.simplePreviewEditedToggleInline, { backgroundColor: theme.surface }]}>
+                              <Text style={[styles.simplePreviewEditedToggleLabel, { color: theme.textPrimary }]}>Edited</Text>
+                              <Switch
+                                value={showStudioEdits}
+                                onValueChange={setShowStudioEdits}
+                                trackColor={{ false: theme.border, true: COLORS.PRIMARY }}
+                                thumbColor="#FFFFFF"
+                                ios_backgroundColor={theme.border}
+                                style={styles.simplePreviewEditedSwitch}
+                              />
+                            </View>
+                            <TouchableOpacity
+                              style={[styles.simplePreviewActionBtn, { backgroundColor: theme.surface }]}
+                              onPress={async () => {
+                                if (!m?.uri) return;
+                                try {
+                                  let shareUri = m.uri;
+                                  if (showStudioEdits) {
+                                    setShareCaptureContext({ photo: m, w: cardW, h: cardH });
+                                    await new Promise((resolve) => setTimeout(resolve, 120));
+                                    if (shareCaptureRef.current) {
+                                      try {
+                                        const composed = await captureRef(shareCaptureRef, {
+                                          format: 'jpg',
+                                          quality: 0.95,
+                                          result: 'tmpfile',
+                                        });
+                                        shareUri = composed;
+                                      } catch (capErr) {
+                                        console.warn('[HomeScreen] composite capture failed, falling back to original URI:', capErr?.message);
+                                      }
+                                    }
+                                    setShareCaptureContext(null);
+                                  }
+                                  await RNShare.share({
+                                    url: shareUri,
+                                    message: activeProject?.name || '',
+                                  });
+                                } catch (_) {
+                                  setShareCaptureContext(null);
+                                }
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Ionicons name="share-outline" size={18} color={theme.textPrimary} />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                  {/* Transient set-title overlay — fires from
+                      switchToSet / switchToPagerSet whenever the pager
+                      crosses into a different set. Pointer-events
+                      none so it never eats taps even mid-fade. */}
+                  {flashTitle && (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[styles.setFlashOverlay, { opacity: flashOpacity }]}
                     >
-                      <Text style={[styles.pairTemplateChipText, active && styles.pairTemplateChipTextActive]}>{tpl.name}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-            <CompareModeSwitcher
-              mode={compareMode}
-              onChange={setCompareMode}
-              style={{ marginTop: 12 }}
+                      <Text style={styles.setFlashText}>{flashTitle}</Text>
+                    </Animated.View>
+                  )}
+                  </View>
+                );
+              })()}
+            </View>
+
+            {/* Thumbnail strip — pinned to the very bottom and tall
+                enough to cover the persistent bottom nav so no nav-bar
+                separator peeks above it. Active cell gets the accent
+                ring. Tap to jump straight to that page. */}
+            {/* Bottom thumbnail strip was removed at the user's
+                request — set navigation is handled by the < Set N | X/Y
+                | Set N+1 > row at the top and by horizontal swipes
+                across the pager (which also walk to the prev/next set
+                via the sentinel pages at the row's edges). */}
+
+            {/* Compact swipe-down close chevron — mirrors the camera
+                screen's gallery-panel chevron: just an icon, centered.
+                Tap also closes the preview. paddingBottom keeps the
+                chevron above the floating PersistentBottomNav (50 px +
+                safe-area). */}
+            <TouchableOpacity
+              onPress={handleLongPressEnd}
+              hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}
+              style={[
+                styles.simplePreviewSwipeHint,
+                {
+                  paddingTop: 6,
+                  paddingBottom: insets.bottom + 50 + 6,
+                },
+              ]}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-down" size={22} color={theme.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
+
+      {/* Hidden share-composite renderer — mounted only while a share
+          with the "Edited" toggle on is in flight. Positioned off-
+          screen with the same dimensions the preview pager card uses
+          (so the captured composition matches what the user saw).
+          collapsable=false is required on Android to keep the View in
+          the native hierarchy for captureRef to find it. */}
+      {shareCaptureContext && (
+        <View
+          ref={shareCaptureRef}
+          collapsable={false}
+          style={{
+            position: 'absolute',
+            left: -10000,
+            top: 0,
+            width: shareCaptureContext.w,
+            height: shareCaptureContext.h,
+            backgroundColor: theme.surface,
+            overflow: 'hidden',
+          }}
+        >
+          <Image
+            source={{ uri: shareCaptureContext.photo.uri }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <StudioEditOverlays
+              photo={shareCaptureContext.photo}
+              theme={theme}
+              showLabels={showLabels}
+              labelPositionSettings={{
+                beforeLabelPosition,
+                afterLabelPosition,
+                beforeLabelPositionLandscape,
+                afterLabelPositionLandscape,
+                beforeLabelOffset,
+                afterLabelOffset,
+                beforeLabelOffsetLandscape,
+                afterLabelOffsetLandscape,
+              }}
+              showWatermark={showWatermark}
+              showBrandLogo={showBrandLogo}
+              brandLogoUri={brandLogoUri}
+              brandLogoPosition={brandLogoPosition}
+              brandLogoSize={brandLogoSize}
+              brandLogoOffset={brandLogoOffset}
+              showPreviewMetadata={showPreviewMetadata}
+              location={location}
+              metaShowDate={metaShowDate}
+              metaShowTime={metaShowTime}
+              metaShowAddress={metaShowAddress}
+              metaShowGps={metaShowGps}
+              metaPosition={metaPosition}
+              metaColor={metaColor}
+              metaOpacity={metaOpacity}
+              metaFontSize={metaFontSize}
+              metaFontFamily={metaFontFamily}
+              metaOffset={metaOffset}
+              combinedLabelLayout={{
+                LeftHalf: ({ children }) => (
+                  <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
+                    {children}
+                  </View>
+                ),
+                RightHalf: ({ children }) => (
+                  <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
+                    {children}
+                  </View>
+                ),
+              }}
             />
           </View>
-
-          {/* Room name + pagination dots */}
-          <View style={styles.fullScreenRoomNameRow}>
-            <Text style={styles.fullScreenRoomName}>
-              {rooms.find(r => r.id === fullScreenPhotoSet.before.room)?.name || fullScreenPhotoSet.before.room}
-            </Text>
-            {fullScreenPhotos.length > 1 && (
-              <View style={styles.fullScreenPaginationDots}>
-                {fullScreenPhotos.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[styles.fullScreenDot, i === fullScreenIndex && styles.fullScreenDotActive]}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-
-          {/* Bottom bar: white return circle, yellow share circle */}
-          <View style={[styles.fullScreenBottomBar, { paddingBottom: fullScreenBottomInset }]}>
-            <TouchableOpacity
-              style={styles.fullScreenReturnCircle}
-              onPress={handleLongPressEnd}
-            >
-              <Ionicons name="arrow-undo" size={20} color="#000000" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fullScreenShareCircle}
-              disabled={sharing}
-              onPress={async () => {
-                // Phase B share-respects-mode: capture the on-screen
-                // CompareViewer so the share output reflects the active mode
-                // (overlay / split / side-by-side). Fall back to the legacy
-                // pre-rendered combined photo if capture fails.
-                try {
-                  setSharing(true);
-                  let shareUri = null;
-                  if (fullScreenCompareRef.current) {
-                    try {
-                      shareUri = await captureRef(fullScreenCompareRef, { format: 'jpg', quality: 0.95 });
-                    } catch (capErr) {
-                      console.warn('[HomeScreen] captureRef of compare failed, falling back to combined:', capErr);
-                    }
-                  }
-                  if (!shareUri) {
-                    const combinedPhoto = getCombinedPhotos(fullScreenPhotoSet.before.room).find(
-                      (p) => p.name === fullScreenPhotoSet.before.name
-                    );
-                    const thumbnailUri = combinedBaseUris[fullScreenPhotoSet.before.name] || combinedPhoto?.uri;
-                    if (thumbnailUri) {
-                      shareCombinedPhoto(thumbnailUri, fullScreenPhotoSet.before.name, fullScreenPhotoSet.before.room, combinedPhoto, fullScreenPhotoSet.before, fullScreenPhotoSet.after);
-                      return;
-                    }
-                    throw new Error('No share URI available');
-                  }
-                  const tempFileName = `${fullScreenPhotoSet.before.room}_${fullScreenPhotoSet.before.name}_${compareMode}_${Date.now()}.jpg`;
-                  const tempUri = `${FileSystem.cacheDirectory}${tempFileName}`;
-                  await FileSystem.copyAsync({ from: shareUri, to: tempUri });
-                  await Share.open({
-                    url: ensureFileUri(tempUri),
-                    type: 'image/jpeg',
-                    title: `${fullScreenPhotoSet.before.name} — ${compareMode}`,
-                  });
-                } catch (e) {
-                  if (e?.message !== 'User did not share') {
-                    Alert.alert(t('common.error'), t('gallery.sharePhotoError'));
-                  }
-                } finally {
-                  setSharing(false);
-                }
-              }}
-            >
-              {sharing ? (
-                <ActivityIndicator size="small" color="#000" />
-              ) : (
-                <Ionicons name="paper-plane-outline" size={20} color="#000" />
-              )}
-            </TouchableOpacity>
-          </View>
         </View>
       )}
+
+      {/* Tap-to-fullscreen modal — opens when the user taps any photo
+          inside the preview pager.
+          - Frame is sized to the photo's saved Studio format
+            (pairTemplate). Image fills the frame via resizeMode=cover
+            so the user sees exactly what the export will render.
+          - When the "Edited" switch is on, the full overlay stack
+            (labels, watermark, brand logo, metadata, markup) is drawn
+            on top — pointerEvents=none so the backdrop tap still
+            closes the modal.
+          - Tap anywhere outside the frame (or the close button) to
+            dismiss. */}
+      <Modal
+        visible={!!tappedFullPhoto}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTappedFullPhoto(null)}
+      >
+        {/* Swipe-down-to-close gesture wrapper. PanResponder uses the
+            CAPTURE phase so it can intercept mid-gesture even when the
+            user is touching the framed photo (which is normally
+            owned by PannableImage's pan/pinch responder). High
+            thresholds (committed dy + dy >> |dx|) make it ignore
+            casual pan moves so PannableImage's zoom + drag stay
+            usable — only a deliberate downward swipe triggers close. */}
+        <View
+          style={styles.tappedFullPhotoSwipeArea}
+          onStartShouldSetResponderCapture={() => false}
+          onMoveShouldSetResponderCapture={(evt, gs) => {
+            const touches = evt.nativeEvent?.touches?.length || 0;
+            if (touches !== 1) return false;
+            // 80 px down + dominated-vertical guard so a pinch / pan
+            // never accidentally closes the viewer.
+            return gs?.dy > 80 && gs.dy > Math.abs(gs.dx || 0) * 2;
+          }}
+          onResponderRelease={(evt) => {
+            // The pan responder captured because of a committed
+            // downward swipe — commit the close.
+            setTappedFullPhoto(null);
+          }}
+          onResponderTerminationRequest={() => false}
+        >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setTappedFullPhoto(null)}
+          style={styles.tappedFullPhotoBackdrop}
+        >
+          {liveTappedFullPhoto?.uri && (() => {
+            // Use the live, store-resolved snapshot so format / metadata
+            // edits saved in Studio while the modal is open (or before
+            // it opens) reflect here too.
+            const tappedFullPhoto = liveTappedFullPhoto;
+            const screenW = Dimensions.get('window').width;
+            const screenH = Dimensions.get('window').height;
+            // Reserve some breathing room around the framed photo so
+            // the close button never overlaps it on tall captures.
+            const availW = screenW - 24;
+            const availH = screenH - (insets.top + 60) - (insets.bottom + 32);
+            const aspect = aspectForPhoto(tappedFullPhoto) || (availW / availH);
+            let frameW = availW;
+            let frameH = availH;
+            if (aspect >= availW / availH) {
+              frameW = availW;
+              frameH = availW / aspect;
+            } else {
+              frameH = availH;
+              frameW = availH * aspect;
+            }
+            return (
+              <View
+                style={{
+                  width: frameW,
+                  height: frameH,
+                  overflow: 'hidden',
+                  borderRadius: 8,
+                }}
+                // Block the backdrop's close tap when touching the
+                // framed photo itself — feels wrong for the photo to
+                // close when you just want to look at it or pinch-zoom.
+                onStartShouldSetResponder={() => true}
+              >
+                {/* PannableImage handles pinch-zoom (0.5×-3×) + pan.
+                    panOnLongPress=false → drag pans immediately (no
+                    waiting on a long-press timer) since this view is
+                    not inside a horizontal carousel that needs to
+                    own swipe gestures. Its reset button (top-right)
+                    snaps back to neutral. */}
+                <PannableImage
+                  source={{ uri: tappedFullPhoto.uri }}
+                  style={{ width: '100%', height: '100%' }}
+                  imageStyle={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                  panOnLongPress={false}
+                >
+                  {/* Overlays are children of PannableImage so the
+                      transform (pinch + pan) applies to them too —
+                      labels, watermark, etc. scale and translate with
+                      the photo instead of staying anchored. */}
+                  {showStudioEdits && (
+                    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                      <StudioEditOverlays
+                        photo={tappedFullPhoto}
+                        theme={theme}
+                        showLabels={showLabels}
+                        labelPositionSettings={{
+                          beforeLabelPosition,
+                          afterLabelPosition,
+                          beforeLabelPositionLandscape,
+                          afterLabelPositionLandscape,
+                          beforeLabelOffset,
+                          afterLabelOffset,
+                          beforeLabelOffsetLandscape,
+                          afterLabelOffsetLandscape,
+                        }}
+                        showWatermark={showWatermark}
+                        showBrandLogo={showBrandLogo}
+                        brandLogoUri={brandLogoUri}
+                        brandLogoPosition={brandLogoPosition}
+                        brandLogoSize={brandLogoSize}
+                        brandLogoOffset={brandLogoOffset}
+                        showPreviewMetadata={showPreviewMetadata}
+                        location={location}
+                        metaShowDate={metaShowDate}
+                        metaShowTime={metaShowTime}
+                        metaShowAddress={metaShowAddress}
+                        metaShowGps={metaShowGps}
+                        metaPosition={metaPosition}
+                        metaColor={metaColor}
+                        metaOpacity={metaOpacity}
+                        metaFontSize={metaFontSize}
+                        metaFontFamily={metaFontFamily}
+                        metaOffset={metaOffset}
+                        combinedLabelLayout={{
+                          LeftHalf: ({ children }) => (
+                            <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
+                              {children}
+                            </View>
+                          ),
+                          RightHalf: ({ children }) => (
+                            <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
+                              {children}
+                            </View>
+                          ),
+                        }}
+                      />
+                    </View>
+                  )}
+                </PannableImage>
+              </View>
+            );
+          })()}
+          <TouchableOpacity
+            onPress={() => setTappedFullPhoto(null)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={[styles.tappedFullPhotoClose, { top: insets.top + 12 }]}
+          >
+            <Ionicons name="close" size={26} color="#FFFFFF" />
+          </TouchableOpacity>
+        </TouchableOpacity>
+        </View>
+      </Modal>
 
       <Modal
         visible={openProjectVisible}
@@ -2068,273 +2949,91 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={styles.optionsModalOverlay}>
           <View style={styles.optionsModalContent}>
-            <Text style={styles.optionsTitle}>{t('home.manageProjects')}</Text>
+            {/* Single-project menu: only operates on the active project.
+                The project list + multi-select were removed because all
+                project management (switching, multi-select, multi-delete)
+                lives on the dedicated Projects screen. The capture-page
+                menu intentionally exposes only the four actions a user
+                needs mid-capture: rename current, create new, delete
+                current, share current. */}
+            <Text style={styles.optionsTitle}>
+              {activeProject?.name || t('projects.noProjects')}
+            </Text>
 
-            <ScrollView style={styles.projectList} showsVerticalScrollIndicator={true}>
-              {projects.length === 0 ? (
-                <Text style={styles.projectItemText}>{t('projects.noProjects')}</Text>
-              ) : (
-                projects.map((proj) => {
-                  const isSelected = selectedProjects.has(proj.id);
-                  const isCurrent = activeProjectId === proj.id;
-                  
-                  return (
-                    <TouchableOpacity
-                      key={proj.id}
-                      style={[
-                        styles.projectItem,
-                        isCurrent && !isMultiSelectMode && { borderWidth: 2, borderColor: '#F2C31B' },
-                        isSelected && { borderWidth: 2, borderColor: '#FF0000' }
-                      ]}
-                      onPress={() => handleProjectPress(proj.id)}
-                      onLongPress={() => handleProjectLongPress(proj.id)}
-                      delayLongPress={500}
-                    >
-                      <View style={styles.projectItemContent}>
-                        {isMultiSelectMode && (
-                          <View style={[
-                            styles.checkbox,
-                            isSelected && styles.checkboxSelected
-                          ]}>
-                            {isSelected && <Text style={styles.checkmark}>✓</Text>}
-                          </View>
-                        )}
-                        <Text style={styles.projectItemText}>
-                          📁 {proj.name} {isCurrent && !isMultiSelectMode ? (
-                            <Text style={{ color: '#FFC107' }}> {t('projects.current')}</Text>
-                          ) : ''}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
-
-            {isMultiSelectMode ? (
-              <>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#22A45D', marginTop: 20 }]}
-                  onPress={() => {
-                    setOpenProjectVisible(false);
-                    setTimeout(() => openNewProjectModal(false), 50);
-                  }}
-                >
-                  <Text style={[styles.actionBtnText, { color: 'white' }]}>＋ {t('home.newProject')}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    {
-                      backgroundColor: selectedProjects.size > 0 ? '#FFE6E6' : '#F2F2F2',
-                      marginTop: 8
-                    }
-                  ]}
-                  onPress={handleDeleteSelectedProjects}
-                  disabled={selectedProjects.size === 0}
-                >
-                  <Ionicons 
-                    name="trash-outline" 
-                    size={18} 
-                    color={selectedProjects.size > 0 ? '#CC0000' : '#999'} 
-                    style={{ marginRight: 6 }} 
-                  />
-                  <Text style={[
-                    styles.actionBtnText,
-                    { color: selectedProjects.size > 0 ? '#CC0000' : '#999' }
-                  ]}>
-                    {t('home.deleteSelected')} ({selectedProjects.size})
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#F2C31B', marginTop: 16 }]}
-                  onPress={() => {
-                    setOpenProjectVisible(false);
-                    exitMultiSelectMode();
-                    navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] });
-                  }}
-                >
-                  <Text style={[styles.actionBtnText, { color: '#000' }]}>🖼️ {t('home.gallery')}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#D6ECFF', marginTop: 8 }]}
-                  onPress={() => {
-                    setOpenProjectVisible(false);
-                    exitMultiSelectMode();
-                    navigation.reset({ index: 0, routes: [{ name: 'Gallery', params: { openManage: true } }] });
-                  }}
-                >
-                  <Text style={[styles.actionBtnText, { color: '#0077CC' }]}>📤 {t('home.shareProject')}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#F2F2F2', marginTop: 8 }]}
-                  onPress={exitMultiSelectMode}
-                >
-                  <Text style={styles.actionBtnText}>{t('home.cancelSelection')}</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                {activeProject && (
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: '#FFF8E1', marginTop: 20 }]}
-                    onPress={() => {
-                      setOpenProjectVisible(false);
-                      setTimeout(() => {
-                        setEditedProjectName(activeProject.name);
-                        setIsEditingProjectName(true);
-                      }, 100);
-                    }}
-                  >
-                    <Ionicons name="pencil-outline" size={18} color="#B8860B" style={{ marginRight: 6 }} />
-                    <Text style={[styles.actionBtnText, { color: '#B8860B' }]}>{t('home.renameProject', { defaultValue: 'Rename Project' })}</Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#22A45D', marginTop: activeProject ? 8 : 20 }]}
-                  onPress={() => {
-                    setOpenProjectVisible(false);
-                    setTimeout(() => openNewProjectModal(false), 50);
-                  }}
-                >
-                  <Text style={[styles.actionBtnText, { color: 'white' }]}>＋ {t('home.newProject')}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    {
-                      backgroundColor: '#F2F2F2',
-                      marginTop: 8
-                    }
-                  ]}
-                  onPress={handleDisabledDeleteClick}
-                >
-                  <Ionicons name="trash-outline" size={18} color="#999" style={{ marginRight: 6 }} />
-                  <Text style={[styles.actionBtnText, { color: '#999' }]}>
-                    {t('home.deleteSelected')} (0)
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#F2C31B', marginTop: 16 }]}
-                  onPress={() => {
-                    setOpenProjectVisible(false);
-                    navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] });
-                  }}
-                >
-                  <Text style={[styles.actionBtnText, { color: '#000' }]}>🖼️ {t('home.gallery')}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#D6ECFF', marginTop: 8 }]}
-                  onPress={() => {
-                    setOpenProjectVisible(false);
-                    navigation.reset({ index: 0, routes: [{ name: 'Gallery', params: { openManage: true } }] });
-                  }}
-                >
-                  <Text style={[styles.actionBtnText, { color: '#0077CC' }]}>📤 {t('home.shareProject')}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#F2F2F2', marginTop: 8 }]}
-                  onPress={() => setOpenProjectVisible(false)}
-                >
-                  <Text style={styles.actionBtnText}>{t('common.close')}</Text>
-                </TouchableOpacity>
-              </>
+            {activeProject && (
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#FFF8E1', marginTop: 20 }]}
+                onPress={() => {
+                  setOpenProjectVisible(false);
+                  setTimeout(() => {
+                    setEditedProjectName(activeProject.name);
+                    setIsEditingProjectName(true);
+                  }, 100);
+                }}
+              >
+                <Ionicons name="pencil-outline" size={18} color="#B8860B" style={{ marginRight: 6 }} />
+                <Text style={[styles.actionBtnText, { color: '#B8860B' }]}>{t('home.renameProject', { defaultValue: 'Edit' })}</Text>
+              </TouchableOpacity>
             )}
+
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#22A45D', marginTop: activeProject ? 8 : 20 }]}
+              onPress={() => {
+                setOpenProjectVisible(false);
+                setTimeout(() => openNewProjectModal(false), 50);
+              }}
+            >
+              <Text style={[styles.actionBtnText, { color: 'white' }]}>＋ {t('home.newProject')}</Text>
+            </TouchableOpacity>
+
+            {activeProject && (
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#FFE6E6', marginTop: 8 }]}
+                onPress={() => {
+                  // Reuse the existing multi-select delete plumbing —
+                  // populate the ref with just the active project and
+                  // open the same confirm modal (with the optional
+                  // "delete from phone" checkbox).
+                  selectedProjectsForDeleteRef.current = new Set([activeProject.id]);
+                  setOpenProjectVisible(false);
+                  setTimeout(() => {
+                    setShowDeleteProjectsConfirm(true);
+                  }, 300);
+                }}
+              >
+                <Ionicons name="trash-outline" size={18} color="#CC0000" style={{ marginRight: 6 }} />
+                <Text style={[styles.actionBtnText, { color: '#CC0000' }]}>{t('common.delete', { defaultValue: 'Delete' })}</Text>
+              </TouchableOpacity>
+            )}
+
+            {activeProject && (
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#D6ECFF', marginTop: 8 }]}
+                onPress={() => {
+                  setOpenProjectVisible(false);
+                  navigation.reset({ index: 0, routes: [{ name: 'Gallery', params: { openManage: true } }] });
+                }}
+              >
+                <Ionicons name="share-outline" size={18} color="#0077CC" style={{ marginRight: 6 }} />
+                <Text style={[styles.actionBtnText, { color: '#0077CC' }]}>{t('home.shareProject', { defaultValue: 'Share' })}</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#F2F2F2', marginTop: 16 }]}
+              onPress={() => setOpenProjectVisible(false)}
+            >
+              <Text style={styles.actionBtnText}>{t('common.close')}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      <Modal
-        visible={newProjectVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setNewProjectVisible(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.optionsModalOverlay}
-        >
-          <View style={styles.optionsModalContent}>
-            <Text style={styles.optionsTitle}>{t('projects.newProjectTitle')}</Text>
-            <View style={{ width: '92%', marginTop: 8 }}>
-              <TextInput
-                style={{
-                  borderWidth: 1,
-                  borderColor: COLORS.BORDER,
-                  borderRadius: 8,
-                  padding: 12,
-                  fontSize: 16,
-                  backgroundColor: 'white'
-                }}
-                value={newProjectNamePart}
-                onChangeText={setNewProjectNamePart}
-                placeholder={t('projects.projectNamePart', { defaultValue: 'Name (date & location added when created)' })}
-                placeholderTextColor={COLORS.GRAY}
-              />
-              {/* Folder location: user can type any location, with optional quick suggestions */}
-              <View style={{ marginTop: 12 }}>
-                <Text style={{ fontSize: 13, marginBottom: 6 }}>
-                  {t('settings.folderLocation', { defaultValue: 'Folder location' })}
-                </Text>
-                <TextInput
-                  style={{
-                    borderWidth: 1,
-                    borderColor: COLORS.BORDER,
-                    borderRadius: 8,
-                    padding: 10,
-                    fontSize: 14,
-                    backgroundColor: 'white',
-                  }}
-                  value={newProjectLocation}
-                  onChangeText={setNewProjectLocation}
-                  placeholder={t('settings.folderLocationPlaceholder', { defaultValue: 'Type city or location name' })}
-                  placeholderTextColor={COLORS.GRAY}
-                />
-                <TouchableOpacity
-                  onPress={handleUseCurrentLocationInModal}
-                  disabled={locationLoadingInModal}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: 8,
-                    paddingVertical: 6,
-                    paddingHorizontal: 10,
-                    alignSelf: 'flex-start',
-                    borderRadius: 8,
-                    backgroundColor: locationLoadingInModal ? '#E8E8E8' : '#F0F0F0',
-                  }}
-                >
-                  {locationLoadingInModal ? (
-                    <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginRight: 6 }} />
-                  ) : (
-                    <Ionicons name="locate" size={18} color={COLORS.PRIMARY} style={{ marginRight: 6 }} />
-                  )}
-                  <Text style={{ fontSize: 13, color: '#333' }}>
-                    {locationLoadingInModal ? t('projects.gettingLocation', { defaultValue: 'Getting location…' }) : t('projects.useCurrentLocation', { defaultValue: 'Use current location' })}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', marginTop: 12 }}>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#F2F2F2', flex: 1, marginRight: 6 }]} onPress={() => setNewProjectVisible(false)}>
-                <Text style={styles.actionBtnText}>{t('common.cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, styles.actionPrimary, { flex: 1, marginLeft: 6 }]} onPress={handleCreateProject}>
-                <Text style={[styles.actionBtnText, { color: 'white' }]}>{t('projects.create')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      {/* Old HomeScreen-local New Project modal removed — the FAB now
+          navigates to Projects with `openNewProject: true`, which opens
+          the canonical modal (street-precise location, industry
+          dropdown, location checkbox, clearable name). Single source
+          of truth in ProjectsScreen.js. */}
 
       <Modal visible={showContextMenu} transparent={true} animationType="fade">
         <TouchableWithoutFeedback onPress={() => setShowContextMenu(false)}>
@@ -2443,9 +3142,12 @@ export default function HomeScreen({ navigation }) {
           setShowDeletePhotoConfirm(false);
           pendingDeletePhotoIdRef.current = null;
           handleLongPressEnd();
-          if (photoId) {
-            deletePhotoSet(photoId, { deleteFromStorage });
-          }
+          if (!photoId) return;
+          // Trash now lives ON the photo and always targets a single
+          // photo (any mode). deletePhoto handles all modes; the old
+          // deletePhotoSet path nuked the whole set, which is the wrong
+          // intent for a per-photo trash icon.
+          deletePhoto(photoId, { deleteFromStorage });
         }}
         onCancel={() => {
           setShowDeletePhotoConfirm(false);
@@ -2711,10 +3413,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ECECEC',
   },
+  // Active room: yellow fill + dark border. Only the active card has a
+  // visible border so the eye lands cleanly on the focused room.
   roomTabActive: {
     backgroundColor: '#FFEAA0',
-    borderColor: '#FFEAA0',
+    borderColor: '#1E1E1E',
+    borderWidth: 2,
+  },
+  // Inactive room with photos — full opacity, no border. Cleaner row
+  // since only the active room is outlined.
+  roomTabFilled: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'transparent',
     borderWidth: 0,
+  },
+  // "No photos in this room yet" — dimmed + dashed outline so the user
+  // can tell at a glance which rooms they haven't shot in.
+  roomTabEmpty: {
+    backgroundColor: '#F4F4F4',
+    borderColor: '#D9D9D9',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    opacity: 0.55,
   },
   roomTabText: {
     fontSize: 10,
@@ -2743,12 +3463,26 @@ const styles = StyleSheet.create({
   photoItem: {
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
-    marginBottom: 16,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#ECECEC',
+  },
+  // Column wrapper for the photo card + its "Set N" label so the grid
+  // still flex-wraps two-per-row but each cell now also includes the
+  // label underneath the tile.
+  setTileWrapper: {
+    width: PHOTO_SIZE,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  setTileLabel: {
+    marginTop: 6,
+    fontFamily: FONTS.SEMIBOLD,
+    fontSize: 12,
+    color: '#1E1E1E',
+    textAlign: 'center',
   },
   photoCenterDivider: {
     position: 'absolute',
@@ -2774,6 +3508,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 8,
     right: 8,
+    zIndex: 10,
+  },
+  // Used for the clock / "waiting for After" badge in upper-right
+  // when a set has only its Before photo (no second photo yet).
+  photoOverlayBadgeTopRight: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 10,
+  },
+  // Used for the green completion checkmark in lower-left once a
+  // set has both Before + After (with or without combined). Sits in
+  // the opposite corner from the yellow progress-count badge so the
+  // two read together without overlapping.
+  photoOverlayBadgeBottomLeft: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
     zIndex: 10,
   },
   checkmarkBadge: {
@@ -2843,7 +3595,7 @@ const styles = StyleSheet.create({
     bottom: 8,
     left: 8,
     right: 8,
-    alignItems: 'flex-start',
+    alignItems: 'center',
     zIndex: 10,
   },
   retakeButton: {
@@ -2855,6 +3607,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 20,
     gap: 3,
+    // Same width as takeAfterButton so the two pills line up
+    // visually across cards (Take Next vs Update After).
+    minWidth: 140,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -2877,6 +3632,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 20,
     gap: 4,
+    // Matches retakeButton.minWidth so both pills look identical
+    // across cards.
+    minWidth: 140,
     shadowColor: COLORS.PRIMARY,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -2950,6 +3708,385 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  // Simple preview (eye-icon → quick look). Theme-aware container, top
+  // bar with Back + Share/Edit/Delete cluster, image fills the body.
+  simplePreviewContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+  },
+  simplePreviewTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  simplePreviewTopBarRight: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  simplePreviewCtrlBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.18,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  // Trash icon overlaid on the top-right corner of each photo in the
+  // preview pager. Per-photo so it always targets the currently-shown
+  // page, not the whole set.
+  simplePreviewPhotoTrash: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+    // Above PhotoWatermark (zIndex 100) so its built-in URL link
+    // doesn't intercept taps meant for these buttons.
+    zIndex: 200,
+  },
+  // Bottom-right share button on each pager card. Same chrome as the
+  // top-right trash so the two icons read as a consistent pair.
+  simplePreviewPhotoShare: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+    // Above PhotoWatermark (zIndex 100) so its built-in URL link
+    // doesn't intercept taps meant for these buttons.
+    zIndex: 200,
+  },
+  // Project name + capture date sit between the top control bar and
+  // the photo pager. Compact two-line row so the photo still has room.
+  simplePreviewInfoRow: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 10,
+    alignItems: 'center',
+  },
+  // Three-column row that mirrors the project detail screen's sets
+  // bar: previous set on the left, position pill in the center,
+  // next set on the right. Without `flexDirection: 'row'` the three
+  // children stack vertically and the "next set" label collapses to
+  // the left under the position pill.
+  simplePreviewSetsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  simplePreviewSetsBarSide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 80,
+  },
+  simplePreviewSetsBarSideRight: {
+    justifyContent: 'flex-end',
+  },
+  simplePreviewSetsBarText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  simplePreviewSetsBarCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  simplePreviewPositionPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  simplePreviewPositionText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  // Horizontal scroll of set thumbnails — sits above the project name
+  // / date row so the user can jump between sets without leaving the
+  // preview. Mirrors the room tabs row on the project detail screen.
+  simplePreviewSetTabsRow: {
+    paddingVertical: 6,
+  },
+  simplePreviewSetTabsContent: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  simplePreviewSetTab: {
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  simplePreviewSetTabThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+  },
+  simplePreviewSetTabLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  simplePreviewProjectName: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  simplePreviewPhotoDate: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  simplePreviewBody: {
+    flex: 1,
+  },
+  simplePreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  simplePreviewThumbs: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  simplePreviewSwipeHint: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  // Top-LEFT pencil icon — opens StudioDetail for the current photo.
+  // Same chrome as the bottom-right share button so the pair reads as
+  // a consistent set of per-photo actions.
+  simplePreviewPhotoEdit: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+    // Above PhotoWatermark (zIndex 100) so its built-in URL link
+    // doesn't intercept taps meant for these buttons.
+    zIndex: 200,
+  },
+  // Bottom-LEFT pill that hosts the "Edited" preview toggle. Wider
+  // than the round action buttons because it carries a label, but
+  // sized so it doesn't reach the share button on the right.
+  simplePreviewEditedToggle: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 10,
+    paddingRight: 4,
+    height: 36,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+    // Above PhotoWatermark (zIndex 100) so its built-in URL link
+    // doesn't intercept taps meant for these buttons.
+    zIndex: 200,
+  },
+  simplePreviewEditedToggleLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  simplePreviewEditedSwitch: {
+    transform: [{ scaleX: 0.75 }, { scaleY: 0.75 }],
+  },
+  // Action rows that sit ABOVE and BELOW the preview photo. Inline
+  // versions of the corner buttons (no absolute positioning) so the
+  // photo can shrink to fit and the buttons no longer overlap the
+  // image. Both rows have flex justify space-between with the photo's
+  // width, so the buttons line up flush with the picture's edges.
+  simplePreviewActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  // Round 40 px action button — same chrome as the old corner
+  // overlays, just laid out inline now.
+  simplePreviewActionBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  // Inline version of the Edited toggle pill (no absolute position).
+  // Sits at the left of the bottom action row.
+  simplePreviewEditedToggleInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 12,
+    paddingRight: 6,
+    height: 40,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  // Fullscreen modal swipe-down close gesture target. Fills the
+  // screen behind the framed photo; the PanResponder lives on this
+  // wrapper. See the modal JSX above for the responder definition.
+  tappedFullPhotoSwipeArea: {
+    flex: 1,
+  },
+  // Big transient title flashed over the pager when the user moves
+  // into a new set. Replaces the old "Previous / Next set" sentinel
+  // cards. Fills the pager bounds so it sits centered over whichever
+  // photo is on-screen, with a subtle dark scrim behind the text so
+  // it stays legible regardless of underlying image brightness.
+  setFlashOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+  },
+  setFlashText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 44,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 16,
+    overflow: 'hidden',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 6,
+  },
+  // Full-screen photo modal — tapping any photo in the preview pager
+  // opens it edge-to-edge over a near-black backdrop. No overlays, no
+  // chrome other than a single dismiss button (tap anywhere also closes).
+  tappedFullPhotoBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tappedFullPhotoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  tappedFullPhotoClose: {
+    position: 'absolute',
+    // Top-LEFT so it doesn't collide with PannableImage's built-in
+    // reset button (which sits at top-right of the framed image).
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  // Combined-photo half overlays — PhotoLabel renders its label
+  // relative to its parent's bounds, so for COMBINED previews we
+  // confine each label to the matching half of the photo. Default
+  // SIDE layout (left = before, right = after); the bake-time
+  // letterbox / stack offsets only apply to share output, not the
+  // preview overlay.
+  simplePreviewCombinedHalfLeft: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: '50%',
+  },
+  simplePreviewCombinedHalfRight: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: '50%',
+  },
+  simplePreviewSwipeHintText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  simplePreviewThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  simplePreviewThumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  simplePreviewThumbLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 4,
+    maxWidth: 56,
+  },
+  // Legacy full-screen preview styles — still used by GalleryScreen and
+  // other places that import these names. Keep them intact even though
+  // the HomeScreen preview no longer uses them.
   fullScreenPhotoContainer: {
     position: 'absolute',
     top: 0,

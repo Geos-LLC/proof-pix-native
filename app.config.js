@@ -8,8 +8,8 @@ export default {
     // production environment had VERSION=1.2.0 stored as a secret, which
     // silently overrode the fallback and shipped 1.2.0 IPAs that Apple
     // rejected (already deleted from EAS env, but keep this guard).
-    version: "1.7.5",
-    runtimeVersion: "1.7.5",
+    version: "1.7.6",
+    runtimeVersion: "1.7.6",
     updates: {
       url: "https://u.expo.dev/c65badb3-ddbc-4bb8-9de5-fab32a427f16"
     },
@@ -29,7 +29,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "72",
+      buildNumber: "74",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -37,6 +37,8 @@ export default {
         NSPhotoLibraryUsageDescription: "ProofPix needs access to your photo library to save before and after photos.",
         NSPhotoLibraryAddUsageDescription: "ProofPix needs permission to save photos to your library.",
         NSLocationWhenInUseUsageDescription: "ProofPix may use your location to help tag cleaning projects by city and improve your reports. Your location is never stored in the photos themselves.",
+        NSMicrophoneUsageDescription: "ProofPix uses the microphone to record voice notes attached to your photos.",
+        NSSpeechRecognitionUsageDescription: "ProofPix transcribes your voice notes on-device using the system speech recognizer.",
         UIViewControllerBasedStatusBarAppearance: true,
         UISupportedInterfaceOrientations: [
           "UIInterfaceOrientationPortrait",
@@ -70,7 +72,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 71,
+      versionCode: 72,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
@@ -121,6 +123,13 @@ export default {
         }
       ],
       "expo-screen-orientation",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "ProofPix uses the microphone to record voice notes attached to your photos.",
+          "speechRecognitionPermission": "ProofPix transcribes your voice notes on-device using the system speech recognizer."
+        }
+      ],
       [
         "expo-build-properties",
         {

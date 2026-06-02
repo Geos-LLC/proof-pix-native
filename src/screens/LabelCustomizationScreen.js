@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,65 @@ import {
   Pressable,
   Dimensions,
   KeyboardAvoidingView,
+  Image,
+  PanResponder,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSettings } from '../context/SettingsContext';
-import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
-import { getLabelPositions } from '../constants/rooms';
+import { usePhotos } from '../context/PhotoContext';
+// useFeaturePermissions / FEATURES removed — used to gate the watermark
+// section, which now lives on the dedicated Watermark Customization
+// screen.
+import { getLabelPositions, PHOTO_MODES } from '../constants/rooms';
+import { Animated } from 'react-native';
+
+// 9-cell position grid keys, organised by (column, row) so a drag can
+// snap to the nearest cell by checking centres.
+const POSITION_GRID = [
+  ['left-top',     'center-top',     'right-top'],
+  ['left-middle',  'center-middle',  'right-middle'],
+  ['left-bottom',  'center-bottom',  'right-bottom'],
+];
+const positionToCoords = (key) => {
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      if (POSITION_GRID[r][c] === key) return { col: c, row: r };
+    }
+  }
+  return { col: 0, row: 0 };
+};
+// Find the grid key whose centre is closest to (x, y) inside a region
+// of width w / height h (origin at top-left of the region).
+const nearestPositionKey = (x, y, w, h) => {
+  if (!w || !h) return 'left-top';
+  let best = 'left-top';
+  let bestDist = Infinity;
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      const cx = (c + 0.5) * (w / 3);
+      const cy = (r + 0.5) * (h / 3);
+      const d = Math.hypot(cx - x, cy - y);
+      if (d < bestDist) { bestDist = d; best = POSITION_GRID[r][c]; }
+    }
+  }
+  return best;
+};
+
+// Compute the top-left corner pixel position of a label for a given
+// position key inside a region of width/height. The label's own
+// width/height is needed so the bottom/right anchors land correctly.
+const positionToTopLeft = (key, regionW, regionH, labelW, labelH, marginH = 10, marginV = 10) => {
+  const { col, row } = positionToCoords(key);
+  let x = marginH;
+  if (col === 1) x = (regionW - labelW) / 2;
+  else if (col === 2) x = regionW - labelW - marginH;
+  let y = marginV;
+  if (row === 1) y = (regionH - labelH) / 2;
+  else if (row === 2) y = regionH - labelH - marginV;
+  return { x, y };
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -38,6 +90,18 @@ const FONT_OPTIONS = [
   { key: 'sf', label: 'SF Compact' },
   { key: 'share', label: 'Share Tech' },
 ];
+
+// Maps the abstract font-family setting keys to the real font names
+// registered in App.js (mirrors PhotoLabel's FONT_FAMILY_MAP so the
+// preview renders with the same typeface the saved labels will use).
+const PREVIEW_FONT_MAP = {
+  system: 'Alexandria_400Regular',
+  shadow: 'PlayfairDisplay_700Bold',
+  shanatel: 'Quicksand_400Regular',
+  sf: 'Lato_700Bold',
+  share: 'RobotoMono_700Bold',
+};
+const getPreviewFontFamily = (key) => PREVIEW_FONT_MAP[key] || PREVIEW_FONT_MAP.system;
 
 // Size Options
 const SIZE_OPTIONS = [
@@ -125,10 +189,7 @@ const LABEL_LANGUAGES = [
   { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
 ];
 
-export default function CustomizeLabelsScreen({ navigation }) {
-  const { canUse } = useFeaturePermissions();
-  const canCustomizeWatermark = canUse(FEATURES.CUSTOM_WATERMARKS);
-
+export default function CustomizeLabelsScreen({ route, navigation }) {
   // Which orientation tab the position controls are editing.
   // 'portrait' edits beforeLabelPosition / afterLabelPosition (the legacy
   // settings, used for portrait + square photos). 'landscape' edits the new
@@ -146,6 +207,10 @@ export default function CustomizeLabelsScreen({ navigation }) {
     afterLabelPosition,
     beforeLabelPositionLandscape,
     afterLabelPositionLandscape,
+    beforeLabelOffset,
+    afterLabelOffset,
+    beforeLabelOffsetLandscape,
+    afterLabelOffsetLandscape,
     labelMarginVertical,
     labelMarginHorizontal,
     updateLabelBackgroundColor,
@@ -157,60 +222,41 @@ export default function CustomizeLabelsScreen({ navigation }) {
     updateAfterLabelPosition,
     updateBeforeLabelPositionLandscape,
     updateAfterLabelPositionLandscape,
+    updateBeforeLabelOffset,
+    updateAfterLabelOffset,
+    updateBeforeLabelOffsetLandscape,
+    updateAfterLabelOffsetLandscape,
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,
-    // Watermark settings
-    watermarkText,
-    watermarkLink,
-    watermarkColor,
-    watermarkOpacity,
-    watermarkPosition,
-    watermarkFontFamily,
-    updateWatermarkText,
-    updateWatermarkLink,
-    updateWatermarkColor,
-    updateWatermarkOpacity,
-    updateWatermarkPosition,
-    updateWatermarkFontFamily,
     // Label language (independent of app language)
     labelLanguage,
     updateLabelLanguage,
   } = useSettings();
+
+  // While a label is being dragged, disable the outer ScrollView so the
+  // page doesn't pan along with the label. Re-enabled on release.
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   // Local state for UI only (modals, temp values)
 
   // Modal states
   const [fontModalVisible, setFontModalVisible] = useState(false);
   const [colorModalVisible, setColorModalVisible] = useState(false);
-  const [colorModalType, setColorModalType] = useState(null); // 'bg', 'text', 'watermark'
+  const [colorModalType, setColorModalType] = useState(null); // 'bg' or 'text'
   const [positionModalVisible, setPositionModalVisible] = useState(false);
   const [sizeModalVisible, setSizeModalVisible] = useState(false);
   const [marginModalVisible, setMarginModalVisible] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
-  // Watermark modal states
-  const [watermarkOpacityModalVisible, setWatermarkOpacityModalVisible] = useState(false);
-  const [watermarkFontModalVisible, setWatermarkFontModalVisible] = useState(false);
-  const [watermarkPositionModalVisible, setWatermarkPositionModalVisible] = useState(false);
-  const [watermarkOpacityPreview, setWatermarkOpacityPreview] = useState(watermarkOpacity || 0.5);
 
   // Color picker state
   const [tempColor, setTempColor] = useState('#EAB308');
   const [colorTab, setColorTab] = useState('Grid');
   const [colorOpacity, setColorOpacity] = useState(100);
 
-  // Update preview when watermarkOpacity changes from outside
-  useEffect(() => {
-    if (typeof watermarkOpacity === 'number') {
-      setWatermarkOpacityPreview(watermarkOpacity);
-    }
-  }, [watermarkOpacity]);
-
   const openColorModal = (type) => {
     setColorModalType(type);
     if (type === 'bg') {
       setTempColor(labelBackgroundColor);
-    } else if (type === 'watermark') {
-      setTempColor(watermarkColor || '#666666');
     } else {
       setTempColor(labelTextColor);
     }
@@ -283,14 +329,30 @@ export default function CustomizeLabelsScreen({ navigation }) {
       await updateLabelBackgroundColor(hexColor);
     } else if (colorModalType === 'text') {
       await updateLabelTextColor(hexColor);
-    } else if (colorModalType === 'watermark') {
-      await updateWatermarkColor(hexColor);
     }
     setColorModalVisible(false);
   };
 
   const currentFont = FONT_OPTIONS.find(f => f.key === labelFontFamily)?.label || 'Arial Blank';
-  const currentSize = SIZE_OPTIONS.find(s => s.key === labelSize);
+  // currentSize supports both the legacy small/medium/large strings and
+  // numeric font sizes (from the new slider). Numeric → derive padding
+  // proportionally; string → look up in SIZE_OPTIONS.
+  const currentSize = useMemo(() => {
+    if (typeof labelSize === 'number') {
+      return { fontSize: labelSize, padding: Math.max(4, Math.round(labelSize * 0.6)) };
+    }
+    return SIZE_OPTIONS.find((s) => s.key === labelSize) || SIZE_OPTIONS[1];
+  }, [labelSize]);
+
+  // Pull the actual photo through if Studio passed a photoId — that way
+  // the preview reflects what the labels will look like on the user's
+  // own picture, not a placeholder icon.
+  const photoId = route?.params?.photoId;
+  const { photos } = usePhotos();
+  const previewPhoto = useMemo(
+    () => (photoId ? photos.find((p) => String(p.id) === String(photoId)) : null),
+    [photoId, photos]
+  );
 
   // Position helper: returns absolute-positioning styles relative to the
   // preview half. Uses percentage + transform for middle/center anchors so
@@ -321,12 +383,24 @@ export default function CustomizeLabelsScreen({ navigation }) {
   const activeAfterPos = orientationTab === 'landscape'
     ? (afterLabelPositionLandscape || afterLabelPosition)
     : afterLabelPosition;
+  const activeBeforeOffset = orientationTab === 'landscape'
+    ? beforeLabelOffsetLandscape
+    : beforeLabelOffset;
+  const activeAfterOffset = orientationTab === 'landscape'
+    ? afterLabelOffsetLandscape
+    : afterLabelOffset;
   const updateActiveBeforePos = orientationTab === 'landscape'
     ? updateBeforeLabelPositionLandscape
     : updateBeforeLabelPosition;
   const updateActiveAfterPos = orientationTab === 'landscape'
     ? updateAfterLabelPositionLandscape
     : updateAfterLabelPosition;
+  const updateActiveBeforeOffset = orientationTab === 'landscape'
+    ? updateBeforeLabelOffsetLandscape
+    : updateBeforeLabelOffset;
+  const updateActiveAfterOffset = orientationTab === 'landscape'
+    ? updateAfterLabelOffsetLandscape
+    : updateAfterLabelOffset;
 
   const activeBeforeStyle = getPositionStyle(activeBeforePos, labelMarginVertical, labelMarginHorizontal);
   const activeAfterStyle = getPositionStyle(activeAfterPos, labelMarginVertical, labelMarginHorizontal);
@@ -335,11 +409,6 @@ export default function CustomizeLabelsScreen({ navigation }) {
   // render stacked (column flex, horizontal divider).
   const isHorizontal = orientationTab === 'landscape';
 
-  // Get watermark position style using the same function as PhotoWatermark
-  const watermarkPositions = getLabelPositions(labelMarginVertical ?? 10, labelMarginHorizontal ?? 10);
-  const watermarkPosKey = watermarkPosition || 'right-bottom';
-  const watermarkPosStyle = watermarkPositions[watermarkPosKey] || watermarkPositions['right-bottom'];
-  const { name: watermarkPosName, horizontalAlign, verticalAlign, ...watermarkPositionCoords } = watermarkPosStyle;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -359,10 +428,11 @@ export default function CustomizeLabelsScreen({ navigation }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <ScrollView 
-          style={styles.scrollView} 
+        <ScrollView
+          style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          scrollEnabled={scrollEnabled}
         >
         {/* Preview — single square box that switches between portrait
             (side-by-side, vertical divider) and landscape (stacked, horizontal
@@ -390,58 +460,32 @@ export default function CustomizeLabelsScreen({ navigation }) {
             ))}
           </View>
 
-          <View style={[
-            styles.previewSquare,
-            { flexDirection: isHorizontal ? 'column' : 'row' },
-          ]}>
-            <View style={styles.previewHalfBefore}>
-              <Ionicons name="image-outline" size={48} color="#999" />
-              <View style={[
-                styles.previewLabel,
-                {
-                  backgroundColor: labelBackgroundColor,
-                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
-                  padding: currentSize?.padding || 10,
-                  position: 'absolute',
-                  ...activeBeforeStyle,
-                }
-              ]}>
-                <Text style={[
-                  styles.previewLabelText,
-                  { color: labelTextColor, fontSize: currentSize?.fontSize || 14 }
-                ]}>Before</Text>
-              </View>
-            </View>
-            <View style={isHorizontal ? styles.previewDividerHorizontal : styles.previewDividerVertical} />
-            <View style={styles.previewHalfAfter}>
-              <Ionicons name="image-outline" size={48} color="#999" />
-              <View style={[
-                styles.previewLabel,
-                {
-                  backgroundColor: labelBackgroundColor,
-                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
-                  padding: currentSize?.padding || 10,
-                  position: 'absolute',
-                  ...activeAfterStyle,
-                }
-              ]}>
-                <Text style={[
-                  styles.previewLabelText,
-                  { color: labelTextColor, fontSize: currentSize?.fontSize || 14 }
-                ]}>After</Text>
-              </View>
-            </View>
-            <Text style={[
-              styles.previewWatermark,
-              {
-                color: watermarkColor || '#666666',
-                opacity: watermarkOpacity || 0.5,
-                ...watermarkPositionCoords,
-              }
-            ]}>
-              {watermarkText || 'Created with Proofpix.app'}
-            </Text>
-          </View>
+          {/* SINGLE photo background (no duplicated halves). For
+              combined photos we show the merged image once and overlay
+              BOTH labels at their respective half-positions. For single
+              photos (Before / After / Progress) we show the photo and a
+              single label. Labels are drag-and-droppable — release
+              snaps to the nearest of 9 grid cells in their half. */}
+          <PreviewArea
+            photo={previewPhoto}
+            isCombined={previewPhoto?.mode === PHOTO_MODES.COMBINED}
+            isHorizontal={isHorizontal}
+            beforePos={activeBeforePos}
+            afterPos={activeAfterPos}
+            beforeOffset={activeBeforeOffset}
+            afterOffset={activeAfterOffset}
+            onBeforeOffsetChange={updateActiveBeforeOffset}
+            onAfterOffsetChange={updateActiveAfterOffset}
+            onDragStart={() => setScrollEnabled(false)}
+            onDragEnd={() => setScrollEnabled(true)}
+            labelBackgroundColor={labelBackgroundColor}
+            labelTextColor={labelTextColor}
+            labelCornerStyle={labelCornerStyle}
+            labelFontFamily={labelFontFamily}
+            currentSize={currentSize}
+            marginV={labelMarginVertical}
+            marginH={labelMarginHorizontal}
+          />
         </View>
 
         {/* Label Section */}
@@ -500,75 +544,9 @@ export default function CustomizeLabelsScreen({ navigation }) {
           />
         </View>
 
-        {/* Watermark Section */}
-        <Text style={styles.sectionTitle}>Watermark</Text>
-
-        {!canCustomizeWatermark ? (
-          <TouchableOpacity
-            style={styles.lockedSection}
-            onPress={() => navigation.navigate('Settings')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="lock-closed" size={24} color={COLORS.PRIMARY} />
-            <Text style={styles.lockedTitle}>Pro Feature</Text>
-            <Text style={styles.lockedMessage}>
-              Upgrade to Pro to customize your watermark text, color, font, and position.
-            </Text>
-            <View style={styles.lockedButton}>
-              <Text style={styles.lockedButtonText}>View Plans</Text>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <>
-            <TextInput
-              style={styles.input}
-              value={watermarkText}
-              onChangeText={updateWatermarkText}
-              placeholder="Watermark Text"
-              placeholderTextColor={COLORS.GRAY}
-            />
-
-            <TextInput
-              style={styles.input}
-              value={watermarkLink}
-              onChangeText={updateWatermarkLink}
-              placeholder="Watermark Link"
-              placeholderTextColor={COLORS.GRAY}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-            />
-
-            {/* Watermark Controls */}
-            <View style={styles.controlsRow}>
-              <ControlButton
-                icon="contrast-outline"
-                label="Opacity"
-                onPress={() => setWatermarkOpacityModalVisible(true)}
-              />
-              <ControlButton
-                icon="text"
-                label="Font"
-                onPress={() => setWatermarkFontModalVisible(true)}
-              />
-              <ColorControlButton
-                color={watermarkColor || '#666666'}
-                label="Color"
-                onPress={() => {
-                  setColorModalType('watermark');
-                  setTempColor(watermarkColor || '#666666');
-                  setColorModalVisible(true);
-                }}
-              />
-              <ControlButton
-                icon="move"
-                label="Position"
-                onPress={() => setWatermarkPositionModalVisible(true)}
-              />
-            </View>
-          </>
-        )}
-
+        {/* Watermark customization lives on the dedicated Watermark
+            Customization screen now — the Labels screen is for label
+            styling only. */}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -639,11 +617,7 @@ export default function CustomizeLabelsScreen({ navigation }) {
         visible={colorModalVisible}
         onClose={() => setColorModalVisible(false)}
         title={
-          colorModalType === 'bg'
-            ? 'Background Color'
-            : colorModalType === 'watermark'
-            ? 'Watermark Color'
-            : 'Text Color'
+          colorModalType === 'bg' ? 'Background Color' : 'Text Color'
         }
         headerExtra={
           <TouchableOpacity style={styles.eyedropperButton}>
@@ -735,7 +709,9 @@ export default function CustomizeLabelsScreen({ navigation }) {
         </View>
       </BottomModal>
 
-      {/* Position Modal */}
+      {/* Position Modal — dual Before/After grid for combined photos,
+          single grid for everything else. For single photos the
+          "before" position drives the lone label that's rendered. */}
       <BottomModal
         visible={positionModalVisible}
         onClose={() => setPositionModalVisible(false)}
@@ -746,89 +722,106 @@ export default function CustomizeLabelsScreen({ navigation }) {
             Editing {orientationTab === 'portrait' ? 'vertical (portrait + square)' : 'horizontal (landscape)'} photo positions. Switch in the preview above.
           </Text>
 
-          {/* Label Position - Before/After Grids */}
-          <View style={styles.positionGrid}>
-            {/* Before Grid */}
-            <View style={styles.positionHalf}>
-              {[
-                ['left-top', 'center-top', 'right-top'],
-                ['left-middle', 'center-middle', 'right-middle'],
-                ['left-bottom', 'center-bottom', 'right-bottom']
-              ].map((row, rowIdx) => (
-                <View key={rowIdx} style={styles.positionRow}>
-                  {row.map(pos => (
-                    <TouchableOpacity
-                      key={pos}
-                      style={[
-                        styles.positionCell,
-                        activeBeforePos === pos && styles.positionCellSelected
-                      ]}
-                      onPress={async () => await updateActiveBeforePos(pos)}
-                    />
-                  ))}
-                </View>
-              ))}
-            </View>
-
-            {/* Divider */}
-            <View style={styles.positionDivider} />
-
-            {/* After Grid */}
+          {previewPhoto?.mode === PHOTO_MODES.COMBINED ? (
+            <View style={styles.positionGrid}>
               <View style={styles.positionHalf}>
-                {[
-                  ['left-top', 'center-top', 'right-top'],
-                  ['left-middle', 'center-middle', 'right-middle'],
-                  ['left-bottom', 'center-bottom', 'right-bottom']
-                ].map((row, rowIdx) => (
+                <Text style={styles.positionHalfLabel}>Before</Text>
+                {POSITION_GRID.map((row, rowIdx) => (
                   <View key={rowIdx} style={styles.positionRow}>
-                    {row.map(pos => (
+                    {row.map((pos) => (
                       <TouchableOpacity
                         key={pos}
                         style={[
                           styles.positionCell,
-                          activeAfterPos === pos && styles.positionCellSelected
+                          activeBeforePos === pos && !activeBeforeOffset && styles.positionCellSelected,
                         ]}
-                        onPress={async () => await updateActiveAfterPos(pos)}
+                        onPress={async () => {
+                          await updateActiveBeforeOffset(null);
+                          await updateActiveBeforePos(pos);
+                        }}
+                      />
+                    ))}
+                  </View>
+                ))}
+              </View>
+              <View style={styles.positionDivider} />
+              <View style={styles.positionHalf}>
+                <Text style={styles.positionHalfLabel}>After</Text>
+                {POSITION_GRID.map((row, rowIdx) => (
+                  <View key={rowIdx} style={styles.positionRow}>
+                    {row.map((pos) => (
+                      <TouchableOpacity
+                        key={pos}
+                        style={[
+                          styles.positionCell,
+                          activeAfterPos === pos && !activeAfterOffset && styles.positionCellSelected,
+                        ]}
+                        onPress={async () => {
+                          await updateActiveAfterOffset(null);
+                          await updateActiveAfterPos(pos);
+                        }}
                       />
                     ))}
                   </View>
                 ))}
               </View>
             </View>
+          ) : (
+            <View style={styles.positionFullGrid}>
+              {POSITION_GRID.map((row, rowIdx) => (
+                <View key={rowIdx} style={styles.positionRow}>
+                  {row.map((pos) => (
+                    <TouchableOpacity
+                      key={pos}
+                      style={[
+                        styles.positionCell,
+                        activeBeforePos === pos && !activeBeforeOffset && styles.positionCellSelected,
+                      ]}
+                      onPress={async () => {
+                        await updateActiveBeforeOffset(null);
+                        await updateActiveBeforePos(pos);
+                      }}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </BottomModal>
 
-      {/* Size Modal */}
+      {/* Size — continuous slider (was Small / Medium / Large pills). */}
       <BottomModal
         visible={sizeModalVisible}
         onClose={() => setSizeModalVisible(false)}
         title="Label Size"
       >
-        <View style={styles.sizeContainer}>
-          {SIZE_OPTIONS.map((size) => (
-                  <TouchableOpacity
-              key={size.key}
-                    style={[
-                styles.sizeButton,
-                {
-                  padding: size.padding,
-                  borderRadius: labelCornerStyle === 'rounded' ? 20 : 4,
-                },
-                labelSize === size.key && styles.sizeButtonSelected
-              ]}
-              onPress={async () => {
-                await updateLabelSize(size.key);
-                setSizeModalVisible(false);
-              }}
-            >
-              <Text style={[
-                styles.sizeButtonText,
-                { fontSize: size.fontSize },
-                labelSize === size.key && styles.sizeButtonTextSelected
-              ]}>{size.label}</Text>
-            </TouchableOpacity>
-                ))}
-              </View>
+        <View style={styles.marginContainer}>
+          <View style={styles.marginSection}>
+            <View style={styles.opacityLabelContainer}>
+              <Text style={styles.marginLabel}>Label size :</Text>
+              <Text style={styles.opacityValueText}>
+                {typeof labelSize === 'number' ? `${labelSize}px` : (
+                  SIZE_OPTIONS.find((s) => s.key === labelSize)?.fontSize
+                    ? `${SIZE_OPTIONS.find((s) => s.key === labelSize).fontSize}px`
+                    : '14px'
+                )}
+              </Text>
+            </View>
+            <SliderInput
+              value={typeof labelSize === 'number'
+                ? labelSize
+                : (SIZE_OPTIONS.find((s) => s.key === labelSize)?.fontSize || 14)}
+              onValueChange={(v) => updateLabelSize(Math.round(v))}
+              onSlidingComplete={(v) => updateLabelSize(Math.round(v))}
+              min={10}
+              max={32}
+              step={1}
+              showValue={false}
+              trackColor="#22C55E"
+            />
+          </View>
+        </View>
       </BottomModal>
 
       {/* Margin Modal */}
@@ -870,105 +863,8 @@ export default function CustomizeLabelsScreen({ navigation }) {
         </View>
       </BottomModal>
 
-      {/* Watermark Opacity Modal */}
-      <BottomModal
-        visible={watermarkOpacityModalVisible}
-        onClose={() => {
-          // Reset preview to saved value when closing
-          setWatermarkOpacityPreview(watermarkOpacity || 0.5);
-          setWatermarkOpacityModalVisible(false);
-        }}
-        title="Opacity"
-      >
-        <View style={styles.marginContainer}>
-          <View style={styles.marginSection}>
-            <View style={styles.opacityLabelContainer}>
-              <Text style={styles.marginLabel}>
-                Watermark Opacity :
-              </Text>
-              <Text style={styles.opacityValueText}>
-                {Math.round(watermarkOpacityPreview * 100)}%
-              </Text>
-            </View>
-            <SliderInput
-              value={watermarkOpacityPreview}
-              onValueChange={setWatermarkOpacityPreview}
-              onSlidingComplete={async (value) => {
-                await updateWatermarkOpacity(value);
-              }}
-              min={0}
-              max={1}
-              step={0.01}
-              showValue={false}
-              trackColor="#22C55E"
-            />
-          </View>
-        </View>
-      </BottomModal>
-
-      {/* Watermark Font Modal */}
-      <BottomModal
-        visible={watermarkFontModalVisible}
-        onClose={() => setWatermarkFontModalVisible(false)}
-        title="Watermark Font"
-      >
-        <View style={styles.fontListContainer}>
-          {FONT_OPTIONS.map((font) => {
-            const isSelected = watermarkFontFamily === font.key;
-            return (
-              <TouchableOpacity
-                key={font.key}
-                style={[
-                  styles.fontListItem,
-                  isSelected && styles.fontListItemSelected
-                ]}
-                onPress={async () => {
-                  await updateWatermarkFontFamily(font.key);
-                  setWatermarkFontModalVisible(false);
-                }}
-              >
-                <Text style={[
-                  styles.fontListItemText,
-                  isSelected && styles.fontListItemTextSelected
-                ]}>{font.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </BottomModal>
-
-      {/* Watermark Position Modal */}
-      <BottomModal
-        visible={watermarkPositionModalVisible}
-        onClose={() => setWatermarkPositionModalVisible(false)}
-        title="Watermark Position"
-      >
-        <View style={styles.positionContainer}>
-          <View style={styles.positionFull}>
-            {[
-              ['left-top', 'center-top', 'right-top'],
-              ['left-middle', 'center-middle', 'right-middle'],
-              ['left-bottom', 'center-bottom', 'right-bottom']
-            ].map((row, rowIdx) => (
-              <View key={rowIdx} style={styles.positionRow}>
-                {row.map(pos => (
-                  <TouchableOpacity
-                    key={pos}
-                    style={[
-                      styles.positionCell,
-                      watermarkPosition === pos && styles.positionCellSelected
-                    ]}
-                    onPress={async () => {
-                      await updateWatermarkPosition(pos);
-                      setWatermarkPositionModalVisible(false);
-                    }}
-                  />
-                ))}
-              </View>
-            ))}
-          </View>
-        </View>
-      </BottomModal>
+      {/* Watermark modals removed — watermark customization lives on its
+          own screen. The color modal here still handles BG + text only. */}
 
     </SafeAreaView>
   );
@@ -1102,6 +998,261 @@ function SliderInput({ value, onValueChange, onSlidingComplete, min = 0, max = 1
   );
 }
 
+// ───────── Preview ─────────
+// Single background photo with one or two draggable labels overlaid.
+// For combined photos, both BEFORE + AFTER labels sit in their
+// respective halves (split direction follows the orientation tab).
+// For single photos, only BEFORE shows (representative single label).
+function PreviewArea({
+  photo,
+  isCombined,
+  isHorizontal,
+  beforePos,
+  afterPos,
+  beforeOffset,
+  afterOffset,
+  onBeforeOffsetChange,
+  onAfterOffsetChange,
+  onDragStart,
+  onDragEnd,
+  labelBackgroundColor,
+  labelTextColor,
+  labelCornerStyle,
+  labelFontFamily,
+  currentSize,
+  marginV,
+  marginH,
+}) {
+  const [layout, setLayout] = useState({ w: 0, h: 0 });
+  const onLayout = (e) => {
+    const { width, height } = e.nativeEvent.layout;
+    setLayout((p) => (p.w === width && p.h === height ? p : { w: width, h: height }));
+  };
+
+  // Bounds for each label's drag region. Combined photos split the
+  // preview into halves; non-combined uses the whole preview.
+  const beforeBounds = isCombined
+    ? (isHorizontal
+        ? { x: 0, y: 0, w: layout.w, h: layout.h / 2 }
+        : { x: 0, y: 0, w: layout.w / 2, h: layout.h })
+    : { x: 0, y: 0, w: layout.w, h: layout.h };
+  const afterBounds = isCombined
+    ? (isHorizontal
+        ? { x: 0, y: layout.h / 2, w: layout.w, h: layout.h / 2 }
+        : { x: layout.w / 2, y: 0, w: layout.w / 2, h: layout.h })
+    : null;
+
+  return (
+    <View style={styles.previewSquare} onLayout={onLayout}>
+      {photo?.uri ? (
+        <Image source={{ uri: photo.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : (
+        <View style={styles.previewPlaceholder}>
+          <Ionicons name="image-outline" size={48} color="#999" />
+        </View>
+      )}
+      {/* Faint divider only for combined photos — visual hint that
+          BEFORE goes on one half and AFTER on the other. */}
+      {isCombined && (
+        <View
+          pointerEvents="none"
+          style={
+            isHorizontal
+              ? { position: 'absolute', left: 0, right: 0, top: '50%', height: 1, backgroundColor: 'rgba(255,255,255,0.5)' }
+              : { position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1, backgroundColor: 'rgba(255,255,255,0.5)' }
+          }
+        />
+      )}
+      {layout.w > 0 && layout.h > 0 && (
+        <DraggableLabel
+          text="Before"
+          bounds={beforeBounds}
+          positionKey={beforePos}
+          offset={beforeOffset}
+          onOffsetChange={onBeforeOffsetChange}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          backgroundColor={labelBackgroundColor}
+          textColor={labelTextColor}
+          cornerStyle={labelCornerStyle}
+          fontFamily={labelFontFamily}
+          fontSize={currentSize?.fontSize || 14}
+          padding={currentSize?.padding || 10}
+          marginV={marginV}
+          marginH={marginH}
+        />
+      )}
+      {isCombined && afterBounds && layout.w > 0 && layout.h > 0 && (
+        <DraggableLabel
+          text="After"
+          bounds={afterBounds}
+          positionKey={afterPos}
+          offset={afterOffset}
+          onOffsetChange={onAfterOffsetChange}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          backgroundColor={labelBackgroundColor}
+          textColor={labelTextColor}
+          cornerStyle={labelCornerStyle}
+          fontFamily={labelFontFamily}
+          fontSize={currentSize?.fontSize || 14}
+          padding={currentSize?.padding || 10}
+          marginV={marginV}
+          marginH={marginH}
+        />
+      )}
+    </View>
+  );
+}
+
+// Freeform draggable label. The label's top-left, in pixels inside
+// `bounds`, lives in a single Animated.ValueXY (`pos`). React's `offset`
+// prop is just the persistence sink — we sync FROM offset → pos when
+// the prop changes externally (and we're not dragging), and write TO
+// offset on release. Because pos is animated, the visual position
+// never depends on a re-render landing — eliminating the one-frame
+// blink the previous "anchor + pan" math caused on release.
+function DraggableLabel({
+  text,
+  bounds,
+  positionKey,
+  offset,
+  onOffsetChange,
+  onDragStart,
+  onDragEnd,
+  backgroundColor,
+  textColor,
+  cornerStyle,
+  fontFamily,
+  fontSize,
+  padding,
+  marginV,
+  marginH,
+}) {
+  const [labelSize, setLabelSize] = useState({ w: 0, h: 0 });
+  const onLabelLayout = (e) => {
+    const { width, height } = e.nativeEvent.layout;
+    setLabelSize((p) => (p.w === width && p.h === height ? p : { w: width, h: height }));
+  };
+
+  const pos = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const posRef = useRef({ x: 0, y: 0 });
+  const draggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  // Keep posRef in sync with pos so the gesture handlers can read the
+  // current pixel value synchronously without going through React.
+  useEffect(() => {
+    const idX = pos.x.addListener(({ value }) => { posRef.current.x = value; });
+    const idY = pos.y.addListener(({ value }) => { posRef.current.y = value; });
+    return () => { pos.x.removeListener(idX); pos.y.removeListener(idY); };
+  }, [pos]);
+
+  // Sync FROM external offset/positionKey (or bounds/labelSize) → pos.
+  // Skipped while dragging so the gesture isn't yanked back by a stale
+  // settings round-trip. Once labelSize is known, compute the target in
+  // pixels and write it directly to the animated value.
+  useEffect(() => {
+    if (draggingRef.current) return;
+    if (labelSize.w === 0 || labelSize.h === 0) return;
+    const target = offset && typeof offset.x === 'number' && typeof offset.y === 'number'
+      ? {
+          x: offset.x * Math.max(0, bounds.w - labelSize.w),
+          y: offset.y * Math.max(0, bounds.h - labelSize.h),
+        }
+      : positionToTopLeft(positionKey, bounds.w, bounds.h, labelSize.w, labelSize.h, marginH, marginV);
+    pos.setValue(target);
+    posRef.current = target;
+  // bounds is a plain object — depend on its scalar fields so we don't
+  // trip on identity churn from the parent rendering a new object each
+  // frame.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offset?.x, offset?.y, positionKey, bounds.w, bounds.h, bounds.x, bounds.y, labelSize.w, labelSize.h, marginH, marginV]);
+
+  // Capture the touch in the capture phase so the parent ScrollView
+  // doesn't claim the gesture first. Termination requests from ancestors
+  // are refused so a scroll-attempt mid-drag can't yank the responder.
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: () => {
+        draggingRef.current = true;
+        dragStartRef.current = { x: posRef.current.x, y: posRef.current.y };
+        onDragStart && onDragStart();
+      },
+      onPanResponderMove: (_, g) => {
+        // Move pos directly in pixels — no separate "pan delta" layer
+        // means the visual position is always exactly where pos points.
+        pos.setValue({
+          x: dragStartRef.current.x + g.dx,
+          y: dragStartRef.current.y + g.dy,
+        });
+      },
+      onPanResponderRelease: () => {
+        // Clamp to bounds so the label can't escape its half.
+        const finalX = Math.max(0, Math.min(bounds.w - labelSize.w, posRef.current.x));
+        const finalY = Math.max(0, Math.min(bounds.h - labelSize.h, posRef.current.y));
+        // Snap pos to the clamped pixel position FIRST, synchronously,
+        // so the next frame renders at exactly the drop point. Then
+        // persist as a fraction.
+        pos.setValue({ x: finalX, y: finalY });
+        posRef.current = { x: finalX, y: finalY };
+        const spanX = Math.max(1, bounds.w - labelSize.w);
+        const spanY = Math.max(1, bounds.h - labelSize.h);
+        const nextOffset = {
+          x: Math.max(0, Math.min(1, finalX / spanX)),
+          y: Math.max(0, Math.min(1, finalY / spanY)),
+        };
+        draggingRef.current = false;
+        onOffsetChange && onOffsetChange(nextOffset);
+        onDragEnd && onDragEnd();
+      },
+      onPanResponderTerminate: () => {
+        draggingRef.current = false;
+        onDragEnd && onDragEnd();
+      },
+    })
+  ).current;
+
+  // Hide the label for the first frame after mount while we wait for
+  // onLayout to report its real size — otherwise it would briefly flash
+  // at (bounds.x, bounds.y) before the sync-effect can place it.
+  const ready = labelSize.w > 0 && labelSize.h > 0;
+
+  return (
+    <Animated.View
+      onLayout={onLabelLayout}
+      {...responder.panHandlers}
+      style={{
+        position: 'absolute',
+        left: bounds.x,
+        top: bounds.y,
+        opacity: ready ? 1 : 0,
+        backgroundColor,
+        borderRadius: cornerStyle === 'rounded' ? 20 : 4,
+        paddingHorizontal: Math.max(6, padding || 10),
+        paddingVertical: Math.max(2, Math.round((padding || 10) * 0.5)),
+        transform: [{ translateX: pos.x }, { translateY: pos.y }],
+      }}
+    >
+      <Text
+        style={{
+          color: textColor,
+          fontSize: fontSize,
+          fontFamily: getPreviewFontFamily(fontFamily),
+          fontWeight: '700',
+        }}
+      >
+        {text}
+      </Text>
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1152,6 +1303,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 4,
     marginBottom: 12,
+  },
+  previewPlaceholder: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   previewSquare: {
     width: '100%',
@@ -1266,13 +1422,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
     color: COLORS.TEXT,
-  },
-  previewWatermark: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    position: 'absolute',
   },
   modalOverlay: {
     flex: 1,
@@ -1566,6 +1715,18 @@ const styles = StyleSheet.create({
   positionHalf: {
     flex: 1,
     minWidth: 0,
+  },
+  positionHalfLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.GRAY,
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: 0.4,
+  },
+  positionFullGrid: {
+    width: '70%',
+    alignSelf: 'center',
   },
   positionFull: {
     width: '100%',

@@ -1,0 +1,545 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  PanResponder,
+  ScrollView,
+  Animated,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } from 'react-native-svg';
+import { FONTS } from '../constants/fonts';
+import { usePhotos } from '../context/PhotoContext';
+import { useTheme } from '../hooks/useTheme';
+
+// Dedicated full-screen markup editor.
+//
+// One PanResponder owns every gesture on the canvas:
+//   • 1 finger → draw / extend shape (coords stored in IMAGE space)
+//   • 2 fingers → pinch-zoom (1×–5×) + two-finger drag pans the picture
+//
+// Shapes are stored in image-space coordinates (untransformed). The
+// Image + SVG live inside a single Animated.View that applies the
+// scale+translate transform, so a mark drawn while zoomed-in renders at
+// its natural size again when the user zooms back out — that's the
+// "stays the same size as it would be on the smaller page" behaviour.
+// `vectorEffect="non-scaling-stroke"` keeps line thickness constant on
+// screen regardless of zoom level so strokes don't get visually fatter
+// while you're zoomed in.
+
+const MARKUP_TOOLS = [
+  { key: 'draw', label: 'Draw', icon: 'pencil-outline', defaultStroke: 3 },
+  { key: 'brush', label: 'Brush', icon: 'brush-outline', defaultStroke: 8 },
+  { key: 'highlight', label: 'Highlight', icon: 'color-fill-outline', defaultStroke: 16 },
+  { key: 'arrow', label: 'Arrow', icon: 'arrow-forward-outline', defaultStroke: 3 },
+  { key: 'circle', label: 'Circle', icon: 'ellipse-outline', defaultStroke: 3 },
+  { key: 'measure', label: 'Measure', icon: 'resize-outline', defaultStroke: 2 },
+];
+const MARKUP_COLORS = ['#FF3B30', '#FFCC00', '#34C759', '#007AFF', '#FFFFFF', '#000000'];
+const STROKE_PRESETS = [
+  { key: 'S', value: 2 },
+  { key: 'M', value: 4 },
+  { key: 'L', value: 8 },
+];
+
+const MIN_SCALE = 1;
+const MAX_SCALE = 5;
+
+function MarkupShape({ shape }) {
+  const opacity = shape.tool === 'highlight' ? 0.35 : 1;
+  const commonStroke = {
+    stroke: shape.color,
+    strokeWidth: shape.stroke,
+    vectorEffect: 'non-scaling-stroke',
+  };
+  if (shape.tool === 'draw' || shape.tool === 'brush' || shape.tool === 'highlight') {
+    const pts = shape.points || [];
+    if (pts.length === 0) return null;
+    if (pts.length === 1) {
+      const r = Math.max(shape.stroke / 2, 2);
+      return <SvgCircle cx={pts[0].x} cy={pts[0].y} r={r} fill={shape.color} opacity={opacity} />;
+    }
+    const d = pts.reduce(
+      (acc, p, i) => acc + (i === 0 ? `M${p.x},${p.y}` : `L${p.x},${p.y}`),
+      ''
+    );
+    return (
+      <Path
+        d={d}
+        {...commonStroke}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        opacity={opacity}
+      />
+    );
+  }
+  if (shape.tool === 'arrow') {
+    const { x1, y1, x2, y2, color, stroke } = shape;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const px = -uy;
+    const py = ux;
+    const headLen = Math.max(stroke * 4, 12);
+    const headWidth = Math.max(stroke * 2.5, 8);
+    const bx = x2 - ux * headLen;
+    const by = y2 - uy * headLen;
+    const ax = bx + px * headWidth;
+    const ay = by + py * headWidth;
+    const cx = bx - px * headWidth;
+    const cy = by - py * headWidth;
+    return (
+      <G>
+        <Line x1={x1} y1={y1} x2={bx} y2={by} {...commonStroke} strokeLinecap="round" />
+        <Polygon points={`${x2},${y2} ${ax},${ay} ${cx},${cy}`} fill={color} />
+      </G>
+    );
+  }
+  if (shape.tool === 'circle') {
+    const { x1, y1, x2, y2 } = shape;
+    const r = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    return <SvgCircle cx={x1} cy={y1} r={r} {...commonStroke} fill="none" />;
+  }
+  if (shape.tool === 'measure') {
+    const { x1, y1, x2, y2, color, stroke } = shape;
+    const len = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    return (
+      <G>
+        <Line x1={x1} y1={y1} x2={x2} y2={y2} {...commonStroke} strokeLinecap="round" />
+        <SvgText x={midX} y={midY - 6} fill={color} fontSize="12" fontWeight="700" textAnchor="middle">
+          {Math.round(len)} px
+        </SvgText>
+      </G>
+    );
+  }
+  return null;
+}
+
+const distance = (touches) => {
+  if (!touches || touches.length < 2) return 0;
+  const dx = touches[0].pageX - touches[1].pageX;
+  const dy = touches[0].pageY - touches[1].pageY;
+  return Math.sqrt(dx * dx + dy * dy);
+};
+const centerOf = (touches) => ({
+  x: (touches[0].pageX + touches[1].pageX) / 2,
+  y: (touches[0].pageY + touches[1].pageY) / 2,
+});
+
+export default function MarkupEditorScreen({ route, navigation }) {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const { photos, updatePhoto } = usePhotos();
+  const photoId = route?.params?.photoId;
+  const photo = useMemo(
+    () => (photoId ? photos.find((p) => String(p.id) === String(photoId)) : null),
+    [photoId, photos]
+  );
+
+  const [markupTool, setMarkupTool] = useState('draw');
+  const [markupColor, setMarkupColor] = useState('#FF3B30');
+  const [markupStroke, setMarkupStroke] = useState(4);
+  // Markup can be either the legacy raw-array format or the new
+  // { bounds, shapes } object. Normalise on load so we always work with
+  // an array internally.
+  const initialShapes = useMemo(() => {
+    const m = photo?.markup;
+    if (Array.isArray(m)) return m;
+    if (m && Array.isArray(m.shapes)) return m.shapes;
+    return [];
+  }, [photo?.markup]);
+  const [shapes, setShapes] = useState(initialShapes);
+  const [inProgress, setInProgress] = useState(null);
+
+  // Live refs for tool / color / stroke so the one-shot PanResponder
+  // closures always see the current pick.
+  const toolRef = useRef(markupTool);
+  const colorRef = useRef(markupColor);
+  const strokeRef = useRef(markupStroke);
+  toolRef.current = markupTool;
+  colorRef.current = markupColor;
+  strokeRef.current = markupStroke;
+
+  // Transform state — image-space ↔ screen-space. translateX/Y move the
+  // picture, scale zooms it. SVG is inside the same Animated.View so it
+  // moves with the picture. Live refs mirror the Animated.Values so the
+  // PanResponder closure can read them without re-creating itself.
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const tXAnim = useRef(new Animated.Value(0)).current;
+  const tYAnim = useRef(new Animated.Value(0)).current;
+  const scaleRef = useRef(1);
+  const tXRef = useRef(0);
+  const tYRef = useRef(0);
+  useEffect(() => {
+    const idS = scaleAnim.addListener(({ value }) => { scaleRef.current = value; });
+    const idX = tXAnim.addListener(({ value }) => { tXRef.current = value; });
+    const idY = tYAnim.addListener(({ value }) => { tYRef.current = value; });
+    return () => {
+      scaleAnim.removeListener(idS);
+      tXAnim.removeListener(idX);
+      tYAnim.removeListener(idY);
+    };
+  }, [scaleAnim, tXAnim, tYAnim]);
+
+  // Per-gesture pinch baselines.
+  const pinchingRef = useRef(false);
+  const pinchStartDistRef = useRef(0);
+  const pinchStartScaleRef = useRef(1);
+  const pinchStartCenterRef = useRef({ x: 0, y: 0 });
+  const pinchStartTranslateRef = useRef({ x: 0, y: 0 });
+
+  // Canvas layout for converting screen ↔ image-space.
+  const canvasLayoutRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
+  const onCanvasLayout = (e) => {
+    const { x, y, width, height } = e.nativeEvent.layout;
+    canvasLayoutRef.current = { x, y, w: width, h: height };
+  };
+
+  // Screen → image space. The Animated.View applies translate then
+  // scale, so the inverse is: image = (screenLocal - translate) / scale.
+  // We use locationX/Y from the responder event (already relative to
+  // the canvas), so no extra origin subtraction is needed.
+  const screenToImage = (locationX, locationY) => ({
+    x: (locationX - tXRef.current) / scaleRef.current,
+    y: (locationY - tYRef.current) / scaleRef.current,
+  });
+
+  const startShape = (x, y) => {
+    const tool = toolRef.current;
+    const base = { tool, color: colorRef.current, stroke: strokeRef.current };
+    if (tool === 'draw' || tool === 'brush' || tool === 'highlight') {
+      return { ...base, points: [{ x, y }] };
+    }
+    return { ...base, x1: x, y1: y, x2: x, y2: y };
+  };
+  const extendShape = (shape, x, y) => {
+    if (!shape) return null;
+    if (shape.tool === 'draw' || shape.tool === 'brush' || shape.tool === 'highlight') {
+      return { ...shape, points: [...shape.points, { x, y }] };
+    }
+    return { ...shape, x2: x, y2: y };
+  };
+
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length === 2) {
+          pinchingRef.current = true;
+          pinchStartDistRef.current = distance(touches);
+          pinchStartScaleRef.current = scaleRef.current;
+          pinchStartCenterRef.current = centerOf(touches);
+          pinchStartTranslateRef.current = { x: tXRef.current, y: tYRef.current };
+          return;
+        }
+        const img = screenToImage(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
+        setInProgress(startShape(img.x, img.y));
+      },
+      onPanResponderMove: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length === 2) {
+          if (!pinchingRef.current) {
+            // Just entered pinch mid-gesture: drop any in-progress draw
+            // and reset baselines from this frame.
+            setInProgress(null);
+            pinchingRef.current = true;
+            pinchStartDistRef.current = distance(touches);
+            pinchStartScaleRef.current = scaleRef.current;
+            pinchStartCenterRef.current = centerOf(touches);
+            pinchStartTranslateRef.current = { x: tXRef.current, y: tYRef.current };
+            return;
+          }
+          const dist = distance(touches);
+          const ratio = dist / (pinchStartDistRef.current || 1);
+          const nextScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, pinchStartScaleRef.current * ratio));
+          scaleAnim.setValue(nextScale);
+          const c = centerOf(touches);
+          tXAnim.setValue(pinchStartTranslateRef.current.x + (c.x - pinchStartCenterRef.current.x));
+          tYAnim.setValue(pinchStartTranslateRef.current.y + (c.y - pinchStartCenterRef.current.y));
+          return;
+        }
+        // 1-finger
+        if (pinchingRef.current) {
+          // Skipping this frame — second finger just lifted. Wait for
+          // the next clean 1-finger event before drawing again.
+          pinchingRef.current = false;
+          return;
+        }
+        const img = screenToImage(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
+        setInProgress((prev) => (prev ? extendShape(prev, img.x, img.y) : startShape(img.x, img.y)));
+      },
+      onPanResponderRelease: () => {
+        pinchingRef.current = false;
+        setInProgress((prev) => {
+          if (prev) setShapes((s) => [...s, prev]);
+          return null;
+        });
+      },
+      onPanResponderTerminate: () => {
+        pinchingRef.current = false;
+        setInProgress(null);
+      },
+    })
+  ).current;
+
+  const resetZoom = () => {
+    Animated.parallel([
+      Animated.timing(scaleAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(tXAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(tYAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleSave = async () => {
+    if (photo?.id) {
+      // Persist canvas bounds alongside shapes so other screens
+      // (Studio's photo overlay) can render the same shapes at the
+      // right proportions in a frame of any size.
+      const layout = canvasLayoutRef.current;
+      const payload = {
+        bounds: { w: layout.w || 0, h: layout.h || 0 },
+        shapes,
+      };
+      await updatePhoto(photo.id, { markup: payload });
+    }
+    navigation.goBack();
+  };
+  const handleUndo = () => setShapes((s) => s.slice(0, -1));
+  const handleClear = () => setShapes([]);
+
+  if (!photo) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+        <View style={[styles.header, { backgroundColor: theme.background }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>Markup</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.emptyState}>
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Photo not found.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const transformStyle = {
+    transform: [
+      { translateX: tXAnim },
+      { translateY: tYAnim },
+      { scale: scaleAnim },
+    ],
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+      <View style={[styles.header, { backgroundColor: theme.background, borderBottomColor: theme.divider }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Ionicons name="close" size={24} color={theme.textPrimary} />
+        </TouchableOpacity>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>Markup</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            onPress={resetZoom}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.zoomResetBtn}
+          >
+            <Ionicons name="refresh-outline" size={20} color={theme.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.saveBtn, { backgroundColor: theme.accent }]}
+            onPress={handleSave}
+          >
+            <Text style={[styles.saveBtnText, { color: theme.accentText }]}>Save</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Single PanResponder owns the canvas. Image + SVG live inside
+          one Animated.View so they zoom + pan together. */}
+      <View
+        style={[styles.canvas, { backgroundColor: theme.surface }]}
+        onLayout={onCanvasLayout}
+        {...responder.panHandlers}
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, transformStyle]}>
+          <Image source={{ uri: photo.uri }} style={styles.photo} resizeMode="contain" />
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <Svg width="100%" height="100%">
+              {shapes.map((shape, i) => (
+                <MarkupShape key={`s-${i}`} shape={shape} />
+              ))}
+              {inProgress && <MarkupShape key="in-progress" shape={inProgress} />}
+            </Svg>
+          </View>
+        </Animated.View>
+      </View>
+
+      <View
+        style={[
+          styles.palette,
+          {
+            paddingBottom: 8 + insets.bottom,
+            backgroundColor: theme.surfaceElevated,
+            borderTopColor: theme.divider,
+          },
+        ]}
+      >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolRow}>
+          {MARKUP_TOOLS.map((t) => {
+            const isActive = markupTool === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={[
+                  styles.toolBtn,
+                  {
+                    backgroundColor: isActive ? theme.accent : theme.surface,
+                    borderColor: isActive ? theme.accent : theme.border,
+                  },
+                ]}
+                onPress={() => {
+                  setMarkupTool(t.key);
+                  if (typeof t.defaultStroke === 'number') setMarkupStroke(t.defaultStroke);
+                }}
+              >
+                <Ionicons name={t.icon} size={16} color={isActive ? theme.accentText : theme.textPrimary} />
+                <Text style={[styles.toolBtnText, { color: isActive ? theme.accentText : theme.textPrimary }]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.controlsRow}>
+          <View style={styles.colorRow}>
+            {MARKUP_COLORS.map((c) => {
+              const isActive = markupColor === c;
+              return (
+                <TouchableOpacity
+                  key={c}
+                  style={[
+                    styles.colorDot,
+                    {
+                      backgroundColor: c,
+                      borderColor: isActive ? theme.accent : theme.border,
+                      borderWidth: isActive ? 3 : 1,
+                    },
+                  ]}
+                  onPress={() => setMarkupColor(c)}
+                />
+              );
+            })}
+          </View>
+          <View style={styles.strokeRow}>
+            {STROKE_PRESETS.map((s) => {
+              const isActive = markupStroke === s.value;
+              return (
+                <TouchableOpacity
+                  key={s.key}
+                  style={[
+                    styles.strokeBtn,
+                    {
+                      backgroundColor: isActive ? theme.accent : theme.surface,
+                      borderColor: isActive ? theme.accent : theme.border,
+                    },
+                  ]}
+                  onPress={() => setMarkupStroke(s.value)}
+                >
+                  <Text style={[styles.strokeBtnText, { color: isActive ? theme.accentText : theme.textPrimary }]}>
+                    {s.key}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.actionBtn, { opacity: shapes.length === 0 ? 0.4 : 1 }]}
+            onPress={handleUndo}
+            disabled={shapes.length === 0}
+          >
+            <Ionicons name="arrow-undo-outline" size={16} color={theme.textPrimary} />
+            <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>Undo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, { opacity: shapes.length === 0 ? 0.4 : 1 }]}
+            onPress={handleClear}
+            disabled={shapes.length === 0}
+          >
+            <Ionicons name="trash-outline" size={16} color={theme.danger} />
+            <Text style={[styles.actionBtnText, { color: theme.danger }]}>Clear</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  zoomResetBtn: { padding: 4 },
+  title: { fontFamily: FONTS.ALEXANDRIA, fontSize: 16, fontWeight: '700' },
+  saveBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100 },
+  saveBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 13, fontWeight: '700' },
+  canvas: { flex: 1, position: 'relative', overflow: 'hidden' },
+  photo: { width: '100%', height: '100%' },
+  palette: { paddingTop: 10, paddingHorizontal: 12, gap: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  toolRow: { flexDirection: 'row', gap: 6, paddingRight: 12 },
+  toolBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  toolBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, fontWeight: '600' },
+  controlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  colorRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  colorDot: { width: 24, height: 24, borderRadius: 12 },
+  strokeRow: { flexDirection: 'row', gap: 6 },
+  strokeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    minWidth: 30,
+    alignItems: 'center',
+  },
+  strokeBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, fontWeight: '700' },
+  actionRow: { flexDirection: 'row', gap: 16, justifyContent: 'center', paddingTop: 4 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  actionBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 12, fontWeight: '700' },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14 },
+});

@@ -242,6 +242,9 @@ const CAPTURE_TAG_PATTERNS = [
   /^\[PhotoContext\b/,
   /^\[BackgroundUpload\b/i,
   /^\[errorLogger\b/,
+  /^\[CAMDIAG\b/,
+  /^\[Storage\b/,
+  /^\[PHOTODEL\b/,
 ];
 
 const stringifyArg = (arg) => {
@@ -286,7 +289,15 @@ const patchConsole = () => {
     if (shouldCapture(args[0])) {
       const message = args.map(stringifyArg).join(' ');
       const errArg = args.find((a) => a instanceof Error);
-      logError(errArg || new Error(message), {
+      // [CAMDIAG] entries are pure timing/state diagnostics — their
+      // React-effect commit stacks are ~30 KB of noise that blows past
+      // the 50 KB export truncation after only a handful of events.
+      // Strip the stack so the export holds dozens of diagnostics.
+      const tag0 = typeof args[0] === 'string' ? args[0] : '';
+      const isDiag = tag0.startsWith('[CAMDIAG') || tag0.startsWith('[PHOTODEL') || tag0.startsWith('[Storage');
+      const err = errArg || new Error(message);
+      if (isDiag) err.stack = '';
+      logError(err, {
         screen: 'console',
         action: 'console.warn',
         tag: typeof args[0] === 'string' ? args[0].split(']')[0] + ']' : '',

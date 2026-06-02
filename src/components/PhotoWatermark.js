@@ -7,17 +7,25 @@ const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
 const DEFAULT_LABEL_BACKGROUND = '#FFD700';
 const DEFAULT_WATERMARK_OPACITY = 0.5;
 
+// Mirrors PhotoLabel's FONT_FAMILY_MAP so the watermark and label
+// renderers stay in sync — picking "Share Tech" on the Watermark screen
+// actually produces Roboto Mono Bold instead of silently falling back to
+// Alexandria like the old all-aliased map did.
 const FONT_FAMILY_MAP = {
   alexandria: 'Alexandria_400Regular',
   system: 'Alexandria_400Regular',
-  montserratBold: 'Alexandria_400Regular',
-  playfairBold: 'Alexandria_400Regular',
-  robotoMonoBold: 'Alexandria_400Regular',
-  latoBold: 'Alexandria_400Regular',
-  poppinsSemiBold: 'Alexandria_400Regular',
-  oswaldSemiBold: 'Alexandria_400Regular',
-  serif: 'Alexandria_400Regular',
-  monospace: 'Alexandria_400Regular',
+  montserratBold: 'Montserrat_700Bold',
+  playfairBold: 'PlayfairDisplay_700Bold',
+  robotoMonoBold: 'RobotoMono_700Bold',
+  latoBold: 'Lato_700Bold',
+  poppinsSemiBold: 'Poppins_600SemiBold',
+  oswaldSemiBold: 'Oswald_600SemiBold',
+  shadow: 'PlayfairDisplay_700Bold',
+  shanatel: 'Quicksand_400Regular',
+  sf: 'Lato_700Bold',
+  share: 'RobotoMono_700Bold',
+  serif: 'PlayfairDisplay_700Bold',
+  monospace: 'RobotoMono_700Bold',
 };
 
 /**
@@ -35,6 +43,8 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, ph
     watermarkPosition,
     watermarkFontFamily,
     watermarkShowMetadata,
+    watermarkOffset,
+    watermarkFontSize,
     labelBackgroundColor,
     labelMarginVertical,
     labelMarginHorizontal,
@@ -101,6 +111,24 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, ph
   const positionStyle = positions[positionKey] || positions['right-bottom'];
   const { name, horizontalAlign, verticalAlign, ...positionCoordinates } = positionStyle;
 
+  // Freeform offset overrides the grid position when present. Same
+  // percentage trick PhotoLabel uses — the negative translate pulls the
+  // watermark back by its own width/height in proportion to the offset.
+  const useFreeform = watermarkOffset
+    && typeof watermarkOffset.x === 'number'
+    && typeof watermarkOffset.y === 'number';
+  const freeformStyle = useFreeform
+    ? {
+        left: `${watermarkOffset.x * 100}%`,
+        top: `${watermarkOffset.y * 100}%`,
+        transform: [
+          { translateX: `${-watermarkOffset.x * 100}%` },
+          { translateY: `${-watermarkOffset.y * 100}%` },
+        ],
+      }
+    : null;
+  const finalPositionStyle = useFreeform ? freeformStyle : positionCoordinates;
+
   // Get font family
   const canonicalKey = watermarkFontFamily || 'system';
   const normalizedKey = canonicalKey.toLowerCase();
@@ -117,14 +145,16 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, ph
     }
   };
 
+  const activeFontSize = typeof watermarkFontSize === 'number' ? watermarkFontSize : 14;
+
   return (
-    <View style={[styles.watermark, positionCoordinates, style, { opacity: activeOpacity }]}>
+    <View style={[styles.watermark, finalPositionStyle, style, { opacity: activeOpacity }]}>
       {targetUrl ? (
         <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
           <Text style={[
             styles.watermarkText,
             textStyle,
-            { color: activeColor },
+            { color: activeColor, fontSize: activeFontSize },
             selectedFontFamily ? { fontFamily: selectedFontFamily } : null,
           ]}>
             {displayText}
@@ -134,7 +164,7 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, ph
         <Text style={[
           styles.watermarkText,
           textStyle,
-          { color: activeColor },
+          { color: activeColor, fontSize: activeFontSize },
           selectedFontFamily ? { fontFamily: selectedFontFamily } : null,
         ]}>
           {displayText}

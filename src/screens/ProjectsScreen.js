@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,14 +15,20 @@ import {
   Keyboard,
   Platform,
   Switch,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
+import { RoomIcon } from '../utils/roomIcons';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
+import { countSets } from '../utils/photoSets';
 import { useAdmin } from '../context/AdminContext';
 import { COLORS, TEMPLATE_CONFIGS, TEMPLATE_TYPES, PHOTO_MODES } from '../constants/rooms';
+import { INDUSTRIES, getIndustryById } from '../constants/industries';
+import { getStoredUserType } from '../components/QualificationPromptModal';
 import { FEATURES } from '../constants/featurePermissions';
 import { FONTS } from '../constants/fonts';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
@@ -57,9 +63,24 @@ if (!isExpoGo) {
   }
 }
 
-export default function ProjectsScreen({ navigation }) {
+// Format a unix-ms timestamp as "Xm ago", "Xh ago", or "Xd ago". Falls back
+// to "—" when nothing is available (project with zero photos and no createdAt).
+const formatRelative = (ts) => {
+  if (!ts) return '—';
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+  return new Date(ts).toLocaleDateString();
+};
+
+export default function ProjectsScreen({ navigation, route }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [actionSheetProject, setActionSheetProject] = useState(null);
   const {
     projects,
     getPhotosByProject,
@@ -70,7 +91,27 @@ export default function ProjectsScreen({ navigation }) {
     photos,
   } = usePhotos();
   
-  const { userName, userPlan, updateUserPlan, location, updateUserInfo, showLabels, useFolderStructure, enabledFolders } = useSettings();
+  const {
+    userName,
+    userPlan,
+    updateUserPlan,
+    location,
+    updateUserInfo,
+    showLabels,
+    useFolderStructure,
+    enabledFolders,
+    getRooms,
+    saveCustomRooms,
+    autoUseCurrentLocationForProjects,
+    updateAutoUseCurrentLocationForProjects,
+  } = useSettings();
+  const roomDataMap = useMemo(() => {
+    const map = new Map();
+    for (const room of (getRooms() || [])) {
+      map.set(room.id, room);
+    }
+    return map;
+  }, [getRooms]);
   const { userMode, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType } = useAdmin();
   const { exceedsLimit, canUse, effectivePlan } = useFeaturePermissions();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
@@ -79,7 +120,70 @@ export default function ProjectsScreen({ navigation }) {
   const [newProjectVisible, setNewProjectVisible] = useState(false);
   const [newProjectNamePart, setNewProjectNamePart] = useState('');
   const [newProjectLocation, setNewProjectLocation] = useState(location);
+  // Ref + selection used to scroll the project-name input back to the
+  // beginning after the auto-fill drops in a long address. Without
+  // this, the input keeps the cursor at the end and iOS renders the
+  // tail of the string instead of "1234 Main St…", which made the
+  // address read as scrolled-to-the-right.
+  const newProjectNameRef = useRef(null);
+  const [newProjectNameSelection, setNewProjectNameSelection] = useState(null);
+  // Industry the user picks for THIS project. Defaults to the industry
+  // they chose during onboarding (from `@user_qualification` storage).
+  // Picking a different one will reseed the global rooms via
+  // saveCustomRooms when the project is created.
+  const [newProjectIndustry, setNewProjectIndustry] = useState(null);
+  const [industryPickerOpen, setIndustryPickerOpen] = useState(false);
+  // When the FAB on HomeScreen sends us here with
+  // `navigateToCameraAfter`, we push Camera right after a successful
+  // create so the user lands on the capture surface (the prior FAB
+  // flow used to do this with its own old modal).
+  const navigateToCameraAfterCreateRef = useRef(false);
+
+  // Load the user's onboarding industry once when the modal opens so
+  // the default dropdown selection matches their initial pick.
+  useEffect(() => {
+    if (!newProjectVisible) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await getStoredUserType();
+        if (!cancelled && stored) setNewProjectIndustry(stored);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [newProjectVisible]);
+
+  // Route-param auto-open: HomeScreen's camera FAB sends us here with
+  // `{ openNewProject: true, navigateToCameraAfter: true }` when there
+  // is no active project, so the user always sees the same canonical
+  // New Project modal (no separate HomeScreen copy). We consume the
+  // params and reset them so re-entering Projects doesn't re-open the
+  // modal accidentally.
+  useEffect(() => {
+    const params = route?.params || {};
+    if (params.openNewProject) {
+      navigateToCameraAfterCreateRef.current = !!params.navigateToCameraAfter;
+      setNewProjectVisible(true);
+      try { navigation.setParams({ openNewProject: undefined, navigateToCameraAfter: undefined }); } catch {}
+    }
+  }, [route?.params?.openNewProject, route?.params?.navigateToCameraAfter, navigation]);
+
+  // Whenever the modal opens, seed the name with the "Project N"
+  // default. If the user has the "always use current location"
+  // checkbox on, kick off a silent location fill — that effect
+  // replaces the default name with the address (if granted) or
+  // leaves it as "Project N" (if denied).
+  useEffect(() => {
+    if (!newProjectVisible) return;
+    const nextNum = (projects?.length || 0) + 1;
+    setNewProjectNamePart(`Project ${nextNum}`);
+    if (autoUseCurrentLocationForProjects) {
+      handleUseCurrentLocationInModal({ interactive: false });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newProjectVisible]);
   const [locationLoadingInModal, setLocationLoadingInModal] = useState(false);
+  const [locationDenied, setLocationDenied] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState(null);
@@ -140,7 +244,9 @@ export default function ProjectsScreen({ navigation }) {
       return;
     }
 
-    const fullName = createAlbumName(namePart, new Date(), null, newProjectLocation || getLocationName(location));
+    // Single field: the user's input IS the folder name (location-derived
+     // by default). Skip the legacy "Name - Date - Location" composition.
+    const fullName = namePart;
     const normalize = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[^a-z0-9_\- ]/gi, '_');
     const existing = projects.map(p => p.name);
     const existingNorm = new Set(existing.map(normalize));
@@ -153,12 +259,38 @@ export default function ProjectsScreen({ navigation }) {
 
     try {
       setCreating(true);
+      // Apply the picked industry's folder seed before creating the
+      // project so the new project lands on the right room set. We
+      // only re-seed when the user picked an industry different from
+      // their onboarding default, to avoid clobbering folders they
+      // may have customised manually.
+      try {
+        const stored = await getStoredUserType();
+        if (newProjectIndustry && newProjectIndustry !== stored) {
+          const industry = getIndustryById(newProjectIndustry);
+          if (industry?.folders?.length) {
+            await saveCustomRooms(industry.folders);
+          }
+        }
+      } catch {}
       const project = await createProject(finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_'));
       logProjectCreated();
       setNewProjectNamePart('');
       setNewProjectVisible(false);
       setActiveProject(project.id);
-      navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] });
+      // If the FAB on HomeScreen routed us here, jump to the camera
+      // right after create so the user lands on the capture surface.
+      // Otherwise keep the legacy Gallery jump.
+      if (navigateToCameraAfterCreateRef.current) {
+        navigateToCameraAfterCreateRef.current = false;
+        const firstRoomId = (getRooms() || [])[0]?.id;
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Camera', params: { mode: 'before', room: firstRoomId } }],
+        });
+      } else {
+        navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] });
+      }
     } catch (e) {
       Alert.alert(t('common.error'), e?.message || t('projects.createError'));
     } finally {
@@ -166,16 +298,41 @@ export default function ProjectsScreen({ navigation }) {
     }
   };
 
-  const handleUseCurrentLocationInModal = async () => {
+  // Resolve the current location and use it as the project name. Three
+  // permission states: granted → fetch and prefill; undetermined → iOS
+  // shows the prompt; denied → offer Settings (iOS won't reprompt). The
+  // name field is only overwritten while it still equals the default
+  // ("Project N") so we don't clobber what the user typed.
+  const handleUseCurrentLocationInModal = async (opts = {}) => {
+    const { interactive = true } = opts;
     setLocationLoadingInModal(true);
     try {
-      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      let { status } = await ExpoLocation.getForegroundPermissionsAsync();
+      if (status === 'undetermined') {
+        const res = await ExpoLocation.requestForegroundPermissionsAsync();
+        status = res.status;
+      }
+      if (status === 'denied') {
+        setLocationDenied(true);
+        if (interactive) {
+          Alert.alert(
+            t('settings.locationPermissionTitle', { defaultValue: 'Location access' }),
+            t('settings.locationPermissionMessage', {
+              defaultValue: 'Enable Location in Settings to auto-fill the project name with your current place.',
+            }),
+            [
+              { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+              {
+                text: t('common.openSettings', { defaultValue: 'Open Settings' }),
+                onPress: () => Linking.openSettings(),
+              },
+            ]
+          );
+        }
+        return;
+      }
       if (status !== 'granted') {
-        Alert.alert(
-          t('settings.locationPermissionTitle', { defaultValue: 'Location access' }),
-          t('settings.locationPermissionMessage', { defaultValue: 'Permission to use location is required to set folder location from GPS.' }),
-          [{ text: 'OK', style: 'cancel' }]
-        );
+        setLocationDenied(true);
         return;
       }
       const position = await ExpoLocation.getCurrentPositionAsync({
@@ -185,15 +342,40 @@ export default function ProjectsScreen({ navigation }) {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
       });
-      const locationDisplay = address?.city || address?.region || address?.subregion || address?.country || t('projects.unknownLocation', { defaultValue: 'Unknown' });
-      setNewProjectLocation(locationDisplay);
+      // Build the most precise address Expo gives us. Order:
+      // <streetNumber street>, <city>, <region>. Each segment is only
+      // appended when present so partial data degrades gracefully
+      // instead of producing dangling commas. Falls back to city /
+      // region / country if no street info came back.
+      const streetLine = [address?.streetNumber, address?.street].filter(Boolean).join(' ').trim();
+      const cityLine = address?.city || address?.subregion;
+      const regionLine = address?.region;
+      const segments = [streetLine, cityLine, regionLine].filter(Boolean);
+      const locationDisplay = segments.length
+        ? segments.join(', ')
+        : (address?.country || null);
+      if (!locationDisplay) {
+        setLocationDenied(true);
+        return;
+      }
+      setLocationDenied(false);
+      const defaultName = `Project ${(projects?.length || 0) + 1}`;
+      setNewProjectNamePart((current) =>
+        !current?.trim() || current === defaultName ? locationDisplay : current
+      );
+      // After the auto-fill lands, scroll the input back to the start
+      // so the user sees the street number / street, not the tail of
+      // the address. Two-part nudge: pin the selection to {0, 0} for
+      // a tick so iOS rewinds, then clear the controlled selection so
+      // tapping the field continues to work normally.
+      setNewProjectNameSelection({ start: 0, end: 0 });
+      setTimeout(() => {
+        try { newProjectNameRef.current?.blur(); } catch {}
+        setNewProjectNameSelection(null);
+      }, 50);
     } catch (error) {
       console.error('[ProjectsScreen] Use current location in modal:', error);
-      Alert.alert(
-        t('common.error', { defaultValue: 'Error' }),
-        t('settings.locationError', { defaultValue: 'Could not get current location. Please try again or select a location manually.' }),
-        [{ text: 'OK', style: 'cancel' }]
-      );
+      setLocationDenied(true);
     } finally {
       setLocationLoadingInModal(false);
     }
@@ -547,129 +729,267 @@ export default function ProjectsScreen({ navigation }) {
 
   const handleSelectProject = (project) => {
     setActiveProject(project.id);
-    navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] });
+    navigation.navigate('ProjectDetail', { projectId: project.id });
   };
+
+  const openNewProjectModal = () => {
+    setLocationDenied(false);
+    setNewProjectVisible(true);
+    // The newProjectVisible useEffect seeds the "Project N" default
+    // name and only runs the auto-fill when the persistent
+    // `autoUseCurrentLocationForProjects` checkbox is on. That keeps
+    // explicit opens and route-driven opens behaving identically.
+  };
+
+  const openProjectActions = (project) => {
+    setActionSheetProject(project);
+  };
+
+  const closeActionSheet = () => setActionSheetProject(null);
+
+  const runSheetAction = (fn) => {
+    const proj = actionSheetProject;
+    setActionSheetProject(null);
+    // Defer so the sheet's exit animation runs first, then the next modal
+    // (delete confirm / share / upload) presents cleanly instead of jumping.
+    setTimeout(() => fn(proj), 220);
+  };
+
+  // Aggregate per-project stats (counters, rooms, latest timestamp, thumbnail,
+  // set count) in a single pass so each card render is O(photos-in-project).
+  const projectStats = (projectId) => {
+    const arr = getPhotosByProject(projectId);
+    const counters = { before: 0, progress: 0, after: 0 };
+    const rooms = new Set();
+    let latestTs = 0;
+    let thumbUri = null;
+    for (const p of arr) {
+      if (p.mode === 'before') counters.before++;
+      else if (p.mode === 'progress') counters.progress++;
+      else if (p.mode === 'after') counters.after++;
+      if (p.room) rooms.add(p.room);
+      const ts = typeof p.timestamp === 'number'
+        ? p.timestamp
+        : (p.createdAt ? new Date(p.createdAt).getTime() : 0);
+      if (ts > latestTs) {
+        latestTs = ts;
+        if (p.uri) thumbUri = p.uri;
+      } else if (!thumbUri && p.uri) {
+        thumbUri = p.uri;
+      }
+    }
+    const sets = countSets(arr);
+    return { count: arr.length, sets, counters, rooms: Array.from(rooms), latestTs, thumbUri };
+  };
+
+  const filteredProjects = searchQuery.trim()
+    ? projects.filter((p) => p.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : projects;
 
   const getProjectPhotoCount = (projectId) => {
     return getPhotosByProject(projectId).length;
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>
-          {t('projects.title')} ({projects.length})
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+      <View style={styles.headerRow}>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>
+          {t('projects.title')}
         </Text>
       </View>
 
-      <ScrollView 
+      <View style={styles.searchRow}>
+        <View style={[styles.searchBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="search" size={16} color={theme.textMuted} />
+          <TextInput
+            placeholder={t('projects.search', { defaultValue: 'Search projects' })}
+            placeholderTextColor={theme.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            style={[styles.searchInput, { color: theme.textPrimary }]}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity
+          style={[styles.filterBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="options-outline" size={18} color={theme.textPrimary} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[styles.content, { paddingBottom: 20 + insets.bottom + 50 + 80 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: 20 + insets.bottom + 50 + 24 }]}
       >
         {projects.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>{t('projects.noProjects')}</Text>
-            <Text style={styles.emptyStateSubtext}>
+            <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>{t('projects.noProjects')}</Text>
+            <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary }]}>
               Create your first project to get started
             </Text>
           </View>
+        ) : filteredProjects.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
+              {t('projects.noMatch', { defaultValue: 'No projects match your search' })}
+            </Text>
+          </View>
         ) : (
-          projects.map((project) => {
-            const photoCount = getProjectPhotoCount(project.id);
+          filteredProjects.map((project) => {
+            const stats = projectStats(project.id);
             const isActive = activeProjectId === project.id;
-            
+            const updatedTs = stats.latestTs || (project.createdAt ? new Date(project.createdAt).getTime() : 0);
+
             return (
               <TouchableOpacity
                 key={project.id}
                 style={[
-                  styles.projectCard,
-                  isActive && styles.projectCardActive
+                  styles.cardNew,
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: isActive ? theme.cardSelectedBorder : 'transparent',
+                  },
                 ]}
                 onPress={() => handleSelectProject(project)}
                 activeOpacity={0.7}
               >
-                <View style={styles.projectCardContent}>
-                  <View style={styles.projectInfo}>
-                    <Text style={styles.projectName} numberOfLines={1} ellipsizeMode="tail">{project.name}</Text>
-                    <Text style={styles.projectSubtitle}>
-                      {photoCount} {photoCount === 1 ? 'Photo' : 'Photos'}
+                <View style={styles.cardRow}>
+                  {stats.thumbUri ? (
+                    <Image source={{ uri: stats.thumbUri }} style={styles.cardThumb} />
+                  ) : (
+                    <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                      <Ionicons name="image-outline" size={26} color={theme.textMuted} />
+                    </View>
+                  )}
+
+                  <View style={styles.cardBody}>
+                    <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>{project.name}</Text>
+                    <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {stats.count} {stats.count === 1 ? 'photo' : 'photos'} · {stats.sets} {stats.sets === 1 ? 'set' : 'sets'} · Updated {formatRelative(updatedTs)}
                     </Text>
+                    <View style={styles.countersRow}>
+                      <View style={styles.counter}>
+                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>Before</Text>
+                        <Text style={[styles.counterValue, { color: theme.modeBefore }]}>{stats.counters.before}</Text>
+                      </View>
+                      <View style={styles.counter}>
+                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>Progress</Text>
+                        <Text style={[styles.counterValue, { color: theme.modeProgress }]}>{stats.counters.progress}</Text>
+                      </View>
+                      <View style={styles.counter}>
+                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>After</Text>
+                        <Text style={[styles.counterValue, { color: theme.modeAfter }]}>{stats.counters.after}</Text>
+                      </View>
+                    </View>
                   </View>
-                  
-                  <View style={styles.projectActions} onStartShouldSetResponder={() => true}>
-                    <TouchableOpacity
-                      style={styles.actionIconButton}
-                      onPress={() => handleDeleteProject(project)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="trash" size={16} color="#DB4446" />
-                    </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={styles.actionIconButton}
-                      onPress={() => handleShareProject(project)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="paper-plane" size={16} color="#000000" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.actionIconButton}
-                      onPress={() => handleUploadProject(project)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="cloud-upload" size={16} color="#000000" />
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.kebabBtn}
+                    onPress={() => openProjectActions(project)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="ellipsis-vertical" size={18} color={theme.textSecondary} />
+                  </TouchableOpacity>
                 </View>
+
+                {stats.rooms.length > 0 && (
+                  <View style={styles.roomChipsRow}>
+                    {stats.rooms.slice(0, 5).map((r) => {
+                      const data = roomDataMap.get(r);
+                      return (
+                        <View
+                          key={r}
+                          style={[styles.roomIconBubble, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+                        >
+                          {data?.image ? (
+                            <Image source={data.image} style={styles.roomIconBubbleImage} resizeMode="contain" />
+                          ) : data?.icon ? (
+                            <Text style={{ fontSize: 16 }}>{data.icon}</Text>
+                          ) : (
+                            <RoomIcon roomId={r} size={18} color={theme.textSecondary} />
+                          )}
+                        </View>
+                      );
+                    })}
+                    {stats.rooms.length > 5 && (
+                      <View style={[styles.roomIconBubble, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}>
+                        <Text style={[styles.roomChipText, { color: theme.textSecondary }]}>+{stats.rooms.length - 5}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })
         )}
       </ScrollView>
 
-      <View style={[styles.bottomNavPill, { bottom: 20 + insets.bottom }]}>
-        <TouchableOpacity 
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
-          style={styles.navItem}
-        >
-          <Image source={require('../../assets/icons/home.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={[styles.navItemText, styles.navItemTextActive]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.navItem, styles.navItemActive]}
-        >
-          <Image source={require('../../assets/icons/projects.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Projects</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] })}
-        >
-          <Image source={require('../../assets/icons/gallery.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Gallery</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Settings' }] })}
-        >
-          <Image source={require('../../assets/icons/settings.png')} style={styles.navItemImage} resizeMode="contain" />
-          <Text style={styles.navItemText}>Settings</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Bottom nav moved to PersistentBottomNav (App.js root). */}
 
 
       <TouchableOpacity
-        style={[styles.floatingAddButton, { bottom: 20 + insets.bottom + 50 + 16 }]}
-        onPress={() => {
-          const locationDisplay = getLocationName(location);
-          setNewProjectNamePart(`Project ${(projects?.length || 0) + 1}`);
-          setNewProjectLocation(locationDisplay);
-          setNewProjectVisible(true);
-        }}
+        style={[styles.floatingAddButton, { bottom: 20 + insets.bottom + 50 + 16, backgroundColor: theme.accent }]}
+        onPress={openNewProjectModal}
       >
-        <Ionicons name="add" size={40} color="#000000" style={{ fontWeight: 'bold' }} />
+        <Ionicons name="add" size={40} color={theme.accentText} />
       </TouchableOpacity>
+
+      <Modal
+        visible={!!actionSheetProject}
+        transparent
+        animationType="slide"
+        onRequestClose={closeActionSheet}
+      >
+        <TouchableWithoutFeedback onPress={closeActionSheet}>
+          <View style={styles.sheetBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={[styles.sheetContainer, { backgroundColor: theme.surface, paddingBottom: 12 + insets.bottom }]}>
+          <View style={[styles.sheetHandle, { backgroundColor: theme.borderStrong }]} />
+          <Text style={[styles.sheetTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+            {actionSheetProject?.name}
+          </Text>
+          <TouchableOpacity
+            style={[styles.sheetAction, { borderBottomColor: theme.divider }]}
+            onPress={() => runSheetAction((p) => handleUploadProject(p))}
+          >
+            <Ionicons name="cloud-upload-outline" size={20} color={theme.textPrimary} />
+            <Text style={[styles.sheetActionText, { color: theme.textPrimary }]}>
+              {t('projects.upload', { defaultValue: 'Upload' })}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sheetAction, { borderBottomColor: theme.divider }]}
+            onPress={() => runSheetAction((p) => handleShareProject(p))}
+          >
+            <Ionicons name="paper-plane-outline" size={20} color={theme.textPrimary} />
+            <Text style={[styles.sheetActionText, { color: theme.textPrimary }]}>
+              {t('projects.share', { defaultValue: 'Share' })}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.sheetAction}
+            onPress={() => runSheetAction((p) => handleDeleteProject(p))}
+          >
+            <Ionicons name="trash-outline" size={20} color={theme.danger} />
+            <Text style={[styles.sheetActionText, { color: theme.danger }]}>
+              {t('common.delete', { defaultValue: 'Delete' })}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sheetCancel, { backgroundColor: theme.surfaceElevated }]}
+            onPress={closeActionSheet}
+          >
+            <Text style={[styles.sheetCancelText, { color: theme.textPrimary }]}>
+              {t('common.cancel', { defaultValue: 'Cancel' })}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* New Project Modal */}
       <Modal
@@ -683,36 +1003,68 @@ export default function ProjectsScreen({ navigation }) {
         <View style={styles.modalOverlayTop}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{t('projects.newProject', { defaultValue: 'New Project' })}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder={t('projects.projectNamePart', { defaultValue: 'Name (date & location added when created)' })}
-              value={newProjectNamePart}
-              onChangeText={setNewProjectNamePart}
-              autoFocus={true}
-              placeholderTextColor="#999"
-            />
-            {/* Folder location: user can type any location, with optional quick suggestions */}
-            <View style={{ marginTop: 12 }}>
-              <Text style={{ fontSize: 13, marginBottom: 6 }}>
-                {t('settings.folderLocation', { defaultValue: 'Folder location' })}
-              </Text>
+            {/* Project name input with a trailing ✕ button so the
+                user can wipe the whole field (auto-filled address or
+                typed name) in one tap. */}
+            <View style={{ position: 'relative', justifyContent: 'center' }}>
               <TextInput
-                style={[styles.input, { fontSize: 14, paddingVertical: 8 }]}
-                value={newProjectLocation}
-                onChangeText={setNewProjectLocation}
-                placeholder={t('settings.folderLocationPlaceholder', { defaultValue: 'Type city or location name' })}
+                ref={newProjectNameRef}
+                style={[styles.input, { paddingRight: 38 }]}
+                placeholder={t('projects.projectNamePlaceholder', { defaultValue: 'Project name' })}
+                value={newProjectNamePart}
+                onChangeText={(text) => {
+                  setNewProjectNamePart(text);
+                  if (newProjectNameSelection) setNewProjectNameSelection(null);
+                }}
                 placeholderTextColor="#999"
+                selection={newProjectNameSelection}
               />
+              {newProjectNamePart?.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setNewProjectNamePart('');
+                    setNewProjectNameSelection(null);
+                    newProjectNameRef.current?.focus?.();
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: 10,
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    backgroundColor: '#E5E5E5',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close" size={14} color="#666" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Location row: tap the button for a one-time fill;
+                tick the checkbox to always auto-fill new projects with
+                the current address (persisted in settings). The two
+                controls live on the same row so the relationship —
+                button = one-shot, checkbox = persistent — is obvious. */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginTop: 10,
+                gap: 10,
+              }}
+            >
               <TouchableOpacity
-                onPress={handleUseCurrentLocationInModal}
+                onPress={() => handleUseCurrentLocationInModal({ interactive: true })}
                 disabled={locationLoadingInModal}
                 style={{
+                  flex: 1,
                   flexDirection: 'row',
                   alignItems: 'center',
-                  marginTop: 8,
-                  paddingVertical: 6,
-                  paddingHorizontal: 10,
-                  alignSelf: 'flex-start',
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
                   borderRadius: 8,
                   backgroundColor: locationLoadingInModal ? '#E8E8E8' : '#F0F0F0',
                 }}
@@ -723,11 +1075,133 @@ export default function ProjectsScreen({ navigation }) {
                   <Ionicons name="locate" size={18} color={COLORS.PRIMARY} style={{ marginRight: 6 }} />
                 )}
                 <Text style={{ fontSize: 13, color: '#333' }}>
-                  {locationLoadingInModal ? t('projects.gettingLocation', { defaultValue: 'Getting location…' }) : t('projects.useCurrentLocation', { defaultValue: 'Use current location' })}
+                  {locationLoadingInModal
+                    ? t('projects.gettingLocation', { defaultValue: 'Getting location…' })
+                    : t('projects.useCurrentLocation', { defaultValue: 'Use current location' })}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={async () => {
+                  const next = !autoUseCurrentLocationForProjects;
+                  await updateAutoUseCurrentLocationForProjects(next);
+                  // Turning on the checkbox = the user agreed to use
+                  // the current location for THIS and future projects.
+                  // Fill the current field immediately so they see the
+                  // address right away.
+                  if (next) {
+                    handleUseCurrentLocationInModal({ interactive: true });
+                  }
+                }}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              >
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 5,
+                    borderWidth: 2,
+                    borderColor: autoUseCurrentLocationForProjects ? COLORS.PRIMARY : '#BBB',
+                    backgroundColor: autoUseCurrentLocationForProjects ? COLORS.PRIMARY : 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {autoUseCurrentLocationForProjects && (
+                    <Ionicons name="checkmark" size={16} color="#000" />
+                  )}
+                </View>
+                <Text style={{ fontSize: 12, color: '#555' }}>
+                  {t('projects.always', { defaultValue: 'Always' })}
                 </Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.modalButtons}>
+
+            {/* Industry picker — defaults to the onboarding choice but
+                lets the user override per-project. Tapping it expands
+                an inline list. */}
+            <Text style={{ marginTop: 16, marginBottom: 6, fontSize: 13, color: '#555', fontWeight: '600' }}>
+              {t('projects.industry', { defaultValue: 'Industry' })}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setIndustryPickerOpen((v) => !v)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderWidth: 1,
+                borderColor: '#DDD',
+                borderRadius: 10,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+                backgroundColor: '#FAFAFA',
+              }}
+              activeOpacity={0.85}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {newProjectIndustry && (
+                  <Ionicons
+                    name={getIndustryById(newProjectIndustry)?.icon || 'briefcase-outline'}
+                    size={18}
+                    color="#333"
+                  />
+                )}
+                <Text style={{ fontSize: 14, color: '#333' }}>
+                  {getIndustryById(newProjectIndustry)?.defaultLabel
+                    || t('projects.pickIndustry', { defaultValue: 'Pick an industry' })}
+                </Text>
+              </View>
+              <Ionicons
+                name={industryPickerOpen ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color="#666"
+              />
+            </TouchableOpacity>
+            {industryPickerOpen && (
+              <View
+                style={{
+                  marginTop: 6,
+                  borderWidth: 1,
+                  borderColor: '#DDD',
+                  borderRadius: 10,
+                  maxHeight: 220,
+                  backgroundColor: '#FFFFFF',
+                  overflow: 'hidden',
+                }}
+              >
+                <ScrollView keyboardShouldPersistTaps="handled">
+                  {INDUSTRIES.map((ind) => {
+                    const active = ind.id === newProjectIndustry;
+                    return (
+                      <TouchableOpacity
+                        key={ind.id}
+                        onPress={() => {
+                          setNewProjectIndustry(ind.id);
+                          setIndustryPickerOpen(false);
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 10,
+                          paddingVertical: 10,
+                          paddingHorizontal: 14,
+                          backgroundColor: active ? '#FFF4C2' : 'transparent',
+                        }}
+                      >
+                        <Ionicons name={ind.icon || 'briefcase-outline'} size={18} color="#333" />
+                        <Text style={{ flex: 1, fontSize: 14, color: '#333' }}>
+                          {ind.defaultLabel}
+                        </Text>
+                        {active && <Ionicons name="checkmark" size={16} color="#F2C31B" />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            <View style={[styles.modalButtons, { marginTop: 24 }]}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel]}
                 onPress={() => {
@@ -737,7 +1211,7 @@ export default function ProjectsScreen({ navigation }) {
               >
                 <Text style={styles.modalButtonTextCancel}>{t('common.cancel')}</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCreate]}
                 onPress={handleCreateProject}
@@ -1104,6 +1578,193 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F6F8FA',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 19,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  newProjectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 100,
+  },
+  newProjectBtnText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 19,
+    paddingBottom: 12,
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    padding: 0,
+  },
+  filterBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardNew: {
+    borderRadius: 14,
+    borderWidth: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  cardThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+  },
+  cardThumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  cardName: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  cardMeta: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  countersRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  counter: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 5,
+  },
+  counterLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  counterValue: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  kebabBtn: {
+    padding: 6,
+  },
+  roomChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 12,
+    paddingLeft: 86,
+  },
+  roomIconBubble: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roomIconBubbleImage: {
+    width: 22,
+    height: 22,
+  },
+  roomChipText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  sheetContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 8,
+    paddingHorizontal: 8,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 12,
+  },
+  sheetTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  sheetAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sheetActionText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  sheetCancel: {
+    marginTop: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  sheetCancelText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '600',
   },
   header: {
     paddingHorizontal: 19,

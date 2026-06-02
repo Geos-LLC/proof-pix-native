@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  Switch,
   Modal,
   Pressable,
-  Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,7 +16,6 @@ import { FONTS } from '../constants/fonts';
 import { useSettings } from '../context/SettingsContext';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
-import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
 
 const POSITIONS = [
@@ -29,6 +24,8 @@ const POSITIONS = [
   ['left-bottom', 'center-bottom', 'right-bottom'],
 ];
 
+// Same FONT_OPTIONS list the label customization screen uses, so users
+// see a consistent typography set across all overlays.
 const FONT_OPTIONS = [
   { key: 'system', label: 'Arial Blank' },
   { key: 'shadow', label: 'Shadow Into Light' },
@@ -36,6 +33,7 @@ const FONT_OPTIONS = [
   { key: 'sf', label: 'SF Compact' },
   { key: 'share', label: 'Share Tech' },
 ];
+// Mirrors PhotoLabel's FONT_FAMILY_MAP so preview matches saved render.
 const PREVIEW_FONT_MAP = {
   system: 'Alexandria_400Regular',
   alexandria: 'Alexandria_400Regular',
@@ -46,39 +44,41 @@ const PREVIEW_FONT_MAP = {
 };
 const getPreviewFontFamily = (key) => PREVIEW_FONT_MAP[key] || PREVIEW_FONT_MAP.system;
 
-const COLOR_SWATCHES = [
-  '#FFFFFF', '#000000', '#FFD700', '#EAB308', '#A855F7', '#3B82F6',
-  '#22C55E', '#EF4444', '#06B6D4', '#F43F5E',
+const COLORS = ['#FFFFFF', '#000000', '#FF3B30', '#FFCC00', '#34C759', '#007AFF'];
+
+const FIELD_DEFS = [
+  { key: 'date', label: 'Date', icon: 'calendar-outline' },
+  { key: 'time', label: 'Time', icon: 'time-outline' },
+  { key: 'address', label: 'Address', icon: 'location-outline' },
+  { key: 'gps', label: 'GPS coordinates', icon: 'navigate-outline' },
 ];
 
-const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
+// Map any saved size value (numeric or legacy string) to a numeric font
+// size in pixels. The slider always writes numbers, but old saves may
+// still be 'small'/'medium'/'large'.
+const LEGACY_FONT_SIZE = { small: 11, medium: 14, large: 18 };
+const toNumericFontSize = (v) => (typeof v === 'number' ? v : (LEGACY_FONT_SIZE[v] || 14));
 
-export default function WatermarkCustomizationScreen({ navigation, route }) {
+export default function MetadataCustomizationScreen({ navigation, route }) {
   const theme = useTheme();
-  const { canUse } = useFeaturePermissions();
-  useEffect(() => {
-    if (!canUse(FEATURES.CUSTOM_WATERMARKS)) navigation.goBack();
-  }, [canUse, navigation]);
-
   const {
-    customWatermarkEnabled,
-    toggleWatermark,
-    watermarkText,
-    updateWatermarkText,
-    watermarkLink,
-    updateWatermarkLink,
-    watermarkColor,
-    updateWatermarkColor,
-    watermarkOpacity,
-    updateWatermarkOpacity,
-    watermarkPosition,
-    updateWatermarkPosition,
-    watermarkFontFamily,
-    updateWatermarkFontFamily,
-    watermarkOffset,
-    updateWatermarkOffset,
-    watermarkFontSize,
-    updateWatermarkFontSize,
+    metaShowDate,
+    metaShowTime,
+    metaShowAddress,
+    metaShowGps,
+    setMetaField,
+    metaPosition,
+    updateMetaPosition,
+    metaColor,
+    updateMetaColor,
+    metaOpacity,
+    updateMetaOpacity,
+    metaFontSize,
+    updateMetaFontSize,
+    metaFontFamily,
+    updateMetaFontFamily,
+    metaOffset,
+    updateMetaOffset,
     labelMarginVertical,
     labelMarginHorizontal,
     updateLabelMarginVertical,
@@ -93,7 +93,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
     [photoId, photos]
   );
 
-  const numericSize = typeof watermarkFontSize === 'number' ? watermarkFontSize : 14;
+  const numericSize = toNumericFontSize(metaFontSize);
   const [previewLayout, setPreviewLayout] = useState({ w: 0, h: 0 });
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [sizeModalVisible, setSizeModalVisible] = useState(false);
@@ -101,7 +101,6 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
   const [marginModalVisible, setMarginModalVisible] = useState(false);
   const [fontModalVisible, setFontModalVisible] = useState(false);
   const [opacityModalVisible, setOpacityModalVisible] = useState(false);
-  const [colorModalVisible, setColorModalVisible] = useState(false);
 
   const onPreviewLayout = (e) => {
     const { width, height } = e.nativeEvent.layout;
@@ -110,13 +109,28 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
 
   const bounds = { x: 0, y: 0, w: previewLayout.w, h: previewLayout.h };
 
-  // What the watermark actually says. Metadata-on-watermark is no longer
-  // a toggle here — that capability lives on the Metadata customization
-  // screen now, so this screen only handles the text/link watermark.
-  const displayText = useMemo(() => {
-    const raw = customWatermarkEnabled ? watermarkText : DEFAULT_WATERMARK_TEXT;
-    return (raw || '').trim() || DEFAULT_WATERMARK_TEXT;
-  }, [customWatermarkEnabled, watermarkText]);
+  // Build the same caption the export pipeline produces, so the preview
+  // mirrors what'll actually land on the photo.
+  const ts = previewPhoto?.timestamp
+    ? new Date(previewPhoto.timestamp)
+    : (previewPhoto?.createdAt ? new Date(previewPhoto.createdAt) : new Date());
+  const parts = [];
+  if (metaShowDate) parts.push(ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+  if (metaShowTime) parts.push(ts.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+  if (metaShowAddress) {
+    const where = (previewPhoto?.location || location || '').toString().trim();
+    if (where) parts.push(where);
+  }
+  if (metaShowGps && previewPhoto?.gps) parts.push(String(previewPhoto.gps));
+  const captionText = parts.length ? parts.join(' · ') : 'Metadata preview';
+
+  const fieldValue = (key) => {
+    if (key === 'date') return metaShowDate;
+    if (key === 'time') return metaShowTime;
+    if (key === 'address') return metaShowAddress;
+    if (key === 'gps') return metaShowGps;
+    return false;
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
@@ -124,129 +138,153 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Watermark</Text>
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Metadata</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      <ScrollView
+        contentContainerStyle={styles.body}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={scrollEnabled}
       >
-        <ScrollView
-          contentContainerStyle={styles.body}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          scrollEnabled={scrollEnabled}
+        <View
+          style={[styles.previewSquare, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+          onLayout={onPreviewLayout}
         >
-          <View
-            style={[styles.previewSquare, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
-            onLayout={onPreviewLayout}
-          >
-            {previewPhoto?.uri ? (
-              <Image source={{ uri: previewPhoto.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            ) : (
-              <View style={styles.previewPlaceholder}>
-                <Ionicons name="image-outline" size={48} color={theme.textMuted} />
-              </View>
-            )}
-            {previewLayout.w > 0 && previewLayout.h > 0 && (
-              <DraggablePreviewItem
-                bounds={bounds}
-                offset={watermarkOffset}
-                fallbackPositionKey={watermarkPosition || 'right-bottom'}
-                marginV={labelMarginVertical}
-                marginH={labelMarginHorizontal}
-                onOffsetChange={updateWatermarkOffset}
-                onDragStart={() => setScrollEnabled(false)}
-                onDragEnd={() => setScrollEnabled(true)}
-                containerStyle={{ opacity: typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5 }}
-              >
-                <Text
-                  style={{
-                    color: watermarkColor || '#FFD700',
-                    fontSize: numericSize,
-                    fontFamily: getPreviewFontFamily(watermarkFontFamily),
-                    fontWeight: '700',
-                  }}
-                  numberOfLines={2}
-                >
-                  {displayText}
-                </Text>
-              </DraggablePreviewItem>
-            )}
-          </View>
-
-          {/* Custom text toggle */}
-          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CUSTOM TEXT</Text>
-          <View style={[styles.toggleRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.toggleLabel, { color: theme.textPrimary }]}>Use custom watermark</Text>
-            <Switch
-              value={!!customWatermarkEnabled}
-              onValueChange={toggleWatermark}
-              trackColor={{ false: '#E0E0E0', true: theme.accent }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-
-          {customWatermarkEnabled && (
-            <>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
-                value={watermarkText}
-                onChangeText={updateWatermarkText}
-                placeholder="Watermark text"
-                placeholderTextColor={theme.textMuted}
-              />
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
-                value={watermarkLink}
-                onChangeText={updateWatermarkLink}
-                placeholder="Optional link (https://…)"
-                placeholderTextColor={theme.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-              />
-            </>
+          {previewPhoto?.uri ? (
+            <Image source={{ uri: previewPhoto.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : (
+            <View style={styles.previewPlaceholder}>
+              <Ionicons name="image-outline" size={48} color={theme.textMuted} />
+            </View>
           )}
+          {previewLayout.w > 0 && previewLayout.h > 0 && (
+            <DraggablePreviewItem
+              bounds={bounds}
+              offset={metaOffset}
+              fallbackPositionKey={metaPosition || 'left-bottom'}
+              marginV={labelMarginVertical}
+              marginH={labelMarginHorizontal}
+              onOffsetChange={updateMetaOffset}
+              onDragStart={() => setScrollEnabled(false)}
+              onDragEnd={() => setScrollEnabled(true)}
+              containerStyle={{ opacity: typeof metaOpacity === 'number' ? metaOpacity : 0.85 }}
+            >
+              <Text
+                style={{
+                  color: metaColor || '#FFFFFF',
+                  fontSize: numericSize,
+                  fontFamily: getPreviewFontFamily(metaFontFamily),
+                  fontWeight: '700',
+                  textShadowColor: 'rgba(0,0,0,0.5)',
+                  textShadowRadius: 4,
+                }}
+                numberOfLines={2}
+              >
+                {captionText}
+              </Text>
+            </DraggablePreviewItem>
+          )}
+        </View>
 
-          {/* Controls */}
-          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CONTROLS</Text>
-          <View style={styles.controlsRow}>
-            <ControlButton theme={theme} icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
-            <ControlButton theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-            <ControlButton theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
-          </View>
-          <View style={[styles.controlsRow, { marginTop: 12 }]}>
-            <ControlButton theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
-            <ControlButton theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
-            <ColorButton theme={theme} color={watermarkColor || '#FFD700'} onPress={() => setColorModalVisible(true)} />
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        {/* ─── Fields ─── */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>FIELDS</Text>
+        <View style={styles.fieldPillRow}>
+          {FIELD_DEFS.map((f) => {
+            const active = !!fieldValue(f.key);
+            return (
+              <TouchableOpacity
+                key={f.key}
+                onPress={() => setMetaField(f.key, !active)}
+                activeOpacity={0.8}
+                style={[
+                  styles.fieldPill,
+                  {
+                    backgroundColor: active ? theme.accent : theme.surface,
+                    borderColor: active ? theme.accent : theme.border,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={f.icon}
+                  size={18}
+                  color={active ? theme.accentText : theme.textPrimary}
+                />
+                <Text
+                  style={[
+                    styles.fieldPillLabel,
+                    { color: active ? theme.accentText : theme.textPrimary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {f.label === 'GPS coordinates' ? 'GPS' : f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ─── Controls ─── */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CONTROLS</Text>
+        <View style={styles.controlsRow}>
+          <ControlButton theme={theme} icon="text" label="Style" onPress={() => setFontModalVisible(true)} />
+          <ControlButton theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
+          <ControlButton theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+        </View>
+        <View style={[styles.controlsRow, { marginTop: 12 }]}>
+          <ControlButton theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
+          <ControlButton theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
+        </View>
+
+        {/* ─── Color ─── */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>COLOR</Text>
+        <View style={styles.swatchRow}>
+          {COLORS.map((c) => {
+            const isActive = metaColor === c;
+            return (
+              <TouchableOpacity
+                key={c}
+                onPress={() => updateMetaColor(c)}
+                style={[
+                  styles.swatch,
+                  {
+                    backgroundColor: c,
+                    borderColor: isActive ? theme.accent : theme.border,
+                    borderWidth: isActive ? 3 : StyleSheet.hairlineWidth,
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
+      </ScrollView>
 
       {/* Font Modal */}
-      <BottomModal visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title="Watermark Font" theme={theme}>
+      <BottomModal visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title="Text Style" theme={theme}>
         <View style={{ paddingVertical: 4 }}>
           {FONT_OPTIONS.map((font) => {
-            const isSelected = watermarkFontFamily === font.key;
+            const isSelected = metaFontFamily === font.key;
             return (
               <TouchableOpacity
                 key={font.key}
                 style={[
                   styles.fontListItem,
-                  { backgroundColor: isSelected ? theme.accent : theme.surfaceElevated },
+                  {
+                    backgroundColor: isSelected ? theme.accent : theme.surfaceElevated,
+                  },
                 ]}
                 onPress={async () => {
-                  await updateWatermarkFontFamily(font.key);
+                  await updateMetaFontFamily(font.key);
                   setFontModalVisible(false);
                 }}
               >
                 <Text
                   style={[
                     styles.fontListItemText,
-                    { color: isSelected ? theme.accentText : theme.textPrimary, fontFamily: getPreviewFontFamily(font.key) },
+                    {
+                      color: isSelected ? theme.accentText : theme.textPrimary,
+                      fontFamily: getPreviewFontFamily(font.key),
+                    },
                   ]}
                 >
                   {font.label}
@@ -258,7 +296,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Size Modal */}
-      <BottomModal visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title="Watermark Size" theme={theme}>
+      <BottomModal visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title="Text Size" theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
             <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Font size</Text>
@@ -270,8 +308,8 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
             maximumValue={32}
             step={1}
             value={numericSize}
-            onValueChange={(v) => updateWatermarkFontSize(Math.round(v))}
-            onSlidingComplete={(v) => updateWatermarkFontSize(Math.round(v))}
+            onValueChange={(v) => updateMetaFontSize(Math.round(v))}
+            onSlidingComplete={(v) => updateMetaFontSize(Math.round(v))}
             minimumTrackTintColor={theme.accent}
             maximumTrackTintColor={theme.border}
             thumbTintColor={theme.accent}
@@ -285,13 +323,13 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
           {POSITIONS.map((row, ri) => (
             <View key={ri} style={styles.positionRow}>
               {row.map((pos) => {
-                const isActive = watermarkPosition === pos && !watermarkOffset;
+                const isActive = metaPosition === pos && !metaOffset;
                 return (
                   <TouchableOpacity
                     key={pos}
                     onPress={async () => {
-                      await updateWatermarkOffset(null);
-                      await updateWatermarkPosition(pos);
+                      await updateMetaOffset(null);
+                      await updateMetaPosition(pos);
                     }}
                     style={[
                       styles.positionCell,
@@ -353,41 +391,19 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
             <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Opacity</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{Math.round((watermarkOpacity ?? 0.5) * 100)}%</Text>
+            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{Math.round((metaOpacity ?? 0.85) * 100)}%</Text>
           </View>
           <Slider
             style={styles.slider}
             minimumValue={0}
             maximumValue={1}
             step={0.01}
-            value={watermarkOpacity ?? 0.5}
-            onValueChange={updateWatermarkOpacity}
+            value={metaOpacity ?? 0.85}
+            onValueChange={updateMetaOpacity}
             minimumTrackTintColor={theme.accent}
             maximumTrackTintColor={theme.border}
             thumbTintColor={theme.accent}
           />
-        </View>
-      </BottomModal>
-
-      {/* Color Modal */}
-      <BottomModal visible={colorModalVisible} onClose={() => setColorModalVisible(false)} title="Watermark Color" theme={theme}>
-        <View style={styles.colorPalette}>
-          {COLOR_SWATCHES.map((c) => {
-            const isActive = (watermarkColor || '').toUpperCase() === c.toUpperCase();
-            return (
-              <TouchableOpacity
-                key={c}
-                onPress={async () => {
-                  await updateWatermarkColor(c);
-                  setColorModalVisible(false);
-                }}
-                style={[
-                  styles.swatch,
-                  { backgroundColor: c, borderColor: isActive ? theme.accent : theme.border, borderWidth: isActive ? 3 : StyleSheet.hairlineWidth },
-                ]}
-              />
-            );
-          })}
         </View>
       </BottomModal>
     </SafeAreaView>
@@ -401,17 +417,6 @@ function ControlButton({ theme, icon, label, onPress }) {
         <Ionicons name={icon} size={22} color={theme.textPrimary} />
       </View>
       <Text style={[styles.controlLabel, { color: theme.textSecondary }]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function ColorButton({ theme, color, onPress }) {
-  return (
-    <TouchableOpacity style={styles.controlButton} onPress={onPress} activeOpacity={0.7}>
-      <View style={[styles.controlSquare, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <View style={[styles.colorSwatchInline, { backgroundColor: color, borderColor: theme.border }]} />
-      </View>
-      <Text style={[styles.controlLabel, { color: theme.textSecondary }]}>Color</Text>
     </TouchableOpacity>
   );
 }
@@ -474,23 +479,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  toggleRow: {
+  fieldPillRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  fieldPill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 10,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    borderRadius: 100,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  toggleLabel: { flex: 1, fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600' },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    marginTop: 8,
+  fieldPillLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '700',
   },
   controlsRow: { flexDirection: 'row', gap: 16 },
   controlButton: { alignItems: 'center', minWidth: 70 },
@@ -504,12 +511,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   controlLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, textAlign: 'center' },
-  colorSwatchInline: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
   positionGrid: {
     padding: 8,
     borderRadius: 12,
@@ -525,6 +526,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  swatchRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  swatch: { width: 32, height: 32, borderRadius: 16 },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -571,6 +574,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   fontListItemText: { fontSize: 16, fontWeight: '600' },
-  colorPalette: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'center' },
-  swatch: { width: 40, height: 40, borderRadius: 20 },
 });
