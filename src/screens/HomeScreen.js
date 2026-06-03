@@ -1734,35 +1734,11 @@ export default function HomeScreen({ navigation, route }) {
               >
                 <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
               </TouchableOpacity>
-              {/* Green completion check at TOP-RIGHT — only when the
-                  set has its After AND there are no Progress photos.
-                  Once the user adds a 3rd shot, the yellow progress-
-                  count badge (also top-right) takes over the slot. */}
-              {progressCount === 0 && (
-                <View style={styles.photoOverlayBadgeTopRight} pointerEvents="none">
-                  <Ionicons name="checkmark-circle-sharp" size={25} color="#22C55E" />
-                </View>
-              )}
-              <View style={styles.thumbnailButtonsOverlay}>
-                <TouchableOpacity
-                  style={styles.retakeButton}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    if (!isSwiping.current) {
-                      navigation.navigate('Camera', {
-                        mode: 'after',
-                        beforePhoto,
-                        afterPhoto,
-                        combinedPhoto,
-                        room: currentRoom
-                      });
-                    }
-                  }}
-                >
-                  <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.retakeButtonText}>{t('home.updateAfter', { defaultValue: 'Update After' })}</Text>
-                </TouchableOpacity>
-              </View>
+              {/* Refresh — per the design screenshots: completed sets
+                  carry no green check + no "Update After" pill. The eye
+                  badge + progress chip are the only overlay chrome.
+                  Tapping the card already routes to Camera in After mode
+                  so the retake action is preserved as a tap target. */}
             </TouchableOpacity>
           );
         } else {
@@ -1836,33 +1812,9 @@ export default function HomeScreen({ navigation, route }) {
               >
                 <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
               </TouchableOpacity>
-              {/* Green completion check at TOP-RIGHT — only when the
-                  set has its After AND no Progress photos. Once a 3rd
-                  shot exists the yellow progress-count badge (also
-                  top-right) replaces this in the same slot. */}
-              {progressCount === 0 && (
-                <View style={styles.photoOverlayBadgeTopRight} pointerEvents="none">
-                  <Ionicons name="checkmark-circle-sharp" size={25} color="#22C55E" />
-                </View>
-              )}
-              <View style={styles.thumbnailButtonsOverlay}>
-                <TouchableOpacity
-                  style={styles.retakeButton}
-                  onPress={() => {
-                    if (!isSwiping.current) {
-                      navigation.navigate('Camera', {
-                        mode: 'after',
-                        beforePhoto,
-                        afterPhoto,
-                        room: currentRoom
-                      });
-                    }
-                  }}
-                >
-                  <Ionicons name="camera-outline" size={14} color="#FFFFFF" />
-                  <Text style={styles.retakeButtonText}>{t('home.updateAfter', { defaultValue: 'Update After' })}</Text>
-                </TouchableOpacity>
-              </View>
+              {/* Refresh: per the design, completed sets show no green
+                  check + no Update After pill. Tapping the card already
+                  routes to Camera in After mode. */}
             </TouchableOpacity>
           );
         }
@@ -3470,32 +3422,37 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between'
   },
+  // Refresh — design shows portrait-leaning tiles (~5:6) not square. The
+  // taller card gives the before/after split more vertical real estate so
+  // the room context reads clearly, and matches the screenshot layout.
   photoItem: {
     width: PHOTO_SIZE,
-    height: PHOTO_SIZE,
-    // Bumped from 12 → 16 to match the refreshed design's tile radius and
-    // removed the white border — the photo itself is now the tile surface
-    // so any contrasting border just adds visual noise.
+    height: Math.round(PHOTO_SIZE * 1.18),
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: '#1A1A1A',
   },
-  // Column wrapper for the photo card + its "Set N · Room" caption below
-  // it. Refresh: tighter spacing + stronger weight so the caption reads
-  // as a label of the tile rather than free-floating type.
+  // Refresh — design has the "Set N · Room" caption ON the tile, white
+  // on a soft dark shadow at the bottom-left. The wrapper stays
+  // position-relative so the label can absolute-position over the photo.
   setTileWrapper: {
     width: PHOTO_SIZE,
-    marginBottom: 14,
-    alignItems: 'flex-start',
+    marginBottom: 12,
+    position: 'relative',
   },
   setTileLabel: {
-    marginTop: 8,
-    marginLeft: 4,
+    position: 'absolute',
+    left: 10,
+    bottom: 9,
     fontFamily: FONTS.SEMIBOLD,
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: '#FFFFFF',
     letterSpacing: -0.1,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    zIndex: 12,
   },
   photoCenterDivider: {
     position: 'absolute',
