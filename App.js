@@ -89,6 +89,8 @@ import PhotoDetailScreen from './src/screens/PhotoDetailScreen';
 import SectionDetailScreen from './src/screens/SectionDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ContactUsScreen from './src/screens/ContactUsScreen';
+import CloudTeamScreen from './src/screens/CloudTeamScreen';
+import HelpSupportScreen from './src/screens/HelpSupportScreen';
 import ProjectsScreen from './src/screens/ProjectsScreen';
 import StudioScreen from './src/screens/StudioScreen';
 import LogoCustomizationScreen from './src/screens/LogoCustomizationScreen';
@@ -375,6 +377,16 @@ function AppNavigator() {
         options={{
           animation: 'slide_from_right'
         }}
+      />
+      <Stack.Screen
+        name="CloudTeam"
+        component={CloudTeamScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="HelpSupport"
+        component={HelpSupportScreen}
+        options={{ animation: 'slide_from_right' }}
       />
       <Stack.Screen
         name="LabelCustomization"

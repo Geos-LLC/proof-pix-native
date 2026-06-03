@@ -3144,12 +3144,11 @@ export default function SettingsScreen({ navigation, route }) {
           {t('settings.cloudTeamGroup', { defaultValue: 'Cloud & Team' })}
         </Text>
         <View style={styles.rowGroup}>
-          {/* Cloud sync — scrolls down to the existing Cloud & Team Sync
-              section which still holds the live connection state for each
-              provider. PRO gate badge per design. */}
+          {/* Cloud sync — opens the standalone Cloud & Team screen
+              (design 35). PRO gate badge per design. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => scrollToRef(cloudSyncSectionRef)}
+            onPress={() => navigation.navigate('CloudTeam')}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3171,11 +3170,11 @@ export default function SettingsScreen({ navigation, route }) {
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
 
-          {/* Team members — scrolls directly to the Team Management row
-              inside the Cloud & Team section. BUSINESS gate per design. */}
+          {/* Team members — opens the standalone Cloud & Team screen
+              (design 35); team invite card sits inside it. BUSINESS gate. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => scrollToRef(teamSectionRef)}
+            onPress={() => navigation.navigate('CloudTeam')}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3197,7 +3196,7 @@ export default function SettingsScreen({ navigation, route }) {
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
 
-          {/* Refer & earn — navigates to the existing ReferralScreen. */}
+          {/* Refer & earn — navigates to ReferralScreen (design 36). */}
           <TouchableOpacity
             style={styles.ppRow}
             onPress={() => navigation.navigate('Referral')}
@@ -3212,6 +3211,28 @@ export default function SettingsScreen({ navigation, route }) {
               </Text>
               <Text style={styles.ppRowSub} numberOfLines={1}>
                 {t('settings.referEarnSub', { defaultValue: 'Give a month, get a month' })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          </TouchableOpacity>
+
+          {/* Help & support — navigates to the new HelpSupportScreen
+              (design 37): live chat / email / help center + send-a-
+              message form. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => navigation.navigate('HelpSupport')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="chatbubble-ellipses-outline" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <Text style={styles.ppRowTitle}>
+                {t('settings.helpSupport', { defaultValue: 'Help & support' })}
+              </Text>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {t('settings.helpSupportSub', { defaultValue: 'Chat, email, or browse the help center' })}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
@@ -5604,7 +5625,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-I · settings=rows-wired-to-sections · camera=zoom+format+navhidden
+              Build tag: OTA-2026-06-03-J · new-screens=CloudTeam+HelpSupport · camera=zoom+format+navhidden
             </Text>
           </View>
         )}
