@@ -1144,19 +1144,23 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingRight: 20
   },
+  // Refresh: format card chip per design — surface fill + hairline
+  // border (was 2px borders + white), active picks up accent border +
+  // accent-soft fill so the selection reads at a glance.
   templateButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: 'white',
-    borderWidth: 2,
-    borderColor: COLORS.BORDER,
+    borderRadius: 12,
+    backgroundColor: '#F4F4F4',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
     alignItems: 'center',
-    minWidth: 120
+    minWidth: 110
   },
   templateButtonActive: {
     borderColor: COLORS.PRIMARY,
-    backgroundColor: COLORS.PRIMARY
+    borderWidth: 2,
+    backgroundColor: '#FFF4C2',
   },
   templateButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
@@ -1167,12 +1171,20 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     color: COLORS.TEXT
   },
+  // Refresh: primary CTA per design.
   shareButton: {
     margin: 20,
     backgroundColor: COLORS.PRIMARY,
-    padding: 18,
-    borderRadius: 12,
-    alignItems: 'center'
+    height: 52,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 6,
   },
   editorBadge: {
     alignSelf: 'center',

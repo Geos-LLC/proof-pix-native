@@ -717,26 +717,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 2
   },
+  // Refresh: primary CTA per design — 52px, radius 16, warm accent glow.
   shareButton: {
     position: 'absolute',
     bottom: 50,
     left: 20,
     right: 20,
     backgroundColor: COLORS.PRIMARY,
-    padding: 18,
-    borderRadius: 12,
+    height: 52,
+    paddingHorizontal: 20,
+    borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5
+    justifyContent: 'center',
+    shadowColor: COLORS.PRIMARY,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 6
   },
   shareButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
-    fontSize: 18,
-    fontWeight: 'bold'
+    color: '#1E1E1E',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.1
   },
   backButton: {
     padding: 8

@@ -7289,15 +7289,18 @@ const sliderStyles = StyleSheet.create({
 });
 
   const styles = StyleSheet.create({
+    // Refresh: page bg flipped from tinted #F8F8F8 to plain white per the
+    // design's --bg token, so the section cards below sit on a clean
+    // canvas instead of competing for contrast with a grey backplate.
     container: {
       flex: 1,
-      backgroundColor: '#F8F8F8'
+      backgroundColor: '#FFFFFF'
     },
     header: {
-      paddingHorizontal: 20,
-      paddingTop: 16,
-      paddingBottom: 16,
-      backgroundColor: 'white',
+      paddingHorizontal: 18,
+      paddingTop: 8,
+      paddingBottom: 12,
+      backgroundColor: '#FFFFFF',
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
