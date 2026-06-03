@@ -551,6 +551,10 @@ export default function HomeScreen({ navigation, route }) {
   const lastTap = useRef(null);
   const swipeStartX = useRef(null);
   const tapCount = useRef(0);
+  // Stashes the latest committed gesture (kind + deltas) from the
+  // fullscreen Modal's capture-phase responder so onResponderRelease
+  // can act on it. Cleared whenever a fresh touch starts.
+  const modalGestureRef = useRef(null);
 
   const beforePhotos = getBeforePhotos(currentRoom);
   const afterPhotos = getAfterPhotos(currentRoom);
@@ -2797,28 +2801,65 @@ export default function HomeScreen({ navigation, route }) {
         animationType="fade"
         onRequestClose={() => setTappedFullPhoto(null)}
       >
-        {/* Swipe-down-to-close gesture wrapper. PanResponder uses the
-            CAPTURE phase so it can intercept mid-gesture even when the
-            user is touching the framed photo (which is normally
-            owned by PannableImage's pan/pinch responder). High
-            thresholds (committed dy + dy >> |dx|) make it ignore
-            casual pan moves so PannableImage's zoom + drag stay
-            usable — only a deliberate downward swipe triggers close. */}
+        {/* Gesture wrapper. CAPTURE phase so we can intercept mid-touch
+            even when the photo is being handled by PannableImage. We
+            distinguish three deliberate gestures:
+              • Horizontal swipe (|dx| > 50, |dx| > 2 × |dy|) → walk
+                forward / backward through the set members.
+              • Vertical down swipe (dy > 80, dy > 2 × |dx|) → close
+                the modal.
+              • Anything slower or unclaimed → falls through to
+                PannableImage's long-press-armed drag-pan / two-finger
+                pinch-zoom, so dragging the photo still works once the
+                user is past the press timer.
+            The latest gesture state is stashed in modalGestureRef
+            because `onResponderRelease` only gets the event — we need
+            the dx/dy deltas from `onMoveShouldSetResponderCapture` to
+            decide what to do on lift-off. */}
         <View
           style={styles.tappedFullPhotoSwipeArea}
-          onStartShouldSetResponderCapture={() => false}
+          onStartShouldSetResponderCapture={() => {
+            modalGestureRef.current = null;
+            return false;
+          }}
           onMoveShouldSetResponderCapture={(evt, gs) => {
             const touches = evt.nativeEvent?.touches?.length || 0;
             if (touches !== 1) return false;
-            // 80 px down + dominated-vertical guard so a pinch / pan
-            // never accidentally closes the viewer.
-            return gs?.dy > 80 && gs.dy > Math.abs(gs.dx || 0) * 2;
+            const dx = gs?.dx || 0;
+            const dy = gs?.dy || 0;
+            // Horizontal swipe — quick and clearly horizontal.
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 2) {
+              modalGestureRef.current = { kind: 'horizontal', dx, dy };
+              return true;
+            }
+            // Vertical down swipe — clearly vertical, large enough to
+            // commit a close.
+            if (dy > 80 && dy > Math.abs(dx) * 2) {
+              modalGestureRef.current = { kind: 'verticalDown', dx, dy };
+              return true;
+            }
+            return false;
           }}
-          onResponderRelease={(evt) => {
-            // The pan responder captured because of a committed
-            // downward swipe — commit the close.
-            setTappedFullPhoto(null);
+          onResponderRelease={() => {
+            const g = modalGestureRef.current;
+            modalGestureRef.current = null;
+            if (!g) return;
+            if (g.kind === 'verticalDown') {
+              setTappedFullPhoto(null);
+              return;
+            }
+            if (g.kind === 'horizontal') {
+              const dir = g.dx > 0 ? -1 : 1; // swipe-right shows previous photo
+              const idx = setMembers.findIndex((mm) => mm?.id === liveTappedFullPhoto?.id);
+              const safe = idx >= 0 ? idx : 0;
+              const target = safe + dir;
+              if (target >= 0 && target < setMembers.length) {
+                setSetMemberIndex(target);
+                setTappedFullPhoto(setMembers[target]);
+              }
+            }
           }}
+          onResponderTerminate={() => { modalGestureRef.current = null; }}
           onResponderTerminationRequest={() => false}
         >
         <View style={styles.tappedFullPhotoBackdrop}>
@@ -2950,18 +2991,20 @@ export default function HomeScreen({ navigation, route }) {
                   onStartShouldSetResponder={() => true}
                 >
                   {/* PannableImage handles pinch-zoom (0.5×-3×) + pan.
-                      panOnLongPress=false → drag pans immediately (no
-                      waiting on a long-press timer) since this view is
-                      not inside a horizontal carousel that needs to
-                      own swipe gestures. Its reset button (top-right)
-                      snaps back to neutral. */}
+                      panOnLongPress=true → single-finger drag only
+                      claims the gesture after a brief long-press, so
+                      quick horizontal swipes still reach the outer
+                      capture-phase responder (which uses them to walk
+                      through set members). Two-finger pinch is still
+                      claimed immediately. The reset chip lives at the
+                      photo's top-right corner. */}
                   <View style={{ width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden' }}>
                     <PannableImage
                       source={{ uri: tappedFullPhoto.uri }}
                       style={{ width: '100%', height: '100%' }}
                       imageStyle={{ width: '100%', height: '100%' }}
                       resizeMode="cover"
-                      panOnLongPress={false}
+                      panOnLongPress
                     >
                       {/* Overlays are children of PannableImage so the
                           transform (pinch + pan) applies to them too —
@@ -3016,18 +3059,19 @@ export default function HomeScreen({ navigation, route }) {
                           />
                         </View>
                       )}
+                      {/* Mode badge pill — INSIDE PannableImage so the
+                          pan / pinch transform also moves the badge with
+                          the photo (per the user's spec: "label should
+                          move with dragging"). */}
+                      {badge && (
+                        <View pointerEvents="none" style={[styles.tappedFullModeBadge, { backgroundColor: badge.bg }]}>
+                          <Text style={[styles.tappedFullModeBadgeText, { color: badge.text }]}>
+                            {badge.label}
+                          </Text>
+                        </View>
+                      )}
                     </PannableImage>
                   </View>
-                  {/* Mode badge pill anchored top-left of the photo
-                      frame (per design). Outside the PannableImage
-                      transform so it stays put while zoomed. */}
-                  {badge && (
-                    <View pointerEvents="none" style={[styles.tappedFullModeBadge, { backgroundColor: badge.bg }]}>
-                      <Text style={[styles.tappedFullModeBadgeText, { color: badge.text }]}>
-                        {badge.label}
-                      </Text>
-                    </View>
-                  )}
                   {/* Left / right chevrons for in-set navigation.
                       Disabled (and hidden) at the set boundaries. */}
                   {prevMember && (
