@@ -91,6 +91,9 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import ContactUsScreen from './src/screens/ContactUsScreen';
 import CloudTeamScreen from './src/screens/CloudTeamScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
+import IndustrySectionsScreen from './src/screens/IndustrySectionsScreen';
+import LabelsLanguageScreen from './src/screens/LabelsLanguageScreen';
+import AppearanceScreen from './src/screens/AppearanceScreen';
 import ProjectsScreen from './src/screens/ProjectsScreen';
 import StudioScreen from './src/screens/StudioScreen';
 import LogoCustomizationScreen from './src/screens/LogoCustomizationScreen';
@@ -386,6 +389,21 @@ function AppNavigator() {
       <Stack.Screen
         name="HelpSupport"
         component={HelpSupportScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="IndustrySections"
+        component={IndustrySectionsScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="LabelsLanguage"
+        component={LabelsLanguageScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="Appearance"
+        component={AppearanceScreen}
         options={{ animation: 'slide_from_right' }}
       />
       <Stack.Screen

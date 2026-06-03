@@ -3072,12 +3072,12 @@ export default function SettingsScreen({ navigation, route }) {
           {t('settings.workspaceGroup', { defaultValue: 'Workspace' })}
         </Text>
         <View style={styles.rowGroup}>
-          {/* Industry & sections — scrolls to the inline Sections subpage
-              where the user can change industry + edit their section
-              names + defaults. */}
+          {/* Industry & sections — opens the standalone IndustrySections
+              screen (industry picker + sections list + Edit in Settings
+              CTA for deep edits). */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => scrollToRef(sectionsSectionRef)}
+            onPress={() => navigation.navigate('IndustrySections')}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3096,12 +3096,12 @@ export default function SettingsScreen({ navigation, route }) {
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
 
-          {/* Labels & language — scrolls to the inline Labels subpage,
-              which holds the labels customization + watermark + upload
-              structure config side-by-side. */}
+          {/* Labels & language — opens the standalone LabelsLanguage
+              screen (Labels / Watermark / Logo / Metadata tiles +
+              Label language + Upload structure rows). */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => scrollToRef(labelsSectionRef)}
+            onPress={() => navigation.navigate('LabelsLanguage')}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3118,10 +3118,11 @@ export default function SettingsScreen({ navigation, route }) {
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
 
-          {/* Appearance — taps to flip theme. Subtitle reflects current mode. */}
+          {/* Appearance — opens the standalone Appearance screen with
+              Light / Dark / System radio rows. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')}
+            onPress={() => navigation.navigate('Appearance')}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3131,12 +3132,13 @@ export default function SettingsScreen({ navigation, route }) {
               <Text style={styles.ppRowTitle}>
                 {t('settings.appearance', { defaultValue: 'Appearance' })}
               </Text>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {themeMode === 'dark'
+                  ? t('settings.themeDark', { defaultValue: 'Dark' })
+                  : t('settings.themeLight', { defaultValue: 'Light' })}
+              </Text>
             </View>
-            <Text style={styles.ppRowRightText}>
-              {themeMode === 'dark'
-                ? t('settings.themeDark', { defaultValue: 'Dark' })
-                : t('settings.themeLight', { defaultValue: 'Light' })}
-            </Text>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
         </View>
 
@@ -5625,7 +5627,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-J · new-screens=CloudTeam+HelpSupport · camera=zoom+format+navhidden
+              Build tag: OTA-2026-06-03-K · new-screens=Industry+Labels+Appearance+CloudTeam+HelpSupport
             </Text>
           </View>
         )}

@@ -1,0 +1,225 @@
+import React from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
+import { FONTS } from '../constants/fonts';
+import { useSettings } from '../context/SettingsContext';
+
+// AppearanceScreen — dedicated route.
+//
+// Three radio rows (Light / Dark / System). Each row is a hairline
+// card with a leading icon tile + label + a check on the active row.
+// "System" maps to whichever of light/dark we have today since the
+// app's themeMode store is boolean (light|dark) only — pass-through
+// for now; future pass can hook it into Appearance.useColorScheme().
+
+export default function AppearanceScreen({ navigation }) {
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const { themeMode, setThemeMode } = useSettings();
+
+  const choose = (mode) => {
+    if (mode === 'system') {
+      // No system pass-through yet — collapse to light for now.
+      setThemeMode('light');
+      return;
+    }
+    setThemeMode(mode);
+  };
+
+  const isLight = themeMode !== 'dark';
+
+  const options = [
+    {
+      key: 'light',
+      icon: 'sunny-outline',
+      label: t('appearance.light', { defaultValue: 'Light' }),
+      sub: t('appearance.lightSub', { defaultValue: 'Bright background, dark text' }),
+      active: isLight,
+    },
+    {
+      key: 'dark',
+      icon: 'moon-outline',
+      label: t('appearance.dark', { defaultValue: 'Dark' }),
+      sub: t('appearance.darkSub', { defaultValue: 'Easier on the eyes in low light' }),
+      active: themeMode === 'dark',
+    },
+    {
+      key: 'system',
+      icon: 'phone-portrait-outline',
+      label: t('appearance.system', { defaultValue: 'System' }),
+      sub: t('appearance.systemSub', { defaultValue: 'Match the device setting (preview — uses Light for now)' }),
+      active: false,
+    },
+  ];
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.headerIconBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={20} color="#1E1E1E" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>
+          {t('appearance.title', { defaultValue: 'Appearance' })}
+        </Text>
+        <View style={styles.headerIconBtn} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.eyebrow}>
+          {t('appearance.theme', { defaultValue: 'Theme' })}
+        </Text>
+
+        <View style={styles.rowGroup}>
+          {options.map((opt) => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.row, opt.active && styles.rowActive]}
+              onPress={() => choose(opt.key)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.rowIc, opt.active && styles.rowIcActive]}>
+                <Ionicons
+                  name={opt.icon}
+                  size={19}
+                  color={opt.active ? '#7A5B00' : '#1E1E1E'}
+                />
+              </View>
+              <View style={styles.rowMeta}>
+                <Text style={styles.rowTitle}>{opt.label}</Text>
+                <Text style={styles.rowSub} numberOfLines={2}>{opt.sub}</Text>
+              </View>
+              {opt.active ? (
+                <View style={styles.checkCircle}>
+                  <Ionicons name="checkmark" size={14} color="#1E1E1E" />
+                </View>
+              ) : (
+                <View style={styles.checkRing} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 10,
+    gap: 8,
+  },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: '#F4F4F4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.2,
+  },
+
+  eyebrow: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    color: '#9A9A9A',
+    textTransform: 'uppercase',
+    marginTop: 14,
+    marginBottom: 8,
+    marginHorizontal: 22,
+  },
+
+  rowGroup: { marginHorizontal: 18, gap: 8 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
+    shadowColor: '#141420',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 1,
+  },
+  rowActive: {
+    borderColor: '#F2C31B',
+    borderWidth: 2,
+    backgroundColor: '#FFFCEC',
+  },
+  rowIc: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#F4F4F4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowIcActive: {
+    backgroundColor: '#FFF4C2',
+  },
+  rowMeta: { flex: 1, minWidth: 0 },
+  rowTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+  },
+  rowSub: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#9A9A9A',
+    letterSpacing: -0.1,
+    marginTop: 1,
+  },
+
+  checkCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F2C31B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkRing: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: '#D0D0D0',
+  },
+});
