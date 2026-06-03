@@ -73,7 +73,7 @@ import {
   logSubscriptionRestored,
   logEvent,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions, getAvailablePurchases, computeEntitlements } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions, getAvailablePurchases, computeEntitlements, diagnoseIAPState } from '../services/iapService';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
@@ -3104,32 +3104,48 @@ export default function SettingsScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        {/* Manage Subscription row — design pattern: a proper card row
-            with an icon tile + title + chevron, so it visually belongs
-            with the user/upgrade cards above instead of floating as an
-            orphan pill. Only renders when the user has an active store
-            sub (hasActiveSub). */}
+        {/* Manage Subscription row — navigates to the in-app paywall
+            (PlanSelection in upgrade mode) so the user can upgrade or
+            downgrade their tier directly without leaving the app. The
+            paywall's own checkout path hands off to Apple's StoreKit
+            sheet when they hit Subscribe; raw billing changes / hard
+            cancel still flow through Apple, which the user can reach
+            via iOS Settings → Subscriptions or the small "Manage in
+            App Store" link below. */}
         {hasActiveSub ? (
-          <TouchableOpacity
-            style={styles.manageSubscriptionRow}
-            onPress={() => { try { openManageSubscriptions(); } catch {} }}
-            activeOpacity={0.85}
-          >
-            <View style={styles.manageSubscriptionIc}>
-              <Ionicons name="card-outline" size={19} color="#1E1E1E" />
-            </View>
-            <View style={styles.manageSubscriptionMeta}>
-              <Text style={styles.manageSubscriptionTitle}>
-                {t('settings.manageSubscription', { defaultValue: 'Manage subscription' })}
-              </Text>
-              <Text style={styles.manageSubscriptionSub} numberOfLines={1}>
-                {t('settings.manageSubscriptionSub', {
-                  defaultValue: 'Change plan, cancel, or update billing',
+          <>
+            <TouchableOpacity
+              style={styles.manageSubscriptionRow}
+              onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
+              activeOpacity={0.85}
+            >
+              <View style={styles.manageSubscriptionIc}>
+                <Ionicons name="card-outline" size={19} color="#1E1E1E" />
+              </View>
+              <View style={styles.manageSubscriptionMeta}>
+                <Text style={styles.manageSubscriptionTitle}>
+                  {t('settings.manageSubscription', { defaultValue: 'Change plan' })}
+                </Text>
+                <Text style={styles.manageSubscriptionSub} numberOfLines={1}>
+                  {t('settings.changePlanSub', {
+                    defaultValue: 'See all tiers and upgrade or downgrade',
+                  })}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.manageInAppStoreLink}
+              onPress={() => { try { openManageSubscriptions(); } catch {} }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.manageInAppStoreLinkText}>
+                {t('settings.manageInAppStore', {
+                  defaultValue: 'Cancel or update billing in the App Store',
                 })}
               </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </>
         ) : null}
 
         {/* ====================================================== */}
@@ -5698,7 +5714,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-U · tier reconciliation v3 (fuzzy fallback + product ids visible)
+              Build tag: OTA-2026-06-03-W · Change plan row → in-app paywall + App Store link below
             </Text>
             {/* IAP diagnostic — shows what getAvailablePurchases returned
                 + the highest-tier plan computeEntitlements detected +
@@ -5768,6 +5784,125 @@ export default function SettingsScreen({ navigation, route }) {
             >
               <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
                 Force refresh tier from store
+              </Text>
+            </TouchableOpacity>
+
+            {/* Verbose IAP diagnostic — exposes every field of every
+                purchase RNIap returns, including transactionId and
+                originalTransactionId. Distinguishes the case where the
+                user genuinely has the wrong sub from the case where
+                stale/unfinished transactions are masking the right
+                one. */}
+            <TouchableOpacity
+              style={{
+                marginTop: 8,
+                marginHorizontal: 4,
+                paddingVertical: 9,
+                paddingHorizontal: 12,
+                borderRadius: 10,
+                backgroundColor: '#F2C31B',
+                alignItems: 'center',
+              }}
+              onPress={async () => {
+                try {
+                  const purchases = await getAvailablePurchases();
+                  const lines = (purchases || []).map((p, i) => {
+                    const fields = {
+                      productId: p?.productId,
+                      transactionId: p?.transactionId,
+                      originalTransactionId: p?.originalTransactionId
+                        || p?.originalTransactionIdentifierIOS
+                        || p?.originalTransactionDate,
+                      transactionDate: p?.transactionDate,
+                      purchaseStateAndroid: p?.purchaseStateAndroid,
+                      isAcknowledged: p?.isAcknowledgedAndroid,
+                      autoRenewing: p?.autoRenewingAndroid,
+                      mapped: productIdToPlan(p?.productId),
+                    };
+                    const parts = Object.entries(fields)
+                      .filter(([, v]) => v !== undefined && v !== null)
+                      .map(([k, v]) => `${k}=${String(v)}`)
+                      .join('\n  ');
+                    return `[${i + 1}]\n  ${parts}`;
+                  });
+                  const message = lines.length
+                    ? lines.join('\n\n')
+                    : 'getAvailablePurchases returned 0 items.';
+                  Alert.alert('IAP purchases (verbose)', message);
+                } catch (e) {
+                  Alert.alert('Verbose IAP error', e?.message || String(e));
+                }
+              }}
+            >
+              <Text style={{ color: '#1E1E1E', fontSize: 12, fontWeight: '800' }}>
+                Show all IAP fields
+              </Text>
+            </TouchableOpacity>
+
+            {/* Clear iOS transaction queue + restore + re-detect.
+                Useful when stale Pro purchases are masking the real
+                Business subscription. Doesn't refund — only clears
+                local pending/finished records. */}
+            <TouchableOpacity
+              style={{
+                marginTop: 8,
+                marginHorizontal: 4,
+                paddingVertical: 9,
+                paddingHorizontal: 12,
+                borderRadius: 10,
+                backgroundColor: '#DB4446',
+                alignItems: 'center',
+              }}
+              onPress={async () => {
+                Alert.alert(
+                  'Clear iOS transaction queue?',
+                  'This finishes every pending/cached purchase locally, then restores from the App Store. It does NOT cancel your subscription — it just forces a fresh read.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Clear + restore',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await clearPendingTransactions();
+                          const restored = await restorePurchases();
+                          const purchases = Array.isArray(restored) && restored.length
+                            ? restored
+                            : await getAvailablePurchases();
+                          const productIds = (purchases || [])
+                            .map((p) => p?.productId)
+                            .filter(Boolean);
+                          const ent = computeEntitlements(purchases);
+                          const strict = ent?.plan || 'free';
+                          const tierRank = { free: 0, starter: 0, pro: 1, business: 2, enterprise: 3 };
+                          let fuzzy = 'free';
+                          for (const id of productIds) {
+                            const mapped = productIdToPlan(id);
+                            if ((tierRank[mapped] || 0) > (tierRank[fuzzy] || 0)) fuzzy = mapped;
+                          }
+                          const detected = (tierRank[strict] || 0) >= (tierRank[fuzzy] || 0) ? strict : fuzzy;
+                          if (['pro', 'business', 'enterprise'].includes(detected)) {
+                            try { await updateUserPlan(detected); } catch {}
+                          }
+                          Alert.alert(
+                            'After clear + restore',
+                            `Active products: ${productIds.length}\n` +
+                            `Detected (strict): ${strict}\n` +
+                            `Detected (fuzzy): ${fuzzy}\n` +
+                            `Synced userPlan: ${detected}\n\n` +
+                            `Product IDs:\n${productIds.length ? productIds.join('\n') : '(none)'}`,
+                          );
+                        } catch (e) {
+                          Alert.alert('Clear error', e?.message || String(e));
+                        }
+                      },
+                    },
+                  ],
+                );
+              }}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
+                Clear iOS queue + restore
               </Text>
             </TouchableOpacity>
           </View>
@@ -8106,6 +8241,22 @@ const sliderStyles = StyleSheet.create({
       color: '#9A9A9A',
       letterSpacing: -0.1,
       marginTop: 1,
+    },
+    // Small inline link under the Change-plan row — sends the user to
+    // Apple's iOS Subscriptions sheet for cancel / billing updates that
+    // can't happen inside the app.
+    manageInAppStoreLink: {
+      alignItems: 'center',
+      paddingVertical: 8,
+      marginTop: 4,
+    },
+    manageInAppStoreLinkText: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 12.5,
+      fontWeight: '600',
+      color: '#9A9A9A',
+      letterSpacing: -0.1,
+      textDecorationLine: 'underline',
     },
     userCardEndAnchor: {
       height: 0,
