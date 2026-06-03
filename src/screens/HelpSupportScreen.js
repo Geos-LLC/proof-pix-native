@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FONTS } from '../constants/fonts';
+import { useSettings } from '../context/SettingsContext';
 import enterpriseContactService from '../services/enterpriseContactService';
 import Constants from 'expo-constants';
 
@@ -44,10 +46,35 @@ const TABS = [
 export default function HelpSupportScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { userName } = useSettings();
 
   const [activeTab, setActiveTab] = useState('question');
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
+
+  // Owner email was captured during UserInfoSetup and persisted to
+  // a standalone AsyncStorage key (since the typed settings context
+  // doesn't carry it yet). Read it on mount so the EmailJS service
+  // has a real reply-to address — without it the service throws
+  // EMAIL_REQUIRED before the message is sent.
+  const [ownerEmail, setOwnerEmail] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [showEmailField, setShowEmailField] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem('@proofpix_owner_email');
+        if (stored && stored.trim()) {
+          setOwnerEmail(stored.trim());
+        } else {
+          setShowEmailField(true);
+        }
+      } catch {
+        setShowEmailField(true);
+      }
+    })();
+  }, []);
 
   const handleLiveChat = () => {
     Linking.openURL(HELP_CENTER_URL).catch(() => {});
@@ -61,32 +88,107 @@ export default function HelpSupportScreen({ navigation }) {
     Linking.openURL(HELP_CENTER_URL).catch(() => {});
   };
 
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const effectiveEmail = (showEmailField ? emailInput : ownerEmail).trim();
+  const hasValidEmail = emailRegex.test(effectiveEmail);
+
   const handleSend = async () => {
     const trimmed = body.trim();
     if (!trimmed || sending) return;
+
+    if (!hasValidEmail) {
+      // Service requires a real reply-to address. Surface the email
+      // field if we don't have one captured yet.
+      setShowEmailField(true);
+      Alert.alert(
+        t('helpSupport.needEmailTitle', { defaultValue: 'Add your email' }),
+        t('helpSupport.needEmailBody', {
+          defaultValue: 'We need a reply-to address so we can get back to you.',
+        }),
+      );
+      return;
+    }
+
     setSending(true);
+    const topic = TABS.find((x) => x.key === activeTab)?.defaultLabel || 'Question';
+    const platform = Platform.OS;
+    const appVersion = Constants?.expoConfig?.version
+      || Constants?.manifest?.version
+      || '—';
+    const subject = `[${topic}] ProofPix in-app feedback`;
+    // EmailJS template expects `description` (mapped to `message` inside
+    // the service) — passing `message` was the silent failure in the
+    // previous build. Adding topic + platform + version metadata to the
+    // body so support has triage info.
+    const description =
+      `${trimmed}\n\n` +
+      `— Sent from ProofPix v${appVersion} on ${platform}.`;
+
+    // Two-step send: try EmailJS first, fall back to opening the mail
+    // client with everything pre-filled if the in-app path fails (env
+    // not configured, network, etc.) so the user always lands at a
+    // composed message ready to send.
+    let sentViaService = false;
     try {
-      const topic = TABS.find((x) => x.key === activeTab)?.defaultLabel || 'Question';
-      const subject = `[${topic}] ProofPix in-app feedback`;
       await enterpriseContactService.sendRequest({
-        name: 'ProofPix user',
-        email: SUPPORT_EMAIL,
+        name: (userName && userName.trim()) || 'ProofPix user',
+        email: effectiveEmail,
         phone: '',
-        message: trimmed,
-        subject,
+        description: `${subject}\n\n${description}`,
       });
+      sentViaService = true;
+    } catch (e) {
+      sentViaService = false;
+    }
+
+    if (sentViaService) {
+      // Persist the email the user just typed so the next send is one-tap.
+      if (showEmailField) {
+        try { await AsyncStorage.setItem('@proofpix_owner_email', effectiveEmail); } catch {}
+        setOwnerEmail(effectiveEmail);
+        setShowEmailField(false);
+      }
+      setBody('');
+      setSending(false);
       Alert.alert(
         t('helpSupport.sentTitle', { defaultValue: 'Thanks!' }),
         t('helpSupport.sentBody', {
           defaultValue: "We got your message and we'll get back to you shortly.",
         }),
       );
-      setBody('');
+      return;
+    }
+
+    // Fallback: open the mail client with everything pre-filled.
+    const mailto =
+      `mailto:${SUPPORT_EMAIL}` +
+      `?subject=${encodeURIComponent(subject)}` +
+      `&body=${encodeURIComponent(`${description}\n\nReply-to: ${effectiveEmail}`)}`;
+    try {
+      const ok = await Linking.canOpenURL(mailto);
+      if (ok) {
+        await Linking.openURL(mailto);
+        // Persist email + clear the textarea — the user is now composing
+        // outside the app and we want a clean slate when they come back.
+        if (showEmailField) {
+          try { await AsyncStorage.setItem('@proofpix_owner_email', effectiveEmail); } catch {}
+          setOwnerEmail(effectiveEmail);
+          setShowEmailField(false);
+        }
+        setBody('');
+      } else {
+        Alert.alert(
+          t('common.error', { defaultValue: 'Error' }),
+          t('helpSupport.noMailClient', {
+            defaultValue: `No email app is set up on this device. Email us at ${SUPPORT_EMAIL} when you can.`,
+          }),
+        );
+      }
     } catch (e) {
       Alert.alert(
         t('common.error', { defaultValue: 'Error' }),
         t('helpSupport.sendFailed', {
-          defaultValue: "We couldn't send the message. Email us at support@proofpix.app and we'll handle it.",
+          defaultValue: `We couldn't send the message. Email us at ${SUPPORT_EMAIL} and we'll handle it.`,
         }),
       );
     } finally {
@@ -196,6 +298,27 @@ export default function HelpSupportScreen({ navigation }) {
               })}
             </View>
           </View>
+
+          {/* Reply-to email input — shown when we don't have a stored
+              owner email or after a validation failure. Persisted to
+              @proofpix_owner_email after a successful send. */}
+          {showEmailField ? (
+            <View style={styles.emailCard}>
+              <Text style={styles.emailLabel}>
+                {t('helpSupport.yourEmail', { defaultValue: 'Your email' })}
+              </Text>
+              <TextInput
+                style={styles.emailInput}
+                value={emailInput}
+                onChangeText={setEmailInput}
+                placeholder="you@company.com"
+                placeholderTextColor="#9A9A9A"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+          ) : null}
 
           {/* Textarea card */}
           <View style={styles.textAreaCard}>
@@ -359,6 +482,37 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  emailCard: {
+    marginHorizontal: 18,
+    marginTop: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: '#141420',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 1,
+  },
+  emailLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    color: '#9A9A9A',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  emailInput: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+    paddingVertical: 4,
+  },
   textAreaCard: {
     marginHorizontal: 18,
     marginTop: 10,
