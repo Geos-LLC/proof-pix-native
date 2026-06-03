@@ -3099,11 +3099,11 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
             <View style={styles.ppRowMeta}>
               <Text style={styles.ppRowTitle}>
-                {t('settings.industrySections', { defaultValue: 'Industry & sections' })}
+                {t('settings.industryFolders', { defaultValue: 'Industry & folders' })}
               </Text>
               <Text style={styles.ppRowSub} numberOfLines={1}>
-                {t('settings.industrySectionsSub', {
-                  defaultValue: `${(Array.isArray(customRooms) ? customRooms.length : 0) || 5} sections`,
+                {t('settings.industryFoldersSub', {
+                  defaultValue: `${(Array.isArray(customRooms) ? customRooms.length : 0) || 5} folders`,
                 })}
               </Text>
             </View>
@@ -5641,7 +5641,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-O · upgrade-banner tier-aware (Pro→Business, hide on Business+)
+              Build tag: OTA-2026-06-03-Q · industry-folders inline + sections→folders rename + labels defaults note + scope: This Folder
             </Text>
           </View>
         )}

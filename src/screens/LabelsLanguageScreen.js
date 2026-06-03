@@ -70,6 +70,19 @@ export default function LabelsLanguageScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Defaults note — these settings apply to NEW photos by
+            default; the user can override on any individual picture,
+            folder, or project from the editor's Save scope sheet. */}
+        <View style={styles.defaultsNote}>
+          <Ionicons name="information-circle-outline" size={16} color="#7A5B00" />
+          <Text style={styles.defaultsNoteText}>
+            {t('labelsLanguage.defaultsNote', {
+              defaultValue:
+                'These are your defaults. You can change them in the editor for an individual picture, a folder, or a project.',
+            })}
+          </Text>
+        </View>
+
         <Text style={styles.eyebrow}>
           {t('labelsLanguage.brandingEyebrow', { defaultValue: 'Branding' })}
         </Text>
@@ -252,6 +265,33 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 8,
     marginHorizontal: 22,
+  },
+
+  // Soft-accent info pill at the top of the screen. Sets expectations
+  // before the user starts flipping defaults — they're defaults, not
+  // hard rules; the editor's save-scope sheet can apply per-photo,
+  // per-folder, or per-project overrides.
+  defaultsNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginHorizontal: 18,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFF4C2',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#F2C31B',
+  },
+  defaultsNoteText: {
+    flex: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#7A5B00',
+    lineHeight: 17,
+    letterSpacing: -0.1,
   },
 
   rowGroup: { marginHorizontal: 18, gap: 8 },

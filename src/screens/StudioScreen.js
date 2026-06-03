@@ -116,9 +116,13 @@ const resolveDefaultFormat = (bitmapAspect, mode, viewMode, beforeOrientation) =
   return 'tall-1-2';
 };
 
+// Save-scope sheet options. The key stays 'room' because the in-memory
+// scope state + downstream save helpers were named before the rename;
+// only the user-facing label changes to "This Folder" to match the
+// rest of the app's terminology (Sections/Folders, not Rooms).
 const APPLY_SCOPES = [
   { key: 'photo', label: 'This Photo' },
-  { key: 'room', label: 'This Room' },
+  { key: 'room', label: 'This Folder' },
   { key: 'project', label: 'Project' },
 ];
 
