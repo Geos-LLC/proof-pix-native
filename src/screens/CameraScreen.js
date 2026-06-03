@@ -6514,14 +6514,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignSelf: 'center',
   },
+  // Zoom row (design 07): preset chips sit inside one continuous
+  // translucent-dark capsule, like the format switch on the other side.
+  // No marginTop here — must stay vertically aligned with the aspect
+  // ratio cluster on the opposite side of controlsRowAboveCapture. The
+  // breathing room above the row when the thumbnail gallery is open is
+  // added inline via `zoomControlsBottomWithGallery` instead.
   zoomControlsBottom: {
     flexDirection: 'row',
-    gap: 5,
+    gap: 0,
     alignItems: 'center',
-    // No marginTop here — the row must stay vertically aligned with the
-    // aspect ratio cluster on the opposite side of controlsRowAboveCapture.
-    // The breathing room above the row when the thumbnail gallery is
-    // open is added inline via `zoomControlsBottomWithGallery` instead.
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderRadius: 999,
+    padding: 3,
   },
   zoomControlsBottomWithGallery: {
     marginTop: 28,
@@ -6544,41 +6549,48 @@ const styles = StyleSheet.create({
     zIndex: 265,
     elevation: 265,
   },
-  // Just a flex row — no background. The dark pill behind each label
-  // comes from the individual button styles (zoomButtonBottom /
-  // aspectRatioButtonBottom), matching the look of the full-camera row.
+  // Same translucent-dark capsule as zoomControlsBottom — chips inside
+  // are transparent and the cluster provides the visual container, so
+  // the floating row matches the full-camera bottom row.
   floatingZoomCluster: {
     flexDirection: 'row',
-    gap: 5,
+    gap: 0,
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderRadius: 999,
+    padding: 3,
   },
+  // Each zoom chip: transparent inside the host capsule, snug 30-px
+  // minWidth so multiple presets fit. No border (the capsule provides
+  // the visual container). Per design 07 the active preset just paints
+  // its label yellow inline — no background, no scale, no ring — so
+  // "1×" reads as the only yellow glyph in the row.
   zoomButtonBottom: {
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'transparent',
     alignContent: 'center',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    minWidth: 55,
-    height: 23,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderRadius: 999,
+    minWidth: 30,
+    height: 26,
+    paddingHorizontal: 6,
   },
   zoomButtonBottomActive: {
-    backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY,
-    borderWidth: 1,
+    backgroundColor: 'transparent',
   },
   zoomButtonBottomText: {
     fontFamily: FONTS.ALEXANDRIA,
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.1,
     textAlign: 'center',
   },
   zoomButtonBottomTextActive: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#1E1E1E', // dark text on yellow PRIMARY bg — was white (invisible on yellow)
-    fontWeight: '700',
+    color: COLORS.PRIMARY,
+    fontSize: 12,
+    fontWeight: '800',
   },
   galleryPickerButton: {
     width: 40,
