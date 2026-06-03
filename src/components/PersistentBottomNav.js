@@ -26,6 +26,12 @@ const HIDDEN_ON = new Set([
   // capture row + Done ring at the bottom of the live view, so it's
   // hidden here. Users return via the Done button or the back gesture.
   'Camera',
+  // StudioDetail (the photo-edit view) renders its OWN bottom toolbar
+  // (Layout / Labels / Branding / Markup / Export). The persistent nav
+  // sat right on top of it, so the user couldn't see / tap the edit
+  // tools. Hidden here. Users navigate out via the back chevron + Save
+  // button in the StudioScreen top header.
+  'StudioDetail',
 ]);
 
 // Sub-routes that conceptually belong to the Projects tab (so the active
