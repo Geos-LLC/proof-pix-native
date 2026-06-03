@@ -2152,25 +2152,27 @@ export default function HomeScreen({ navigation, route }) {
             {...previewDismissPanResponder.panHandlers}
           >
 
-            {/* Sets bar — three-column row that mirrors the project
-                detail screen's pattern: previous-set link on the left,
-                current photo position (X / Y) in the middle, next-set
-                link on the right. Tapping the side labels jumps the
-                pager to that set's first photo. Hidden when the room
-                has only one set (nothing to switch to). */}
+            {/* Fullscreen-viewer header — per the design, a single row
+                with three slots: X close (left), photo position (centre,
+                e.g. "3 / 7"), and "Set N+1 ›" jump (right). Replaces the
+                older three-up Set | N/M | Set sets bar — the jump arrow
+                on the right still takes you to the next set's first
+                photo; the prev-set backwards affordance was rarely used
+                and is subsumed by horizontal pager swipes. */}
             {(() => {
               const roomBefores = getBeforePhotos(currentRoom) || [];
-              if (roomBefores.length < 2) return null;
+              const activeSetId = setMembers.find((mm) => mm?.mode === 'before')?.id
+                || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
+              const setIdx = Math.max(0, roomBefores.findIndex((b) => b.id === activeSetId));
+              const setPosition = setIdx + 1;
+              const setCount = Math.max(1, roomBefores.length);
+              const positionInSet = Math.min(setMemberIndex + 1, Math.max(1, setMembers.length));
+              const setTotal = Math.max(1, setMembers.length);
               const afters = getAfterPhotos(currentRoom) || [];
               const afterByBeforeId = new Map();
               for (const a of afters) {
                 if (a.beforePhotoId) afterByBeforeId.set(a.beforePhotoId, a);
               }
-              const activeSetId = setMembers.find((mm) => mm?.mode === 'before')?.id
-                || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
-              const setIdx = Math.max(0, roomBefores.findIndex((b) => b.id === activeSetId));
-              const setPosition = setIdx + 1;
-              const setCount = roomBefores.length;
               const switchToSet = (before) => {
                 if (!before) return;
                 const members = [before];
@@ -2185,9 +2187,6 @@ export default function HomeScreen({ navigation, route }) {
                 setSetMembers(members);
                 setSetMemberIndex(0);
                 setFullScreenPhotoSet({ before, after: after || null });
-                // Flash the destination set's title on the first photo
-                // — replaces the old "Previous / Next set" sentinel
-                // cards with a transient label.
                 const newIdx = roomBefores.findIndex((b) => b.id === before.id);
                 flashSetTitle(`Set ${newIdx >= 0 ? newIdx + 1 : setPosition}`);
                 requestAnimationFrame(() => {
@@ -2196,48 +2195,43 @@ export default function HomeScreen({ navigation, route }) {
                   }
                 });
               };
-              const prevBefore = setPosition > 1 ? roomBefores[setIdx - 1] : null;
               const nextBefore = setPosition < setCount ? roomBefores[setIdx + 1] : null;
-              const positionInSet = Math.min(setMemberIndex + 1, Math.max(1, setMembers.length));
               return (
-                <View style={styles.simplePreviewSetsBar}>
+                <View style={styles.simplePreviewHeaderRow}>
                   <TouchableOpacity
-                    style={styles.simplePreviewSetsBarSide}
-                    disabled={!prevBefore}
-                    onPress={() => switchToSet(prevBefore)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={handleLongPressEnd}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={[
+                      styles.simplePreviewHeaderClose,
+                      { backgroundColor: theme.surface, borderColor: theme.border },
+                    ]}
                   >
-                    {prevBefore && (
-                      <>
-                        <Ionicons name="chevron-back" size={14} color={theme.textSecondary} />
-                        <Text style={[styles.simplePreviewSetsBarText, { color: theme.textSecondary }]}>
-                          Set {setPosition - 1}
-                        </Text>
-                      </>
-                    )}
+                    <Ionicons name="close" size={20} color={theme.textPrimary} />
                   </TouchableOpacity>
-
-                  <View style={styles.simplePreviewSetsBarCenter}>
-                    <View style={[styles.simplePreviewPositionPill, { backgroundColor: theme.surface }]}>
-                      <Text style={[styles.simplePreviewPositionText, { color: theme.textPrimary }]}>
-                        {positionInSet} / {Math.max(1, setMembers.length)}
-                      </Text>
-                    </View>
+                  <View style={styles.simplePreviewHeaderCenter}>
+                    <Text
+                      style={[styles.simplePreviewHeaderPosition, { color: theme.textSecondary }]}
+                      numberOfLines={1}
+                    >
+                      {positionInSet} / {setTotal}
+                    </Text>
                   </View>
-
                   <TouchableOpacity
-                    style={[styles.simplePreviewSetsBarSide, styles.simplePreviewSetsBarSideRight]}
+                    onPress={() => nextBefore && switchToSet(nextBefore)}
                     disabled={!nextBefore}
-                    onPress={() => switchToSet(nextBefore)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={styles.simplePreviewHeaderSetJump}
                   >
+                    <Text
+                      style={[
+                        styles.simplePreviewHeaderSetJumpText,
+                        { color: nextBefore ? theme.textPrimary : theme.textMuted },
+                      ]}
+                    >
+                      Set {nextBefore ? setPosition + 1 : setPosition}
+                    </Text>
                     {nextBefore && (
-                      <>
-                        <Text style={[styles.simplePreviewSetsBarText, { color: theme.textSecondary }]}>
-                          Set {setPosition + 1}
-                        </Text>
-                        <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
-                      </>
+                      <Ionicons name="chevron-forward" size={16} color={theme.textPrimary} />
                     )}
                   </TouchableOpacity>
                 </View>
@@ -2524,11 +2518,15 @@ export default function HomeScreen({ navigation, route }) {
                               <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
                             </TouchableOpacity>
                           </View>
-                          {/* Photo card — only the picture (and the
-                              Studio overlay stack when the Edited
-                              switch is on) lives here. Action chrome
-                              moved out to the rows above and below so
-                              the buttons no longer overlap the image. */}
+                          {/* Photo card — picture + (optional) Studio
+                              overlay stack. PannableImage gives the user
+                              pinch-zoom (0.5×–3×) + long-press drag pan,
+                              with its built-in reset chip at the top-
+                              right (per the design "refresh" icon).
+                              panOnLongPress keeps the carousel's
+                              horizontal swipe responsive — a brief press
+                              arms the drag so casual left/right swipes
+                              still page between photos. */}
                           <View
                             style={{
                               width: cardW,
@@ -2538,17 +2536,15 @@ export default function HomeScreen({ navigation, route }) {
                               overflow: 'hidden',
                             }}
                           >
-                            <TouchableOpacity
-                              activeOpacity={0.95}
-                              onPress={() => setTappedFullPhoto(m)}
+                            <PannableImage
+                              source={{ uri: m.uri }}
                               style={{ width: '100%', height: '100%' }}
+                              imageStyle={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                              panOnLongPress
+                              showResetButton
+                              onDoubleTap={() => setTappedFullPhoto(m)}
                             >
-                              <Image
-                                source={{ uri: m.uri }}
-                                style={{ width: '100%', height: '100%' }}
-                                resizeMode="cover"
-                              />
-                            </TouchableOpacity>
                             {showStudioEdits && (
                               <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                                 <StudioEditOverlays
@@ -2598,6 +2594,31 @@ export default function HomeScreen({ navigation, route }) {
                                 />
                               </View>
                             )}
+                            </PannableImage>
+                            {/* Mode badge pill anchored top-left of the
+                                photo card (per design 17-fullscreen-
+                                viewer). Lives OUTSIDE PannableImage's
+                                transform so it stays put while the user
+                                pinches / pans. */}
+                            {(() => {
+                              const mode = m?.mode;
+                              const badgeMap = {
+                                before: { bg: '#F2C31B', text: '#1E1E1E', label: 'BEFORE' },
+                                after: { bg: '#A78BFA', text: '#FFFFFF', label: 'AFTER' },
+                                progress: { bg: 'rgba(0,0,0,0.55)', text: '#FFFFFF', label: 'PROGRESS' },
+                                combined: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
+                                mix: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
+                              };
+                              const badge = badgeMap[mode];
+                              if (!badge) return null;
+                              return (
+                                <View pointerEvents="none" style={[styles.simplePreviewModeBadge, { backgroundColor: badge.bg }]}>
+                                  <Text style={[styles.simplePreviewModeBadgeText, { color: badge.text }]}>
+                                    {badge.label}
+                                  </Text>
+                                </View>
+                              );
+                            })()}
                           </View>
                           {/* BOTTOM action row — Edited toggle on the
                               left, Share on the right. Same width as
@@ -3829,6 +3850,68 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '700',
+  },
+  // New fullscreen-viewer header (replaces simplePreviewSetsBar). Three
+  // slots: circular X close on the left, photo position centre, and the
+  // tap-to-jump "Set N+1 ›" on the right.
+  simplePreviewHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  simplePreviewHeaderClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  simplePreviewHeaderCenter: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 12,
+  },
+  simplePreviewHeaderPosition: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  simplePreviewHeaderSetJump: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 6,
+    paddingLeft: 6,
+    minWidth: 64,
+    justifyContent: 'flex-end',
+  },
+  simplePreviewHeaderSetJumpText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Mode badge pill anchored at the top-left corner of each photo card
+  // in the fullscreen viewer (per design 17-fullscreen-viewer). BEFORE
+  // shows the warm accent, AFTER the design's purple, PROGRESS a neutral
+  // dark chip, COMBINED reuses the AFTER purple with a 'B/A' label.
+  simplePreviewModeBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    zIndex: 4,
+  },
+  simplePreviewModeBadgeText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
   // Horizontal scroll of set thumbnails — sits above the project name
   // / date row so the user can jump between sets without leaving the

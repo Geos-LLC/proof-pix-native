@@ -23,20 +23,7 @@ import { FONTS } from '../constants/fonts';
 import { PHOTO_MODES } from '../constants/rooms';
 import { computeSetIds } from '../utils/photoSets';
 import PhotoLabel from '../components/PhotoLabel';
-import PannableImage from '../components/PannableImage';
 import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
-
-// Mode badge colors for the corner pill that overlays each photo in
-// the fullscreen viewer (per design 17-fullscreen-viewer). Distinct
-// from PhotoLabel (which can be repositioned via Settings); this pill
-// is always anchored top-left so the viewer immediately tells the user
-// what role the current photo plays.
-const MODE_BADGE = {
-  [PHOTO_MODES.BEFORE]: { bg: '#F2C31B', text: '#1E1E1E', label: 'BEFORE' },
-  [PHOTO_MODES.AFTER]: { bg: '#A78BFA', text: '#FFFFFF', label: 'AFTER' },
-  [PHOTO_MODES.PROGRESS]: { bg: 'rgba(0,0,0,0.55)', text: '#FFFFFF', label: 'PROGRESS' },
-  [PHOTO_MODES.COMBINED]: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
-};
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -630,105 +617,95 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       <View style={styles.headerRow}>
-        {/* Top-left: X close. Per the fullscreen viewer design — the
-            close button replaces the old back chevron + pencil cluster,
-            since Edit is reachable via the EDIT control row below the
-            photo and Back is just "close the viewer". */}
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={[styles.headerCloseBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <Ionicons name="close" size={20} color={theme.textPrimary} />
-        </TouchableOpacity>
-        {/* Center: photo position within the current set ("3 / 5"). */}
+        {/* Top-left: back chevron + Edit (pencil). The user
+            specifically wants Edit anchored to the left corner so it
+            stays in thumb reach with the back gesture. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleEditInStudio}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="pencil-outline" size={22} color={theme.textPrimary} />
+          </TouchableOpacity>
+        </View>
         <View style={styles.headerTitleWrap}>
-          <Text style={[styles.headerPosition, { color: theme.textSecondary }]} numberOfLines={1}>
-            {positionInSet} / {setTotal}
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+            {tsOf(current) > 0
+              ? new Date(tsOf(current)).toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })
+              : currentRoom}
           </Text>
         </View>
-        {/* Top-right: jump to next set. Tap "Set N+1 ›" to advance to
-            the first photo of the following set. Disabled (and hidden
-            chevron) at the last set so the affordance matches state. */}
+        {/* Top-right: Share for the currently-visible photo. Single
+            picture export — available to starter plan. */}
         <TouchableOpacity
-          onPress={() => setPosition < setCount && jumpTo(nextSetFirstIndex)}
-          disabled={setPosition >= setCount}
+          onPress={handleShareCurrent}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={styles.headerSetJump}
         >
-          <Text
-            style={[
-              styles.headerSetJumpText,
-              { color: setPosition >= setCount ? theme.textMuted : theme.textPrimary },
-            ]}
-          >
-            Set {setPosition >= setCount ? setPosition : setPosition + 1}
-          </Text>
-          {setPosition < setCount && (
-            <Ionicons name="chevron-forward" size={16} color={theme.textPrimary} />
-          )}
+          <Ionicons name="share-outline" size={22} color={theme.textPrimary} />
         </TouchableOpacity>
       </View>
 
-      {/* Legacy three-up Sets bar removed — its info now lives in the
-          header (position centre + "Set N+1 ›" jump on the right). The
-          backwards-only previous-set affordance was rarely used and got
-          subsumed by horizontal pager swipes. */}
-      {false && (
-        <View style={styles.setsBar}>
-          <TouchableOpacity
-            style={styles.setsBarSide}
-            disabled={setPosition <= 1}
-            onPress={() => jumpTo(prevSetFirstIndex)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            {(() => {
-              const leftLabelNum = setPosition === 1 ? setPosition : setPosition - 1;
-              const showLeftArrow = leftLabelNum > 1;
-              return (
-                <>
-                  {showLeftArrow && (
-                    <Ionicons name="chevron-back" size={14} color={theme.textSecondary} />
-                  )}
-                  <Text style={[styles.setsBarSideText, { color: theme.textSecondary }]}>
-                    Set {leftLabelNum || 1}
-                  </Text>
-                </>
-              );
-            })()}
-          </TouchableOpacity>
+      <View style={styles.setsBar}>
+        <TouchableOpacity
+          style={styles.setsBarSide}
+          disabled={setPosition <= 1}
+          onPress={() => jumpTo(prevSetFirstIndex)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          {(() => {
+            const leftLabelNum = setPosition === 1 ? setPosition : setPosition - 1;
+            const showLeftArrow = leftLabelNum > 1;
+            return (
+              <>
+                {showLeftArrow && (
+                  <Ionicons name="chevron-back" size={14} color={theme.textSecondary} />
+                )}
+                <Text style={[styles.setsBarSideText, { color: theme.textSecondary }]}>
+                  Set {leftLabelNum || 1}
+                </Text>
+              </>
+            );
+          })()}
+        </TouchableOpacity>
 
-          <View style={styles.positionPillWrap}>
-            <View style={[styles.positionPill, { backgroundColor: theme.surface }]}>
-              <Text style={[styles.positionText, { color: theme.textPrimary }]}>
-                {positionInSet} / {setTotal}
-              </Text>
-            </View>
+        <View style={styles.positionPillWrap}>
+          <View style={[styles.positionPill, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.positionText, { color: theme.textPrimary }]}>
+              {positionInSet} / {setTotal}
+            </Text>
           </View>
-
-          <TouchableOpacity
-            style={[styles.setsBarSide, styles.setsBarSideRight]}
-            disabled={setPosition >= setCount}
-            onPress={() => jumpTo(nextSetFirstIndex)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            {(() => {
-              const rightLabelNum = setPosition === setCount ? setCount : setPosition + 1;
-              const showRightArrow = rightLabelNum < setCount;
-              return (
-                <>
-                  <Text style={[styles.setsBarSideText, { color: theme.textSecondary }]}>
-                    Set {rightLabelNum || 1}
-                  </Text>
-                  {showRightArrow && (
-                    <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
-                  )}
-                </>
-              );
-            })()}
-          </TouchableOpacity>
         </View>
-      )}
+
+        <TouchableOpacity
+          style={[styles.setsBarSide, styles.setsBarSideRight]}
+          disabled={setPosition >= setCount}
+          onPress={() => jumpTo(nextSetFirstIndex)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          {(() => {
+            const rightLabelNum = setPosition === setCount ? setCount : setPosition + 1;
+            const showRightArrow = rightLabelNum < setCount;
+            return (
+              <>
+                <Text style={[styles.setsBarSideText, { color: theme.textSecondary }]}>
+                  Set {rightLabelNum || 1}
+                </Text>
+                {showRightArrow && (
+                  <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
+                )}
+              </>
+            );
+          })()}
+        </TouchableOpacity>
+      </View>
 
       {allRooms.length > 0 && (
         <View style={styles.roomTabsContainer}>
@@ -792,26 +769,7 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
         </View>
       )}
 
-      <View
-        style={styles.pagerWrap}
-        // Swipe-down-to-close gesture. Mirrors the HomeScreen
-        // tap-to-fullscreen modal's pan-responder so the close threshold
-        // feels the same across both viewers. Capture-phase claim with
-        // a tall floor (dy > 90 px) AND a vertical-dominance guard
-        // (dy > 2 × |dx|) prevents horizontal swipes (carousel paging)
-        // and pinch-zoom from accidentally tripping a close. The
-        // responder ONLY claims after the user has clearly committed
-        // to a downward gesture, so PannableImage's pan + zoom inside
-        // each slide stay fully usable.
-        onStartShouldSetResponderCapture={() => false}
-        onMoveShouldSetResponderCapture={(evt, gs) => {
-          const touches = evt.nativeEvent?.touches?.length || 0;
-          if (touches !== 1) return false;
-          return gs?.dy > 90 && gs.dy > Math.abs(gs.dx || 0) * 2;
-        }}
-        onResponderRelease={() => navigation.goBack()}
-        onResponderTerminationRequest={() => false}
-      >
+      <View style={styles.pagerWrap}>
         <ScrollView
           ref={scrollRef}
           horizontal
@@ -832,78 +790,50 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
             // made every regular capture render as 9:16 once `cover`
             // cropping kicked in.
             const photoAspect = aspectForPhoto(p);
-            const isActive = p.id === current?.id;
-            const badge = MODE_BADGE[role] || MODE_BADGE[PHOTO_MODES.PROGRESS];
             return (
               <View key={p.id} style={styles.pagerSlide}>
                 <View style={[styles.photoArea, { aspectRatio: photoAspect }]}>
-                  {/* PannableImage: pinch-zoom (0.5×–3×) + drag pan.
-                      panOnLongPress=true keeps the horizontal carousel
-                      swipe responsive — single-finger drag only claims
-                      the photo after a brief press, so casual left/right
-                      swipes still page between photos. PannableImage's
-                      built-in reset button (top-right) lives inside its
-                      own container, matching the design's refresh chip. */}
-                  <PannableImage
-                    source={{ uri: p.uri }}
-                    style={[styles.photo, { backgroundColor: theme.surface }]}
-                    imageStyle={{ width: '100%', height: '100%' }}
-                    resizeMode="cover"
-                    panOnLongPress
-                    showResetButton={isActive}
-                  >
-                    {/* Labels now come from the shared PhotoLabel component +
-                        Settings, so they match the Studio screen's style and
-                        honor the Show Labels toggle. COMBINED photos get
-                        BEFORE/AFTER on opposing halves (default: side-by-side,
-                        mirroring the most common Original (side) template). */}
-                    {showLabels && (
-                      role === PHOTO_MODES.COMBINED ? (
-                        <>
-                          <View pointerEvents="none" style={styles.combinedHalfLeft}>
-                            <PhotoLabel
-                              label="common.before"
-                              position={pickBeforeLabelPosition(labelPositionSettings, p)}
-                            />
-                          </View>
-                          <View pointerEvents="none" style={styles.combinedHalfRight}>
-                            <PhotoLabel
-                              label="common.after"
-                              position={pickAfterLabelPosition(labelPositionSettings, p)}
-                            />
-                          </View>
-                        </>
-                      ) : role === PHOTO_MODES.BEFORE ? (
-                        <PhotoLabel
-                          label="common.before"
-                          position={pickBeforeLabelPosition(labelPositionSettings, p)}
-                        />
-                      ) : role === PHOTO_MODES.AFTER ? (
-                        <PhotoLabel
-                          label="common.after"
-                          position={pickAfterLabelPosition(labelPositionSettings, p)}
-                        />
-                      ) : role === PHOTO_MODES.PROGRESS ? (
-                        <PhotoLabel
-                          label="common.progress"
-                          position={pickAfterLabelPosition(labelPositionSettings, p)}
-                        />
-                      ) : null
-                    )}
-                  </PannableImage>
-                  {/* Mode badge pill at top-left of the photo (per design
-                      17-fullscreen-viewer). Sits OUTSIDE PannableImage's
-                      transform so it stays anchored at the corner even
-                      while the photo is zoomed/panned — same reason the
-                      trash control above is positioned at the photo-area
-                      level, not nested inside PannableImage. */}
-                  <View pointerEvents="none" style={[styles.modeBadgeOverlay, { backgroundColor: badge.bg }]}>
-                    <Text style={[styles.modeBadgeOverlayText, { color: badge.text }]}>
-                      {badge.label}
-                    </Text>
-                  </View>
+                  <Image source={{ uri: p.uri }} style={[styles.photo, { backgroundColor: theme.surface }]} resizeMode="cover" />
+                  {/* Labels now come from the shared PhotoLabel component +
+                      Settings, so they match the Studio screen's style and
+                      honor the Show Labels toggle. COMBINED photos get
+                      BEFORE/AFTER on opposing halves (default: side-by-side,
+                      mirroring the most common Original (side) template). */}
+                  {showLabels && (
+                    role === PHOTO_MODES.COMBINED ? (
+                      <>
+                        <View pointerEvents="none" style={styles.combinedHalfLeft}>
+                          <PhotoLabel
+                            label="common.before"
+                            position={pickBeforeLabelPosition(labelPositionSettings, p)}
+                          />
+                        </View>
+                        <View pointerEvents="none" style={styles.combinedHalfRight}>
+                          <PhotoLabel
+                            label="common.after"
+                            position={pickAfterLabelPosition(labelPositionSettings, p)}
+                          />
+                        </View>
+                      </>
+                    ) : role === PHOTO_MODES.BEFORE ? (
+                      <PhotoLabel
+                        label="common.before"
+                        position={pickBeforeLabelPosition(labelPositionSettings, p)}
+                      />
+                    ) : role === PHOTO_MODES.AFTER ? (
+                      <PhotoLabel
+                        label="common.after"
+                        position={pickAfterLabelPosition(labelPositionSettings, p)}
+                      />
+                    ) : role === PHOTO_MODES.PROGRESS ? (
+                      <PhotoLabel
+                        label="common.progress"
+                        position={pickAfterLabelPosition(labelPositionSettings, p)}
+                      />
+                    ) : null
+                  )}
                   {setCount > 1 && (
-                    <View style={styles.dotsOverlay} pointerEvents="none">
+                    <View style={styles.dotsOverlay}>
                       {Array.from({ length: setCount }, (_, i) => (
                         <View
                           key={i}
@@ -923,11 +853,14 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
                       photo (handleDeletePhoto already shows a confirm
                       dialog). Only render on the current photo so the
                       pager doesn't show stale toggles on neighbouring
-                      slides. The trash sits one row below the photo's
-                      top edge so it doesn't collide with PannableImage's
-                      reset button (which renders top-right corner). */}
-                  {isActive && (
+                      slides. */}
+                  {p.id === current?.id && (
                     <View style={styles.photoControlOverlay} pointerEvents="box-none">
+                      {/* Eye / include-in-report toggle removed per
+                          the user's spec — the new Reports flow
+                          drives per-report photo selection from the
+                          Timeline grid, so this overlay button is
+                          obsolete. Trash stays for inline delete. */}
                       <TouchableOpacity
                         style={[styles.photoControlBtn, styles.photoControlBtnDanger]}
                         onPress={handleDeletePhoto}
@@ -1146,47 +1079,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 17,
     fontWeight: '700',
-  },
-  headerCloseBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerPosition: {
-    fontFamily: FONTS.ALEXANDRIA,
-    fontSize: 14,
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
-  headerSetJump: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingVertical: 6,
-    paddingLeft: 6,
-  },
-  headerSetJumpText: {
-    fontFamily: FONTS.ALEXANDRIA,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  modeBadgeOverlay: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    zIndex: 4,
-  },
-  modeBadgeOverlayText: {
-    fontFamily: FONTS.ALEXANDRIA,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
   },
   setsBar: {
     flexDirection: 'row',
