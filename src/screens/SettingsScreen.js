@@ -73,7 +73,7 @@ import {
   logSubscriptionRestored,
   logEvent,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions, getAvailablePurchases, computeEntitlements } from '../services/iapService';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
@@ -920,11 +920,34 @@ export default function SettingsScreen({ navigation, route }) {
     let mounted = true;
     (async () => {
       try {
-        const active = await hasActiveIAPSubscription();
-        if (mounted) setHasActiveSub(!!active);
+        // Single source of truth: read the active purchases from the
+        // store, compute entitlements (highest tier wins per
+        // computeEntitlements), and reconcile userPlan if the cached
+        // value drifted (e.g. user upgraded Pro→Business from the
+        // App Store sheet directly without going through the in-app
+        // paywall, or the previous purchase finished after we wrote
+        // userPlan='pro'). Without this, the Settings header keeps
+        // showing the stale tier + "Upgrade to Business" banner.
+        const purchases = await getAvailablePurchases();
+        const active = Array.isArray(purchases) && purchases.length > 0;
+        if (!mounted) return;
+        setHasActiveSub(active);
+        if (active) {
+          const ent = computeEntitlements(purchases);
+          const detected = ent?.plan;
+          const detectableTiers = ['pro', 'business', 'enterprise'];
+          if (
+            detected
+            && detectableTiers.includes(detected)
+            && (userPlan || 'starter').toLowerCase() !== detected
+          ) {
+            try { await updateUserPlan(detected); } catch {}
+          }
+        }
       } catch {}
     })();
     return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
 
@@ -3042,37 +3065,50 @@ export default function SettingsScreen({ navigation, route }) {
           );
         })()}
 
-        {/* Trial / plan status — a thin row that appears only when there's
-            something to say (active trial, paid sub manage link). Hidden
-            for default Starter so the card stack stays clean per design. */}
-        {(trialActive && trialDaysRemaining > 0) || hasActiveSub ? (
-          <View style={styles.planStatusBar}>
-            {trialActive && trialDaysRemaining > 0 ? (
-              <View style={{ flex: 1 }}>
-                <View style={styles.trialProgressBar}>
-                  <View
-                    style={[
-                      styles.trialProgressFill,
-                      { width: `${(trialDaysRemaining / trialDuration) * 100}%` },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.trialDaysText}>
-                  {t('settings.trialDaysRemaining', { days: trialDaysRemaining, defaultValue: `${trialDaysRemaining} days remaining` })}
-                </Text>
-              </View>
-            ) : null}
-            {hasActiveSub ? (
-              <TouchableOpacity
-                style={styles.manageSubscriptionButton}
-                onPress={() => { try { openManageSubscriptions(); } catch {} }}
-              >
-                <Text style={styles.manageSubscriptionText}>
-                  {t('settings.manageSubscription', { defaultValue: 'Manage Subscription' })}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
+        {/* Trial progress bar — full-width strip directly under the user
+            card when a trial is active. Hidden once a paid sub kicks in. */}
+        {trialActive && trialDaysRemaining > 0 ? (
+          <View style={styles.trialBar}>
+            <View style={styles.trialProgressBar}>
+              <View
+                style={[
+                  styles.trialProgressFill,
+                  { width: `${(trialDaysRemaining / trialDuration) * 100}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.trialDaysText}>
+              {t('settings.trialDaysRemaining', { days: trialDaysRemaining, defaultValue: `${trialDaysRemaining} days remaining` })}
+            </Text>
           </View>
+        ) : null}
+
+        {/* Manage Subscription row — design pattern: a proper card row
+            with an icon tile + title + chevron, so it visually belongs
+            with the user/upgrade cards above instead of floating as an
+            orphan pill. Only renders when the user has an active store
+            sub (hasActiveSub). */}
+        {hasActiveSub ? (
+          <TouchableOpacity
+            style={styles.manageSubscriptionRow}
+            onPress={() => { try { openManageSubscriptions(); } catch {} }}
+            activeOpacity={0.85}
+          >
+            <View style={styles.manageSubscriptionIc}>
+              <Ionicons name="card-outline" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.manageSubscriptionMeta}>
+              <Text style={styles.manageSubscriptionTitle}>
+                {t('settings.manageSubscription', { defaultValue: 'Manage subscription' })}
+              </Text>
+              <Text style={styles.manageSubscriptionSub} numberOfLines={1}>
+                {t('settings.manageSubscriptionSub', {
+                  defaultValue: 'Change plan, cancel, or update billing',
+                })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          </TouchableOpacity>
         ) : null}
 
         {/* ====================================================== */}
@@ -5641,7 +5677,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-R · paywall design 38 (Choose your plan + billing toggle + Starter/Pro/Business/Enterprise)
+              Build tag: OTA-2026-06-03-S · tier reconciliation + Manage Subscription row card
             </Text>
           </View>
         )}
@@ -7926,6 +7962,59 @@ const sliderStyles = StyleSheet.create({
       marginTop: 12,
       marginHorizontal: 18,
       paddingVertical: 8,
+    },
+    // Trial progress strip — sits flush under the user card.
+    trialBar: {
+      marginHorizontal: 18,
+      marginTop: 12,
+    },
+    // Manage Subscription as a proper row card (icon tile + title + chevron)
+    // so it visually belongs with the design's row stack instead of
+    // floating as a ghost pill.
+    manageSubscriptionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 13,
+      paddingVertical: 13,
+      paddingHorizontal: 14,
+      backgroundColor: '#FFFFFF',
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: '#ECECEC',
+      marginHorizontal: 18,
+      marginTop: 12,
+      shadowColor: '#141420',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.04,
+      shadowRadius: 12,
+      elevation: 1,
+    },
+    manageSubscriptionIc: {
+      width: 42,
+      height: 42,
+      borderRadius: 12,
+      backgroundColor: '#F4F4F4',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    manageSubscriptionMeta: {
+      flex: 1,
+      minWidth: 0,
+    },
+    manageSubscriptionTitle: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 14.5,
+      fontWeight: '700',
+      color: '#1E1E1E',
+      letterSpacing: -0.1,
+    },
+    manageSubscriptionSub: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 12,
+      fontWeight: '500',
+      color: '#9A9A9A',
+      letterSpacing: -0.1,
+      marginTop: 1,
     },
     userCardEndAnchor: {
       height: 0,
