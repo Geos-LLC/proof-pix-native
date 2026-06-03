@@ -64,6 +64,12 @@ export default function PlanSelectionScreen({ navigation, route }) {
   // of "Free Trial" UI before canStartTrial() resolves. Eligible new users will
   // briefly see "Subscribe" before the trial UI appears — acceptable.
   const [trialAvailable, setTrialAvailable] = useState(false);
+  // Billing toggle is shown per the design (Annual / Monthly). Annual
+  // products aren't configured in App Store Connect / Play yet, so tapping
+  // Annual surfaces a friendly "coming soon" alert and the state stays
+  // on monthly. When annual is wired upstream, flip the alert to a real
+  // setBillingCycle('annual') call and price selection downstream.
+  const [billingCycle, setBillingCycle] = useState('monthly');
   // Fallback when store metadata hasn't loaded yet. Actual duration is read
   // from the store's intro offer below (iOS: 14 days / 2 weeks, Android: 15)
   // so paywall copy always matches what the store's sheet will show.
@@ -425,33 +431,71 @@ export default function PlanSelectionScreen({ navigation, route }) {
     }
   };
 
+  // Design 38 layout — "Choose your plan" + X close, Annual/Monthly
+  // toggle, then Starter / Pro (highlighted) / Business / Enterprise
+  // stacked vertically. Cards carry concise design bullets; Pro hosts
+  // the primary CTA inline. All existing IAP / restore / legal logic
+  // is preserved; only the JSX structure is reshaped.
+  const handlePickAnnual = () => {
+    Alert.alert(
+      'Annual coming soon',
+      'Annual billing will be available shortly. Monthly is active for now.',
+    );
+  };
+
+  const proCTAText = trialAvailable
+    ? `Start ${trialDays}-day free trial`
+    : 'Subscribe to Pro';
+  const businessCTAText = trialAvailable
+    ? `Start ${trialDays}-day free trial`
+    : 'Subscribe to Business';
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      {/* Header */}
+
+      {/* Header — design 38: "Choose your plan" left + X close right. */}
       <View style={styles.header}>
+        <Text style={styles.headerTitle}>Choose your plan</Text>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.headerClose}
           onPress={handleGoBack}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <View style={styles.backButtonInner}>
-            <Ionicons name="arrow-back-outline" size={22} color="#000000" />
-          </View>
+          <Ionicons name="close" size={20} color="#1E1E1E" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Turn every job into before & after proof</Text>
       </View>
-
-      <Text style={styles.subheaderText}>Avoid disputes. Save time. Impress your clients.</Text>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Annual / Monthly segmented control */}
+        <View style={styles.billingToggle}>
+          <TouchableOpacity
+            style={[styles.billingChip, billingCycle === 'annual' && styles.billingChipActive]}
+            onPress={handlePickAnnual}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.billingChipText, billingCycle === 'annual' && styles.billingChipTextActive]}>
+              Annual · save 20%
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.billingChip, billingCycle === 'monthly' && styles.billingChipActive]}
+            onPress={() => setBillingCycle('monthly')}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.billingChipText, billingCycle === 'monthly' && styles.billingChipTextActive]}>
+              Monthly
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Contextual trigger banner — shown when paywall is opened from a
-            specific feature or limit (e.g. export_limit). Tells the user
-            exactly what they unlock by upgrading. */}
+            specific feature or limit. Tells the user exactly what they
+            unlock by upgrading. */}
         {trigger ? (
           <View style={styles.triggerBanner}>
             <Text style={styles.triggerBannerTitle}>
@@ -471,318 +515,177 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        {/* Trial Banner */}
-        {trialAvailable && (
-          <View style={styles.trialBannerWrapper}>
-            <GradientView
-              colors={['rgb(226, 208, 95)', '#FFFFFF']}
-              start={{ x: 0, y: 1.3 }}
-              end={{ x: 0.2, y: 0 }}
-              style={styles.trialBanner}
-              fallbackColor="#FFFFFF"
-            >
-              <Text style={styles.trialBannerText}>
-                {trialDays}-day free trial {'\u2022'} No charges today
-              </Text>
-            </GradientView>
+        {/* ===== Starter ===== */}
+        <TouchableOpacity
+          style={[
+            styles.designCard,
+            userPlan === 'starter' && styles.designCardSelected,
+          ]}
+          onPress={() => handleSelectPlan('starter')}
+          activeOpacity={0.85}
+        >
+          <View style={styles.designCardHeader}>
+            <Text style={styles.designCardTitle}>Starter</Text>
+            <Text style={styles.designCardPriceFree}>Free</Text>
           </View>
-        )}
+          <View style={styles.designBullets}>
+            <Bullet text="Single project · 100 photos" />
+            <Bullet text="All capture modes" />
+            <Bullet text="Text notes · single-photo share" />
+          </View>
+        </TouchableOpacity>
 
-        {/* ===== Pro Plan Card (PRIMARY) =====
-            Refresh pass 10 (cosmetic): swapped the GradientView fill
-            (yellow → white sweep that fought the white page bg) for a
-            flat soft-accent surface (#FFF4C2). Cleaner highlight and
-            matches the design's Pro card treatment 1:1. */}
-        <View style={[styles.planCardWrapper, styles.planCardWrapperPrimary, { backgroundColor: '#FFF4C2' }]}>
-          <View style={styles.planCard}>
-            <View style={styles.recommendedBadge}>
-              <Ionicons name="star" size={11} color="#1E1E1E" style={styles.recommendedIcon} />
-              <Text style={styles.recommendedText}>Most popular</Text>
-            </View>
-            <View style={styles.planCardHeader}>
-              <Text style={styles.planCardTitle}>{t('firstLoad.pro', { defaultValue: 'Pro' })}</Text>
-              <View style={styles.priceContainer}>
-                <GradientView
-                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={styles.priceBadgeGradient}
-                  fallbackColor="rgba(11, 131, 33, 0.14)"
-                />
-                {pricesLoading ? (
-                  <ActivityIndicator size="small" color="#0B8321" />
-                ) : trialAvailable ? (
-                  <View style={styles.trialPriceRow}>
-                    <Text style={styles.priceText}>Free Trial</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.priceText}>{prices.pro || 'Price unavailable'}</Text>
-                )}
-              </View>
-            </View>
-            {trialAvailable && prices.pro ? (
-              <Text style={styles.trialSubtext}>then {prices.pro}/month</Text>
-            ) : null}
-            <Text style={styles.planCardDescription}>
-              For professionals who use ProofPix every day.{'\n'}Everything in Starter, plus:
-            </Text>
-            <View style={styles.valueBullets}>
-              <Text style={styles.valueBulletText}>{'✓'} Unlimited Projects</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Unlimited Photos</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Remove ProofPix Watermark</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Professional Reports</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Voice Notes & Transcription</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Markup & Annotations</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Google Drive Sync</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Dropbox Sync</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Background Uploads</Text>
-              <Text style={styles.valueBulletText}>{'✓'} ZIP Exports & Advanced Formats</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Custom Labels & Watermarks</Text>
-            </View>
-            {Platform.OS === 'android' && (
-              <>
-                <TouchableOpacity
-                  style={styles.androidCardCTA}
-                  onPress={() => handleSelectPlan('pro')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.androidCardCTAText}>
-                    {trialAvailable ? 'Continue — $0 today' : 'Subscribe'}
-                  </Text>
-                  {trialAvailable && (
-                    <Text style={styles.androidCardCTASubtext}>Cancel anytime</Text>
-                  )}
-                </TouchableOpacity>
-                <Text style={styles.androidCardDisclosure}>
-                  {trialAvailable && prices.pro
-                    ? `${trialDays}-day free trial, then ${prices.pro}/month.\nAuto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
-                    : prices.pro
-                      ? `${prices.pro}/month. Auto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
-                      : ''}
-                </Text>
-              </>
-            )}
+        {/* ===== Pro (highlighted) ===== */}
+        <View
+          style={[
+            styles.designCard,
+            styles.designCardPro,
+            userPlan === 'pro' && styles.designCardSelected,
+          ]}
+        >
+          <View style={styles.mostPopularPill}>
+            <Ionicons name="star" size={11} color="#1E1E1E" />
+            <Text style={styles.mostPopularPillText}>Most popular</Text>
           </View>
+
+          <View style={styles.designCardHeader}>
+            <Text style={styles.designCardTitle}>Pro</Text>
+            <View style={styles.designPriceCluster}>
+              {pricesLoading ? (
+                <ActivityIndicator size="small" color="#1E1E1E" />
+              ) : (
+                <>
+                  <Text style={styles.designCardPrice}>{prices.pro || '—'}</Text>
+                  <Text style={styles.designCardPriceUnit}>/mo</Text>
+                </>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.designBullets}>
+            <Bullet text="Unlimited projects & photos" tint="#7A5B00" />
+            <Bullet text="Combined formats & view modes" tint="#7A5B00" />
+            <Bullet text="Watermark, voice notes, markup" tint="#7A5B00" />
+            <Bullet text="Reports & cloud sync" tint="#7A5B00" />
+          </View>
+
+          <TouchableOpacity
+            style={styles.proInCardCTA}
+            onPress={() => handleSelectPlan('pro')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.proInCardCTAText}>{proCTAText}</Text>
+          </TouchableOpacity>
+
+          {Platform.OS === 'android' && (
+            <Text style={styles.androidCardDisclosure}>
+              {trialAvailable && prices.pro
+                ? `${trialDays}-day free trial, then ${prices.pro}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
+                : prices.pro
+                  ? `${prices.pro}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
+                  : ''}
+            </Text>
+          )}
         </View>
 
-        {/* ===== Primary CTA Button (iOS only — Android uses per-card CTAs for Play policy compliance) ===== */}
-        {Platform.OS !== 'android' && (
+        {/* ===== Business ===== */}
         <TouchableOpacity
-          style={styles.primaryCTAButton}
-          onPress={() => handleSelectPlan('pro')}
-          activeOpacity={0.8}
+          style={[
+            styles.designCard,
+            userPlan === 'business' && styles.designCardSelected,
+          ]}
+          onPress={Platform.OS === 'android' ? undefined : () => handleSelectPlan('business')}
+          disabled={Platform.OS === 'android'}
+          activeOpacity={Platform.OS === 'android' ? 1 : 0.85}
         >
-          <Text style={styles.primaryCTAText}>
-            {trialAvailable ? 'Continue — $0 today' : 'Subscribe'}
-          </Text>
-          {trialAvailable && (
-            <Text style={styles.primaryCTASubtext}>Cancel anytime</Text>
-          )}
-        </TouchableOpacity>
-        )}
-
-        {/* Risk reversal, trust, urgency, legal disclosure — iOS only. Android surfaces these per-card. */}
-        {Platform.OS !== 'android' && (
-          <>
-        {/* Risk reversal text */}
-        <Text style={styles.riskReversalText}>
-          {trialAvailable
-            ? 'No charge today. Apple will remind you before billing.'
-            : `No charges today ${'\u2022'} Cancel anytime`}
-        </Text>
-
-        {/* Trust element */}
-        <Text style={styles.trustText}>
-          Used by cleaning professionals every day
-        </Text>
-
-        {/* Subtle urgency */}
-        {trialAvailable && (
-          <Text style={styles.urgencyText}>Start your free trial today</Text>
-        )}
-
-        {/* Legal disclosure */}
-        {trialAvailable && prices.pro ? (
-          <Text style={styles.legalDisclosureText}>
-            {trialDays}-day free trial, then {prices.pro}/month.{'\n'}Auto-renews unless canceled.{'\n'}{platformCancelText}.
-          </Text>
-        ) : null}
-          </>
-        )}
-
-        {/* ===== Starter Plan (DE-EMPHASIZED) ===== */}
-        <TouchableOpacity
-          style={[styles.planCardWrapperSecondary, userPlan === 'starter' && styles.planCardWrapperSelected]}
-          onPress={() => handleSelectPlan('starter')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.planCardSecondary}>
-            <View style={styles.planCardHeader}>
-              <Text style={styles.planCardTitle}>{t('firstLoad.starter', { defaultValue: 'Starter' })}</Text>
-              <View style={styles.priceContainer}>
-                <GradientView
-                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={styles.priceBadgeGradient}
-                  fallbackColor="rgba(11, 131, 33, 0.14)"
-                />
-                <Text style={styles.priceText}>FREE</Text>
-              </View>
-            </View>
-            <Text style={styles.planCardDescription}>
-              Perfect for getting started.
-            </Text>
-            <View style={styles.valueBullets}>
-              <Text style={styles.valueBulletText}>{'✓'} 1 Project</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Up to 100 Photos</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Before / Progress / After workflow</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Ghost Overlay</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Comparison Views</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Combined Before & After Images</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Share Photos & Comparisons</Text>
-              <Text style={styles.valueBulletText}>{'✓'} Watermarked Exports</Text>
+          <View style={styles.designCardHeader}>
+            <Text style={styles.designCardTitle}>Business</Text>
+            <View style={styles.designPriceCluster}>
+              {pricesLoading ? (
+                <ActivityIndicator size="small" color="#1E1E1E" />
+              ) : (
+                <>
+                  <Text style={styles.designCardPrice}>{prices.business || '—'}</Text>
+                  <Text style={styles.designCardPriceUnit}>/mo</Text>
+                </>
+              )}
             </View>
           </View>
+
+          <View style={styles.designBullets}>
+            <Bullet text="Everything in Pro" />
+            <Bullet text="Logo & timestamp overlays" />
+            <Bullet text="Team invites & shared projects" />
+            <Bullet text="Map-embedded reports" />
+          </View>
+
+          {Platform.OS === 'android' && (
+            <>
+              <TouchableOpacity
+                style={styles.designSecondaryCTA}
+                onPress={() => handleSelectPlan('business')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.designSecondaryCTAText}>{businessCTAText}</Text>
+              </TouchableOpacity>
+              <Text style={styles.androidCardDisclosure}>
+                {trialAvailable && prices.business
+                  ? `${trialDays}-day free trial, then ${prices.business}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
+                  : prices.business
+                    ? `${prices.business}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
+                    : ''}
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
 
-        {/* ===== Business & Enterprise link / expanded cards ===== */}
-        {/* Toggle hidden on Android — Play policy requires all plan terms visible adjacent to tap targets. */}
-        {Platform.OS !== 'android' && (
+        {/* ===== Enterprise ===== */}
+        <TouchableOpacity
+          style={[
+            styles.designCard,
+            userPlan === 'enterprise' && styles.designCardSelected,
+          ]}
+          onPress={() => setShowEnterpriseModal(true)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.designCardHeader}>
+            <Text style={styles.designCardTitle}>Enterprise</Text>
+            <Text style={styles.designCardPriceContact}>Contact sales</Text>
+          </View>
+
+          <View style={styles.designBullets}>
+            <Bullet text="Everything in Business" />
+            <Bullet text="Unlimited team members" />
+            <Bullet text="Multiple cloud accounts & teams" />
+            <Bullet text="API access, webhooks, priority support" />
+          </View>
+
           <TouchableOpacity
-            style={styles.businessLinkButton}
-            onPress={() => setShowTeamPlans(!showTeamPlans)}
-            activeOpacity={0.7}
+            style={styles.designSecondaryCTA}
+            onPress={() => setShowEnterpriseModal(true)}
+            activeOpacity={0.85}
           >
-            <Text style={styles.businessLinkText}>
-              {showTeamPlans ? 'Hide Business plans' : 'Have a team? See Business plans'}
-            </Text>
-            <Ionicons name={showTeamPlans ? 'chevron-up' : 'arrow-forward'} size={16} color="#000000" />
+            <Text style={styles.designSecondaryCTAText}>Contact sales</Text>
           </TouchableOpacity>
-        )}
+        </TouchableOpacity>
 
-        {(showTeamPlans || Platform.OS === 'android') && (
+        {/* Risk reversal + trust + urgency (iOS only — Android shows
+            per-card disclosures inline above to satisfy Play policy). */}
+        {Platform.OS !== 'android' && (
           <>
-            {/* Business Plan Card —
-                Refresh pass 10 (cosmetic): flat white fill, no gradient,
-                matching the design's neutral Business card treatment. */}
-            <TouchableOpacity
-              style={[styles.planCardWrapper, { backgroundColor: '#FFFFFF' }, userPlan === 'business' && styles.planCardWrapperSelected]}
-              onPress={Platform.OS === 'android' ? undefined : () => handleSelectPlan('business')}
-              activeOpacity={Platform.OS === 'android' ? 1 : 0.8}
-              disabled={Platform.OS === 'android'}
-            >
-              <View style={styles.planCard}>
-                <View style={styles.planCardHeader}>
-                  <Text style={styles.planCardTitle}>{t('firstLoad.business', { defaultValue: 'Business' })}</Text>
-                  <View style={styles.priceContainer}>
-                    <GradientView
-                      colors={['rgba(11, 131, 33, 0)', '#0B8321']}
-                      start={{ x: 0, y: 0.5 }}
-                      end={{ x: 1, y: 0.5 }}
-                      style={styles.priceBadgeGradient}
-                      fallbackColor="rgba(11, 131, 33, 0.14)"
-                    />
-                    {pricesLoading ? (
-                      <ActivityIndicator size="small" color="#0B8321" />
-                    ) : trialAvailable ? (
-                      <View style={styles.trialPriceRow}>
-                        <Text style={styles.priceText}>Free Trial</Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.priceText}>{prices.business || 'Price unavailable'}</Text>
-                    )}
-                  </View>
-                </View>
-                {trialAvailable && prices.business ? (
-                  <Text style={styles.trialSubtext}>then {prices.business}/month</Text>
-                ) : null}
-                <Text style={styles.planCardDescription}>
-                  For growing teams and companies.{'\n'}Everything in Pro, plus:
-                </Text>
-                <View style={styles.valueBullets}>
-                  <Text style={styles.valueBulletText}>{'✓'} Team Members (up to 10)</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Shared Projects</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Company Logo Branding</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Metadata Overlays</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Business Reports & Analytics</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Team Collaboration Tools</Text>
-                </View>
-                <Text style={styles.planCardDescription}>
-                  {'\n'}For small teams up to 5 members.{prices.businessSeat ? ` ${prices.businessSeat} per additional team member.` : ''}
-                </Text>
-                {Platform.OS === 'android' && (
-                  <>
-                    <TouchableOpacity
-                      style={styles.androidCardCTA}
-                      onPress={() => handleSelectPlan('business')}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.androidCardCTAText}>
-                        {trialAvailable ? `Start ${trialDays}-day free trial` : 'Subscribe'}
-                      </Text>
-                    </TouchableOpacity>
-                    <Text style={styles.androidCardDisclosure}>
-                      {trialAvailable && prices.business
-                        ? `${trialDays}-day free trial, then ${prices.business}/month.\nAuto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
-                        : prices.business
-                          ? `${prices.business}/month. Auto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
-                          : ''}
-                    </Text>
-                  </>
-                )}
-              </View>
-            </TouchableOpacity>
-
-            {/* Enterprise Plan Card — contact-sales only (no public IAP price).
-                Refresh pass 10 (cosmetic): flat white fill matching the
-                Business card so the lower half of the picker reads as a
-                tidy two-card stack instead of two competing gradients. */}
-            <TouchableOpacity
-              style={[styles.planCardWrapper, { backgroundColor: '#FFFFFF' }, userPlan === 'enterprise' && styles.planCardWrapperSelected]}
-              onPress={() => setShowEnterpriseModal(true)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.planCard}>
-                <View style={styles.planCardHeader}>
-                  <Text style={styles.planCardTitle}>{t('firstLoad.enterprise', { defaultValue: 'Enterprise' })}</Text>
-                  <View style={[styles.priceContainer, styles.priceContainerWide]}>
-                    <GradientView
-                      colors={['rgba(11, 131, 33, 0)', '#0B8321']}
-                      start={{ x: 0, y: 0.5 }}
-                      end={{ x: 1, y: 0.5 }}
-                      style={styles.priceBadgeGradientWide}
-                      fallbackColor="rgba(11, 131, 33, 0.14)"
-                    />
-                    <Text style={styles.priceText}>Contact Sales</Text>
-                  </View>
-                </View>
-                <Text style={styles.planCardDescription}>
-                  For growing organizations with 15+ team members.{'\n'}Everything in Business, plus:
-                </Text>
-                <View style={styles.valueBullets}>
-                  <Text style={styles.valueBulletText}>{'✓'} Unlimited Team Members</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Multiple Cloud Accounts</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Multiple Teams</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} API Access & Webhooks</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Custom Integrations</Text>
-                  <Text style={styles.valueBulletText}>{'✓'} Priority Support</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.androidCardCTA}
-                  onPress={() => setShowEnterpriseModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.androidCardCTAText}>Contact Sales</Text>
-                </TouchableOpacity>
-                <Text style={styles.androidCardDisclosure}>
-                  Custom pricing based on team size and integrations.{'\n'}Our team will get back to you within 1 business day.
-                </Text>
-              </View>
-            </TouchableOpacity>
+            <Text style={styles.riskReversalText}>
+              {trialAvailable
+                ? 'No charge today. Apple will remind you before billing.'
+                : `No charges today ${'•'} Cancel anytime`}
+            </Text>
+            {trialAvailable && prices.pro ? (
+              <Text style={styles.legalDisclosureText}>
+                {trialDays}-day free trial, then {prices.pro}/month.{'\n'}
+                Auto-renews unless canceled.{'\n'}{platformCancelText}.
+              </Text>
+            ) : null}
           </>
         )}
-
         {/* Restore Purchases */}
         <TouchableOpacity
           style={styles.restorePurchasesButton}
@@ -833,6 +736,22 @@ export default function PlanSelectionScreen({ navigation, route }) {
   );
 }
 
+// One feature bullet line — round check + text. `tint` lets the Pro
+// card's bullets render in accent-ink for the soft-yellow surface,
+// while everyone else stays neutral grey.
+function Bullet({ text, tint }) {
+  return (
+    <View style={styles.designBulletRow}>
+      <View style={[styles.designBulletCheck, tint ? { backgroundColor: '#F2C31B' } : null]}>
+        <Ionicons name="checkmark" size={11} color={tint ? '#1E1E1E' : '#34C759'} />
+      </View>
+      <Text style={[styles.designBulletText, tint ? { color: tint } : null]} numberOfLines={2}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   // Refresh pass 10 (cosmetic) — design screenshot 38 puts the paywall
   // on a white canvas instead of the brand-yellow flood. The yellow
@@ -844,13 +763,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  // Design 38: title left, X close right. No back arrow, no subhead.
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingHorizontal: 22,
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
+  headerClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    backgroundColor: '#F4F4F4',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backButton: {
     width: 36,
@@ -865,15 +793,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
     fontFamily: 'Alexandria_400Regular',
     color: '#1E1E1E',
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
     flex: 1,
-    textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 8,
+    textAlign: 'left',
   },
   headerSpacer: {
     width: 36,
@@ -1415,5 +1341,213 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 14,
     paddingHorizontal: 4,
+  },
+
+  // ============================================================
+  // Design 38 paywall styles — billing toggle + concise card stack.
+  // ============================================================
+
+  billingToggle: {
+    flexDirection: 'row',
+    marginHorizontal: 18,
+    marginTop: 4,
+    marginBottom: 14,
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: '#F4F4F4',
+  },
+  billingChip: {
+    flex: 1,
+    height: 38,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  billingChipActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#141420',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  billingChipText: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666666',
+    letterSpacing: -0.1,
+  },
+  billingChipTextActive: {
+    color: '#1E1E1E',
+    fontWeight: '700',
+  },
+
+  // Card
+  designCard: {
+    marginHorizontal: 18,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 16,
+    shadowColor: '#141420',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  designCardPro: {
+    backgroundColor: '#FFF4C2',
+    borderColor: '#F2C31B',
+    borderWidth: 2,
+  },
+  designCardSelected: {
+    borderColor: '#F2C31B',
+    borderWidth: 2,
+  },
+
+  // "Most popular" pill — sits at the top-right of the Pro card.
+  mostPopularPill: {
+    position: 'absolute',
+    top: -10,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#F2C31B',
+    shadowColor: '#F2C31B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  mostPopularPillText: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: 0.2,
+    textTransform: 'lowercase',
+  },
+
+  // Card header — title left, price cluster right.
+  designCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  designCardTitle: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.4,
+  },
+  designPriceCluster: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  designCardPrice: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.4,
+  },
+  designCardPriceUnit: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9A9A9A',
+    letterSpacing: -0.1,
+    marginLeft: 2,
+  },
+  designCardPriceFree: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.4,
+  },
+  designCardPriceContact: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#666666',
+    letterSpacing: -0.1,
+  },
+
+  // Bullets
+  designBullets: {
+    gap: 9,
+  },
+  designBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  designBulletCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(52,199,89,0.12)',
+  },
+  designBulletText: {
+    flex: 1,
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+    lineHeight: 19,
+  },
+
+  // In-card primary CTA on Pro (yellow → dark text).
+  proInCardCTA: {
+    marginTop: 16,
+    backgroundColor: '#F2C31B',
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#F2C31B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    elevation: 5,
+  },
+  proInCardCTAText: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+  },
+
+  // Secondary in-card CTA (Business on Android, Enterprise everywhere).
+  designSecondaryCTA: {
+    marginTop: 14,
+    backgroundColor: '#1E1E1E',
+    height: 44,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  designSecondaryCTAText: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.1,
   },
 });

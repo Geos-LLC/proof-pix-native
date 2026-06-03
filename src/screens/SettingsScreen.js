@@ -5641,7 +5641,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-Q · industry-folders inline + sections→folders rename + labels defaults note + scope: This Folder
+              Build tag: OTA-2026-06-03-R · paywall design 38 (Choose your plan + billing toggle + Starter/Pro/Business/Enterprise)
             </Text>
           </View>
         )}
