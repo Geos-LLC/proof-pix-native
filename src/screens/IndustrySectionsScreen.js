@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { useSettings } from '../context/SettingsContext';
+import { usePhotos } from '../context/PhotoContext';
 import { INDUSTRIES, getIndustryById } from '../constants/industries';
 import QualificationPromptModal, { getStoredUserType } from '../components/QualificationPromptModal';
 import RoomEditor from '../components/RoomEditor';
@@ -38,11 +40,24 @@ export default function IndustrySectionsScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { customRooms, saveCustomRooms, getRooms } = useSettings();
+  const photoCtx = usePhotos();
+  const photos = photoCtx?.photos;
+  const activeProjectId = photoCtx?.activeProjectId;
+  const createProject = photoCtx?.createProject;
+  const setActiveProject = photoCtx?.setActiveProject;
+  const updatePhotos = photoCtx?.updatePhotos;
 
   const [showQualPicker, setShowQualPicker] = useState(false);
   const [showRoomEditor, setShowRoomEditor] = useState(false);
   const [industryDropdownOpen, setIndustryDropdownOpen] = useState(false);
   const [currentIndustryId, setCurrentIndustryId] = useState(null);
+  // Pending industry-change confirmation modal. `pendingIndustry`
+  // holds the industry the user just tapped; the modal asks how to
+  // handle their existing photos before we actually swap folders.
+  const [pendingIndustry, setPendingIndustry] = useState(null);
+  // After they pick "Move existing photos to a folder", a second
+  // modal lets them choose WHICH new folder receives all the photos.
+  const [reassignTargetFor, setReassignTargetFor] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -67,13 +82,93 @@ export default function IndustrySectionsScreen({ navigation }) {
     await refreshIndustryFromStore();
   };
 
-  const handlePickIndustry = async (industry) => {
-    setIndustryDropdownOpen(false);
+  // Persist the picked industry id + replace the folder template. Does
+  // NOT touch photos — that's handled by the wrapper below depending on
+  // what the user chose in the confirmation modal.
+  const applyIndustryFolders = async (industry) => {
     setCurrentIndustryId(industry.id);
     try { await AsyncStorage.setItem('@user_qualification', industry.id); } catch {}
     if (Array.isArray(industry.folders) && industry.folders.length) {
       try { await saveCustomRooms(industry.folders); } catch {}
     }
+  };
+
+  // Returns the photos that live in the currently-active project AND
+  // sit in one of the current folder ids — i.e. the photos that would
+  // visually "disappear" from Home when we swap to a different industry.
+  const activeProjectPhotosInCurrentFolders = useMemo(() => {
+    if (!Array.isArray(photos) || photos.length === 0) return [];
+    const currentRoomIds = new Set(
+      (Array.isArray(customRooms) && customRooms.length > 0
+        ? customRooms
+        : (() => {
+            try { return getRooms?.() || []; } catch { return []; }
+          })()
+      ).map((r) => r?.id).filter(Boolean),
+    );
+    return photos.filter(
+      (p) =>
+        currentRoomIds.has(p?.room)
+        && (activeProjectId ? p?.projectId === activeProjectId : !p?.projectId),
+    );
+  }, [photos, customRooms, getRooms, activeProjectId]);
+
+  // First handler — bound to every industry tile in the dropdown. Shows
+  // the confirmation modal when there's content that would be affected;
+  // otherwise just applies the swap immediately.
+  const handlePickIndustry = async (industry) => {
+    setIndustryDropdownOpen(false);
+    // No-op if they're picking the industry they're already on.
+    if (industry?.id && industry.id === currentIndustryId) return;
+
+    const willStrandPhotos = activeProjectPhotosInCurrentFolders.length > 0;
+    if (!willStrandPhotos) {
+      await applyIndustryFolders(industry);
+      return;
+    }
+    setPendingIndustry(industry);
+  };
+
+  // "Move existing photos to a folder" path. Opens the target-folder
+  // picker; on confirm, reassigns every affected photo's `room` to the
+  // chosen new folder, then applies the new industry folders. Photos
+  // stay accessible from Home under the picked folder.
+  const handleMovePhotosToFolder = async (industry, targetFolder) => {
+    const affected = activeProjectPhotosInCurrentFolders;
+    // Bulk reassign in a single pass — call updatePhoto for each id so
+    // PhotoContext's photosRef + AsyncStorage stay in sync. Sequential
+    // awaits guarantee the writes apply in order.
+    if (typeof photoCtx?.updatePhoto === 'function') {
+      for (const p of affected) {
+        try {
+          await photoCtx.updatePhoto(p.id, { room: targetFolder.id });
+        } catch {}
+      }
+    }
+    await applyIndustryFolders(industry);
+    setReassignTargetFor(null);
+    setPendingIndustry(null);
+  };
+
+  // "Create a new project" path. Spins up a fresh project named after
+  // the new industry, switches the active project to it, then applies
+  // the new folders. The old project + its photos stay untouched — if
+  // the user switches back to the old industry, those photos re-appear
+  // in their original folders.
+  const handleStartNewProject = async (industry) => {
+    try {
+      if (typeof createProject === 'function') {
+        const baseName = industry?.defaultLabel
+          ? `${industry.defaultLabel} project`
+          : 'New project';
+        const created = await createProject(baseName);
+        if (created?.id && typeof setActiveProject === 'function') {
+          await setActiveProject(created.id);
+        }
+      }
+    } catch {}
+    await applyIndustryFolders(industry);
+    setPendingIndustry(null);
   };
 
   const industry = useMemo(
@@ -284,6 +379,131 @@ export default function IndustrySectionsScreen({ navigation }) {
         onSave={handleSaveFolders}
         initialRooms={customRooms}
       />
+
+      {/* Industry-change confirmation. Three options:
+          • Cancel — close, nothing changes
+          • Move existing photos to a folder — opens the target picker
+            below; one tap → all affected photos move to that folder
+          • Create a new project — keeps current photos + folders in the
+            existing project; new project gets the new industry */}
+      <Modal
+        visible={!!pendingIndustry && !reassignTargetFor}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingIndustry(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>
+              {t('industrySections.changeIndustryTitle', {
+                defaultValue: `Switch to ${pendingIndustry?.defaultLabel || ''}?`,
+              })}
+            </Text>
+            <Text style={styles.modalBody}>
+              {t('industrySections.changeIndustryBody', {
+                defaultValue:
+                  `${activeProjectPhotosInCurrentFolders.length} photo${activeProjectPhotosInCurrentFolders.length === 1 ? '' : 's'} in this project sit in the current folders. Switching industries replaces those folders. What should we do with the photos?`,
+              })}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalPrimary}
+              onPress={() => setReassignTargetFor(pendingIndustry)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="arrow-forward-circle-outline" size={18} color="#1E1E1E" />
+              <Text style={styles.modalPrimaryText}>
+                {t('industrySections.movePhotosCTA', {
+                  defaultValue: `Move them to a folder in ${pendingIndustry?.defaultLabel || ''}`,
+                })}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalSecondary}
+              onPress={() => handleStartNewProject(pendingIndustry)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add-circle-outline" size={18} color="#1E1E1E" />
+              <Text style={styles.modalSecondaryText}>
+                {t('industrySections.newProjectCTA', {
+                  defaultValue: 'Create a new project (keep current photos)',
+                })}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalGhost}
+              onPress={() => setPendingIndustry(null)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalGhostText}>
+                {t('common.cancel', { defaultValue: 'Cancel' })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Target-folder picker. Opens after "Move them to a folder" tap;
+          shows every folder in the new industry. One tap → reassigns
+          all affected photos to that folder + applies the new folder
+          set. */}
+      <Modal
+        visible={!!reassignTargetFor}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReassignTargetFor(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>
+              {t('industrySections.pickTargetTitle', { defaultValue: 'Move photos to which folder?' })}
+            </Text>
+            <Text style={styles.modalBody}>
+              {t('industrySections.pickTargetBody', {
+                defaultValue:
+                  `${activeProjectPhotosInCurrentFolders.length} photo${activeProjectPhotosInCurrentFolders.length === 1 ? '' : 's'} will move to the folder you pick.`,
+              })}
+            </Text>
+
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+              {(reassignTargetFor?.folders || []).map((folder) => (
+                <TouchableOpacity
+                  key={folder.id}
+                  style={styles.targetRow}
+                  onPress={() => handleMovePhotosToFolder(reassignTargetFor, folder)}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.targetRowIc}>
+                    {folder.image ? (
+                      <Image source={folder.image} style={{ width: 22, height: 22 }} />
+                    ) : folder.icon && /[\p{Emoji}]/u.test(String(folder.icon)) ? (
+                      <Text style={{ fontSize: 19 }}>{folder.icon}</Text>
+                    ) : (
+                      <Ionicons name="folder-outline" size={18} color="#1E1E1E" />
+                    )}
+                  </View>
+                  <Text style={styles.targetRowText} numberOfLines={1}>
+                    {folder.name || folder.id}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.modalGhost, { marginTop: 8 }]}
+              onPress={() => setReassignTargetFor(null)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalGhostText}>
+                {t('common.back', { defaultValue: 'Back' })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -466,6 +686,118 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#9A9A9A',
+    letterSpacing: -0.1,
+  },
+
+  // Industry-change confirmation + target-folder picker modals.
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(20,20,22,0.55)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 28,
+  },
+  modalTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.3,
+    marginBottom: 8,
+  },
+  modalBody: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13.5,
+    fontWeight: '500',
+    color: '#666666',
+    letterSpacing: -0.1,
+    lineHeight: 19,
+    marginBottom: 18,
+  },
+  modalPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#FFF4C2',
+    borderWidth: 1.5,
+    borderColor: '#F2C31B',
+    marginBottom: 10,
+  },
+  modalPrimaryText: {
+    flex: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+  },
+  modalSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
+    marginBottom: 6,
+  },
+  modalSecondaryText: {
+    flex: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14.5,
+    fontWeight: '600',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+  },
+  modalGhost: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  modalGhostText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9A9A9A',
+    letterSpacing: -0.1,
+  },
+  targetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
+    marginBottom: 6,
+  },
+  targetRowIc: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F4F4F4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  targetRowText: {
+    flex: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E1E1E',
     letterSpacing: -0.1,
   },
 });
