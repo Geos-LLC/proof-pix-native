@@ -916,25 +916,26 @@ export default function SettingsScreen({ navigation, route }) {
   // surface a "Manage Subscription" button. Only renders when true — Free users
   // never see it. Refreshed on mount.
   const [hasActiveSub, setHasActiveSub] = useState(false);
+  // Diagnostic snapshot exposed in the dev-tools build-tag area so we can
+  // see what the store actually returns vs what userPlan is cached at.
+  // Helps debug tier-mismatch cases (e.g. user has a Business sub but the
+  // app's userPlan was stuck on 'pro').
+  const [iapDiag, setIapDiag] = useState('');
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        // Single source of truth: read the active purchases from the
-        // store, compute entitlements (highest tier wins per
-        // computeEntitlements), and reconcile userPlan if the cached
-        // value drifted (e.g. user upgraded Pro→Business from the
-        // App Store sheet directly without going through the in-app
-        // paywall, or the previous purchase finished after we wrote
-        // userPlan='pro'). Without this, the Settings header keeps
-        // showing the stale tier + "Upgrade to Business" banner.
         const purchases = await getAvailablePurchases();
         const active = Array.isArray(purchases) && purchases.length > 0;
         if (!mounted) return;
         setHasActiveSub(active);
+        const productIds = (purchases || [])
+          .map((p) => p?.productId)
+          .filter(Boolean);
+        let detected = 'free';
         if (active) {
           const ent = computeEntitlements(purchases);
-          const detected = ent?.plan;
+          detected = ent?.plan || 'free';
           const detectableTiers = ['pro', 'business', 'enterprise'];
           if (
             detected
@@ -944,7 +945,12 @@ export default function SettingsScreen({ navigation, route }) {
             try { await updateUserPlan(detected); } catch {}
           }
         }
-      } catch {}
+        setIapDiag(
+          `n=${productIds.length} detected=${detected} cached=${userPlan || 'starter'} ids=[${productIds.join(', ')}]`,
+        );
+      } catch (e) {
+        setIapDiag(`err: ${e?.message || String(e)}`);
+      }
     })();
     return () => { mounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5677,8 +5683,60 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-S · tier reconciliation + Manage Subscription row card
+              Build tag: OTA-2026-06-03-T · tier reconciliation v2 + diag + refresh action
             </Text>
+            {/* IAP diagnostic — shows what getAvailablePurchases returned
+                + the highest-tier plan computeEntitlements detected +
+                what userPlan is currently cached at. If this says
+                `detected=business` but the user card still shows PRO,
+                state hasn't re-rendered yet; tap the row below. */}
+            <Text style={{ fontSize: 11, color: '#888', marginTop: 6, paddingHorizontal: 4 }} selectable>
+              IAP: {iapDiag || '(no diag yet)'}
+            </Text>
+            <TouchableOpacity
+              style={{
+                marginTop: 8,
+                marginHorizontal: 4,
+                paddingVertical: 9,
+                paddingHorizontal: 12,
+                borderRadius: 10,
+                backgroundColor: '#1E1E1E',
+                alignItems: 'center',
+              }}
+              onPress={async () => {
+                try {
+                  // Run a real RestorePurchases (forces the store to
+                  // surface every active subscription product id), then
+                  // re-detect + reconcile userPlan from the fresh
+                  // snapshot.
+                  const restored = await restorePurchases();
+                  const purchases = Array.isArray(restored) && restored.length
+                    ? restored
+                    : await getAvailablePurchases();
+                  const productIds = (purchases || [])
+                    .map((p) => p?.productId)
+                    .filter(Boolean);
+                  const ent = computeEntitlements(purchases);
+                  const detected = ent?.plan || 'free';
+                  if (['pro', 'business', 'enterprise'].includes(detected)) {
+                    try { await updateUserPlan(detected); } catch {}
+                  }
+                  setIapDiag(
+                    `n=${productIds.length} detected=${detected} cached=${detected || userPlan} ids=[${productIds.join(', ')}]`,
+                  );
+                  Alert.alert(
+                    'Tier refresh',
+                    `Active products: ${productIds.length}\nDetected plan: ${detected}\nSynced cached userPlan: ${detected}`,
+                  );
+                } catch (e) {
+                  Alert.alert('Tier refresh error', e?.message || String(e));
+                }
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
+                Force refresh tier from store
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
