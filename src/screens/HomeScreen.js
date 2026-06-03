@@ -2152,27 +2152,25 @@ export default function HomeScreen({ navigation, route }) {
             {...previewDismissPanResponder.panHandlers}
           >
 
-            {/* Fullscreen-viewer header — per the design, a single row
-                with three slots: X close (left), photo position (centre,
-                e.g. "3 / 7"), and "Set N+1 ›" jump (right). Replaces the
-                older three-up Set | N/M | Set sets bar — the jump arrow
-                on the right still takes you to the next set's first
-                photo; the prev-set backwards affordance was rarely used
-                and is subsumed by horizontal pager swipes. */}
+            {/* Sets bar — three-column row that mirrors the project
+                detail screen's pattern: previous-set link on the left,
+                current photo position (X / Y) in the middle, next-set
+                link on the right. Tapping the side labels jumps the
+                pager to that set's first photo. Hidden when the room
+                has only one set (nothing to switch to). */}
             {(() => {
               const roomBefores = getBeforePhotos(currentRoom) || [];
-              const activeSetId = setMembers.find((mm) => mm?.mode === 'before')?.id
-                || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
-              const setIdx = Math.max(0, roomBefores.findIndex((b) => b.id === activeSetId));
-              const setPosition = setIdx + 1;
-              const setCount = Math.max(1, roomBefores.length);
-              const positionInSet = Math.min(setMemberIndex + 1, Math.max(1, setMembers.length));
-              const setTotal = Math.max(1, setMembers.length);
+              if (roomBefores.length < 2) return null;
               const afters = getAfterPhotos(currentRoom) || [];
               const afterByBeforeId = new Map();
               for (const a of afters) {
                 if (a.beforePhotoId) afterByBeforeId.set(a.beforePhotoId, a);
               }
+              const activeSetId = setMembers.find((mm) => mm?.mode === 'before')?.id
+                || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
+              const setIdx = Math.max(0, roomBefores.findIndex((b) => b.id === activeSetId));
+              const setPosition = setIdx + 1;
+              const setCount = roomBefores.length;
               const switchToSet = (before) => {
                 if (!before) return;
                 const members = [before];
@@ -2187,6 +2185,9 @@ export default function HomeScreen({ navigation, route }) {
                 setSetMembers(members);
                 setSetMemberIndex(0);
                 setFullScreenPhotoSet({ before, after: after || null });
+                // Flash the destination set's title on the first photo
+                // — replaces the old "Previous / Next set" sentinel
+                // cards with a transient label.
                 const newIdx = roomBefores.findIndex((b) => b.id === before.id);
                 flashSetTitle(`Set ${newIdx >= 0 ? newIdx + 1 : setPosition}`);
                 requestAnimationFrame(() => {
@@ -2195,43 +2196,48 @@ export default function HomeScreen({ navigation, route }) {
                   }
                 });
               };
+              const prevBefore = setPosition > 1 ? roomBefores[setIdx - 1] : null;
               const nextBefore = setPosition < setCount ? roomBefores[setIdx + 1] : null;
+              const positionInSet = Math.min(setMemberIndex + 1, Math.max(1, setMembers.length));
               return (
-                <View style={styles.simplePreviewHeaderRow}>
+                <View style={styles.simplePreviewSetsBar}>
                   <TouchableOpacity
-                    onPress={handleLongPressEnd}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    style={[
-                      styles.simplePreviewHeaderClose,
-                      { backgroundColor: theme.surface, borderColor: theme.border },
-                    ]}
+                    style={styles.simplePreviewSetsBarSide}
+                    disabled={!prevBefore}
+                    onPress={() => switchToSet(prevBefore)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Ionicons name="close" size={20} color={theme.textPrimary} />
+                    {prevBefore && (
+                      <>
+                        <Ionicons name="chevron-back" size={14} color={theme.textSecondary} />
+                        <Text style={[styles.simplePreviewSetsBarText, { color: theme.textSecondary }]}>
+                          Set {setPosition - 1}
+                        </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
-                  <View style={styles.simplePreviewHeaderCenter}>
-                    <Text
-                      style={[styles.simplePreviewHeaderPosition, { color: theme.textSecondary }]}
-                      numberOfLines={1}
-                    >
-                      {positionInSet} / {setTotal}
-                    </Text>
+
+                  <View style={styles.simplePreviewSetsBarCenter}>
+                    <View style={[styles.simplePreviewPositionPill, { backgroundColor: theme.surface }]}>
+                      <Text style={[styles.simplePreviewPositionText, { color: theme.textPrimary }]}>
+                        {positionInSet} / {Math.max(1, setMembers.length)}
+                      </Text>
+                    </View>
                   </View>
+
                   <TouchableOpacity
-                    onPress={() => nextBefore && switchToSet(nextBefore)}
+                    style={[styles.simplePreviewSetsBarSide, styles.simplePreviewSetsBarSideRight]}
                     disabled={!nextBefore}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    style={styles.simplePreviewHeaderSetJump}
+                    onPress={() => switchToSet(nextBefore)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text
-                      style={[
-                        styles.simplePreviewHeaderSetJumpText,
-                        { color: nextBefore ? theme.textPrimary : theme.textMuted },
-                      ]}
-                    >
-                      Set {nextBefore ? setPosition + 1 : setPosition}
-                    </Text>
                     {nextBefore && (
-                      <Ionicons name="chevron-forward" size={16} color={theme.textPrimary} />
+                      <>
+                        <Text style={[styles.simplePreviewSetsBarText, { color: theme.textSecondary }]}>
+                          Set {setPosition + 1}
+                        </Text>
+                        <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
+                      </>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -2518,15 +2524,11 @@ export default function HomeScreen({ navigation, route }) {
                               <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
                             </TouchableOpacity>
                           </View>
-                          {/* Photo card — picture + (optional) Studio
-                              overlay stack. PannableImage gives the user
-                              pinch-zoom (0.5×–3×) + long-press drag pan,
-                              with its built-in reset chip at the top-
-                              right (per the design "refresh" icon).
-                              panOnLongPress keeps the carousel's
-                              horizontal swipe responsive — a brief press
-                              arms the drag so casual left/right swipes
-                              still page between photos. */}
+                          {/* Photo card — only the picture (and the
+                              Studio overlay stack when the Edited
+                              switch is on) lives here. Tapping it opens
+                              the fullscreen viewer Modal (tappedFullPhoto)
+                              where pinch-zoom + drag-pan live. */}
                           <View
                             style={{
                               width: cardW,
@@ -2536,15 +2538,17 @@ export default function HomeScreen({ navigation, route }) {
                               overflow: 'hidden',
                             }}
                           >
-                            <PannableImage
-                              source={{ uri: m.uri }}
+                            <TouchableOpacity
+                              activeOpacity={0.95}
+                              onPress={() => setTappedFullPhoto(m)}
                               style={{ width: '100%', height: '100%' }}
-                              imageStyle={{ width: '100%', height: '100%' }}
-                              resizeMode="cover"
-                              panOnLongPress
-                              showResetButton
-                              onDoubleTap={() => setTappedFullPhoto(m)}
                             >
+                              <Image
+                                source={{ uri: m.uri }}
+                                style={{ width: '100%', height: '100%' }}
+                                resizeMode="cover"
+                              />
+                            </TouchableOpacity>
                             {showStudioEdits && (
                               <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                                 <StudioEditOverlays
@@ -2594,31 +2598,6 @@ export default function HomeScreen({ navigation, route }) {
                                 />
                               </View>
                             )}
-                            </PannableImage>
-                            {/* Mode badge pill anchored top-left of the
-                                photo card (per design 17-fullscreen-
-                                viewer). Lives OUTSIDE PannableImage's
-                                transform so it stays put while the user
-                                pinches / pans. */}
-                            {(() => {
-                              const mode = m?.mode;
-                              const badgeMap = {
-                                before: { bg: '#F2C31B', text: '#1E1E1E', label: 'BEFORE' },
-                                after: { bg: '#A78BFA', text: '#FFFFFF', label: 'AFTER' },
-                                progress: { bg: 'rgba(0,0,0,0.55)', text: '#FFFFFF', label: 'PROGRESS' },
-                                combined: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
-                                mix: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
-                              };
-                              const badge = badgeMap[mode];
-                              if (!badge) return null;
-                              return (
-                                <View pointerEvents="none" style={[styles.simplePreviewModeBadge, { backgroundColor: badge.bg }]}>
-                                  <Text style={[styles.simplePreviewModeBadgeText, { color: badge.text }]}>
-                                    {badge.label}
-                                  </Text>
-                                </View>
-                              );
-                            })()}
                           </View>
                           {/* BOTTOM action row — Edited toggle on the
                               left, Share on the right. Same width as
@@ -2802,16 +2781,16 @@ export default function HomeScreen({ navigation, route }) {
       )}
 
       {/* Tap-to-fullscreen modal — opens when the user taps any photo
-          inside the preview pager.
-          - Frame is sized to the photo's saved Studio format
-            (pairTemplate). Image fills the frame via resizeMode=cover
-            so the user sees exactly what the export will render.
-          - When the "Edited" switch is on, the full overlay stack
-            (labels, watermark, brand logo, metadata, markup) is drawn
-            on top — pointerEvents=none so the backdrop tap still
-            closes the modal.
-          - Tap anywhere outside the frame (or the close button) to
-            dismiss. */}
+          inside the preview pager. Now follows the design 17-fullscreen-
+          viewer layout:
+          - Top row: X close (left) / N / M position (centre) / Set N+1 ›
+            jump (right).
+          - Photo with mode badge top-left (BEFORE / AFTER / PROGRESS),
+            PannableImage's reset chip top-right, and left/right chevrons
+            to walk through the set members.
+          - Carousel dots below the photo.
+          - PannableImage handles pinch-zoom (0.5×-3×) + drag-pan.
+          - Swipe down anywhere to close. */}
       <Modal
         visible={!!tappedFullPhoto}
         transparent
@@ -2842,11 +2821,7 @@ export default function HomeScreen({ navigation, route }) {
           }}
           onResponderTerminationRequest={() => false}
         >
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => setTappedFullPhoto(null)}
-          style={styles.tappedFullPhotoBackdrop}
-        >
+        <View style={styles.tappedFullPhotoBackdrop}>
           {liveTappedFullPhoto?.uri && (() => {
             // Use the live, store-resolved snapshot so format / metadata
             // edits saved in Studio while the modal is open (or before
@@ -2854,10 +2829,13 @@ export default function HomeScreen({ navigation, route }) {
             const tappedFullPhoto = liveTappedFullPhoto;
             const screenW = Dimensions.get('window').width;
             const screenH = Dimensions.get('window').height;
-            // Reserve some breathing room around the framed photo so
-            // the close button never overlaps it on tall captures.
+            // Reserve room for the header (top) + carousel dots (bottom)
+            // around the framed photo. Width keeps the same 12 px outer
+            // padding the original viewer used.
+            const HEADER_H = 56;
+            const DOTS_H = 36;
             const availW = screenW - 24;
-            const availH = screenH - (insets.top + 60) - (insets.bottom + 32);
+            const availH = screenH - (insets.top + HEADER_H) - (insets.bottom + DOTS_H);
             const aspect = aspectForPhoto(tappedFullPhoto) || (availW / availH);
             let frameW = availW;
             let frameH = availH;
@@ -2868,97 +2846,234 @@ export default function HomeScreen({ navigation, route }) {
               frameH = availH;
               frameW = availH * aspect;
             }
+            // Derive the active photo's set-member index + neighbours
+            // from the shared setMembers state. Walking through the set
+            // updates `tappedFullPhoto` so the modal stays the source of
+            // truth; the enlarged view's index is bumped too so it lands
+            // on the same photo when the modal closes.
+            const activeIdx = setMembers.findIndex((mm) => mm?.id === tappedFullPhoto.id);
+            const safeIdx = activeIdx >= 0 ? activeIdx : 0;
+            const total = Math.max(1, setMembers.length);
+            const prevMember = safeIdx > 0 ? setMembers[safeIdx - 1] : null;
+            const nextMember = safeIdx < setMembers.length - 1 ? setMembers[safeIdx + 1] : null;
+            const goToMember = (idx) => {
+              const m = setMembers[idx];
+              if (!m) return;
+              setSetMemberIndex(idx);
+              setTappedFullPhoto(m);
+            };
+            // "Set N+1 ›" — jump to the first member of the next set
+            // in the current room (mirrors the enlarged-view sets bar).
+            const roomBeforesForJump = getBeforePhotos(currentRoom) || [];
+            const aftersForJump = getAfterPhotos(currentRoom) || [];
+            const afterByBeforeIdJump = new Map();
+            for (const a of aftersForJump) {
+              if (a.beforePhotoId) afterByBeforeIdJump.set(a.beforePhotoId, a);
+            }
+            const activeBeforeId = setMembers.find((mm) => mm?.mode === 'before')?.id
+              || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
+            const activeSetIdxForJump = Math.max(0, roomBeforesForJump.findIndex((b) => b.id === activeBeforeId));
+            const nextBefore = activeSetIdxForJump < roomBeforesForJump.length - 1
+              ? roomBeforesForJump[activeSetIdxForJump + 1]
+              : null;
+            const jumpToNextSet = () => {
+              if (!nextBefore) return;
+              const members = [nextBefore];
+              const progresses = (getProgressPhotos?.(currentRoom) || [])
+                .filter((p) => p.beforePhotoId === nextBefore.id)
+                .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+              members.push(...progresses);
+              const after = afterByBeforeIdJump.get(nextBefore.id);
+              if (after) members.push(after);
+              const combined = findCombinedForBefore(nextBefore, currentRoom);
+              if (combined) members.push(combined);
+              setSetMembers(members);
+              setSetMemberIndex(0);
+              setFullScreenPhotoSet({ before: nextBefore, after: after || null });
+              setTappedFullPhoto(members[0]);
+            };
+            const mode = tappedFullPhoto?.mode;
+            const badgeMap = {
+              before: { bg: '#F2C31B', text: '#1E1E1E', label: 'BEFORE' },
+              after: { bg: '#A78BFA', text: '#FFFFFF', label: 'AFTER' },
+              progress: { bg: 'rgba(255,255,255,0.18)', text: '#FFFFFF', label: 'PROGRESS' },
+              combined: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
+              mix: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
+            };
+            const badge = badgeMap[mode];
             return (
-              <View
-                style={{
-                  width: frameW,
-                  height: frameH,
-                  overflow: 'hidden',
-                  borderRadius: 8,
-                }}
-                // Block the backdrop's close tap when touching the
-                // framed photo itself — feels wrong for the photo to
-                // close when you just want to look at it or pinch-zoom.
-                onStartShouldSetResponder={() => true}
-              >
-                {/* PannableImage handles pinch-zoom (0.5×-3×) + pan.
-                    panOnLongPress=false → drag pans immediately (no
-                    waiting on a long-press timer) since this view is
-                    not inside a horizontal carousel that needs to
-                    own swipe gestures. Its reset button (top-right)
-                    snaps back to neutral. */}
-                <PannableImage
-                  source={{ uri: tappedFullPhoto.uri }}
-                  style={{ width: '100%', height: '100%' }}
-                  imageStyle={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                  panOnLongPress={false}
+              <>
+                {/* Top header: X / N-of-M / Set N+1 › */}
+                <View style={[styles.tappedFullHeaderRow, { top: insets.top + 8 }]}>
+                  <TouchableOpacity
+                    onPress={() => setTappedFullPhoto(null)}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    style={styles.tappedFullHeaderClose}
+                  >
+                    <Ionicons name="close" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <View style={styles.tappedFullHeaderCenter}>
+                    <Text style={styles.tappedFullHeaderPosition} numberOfLines={1}>
+                      {safeIdx + 1} / {total}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={jumpToNextSet}
+                    disabled={!nextBefore}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    style={styles.tappedFullHeaderSetJump}
+                  >
+                    <Text
+                      style={[
+                        styles.tappedFullHeaderSetJumpText,
+                        { color: nextBefore ? '#FFFFFF' : 'rgba(255,255,255,0.4)' },
+                      ]}
+                    >
+                      Set {nextBefore ? activeSetIdxForJump + 2 : activeSetIdxForJump + 1}
+                    </Text>
+                    {nextBefore && (
+                      <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                <View
+                  style={{
+                    width: frameW,
+                    height: frameH,
+                    overflow: 'visible',
+                    borderRadius: 8,
+                  }}
+                  // Block the backdrop's close tap when touching the
+                  // framed photo itself — feels wrong for the photo to
+                  // close when you just want to look at it or pinch-zoom.
+                  onStartShouldSetResponder={() => true}
                 >
-                  {/* Overlays are children of PannableImage so the
-                      transform (pinch + pan) applies to them too —
-                      labels, watermark, etc. scale and translate with
-                      the photo instead of staying anchored. */}
-                  {showStudioEdits && (
-                    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                      <StudioEditOverlays
-                        photo={tappedFullPhoto}
-                        theme={theme}
-                        showLabels={showLabels}
-                        labelPositionSettings={{
-                          beforeLabelPosition,
-                          afterLabelPosition,
-                          beforeLabelPositionLandscape,
-                          afterLabelPositionLandscape,
-                          beforeLabelOffset,
-                          afterLabelOffset,
-                          beforeLabelOffsetLandscape,
-                          afterLabelOffsetLandscape,
-                        }}
-                        showWatermark={showWatermark}
-                        showBrandLogo={showBrandLogo}
-                        brandLogoUri={brandLogoUri}
-                        brandLogoPosition={brandLogoPosition}
-                        brandLogoSize={brandLogoSize}
-                        brandLogoOffset={brandLogoOffset}
-                        showPreviewMetadata={showPreviewMetadata}
-                        location={location}
-                        metaShowDate={metaShowDate}
-                        metaShowTime={metaShowTime}
-                        metaShowAddress={metaShowAddress}
-                        metaShowGps={metaShowGps}
-                        metaPosition={metaPosition}
-                        metaColor={metaColor}
-                        metaOpacity={metaOpacity}
-                        metaFontSize={metaFontSize}
-                        metaFontFamily={metaFontFamily}
-                        metaOffset={metaOffset}
-                        combinedLabelLayout={{
-                          LeftHalf: ({ children }) => (
-                            <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
-                              {children}
-                            </View>
-                          ),
-                          RightHalf: ({ children }) => (
-                            <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
-                              {children}
-                            </View>
-                          ),
-                        }}
-                      />
+                  {/* PannableImage handles pinch-zoom (0.5×-3×) + pan.
+                      panOnLongPress=false → drag pans immediately (no
+                      waiting on a long-press timer) since this view is
+                      not inside a horizontal carousel that needs to
+                      own swipe gestures. Its reset button (top-right)
+                      snaps back to neutral. */}
+                  <View style={{ width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden' }}>
+                    <PannableImage
+                      source={{ uri: tappedFullPhoto.uri }}
+                      style={{ width: '100%', height: '100%' }}
+                      imageStyle={{ width: '100%', height: '100%' }}
+                      resizeMode="cover"
+                      panOnLongPress={false}
+                    >
+                      {/* Overlays are children of PannableImage so the
+                          transform (pinch + pan) applies to them too —
+                          labels, watermark, etc. scale and translate with
+                          the photo instead of staying anchored. */}
+                      {showStudioEdits && (
+                        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                          <StudioEditOverlays
+                            photo={tappedFullPhoto}
+                            theme={theme}
+                            showLabels={showLabels}
+                            labelPositionSettings={{
+                              beforeLabelPosition,
+                              afterLabelPosition,
+                              beforeLabelPositionLandscape,
+                              afterLabelPositionLandscape,
+                              beforeLabelOffset,
+                              afterLabelOffset,
+                              beforeLabelOffsetLandscape,
+                              afterLabelOffsetLandscape,
+                            }}
+                            showWatermark={showWatermark}
+                            showBrandLogo={showBrandLogo}
+                            brandLogoUri={brandLogoUri}
+                            brandLogoPosition={brandLogoPosition}
+                            brandLogoSize={brandLogoSize}
+                            brandLogoOffset={brandLogoOffset}
+                            showPreviewMetadata={showPreviewMetadata}
+                            location={location}
+                            metaShowDate={metaShowDate}
+                            metaShowTime={metaShowTime}
+                            metaShowAddress={metaShowAddress}
+                            metaShowGps={metaShowGps}
+                            metaPosition={metaPosition}
+                            metaColor={metaColor}
+                            metaOpacity={metaOpacity}
+                            metaFontSize={metaFontSize}
+                            metaFontFamily={metaFontFamily}
+                            metaOffset={metaOffset}
+                            combinedLabelLayout={{
+                              LeftHalf: ({ children }) => (
+                                <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
+                                  {children}
+                                </View>
+                              ),
+                              RightHalf: ({ children }) => (
+                                <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
+                                  {children}
+                                </View>
+                              ),
+                            }}
+                          />
+                        </View>
+                      )}
+                    </PannableImage>
+                  </View>
+                  {/* Mode badge pill anchored top-left of the photo
+                      frame (per design). Outside the PannableImage
+                      transform so it stays put while zoomed. */}
+                  {badge && (
+                    <View pointerEvents="none" style={[styles.tappedFullModeBadge, { backgroundColor: badge.bg }]}>
+                      <Text style={[styles.tappedFullModeBadgeText, { color: badge.text }]}>
+                        {badge.label}
+                      </Text>
                     </View>
                   )}
-                </PannableImage>
-              </View>
+                  {/* Left / right chevrons for in-set navigation.
+                      Disabled (and hidden) at the set boundaries. */}
+                  {prevMember && (
+                    <TouchableOpacity
+                      onPress={() => goToMember(safeIdx - 1)}
+                      hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
+                      style={[styles.tappedFullChev, styles.tappedFullChevLeft]}
+                    >
+                      <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  )}
+                  {nextMember && (
+                    <TouchableOpacity
+                      onPress={() => goToMember(safeIdx + 1)}
+                      hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
+                      style={[styles.tappedFullChev, styles.tappedFullChevRight]}
+                    >
+                      <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Carousel dots below the photo — one per set member,
+                    accent on the active one. Hidden when the set has
+                    only a single photo (no value in showing a single
+                    dot). */}
+                {setMembers.length > 1 && (
+                  <View style={styles.tappedFullDots}>
+                    {setMembers.map((mm, i) => (
+                      <View
+                        key={mm.id || i}
+                        style={[
+                          styles.tappedFullDot,
+                          {
+                            backgroundColor: i === safeIdx ? '#F2C31B' : 'rgba(255,255,255,0.45)',
+                            width: i === safeIdx ? 18 : 6,
+                          },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                )}
+              </>
             );
           })()}
-          <TouchableOpacity
-            onPress={() => setTappedFullPhoto(null)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={[styles.tappedFullPhotoClose, { top: insets.top + 12 }]}
-          >
-            <Ionicons name="close" size={26} color="#FFFFFF" />
-          </TouchableOpacity>
-        </TouchableOpacity>
+        </View>
         </View>
       </Modal>
 
@@ -4123,6 +4238,105 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  // New tap-to-fullscreen modal header (per design 17-fullscreen-
+  // viewer): three slots laid out across the top — circular X close on
+  // the left, photo position pill centre, and "Set N+1 ›" jump on the
+  // right. Positioned absolute above the photo so the existing centred
+  // layout of the framed image stays intact.
+  tappedFullHeaderRow: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 8,
+  },
+  tappedFullHeaderClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  tappedFullHeaderCenter: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 12,
+  },
+  tappedFullHeaderPosition: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 0.2,
+  },
+  tappedFullHeaderSetJump: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 6,
+    paddingLeft: 6,
+    minWidth: 64,
+    justifyContent: 'flex-end',
+  },
+  tappedFullHeaderSetJumpText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Mode badge pill anchored top-left of the framed photo (outside
+  // the PannableImage transform, so it stays put when zoomed).
+  tappedFullModeBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    zIndex: 6,
+  },
+  tappedFullModeBadgeText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  // Left / right navigation chevrons sitting on top of the photo
+  // frame. Outside the PannableImage transform too so they don't drift
+  // when the user pans / zooms.
+  tappedFullChev: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    zIndex: 6,
+  },
+  tappedFullChevLeft: { left: -18 },
+  tappedFullChevRight: { right: -18 },
+  // Carousel dots below the photo. Active dot grows wider in the
+  // accent yellow; the rest stay round and translucent white.
+  tappedFullDots: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    bottom: 24,
+    zIndex: 7,
+  },
+  tappedFullDot: {
+    height: 6,
+    borderRadius: 3,
   },
   // Combined-photo half overlays — PhotoLabel renders its label
   // relative to its parent's bounds, so for COMBINED previews we
