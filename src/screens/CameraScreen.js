@@ -5258,32 +5258,38 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 20,
   },
+  // Format switch (design 07): two segments sit inside one continuous
+  // translucent-dark capsule instead of two separately outlined chips
+  // with a gap. Active segment fills white with dark text; inactive
+  // stays transparent with white text. Reads as a single segmented
+  // control, like the zoom pill next to it.
   aspectRatioSelector: {
     flexDirection: 'row',
-    gap: 5,
+    gap: 0,
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderRadius: 999,
+    padding: 3,
   },
   aspectRatioButtonBottom: {
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'transparent',
     alignContent: 'center',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    minWidth: 55,
-    height: 23,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderRadius: 999,
+    minWidth: 44,
+    height: 26,
+    paddingHorizontal: 10,
   },
   aspectRatioButtonBottomActive: {
-    backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY,
-    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
   },
   aspectRatioButtonBottomText: {
     fontFamily: FONTS.ALEXANDRIA,
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.1,
     textAlign: 'center',
   },
   aspectRatioButtonBottomTextActive: {
