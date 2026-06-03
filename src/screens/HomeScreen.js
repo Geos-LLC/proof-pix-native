@@ -2835,38 +2835,18 @@ export default function HomeScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* Tap-to-fullscreen modal — opens when the user taps any photo
-          inside the preview pager. Now follows the design 17-fullscreen-
-          viewer layout:
-          - Top row: X close (left) / N / M position (centre) / Set N+1 ›
-            jump (right).
-          - Photo with mode badge top-left (BEFORE / AFTER / PROGRESS),
-            PannableImage's reset chip top-right, and left/right chevrons
-            to walk through the set members.
-          - Carousel dots below the photo.
-          - PannableImage handles pinch-zoom (0.5×-3×) + drag-pan.
-          - Swipe down anywhere to close. */}
-      <Modal
-        visible={!!tappedFullPhoto}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTappedFullPhoto(null)}
-      >
-        {/* Gesture wrapper — bubble-phase PanResponder via the
-            tappedFullPanResponder hook above. PannableImage's PanResponder
-            on the deeper View gets first crack at every touch:
-              • 2-finger pinch  → claimed by PannableImage immediately
-              • Long-press + drag → claimed by PannableImage once armed
-              • Quick single-finger swipe → not claimed by PannableImage,
-                bubbles up here, and tappedFullPanResponder claims to
-                navigate (horizontal) or close (vertical down).
-            That ordering means casual one-finger touches still drive
-            PannableImage's drag/pinch without the modal stealing them. */}
+      {/* Tap-to-fullscreen overlay — opens when the user taps any photo
+          inside the preview pager. Uses a plain absolutely-positioned
+          View (NOT <Modal>) because React Native's Modal sometimes drops
+          PanResponder events from descendants on iOS, which made the
+          previous Modal-based attempt break drag + pinch + swipe at the
+          same time. GalleryScreen uses the same plain-View overlay
+          pattern for its fullscreen viewer and gestures work there. */}
+      {!!tappedFullPhoto && (
         <View
-          style={styles.tappedFullPhotoSwipeArea}
+          style={styles.tappedFullPhotoBackdrop}
           {...tappedFullPanResponder.panHandlers}
         >
-        <View style={styles.tappedFullPhotoBackdrop}>
           {liveTappedFullPhoto?.uri && (() => {
             // Use the live, store-resolved snapshot so format / metadata
             // edits saved in Studio while the modal is open (or before
@@ -3125,8 +3105,7 @@ export default function HomeScreen({ navigation, route }) {
             );
           })()}
         </View>
-        </View>
-      </Modal>
+      )}
 
       <Modal
         visible={openProjectVisible}
@@ -4269,10 +4248,19 @@ const styles = StyleSheet.create({
   // opens it edge-to-edge over a near-black backdrop. No overlays, no
   // chrome other than a single dismiss button (tap anywhere also closes).
   tappedFullPhotoBackdrop: {
-    flex: 1,
+    // Plain overlay (not Modal) — absolute-positioned full-screen so it
+    // covers the screen above everything (including the persistent
+    // bottom nav). zIndex 1000 matches the pattern GalleryScreen uses
+    // for its fullscreen overlay.
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.95)',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 1000,
   },
   tappedFullPhotoImage: {
     width: '100%',
