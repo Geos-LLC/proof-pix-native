@@ -427,7 +427,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F2C31B" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -466,7 +466,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
                       : 'Upgrade to keep going'}
             </Text>
             <Text style={styles.triggerBannerSubtitle}>
-              Remove watermark {'•'} Export in HD {'•'} Unlimited projects
+              Remove watermark {'•'} Unlimited projects {'•'} Reports
             </Text>
           </View>
         ) : null}
@@ -488,17 +488,16 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* ===== Pro Plan Card (PRIMARY) ===== */}
-        <View style={[styles.planCardWrapper, styles.planCardWrapperPrimary]}>
-          <GradientView
-            colors={['rgb(226, 208, 95)', '#FFFFFF']}
-            start={{ x: 0, y: 1.9 }}
-            end={{ x: 0.2, y: 0.2 }}
-            style={styles.planCard}
-            fallbackColor="#FFFFFF"
-          >
+        {/* ===== Pro Plan Card (PRIMARY) =====
+            Refresh pass 10 (cosmetic): swapped the GradientView fill
+            (yellow → white sweep that fought the white page bg) for a
+            flat soft-accent surface (#FFF4C2). Cleaner highlight and
+            matches the design's Pro card treatment 1:1. */}
+        <View style={[styles.planCardWrapper, styles.planCardWrapperPrimary, { backgroundColor: '#FFF4C2' }]}>
+          <View style={styles.planCard}>
             <View style={styles.recommendedBadge}>
-              <Text style={styles.recommendedText}>MOST POPULAR</Text>
+              <Ionicons name="star" size={11} color="#1E1E1E" style={styles.recommendedIcon} />
+              <Text style={styles.recommendedText}>Most popular</Text>
             </View>
             <View style={styles.planCardHeader}>
               <Text style={styles.planCardTitle}>{t('firstLoad.pro', { defaultValue: 'Pro' })}</Text>
@@ -525,12 +524,20 @@ export default function PlanSelectionScreen({ navigation, route }) {
               <Text style={styles.trialSubtext}>then {prices.pro}/month</Text>
             ) : null}
             <Text style={styles.planCardDescription}>
-              Best for solo cleaners & professionals
+              For professionals who use ProofPix every day.{'\n'}Everything in Starter, plus:
             </Text>
             <View style={styles.valueBullets}>
-              <Text style={styles.valueBulletText}>Prevent "you didn't clean this" complaints</Text>
-              <Text style={styles.valueBulletText}>Create before & after photos in seconds</Text>
-              <Text style={styles.valueBulletText}>Send proof to clients instantly</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Unlimited Projects</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Unlimited Photos</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Remove ProofPix Watermark</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Professional Reports</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Voice Notes & Transcription</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Markup & Annotations</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Google Drive Sync</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Dropbox Sync</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Background Uploads</Text>
+              <Text style={styles.valueBulletText}>{'✓'} ZIP Exports & Advanced Formats</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Custom Labels & Watermarks</Text>
             </View>
             {Platform.OS === 'android' && (
               <>
@@ -555,7 +562,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
                 </Text>
               </>
             )}
-          </GradientView>
+          </View>
         </View>
 
         {/* ===== Primary CTA Button (iOS only — Android uses per-card CTAs for Play policy compliance) ===== */}
@@ -624,8 +631,18 @@ export default function PlanSelectionScreen({ navigation, route }) {
               </View>
             </View>
             <Text style={styles.planCardDescription}>
-              Basic before & after photos{'\n'}1 free export every 24 hours
+              Perfect for getting started.
             </Text>
+            <View style={styles.valueBullets}>
+              <Text style={styles.valueBulletText}>{'✓'} 1 Project</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Up to 100 Photos</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Before / Progress / After workflow</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Ghost Overlay</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Comparison Views</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Combined Before & After Images</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Share Photos & Comparisons</Text>
+              <Text style={styles.valueBulletText}>{'✓'} Watermarked Exports</Text>
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -646,20 +663,16 @@ export default function PlanSelectionScreen({ navigation, route }) {
 
         {(showTeamPlans || Platform.OS === 'android') && (
           <>
-            {/* Business Plan Card */}
+            {/* Business Plan Card —
+                Refresh pass 10 (cosmetic): flat white fill, no gradient,
+                matching the design's neutral Business card treatment. */}
             <TouchableOpacity
-              style={[styles.planCardWrapper, userPlan === 'business' && styles.planCardWrapperSelected]}
+              style={[styles.planCardWrapper, { backgroundColor: '#FFFFFF' }, userPlan === 'business' && styles.planCardWrapperSelected]}
               onPress={Platform.OS === 'android' ? undefined : () => handleSelectPlan('business')}
               activeOpacity={Platform.OS === 'android' ? 1 : 0.8}
               disabled={Platform.OS === 'android'}
             >
-              <GradientView
-                colors={['rgb(226, 208, 95)', '#FFFFFF']}
-                start={{ x: 0, y: 1.9 }}
-                end={{ x: 0.2, y: 0.2 }}
-                style={styles.planCard}
-                fallbackColor="#FFFFFF"
-              >
+              <View style={styles.planCard}>
                 <View style={styles.planCardHeader}>
                   <Text style={styles.planCardTitle}>{t('firstLoad.business', { defaultValue: 'Business' })}</Text>
                   <View style={styles.priceContainer}>
@@ -685,7 +698,18 @@ export default function PlanSelectionScreen({ navigation, route }) {
                   <Text style={styles.trialSubtext}>then {prices.business}/month</Text>
                 ) : null}
                 <Text style={styles.planCardDescription}>
-                  Everything in Pro &{'\n'}For small teams up to 5 members.{prices.businessSeat ? ` ${prices.businessSeat} per` : ''} {'\n'}additional team member.
+                  For growing teams and companies.{'\n'}Everything in Pro, plus:
+                </Text>
+                <View style={styles.valueBullets}>
+                  <Text style={styles.valueBulletText}>{'✓'} Team Members (up to 10)</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Shared Projects</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Company Logo Branding</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Metadata Overlays</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Business Reports & Analytics</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Team Collaboration Tools</Text>
+                </View>
+                <Text style={styles.planCardDescription}>
+                  {'\n'}For small teams up to 5 members.{prices.businessSeat ? ` ${prices.businessSeat} per additional team member.` : ''}
                 </Text>
                 {Platform.OS === 'android' && (
                   <>
@@ -707,23 +731,19 @@ export default function PlanSelectionScreen({ navigation, route }) {
                     </Text>
                   </>
                 )}
-              </GradientView>
+              </View>
             </TouchableOpacity>
 
-            {/* Enterprise Plan Card */}
+            {/* Enterprise Plan Card — contact-sales only (no public IAP price).
+                Refresh pass 10 (cosmetic): flat white fill matching the
+                Business card so the lower half of the picker reads as a
+                tidy two-card stack instead of two competing gradients. */}
             <TouchableOpacity
-              style={[styles.planCardWrapper, userPlan === 'enterprise' && styles.planCardWrapperSelected]}
-              onPress={Platform.OS === 'android' ? undefined : () => handleSelectPlan('enterprise')}
-              activeOpacity={Platform.OS === 'android' ? 1 : 0.8}
-              disabled={Platform.OS === 'android'}
+              style={[styles.planCardWrapper, { backgroundColor: '#FFFFFF' }, userPlan === 'enterprise' && styles.planCardWrapperSelected]}
+              onPress={() => setShowEnterpriseModal(true)}
+              activeOpacity={0.8}
             >
-              <GradientView
-                colors={['rgb(226, 208, 95)', '#FFFFFF']}
-                start={{ x: 0, y: 1.9 }}
-                end={{ x: 0.2, y: 0.2 }}
-                style={styles.planCard}
-                fallbackColor="#FFFFFF"
-              >
+              <View style={styles.planCard}>
                 <View style={styles.planCardHeader}>
                   <Text style={styles.planCardTitle}>{t('firstLoad.enterprise', { defaultValue: 'Enterprise' })}</Text>
                   <View style={[styles.priceContainer, styles.priceContainerWide]}>
@@ -734,44 +754,31 @@ export default function PlanSelectionScreen({ navigation, route }) {
                       style={styles.priceBadgeGradientWide}
                       fallbackColor="rgba(11, 131, 33, 0.14)"
                     />
-                    {pricesLoading ? (
-                      <ActivityIndicator size="small" color="#0B8321" />
-                    ) : trialAvailable ? (
-                      <View style={styles.trialPriceRow}>
-                        <Text style={styles.priceText}>Free Trial</Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.priceText}>{prices.enterprise ? `Starts at ${prices.enterprise}` : 'Price unavailable'}</Text>
-                    )}
+                    <Text style={styles.priceText}>Contact Sales</Text>
                   </View>
                 </View>
-                {trialAvailable && prices.enterprise ? (
-                  <Text style={styles.trialSubtext}>then {prices.enterprise}/month</Text>
-                ) : null}
                 <Text style={styles.planCardDescription}>
-                  Everything in Business &{'\n'}For growing organizations with 15 team members and more
+                  For growing organizations with 15+ team members.{'\n'}Everything in Business, plus:
                 </Text>
-                {Platform.OS === 'android' && (
-                  <>
-                    <TouchableOpacity
-                      style={styles.androidCardCTA}
-                      onPress={() => handleSelectPlan('enterprise')}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.androidCardCTAText}>
-                        {trialAvailable ? `Start ${trialDays}-day free trial` : 'Subscribe'}
-                      </Text>
-                    </TouchableOpacity>
-                    <Text style={styles.androidCardDisclosure}>
-                      {trialAvailable && prices.enterprise
-                        ? `${trialDays}-day free trial, then ${prices.enterprise}/month.\nAuto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
-                        : prices.enterprise
-                          ? `${prices.enterprise}/month. Auto-renews until canceled.\nCancel anytime in Google Play > Subscriptions.`
-                          : ''}
-                    </Text>
-                  </>
-                )}
-              </GradientView>
+                <View style={styles.valueBullets}>
+                  <Text style={styles.valueBulletText}>{'✓'} Unlimited Team Members</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Multiple Cloud Accounts</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Multiple Teams</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} API Access & Webhooks</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Custom Integrations</Text>
+                  <Text style={styles.valueBulletText}>{'✓'} Priority Support</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.androidCardCTA}
+                  onPress={() => setShowEnterpriseModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.androidCardCTAText}>Contact Sales</Text>
+                </TouchableOpacity>
+                <Text style={styles.androidCardDisclosure}>
+                  Custom pricing based on team size and integrations.{'\n'}Our team will get back to you within 1 business day.
+                </Text>
+              </View>
             </TouchableOpacity>
           </>
         )}
@@ -827,16 +834,22 @@ export default function PlanSelectionScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  // Refresh pass 10 (cosmetic) — design screenshot 38 puts the paywall
+  // on a white canvas instead of the brand-yellow flood. The yellow
+  // moves to the Pro card's soft-accent fill (#FFF4C2) where it does
+  // its job as the highlight — the surrounding screen reads cleaner
+  // and Pro pops more. Header order + CTA placement + card ordering
+  // are all left as the user has them; only surfaces and borders change.
   container: {
     flex: 1,
-    backgroundColor: '#F2C31B',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 18,
+    paddingHorizontal: 18,
+    paddingTop: 8,
     paddingBottom: 12,
   },
   backButton: {
@@ -846,21 +859,21 @@ const styles = StyleSheet.create({
   backButtonInner: {
     width: 36,
     height: 36,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 999,
+    backgroundColor: '#F4F4F4',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 23,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '800',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
-    letterSpacing: -0.2,
+    color: '#1E1E1E',
+    letterSpacing: -0.3,
     flex: 1,
     textAlign: 'center',
-    textTransform: 'sentence-case',
+    lineHeight: 24,
+    paddingHorizontal: 8,
   },
   headerSpacer: {
     width: 36,
@@ -927,30 +940,35 @@ const styles = StyleSheet.create({
   trialBannerBold: {
     fontWeight: '900',
   },
+  // Refresh pass 10 (cosmetic) — softer card chrome per the design's
+  // shadow-card spec: hairline border + warm soft shadow, radius 20.
+  // Primary (Pro) keeps the +2px accent border per design; selected
+  // cards still get the 2.5px accent ring so the picked state reads.
   planCardWrapper: {
-    marginBottom: 14,
-    borderRadius: 25,
-    shadowColor: '#000',
+    marginBottom: 12,
+    borderRadius: 20,
+    shadowColor: '#141420',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.11,
-    shadowRadius: 8.2,
-    elevation: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    elevation: 3,
     overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
   },
   planCardWrapperPrimary: {
     borderWidth: 2,
-    borderColor: '#000000',
-    transform: [{ scale: 1.02 }],
+    borderColor: '#F2C31B',
   },
   planCardWrapperSelected: {
     borderWidth: 2.5,
     borderColor: '#F2C31B',
   },
   planCard: {
-    borderRadius: 25,
-    paddingHorizontal: 22,
-    paddingTop: 15,
-    paddingBottom: 20,
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 18,
   },
   planCardHeader: {
     flexDirection: 'row',
@@ -1030,27 +1048,31 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 2,
   },
+  // Refresh pass 10 (cosmetic) — design 38: "Most popular" reads as a
+  // filled yellow pill with a star glyph and dark text (was a black
+  // outlined chip with no glyph). Smaller, leaning, more positive.
   recommendedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-end',
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 7,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.3)',
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginTop: 6,
+    backgroundColor: '#F2C31B',
   },
   recommendedIcon: {
-    fontSize: 14,
-    marginRight: 6,
+    fontSize: 11,
+    marginRight: 4,
   },
   recommendedText: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
-    lineHeight: 15,
+    color: '#1E1E1E',
+    lineHeight: 14,
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
   },
   valueBullets: {
     marginTop: 10,
@@ -1063,30 +1085,41 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     paddingLeft: 4,
   },
+  // Refresh pass 10 (cosmetic) — design 38: primary CTA is yellow per
+  // the pp-btn--primary spec (was solid black with white text). 54px
+  // height per the system, warm pop-shadow, dark text on accent.
   primaryCTAButton: {
-    backgroundColor: '#000000',
-    borderRadius: 100,
-    paddingVertical: 18,
+    backgroundColor: '#F2C31B',
+    borderRadius: 16,
+    height: 54,
+    paddingHorizontal: 24,
     marginTop: 4,
     marginBottom: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#F2C31B',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 6,
   },
   primaryCTAText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     fontFamily: 'Alexandria_400Regular',
-    color: '#FFFFFF',
+    color: '#1E1E1E',
     textAlign: 'center',
+    letterSpacing: -0.1,
   },
   primaryCTASubtext: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: '#FFFFFF',
+    color: '#1E1E1E',
     textAlign: 'center',
-    opacity: 0.85,
+    opacity: 0.7,
     marginTop: 2,
+    letterSpacing: -0.1,
   },
   triggerBanner: {
     backgroundColor: '#FFF8E1',
@@ -1205,38 +1238,40 @@ const styles = StyleSheet.create({
   restoreIcon: {
     marginRight: 6,
   },
+  // Refresh pass 10 (cosmetic) — design 38 footer reads as muted small
+  // text ("Restore purchases · Terms · Privacy") rather than the prior
+  // black-pill restore + underlined dark links + black dot. Same taps,
+  // softer hierarchy.
   restorePurchasesText: {
-    fontSize: 14,
-    fontWeight: '400',
+    fontSize: 13,
+    fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
-    lineHeight: 17,
+    color: '#666666',
+    lineHeight: 16,
+    letterSpacing: -0.1,
   },
   legalLinksContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
-    gap: 7,
-    bottom: 3,
-    display: 'absolute',
+    marginTop: 8,
+    gap: 8,
   },
   legalLinkButton: {
     paddingVertical: 4,
   },
   legalLinkText: {
-    fontSize: 10,
-    fontWeight: '400',
+    fontSize: 11,
+    fontWeight: '500',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
-    textDecorationLine: 'underline',
-    lineHeight: 12,
+    color: '#9A9A9A',
+    lineHeight: 14,
   },
   legalLinkDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#000000',
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#9A9A9A',
   },
   // Trial Confirmation Modal Styles
   trialModalOverlay: {

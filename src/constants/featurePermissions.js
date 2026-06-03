@@ -14,35 +14,42 @@ export const FEATURES = {
   PHOTO_EXPORT: 'photo_export',
   BULK_DELETE: 'bulk_delete',
   UNLIMITED_SHARING: 'unlimited_sharing',
-  
+  REMOVE_WATERMARK: 'remove_watermark',
+  MARKUP: 'markup',
+  VOICE_NOTES: 'voice_notes',
+  ZIP_EXPORT: 'zip_export',
+  ADVANCED_FORMATS: 'advanced_formats',
+
   // Cloud Integration
   GOOGLE_DRIVE_SYNC: 'google_drive_sync',
   DROPBOX_SYNC: 'dropbox_sync',
   MULTIPLE_CLOUD_ACCOUNTS: 'multiple_cloud_accounts',
   BACKGROUND_UPLOAD: 'background_upload',
-  
+
   // Team Features
   TEAM_COLLABORATION: 'team_collaboration',
   TEAM_INVITES: 'team_invites',
   TEAM_MANAGEMENT: 'team_management',
   MULTIPLE_TEAMS: 'multiple_teams',
-  
+
   // Customization
   CUSTOM_WATERMARKS: 'custom_watermarks',
   CUSTOM_LABELS: 'custom_labels',
   ADVANCED_TEMPLATES: 'advanced_templates',
   BRANDING: 'branding',
-  
+  LOGO: 'logo',
+  METADATA: 'metadata',
+
   // Projects
   MULTIPLE_PROJECTS: 'multiple_projects',
   UNLIMITED_PROJECTS: 'unlimited_projects',
   PROJECT_SHARING: 'project_sharing',
-  
+
   // Analytics & Reporting
   ANALYTICS: 'analytics',
   REPORTS: 'reports',
   EXPORT_REPORTS: 'export_reports',
-  
+
   // Advanced Features
   API_ACCESS: 'api_access',
   WEBHOOKS: 'webhooks',
@@ -51,14 +58,23 @@ export const FEATURES = {
 };
 
 // Role definitions for each tier
+//
+// Starter: before/after workflow, combined image gen + sharing, progress photos,
+//          1 project, watermark shown (no remove).
+// Pro:     Starter + remove watermark, unlimited projects, reports, markup,
+//          voice notes, cloud sync.
+// Business: Pro + logo, metadata, team, shared projects.
+//
+// Note: before/after workflow, combined image generation/sharing, and progress
+// photos are core capabilities available to every tier, so they don't appear as
+// gated features.
 export const TIER_ROLES = {
   starter: {
     name: 'Starter',
     features: [
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
-      // No MULTIPLE_PROJECTS - starter can only have 1 project
-      // No cloud sync, no team features, no watermark customization, no label customization
+      FEATURES.UNLIMITED_SHARING,
     ],
     limits: {
       maxProjects: 1,
@@ -67,7 +83,7 @@ export const TIER_ROLES = {
       maxCloudAccounts: 0,
     }
   },
-  
+
   pro: {
     name: 'Pro',
     features: [
@@ -75,6 +91,11 @@ export const TIER_ROLES = {
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
       FEATURES.UNLIMITED_SHARING,
+      FEATURES.REMOVE_WATERMARK,
+      FEATURES.MARKUP,
+      FEATURES.VOICE_NOTES,
+      FEATURES.ZIP_EXPORT,
+      FEATURES.ADVANCED_FORMATS,
       FEATURES.GOOGLE_DRIVE_SYNC,
       FEATURES.DROPBOX_SYNC,
       FEATURES.BACKGROUND_UPLOAD,
@@ -83,8 +104,8 @@ export const TIER_ROLES = {
       FEATURES.CUSTOM_WATERMARKS,
       FEATURES.CUSTOM_LABELS,
       FEATURES.ADVANCED_TEMPLATES,
-      FEATURES.PROJECT_SHARING,
-      // No team features - everything else
+      FEATURES.REPORTS,
+      FEATURES.EXPORT_REPORTS,
     ],
     limits: {
       maxProjects: -1, // Unlimited
@@ -93,14 +114,18 @@ export const TIER_ROLES = {
       maxCloudAccounts: 1,
     }
   },
-  
+
   business: {
     name: 'Business',
     features: [
+      // Pro features
       FEATURES.UNLIMITED_PHOTOS,
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
       FEATURES.UNLIMITED_SHARING,
+      FEATURES.REMOVE_WATERMARK,
+      FEATURES.MARKUP,
+      FEATURES.VOICE_NOTES,
       FEATURES.GOOGLE_DRIVE_SYNC,
       FEATURES.DROPBOX_SYNC,
       FEATURES.BACKGROUND_UPLOAD,
@@ -109,10 +134,15 @@ export const TIER_ROLES = {
       FEATURES.CUSTOM_WATERMARKS,
       FEATURES.CUSTOM_LABELS,
       FEATURES.ADVANCED_TEMPLATES,
+      FEATURES.REPORTS,
+      // Business-only
+      FEATURES.LOGO,
       FEATURES.BRANDING,
+      FEATURES.METADATA,
       FEATURES.PROJECT_SHARING,
       FEATURES.TEAM_COLLABORATION,
       FEATURES.TEAM_INVITES,
+      FEATURES.TEAM_MANAGEMENT,
       FEATURES.ANALYTICS,
     ],
     limits: {
@@ -126,27 +156,34 @@ export const TIER_ROLES = {
   enterprise: {
     name: 'Enterprise',
     features: [
+      // Business features
       FEATURES.UNLIMITED_PHOTOS,
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
       FEATURES.UNLIMITED_SHARING,
+      FEATURES.REMOVE_WATERMARK,
+      FEATURES.MARKUP,
+      FEATURES.VOICE_NOTES,
       FEATURES.GOOGLE_DRIVE_SYNC,
       FEATURES.DROPBOX_SYNC,
-      FEATURES.MULTIPLE_CLOUD_ACCOUNTS,
       FEATURES.BACKGROUND_UPLOAD,
       FEATURES.MULTIPLE_PROJECTS,
       FEATURES.UNLIMITED_PROJECTS,
       FEATURES.CUSTOM_WATERMARKS,
       FEATURES.CUSTOM_LABELS,
       FEATURES.ADVANCED_TEMPLATES,
+      FEATURES.REPORTS,
+      FEATURES.LOGO,
       FEATURES.BRANDING,
+      FEATURES.METADATA,
       FEATURES.PROJECT_SHARING,
       FEATURES.TEAM_COLLABORATION,
       FEATURES.TEAM_INVITES,
       FEATURES.TEAM_MANAGEMENT,
-      FEATURES.MULTIPLE_TEAMS,
       FEATURES.ANALYTICS,
-      FEATURES.REPORTS,
+      // Enterprise-only
+      FEATURES.MULTIPLE_CLOUD_ACCOUNTS,
+      FEATURES.MULTIPLE_TEAMS,
       FEATURES.EXPORT_REPORTS,
       FEATURES.API_ACCESS,
       FEATURES.WEBHOOKS,
