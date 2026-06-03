@@ -3005,28 +3005,42 @@ export default function SettingsScreen({ navigation, route }) {
           })()}
         </TouchableOpacity>
 
-        {/* Upgrade banner — separate yellow card per design, sits below
-            the user card. Same destination (PlanSelection upgrade mode). */}
-        <TouchableOpacity
-          style={styles.upgradeButton}
-          onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
-          activeOpacity={0.85}
-        >
-          <View style={styles.upgradeButtonIconTile}>
-            <Ionicons name="star" size={20} color="#1E1E1E" />
-          </View>
-          <View style={styles.upgradeButtonCopy}>
-            <Text style={styles.upgradeButtonTitle}>
-              {t('settings.upgradeToPro', { defaultValue: 'Upgrade to Pro' })}
-            </Text>
-            <Text style={styles.upgradeButtonSubtitle} numberOfLines={1}>
-              {t('settings.upgradeToProSubtitle', {
+        {/* Upgrade banner — tier-aware:
+            - Starter (or no plan)        → "Upgrade to Pro" + Pro pitch
+            - Pro                         → "Upgrade to Business" + team/branding pitch
+            - Business / Enterprise       → hidden (already at top tier)
+            Same destination (PlanSelection upgrade mode). */}
+        {(() => {
+          const plan = (userPlan || 'starter').toLowerCase();
+          if (plan === 'business' || plan === 'enterprise') return null;
+          const isPro = plan === 'pro';
+          const title = isPro
+            ? t('settings.upgradeToBusiness', { defaultValue: 'Upgrade to Business' })
+            : t('settings.upgradeToPro', { defaultValue: 'Upgrade to Pro' });
+          const subtitle = isPro
+            ? t('settings.upgradeToBusinessSubtitle', {
+                defaultValue: 'Team members, shared projects, logo & metadata',
+              })
+            : t('settings.upgradeToProSubtitle', {
                 defaultValue: 'Unlimited projects, reports & cloud sync',
-              })}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#1E1E1E" />
-        </TouchableOpacity>
+              });
+          return (
+            <TouchableOpacity
+              style={styles.upgradeButton}
+              onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
+              activeOpacity={0.85}
+            >
+              <View style={styles.upgradeButtonIconTile}>
+                <Ionicons name="star" size={20} color="#1E1E1E" />
+              </View>
+              <View style={styles.upgradeButtonCopy}>
+                <Text style={styles.upgradeButtonTitle}>{title}</Text>
+                <Text style={styles.upgradeButtonSubtitle} numberOfLines={1}>{subtitle}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#1E1E1E" />
+            </TouchableOpacity>
+          );
+        })()}
 
         {/* Trial / plan status — a thin row that appears only when there's
             something to say (active trial, paid sub manage link). Hidden
@@ -5627,7 +5641,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-N · helpsupport: no live-chat, help-center=www.proofpix.app/help
+              Build tag: OTA-2026-06-03-O · upgrade-banner tier-aware (Pro→Business, hide on Business+)
             </Text>
           </View>
         )}
