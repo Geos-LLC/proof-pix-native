@@ -6,162 +6,184 @@ import {
   TouchableOpacity,
   Alert,
   Linking,
-  Platform,
-  PermissionsAndroid,
   Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
+import * as Location from 'expo-location';
+import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
 import { logOnboardingStepCompleted } from '../utils/analytics';
 
+// Refresh pass 7 — rebuilt to match design screenshot 03-permissions:
+//
+//   [shield] ← small soft-accent tile, top-left
+//   A few permissions                     ← bold left-aligned headline
+//   ProofPix only uses these to capture…  ← supporting subhead
+//
+//   ┌──────────────────────────────┐
+//   │ [📷] Camera          ✓       │   ← granted state = green check
+//   │     Capture before & after… │
+//   └──────────────────────────────┘
+//   ┌──────────────────────────────┐
+//   │ [🖼️] Photos          ✓       │
+//   │     Import existing shots…  │
+//   └──────────────────────────────┘
+//   ┌──────────────────────────────┐
+//   │ [📍] Location     [Allow]    │   ← not-yet state = outline button
+//   │     Stamp GPS & address…    │
+//   └──────────────────────────────┘
+//   ┌──────────────────────────────┐
+//   │ [🎤] Microphone   [Allow]    │
+//   │     Record voice notes…     │
+//   └──────────────────────────────┘
+//
+//   [        Allow access         ]    ← yellow primary CTA — requests
+//                                        anything still missing.
+//        Not now                       ← ghost skip
+//
+// All four are real requests:
+//   Camera     → expo-camera        (existing)
+//   Photos     → expo-media-library (existing)
+//   Location   → expo-location      (new — was already a dep, used by upload)
+//   Microphone → expo-av Audio      (new — was already a dep, used by voice notes)
+//
+// Location + Microphone are optional — the user can proceed without them
+// (we don't block Continue on those). Camera + Photos remain required.
+
 export default function PermissionsSetupScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  
-  const [cameraPermission, setCameraPermission] = useState(null);
-  const [photoPermission, setPhotoPermission] = useState(null);
-  const [isChecking, setIsChecking] = useState(true);
-  
+
+  const [cameraGranted, setCameraGranted] = useState(false);
+  const [photoGranted, setPhotoGranted] = useState(false);
+  const [locationGranted, setLocationGranted] = useState(false);
+  const [micGranted, setMicGranted] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const cameraCheckAnim = useRef(new Animated.Value(0)).current;
-  const photoCheckAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
     ]).start();
   }, []);
 
   useEffect(() => {
-    if (cameraPermission) {
-      Animated.spring(cameraCheckAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [cameraPermission]);
+    (async () => {
+      try {
+        const camera = await Camera.getCameraPermissionsAsync();
+        setCameraGranted(!!(camera.granted || camera.status === 'granted'));
 
-  useEffect(() => {
-    if (photoPermission) {
-      Animated.spring(photoCheckAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [photoPermission]);
+        const photo = await MediaLibrary.getPermissionsAsync();
+        setPhotoGranted(photo.status === 'granted' || photo.status === 'limited');
 
-  useEffect(() => {
-    checkPermissions();
+        const location = await Location.getForegroundPermissionsAsync();
+        setLocationGranted(location.status === 'granted');
+
+        const mic = await Audio.getPermissionsAsync();
+        setMicGranted(mic.status === 'granted');
+      } catch (e) {
+        // Non-fatal — leave defaults (denied) and let the user re-grant.
+      }
+    })();
   }, []);
 
-  const checkPermissions = async () => {
-    try {
-      // Check camera permission
-      const cameraStatus = await Camera.getCameraPermissionsAsync();
-      setCameraPermission(cameraStatus.granted || cameraStatus.status === 'granted');
-
-      // Check photo library permission
-      const photoStatus = await MediaLibrary.getPermissionsAsync();
-      setPhotoPermission(photoStatus.status === 'granted' || photoStatus.status === 'limited');
-    } catch (error) {
-      console.error('[PermissionsSetup] Error checking permissions:', error);
-    } finally {
-      setIsChecking(false);
-    }
-  };
-
-  const requestCameraPermission = async () => {
+  const requestCamera = async () => {
     try {
       const result = await Camera.requestCameraPermissionsAsync();
-      const granted = result.granted || result.status === 'granted';
-      setCameraPermission(granted);
-      
-      if (!granted) {
-        Alert.alert(
-          t('permissions.cameraDeniedTitle', { defaultValue: 'Camera Permission Required' }),
-          t('permissions.cameraDeniedMessage', {
-            defaultValue: 'ProofPix needs camera access to take photos. Please enable it in Settings.'
-          }),
-          [
-            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
-            {
-              text: t('permissions.openSettings', { defaultValue: 'Open Settings' }),
-              onPress: () => Linking.openSettings(),
-            },
-          ]
-        );
-      }
-    } catch (error) {
-      console.error('[PermissionsSetup] Error requesting camera permission:', error);
+      const granted = !!(result.granted || result.status === 'granted');
+      setCameraGranted(granted);
+      if (!granted) showDeniedAlert('Camera');
+      return granted;
+    } catch {
+      return false;
     }
   };
 
-  const requestPhotoPermission = async () => {
+  const requestPhoto = async () => {
     try {
       const result = await MediaLibrary.requestPermissionsAsync();
       const granted = result.status === 'granted' || result.status === 'limited';
-      setPhotoPermission(granted);
-      
-      if (!granted) {
-        Alert.alert(
-          t('permissions.photosDeniedTitle', { defaultValue: 'Photo Library Permission Required' }),
-          t('permissions.photosDeniedMessage', {
-            defaultValue: 'ProofPix needs photo library access to save your photos. Please enable it in Settings.'
-          }),
-          [
-            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
-            {
-              text: t('permissions.openSettings', { defaultValue: 'Open Settings' }),
-              onPress: () => Linking.openSettings(),
-            },
-          ]
-        );
-      }
-    } catch (error) {
-      console.error('[PermissionsSetup] Error requesting photo permission:', error);
+      setPhotoGranted(granted);
+      if (!granted) showDeniedAlert('Photos');
+      return granted;
+    } catch {
+      return false;
     }
   };
 
-  const handleContinue = () => {
-    if (!cameraPermission || !photoPermission) {
+  const requestLocation = async () => {
+    try {
+      const result = await Location.requestForegroundPermissionsAsync();
+      const granted = result.status === 'granted';
+      setLocationGranted(granted);
+      return granted;
+    } catch {
+      return false;
+    }
+  };
+
+  const requestMic = async () => {
+    try {
+      const result = await Audio.requestPermissionsAsync();
+      const granted = result.status === 'granted';
+      setMicGranted(granted);
+      return granted;
+    } catch {
+      return false;
+    }
+  };
+
+  const showDeniedAlert = (which) => {
+    Alert.alert(
+      t('permissions.deniedTitle', { defaultValue: `${which} permission needed` }),
+      t('permissions.deniedMessage', {
+        defaultValue: `Enable ${which} in Settings to use this feature.`,
+      }),
+      [
+        { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        {
+          text: t('permissions.openSettings', { defaultValue: 'Open Settings' }),
+          onPress: () => Linking.openSettings(),
+        },
+      ],
+    );
+  };
+
+  // "Allow access" — requests anything still missing, then advances if
+  // the two required ones (Camera + Photos) are granted.
+  const handleAllowAccess = async () => {
+    if (!cameraGranted) await requestCamera();
+    if (!photoGranted) await requestPhoto();
+    if (!locationGranted) await requestLocation();
+    if (!micGranted) await requestMic();
+    // Re-read state guard — useState updates are async so use returned
+    // values from this round to decide whether to advance.
+    const cam = cameraGranted || (await Camera.getCameraPermissionsAsync()).granted;
+    const ph = photoGranted || ['granted', 'limited'].includes((await MediaLibrary.getPermissionsAsync()).status);
+    if (cam && ph) {
+      logOnboardingStepCompleted('permissions');
+      navigation.navigate('LabelLanguageSetup');
+    } else {
       Alert.alert(
         t('permissions.requiredTitle', { defaultValue: 'Permissions Required' }),
         t('permissions.requiredMessage', {
-          defaultValue: 'Please grant camera and photo library permissions to use ProofPix.'
-        })
+          defaultValue: 'ProofPix needs Camera and Photos access to capture and store your work.',
+        }),
       );
-      return;
     }
-
-    logOnboardingStepCompleted('permissions');
-    // Navigate to plan selection or label language setup
-    navigation.navigate('LabelLanguageSetup');
   };
 
-  const handleSkip = () => {
+  const handleNotNow = () => {
     Alert.alert(
-      t('permissions.skipTitle', { defaultValue: 'Skip Permissions?' }),
+      t('permissions.skipTitle', { defaultValue: 'Skip for now?' }),
       t('permissions.skipMessage', {
-        defaultValue: 'You can grant permissions later in Settings, but some features may not work until then.'
+        defaultValue: "You can enable these later in Settings. Some features won't work until you do.",
       }),
       [
         { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
@@ -169,206 +191,111 @@ export default function PermissionsSetupScreen({ navigation }) {
           text: t('common.continue', { defaultValue: 'Continue' }),
           onPress: () => navigation.navigate('LabelLanguageSetup'),
         },
-      ]
+      ],
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        {/* Header */}
-        <Animated.View 
-          style={[
-            styles.header,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          <View style={styles.headerIconContainer}>
-            <Ionicons name="shield-checkmark-outline" size={48} color={COLORS.PRIMARY} />
-          </View>
-          <Text style={styles.title}>
-            {t('permissions.title', { defaultValue: 'Enable Permissions' })}
-          </Text>
-          <Text style={styles.subtitle}>
-            {t('permissions.subtitle', {
-              defaultValue: 'ProofPix needs these permissions to function properly'
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <Animated.View
+        style={[
+          styles.content,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        <View style={styles.headerIcon}>
+          <Ionicons name="shield-checkmark" size={24} color="#7A5B00" />
+        </View>
+
+        <Text style={styles.headline}>
+          {t('permissions.headline', { defaultValue: 'A few permissions' })}
+        </Text>
+        <Text style={styles.subhead}>
+          {t('permissions.subhead', {
+            defaultValue: 'ProofPix only uses these to capture and document your work. Nothing is shared.',
+          })}
+        </Text>
+
+        <View style={styles.rows}>
+          <PermissionRow
+            icon="camera-outline"
+            title={t('permissions.cameraTitle', { defaultValue: 'Camera' })}
+            description={t('permissions.cameraDescription', {
+              defaultValue: 'Capture before & after photos on the job',
             })}
+            granted={cameraGranted}
+            onAllow={requestCamera}
+          />
+          <PermissionRow
+            icon="image-outline"
+            title={t('permissions.photosTitle', { defaultValue: 'Photos' })}
+            description={t('permissions.photosDescription', {
+              defaultValue: 'Import existing shots into a set',
+            })}
+            granted={photoGranted}
+            onAllow={requestPhoto}
+          />
+          <PermissionRow
+            icon="location-outline"
+            title={t('permissions.locationTitle', { defaultValue: 'Location' })}
+            description={t('permissions.locationDescription', {
+              defaultValue: 'Stamp GPS & address on proof',
+            })}
+            granted={locationGranted}
+            onAllow={requestLocation}
+          />
+          <PermissionRow
+            icon="mic-outline"
+            title={t('permissions.microphoneTitle', { defaultValue: 'Microphone' })}
+            description={t('permissions.microphoneDescription', {
+              defaultValue: 'Record voice notes hands-free',
+            })}
+            granted={micGranted}
+            onAllow={requestMic}
+          />
+        </View>
+      </Animated.View>
+
+      <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={handleAllowAccess}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.primaryButtonText}>
+            {t('permissions.allowAccess', { defaultValue: 'Allow access' })}
           </Text>
-        </Animated.View>
-
-        {/* Permissions List */}
-        <Animated.View 
-          style={[
-            styles.permissionsContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          {/* Camera Permission */}
-          <View style={[
-            styles.permissionCard,
-            cameraPermission && styles.permissionCardGranted,
-          ]}>
-            <View style={[
-              styles.permissionIconContainer,
-              cameraPermission && styles.permissionIconContainerGranted,
-            ]}>
-              <Ionicons 
-                name="camera" 
-                size={32} 
-                color={cameraPermission ? '#FFFFFF' : COLORS.PRIMARY} 
-              />
-            </View>
-            <View style={styles.permissionContent}>
-              <Text style={styles.permissionTitle}>
-                {t('permissions.cameraTitle', { defaultValue: 'Camera Access' })}
-              </Text>
-              <Text style={styles.permissionDescription}>
-                {t('permissions.cameraDescription', {
-                  defaultValue: 'Required to take before and after photos'
-                })}
-              </Text>
-            </View>
-            <View style={styles.permissionStatus}>
-              {cameraPermission === null ? (
-                <View style={styles.statusPending}>
-                  <Animated.View 
-                    style={[
-                      styles.statusPendingInner,
-                      {
-                        transform: [{ scale: cameraCheckAnim }],
-                      },
-                    ]}
-                  />
-                </View>
-              ) : cameraPermission ? (
-                <Animated.View
-                  style={{
-                    transform: [{ scale: cameraCheckAnim }],
-                  }}
-                >
-                  <View style={styles.statusGrantedContainer}>
-                    <Ionicons name="checkmark-circle" size={28} color="#34C759" />
-                  </View>
-                </Animated.View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.enableButton}
-                  onPress={requestCameraPermission}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.enableButtonText}>
-                    {t('permissions.enable', { defaultValue: 'Enable' })}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          {/* Photo Library Permission */}
-          <View style={[
-            styles.permissionCard,
-            photoPermission && styles.permissionCardGranted,
-          ]}>
-            <View style={[
-              styles.permissionIconContainer,
-              photoPermission && styles.permissionIconContainerGranted,
-            ]}>
-              <Ionicons 
-                name="images" 
-                size={32} 
-                color={photoPermission ? '#FFFFFF' : COLORS.PRIMARY} 
-              />
-            </View>
-            <View style={styles.permissionContent}>
-              <Text style={styles.permissionTitle}>
-                {t('permissions.photosTitle', { defaultValue: 'Photo Library Access' })}
-              </Text>
-              <Text style={styles.permissionDescription}>
-                {t('permissions.photosDescription', {
-                  defaultValue: 'Required to save and organize your photos'
-                })}
-              </Text>
-            </View>
-            <View style={styles.permissionStatus}>
-              {photoPermission === null ? (
-                <View style={styles.statusPending}>
-                  <Animated.View 
-                    style={[
-                      styles.statusPendingInner,
-                      {
-                        transform: [{ scale: photoCheckAnim }],
-                      },
-                    ]}
-                  />
-                </View>
-              ) : photoPermission ? (
-                <Animated.View
-                  style={{
-                    transform: [{ scale: photoCheckAnim }],
-                  }}
-                >
-                  <View style={styles.statusGrantedContainer}>
-                    <Ionicons name="checkmark-circle" size={28} color="#34C759" />
-                  </View>
-                </Animated.View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.enableButton}
-                  onPress={requestPhotoPermission}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.enableButtonText}>
-                    {t('permissions.enable', { defaultValue: 'Enable' })}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        </Animated.View>
-
-        {/* Action Buttons */}
-        <Animated.View 
-          style={[
-            styles.actionsContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={[
-              styles.continueButton,
-              (!cameraPermission || !photoPermission) && styles.continueButtonDisabled
-            ]}
-            onPress={handleContinue}
-            disabled={!cameraPermission || !photoPermission}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.continueButtonText}>
-              {t('common.continue', { defaultValue: 'Continue' })}
-            </Text>
-            <Ionicons name="arrow-forward" size={20} color="#000" style={styles.buttonIcon} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={handleSkip}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.skipButtonText}>
-              {t('common.skip', { defaultValue: 'Skip for Now' })}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.ghostLink} onPress={handleNotNow} activeOpacity={0.7}>
+          <Text style={styles.ghostLinkText}>
+            {t('permissions.notNow', { defaultValue: 'Not now' })}
+          </Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
+  );
+}
+
+function PermissionRow({ icon, title, description, granted, onAllow }) {
+  return (
+    <View style={styles.row}>
+      <View style={styles.rowIcon}>
+        <Ionicons name={icon} size={20} color="#666666" />
+      </View>
+      <View style={styles.rowBody}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <Text style={styles.rowDesc} numberOfLines={2}>{description}</Text>
+      </View>
+      <View style={styles.rowStatus}>
+        {granted ? (
+          <Ionicons name="checkmark-circle" size={26} color="#34C759" />
+        ) : (
+          <TouchableOpacity style={styles.allowButton} onPress={onAllow} activeOpacity={0.7}>
+            <Text style={styles.allowButtonText}>Allow</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -379,186 +306,133 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 30,
-    paddingTop: 40,
-    paddingBottom: 30,
-    justifyContent: 'space-between',
-  },
-  header: {
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  // Refresh: drop the thick yellow border, use the design's soft accent
-  // tile (FFF4C2) so the icon sits cleanly without a competing outline.
-  headerIconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 18,
-    backgroundColor: '#FFF4C2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
-    textAlign: 'center',
-    marginBottom: 12,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
-    fontFamily: FONTS.ALEXANDRIA,
-    lineHeight: 22,
     paddingHorizontal: 20,
+    paddingTop: 8,
   },
-  permissionsContainer: {
-    flex: 1,
+  headerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FFF4C2',
+    alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 32,
+    marginBottom: 18,
   },
-  // Refresh: cleaner permission card. Light surface bg + hairline border,
-  // softer shadow per the design's shadow-card spec — was over-borderly
-  // (2px outline on every state) and competed with the icon's chrome.
-  permissionCard: {
+  headline: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.5,
+    marginBottom: 8,
+  },
+  subhead: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    color: '#666666',
+    lineHeight: 20,
+    letterSpacing: -0.1,
+    marginBottom: 22,
+  },
+
+  rows: {
+    gap: 10,
+  },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#ECECEC',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
     shadowColor: '#141420',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 1,
   },
-  permissionCardGranted: {
-    borderColor: '#ECECEC',
-    backgroundColor: '#FFFFFF',
-  },
-  permissionIconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    backgroundColor: '#FFF4C2',
-    justifyContent: 'center',
+  rowIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#F4F4F4',
     alignItems: 'center',
-    marginRight: 14,
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  permissionIconContainerGranted: {
-    backgroundColor: '#34C759',
-    borderColor: '#34C759',
-  },
-  permissionContent: {
+  rowBody: {
     flex: 1,
   },
-  permissionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  rowTitle: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
-    marginBottom: 6,
-    letterSpacing: -0.3,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+    marginBottom: 2,
   },
-  permissionDescription: {
-    fontSize: 14,
+  rowDesc: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12.5,
     color: '#666666',
-    fontFamily: FONTS.ALEXANDRIA,
-    lineHeight: 20,
+    lineHeight: 17,
   },
-  permissionStatus: {
-    marginLeft: 12,
-    minWidth: 90,
+  rowStatus: {
+    minWidth: 70,
     alignItems: 'flex-end',
-  },
-  statusPending: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E0E0E0',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  statusPendingInner: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#999999',
+  allowButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: '#D0D0D0',
   },
-  statusGrantedContainer: {
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  enableButton: {
-    backgroundColor: COLORS.PRIMARY,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-    shadowColor: COLORS.PRIMARY,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  enableButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
+  allowButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
   },
-  actionsContainer: {
-    marginTop: 20,
+
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    backgroundColor: '#FFFFFF',
   },
-  // Refresh: primary CTA per design — 52px, no double border.
-  continueButton: {
-    backgroundColor: COLORS.PRIMARY,
+  primaryButton: {
+    backgroundColor: '#F2C31B',
+    height: 54,
     borderRadius: 16,
-    height: 52,
-    paddingHorizontal: 24,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: COLORS.PRIMARY,
+    shadowColor: '#F2C31B',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 18,
     elevation: 6,
   },
-  continueButtonDisabled: {
-    backgroundColor: '#E0E0E0',
-    opacity: 0.6,
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  continueButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  primaryButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
-    letterSpacing: 0.5,
-  },
-  buttonIcon: {
-    marginLeft: 10,
-  },
-  skipButton: {
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  skipButtonText: {
     fontSize: 16,
-    color: '#666666',
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+  },
+  ghostLink: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  ghostLinkText: {
     fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
   },
 });
-

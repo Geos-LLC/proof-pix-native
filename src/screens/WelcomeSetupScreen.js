@@ -11,39 +11,40 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
-import { FONTS, scaleFontSize } from '../constants/fonts';
+import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
 import { logOnboardingStarted, logOnboardingStepCompleted } from '../utils/analytics';
 
 const { width } = Dimensions.get('window');
-const scaled = (size) => scaleFontSize(size, width);
+
+// Refresh pass 7 — rebuilt to match design screenshot 02-welcome:
+//   ┌─────────────────────────┐
+//   │   Big before/after      │  ← portrait hero card (~52% screen height)
+//   │   preview with BEFORE   │     showing beige "before" + cyan "after"
+//   │   (yellow) | AFTER      │     with a vertical yellow divider down
+//   │   (purple) chip         │     the middle. Chips top-left + top-right.
+//   ├─────────────────────────┤
+//   │  [logo] ProofPix        │  ← small yellow logo tile + wordmark
+//   │                         │
+//   │  Show the work.         │  ← Alexandria 700 two-line headline
+//   │  Win the job.           │
+//   │                         │
+//   │  Document every job…    │  ← supporting subhead
+//   │                         │
+//   │  [    Get started    ]  │  ← yellow primary CTA
+//   │  I already have an…     │  ← ghost link
+//   └─────────────────────────┘
 
 export default function WelcomeSetupScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const slideAnim = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
   }, []);
 
@@ -55,111 +56,88 @@ export default function WelcomeSetupScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        {/* Logo and App Name */}
-        <Animated.View 
+      <View style={[styles.content, { paddingBottom: 12 + insets.bottom }]}>
+        {/* Hero before/after preview — the marquee that sells the app's
+            value in a single visual. Beige "before" half + cyan-tinted
+            "after" half with a vertical accent divider down the middle. */}
+        <Animated.View
           style={[
-            styles.logoContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
-            },
+            styles.hero,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <View style={styles.logoWrapper}>
-            <Image
-              source={require('../../assets/logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+          <View style={styles.heroHalf}>
+            <View style={[styles.heroFill, styles.heroBefore]} />
+            <View style={styles.chipBefore}>
+              <Text style={styles.chipBeforeText}>BEFORE</Text>
+            </View>
           </View>
-          <Text style={styles.appTitle}>ProofPix</Text>
-          <Text style={styles.appSubtitle}>
-            {t('welcome.subtitle', { defaultValue: 'Professional Before & After Photo Documentation' })}
+          <View style={styles.heroDivider} />
+          <View style={styles.heroHalf}>
+            <View style={[styles.heroFill, styles.heroAfter]} />
+            <View style={styles.chipAfter}>
+              <Text style={styles.chipAfterText}>AFTER</Text>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Brand + headline block sits in the lower half. */}
+        <Animated.View
+          style={[
+            styles.copyBlock,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          <View style={styles.brandRow}>
+            <View style={styles.logoTile}>
+              <Ionicons name="camera" size={18} color="#1E1E1E" />
+            </View>
+            <Text style={styles.wordmark}>ProofPix</Text>
+          </View>
+
+          <Text style={styles.headline}>
+            {t('welcome.headline', { defaultValue: 'Show the work.\nWin the job.' })}
+          </Text>
+          <Text style={styles.subhead}>
+            {t('welcome.subhead', {
+              defaultValue: 'Document every job with paired before & after photos your clients can trust.',
+            })}
           </Text>
         </Animated.View>
 
-        {/* Features List */}
-        <Animated.View 
+        {/* Primary + ghost actions at the bottom. */}
+        <Animated.View
           style={[
-            styles.featuresContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
+            styles.actions,
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}
         >
-          <View style={styles.featureItem}>
-            <View style={styles.featureIconContainer}>
-              <View style={styles.featureIconBackground}>
-                <Ionicons name="camera" size={32} color={COLORS.PRIMARY} />
-              </View>
-            </View>
-            <View style={styles.featureTextContainer}>
-              <Text style={styles.featureTitle}>
-                {t('welcome.feature1Title', { defaultValue: 'Capture Before & After' })}
-              </Text>
-              <Text style={styles.featureDescription}>
-                {t('welcome.feature1Desc', { defaultValue: 'Take professional photos with automatic labeling' })}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.featureItem}>
-            <View style={styles.featureIconContainer}>
-              <View style={styles.featureIconBackground}>
-                <Ionicons name="images" size={32} color={COLORS.PRIMARY} />
-              </View>
-            </View>
-            <View style={styles.featureTextContainer}>
-              <Text style={styles.featureTitle}>
-                {t('welcome.feature2Title', { defaultValue: 'Create Combined Images' })}
-              </Text>
-              <Text style={styles.featureDescription}>
-                {t('welcome.feature2Desc', { defaultValue: 'Automatically merge before and after photos' })}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.featureItem}>
-            <View style={styles.featureIconContainer}>
-              <View style={styles.featureIconBackground}>
-                <Ionicons name="cloud-upload" size={32} color={COLORS.PRIMARY} />
-              </View>
-            </View>
-            <View style={styles.featureTextContainer}>
-              <Text style={styles.featureTitle}>
-                {t('welcome.feature3Title', { defaultValue: 'Cloud Sync' })}
-              </Text>
-              <Text style={styles.featureDescription}>
-                {t('welcome.feature3Desc', { defaultValue: 'Sync photos to Google Drive, Dropbox, or iCloud' })}
-              </Text>
-            </View>
-          </View>
-        </Animated.View>
-
-        {/* Get Started Button */}
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          }}
-        >
           <TouchableOpacity
-            style={styles.getStartedButton}
+            style={styles.primaryButton}
             onPress={handleGetStarted}
             activeOpacity={0.85}
           >
-            <Text style={styles.getStartedButtonText}>
-              {t('welcome.getStarted', { defaultValue: 'Get Started' })}
+            <Text style={styles.primaryButtonText}>
+              {t('welcome.getStarted', { defaultValue: 'Get started' })}
             </Text>
-            <Ionicons name="arrow-forward" size={22} color="#000" style={styles.buttonIcon} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.ghostLink}
+            onPress={handleGetStarted}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.ghostLinkText}>
+              {t('welcome.haveAccount', { defaultValue: 'I already have an account' })}
+            </Text>
           </TouchableOpacity>
         </Animated.View>
       </View>
     </SafeAreaView>
   );
 }
+
+const HERO_HEIGHT = Math.round(Dimensions.get('window').height * 0.48);
 
 const styles = StyleSheet.create({
   container: {
@@ -168,120 +146,150 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 32,
-    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
   },
-  logoContainer: {
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  // Refresh: yellow accent tile with the logo centered, matching the
-  // design's brand mark — drops the heavy yellow border + tinted shadow
-  // for a cleaner card with a warm pop-shadow.
-  logoWrapper: {
-    width: 120,
-    height: 120,
+
+  // Hero before/after preview card.
+  hero: {
+    width: '100%',
+    height: HERO_HEIGHT,
     borderRadius: 24,
-    backgroundColor: COLORS.PRIMARY,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 28,
-    shadowColor: COLORS.PRIMARY,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 22,
-    elevation: 10,
-  },
-  logo: {
-    width: 100,
-    height: 100,
-  },
-  appTitle: {
-    fontSize: scaled(44),
-    fontWeight: 'bold',
-    fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
-    marginBottom: 12,
-    letterSpacing: -0.5,
-  },
-  appSubtitle: {
-    fontSize: scaled(17),
-    color: '#666666',
-    textAlign: 'center',
-    fontFamily: FONTS.ALEXANDRIA,
-    lineHeight: scaled(24),
-    paddingHorizontal: 24,
-  },
-  featuresContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    marginVertical: 32,
-  },
-  featureItem: {
+    overflow: 'hidden',
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 28,
-    paddingHorizontal: 4,
+    backgroundColor: '#F4F4F4',
   },
-  featureIconContainer: {
-    marginRight: 16,
+  heroHalf: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  // Refresh: lighter feature icon — soft yellow tint, no thick border.
-  // Matches the design's `accent-soft` pattern for inline icon tiles.
-  featureIconBackground: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    backgroundColor: '#FFF4C2',
+  heroFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  heroBefore: {
+    backgroundColor: '#D6CFC3',
+  },
+  heroAfter: {
+    backgroundColor: '#CCDFE1',
+  },
+  heroDivider: {
+    width: 4,
+    backgroundColor: '#F2C31B',
+  },
+  chipBefore: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 7,
+    backgroundColor: '#F2C31B',
+  },
+  chipBeforeText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: 0.6,
+  },
+  chipAfter: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 7,
+    backgroundColor: '#A855F7',
+  },
+  chipAfterText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.6,
+  },
+
+  // Brand + headline copy.
+  copyBlock: {
+    marginTop: 24,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  logoTile: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: '#F2C31B',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  featureTextContainer: {
-    flex: 1,
-    paddingTop: 4,
-  },
-  featureTitle: {
-    fontSize: scaled(20),
-    fontWeight: 'bold',
+  wordmark: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
-    marginBottom: 6,
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#1E1E1E',
     letterSpacing: -0.3,
   },
-  featureDescription: {
-    fontSize: scaled(15),
-    color: '#666666',
+  headline: {
     fontFamily: FONTS.ALEXANDRIA,
-    lineHeight: scaled(22),
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.5,
+    lineHeight: 34,
+    marginBottom: 10,
   },
-  // Refresh: primary button per design spec — 52px height, radius 16,
-  // 700 weight, warm pop-shadow, no double border.
-  getStartedButton: {
-    backgroundColor: COLORS.PRIMARY,
+  subhead: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14.5,
+    color: '#666666',
+    lineHeight: 21,
+    letterSpacing: -0.1,
+  },
+
+  // Actions at the bottom.
+  actions: {
+    marginTop: 'auto',
+    paddingTop: 16,
+  },
+  primaryButton: {
+    backgroundColor: '#F2C31B',
+    height: 54,
     borderRadius: 16,
-    height: 52,
-    paddingHorizontal: 24,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: COLORS.PRIMARY,
+    shadowColor: '#F2C31B',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 18,
     elevation: 6,
   },
-  getStartedButtonText: {
-    fontSize: scaled(18),
-    fontWeight: 'bold',
+  primaryButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
-    letterSpacing: 0.5,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
   },
-  buttonIcon: {
-    marginLeft: 10,
+  ghostLink: {
+    marginTop: 14,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  ghostLinkText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
   },
 });
-
