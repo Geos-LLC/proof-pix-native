@@ -5714,7 +5714,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-X · Industry switch confirmation modal (move photos / new project)
+              Build tag: OTA-2026-06-03-Y · paywall tier-aware (Current plan + Upgrade/Switch CTAs)
             </Text>
             {/* IAP diagnostic — shows what getAvailablePurchases returned
                 + the highest-tier plan computeEntitlements detected +

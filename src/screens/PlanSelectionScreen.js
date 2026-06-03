@@ -443,12 +443,28 @@ export default function PlanSelectionScreen({ navigation, route }) {
     );
   };
 
-  const proCTAText = trialAvailable
-    ? `Start ${trialDays}-day free trial`
-    : 'Subscribe to Pro';
-  const businessCTAText = trialAvailable
-    ? `Start ${trialDays}-day free trial`
-    : 'Subscribe to Business';
+  // Compute per-tier CTA labels based on the user's current tier so
+  // every card tells them exactly what tapping it does. Pricing tiers
+  // are ranked starter(0) < pro(1) < business(2) < enterprise(3); a
+  // tap on a higher tier is an upgrade, a tap on a lower tier is a
+  // downgrade, and the tier they're already on says "Current plan".
+  const tierRank = { starter: 0, pro: 1, business: 2, enterprise: 3 };
+  const currentTier = (userPlan || 'starter').toLowerCase();
+  const currentRank = tierRank[currentTier] ?? 0;
+  const labelForTier = (tier) => {
+    const rank = tierRank[tier] ?? 0;
+    if (tier === currentTier) return 'Current plan';
+    if (rank > currentRank) {
+      return trialAvailable && currentRank === 0
+        ? `Start ${trialDays}-day free trial`
+        : `Upgrade to ${tier.charAt(0).toUpperCase()}${tier.slice(1)}`;
+    }
+    return `Switch to ${tier.charAt(0).toUpperCase()}${tier.slice(1)}`;
+  };
+  const proCTAText = labelForTier('pro');
+  const businessCTAText = labelForTier('business');
+  const enterpriseCTAText =
+    currentTier === 'enterprise' ? 'Current plan' : 'Contact sales';
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -519,11 +535,18 @@ export default function PlanSelectionScreen({ navigation, route }) {
         <TouchableOpacity
           style={[
             styles.designCard,
-            userPlan === 'starter' && styles.designCardSelected,
+            currentTier === 'starter' && styles.designCardCurrent,
           ]}
-          onPress={() => handleSelectPlan('starter')}
+          onPress={currentTier === 'starter' ? undefined : () => handleSelectPlan('starter')}
+          disabled={currentTier === 'starter'}
           activeOpacity={0.85}
         >
+          {currentTier === 'starter' ? (
+            <View style={styles.currentPlanPill}>
+              <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+              <Text style={styles.currentPlanPillText}>Current plan</Text>
+            </View>
+          ) : null}
           <View style={styles.designCardHeader}>
             <Text style={styles.designCardTitle}>Starter</Text>
             <Text style={styles.designCardPriceFree}>Free</Text>
@@ -540,13 +563,22 @@ export default function PlanSelectionScreen({ navigation, route }) {
           style={[
             styles.designCard,
             styles.designCardPro,
-            userPlan === 'pro' && styles.designCardSelected,
+            currentTier === 'pro' && styles.designCardCurrent,
           ]}
         >
-          <View style={styles.mostPopularPill}>
-            <Ionicons name="star" size={11} color="#1E1E1E" />
-            <Text style={styles.mostPopularPillText}>Most popular</Text>
-          </View>
+          {/* Most-popular pill stays for any non-Pro user; Pro users
+              see the Current-plan pill instead (in the same slot). */}
+          {currentTier === 'pro' ? (
+            <View style={[styles.currentPlanPill, styles.currentPlanPillOnAccent]}>
+              <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+              <Text style={styles.currentPlanPillText}>Current plan</Text>
+            </View>
+          ) : (
+            <View style={styles.mostPopularPill}>
+              <Ionicons name="star" size={11} color="#1E1E1E" />
+              <Text style={styles.mostPopularPillText}>Most popular</Text>
+            </View>
+          )}
 
           <View style={styles.designCardHeader}>
             <Text style={styles.designCardTitle}>Pro</Text>
@@ -570,8 +602,9 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
 
           <TouchableOpacity
-            style={styles.proInCardCTA}
-            onPress={() => handleSelectPlan('pro')}
+            style={[styles.proInCardCTA, currentTier === 'pro' && styles.proInCardCTADisabled]}
+            onPress={currentTier === 'pro' ? undefined : () => handleSelectPlan('pro')}
+            disabled={currentTier === 'pro'}
             activeOpacity={0.85}
           >
             <Text style={styles.proInCardCTAText}>{proCTAText}</Text>
@@ -592,12 +625,22 @@ export default function PlanSelectionScreen({ navigation, route }) {
         <TouchableOpacity
           style={[
             styles.designCard,
-            userPlan === 'business' && styles.designCardSelected,
+            currentTier === 'business' && styles.designCardCurrent,
           ]}
-          onPress={Platform.OS === 'android' ? undefined : () => handleSelectPlan('business')}
-          disabled={Platform.OS === 'android'}
-          activeOpacity={Platform.OS === 'android' ? 1 : 0.85}
+          onPress={
+            currentTier === 'business' || Platform.OS === 'android'
+              ? undefined
+              : () => handleSelectPlan('business')
+          }
+          disabled={currentTier === 'business' || Platform.OS === 'android'}
+          activeOpacity={(currentTier === 'business' || Platform.OS === 'android') ? 1 : 0.85}
         >
+          {currentTier === 'business' ? (
+            <View style={styles.currentPlanPill}>
+              <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+              <Text style={styles.currentPlanPillText}>Current plan</Text>
+            </View>
+          ) : null}
           <View style={styles.designCardHeader}>
             <Text style={styles.designCardTitle}>Business</Text>
             <View style={styles.designPriceCluster}>
@@ -622,8 +665,12 @@ export default function PlanSelectionScreen({ navigation, route }) {
           {Platform.OS === 'android' && (
             <>
               <TouchableOpacity
-                style={styles.designSecondaryCTA}
-                onPress={() => handleSelectPlan('business')}
+                style={[
+                  styles.designSecondaryCTA,
+                  currentTier === 'business' && styles.designSecondaryCTADisabled,
+                ]}
+                onPress={currentTier === 'business' ? undefined : () => handleSelectPlan('business')}
+                disabled={currentTier === 'business'}
                 activeOpacity={0.85}
               >
                 <Text style={styles.designSecondaryCTAText}>{businessCTAText}</Text>
@@ -643,11 +690,18 @@ export default function PlanSelectionScreen({ navigation, route }) {
         <TouchableOpacity
           style={[
             styles.designCard,
-            userPlan === 'enterprise' && styles.designCardSelected,
+            currentTier === 'enterprise' && styles.designCardCurrent,
           ]}
-          onPress={() => setShowEnterpriseModal(true)}
-          activeOpacity={0.85}
+          onPress={currentTier === 'enterprise' ? undefined : () => setShowEnterpriseModal(true)}
+          disabled={currentTier === 'enterprise'}
+          activeOpacity={currentTier === 'enterprise' ? 1 : 0.85}
         >
+          {currentTier === 'enterprise' ? (
+            <View style={styles.currentPlanPill}>
+              <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+              <Text style={styles.currentPlanPillText}>Current plan</Text>
+            </View>
+          ) : null}
           <View style={styles.designCardHeader}>
             <Text style={styles.designCardTitle}>Enterprise</Text>
             <Text style={styles.designCardPriceContact}>Contact sales</Text>
@@ -661,11 +715,15 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
 
           <TouchableOpacity
-            style={styles.designSecondaryCTA}
-            onPress={() => setShowEnterpriseModal(true)}
+            style={[
+              styles.designSecondaryCTA,
+              currentTier === 'enterprise' && styles.designSecondaryCTADisabled,
+            ]}
+            onPress={currentTier === 'enterprise' ? undefined : () => setShowEnterpriseModal(true)}
+            disabled={currentTier === 'enterprise'}
             activeOpacity={0.85}
           >
-            <Text style={styles.designSecondaryCTAText}>Contact sales</Text>
+            <Text style={styles.designSecondaryCTAText}>{enterpriseCTAText}</Text>
           </TouchableOpacity>
         </TouchableOpacity>
 
@@ -1409,6 +1467,43 @@ const styles = StyleSheet.create({
     borderColor: '#F2C31B',
     borderWidth: 2,
   },
+  // Current plan card — distinct green accent so the user immediately
+  // recognises the tier they're already on, separate from the "Most
+  // popular" yellow which still highlights Pro for non-Pro users.
+  designCardCurrent: {
+    borderColor: '#34C759',
+    borderWidth: 2,
+  },
+  // "Current plan" badge — green pill mirroring the Most-popular slot
+  // (top edge, right side) so the visual rhythm of the card stack is
+  // preserved.
+  currentPlanPill: {
+    position: 'absolute',
+    top: -10,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#34C759',
+    shadowColor: '#34C759',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  // Pro's card has a yellow fill so the current-plan green pill sits
+  // on top of it; nothing changes structurally, just kept for clarity.
+  currentPlanPillOnAccent: {},
+  currentPlanPillText: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
 
   // "Most popular" pill — sits at the top-right of the Pro card.
   mostPopularPill: {
@@ -1533,6 +1628,10 @@ const styles = StyleSheet.create({
     color: '#1E1E1E',
     letterSpacing: -0.1,
   },
+  proInCardCTADisabled: {
+    backgroundColor: '#E7E7E7',
+    shadowOpacity: 0,
+  },
 
   // Secondary in-card CTA (Business on Android, Enterprise everywhere).
   designSecondaryCTA: {
@@ -1549,5 +1648,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: -0.1,
+  },
+  designSecondaryCTADisabled: {
+    backgroundColor: '#E7E7E7',
   },
 });
