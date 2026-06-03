@@ -2653,6 +2653,30 @@ export default function HomeScreen({ navigation, route }) {
                                 />
                               </View>
                             )}
+                            {/* Mode badge pill — same as the fullscreen
+                                viewer, so the role (BEFORE / AFTER /
+                                PROGRESS / B-A) is visible at a glance
+                                in both views. Per design 16-photo-set-
+                                preview.png. pointerEvents none so it
+                                doesn't eat the tap-to-fullscreen press. */}
+                            {(() => {
+                              const modeBadgeMap = {
+                                before: { bg: '#F2C31B', text: '#1E1E1E', label: 'BEFORE' },
+                                after: { bg: '#A78BFA', text: '#FFFFFF', label: 'AFTER' },
+                                progress: { bg: 'rgba(0,0,0,0.55)', text: '#FFFFFF', label: 'PROGRESS' },
+                                combined: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
+                                mix: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
+                              };
+                              const mb = modeBadgeMap[m?.mode];
+                              if (!mb) return null;
+                              return (
+                                <View pointerEvents="none" style={[styles.simplePreviewModeBadge, { backgroundColor: mb.bg }]}>
+                                  <Text style={[styles.simplePreviewModeBadgeText, { color: mb.text }]}>
+                                    {mb.label}
+                                  </Text>
+                                </View>
+                              );
+                            })()}
                           </View>
                           {/* BOTTOM action row — Edited toggle on the
                               left, Share on the right. Same width as
