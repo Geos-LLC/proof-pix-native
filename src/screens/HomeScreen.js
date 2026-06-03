@@ -1498,7 +1498,7 @@ export default function HomeScreen({ navigation, route }) {
     }
 
     return (
-      <View style={[styles.roomTabsContainer, theme?.mode === 'dark' && styles.roomTabsContainerDark]}>
+      <View style={styles.roomTabsContainer}>
         <ScrollView
           ref={roomTabsScrollRef}
           horizontal
@@ -1732,13 +1732,37 @@ export default function HomeScreen({ navigation, route }) {
                 // small, but a much larger surrounding zone responds.
                 hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
               >
-                <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
+                <Ionicons name="eye-outline" size={16} color="#000" />
               </TouchableOpacity>
-              {/* Refresh — per the design screenshots: completed sets
-                  carry no green check + no "Update After" pill. The eye
-                  badge + progress chip are the only overlay chrome.
-                  Tapping the card already routes to Camera in After mode
-                  so the retake action is preserved as a tap target. */}
+              {/* Green completion check at TOP-RIGHT — only when the
+                  set has its After AND there are no Progress photos.
+                  Once the user adds a 3rd shot, the yellow progress-
+                  count badge (also top-right) takes over the slot. */}
+              {progressCount === 0 && (
+                <View style={styles.photoOverlayBadgeTopRight} pointerEvents="none">
+                  <Ionicons name="checkmark-circle-sharp" size={25} color="#22C55E" />
+                </View>
+              )}
+              <View style={styles.thumbnailButtonsOverlay}>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    if (!isSwiping.current) {
+                      navigation.navigate('Camera', {
+                        mode: 'after',
+                        beforePhoto,
+                        afterPhoto,
+                        combinedPhoto,
+                        room: currentRoom
+                      });
+                    }
+                  }}
+                >
+                  <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.retakeButtonText}>{t('home.updateAfter', { defaultValue: 'Update After' })}</Text>
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           );
         } else {
@@ -1810,11 +1834,35 @@ export default function HomeScreen({ navigation, route }) {
                 // small, but a much larger surrounding zone responds.
                 hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
               >
-                <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
+                <Ionicons name="eye-outline" size={16} color="#000" />
               </TouchableOpacity>
-              {/* Refresh: per the design, completed sets show no green
-                  check + no Update After pill. Tapping the card already
-                  routes to Camera in After mode. */}
+              {/* Green completion check at TOP-RIGHT — only when the
+                  set has its After AND no Progress photos. Once a 3rd
+                  shot exists the yellow progress-count badge (also
+                  top-right) replaces this in the same slot. */}
+              {progressCount === 0 && (
+                <View style={styles.photoOverlayBadgeTopRight} pointerEvents="none">
+                  <Ionicons name="checkmark-circle-sharp" size={25} color="#22C55E" />
+                </View>
+              )}
+              <View style={styles.thumbnailButtonsOverlay}>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={() => {
+                    if (!isSwiping.current) {
+                      navigation.navigate('Camera', {
+                        mode: 'after',
+                        beforePhoto,
+                        afterPhoto,
+                        room: currentRoom
+                      });
+                    }
+                  }}
+                >
+                  <Ionicons name="camera-outline" size={14} color="#FFFFFF" />
+                  <Text style={styles.retakeButtonText}>{t('home.updateAfter', { defaultValue: 'Update After' })}</Text>
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           );
         }
@@ -1863,7 +1911,7 @@ export default function HomeScreen({ navigation, route }) {
               activeOpacity={0.7}
               hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
             >
-              <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
+              <Ionicons name="eye-outline" size={16} color="#000" />
             </TouchableOpacity>
             <View style={styles.thumbnailButtonsOverlay}>
               <TouchableOpacity
@@ -1893,21 +1941,18 @@ export default function HomeScreen({ navigation, route }) {
       }
     });
 
-    // Wrap each tile with a "Set N · Room" label overlaid on the photo
-    // itself (white text with a soft shadow, bottom-left). Mirrors the
-    // refreshed design's `pp-tile-room` caption so the card carries its
-    // own context instead of leaning on a label sitting underneath.
-    // Numbering follows beforePhotos (oldest → newest) to match capture
-    // order. Done at the very end so the three different gridItems.push
-    // paths above don't each need to know about the label.
-    const currentRoomName = rooms?.find((r) => r.id === currentRoom)?.name || '';
+    // Wrap each tile with a "Set N" label beneath it. The numbering
+    // follows the same order as beforePhotos (oldest → newest), so it
+    // matches the chronological capture order. Done at the very end so
+    // the three different gridItems.push paths above don't each need
+    // to know about the label.
     return (
       <View style={styles.photoGrid}>
         {gridItems.map((item, i) => (
           <View key={item.key || `set-wrap-${i}`} style={styles.setTileWrapper}>
             {item}
-            <Text style={styles.setTileLabel} numberOfLines={1} pointerEvents="none">
-              {currentRoomName ? `Set ${i + 1} · ${currentRoomName}` : `Set ${i + 1}`}
+            <Text style={styles.setTileLabel} numberOfLines={1}>
+              {`Set ${i + 1}`}
             </Text>
           </View>
         ))}
@@ -3122,21 +3167,17 @@ export default function HomeScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  // Refresh: page background is now plain white (was a tinted #F6F8FA)
-  // so the room strip + photo tiles read against the cleaner canvas the
-  // design calls for. Dark-mode override sits on top via the theme hook.
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F6F8FA'
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingTop: 4,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F6F8FA',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -3220,14 +3261,21 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontWeight: '700',
   },
-  // Refresh: project name now sits as plain text on the page (no white
-  // card / no shadow / no border) per the design. Lets the room strip
-  // below sit closer to the title and keeps the visual hierarchy clean.
   projectNameContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 12,
-    backgroundColor: 'transparent',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginHorizontal: 17,
+    marginTop: 8,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+    shadowColor: 'grey',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 9,
   },
   upgradeButtonImage:{
     width: 14,
@@ -3278,9 +3326,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.TEXT,
   },
-  // Home camera FAB — matches design spec (right:20 bottom:~84 + safe area,
-  // 60×60 yellow circle with warm glow). Bottom value is applied inline using
-  // insets so the FAB clears the floating bottom-nav pill on every device.
   fab: {
     position: 'absolute',
     bottom: 90,
@@ -3292,10 +3337,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#F2C31B',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
     shadowRadius: 24,
-    elevation: 10,
+    elevation: 8,
     zIndex: 100,
   },
   bottomNavPill: {
@@ -3342,16 +3387,9 @@ const styles = StyleSheet.create({
     fontWeight: '590',
     letterSpacing: -0.1,
   },
-  // Subtle elevated strip behind the room tabs. Kept light grey in light
-  // mode (was the hardcoded #F6F8FA) and switches to a near-black banding
-  // in dark mode so the row reads as a separate scrollable zone without
-  // a hard border.
   roomTabsContainer: {
     backgroundColor: '#F6F8FA',
     paddingVertical: 12,
-  },
-  roomTabsContainerDark: {
-    backgroundColor: '#141414',
   },
   roomTabsScrollView: {
     flex: 0,
@@ -3422,37 +3460,29 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between'
   },
-  // Refresh — design shows portrait-leaning tiles (~5:6) not square. The
-  // taller card gives the before/after split more vertical real estate so
-  // the room context reads clearly, and matches the screenshot layout.
   photoItem: {
     width: PHOTO_SIZE,
-    height: Math.round(PHOTO_SIZE * 1.18),
-    borderRadius: 16,
+    height: PHOTO_SIZE,
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#ECECEC',
   },
-  // Refresh — design has the "Set N · Room" caption ON the tile, white
-  // on a soft dark shadow at the bottom-left. The wrapper stays
-  // position-relative so the label can absolute-position over the photo.
+  // Column wrapper for the photo card + its "Set N" label so the grid
+  // still flex-wraps two-per-row but each cell now also includes the
+  // label underneath the tile.
   setTileWrapper: {
     width: PHOTO_SIZE,
-    marginBottom: 12,
-    position: 'relative',
+    marginBottom: 16,
+    alignItems: 'center',
   },
   setTileLabel: {
-    position: 'absolute',
-    left: 10,
-    bottom: 9,
+    marginTop: 6,
     fontFamily: FONTS.SEMIBOLD,
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.1,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-    zIndex: 12,
+    fontSize: 12,
+    color: '#1E1E1E',
+    textAlign: 'center',
   },
   photoCenterDivider: {
     position: 'absolute',
@@ -3516,20 +3546,21 @@ const styles = StyleSheet.create({
   // Eye / preview icon sits at the top-LEFT of the photo card. Tapping opens
   // the full-screen preview viewer (same as a double-tap on the card body —
   // exists as a discoverable UI affordance).
-  // Eye / preview badge — design refresh: was a white circle with a black eye
-  // icon (low-contrast on bright photos). Now a translucent dark capsule with
-  // a white icon so it stays legible against any photo. 26×26 to match the
-  // refreshed tile radius and the design spec.
   previewIconBadge: {
     position: 'absolute',
-    top: 7,
-    left: 7,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    top: 8,
+    left: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
     zIndex: 11,
   },
   // Yellow progress-count badge sits at the top-right of the photo card so it
