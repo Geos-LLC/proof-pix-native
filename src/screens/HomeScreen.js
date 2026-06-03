@@ -35,7 +35,7 @@ import { StudioEditOverlays } from '../components/StudioOverlays';
 import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
-import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
+import { pickBeforeLabelPosition, pickAfterLabelPosition, pickBeforeLabelOffset, pickAfterLabelOffset } from '../utils/labelPosition';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
@@ -2609,12 +2609,12 @@ export default function HomeScreen({ navigation, route }) {
                                 Settings (NOT on the Edited toggle), so
                                 the BEFORE / AFTER label is visible by
                                 default and follows the user's chosen
-                                position / color / font. Combined photos
-                                get one label per half. We render this
-                                here (outside StudioEditOverlays) and
-                                pass showLabels=false to StudioEdit-
-                                Overlays below, so labels never render
-                                twice. */}
+                                position / color / font / freeform
+                                offset. Combined photos get one label
+                                per half. We render this here (outside
+                                StudioEditOverlays) and pass showLabels=
+                                false to StudioEditOverlays below, so
+                                labels never render twice. */}
                             {showLabels && (() => {
                               const role = m?.mode;
                               const lps = {
@@ -2622,27 +2622,57 @@ export default function HomeScreen({ navigation, route }) {
                                 afterLabelPosition,
                                 beforeLabelPositionLandscape,
                                 afterLabelPositionLandscape,
+                                beforeLabelOffset,
+                                afterLabelOffset,
+                                beforeLabelOffsetLandscape,
+                                afterLabelOffsetLandscape,
                               };
                               if (role === 'combined' || role === 'mix') {
                                 return (
                                   <>
                                     <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
-                                      <PhotoLabel label="common.before" position={pickBeforeLabelPosition(lps, m)} />
+                                      <PhotoLabel
+                                        label="common.before"
+                                        position={pickBeforeLabelPosition(lps, m)}
+                                        freeformOffset={pickBeforeLabelOffset(lps, m)}
+                                      />
                                     </View>
                                     <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
-                                      <PhotoLabel label="common.after" position={pickAfterLabelPosition(lps, m)} />
+                                      <PhotoLabel
+                                        label="common.after"
+                                        position={pickAfterLabelPosition(lps, m)}
+                                        freeformOffset={pickAfterLabelOffset(lps, m)}
+                                      />
                                     </View>
                                   </>
                                 );
                               }
                               if (role === 'before') {
-                                return <PhotoLabel label="common.before" position={pickBeforeLabelPosition(lps, m)} />;
+                                return (
+                                  <PhotoLabel
+                                    label="common.before"
+                                    position={pickBeforeLabelPosition(lps, m)}
+                                    freeformOffset={pickBeforeLabelOffset(lps, m)}
+                                  />
+                                );
                               }
                               if (role === 'after') {
-                                return <PhotoLabel label="common.after" position={pickAfterLabelPosition(lps, m)} />;
+                                return (
+                                  <PhotoLabel
+                                    label="common.after"
+                                    position={pickAfterLabelPosition(lps, m)}
+                                    freeformOffset={pickAfterLabelOffset(lps, m)}
+                                  />
+                                );
                               }
                               if (role === 'progress') {
-                                return <PhotoLabel label="common.progress" position={pickAfterLabelPosition(lps, m)} />;
+                                return (
+                                  <PhotoLabel
+                                    label="common.progress"
+                                    position={pickAfterLabelPosition(lps, m)}
+                                    freeformOffset={pickAfterLabelOffset(lps, m)}
+                                  />
+                                );
                               }
                               return null;
                             })()}
@@ -3032,7 +3062,12 @@ export default function HomeScreen({ navigation, route }) {
                       panOnLongPress
                     >
                       {/* PhotoLabel — single label rendering, gated on
-                          `showLabels` from Settings only. Rendered as a
+                          `showLabels` from Settings only. Includes the
+                          freeform offset so the label sits at the exact
+                          spot the user picked in Customize Labels —
+                          mismatched offset is what made it look like the
+                          enlarged preview and the Studio screen rendered
+                          the label in different places. Rendered as a
                           child of PannableImage so the pan / pinch
                           transform travels with the label too. */}
                       {showLabels && (() => {
@@ -3042,27 +3077,57 @@ export default function HomeScreen({ navigation, route }) {
                           afterLabelPosition,
                           beforeLabelPositionLandscape,
                           afterLabelPositionLandscape,
+                          beforeLabelOffset,
+                          afterLabelOffset,
+                          beforeLabelOffsetLandscape,
+                          afterLabelOffsetLandscape,
                         };
                         if (role === 'combined' || role === 'mix') {
                           return (
                             <>
                               <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
-                                <PhotoLabel label="common.before" position={pickBeforeLabelPosition(lps, tappedFullPhoto)} />
+                                <PhotoLabel
+                                  label="common.before"
+                                  position={pickBeforeLabelPosition(lps, tappedFullPhoto)}
+                                  freeformOffset={pickBeforeLabelOffset(lps, tappedFullPhoto)}
+                                />
                               </View>
                               <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
-                                <PhotoLabel label="common.after" position={pickAfterLabelPosition(lps, tappedFullPhoto)} />
+                                <PhotoLabel
+                                  label="common.after"
+                                  position={pickAfterLabelPosition(lps, tappedFullPhoto)}
+                                  freeformOffset={pickAfterLabelOffset(lps, tappedFullPhoto)}
+                                />
                               </View>
                             </>
                           );
                         }
                         if (role === 'before') {
-                          return <PhotoLabel label="common.before" position={pickBeforeLabelPosition(lps, tappedFullPhoto)} />;
+                          return (
+                            <PhotoLabel
+                              label="common.before"
+                              position={pickBeforeLabelPosition(lps, tappedFullPhoto)}
+                              freeformOffset={pickBeforeLabelOffset(lps, tappedFullPhoto)}
+                            />
+                          );
                         }
                         if (role === 'after') {
-                          return <PhotoLabel label="common.after" position={pickAfterLabelPosition(lps, tappedFullPhoto)} />;
+                          return (
+                            <PhotoLabel
+                              label="common.after"
+                              position={pickAfterLabelPosition(lps, tappedFullPhoto)}
+                              freeformOffset={pickAfterLabelOffset(lps, tappedFullPhoto)}
+                            />
+                          );
                         }
                         if (role === 'progress') {
-                          return <PhotoLabel label="common.progress" position={pickAfterLabelPosition(lps, tappedFullPhoto)} />;
+                          return (
+                            <PhotoLabel
+                              label="common.progress"
+                              position={pickAfterLabelPosition(lps, tappedFullPhoto)}
+                              freeformOffset={pickAfterLabelOffset(lps, tappedFullPhoto)}
+                            />
+                          );
                         }
                         return null;
                       })()}
