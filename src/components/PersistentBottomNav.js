@@ -22,6 +22,10 @@ const HIDDEN_ON = new Set([
   'Invite',
   'LabelLanguageSetup',
   'SectionLanguageSetup',
+  // Camera (capture viewfinder) — the floating nav pill overlaps the
+  // capture row + Done ring at the bottom of the live view, so it's
+  // hidden here. Users return via the Done button or the back gesture.
+  'Camera',
 ]);
 
 // Sub-routes that conceptually belong to the Projects tab (so the active
