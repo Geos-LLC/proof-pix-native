@@ -44,6 +44,8 @@ export default function LabelsLanguageScreen({ navigation }) {
     showBrandLogo,
     updateShowBrandLogo,
     brandLogoUri,
+    splitPhotosByDate,
+    updateSplitPhotosByDate,
   } = useSettings();
 
   const labelLanguageSubtitle = useLabelLanguageSubtitle();
@@ -132,26 +134,36 @@ export default function LabelsLanguageScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => navigation.navigate('Settings', { scrollToUploadStructure: true })}
-            activeOpacity={0.85}
-          >
+        </View>
+
+        <Text style={styles.eyebrow}>
+          {t('labelsLanguage.uploadStructureEyebrow', { defaultValue: 'Upload structure' })}
+        </Text>
+        <View style={styles.rowGroup}>
+          {/* Split photos by date — same SettingsContext flag the legacy
+              inline section toggles. Wired directly here so the user
+              never has to leave this screen for it. */}
+          <View style={styles.row}>
             <View style={styles.rowIc}>
-              <Ionicons name="folder-open-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="calendar-outline" size={19} color="#1E1E1E" />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>
-                {t('labelsLanguage.uploadStructure', { defaultValue: 'Upload structure' })}
+                {t('labelsLanguage.splitByDate', { defaultValue: 'Split photos by date' })}
               </Text>
-              <Text style={styles.rowSub} numberOfLines={1}>
-                {t('labelsLanguage.uploadStructureSub', {
-                  defaultValue: 'How photos are organized in cloud storage',
+              <Text style={styles.rowSub} numberOfLines={2}>
+                {t('labelsLanguage.splitByDateSub', {
+                  defaultValue: 'Group uploaded photos into per-day subfolders in your cloud.',
                 })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
-          </TouchableOpacity>
+            <Switch
+              value={!!splitPhotosByDate}
+              onValueChange={updateSplitPhotosByDate}
+              trackColor={{ false: '#E0E0E0', true: '#F2C31B' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

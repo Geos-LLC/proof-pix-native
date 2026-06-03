@@ -6,6 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
+  Alert,
+  Share,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +18,10 @@ import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { FONTS } from '../constants/fonts';
 import dropboxAuthService from '../services/dropboxAuthService';
+import proxyService from '../services/proxyService';
+import { generateInviteToken } from '../utils/tokens';
+import { generateInviteLink } from '../utils/inviteLinkGenerator';
+import { logTeamInvitesCreated } from '../utils/analytics';
 
 // CloudTeamScreen — design 35.
 //
@@ -41,11 +48,27 @@ const BG_UPLOAD_KEY = '@cloud_team_bg_upload_pref';
 export default function CloudTeamScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, userInfo, accountType } = useAdmin();
+  const {
+    isAuthenticated,
+    userInfo,
+    accountType,
+    userMode,
+    proxySessionId,
+    teamInfo,
+    inviteTokens,
+    addInviteToken,
+    individualSignIn,
+    adminSignIn,
+    signOut,
+  } = useAdmin();
   const { userPlan } = useSettings();
 
   const [dropboxConnected, setDropboxConnected] = useState(false);
+  const [dropboxUserInfo, setDropboxUserInfo] = useState(null);
   const [bgUploadEnabled, setBgUploadEnabled] = useState(true);
+  const [isWorkingGoogle, setIsWorkingGoogle] = useState(false);
+  const [isWorkingDropbox, setIsWorkingDropbox] = useState(false);
+  const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -53,38 +76,215 @@ export default function CloudTeamScreen({ navigation }) {
         const pref = await AsyncStorage.getItem(BG_UPLOAD_KEY);
         if (pref !== null) setBgUploadEnabled(pref === 'true');
       } catch {}
-      try {
-        setDropboxConnected(dropboxAuthService.isAuthenticated());
-      } catch {}
+      await refreshDropbox();
     })();
   }, []);
+
+  const refreshDropbox = async () => {
+    try {
+      const connected = dropboxAuthService.isAuthenticated();
+      setDropboxConnected(connected);
+      if (connected) {
+        try {
+          const info = await dropboxAuthService.getUserInfo?.();
+          if (info) setDropboxUserInfo(info);
+        } catch {}
+      } else {
+        setDropboxUserInfo(null);
+      }
+    } catch {}
+  };
 
   const toggleBgUpload = async (next) => {
     setBgUploadEnabled(next);
     try { await AsyncStorage.setItem(BG_UPLOAD_KEY, String(next)); } catch {}
   };
 
-  const handleGoogleDrive = () => {
-    // Route back to the Settings cloud-sync section — the existing
-    // sign-in / sign-out / Manage UI lives there.
-    navigation.navigate('Settings', { scrollToCloudSync: true });
+  // --- Google Drive ----------------------------------------------------
+
+  const isBusinessOrEnterprise = userPlan === 'business' || userPlan === 'enterprise';
+
+  const handleGoogleDrive = async () => {
+    if (isWorkingGoogle) return;
+    if (googleConnected) {
+      // Already connected → offer to sign out (matches Settings flow).
+      Alert.alert(
+        t('cloudTeam.disconnectGoogleTitle', { defaultValue: 'Disconnect Google Drive?' }),
+        t('cloudTeam.disconnectGoogleMessage', {
+          defaultValue: 'Photos already uploaded stay in your Drive. New captures stop syncing until you reconnect.',
+        }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          {
+            text: t('cloudTeam.disconnect', { defaultValue: 'Disconnect' }),
+            style: 'destructive',
+            onPress: async () => {
+              setIsWorkingGoogle(true);
+              try { await signOut(); }
+              catch (e) { Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Sign-out failed'); }
+              finally { setIsWorkingGoogle(false); }
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    // Not connected → sign in. Business/Enterprise route through
+    // adminSignIn (team-shared Drive); Pro / others use the per-user
+    // individualSignIn path.
+    setIsWorkingGoogle(true);
+    try {
+      const fn = isBusinessOrEnterprise ? adminSignIn : individualSignIn;
+      const result = await fn();
+      if (!result?.success) {
+        const errMsg = result?.error || 'Sign-in failed';
+        if (!/cancel/i.test(String(errMsg))) {
+          Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
+        }
+      }
+    } catch (e) {
+      if (!/cancel/i.test(String(e?.message || ''))) {
+        Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Sign-in failed');
+      }
+    } finally {
+      setIsWorkingGoogle(false);
+    }
   };
 
-  const handleDropbox = () => {
-    navigation.navigate('Settings', { scrollToCloudSync: true });
+  // --- Dropbox ---------------------------------------------------------
+
+  const handleDropbox = async () => {
+    if (isWorkingDropbox) return;
+    if (dropboxConnected) {
+      Alert.alert(
+        t('cloudTeam.disconnectDropboxTitle', { defaultValue: 'Disconnect Dropbox?' }),
+        t('cloudTeam.disconnectDropboxMessage', {
+          defaultValue: 'Photos already uploaded stay in your Dropbox. New captures stop syncing until you reconnect.',
+        }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          {
+            text: t('cloudTeam.disconnect', { defaultValue: 'Disconnect' }),
+            style: 'destructive',
+            onPress: async () => {
+              setIsWorkingDropbox(true);
+              try {
+                await dropboxAuthService.signOut();
+                await refreshDropbox();
+              } catch (e) {
+                Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Sign-out failed');
+              } finally {
+                setIsWorkingDropbox(false);
+              }
+            },
+          },
+        ],
+      );
+      return;
+    }
+    setIsWorkingDropbox(true);
+    try {
+      const result = await dropboxAuthService.signIn();
+      if (result?.success === false) {
+        const errMsg = result?.error || '';
+        if (errMsg && !/cancel/i.test(errMsg)) {
+          Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
+        }
+      }
+      await refreshDropbox();
+    } catch (e) {
+      const errMsg = e?.message || '';
+      if (errMsg && !/cancel/i.test(errMsg)) {
+        Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
+      }
+    } finally {
+      setIsWorkingDropbox(false);
+    }
   };
 
-  const handleGenerateInvite = () => {
-    navigation.navigate('Settings', { scrollToCloudSync: true, openTeam: true });
+  // --- Team invite -----------------------------------------------------
+
+  const teamName = teamInfo?.teamName || teamInfo?.name || 'ProofPix Team';
+
+  const handleGenerateInvite = async () => {
+    if (isGeneratingInvite) return;
+    if (!isBusinessOrEnterprise) {
+      Alert.alert(
+        t('cloudTeam.upgradeForTeamTitle', { defaultValue: 'Team requires Business' }),
+        t('cloudTeam.upgradeForTeamMessage', {
+          defaultValue: 'Upgrade to Business or Enterprise to invite team members.',
+        }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          {
+            text: t('cloudTeam.upgrade', { defaultValue: 'Upgrade' }),
+            onPress: () => navigation.navigate('PlanSelection', { mode: 'upgrade' }),
+          },
+        ],
+      );
+      return;
+    }
+    if (!proxySessionId) {
+      // Team mode hasn't been set up — that path needs the team
+      // dashboard inside Settings (it walks the user through admin
+      // sign-in + team naming). Send them there.
+      Alert.alert(
+        t('cloudTeam.setupTeamFirstTitle', { defaultValue: 'Set up your team first' }),
+        t('cloudTeam.setupTeamFirstMessage', {
+          defaultValue: "We need to connect your team's shared Google Drive before generating invites. Open Settings to finish setup.",
+        }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          {
+            text: t('cloudTeam.openSettings', { defaultValue: 'Open Settings' }),
+            onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true, openTeam: true }),
+          },
+        ],
+      );
+      return;
+    }
+
+    setIsGeneratingInvite(true);
+    const newToken = generateInviteToken();
+    try {
+      await proxyService.addInviteToken(proxySessionId, newToken);
+      await addInviteToken(newToken);
+      try {
+        logTeamInvitesCreated(1, {
+          plan: userPlan,
+          team_size_before: 0,
+          team_size_after: 0,
+        });
+      } catch {}
+      const link = generateInviteLink(newToken, proxySessionId);
+      try {
+        await Share.share({
+          message: `Join ${teamName} on ProofPix: ${link}`,
+          url: link,
+        });
+      } catch {}
+    } catch (e) {
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        e?.message || 'Failed to generate invite',
+      );
+    } finally {
+      setIsGeneratingInvite(false);
+    }
   };
 
   const isPro = userPlan === 'pro' || userPlan === 'business' || userPlan === 'enterprise';
-  const isBusiness = userPlan === 'business' || userPlan === 'enterprise';
+  const isBusiness = isBusinessOrEnterprise;
 
   const googleConnected = isAuthenticated && accountType === 'google';
   const googleAccountLabel = googleConnected
     ? (userInfo?.email || userInfo?.name || t('cloudTeam.connected', { defaultValue: 'Connected' }))
     : t('cloudTeam.notConnected', { defaultValue: 'Not connected' });
+  const dropboxLabel = dropboxConnected
+    ? (dropboxUserInfo?.email || dropboxUserInfo?.name || t('cloudTeam.connected', { defaultValue: 'Connected' }))
+    : t('cloudTeam.notConnected', { defaultValue: 'Not connected' });
+  const inviteCount = Array.isArray(inviteTokens) ? inviteTokens.length : 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -139,11 +339,15 @@ export default function CloudTeamScreen({ navigation }) {
               </Text>
             </View>
             <View style={[styles.actionPill, googleConnected ? styles.actionPillGhost : styles.actionPillAccent]}>
-              <Text style={[styles.actionPillText, googleConnected ? styles.actionPillTextGhost : styles.actionPillTextAccent]}>
-                {googleConnected
-                  ? t('cloudTeam.manage', { defaultValue: 'Manage' })
-                  : t('cloudTeam.connect', { defaultValue: 'Connect' })}
-              </Text>
+              {isWorkingGoogle ? (
+                <ActivityIndicator size="small" color="#1E1E1E" />
+              ) : (
+                <Text style={[styles.actionPillText, googleConnected ? styles.actionPillTextGhost : styles.actionPillTextAccent]}>
+                  {googleConnected
+                    ? t('cloudTeam.disconnect', { defaultValue: 'Disconnect' })
+                    : t('cloudTeam.connect', { defaultValue: 'Connect' })}
+                </Text>
+              )}
             </View>
           </TouchableOpacity>
 
@@ -165,17 +369,19 @@ export default function CloudTeamScreen({ navigation }) {
                 style={[styles.rowSub, dropboxConnected && styles.rowSubSuccess]}
                 numberOfLines={1}
               >
-                {dropboxConnected
-                  ? t('cloudTeam.connected', { defaultValue: 'Connected' })
-                  : t('cloudTeam.notConnected', { defaultValue: 'Not connected' })}
+                {dropboxLabel}
               </Text>
             </View>
             <View style={[styles.actionPill, dropboxConnected ? styles.actionPillGhost : styles.actionPillAccent]}>
-              <Text style={[styles.actionPillText, dropboxConnected ? styles.actionPillTextGhost : styles.actionPillTextAccent]}>
-                {dropboxConnected
-                  ? t('cloudTeam.manage', { defaultValue: 'Manage' })
-                  : t('cloudTeam.connect', { defaultValue: 'Connect' })}
-              </Text>
+              {isWorkingDropbox ? (
+                <ActivityIndicator size="small" color="#1E1E1E" />
+              ) : (
+                <Text style={[styles.actionPillText, dropboxConnected ? styles.actionPillTextGhost : styles.actionPillTextAccent]}>
+                  {dropboxConnected
+                    ? t('cloudTeam.disconnect', { defaultValue: 'Disconnect' })
+                    : t('cloudTeam.connect', { defaultValue: 'Connect' })}
+                </Text>
+              )}
             </View>
           </TouchableOpacity>
 
@@ -223,16 +429,27 @@ export default function CloudTeamScreen({ navigation }) {
               defaultValue: 'Share a link or QR code. Members capture into shared projects.',
             })}
           </Text>
+          {isBusiness && proxySessionId && inviteCount > 0 ? (
+            <Text style={styles.teamCardCount}>
+              {t('cloudTeam.activeInvites', { count: inviteCount, defaultValue: `${inviteCount} active invite${inviteCount === 1 ? '' : 's'}` })}
+            </Text>
+          ) : null}
           <TouchableOpacity
             style={[styles.darkButton, !isBusiness && styles.darkButtonDisabled]}
             onPress={handleGenerateInvite}
-            disabled={!isBusiness}
+            disabled={!isBusiness || isGeneratingInvite}
             activeOpacity={0.85}
           >
-            <Ionicons name="add" size={16} color="#FFFFFF" />
-            <Text style={styles.darkButtonText}>
-              {t('cloudTeam.generateInvite', { defaultValue: 'Generate invite' })}
-            </Text>
+            {isGeneratingInvite ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons name="add" size={16} color="#FFFFFF" />
+                <Text style={styles.darkButtonText}>
+                  {t('cloudTeam.generateInvite', { defaultValue: 'Generate invite' })}
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -442,8 +659,17 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
     lineHeight: 18,
     textAlign: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
     paddingHorizontal: 8,
+  },
+  teamCardCount: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7A5B00',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    marginBottom: 10,
   },
   darkButton: {
     flexDirection: 'row',

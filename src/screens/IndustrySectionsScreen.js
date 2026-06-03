@@ -14,6 +14,7 @@ import { FONTS } from '../constants/fonts';
 import { useSettings } from '../context/SettingsContext';
 import { INDUSTRIES, getIndustryById } from '../constants/industries';
 import QualificationPromptModal, { getStoredUserType } from '../components/QualificationPromptModal';
+import RoomEditor from '../components/RoomEditor';
 
 // IndustrySectionsScreen — dedicated route.
 //
@@ -36,6 +37,7 @@ export default function IndustrySectionsScreen({ navigation }) {
   const { customRooms, saveCustomRooms } = useSettings();
 
   const [showPicker, setShowPicker] = useState(false);
+  const [showRoomEditor, setShowRoomEditor] = useState(false);
   const [currentIndustryId, setCurrentIndustryId] = useState(null);
 
   useEffect(() => {
@@ -69,8 +71,9 @@ export default function IndustrySectionsScreen({ navigation }) {
     ? customRooms
     : [];
 
-  const openInSettings = () => {
-    navigation.navigate('Settings', { scrollToSections: true });
+  const openEditor = () => setShowRoomEditor(true);
+  const handleSaveRooms = (rooms) => {
+    try { saveCustomRooms(rooms); } catch {}
   };
 
   return (
@@ -170,12 +173,14 @@ export default function IndustrySectionsScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.manageButton}
-          onPress={openInSettings}
+          onPress={openEditor}
           activeOpacity={0.85}
         >
           <Ionicons name="pencil-outline" size={16} color="#1E1E1E" />
           <Text style={styles.manageButtonText}>
-            {t('industrySections.manageInSettings', { defaultValue: 'Edit sections in Settings' })}
+            {sections.length > 0
+              ? t('industrySections.editSections', { defaultValue: 'Edit sections' })
+              : t('industrySections.addSections', { defaultValue: 'Add sections' })}
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -183,6 +188,13 @@ export default function IndustrySectionsScreen({ navigation }) {
       <QualificationPromptModal
         visible={showPicker}
         onClose={handleClosePicker}
+      />
+
+      <RoomEditor
+        visible={showRoomEditor}
+        onClose={() => setShowRoomEditor(false)}
+        onSave={handleSaveRooms}
+        initialRooms={customRooms}
       />
     </SafeAreaView>
   );
