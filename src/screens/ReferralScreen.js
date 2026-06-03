@@ -282,7 +282,8 @@ export default function ReferralScreen({ navigation, route }) {
                 Alert.alert('Copied!', 'Referral code copied to clipboard.');
               }}
             >
-              <Ionicons name="copy-outline" size={20} color={COLORS.TEXT} />
+              <Ionicons name="copy-outline" size={14} color="#1E1E1E" />
+              <Text style={styles.copyIconButtonText}>Copy</Text>
             </TouchableOpacity>
           </View>
           
@@ -520,28 +521,48 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: -0.2,
   },
-  // Refresh: code box uses the design's `surface` tile pattern — soft
-  // grey fill (#F4F4F4), hairline border (#ECECEC), radius 16.
+  // Refresh pass 8 — design screenshot 36 shows the code box with a soft
+  // yellow fill (#FFF4C2 accent-soft) + dashed accent border. Tighter
+  // padding and the code text colored in accent-ink (#7A5B00) so it
+  // reads as branded type rather than plain black.
   codeBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F4F4F4',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    backgroundColor: '#FFF4C2',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: '#F2C31B',
+    borderStyle: 'dashed',
   },
   codeText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#000000',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#7A5B00',
     letterSpacing: 2,
     fontFamily: FONTS.ALEXANDRIA,
   },
+  // Refresh pass 8 — design screenshot 36 shows the copy button inside
+  // the code box as a small yellow pill ("📋 Copy") rather than a bare
+  // icon. Same tap target, more discoverable.
   copyIconButton: {
-    padding: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 30,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: '#F2C31B',
+  },
+  copyIconButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
   },
   actionButtons: {
     flexDirection: 'row',
