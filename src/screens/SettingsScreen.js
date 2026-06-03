@@ -932,10 +932,25 @@ export default function SettingsScreen({ navigation, route }) {
         const productIds = (purchases || [])
           .map((p) => p?.productId)
           .filter(Boolean);
+        let strict = 'free';
+        let fuzzy = 'free';
         let detected = 'free';
         if (active) {
+          // Strict detection via exact-id match in computeEntitlements.
           const ent = computeEntitlements(purchases);
-          detected = ent?.plan || 'free';
+          strict = ent?.plan || 'free';
+
+          // Fuzzy detection via productIdToPlan substring match — covers
+          // grandfathered SKUs, annual variants, or any id that includes
+          // "business" / "pro" / "enterprise" without being identical to
+          // the constants in IOS_PRODUCTS / ANDROID_PRODUCTS.
+          const tierRank = { free: 0, starter: 0, pro: 1, business: 2, enterprise: 3 };
+          for (const id of productIds) {
+            const mapped = productIdToPlan(id);
+            if ((tierRank[mapped] || 0) > (tierRank[fuzzy] || 0)) fuzzy = mapped;
+          }
+          detected = (tierRank[strict] || 0) >= (tierRank[fuzzy] || 0) ? strict : fuzzy;
+
           const detectableTiers = ['pro', 'business', 'enterprise'];
           if (
             detected
@@ -946,7 +961,7 @@ export default function SettingsScreen({ navigation, route }) {
           }
         }
         setIapDiag(
-          `n=${productIds.length} detected=${detected} cached=${userPlan || 'starter'} ids=[${productIds.join(', ')}]`,
+          `n=${productIds.length} strict=${strict} fuzzy=${fuzzy} → ${detected} cached=${userPlan || 'starter'} ids=[${productIds.join(', ')}]`,
         );
       } catch (e) {
         setIapDiag(`err: ${e?.message || String(e)}`);
@@ -5683,7 +5698,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-T · tier reconciliation v2 + diag + refresh action
+              Build tag: OTA-2026-06-03-U · tier reconciliation v3 (fuzzy fallback + product ids visible)
             </Text>
             {/* IAP diagnostic — shows what getAvailablePurchases returned
                 + the highest-tier plan computeEntitlements detected +
@@ -5705,10 +5720,6 @@ export default function SettingsScreen({ navigation, route }) {
               }}
               onPress={async () => {
                 try {
-                  // Run a real RestorePurchases (forces the store to
-                  // surface every active subscription product id), then
-                  // re-detect + reconcile userPlan from the fresh
-                  // snapshot.
                   const restored = await restorePurchases();
                   const purchases = Array.isArray(restored) && restored.length
                     ? restored
@@ -5716,17 +5727,39 @@ export default function SettingsScreen({ navigation, route }) {
                   const productIds = (purchases || [])
                     .map((p) => p?.productId)
                     .filter(Boolean);
+
+                  // Strict (exact-id) detection via computeEntitlements.
                   const ent = computeEntitlements(purchases);
-                  const detected = ent?.plan || 'free';
+                  const strict = ent?.plan || 'free';
+
+                  // Fuzzy detection — picks the highest tier any
+                  // returned id maps to via productIdToPlan. Catches
+                  // cases where the store returned a product whose id
+                  // doesn't exactly equal IOS_PRODUCTS.BUSINESS_MONTHLY
+                  // but still includes "business" (e.g. a renamed SKU,
+                  // an annual variant, an older grandfathered id).
+                  const tierRank = { free: 0, starter: 0, pro: 1, business: 2, enterprise: 3 };
+                  let fuzzy = 'free';
+                  for (const id of productIds) {
+                    const mapped = productIdToPlan(id);
+                    if ((tierRank[mapped] || 0) > (tierRank[fuzzy] || 0)) fuzzy = mapped;
+                  }
+
+                  // Final detected = whichever is higher.
+                  const detected = (tierRank[strict] || 0) >= (tierRank[fuzzy] || 0) ? strict : fuzzy;
                   if (['pro', 'business', 'enterprise'].includes(detected)) {
                     try { await updateUserPlan(detected); } catch {}
                   }
                   setIapDiag(
-                    `n=${productIds.length} detected=${detected} cached=${detected || userPlan} ids=[${productIds.join(', ')}]`,
+                    `n=${productIds.length} strict=${strict} fuzzy=${fuzzy} → ${detected} | ids=[${productIds.join(', ')}]`,
                   );
                   Alert.alert(
                     'Tier refresh',
-                    `Active products: ${productIds.length}\nDetected plan: ${detected}\nSynced cached userPlan: ${detected}`,
+                    `Active products: ${productIds.length}\n\n` +
+                    `Detected (strict): ${strict}\n` +
+                    `Detected (fuzzy): ${fuzzy}\n` +
+                    `Synced userPlan: ${detected}\n\n` +
+                    `Product IDs returned:\n${productIds.length ? productIds.join('\n') : '(none)'}`,
                   );
                 } catch (e) {
                   Alert.alert('Tier refresh error', e?.message || String(e));
