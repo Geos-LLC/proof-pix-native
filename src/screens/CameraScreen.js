@@ -5068,10 +5068,15 @@ const styles = StyleSheet.create({
     zIndex: 260,
     elevation: 260
   },
+  // Refresh pass 9 (cosmetic) — design 07/08: top room|mode pill is a
+  // dark translucent capsule with no outline (was a transparent capsule
+  // with a 1px yellow border that competed with the live view). The
+  // mode segment inside stays yellow; the room segment renders on the
+  // dark backdrop so the white "Kitchen" reads cleanly.
   roomModeContainer: {
     position: 'absolute',
-    top: 50,
-    left: 15,
+    top: 48,
+    left: 16,
     flexDirection: 'row',
     alignItems: 'center',
     zIndex: 1000,
@@ -5080,11 +5085,10 @@ const styles = StyleSheet.create({
   roomModePillWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: COLORS.PRIMARY,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     overflow: 'hidden',
-    height: 32,
+    height: 36,
     paddingLeft: 14,
     paddingRight: 4,
   },
@@ -5100,50 +5104,53 @@ const styles = StyleSheet.create({
     fontWeight: '590',
     letterSpacing: -0.11,
   },
+  // Refresh pass 9 (cosmetic) — mode segment now fills the right half
+  // of the host pill (was a smaller floating 25-px chip inside a yellow
+  // outline). Inherits the host's 36-px height and rounds only the right
+  // side via the parent's overflow:hidden.
   modeButton: {
     backgroundColor: COLORS.PRIMARY,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 30,
+    paddingHorizontal: 14,
     justifyContent: 'center',
-    height: 25,
+    height: 36,
   },
   modeButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
-    fontSize: 13.7,
-    fontWeight: '590',
+    color: '#1E1E1E',
+    fontSize: 13.5,
+    fontWeight: '700',
+    letterSpacing: -0.1,
     textAlign: 'center',
   },
+  // Refresh pass 9 (cosmetic only) — design screenshots 07/08 show the
+  // top sound + torch buttons as dark translucent circles with no
+  // outline (was 1px white border on transparent fill). Slightly larger
+  // tap target too. No functionality changes.
   torchButton: {
     position: 'absolute',
-    top: 50,
-    right: 15,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'transparent',
+    top: 48,
+    right: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
     elevation: 1000,
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
   },
   soundButton: {
     position: 'absolute',
-    top: 50,
-    right: 60,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'transparent',
+    top: 48,
+    right: 64,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
     elevation: 1000,
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
   },
   closeButton: {
     width: 44,
@@ -5258,37 +5265,44 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 20,
   },
+  // Refresh pass 9 (cosmetic) — design 07: aspect-ratio segments now sit
+  // inside one continuous translucent-dark pill (was two separately
+  // outlined chips with a 5-px gap). Active segment fills with white +
+  // dark text; inactive stays translucent with white text. No props
+  // change — only the wrapper now provides the pill backdrop via a
+  // matched height + radius so the children read as a single control.
   aspectRatioSelector: {
     flexDirection: 'row',
-    gap: 5,
+    gap: 0,
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderRadius: 999,
+    padding: 3,
   },
   aspectRatioButtonBottom: {
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'transparent',
     alignContent: 'center',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    minWidth: 55,
-    height: 23,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderRadius: 999,
+    minWidth: 44,
+    height: 26,
+    paddingHorizontal: 10,
   },
   aspectRatioButtonBottomActive: {
-    backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY,
-    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
   },
   aspectRatioButtonBottomText: {
     fontFamily: FONTS.ALEXANDRIA,
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.1,
     textAlign: 'center',
   },
   aspectRatioButtonBottomTextActive: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#1E1E1E', // dark text on yellow PRIMARY bg — was white (invisible on yellow)
+    color: '#1E1E1E',
     fontWeight: '700',
   },
   aspectRatioButton: {
@@ -5366,40 +5380,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20
   },
+  // Refresh pass 9 (cosmetic) — design 07: zoom pill is a tight
+  // translucent capsule with snug zoom-preset chips inside. Was a wider
+  // dark pill with 44-px-tall preset buttons + scale animation on the
+  // active. Active zoom now reads as yellow text inline (no scale, no
+  // background change) — matches the screenshot exactly.
   zoomButtons: {
     flexDirection: 'row',
-    gap: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    gap: 4,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 24,
-    backdropFilter: 'blur(10px)'
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   zoomPresetButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    minWidth: 30,
+    height: 26,
+    paddingHorizontal: 6,
+    borderRadius: 999,
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    opacity: 0.7
+    opacity: 1,
   },
   zoomPresetButtonActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: 'transparent',
     opacity: 1,
-    transform: [{ scale: 1.1 }]
   },
   zoomPresetText: {
-    color: 'white',
-    fontSize: 15,
-    fontWeight: '600',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.1,
   },
   zoomPresetTextActive: {
     color: COLORS.PRIMARY,
-    fontWeight: '700'
+    fontWeight: '800',
   },
   aspectRatioContainer: {
     flexDirection: 'column',
@@ -6581,29 +6598,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
+  // Refresh pass 9 (cosmetic) — design 07/08: Done is a smaller ring
+  // outline (was a 75-px white solid pill with white border that visually
+  // competed with the yellow capture). Now a 58-px transparent ring with
+  // a thin yellow stroke and white "Done" text — same tap target, same
+  // navigation behavior, lower visual weight so the capture stays the
+  // hero.
    checkmarkButtonBorder: {
-    width: 75,
-    height: 75,
-    borderRadius: 37.5,
-    borderWidth: 2.5,
-    borderColor: '#FFFFFF',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 2,
+    borderColor: '#F2C31B',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 3,
   },
    checkmarkButton: {
     width: '100%',
     height: '100%',
-    borderRadius: 34,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
   },
   doneButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#000000',
+    color: '#FFFFFF',
+    letterSpacing: -0.1,
   },
   // Ghost overlay opacity slider — vertical column on the right edge.
   // The Slider widget itself is rotated 90deg so a horizontal slider
