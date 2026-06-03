@@ -936,6 +936,12 @@ export default function SettingsScreen({ navigation, route }) {
   const cloudSyncSectionRef = useRef(null);
   const watermarkSectionRef = useRef(null);
   const accountDataSectionRef = useRef(null);
+  // Section refs added for the design's WORKSPACE / CLOUD & TEAM rows
+  // so a row tap can scroll to the existing inline section where the
+  // user does the actual editing.
+  const sectionsSectionRef = useRef(null);
+  const labelsSectionRef = useRef(null);
+  const teamSectionRef = useRef(null);
   const watermarkSectionY = useRef(null);
   const watermarkSectionAbsoluteY = useRef(null);
   const [highlightWatermarkSection, setHighlightWatermarkSection] = useState(false);
@@ -2757,10 +2763,24 @@ export default function SettingsScreen({ navigation, route }) {
     }
   }, [languageModalVisible]);
 
+  // Scroll the main settings ScrollView to the top of a section ref —
+  // used by the design's WORKSPACE + CLOUD & TEAM design rows so a tap
+  // jumps to the legacy section that holds the full editing UI.
+  const scrollToRef = (ref) => {
+    if (!ref?.current || !mainScrollViewRef.current) return;
+    try {
+      ref.current.measureLayout(
+        mainScrollViewRef.current,
+        (x, y) => mainScrollViewRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true }),
+        () => {},
+      );
+    } catch {}
+  };
+
   // Handle navigation to specific sections - using useEffect to watch route params
   useEffect(() => {
     const params = route?.params;
-    
+
     const scrollToSection = (sectionRef, paramKey) => {
       if (params?.[paramKey] === true) {
         console.log(`[SETTINGS] Attempting to scroll to ${paramKey} section`);
@@ -3052,10 +3072,12 @@ export default function SettingsScreen({ navigation, route }) {
           {t('settings.workspaceGroup', { defaultValue: 'Workspace' })}
         </Text>
         <View style={styles.rowGroup}>
-          {/* Industry & rooms — opens the existing QualificationPromptModal. */}
+          {/* Industry & sections — scrolls to the inline Sections subpage
+              where the user can change industry + edit their section
+              names + defaults. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => setShowIndustryPicker(true)}
+            onPress={() => scrollToRef(sectionsSectionRef)}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3063,23 +3085,23 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
             <View style={styles.ppRowMeta}>
               <Text style={styles.ppRowTitle}>
-                {t('settings.industryRooms', { defaultValue: 'Industry & rooms' })}
+                {t('settings.industrySections', { defaultValue: 'Industry & sections' })}
               </Text>
               <Text style={styles.ppRowSub} numberOfLines={1}>
-                {t('settings.industryRoomsSub', {
-                  defaultValue: `${(Array.isArray(customRooms) ? customRooms.length : 0) || 5} default rooms`,
+                {t('settings.industrySectionsSub', {
+                  defaultValue: `${(Array.isArray(customRooms) ? customRooms.length : 0) || 5} sections`,
                 })}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
 
-          {/* Labels & language — navigates to the existing Label customization
-              screen which exposes label color/font/size/position + label
-              language picker. */}
+          {/* Labels & language — scrolls to the inline Labels subpage,
+              which holds the labels customization + watermark + upload
+              structure config side-by-side. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => navigation.navigate('LabelCustomization')}
+            onPress={() => scrollToRef(labelsSectionRef)}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3127,15 +3149,7 @@ export default function SettingsScreen({ navigation, route }) {
               provider. PRO gate badge per design. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => {
-              if (cloudSyncSectionRef.current && mainScrollViewRef.current) {
-                cloudSyncSectionRef.current.measureLayout(
-                  mainScrollViewRef.current,
-                  (x, y) => mainScrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true }),
-                  () => {},
-                );
-              }
-            }}
+            onPress={() => scrollToRef(cloudSyncSectionRef)}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3157,19 +3171,11 @@ export default function SettingsScreen({ navigation, route }) {
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
 
-          {/* Team members — scrolls to the cloud + team section as well
-              (team management lives inside that section). BUSINESS gate. */}
+          {/* Team members — scrolls directly to the Team Management row
+              inside the Cloud & Team section. BUSINESS gate per design. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => {
-              if (cloudSyncSectionRef.current && mainScrollViewRef.current) {
-                cloudSyncSectionRef.current.measureLayout(
-                  mainScrollViewRef.current,
-                  (x, y) => mainScrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true }),
-                  () => {},
-                );
-              }
-            }}
+            onPress={() => scrollToRef(teamSectionRef)}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3276,7 +3282,7 @@ export default function SettingsScreen({ navigation, route }) {
         {userMode !== 'team_member' && (
           <>
             {/* Label Customization */}
-            <View style={styles.section}>
+            <View ref={labelsSectionRef} style={styles.section}>
               <Text style={styles.sectionTitle}>{t('settings.labels', { defaultValue: 'Labels' })}</Text>
               <Text style={styles.sectionDescription}>
                 {t('settings.labelCustomizationDescription', { defaultValue: 'Customize the appearance of before/after labels on your photos.' })}
@@ -3711,7 +3717,11 @@ export default function SettingsScreen({ navigation, route }) {
 
             </View>
 
-            {/* Appearance */}
+            {/* Appearance — hidden in the legacy section flow because the
+                "Appearance" design row above already toggles themeMode.
+                Wrapping in `{false && (` so the JSX subtree doesn't
+                render but the code stays in place for a quick re-enable. */}
+            {false && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t('settings.appearance', { defaultValue: 'Appearance' })}</Text>
               <View style={styles.settingRow}>
@@ -3729,9 +3739,10 @@ export default function SettingsScreen({ navigation, route }) {
                 />
               </View>
             </View>
+            )}
 
             {/* Sections */}
-            <View style={styles.section}>
+            <View ref={sectionsSectionRef} style={styles.section}>
               <Text style={styles.sectionTitle}>{t('settings.folderCustomization_short', { defaultValue: 'Sections' })}</Text>
               <Text style={styles.sectionDescription}>
                 {t('settings.folderCustomizationDescription', { defaultValue: 'Customize the names and default status of your project sections.' })}
@@ -4416,7 +4427,7 @@ export default function SettingsScreen({ navigation, route }) {
                   </View>
 
                   {/* Team Management Row */}
-                  <View style={styles.teamManagementRow}>
+                  <View ref={teamSectionRef} style={styles.teamManagementRow}>
                     {/* Set up Team / Manage Team Button */}
                     <TouchableOpacity
                       style={[
@@ -5593,7 +5604,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-H · settings=workspace+cloudteam-rows · camera=zoom+format+navhidden
+              Build tag: OTA-2026-06-03-I · settings=rows-wired-to-sections · camera=zoom+format+navhidden
             </Text>
           </View>
         )}
