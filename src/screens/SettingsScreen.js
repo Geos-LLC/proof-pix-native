@@ -2939,29 +2939,41 @@ export default function SettingsScreen({ navigation, route }) {
           setScrollContainerHeight(height);
         }}
       >
-        {/* User Account Card */}
+        {/* User Account Card — refresh per design 34:
+            yellow circle with initials + name + subtitle + tier pill on
+            the right. Edit pen kept but moved to be a small ghost button
+            under the tier pill so the row stays clean. */}
         <View style={styles.userAccountCard}>
           <View style={styles.userAccountHeader}>
             <View style={styles.userAccountLeft}>
               <View style={styles.userAvatar}>
-               <Image 
-               source={require('../../assets/icons/user.png')}
-               style={{ width: 50, height: 50 }}
-               />
+                <Text style={styles.userAvatarInitials} numberOfLines={1}>
+                  {((userName || 'U').trim().split(/\s+/).slice(0, 2).map(s => s[0] || '').join('') || 'U').toUpperCase()}
+                </Text>
               </View>
               <View style={styles.userInfo}>
-                <Text style={styles.userName}>{userName || 'User'}</Text>
-                <Text style={styles.accountType}>
-                  {userMode === 'team_member' ? t('settings.teamAccount', { defaultValue: 'Team account' }) : t('settings.individualAccount', { defaultValue: 'Individual account' })}
+                <Text style={styles.userName} numberOfLines={1}>{userName || 'User'}</Text>
+                <Text style={styles.accountType} numberOfLines={1}>
+                  {userMode === 'team_member'
+                    ? t('settings.teamAccount', { defaultValue: 'Team account' })
+                    : t('settings.individualAccount', { defaultValue: 'Individual account' })}
                 </Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.editButton} onPress={() => { setName(userName); setEditingName(true); }}>
-              <Image
-              source={require('../../assets/icons/pen.png')}
-              style={{ width: 25, height: 25 }}
-              />
-            </TouchableOpacity>
+            <View style={styles.userTierColumn}>
+              <View style={styles.userTierPill}>
+                <Text style={styles.userTierPillText}>
+                  {(userPlan || 'starter').toUpperCase()}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => { setName(userName); setEditingName(true); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="pencil-outline" size={14} color="#9A9A9A" />
+              </TouchableOpacity>
+            </View>
           </View>
           
           <View style={styles.planInfo}>
@@ -3001,11 +3013,28 @@ export default function SettingsScreen({ navigation, route }) {
             )}
           </View>
           
+          {/* Upgrade banner — design 34 has this as a stand-alone yellow
+              row card with a dark icon tile + title + subtitle + chevron.
+              Same destination (PlanSelection upgrade mode). */}
           <TouchableOpacity
             style={styles.upgradeButton}
             onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
+            activeOpacity={0.85}
           >
-            <Text style={styles.upgradeButtonText}>{t('settings.upgrade', { defaultValue: 'Upgrade' })}</Text>
+            <View style={styles.upgradeButtonIconTile}>
+              <Ionicons name="star" size={16} color="#F2C31B" />
+            </View>
+            <View style={styles.upgradeButtonCopy}>
+              <Text style={styles.upgradeButtonTitle}>
+                {t('settings.upgradeToPro', { defaultValue: 'Upgrade to Pro' })}
+              </Text>
+              <Text style={styles.upgradeButtonSubtitle} numberOfLines={1}>
+                {t('settings.upgradeToProSubtitle', {
+                  defaultValue: 'Unlimited projects, reports & cloud sync',
+                })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#1E1E1E" />
           </TouchableOpacity>
 
           {/* Manage Subscription — only visible to users with an active store
@@ -5402,7 +5431,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-E · camera=zoom-fixed+format+navhidden · settings=new
+              Build tag: OTA-2026-06-03-F · camera=zoom+format+navhidden · settings=user-card+upgrade-banner
             </Text>
           </View>
         )}
@@ -7305,11 +7334,15 @@ const sliderStyles = StyleSheet.create({
       justifyContent: 'space-between',
       alignItems: 'center',
     },
+    // Refresh per design 34: large bold "Settings" headline, weight 800,
+    // tighter letter-spacing — reads as the page anchor before the user
+    // card. (Same family + color stays; only weight + tracking change.)
     title: {
-      fontSize: 34,
-      fontWeight: '700',
-      color: COLORS.TEXT,
-      letterSpacing: -0.5,
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 32,
+      fontWeight: '800',
+      color: '#1E1E1E',
+      letterSpacing: -0.6,
     },
     titleTouchable: {
       alignSelf: 'flex-start',
@@ -7341,24 +7374,49 @@ const sliderStyles = StyleSheet.create({
     content: {
       flex: 1
     },
+    // Refresh per design 34: section cards are hairline-bordered, with
+    // the softer shadow-card recipe (was 8% black drop shadow). Tighter
+    // top spacing so the eyebrow above + card below read as one group.
     section: {
-      backgroundColor: 'white',
-      marginTop: 20,
-      marginHorizontal: 20,
+      backgroundColor: '#FFFFFF',
+      marginTop: 10,
+      marginHorizontal: 18,
       borderRadius: 16,
-      paddingVertical: 20,
-      paddingHorizontal: 20,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
-      elevation: 3,
+      paddingVertical: 16,
+      paddingHorizontal: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: '#ECECEC',
+      shadowColor: '#141420',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.04,
+      shadowRadius: 14,
+      elevation: 2,
     },
+    // Section title — used in the body of cards (Folder name, Cleaning
+    // service, etc.). Kept large per the existing structure since
+    // these are NOT the design's eyebrow ("WORKSPACE" / "CLOUD & TEAM")
+    // — the eyebrow style is `sectionEyebrow` below.
     sectionTitle: {
-      fontSize: 22,
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 18,
       fontWeight: '700',
-      color: COLORS.TEXT,
+      color: '#1E1E1E',
       marginBottom: 2,
+      letterSpacing: -0.3,
+    },
+    // Eyebrow style for the small uppercase group labels above section
+    // cards ("WORKSPACE", "CLOUD & TEAM"). Wire any existing top-of-
+    // section label that should look like the design to this style.
+    sectionEyebrow: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 1.1,
+      color: '#9A9A9A',
+      textTransform: 'uppercase',
+      marginTop: 18,
+      marginBottom: 4,
+      marginHorizontal: 22,
     },
     inputGroup: {
       marginBottom: 16
@@ -7441,52 +7499,93 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 2,
       lineHeight: 20,
     },
+    // Refresh per design 34: white card + hairline border + soft
+    // shadow-card recipe (was 8% black drop shadow with no border).
     userAccountCard: {
-      backgroundColor: 'white',
+      backgroundColor: '#FFFFFF',
       borderRadius: 16,
-      padding: 20,
-      marginTop: 20,
-      marginHorizontal: 20,
+      padding: 14,
+      marginTop: 16,
+      marginHorizontal: 18,
       marginBottom: 0,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: '#ECECEC',
+      shadowColor: '#141420',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.06,
+      shadowRadius: 18,
       elevation: 3,
     },
     userAccountHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 16,
+      marginBottom: 4,
     },
     userAccountLeft: {
       flexDirection: 'row',
       alignItems: 'center',
       flex: 1,
     },
+    // Refresh: was a bordered ring around an image icon. Now a flat
+    // yellow disc 48px with the user's initials in dark text inside —
+    // matches the design's "MR" avatar in screenshot 34.
     userAvatar: {
-      borderRadius: 32,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: '#F2C31B',
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 12,
+    },
+    userAvatarInitials: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 16,
+      fontWeight: '800',
+      color: '#1E1E1E',
+      letterSpacing: 0.5,
     },
     userInfo: {
       flex: 1,
     },
     userName: {
-      fontSize: 22,
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 17,
       fontWeight: '700',
-      color: COLORS.TEXT,
-      marginBottom: 4,
+      color: '#1E1E1E',
+      marginBottom: 2,
+      letterSpacing: -0.2,
     },
     accountType: {
+      fontFamily: FONTS.ALEXANDRIA,
       fontSize: 13,
       fontWeight: '500',
-      color: 'rgba(0, 0, 0, 0.6)',
+      color: '#9A9A9A',
+      letterSpacing: -0.1,
+    },
+    // Right cluster: tier pill on top, small ghost edit pen below.
+    userTierColumn: {
+      alignItems: 'flex-end',
+      gap: 6,
+    },
+    userTierPill: {
+      height: 24,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      backgroundColor: '#F4F4F4',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    userTierPillText: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 10,
+      fontWeight: '800',
+      color: '#666666',
+      letterSpacing: 0.6,
     },
     editButton: {
-      padding: 8,
+      padding: 4,
     },
     planInfo: {
       marginBottom: 16,
@@ -7542,31 +7641,75 @@ const sliderStyles = StyleSheet.create({
       fontSize: 12,
       fontWeight: '700',
     },
+    // Refresh per design 34: was a solid-black pill with white text. Now
+    // a yellow horizontal banner with a dark icon tile + 2-line copy +
+    // chevron — reads as a high-affordance row card sitting under the
+    // user card.
     upgradeButton: {
-      backgroundColor: '#000000',
-      borderRadius: 32,
-      paddingVertical: 16,
+      flexDirection: 'row',
       alignItems: 'center',
-      marginTop: 5,
+      backgroundColor: '#F2C31B',
+      borderRadius: 16,
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      gap: 12,
+      marginTop: 10,
+      shadowColor: '#F2C31B',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.3,
+      shadowRadius: 16,
+      elevation: 5,
     },
+    upgradeButtonIconTile: {
+      width: 38,
+      height: 38,
+      borderRadius: 11,
+      backgroundColor: '#1E1E1E',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flex: 0,
+    },
+    upgradeButtonCopy: {
+      flex: 1,
+      minWidth: 0,
+    },
+    upgradeButtonTitle: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 15,
+      fontWeight: '800',
+      color: '#1E1E1E',
+      letterSpacing: -0.2,
+      marginBottom: 2,
+    },
+    upgradeButtonSubtitle: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 12,
+      fontWeight: '500',
+      color: 'rgba(30,30,30,0.7)',
+      letterSpacing: -0.1,
+    },
+    // Old style kept around in case any other site still references it.
     upgradeButtonText: {
-      color: '#FFFFFF',
+      color: '#1E1E1E',
       fontSize: 16,
       fontWeight: '700',
     },
+    // Refresh: ghost outline ('.pp-btn--ghost') — 1.5px borderStrong,
+    // radius 16 to match the upgrade banner, 16/700 dark text.
     manageSubscriptionButton: {
       backgroundColor: 'transparent',
-      borderRadius: 32,
-      paddingVertical: 14,
+      borderRadius: 16,
+      paddingVertical: 13,
       alignItems: 'center',
       marginTop: 8,
-      borderWidth: 1,
-      borderColor: '#000000',
+      borderWidth: 1.5,
+      borderColor: '#D0D0D0',
     },
     manageSubscriptionText: {
-      color: '#000000',
-      fontSize: 15,
-      fontWeight: '600',
+      color: '#1E1E1E',
+      fontSize: 14,
+      fontWeight: '700',
+      letterSpacing: -0.1,
     },
     settingRow: {
       flexDirection: 'row',
