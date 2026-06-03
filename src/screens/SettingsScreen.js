@@ -2939,121 +2939,107 @@ export default function SettingsScreen({ navigation, route }) {
           setScrollContainerHeight(height);
         }}
       >
-        {/* User Account Card — refresh per design 34:
-            yellow circle with initials + name + subtitle + tier pill on
-            the right. Edit pen kept but moved to be a small ghost button
-            under the tier pill so the row stays clean. */}
-        <View style={styles.userAccountCard}>
-          <View style={styles.userAccountHeader}>
-            <View style={styles.userAccountLeft}>
-              <View style={styles.userAvatar}>
-                <Text style={styles.userAvatarInitials} numberOfLines={1}>
-                  {((userName || 'U').trim().split(/\s+/).slice(0, 2).map(s => s[0] || '').join('') || 'U').toUpperCase()}
-                </Text>
-              </View>
-              <View style={styles.userInfo}>
-                <Text style={styles.userName} numberOfLines={1}>{userName || 'User'}</Text>
-                <Text style={styles.accountType} numberOfLines={1}>
-                  {userMode === 'team_member'
-                    ? t('settings.teamAccount', { defaultValue: 'Team account' })
-                    : t('settings.individualAccount', { defaultValue: 'Individual account' })}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.userTierColumn}>
-              <View style={styles.userTierPill}>
-                <Text style={styles.userTierPillText}>
-                  {(userPlan || 'starter').toUpperCase()}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.editButton}
-                onPress={() => { setName(userName); setEditingName(true); }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="pencil-outline" size={14} color="#9A9A9A" />
-              </TouchableOpacity>
-            </View>
+        {/* User Account Card — design 34: flat single-row layout —
+            yellow disc with initials | name + subtitle | tier pill.
+            That's it — nothing else in the card. Plan + trial info
+            moves to a thin contextual banner under the upgrade card.
+            Tapping the card opens the name editor (was a separate
+            pen button — design has no pen). */}
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={styles.userAccountCard}
+          onPress={() => { setName(userName); setEditingName(true); }}
+        >
+          <View style={styles.userAvatar}>
+            <Text style={styles.userAvatarInitials} numberOfLines={1}>
+              {((userName || 'U').trim().split(/\s+/).slice(0, 2).map(s => s[0] || '').join('') || 'U').toUpperCase()}
+            </Text>
           </View>
-          
-          <View style={styles.planInfo}>
-            <View style={styles.planNameRow}>
-              <Text style={styles.planName}>
-                {t('settings.planName', { plan: userPlan ? t(`settings.plans.${userPlan}`, { defaultValue: userPlan.charAt(0).toUpperCase() + userPlan.slice(1) }) : t('settings.plans.starter', { defaultValue: 'Starter' }), defaultValue: `${userPlan ? userPlan.charAt(0).toUpperCase() + userPlan.slice(1) : 'Starter'} Plan` })}
-                {trialActive && trialPlan && ` (${t('settings.trial', { defaultValue: 'Trial' })})`}
-              </Text>
-              {trialActive && (
-                  <View style={styles.priceContainer}>
-                <GradientView
-                  colors={['rgba(11, 131, 33, 0)', '#0B8321']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={styles.priceBadgeGradient}
-                  fallbackColor="rgba(11, 131, 33, 0.14)"
-                />
-                <Text style={styles.priceText}>{t('settings.free', { defaultValue: 'FREE' })}</Text>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName} numberOfLines={1}>{userName || 'User'}</Text>
+            <Text style={styles.accountType} numberOfLines={1}>
+              {userMode === 'team_member'
+                ? t('settings.teamAccount', { defaultValue: 'Team account' })
+                : t('settings.individualAccount', { defaultValue: 'Individual account' })}
+            </Text>
+          </View>
+          {(() => {
+            const plan = (userPlan || 'starter');
+            const tierStyle =
+              plan === 'pro' ? styles.userTierPillPro
+              : plan === 'business' ? styles.userTierPillBusiness
+              : plan === 'enterprise' ? styles.userTierPillBusiness
+              : styles.userTierPillFree;
+            const tierTextStyle =
+              plan === 'pro' ? styles.userTierPillTextPro
+              : plan === 'business' ? styles.userTierPillTextBusiness
+              : plan === 'enterprise' ? styles.userTierPillTextBusiness
+              : styles.userTierPillTextFree;
+            return (
+              <View style={[styles.userTierPill, tierStyle]}>
+                <Text style={[styles.userTierPillText, tierTextStyle]}>
+                  {plan.toUpperCase()}
+                </Text>
               </View>
-              )}
-            </View>
-            
-            {trialActive && trialDaysRemaining > 0 && (
-              <View style={styles.trialProgressContainer}>
+            );
+          })()}
+        </TouchableOpacity>
+
+        {/* Upgrade banner — separate yellow card per design, sits below
+            the user card. Same destination (PlanSelection upgrade mode). */}
+        <TouchableOpacity
+          style={styles.upgradeButton}
+          onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
+          activeOpacity={0.85}
+        >
+          <View style={styles.upgradeButtonIconTile}>
+            <Ionicons name="star" size={20} color="#1E1E1E" />
+          </View>
+          <View style={styles.upgradeButtonCopy}>
+            <Text style={styles.upgradeButtonTitle}>
+              {t('settings.upgradeToPro', { defaultValue: 'Upgrade to Pro' })}
+            </Text>
+            <Text style={styles.upgradeButtonSubtitle} numberOfLines={1}>
+              {t('settings.upgradeToProSubtitle', {
+                defaultValue: 'Unlimited projects, reports & cloud sync',
+              })}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#1E1E1E" />
+        </TouchableOpacity>
+
+        {/* Trial / plan status — a thin row that appears only when there's
+            something to say (active trial, paid sub manage link). Hidden
+            for default Starter so the card stack stays clean per design. */}
+        {(trialActive && trialDaysRemaining > 0) || hasActiveSub ? (
+          <View style={styles.planStatusBar}>
+            {trialActive && trialDaysRemaining > 0 ? (
+              <View style={{ flex: 1 }}>
                 <View style={styles.trialProgressBar}>
-                  <View 
+                  <View
                     style={[
                       styles.trialProgressFill,
-                      { width: `${(trialDaysRemaining / trialDuration) * 100}%` }
-                    ]} 
+                      { width: `${(trialDaysRemaining / trialDuration) * 100}%` },
+                    ]}
                   />
                 </View>
                 <Text style={styles.trialDaysText}>
                   {t('settings.trialDaysRemaining', { days: trialDaysRemaining, defaultValue: `${trialDaysRemaining} days remaining` })}
                 </Text>
               </View>
-            )}
+            ) : null}
+            {hasActiveSub ? (
+              <TouchableOpacity
+                style={styles.manageSubscriptionButton}
+                onPress={() => { try { openManageSubscriptions(); } catch {} }}
+              >
+                <Text style={styles.manageSubscriptionText}>
+                  {t('settings.manageSubscription', { defaultValue: 'Manage Subscription' })}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
-          
-          {/* Upgrade banner — design 34 has this as a stand-alone yellow
-              row card with a dark icon tile + title + subtitle + chevron.
-              Same destination (PlanSelection upgrade mode). */}
-          <TouchableOpacity
-            style={styles.upgradeButton}
-            onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
-            activeOpacity={0.85}
-          >
-            <View style={styles.upgradeButtonIconTile}>
-              <Ionicons name="star" size={16} color="#F2C31B" />
-            </View>
-            <View style={styles.upgradeButtonCopy}>
-              <Text style={styles.upgradeButtonTitle}>
-                {t('settings.upgradeToPro', { defaultValue: 'Upgrade to Pro' })}
-              </Text>
-              <Text style={styles.upgradeButtonSubtitle} numberOfLines={1}>
-                {t('settings.upgradeToProSubtitle', {
-                  defaultValue: 'Unlimited projects, reports & cloud sync',
-                })}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#1E1E1E" />
-          </TouchableOpacity>
-
-          {/* Manage Subscription — only visible to users with an active store
-              subscription. Deep-links into iOS/Android subscription manager.
-              This is the only real way for a user on a Pro/Business/Enterprise
-              trial or paid plan to cancel and switch to Free. */}
-          {hasActiveSub && (
-            <TouchableOpacity
-              style={styles.manageSubscriptionButton}
-              onPress={() => {
-                try { openManageSubscriptions(); } catch {}
-              }}
-            >
-              <Text style={styles.manageSubscriptionText}>
-                {t('settings.manageSubscription', { defaultValue: 'Manage Subscription' })}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        ) : null}
 
         {/* Folder location - manual pick + Use current location (GPS) */}
         {userMode !== 'team_member' && (
@@ -5431,7 +5417,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-F · camera=zoom+format+navhidden · settings=user-card+upgrade-banner
+              Build tag: OTA-2026-06-03-G · settings=flat-user-card+separated-upgrade · camera=zoom+format+navhidden
             </Text>
           </View>
         )}
@@ -7499,15 +7485,20 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 2,
       lineHeight: 20,
     },
-    // Refresh per design 34: white card + hairline border + soft
-    // shadow-card recipe (was 8% black drop shadow with no border).
+    // Account card — design 34 / pp-settings.jsx: flat single-row card,
+    // padding 14, flex row + gap 13, centered. avatar | name+sub | tier.
+    // Hairline border + softer shadow-card recipe; tappable to open
+    // the existing rename modal.
     userAccountCard: {
       backgroundColor: '#FFFFFF',
       borderRadius: 16,
       padding: 14,
-      marginTop: 16,
+      marginTop: 14,
       marginHorizontal: 18,
       marginBottom: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 13,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: '#ECECEC',
       shadowColor: '#141420',
@@ -7516,42 +7507,30 @@ const sliderStyles = StyleSheet.create({
       shadowRadius: 18,
       elevation: 3,
     },
-    userAccountHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 4,
-    },
-    userAccountLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flex: 1,
-    },
-    // Refresh: was a bordered ring around an image icon. Now a flat
-    // yellow disc 48px with the user's initials in dark text inside —
-    // matches the design's "MR" avatar in screenshot 34.
+    // Yellow disc 52×52 holding 20/800 initials in dark text — copies
+    // the "MR" treatment from pp-settings.jsx.
     userAvatar: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+      width: 52,
+      height: 52,
+      borderRadius: 26,
       backgroundColor: '#F2C31B',
       justifyContent: 'center',
       alignItems: 'center',
-      marginRight: 12,
     },
     userAvatarInitials: {
       fontFamily: FONTS.ALEXANDRIA,
-      fontSize: 16,
+      fontSize: 20,
       fontWeight: '800',
       color: '#1E1E1E',
-      letterSpacing: 0.5,
+      letterSpacing: 0.3,
     },
     userInfo: {
       flex: 1,
+      minWidth: 0,
     },
     userName: {
       fontFamily: FONTS.ALEXANDRIA,
-      fontSize: 17,
+      fontSize: 16,
       fontWeight: '700',
       color: '#1E1E1E',
       marginBottom: 2,
@@ -7559,31 +7538,50 @@ const sliderStyles = StyleSheet.create({
     },
     accountType: {
       fontFamily: FONTS.ALEXANDRIA,
-      fontSize: 13,
+      fontSize: 12.5,
       fontWeight: '500',
       color: '#9A9A9A',
       letterSpacing: -0.1,
     },
-    // Right cluster: tier pill on top, small ghost edit pen below.
-    userTierColumn: {
-      alignItems: 'flex-end',
-      gap: 6,
-    },
+    // Tier pill — proofpix.css: height 30, padding 0 11, radius 999,
+    // font 11/700 uppercase. Three variants (free / pro / business)
+    // applied on top via plan-specific styles below.
     userTierPill: {
-      height: 24,
-      paddingHorizontal: 10,
+      height: 30,
+      paddingHorizontal: 11,
       borderRadius: 999,
-      backgroundColor: '#F4F4F4',
       alignItems: 'center',
       justifyContent: 'center',
     },
     userTierPillText: {
       fontFamily: FONTS.ALEXANDRIA,
-      fontSize: 10,
-      fontWeight: '800',
-      color: '#666666',
-      letterSpacing: 0.6,
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.4,
     },
+    // .pp-tier--free: surface bg + secondary text.
+    userTierPillFree: {
+      backgroundColor: '#F4F4F4',
+    },
+    userTierPillTextFree: {
+      color: '#666666',
+    },
+    // .pp-tier--pro: accent bg + dark text.
+    userTierPillPro: {
+      backgroundColor: '#F2C31B',
+    },
+    userTierPillTextPro: {
+      color: '#1E1E1E',
+    },
+    // .pp-tier--business: dark bg + accent text.
+    userTierPillBusiness: {
+      backgroundColor: '#1E1E1E',
+    },
+    userTierPillTextBusiness: {
+      color: '#F2C31B',
+    },
+    // Edit pen no longer rendered (design has none). Kept the style key
+    // for backward compatibility with any nested team_member render.
     editButton: {
       padding: 4,
     },
@@ -7641,10 +7639,10 @@ const sliderStyles = StyleSheet.create({
       fontSize: 12,
       fontWeight: '700',
     },
-    // Refresh per design 34: was a solid-black pill with white text. Now
-    // a yellow horizontal banner with a dark icon tile + 2-line copy +
-    // chevron — reads as a high-affordance row card sitting under the
-    // user card.
+    // Upgrade banner — pp-settings.jsx: yellow card padding 14, flex row
+    // gap 12, centered. Icon tile is rgba(0,0,0,.12) (translucent dark
+    // patch on the yellow card) holding a dark star. Title 14.5/800,
+    // subtitle 12/600 dark @ 75% opacity, chevron 20.
     upgradeButton: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -7653,7 +7651,8 @@ const sliderStyles = StyleSheet.create({
       paddingVertical: 14,
       paddingHorizontal: 14,
       gap: 12,
-      marginTop: 10,
+      marginTop: 12,
+      marginHorizontal: 18,
       shadowColor: '#F2C31B',
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.3,
@@ -7661,13 +7660,12 @@ const sliderStyles = StyleSheet.create({
       elevation: 5,
     },
     upgradeButtonIconTile: {
-      width: 38,
-      height: 38,
-      borderRadius: 11,
-      backgroundColor: '#1E1E1E',
+      width: 42,
+      height: 42,
+      borderRadius: 12,
+      backgroundColor: 'rgba(0,0,0,0.12)',
       alignItems: 'center',
       justifyContent: 'center',
-      flex: 0,
     },
     upgradeButtonCopy: {
       flex: 1,
@@ -7675,7 +7673,7 @@ const sliderStyles = StyleSheet.create({
     },
     upgradeButtonTitle: {
       fontFamily: FONTS.ALEXANDRIA,
-      fontSize: 15,
+      fontSize: 14.5,
       fontWeight: '800',
       color: '#1E1E1E',
       letterSpacing: -0.2,
@@ -7684,8 +7682,8 @@ const sliderStyles = StyleSheet.create({
     upgradeButtonSubtitle: {
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 12,
-      fontWeight: '500',
-      color: 'rgba(30,30,30,0.7)',
+      fontWeight: '600',
+      color: 'rgba(30,30,30,0.75)',
       letterSpacing: -0.1,
     },
     // Old style kept around in case any other site still references it.
@@ -7693,6 +7691,20 @@ const sliderStyles = StyleSheet.create({
       color: '#1E1E1E',
       fontSize: 16,
       fontWeight: '700',
+    },
+    // Thin contextual banner under the upgrade card — only renders when
+    // a trial is active or there's an active sub to manage. Hidden for
+    // default Starter so the card stack stays clean per the design.
+    planStatusBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginTop: 12,
+      marginHorizontal: 18,
+      paddingVertical: 8,
+    },
+    userCardEndAnchor: {
+      height: 0,
     },
     // Refresh: ghost outline ('.pp-btn--ghost') — 1.5px borderStrong,
     // radius 16 to match the upgrade banner, 16/700 dark text.
