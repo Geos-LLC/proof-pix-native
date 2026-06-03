@@ -3041,6 +3041,182 @@ export default function SettingsScreen({ navigation, route }) {
           </View>
         ) : null}
 
+        {/* ====================================================== */}
+        {/* Design 34 / pp-settings.jsx — WORKSPACE + CLOUD & TEAM */}
+        {/* row groups. Each row taps the existing functionality (modal,
+            navigate, or scroll-to). Heavy section cards below are
+            kept for full editing access. */}
+        {/* ====================================================== */}
+
+        <Text style={styles.sectionEyebrow}>
+          {t('settings.workspaceGroup', { defaultValue: 'Workspace' })}
+        </Text>
+        <View style={styles.rowGroup}>
+          {/* Industry & rooms — opens the existing QualificationPromptModal. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => setShowIndustryPicker(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="folder-outline" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <Text style={styles.ppRowTitle}>
+                {t('settings.industryRooms', { defaultValue: 'Industry & rooms' })}
+              </Text>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {t('settings.industryRoomsSub', {
+                  defaultValue: `${(Array.isArray(customRooms) ? customRooms.length : 0) || 5} default rooms`,
+                })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          </TouchableOpacity>
+
+          {/* Labels & language — navigates to the existing Label customization
+              screen which exposes label color/font/size/position + label
+              language picker. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => navigation.navigate('LabelCustomization')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="text" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <Text style={styles.ppRowTitle}>
+                {t('settings.labelsLanguage', { defaultValue: 'Labels & language' })}
+              </Text>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {getCurrentLanguage()?.name || 'English'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          </TouchableOpacity>
+
+          {/* Appearance — taps to flip theme. Subtitle reflects current mode. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="contrast-outline" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <Text style={styles.ppRowTitle}>
+                {t('settings.appearance', { defaultValue: 'Appearance' })}
+              </Text>
+            </View>
+            <Text style={styles.ppRowRightText}>
+              {themeMode === 'dark'
+                ? t('settings.themeDark', { defaultValue: 'Dark' })
+                : t('settings.themeLight', { defaultValue: 'Light' })}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.sectionEyebrow}>
+          {t('settings.cloudTeamGroup', { defaultValue: 'Cloud & Team' })}
+        </Text>
+        <View style={styles.rowGroup}>
+          {/* Cloud sync — scrolls down to the existing Cloud & Team Sync
+              section which still holds the live connection state for each
+              provider. PRO gate badge per design. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => {
+              if (cloudSyncSectionRef.current && mainScrollViewRef.current) {
+                cloudSyncSectionRef.current.measureLayout(
+                  mainScrollViewRef.current,
+                  (x, y) => mainScrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true }),
+                  () => {},
+                );
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="cloud-outline" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <View style={styles.ppRowTitleRow}>
+                <Text style={styles.ppRowTitle}>
+                  {t('settings.cloudSync', { defaultValue: 'Cloud sync' })}
+                </Text>
+                <View style={styles.proBadge}>
+                  <Text style={styles.proBadgeText}>PRO</Text>
+                </View>
+              </View>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {t('settings.cloudSyncSub', { defaultValue: 'Google Drive · Dropbox' })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          </TouchableOpacity>
+
+          {/* Team members — scrolls to the cloud + team section as well
+              (team management lives inside that section). BUSINESS gate. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => {
+              if (cloudSyncSectionRef.current && mainScrollViewRef.current) {
+                cloudSyncSectionRef.current.measureLayout(
+                  mainScrollViewRef.current,
+                  (x, y) => mainScrollViewRef.current?.scrollTo({ y: Math.max(0, y - 20), animated: true }),
+                  () => {},
+                );
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="layers-outline" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <View style={styles.ppRowTitleRow}>
+                <Text style={styles.ppRowTitle}>
+                  {t('settings.teamMembers', { defaultValue: 'Team members' })}
+                </Text>
+                <View style={styles.businessBadge}>
+                  <Text style={styles.businessBadgeText}>BUSINESS</Text>
+                </View>
+              </View>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {t('settings.teamMembersSub', { defaultValue: 'Invite your crew' })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          </TouchableOpacity>
+
+          {/* Refer & earn — navigates to the existing ReferralScreen. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => navigation.navigate('Referral')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="gift-outline" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <Text style={styles.ppRowTitle}>
+                {t('settings.referEarn', { defaultValue: 'Refer & earn' })}
+              </Text>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {t('settings.referEarnSub', { defaultValue: 'Give a month, get a month' })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          </TouchableOpacity>
+        </View>
+
+        {/* End design rows. Existing legacy sections continue below for
+            full editing access — they handle the actual data binding
+            (folder list, watermark customization, cloud provider state,
+            etc.) and the rows above are quick-entry points to them. */}
+
         {/* Folder location - manual pick + Use current location (GPS) */}
         {userMode !== 'team_member' && (
           <View style={styles.section}>
@@ -5417,7 +5593,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-G · settings=flat-user-card+separated-upgrade · camera=zoom+format+navhidden
+              Build tag: OTA-2026-06-03-H · settings=workspace+cloudteam-rows · camera=zoom+format+navhidden
             </Text>
           </View>
         )}
@@ -7705,6 +7881,101 @@ const sliderStyles = StyleSheet.create({
     },
     userCardEndAnchor: {
       height: 0,
+    },
+    // Row group container — design 34: 3 rows per group sit in a single
+    // column with 8-px gap, on the page background (no card around
+    // them). 18-px horizontal margin matches the cards above.
+    rowGroup: {
+      marginHorizontal: 18,
+      marginBottom: 6,
+      gap: 8,
+    },
+    // SettingRow — pp-settings.jsx `.pp-row` ported to RN: hairline
+    // bordered row card with a 42×42 icon tile + title/subtitle stack +
+    // chevron (or right-side text/badge). Padding 13 14.
+    ppRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 13,
+      paddingVertical: 13,
+      paddingHorizontal: 14,
+      backgroundColor: '#FFFFFF',
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: '#ECECEC',
+      shadowColor: '#141420',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.04,
+      shadowRadius: 12,
+      elevation: 1,
+    },
+    ppRowIc: {
+      width: 42,
+      height: 42,
+      borderRadius: 12,
+      backgroundColor: '#F4F4F4',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    ppRowMeta: {
+      flex: 1,
+      minWidth: 0,
+    },
+    ppRowTitle: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 14.5,
+      fontWeight: '700',
+      color: '#1E1E1E',
+      letterSpacing: -0.1,
+    },
+    ppRowTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      marginBottom: 2,
+    },
+    ppRowSub: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 12,
+      fontWeight: '500',
+      color: '#9A9A9A',
+      letterSpacing: -0.1,
+      marginTop: 1,
+    },
+    ppRowRightText: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 13,
+      fontWeight: '600',
+      color: '#9A9A9A',
+      letterSpacing: -0.1,
+    },
+    // Gate badge — small uppercase pill (.pp-pro-badge) tagged on rows
+    // that require a higher tier.
+    proBadge: {
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: 6,
+      backgroundColor: '#FFF4C2',
+    },
+    proBadgeText: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 9.5,
+      fontWeight: '800',
+      color: '#7A5B00',
+      letterSpacing: 0.5,
+    },
+    businessBadge: {
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: 6,
+      backgroundColor: 'rgba(30,30,30,0.1)',
+    },
+    businessBadgeText: {
+      fontFamily: FONTS.ALEXANDRIA,
+      fontSize: 9.5,
+      fontWeight: '800',
+      color: '#1E1E1E',
+      letterSpacing: 0.5,
     },
     // Refresh: ghost outline ('.pp-btn--ghost') — 1.5px borderStrong,
     // radius 16 to match the upgrade banner, 16/700 dark text.
