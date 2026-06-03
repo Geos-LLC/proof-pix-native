@@ -3233,11 +3233,12 @@ export default function SettingsScreen({ navigation, route }) {
           {t('settings.cloudTeamGroup', { defaultValue: 'Cloud & Team' })}
         </Text>
         <View style={styles.rowGroup}>
-          {/* Cloud sync — opens the standalone Cloud & Team screen
-              (design 35). PRO gate badge per design. */}
+          {/* Cloud sync — opens the standalone Cloud sync screen
+              (Google Drive + Dropbox + iCloud + Background upload).
+              PRO gate badge per design. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => navigation.navigate('CloudTeam')}
+            onPress={() => navigation.navigate('CloudSync')}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -3259,11 +3260,11 @@ export default function SettingsScreen({ navigation, route }) {
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
           </TouchableOpacity>
 
-          {/* Team members — opens the standalone Cloud & Team screen
-              (design 35); team invite card sits inside it. BUSINESS gate. */}
+          {/* Team members — opens the standalone Team members screen
+              (set up flow + invite generation + member list). BUSINESS gate. */}
           <TouchableOpacity
             style={styles.ppRow}
-            onPress={() => navigation.navigate('CloudTeam')}
+            onPress={() => navigation.navigate('TeamMembers')}
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
@@ -5714,7 +5715,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-Y · paywall tier-aware (Current plan + Upgrade/Switch CTAs)
+              Build tag: OTA-2026-06-03-Z · CloudSync + TeamMembers split (iCloud row + Set up flow)
             </Text>
             {/* IAP diagnostic — shows what getAvailablePurchases returned
                 + the highest-tier plan computeEntitlements detected +

@@ -90,6 +90,8 @@ import SectionDetailScreen from './src/screens/SectionDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ContactUsScreen from './src/screens/ContactUsScreen';
 import CloudTeamScreen from './src/screens/CloudTeamScreen';
+import CloudSyncScreen from './src/screens/CloudSyncScreen';
+import TeamMembersScreen from './src/screens/TeamMembersScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
 import IndustrySectionsScreen from './src/screens/IndustrySectionsScreen';
 import LabelsLanguageScreen from './src/screens/LabelsLanguageScreen';
@@ -384,6 +386,16 @@ function AppNavigator() {
       <Stack.Screen
         name="CloudTeam"
         component={CloudTeamScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="CloudSync"
+        component={CloudSyncScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="TeamMembers"
+        component={TeamMembersScreen}
         options={{ animation: 'slide_from_right' }}
       />
       <Stack.Screen
