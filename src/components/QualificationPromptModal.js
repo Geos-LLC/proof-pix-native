@@ -10,7 +10,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { INDUSTRIES, getIndustryById } from '../constants/industries';
 import { useSettings } from '../context/SettingsContext';
@@ -35,13 +34,44 @@ export const getStoredUserType = async () => {
   }
 };
 
+// Refresh pass 8 — re-skinned to match design screenshot 05-industry:
+//
+//   STEP 2 OF 2                                ← eyebrow
+//   What do you do?                            ← bold left-aligned headline
+//   We'll set up the right rooms & labels…     ← subhead
+//
+//   ┌────────────┐  ┌────────────┐
+//   │ [💧] (sel) │  │ [✏️]      │
+//   │  Cleaning  │  │ Contractors│   ← 2-column grid of cards
+//   └────────────┘  └────────────┘     selected = yellow border + soft
+//   ┌────────────┐  ┌────────────┐     yellow fill, others = white +
+//   │ [📍]       │  │ [✨]      │      hairline border. Each card has a
+//   │ Real Estate│  │ Landscaping│     small icon tile (radius 12) +
+//   └────────────┘  └────────────┘     label below.
+//
+//   [        Continue        ]         ← yellow primary CTA at bottom
+//
+// Kept as a bottom-anchored Modal so the existing onboarding flow
+// (mandatory: tap-out disabled) keeps working as a slide-up sheet.
+// Selection is now a 2-step interaction: tap a card to highlight, then
+// Continue persists + dismisses. Matches the design's flow and lets
+// the user change their mind before committing.
+
 export default function QualificationPromptModal({ visible, onClose, mandatory = false }) {
   const { t } = useTranslation();
   const { saveCustomRooms } = useSettings();
   const [selected, setSelected] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  const handleSelect = async (userType) => {
-    setSelected(userType);
+  // The original handleSelect was a "pick + save + close" combo. With
+  // the design's Continue button it splits cleanly: tapping a card just
+  // updates local state, and Continue runs the persistence + analytics
+  // payload below.
+  const handleContinue = async () => {
+    if (!selected || saving) return;
+    setSaving(true);
+
+    const userType = selected;
 
     // Build a richer payload now that there are 18 industries. Keeping
     // `user_type` for continuity with v1.5.21–v1.5.24 events, then layering:
@@ -54,8 +84,6 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
     const folderCount = industry?.folders?.length || 0;
     const context = mandatory ? 'onboarding' : 'settings_repick';
 
-    // Previous selection (if any) so we can attribute switches for the
-    // re-pick case. Null on first-time onboarding.
     let previousType = null;
     try { previousType = await AsyncStorage.getItem(QUALIFICATION_KEY); } catch {}
 
@@ -70,18 +98,15 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
 
     logEvent('qualification_option_selected', payload);
 
-    // Apply the industry's folder seed list. The user can still edit them
-    // via Settings → Folders afterward. We persist user_type AND folders
-    // before closing so they survive an app restart mid-onboarding.
     try {
       if (industry?.folders?.length) {
         await saveCustomRooms(industry.folders);
       }
     } catch (e) {
-      // Saving folders failing is non-fatal — user can still pick rooms manually.
+      // Non-fatal — user can pick rooms manually.
     }
 
-    setTimeout(async () => {
+    try {
       await AsyncStorage.setItem(QUALIFICATION_KEY, userType);
       setUserProperties({
         user_type: userType,
@@ -89,8 +114,6 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
         industry_label: industryLabel,
       });
       logEvent('qualification_answered', payload);
-      // Dedicated industry-change event for the re-pick path so changes
-      // out of the onboarding funnel are easy to slice in Firebase.
       if (context === 'settings_repick' && previousType && previousType !== userType) {
         logEvent('industry_changed', {
           from_industry: previousType,
@@ -98,8 +121,10 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
           to_industry_label: industryLabel,
         });
       }
+    } finally {
+      setSaving(false);
       onClose();
-    }, 250);
+    }
   };
 
   return (
@@ -107,34 +132,37 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
       visible={visible}
       transparent
       animationType="slide"
-      // In mandatory (onboarding) mode the hardware-back must NOT dismiss —
-      // the user has to pick an industry. In non-mandatory (Settings re-pick)
-      // mode it closes cleanly.
       onRequestClose={() => { if (!mandatory) onClose(); }}
     >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
+          <View style={styles.grabber} />
+
           {!mandatory && (
             <TouchableOpacity
               style={styles.closeButton}
               onPress={onClose}
               accessibilityLabel="Close"
             >
-              <Ionicons name="close" size={22} color="#fff" />
+              <Ionicons name="close" size={20} color="#1E1E1E" />
             </TouchableOpacity>
           )}
-          <Text style={styles.title}>
-            {t('qualification.title', { defaultValue: 'What do you use ProofPix for?' })}
+
+          <Text style={styles.eyebrow}>
+            {t('qualification.step', { defaultValue: 'STEP 2 OF 2' })}
           </Text>
-          <Text style={styles.subtitle}>
-            {t('qualification.subtitle', {
-              defaultValue: 'Pick the closest match — we\'ll set up your folders. You can edit them anytime in Settings.',
+          <Text style={styles.headline}>
+            {t('qualification.headline', { defaultValue: 'What do you do?' })}
+          </Text>
+          <Text style={styles.subhead}>
+            {t('qualification.subhead', {
+              defaultValue: "We'll set up the right rooms & labels for your trade. Change it anytime.",
             })}
           </Text>
 
           <ScrollView
             style={styles.scrollArea}
-            contentContainerStyle={styles.options}
+            contentContainerStyle={styles.grid}
             showsVerticalScrollIndicator={false}
           >
             {INDUSTRIES.map((industry) => {
@@ -142,114 +170,184 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
               return (
                 <TouchableOpacity
                   key={industry.id}
-                  style={[styles.option, isSelected && styles.optionSelected]}
-                  onPress={() => handleSelect(industry.id)}
+                  style={[styles.card, isSelected && styles.cardSelected]}
+                  onPress={() => setSelected(industry.id)}
                   activeOpacity={0.85}
                 >
-                  <Ionicons
-                    name={industry.icon}
-                    size={20}
-                    color={isSelected ? '#000' : COLORS.PRIMARY}
-                  />
-                  <Text style={[
-                    styles.optionText,
-                    isSelected && styles.optionTextSelected,
-                  ]}>
+                  <View style={[styles.cardIcon, isSelected && styles.cardIconSelected]}>
+                    <Ionicons
+                      name={industry.icon}
+                      size={18}
+                      color={isSelected ? '#1E1E1E' : '#666666'}
+                    />
+                  </View>
+                  <Text
+                    style={[styles.cardLabel, isSelected && styles.cardLabelSelected]}
+                    numberOfLines={2}
+                  >
                     {t(industry.labelKey, { defaultValue: industry.defaultLabel })}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
+
+          <TouchableOpacity
+            style={[styles.continueButton, (!selected || saving) && styles.continueButtonDisabled]}
+            onPress={handleContinue}
+            disabled={!selected || saving}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.continueButtonText}>
+              {saving
+                ? t('common.saving', { defaultValue: 'Saving…' })
+                : t('qualification.continue', { defaultValue: 'Continue' })}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>
   );
 }
 
+const CARD_GAP = 12;
+
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(20,20,22,0.55)',
     justifyContent: 'flex-end',
   },
-  // Yellow + black, paywall-style — bright yellow header backing on black
-  // sheet so the sheet looks branded rather than the previous flat-dark slab.
+  // Refresh — design's industry sheet sits on white with a soft grabber +
+  // close X, light typography, and the yellow Continue button at the bottom.
   sheet: {
-    backgroundColor: '#000',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    borderTopWidth: 4,
-    borderTopColor: COLORS.PRIMARY,
     paddingHorizontal: 20,
-    paddingTop: 28,
-    paddingBottom: 32,
-    maxHeight: '85%',
+    paddingTop: 8,
+    paddingBottom: 28,
+    maxHeight: '92%',
+  },
+  grabber: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D0D0D0',
+    marginTop: 8,
+    marginBottom: 14,
   },
   closeButton: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    top: 14,
+    right: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F4F4F4',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
   },
-  title: {
-    fontSize: 22,
+  eyebrow: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
     fontWeight: '700',
-    color: COLORS.PRIMARY,
-    textAlign: 'center',
+    letterSpacing: 1.2,
+    color: '#9A9A9A',
+    textTransform: 'uppercase',
     marginBottom: 8,
-    fontFamily: FONTS.BOLD,
   },
-  subtitle: {
-    fontSize: 13,
-    color: '#bbb',
-    textAlign: 'center',
+  headline: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.5,
+    marginBottom: 8,
+  },
+  subhead: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    color: '#666666',
+    lineHeight: 20,
+    letterSpacing: -0.1,
     marginBottom: 18,
-    paddingHorizontal: 8,
-    lineHeight: 18,
-    fontFamily: FONTS.REGULAR,
   },
   scrollArea: {
-    maxHeight: 480,
+    flexGrow: 0,
+    maxHeight: 420,
   },
-  options: {
+  grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-    paddingBottom: 8,
+    gap: CARD_GAP,
+    paddingBottom: 12,
   },
-  option: {
-    flexDirection: 'row',
+  card: {
+    width: `${(100 - 4) / 2}%`,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
+    padding: 14,
+    minHeight: 92,
+    shadowColor: '#141420',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 1,
+  },
+  cardSelected: {
+    borderColor: '#F2C31B',
+    borderWidth: 2,
+    backgroundColor: '#FFF4C2',
+  },
+  cardIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#F4F4F4',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#111',
-    minWidth: '47%',
-    flexShrink: 1,
+    justifyContent: 'center',
+    marginBottom: 10,
   },
-  optionSelected: {
-    borderColor: COLORS.PRIMARY,
-    backgroundColor: COLORS.PRIMARY,
+  cardIconSelected: {
+    backgroundColor: '#F2C31B',
   },
-  optionText: {
-    fontSize: 13,
-    color: '#eee',
-    fontWeight: '600',
-    fontFamily: FONTS.SEMIBOLD,
-    flexShrink: 1,
+  cardLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
   },
-  optionTextSelected: {
-    color: '#000',
+  cardLabelSelected: {
+    color: '#1E1E1E',
+  },
+  continueButton: {
+    backgroundColor: '#F2C31B',
+    height: 54,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    shadowColor: '#F2C31B',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  continueButtonDisabled: {
+    opacity: 0.4,
+    shadowOpacity: 0,
+  },
+  continueButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
   },
 });

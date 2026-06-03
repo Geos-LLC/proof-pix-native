@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Platform, Text, Image, Dimensions, StatusBar, Linking } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet, Platform, Text, Image, Dimensions, StatusBar, Linking, Animated, Easing } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as NavigationBarModule from 'expo-navigation-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -249,31 +250,63 @@ export default function AuthLoadingScreen({ navigation }) {
     }
   }, [settingsLoading, adminLoading, iapChecked, userName, userPlan, navigation]);
 
+  // Refresh pass 8 — rebuilt to match design screenshot 01-auth:
+  //   • white background (was a flat yellow flood)
+  //   • centered yellow rounded square (~88×88) with a warm yellow glow
+  //     and a dark camera glyph
+  //   • bold "ProofPix" wordmark below
+  //   • "Before & after, proven." subhead
+  //   • 3 small dots cycling yellow/grey as a loading indicator
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.PRIMARY} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Top-left decorative image */}
-      <Image
-        source={require('../../assets/right.png')}
-        style={styles.decorativeImage}
-        resizeMode="contain"
-      />
-
-      {/* Bottom-right decorative circle (outline only) */}
-      <View style={styles.decorativeCircle2} />
-
-      {/* Logo */}
-      <View style={styles.logoContainer}>
-        <Image
-          source={require('../../assets/PP_logo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+      <View style={styles.logoTile}>
+        <Ionicons name="camera" size={36} color="#1E1E1E" />
       </View>
-
-      {/* App Name */}
       <Text style={styles.appTitle}>ProofPix</Text>
+      <Text style={styles.tagline}>Before &amp; after, proven.</Text>
+
+      <LoadingDots />
+    </View>
+  );
+}
+
+// 3 dots that cycle the active color. Pure JS animation — no native
+// driver needed since we're animating backgroundColor, which doesn't
+// run on the native thread.
+function LoadingDots() {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(progress, {
+        toValue: 3,
+        duration: 1200,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [progress]);
+
+  const dotColor = (index) =>
+    progress.interpolate({
+      inputRange: [0, 1, 2, 3],
+      outputRange: [
+        index === 0 ? '#F2C31B' : '#E0E0E0',
+        index === 1 ? '#F2C31B' : '#E0E0E0',
+        index === 2 ? '#F2C31B' : '#E0E0E0',
+        index === 0 ? '#F2C31B' : '#E0E0E0',
+      ],
+    });
+
+  return (
+    <View style={styles.dotsRow}>
+      <Animated.View style={[styles.dot, { backgroundColor: dotColor(0) }]} />
+      <Animated.View style={[styles.dot, { backgroundColor: dotColor(1) }]} />
+      <Animated.View style={[styles.dot, { backgroundColor: dotColor(2) }]} />
     </View>
   );
 }
@@ -285,40 +318,46 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.PRIMARY,
+    backgroundColor: '#FFFFFF',
   },
-  decorativeImage: {
-    position: 'absolute',
-    top: '50',
-    left: -CIRCLE_SIZE * 0.2,
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-  },
-  decorativeCircle2: {
-    position: 'absolute',
-    bottom: -CIRCLE_SIZE * 0.3,
-    right: -CIRCLE_SIZE * 0.3,
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-    borderRadius: CIRCLE_SIZE / 2,
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: 'rgba(180, 150, 10, 0.35)',
-  },
-  logoContainer: {
+  logoTile: {
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    backgroundColor: '#F2C31B',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
-  },
-  logo: {
-    width: 140,
-    height: 140,
+    marginBottom: 18,
+    shadowColor: '#F2C31B',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 28,
+    elevation: 10,
   },
   appTitle: {
-    fontSize: 36,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '800',
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
+    color: '#1E1E1E',
     textAlign: 'center',
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  tagline: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    color: '#666666',
+    letterSpacing: -0.1,
+    marginBottom: 28,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
   },
 });

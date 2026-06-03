@@ -1790,23 +1790,29 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 120,
   },
+  // Refresh pass 8 — design screenshot 28: project rows are taller cards
+  // with hairline border + soft shadow-card recipe (replacing the prior
+  // heavy 11% black shadow + 2px transparent border). Active project
+  // gets the accent border per the existing model.
   projectCard: {
-    height: 78,
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    marginBottom: 11,
-    shadowColor: '#000',
+    minHeight: 84,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+    shadowColor: '#141420',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.11,
-    shadowRadius: 8.2,
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
     elevation: 3,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
   },
   projectCardActive: {
     borderColor: '#F2C31B',
+    borderWidth: 2,
   },
   projectCardContent: {
     flexDirection: 'row',
