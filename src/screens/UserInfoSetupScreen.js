@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   },
   root: {
     flex: 1,
-    backgroundColor: '#F6F8FA',
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -303,24 +303,34 @@ const styles = StyleSheet.create({
     color: '#000',
   },
 
+  // Refresh: primary CTA now uses the brand yellow per the design's
+  // pp-btn--primary spec (was solid black). Radius 16, height 52, warm
+  // pop-shadow — consistent with Welcome / Permissions / Plan picker.
   primaryButton: {
     width: 335,
     maxWidth: '100%',
-    height: 54,
-    borderRadius: 100,
-    backgroundColor: '#000',
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: YELLOW,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginTop: 8,
+    shadowColor: YELLOW,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 6,
   },
   primaryButtonDisabled: {
-    opacity: 0.4,
+    opacity: 0.35,
+    shadowOpacity: 0,
   },
   primaryButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
   },
 
   orRow: {

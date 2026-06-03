@@ -3152,9 +3152,9 @@ fontWeight: '500',
 filterContainer: {
 flexDirection: 'row',
 alignItems: 'center',
-backgroundColor: '#F6F8FA',
+backgroundColor: '#FFFFFF',
 paddingVertical: 12,
-paddingHorizontal: 19,
+paddingHorizontal: 18,
 gap: 10,
 },
 filterButton: {
@@ -3348,12 +3348,12 @@ zIndex: 95
 },
 scrollView: {
 flex: 1,
-backgroundColor: '#F6F8FA',
+backgroundColor: '#FFFFFF',
 },
 content: {
-padding: 19,
+padding: 18,
 paddingTop: 10,
-backgroundColor: '#F6F8FA',
+backgroundColor: '#FFFFFF',
 },
 roomSection: {
 marginBottom: 24,

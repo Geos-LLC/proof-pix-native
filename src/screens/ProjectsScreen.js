@@ -1575,9 +1575,11 @@ export default function ProjectsScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  // Refresh: page background now plain white (was tinted #F6F8FA) per the
+  // design's --bg token. Card chrome below sits more cleanly on white.
   container: {
     flex: 1,
-    backgroundColor: '#F6F8FA',
+    backgroundColor: '#FFFFFF',
   },
   headerRow: {
     flexDirection: 'row',
@@ -1767,10 +1769,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   header: {
-    paddingHorizontal: 19,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: '#F6F8FA',
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
   },
   title: {
     fontFamily: FONTS.ALEXANDRIA,
