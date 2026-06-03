@@ -1498,7 +1498,7 @@ export default function HomeScreen({ navigation, route }) {
     }
 
     return (
-      <View style={styles.roomTabsContainer}>
+      <View style={[styles.roomTabsContainer, theme?.mode === 'dark' && styles.roomTabsContainerDark]}>
         <ScrollView
           ref={roomTabsScrollRef}
           horizontal
@@ -1732,7 +1732,7 @@ export default function HomeScreen({ navigation, route }) {
                 // small, but a much larger surrounding zone responds.
                 hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
               >
-                <Ionicons name="eye-outline" size={16} color="#000" />
+                <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
               </TouchableOpacity>
               {/* Green completion check at TOP-RIGHT — only when the
                   set has its After AND there are no Progress photos.
@@ -1834,7 +1834,7 @@ export default function HomeScreen({ navigation, route }) {
                 // small, but a much larger surrounding zone responds.
                 hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
               >
-                <Ionicons name="eye-outline" size={16} color="#000" />
+                <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
               </TouchableOpacity>
               {/* Green completion check at TOP-RIGHT — only when the
                   set has its After AND no Progress photos. Once a 3rd
@@ -1911,7 +1911,7 @@ export default function HomeScreen({ navigation, route }) {
               activeOpacity={0.7}
               hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
             >
-              <Ionicons name="eye-outline" size={16} color="#000" />
+              <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
             </TouchableOpacity>
             <View style={styles.thumbnailButtonsOverlay}>
               <TouchableOpacity
@@ -1941,18 +1941,21 @@ export default function HomeScreen({ navigation, route }) {
       }
     });
 
-    // Wrap each tile with a "Set N" label beneath it. The numbering
-    // follows the same order as beforePhotos (oldest → newest), so it
-    // matches the chronological capture order. Done at the very end so
-    // the three different gridItems.push paths above don't each need
-    // to know about the label.
+    // Wrap each tile with a "Set N · Room" label overlaid on the photo
+    // itself (white text with a soft shadow, bottom-left). Mirrors the
+    // refreshed design's `pp-tile-room` caption so the card carries its
+    // own context instead of leaning on a label sitting underneath.
+    // Numbering follows beforePhotos (oldest → newest) to match capture
+    // order. Done at the very end so the three different gridItems.push
+    // paths above don't each need to know about the label.
+    const currentRoomName = rooms?.find((r) => r.id === currentRoom)?.name || '';
     return (
       <View style={styles.photoGrid}>
         {gridItems.map((item, i) => (
           <View key={item.key || `set-wrap-${i}`} style={styles.setTileWrapper}>
             {item}
-            <Text style={styles.setTileLabel} numberOfLines={1}>
-              {`Set ${i + 1}`}
+            <Text style={styles.setTileLabel} numberOfLines={1} pointerEvents="none">
+              {currentRoomName ? `Set ${i + 1} · ${currentRoomName}` : `Set ${i + 1}`}
             </Text>
           </View>
         ))}
@@ -3167,17 +3170,21 @@ export default function HomeScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  // Refresh: page background is now plain white (was a tinted #F6F8FA)
+  // so the room strip + photo tiles read against the cleaner canvas the
+  // design calls for. Dark-mode override sits on top via the theme hook.
   container: {
     flex: 1,
-    backgroundColor: '#F6F8FA'
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#F6F8FA',
+    paddingHorizontal: 18,
+    paddingTop: 4,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -3261,21 +3268,14 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontWeight: '700',
   },
+  // Refresh: project name now sits as plain text on the page (no white
+  // card / no shadow / no border) per the design. Lets the room strip
+  // below sit closer to the title and keeps the visual hierarchy clean.
   projectNameContainer: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginHorizontal: 17,
-    marginTop: 8,
-    marginBottom: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ECECEC',
-    shadowColor: 'grey',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 9,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 12,
+    backgroundColor: 'transparent',
   },
   upgradeButtonImage:{
     width: 14,
@@ -3390,9 +3390,16 @@ const styles = StyleSheet.create({
     fontWeight: '590',
     letterSpacing: -0.1,
   },
+  // Subtle elevated strip behind the room tabs. Kept light grey in light
+  // mode (was the hardcoded #F6F8FA) and switches to a near-black banding
+  // in dark mode so the row reads as a separate scrollable zone without
+  // a hard border.
   roomTabsContainer: {
     backgroundColor: '#F6F8FA',
     paddingVertical: 12,
+  },
+  roomTabsContainerDark: {
+    backgroundColor: '#141414',
   },
   roomTabsScrollView: {
     flex: 0,
@@ -3466,26 +3473,29 @@ const styles = StyleSheet.create({
   photoItem: {
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
-    borderRadius: 12,
+    // Bumped from 12 → 16 to match the refreshed design's tile radius and
+    // removed the white border — the photo itself is now the tile surface
+    // so any contrasting border just adds visual noise.
+    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#ECECEC',
+    backgroundColor: '#1A1A1A',
   },
-  // Column wrapper for the photo card + its "Set N" label so the grid
-  // still flex-wraps two-per-row but each cell now also includes the
-  // label underneath the tile.
+  // Column wrapper for the photo card + its "Set N · Room" caption below
+  // it. Refresh: tighter spacing + stronger weight so the caption reads
+  // as a label of the tile rather than free-floating type.
   setTileWrapper: {
     width: PHOTO_SIZE,
-    marginBottom: 16,
-    alignItems: 'center',
+    marginBottom: 14,
+    alignItems: 'flex-start',
   },
   setTileLabel: {
-    marginTop: 6,
+    marginTop: 8,
+    marginLeft: 4,
     fontFamily: FONTS.SEMIBOLD,
     fontSize: 12,
+    fontWeight: '700',
     color: '#1E1E1E',
-    textAlign: 'center',
+    letterSpacing: -0.1,
   },
   photoCenterDivider: {
     position: 'absolute',
@@ -3549,21 +3559,20 @@ const styles = StyleSheet.create({
   // Eye / preview icon sits at the top-LEFT of the photo card. Tapping opens
   // the full-screen preview viewer (same as a double-tap on the card body —
   // exists as a discoverable UI affordance).
+  // Eye / preview badge — design refresh: was a white circle with a black eye
+  // icon (low-contrast on bright photos). Now a translucent dark capsule with
+  // a white icon so it stays legible against any photo. 26×26 to match the
+  // refreshed tile radius and the design spec.
   previewIconBadge: {
     position: 'absolute',
-    top: 8,
-    left: 8,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    top: 7,
+    left: 7,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 2,
-    elevation: 2,
     zIndex: 11,
   },
   // Yellow progress-count badge sits at the top-right of the photo card so it
