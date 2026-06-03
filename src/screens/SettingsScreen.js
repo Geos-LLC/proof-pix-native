@@ -5715,7 +5715,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-AH · Enlarged preview: mode badge pill (BEFORE/AFTER/PROGRESS) matches fullscreen viewer
+              Build tag: OTA-2026-06-03-AI · Mode badge gated on !showStudioEdits (no double badge when Edited toggle is on)
             </Text>
             {/* IAP diagnostic — shows what getAvailablePurchases returned
                 + the highest-tier plan computeEntitlements detected +

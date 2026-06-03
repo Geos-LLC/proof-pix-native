@@ -2653,13 +2653,18 @@ export default function HomeScreen({ navigation, route }) {
                                 />
                               </View>
                             )}
-                            {/* Mode badge pill — same as the fullscreen
-                                viewer, so the role (BEFORE / AFTER /
-                                PROGRESS / B-A) is visible at a glance
-                                in both views. Per design 16-photo-set-
-                                preview.png. pointerEvents none so it
-                                doesn't eat the tap-to-fullscreen press. */}
-                            {(() => {
+                            {/* Mode badge pill — fills in for the role
+                                label ONLY when StudioEditOverlays
+                                isn't rendering one. When the "Edited"
+                                toggle is on, StudioEditOverlays already
+                                draws a positionable PhotoLabel, so the
+                                pill would double the badge. Skip the
+                                pill in that case so we always show
+                                exactly one BEFORE / AFTER indicator.
+                                Per design 16-photo-set-preview.png.
+                                pointerEvents none so it doesn't eat
+                                the tap-to-fullscreen press. */}
+                            {!showStudioEdits && (() => {
                               const modeBadgeMap = {
                                 before: { bg: '#F2C31B', text: '#1E1E1E', label: 'BEFORE' },
                                 after: { bg: '#A78BFA', text: '#FFFFFF', label: 'AFTER' },
@@ -3073,8 +3078,11 @@ export default function HomeScreen({ navigation, route }) {
                       {/* Mode badge pill — INSIDE PannableImage so the
                           pan / pinch transform also moves the badge with
                           the photo (per the user's spec: "label should
-                          move with dragging"). */}
-                      {badge && (
+                          move with dragging"). Hidden when StudioEdit-
+                          Overlays is already drawing a PhotoLabel (the
+                          "Edited" toggle is on), so we never show two
+                          BEFORE / AFTER indicators at the same time. */}
+                      {badge && !showStudioEdits && (
                         <View pointerEvents="none" style={[styles.tappedFullModeBadge, { backgroundColor: badge.bg }]}>
                           <Text style={[styles.tappedFullModeBadgeText, { color: badge.text }]}>
                             {badge.label}
