@@ -5627,7 +5627,7 @@ export default function SettingsScreen({ navigation, route }) {
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
-              Build tag: OTA-2026-06-03-M · helpsupport-send-fixed (description field + mailto fallback)
+              Build tag: OTA-2026-06-03-N · helpsupport: no live-chat, help-center=www.proofpix.app/help
             </Text>
           </View>
         )}

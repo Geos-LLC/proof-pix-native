@@ -29,12 +29,11 @@ import Constants from 'expo-constants';
 // Footer reads "ProofPix v{X} · build {Y}".
 //
 // Routing:
-// - Live chat → external help link via Linking (no in-app chat yet).
-// - Email us → opens mailto:.
-// - Help center → opens web help.
-// - Send message → wraps the existing EmailJS path used by the legacy
-//   Contact Us screen (sendEnterpriseContactRequest service).
-const HELP_CENTER_URL = 'https://proofpix.app/help';
+// - Email us → opens mailto:support@proofpix.app.
+// - Help center → opens https://www.proofpix.app/help in the browser.
+// - Send message → tries EmailJS first, falls back to mailto: with the
+//   message pre-filled so the user always lands at a composed email.
+const HELP_CENTER_URL = 'https://www.proofpix.app/help';
 const SUPPORT_EMAIL = 'support@proofpix.app';
 
 const TABS = [
@@ -75,10 +74,6 @@ export default function HelpSupportScreen({ navigation }) {
       }
     })();
   }, []);
-
-  const handleLiveChat = () => {
-    Linking.openURL(HELP_CENTER_URL).catch(() => {});
-  };
 
   const handleEmailUs = () => {
     Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {});
@@ -230,21 +225,6 @@ export default function HelpSupportScreen({ navigation }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.rowGroup}>
-            <TouchableOpacity style={styles.row} onPress={handleLiveChat} activeOpacity={0.85}>
-              <View style={styles.rowIc}>
-                <Ionicons name="chatbubble-ellipses-outline" size={19} color="#1E1E1E" />
-              </View>
-              <View style={styles.rowMeta}>
-                <Text style={styles.rowTitle}>
-                  {t('helpSupport.liveChat', { defaultValue: 'Live chat' })}
-                </Text>
-                <Text style={styles.rowSub} numberOfLines={1}>
-                  {t('helpSupport.liveChatSub', { defaultValue: 'Typically replies in minutes' })}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
-            </TouchableOpacity>
-
             <TouchableOpacity style={styles.row} onPress={handleEmailUs} activeOpacity={0.85}>
               <View style={styles.rowIc}>
                 <Ionicons name="mail-outline" size={19} color="#1E1E1E" />
