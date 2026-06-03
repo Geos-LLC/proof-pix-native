@@ -2604,12 +2604,59 @@ export default function HomeScreen({ navigation, route }) {
                                 resizeMode="cover"
                               />
                             </TouchableOpacity>
+                            {/* PhotoLabel — the single label rendering
+                                in this view. Gated on `showLabels` from
+                                Settings (NOT on the Edited toggle), so
+                                the BEFORE / AFTER label is visible by
+                                default and follows the user's chosen
+                                position / color / font. Combined photos
+                                get one label per half. We render this
+                                here (outside StudioEditOverlays) and
+                                pass showLabels=false to StudioEdit-
+                                Overlays below, so labels never render
+                                twice. */}
+                            {showLabels && (() => {
+                              const role = m?.mode;
+                              const lps = {
+                                beforeLabelPosition,
+                                afterLabelPosition,
+                                beforeLabelPositionLandscape,
+                                afterLabelPositionLandscape,
+                              };
+                              if (role === 'combined' || role === 'mix') {
+                                return (
+                                  <>
+                                    <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
+                                      <PhotoLabel label="common.before" position={pickBeforeLabelPosition(lps, m)} />
+                                    </View>
+                                    <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
+                                      <PhotoLabel label="common.after" position={pickAfterLabelPosition(lps, m)} />
+                                    </View>
+                                  </>
+                                );
+                              }
+                              if (role === 'before') {
+                                return <PhotoLabel label="common.before" position={pickBeforeLabelPosition(lps, m)} />;
+                              }
+                              if (role === 'after') {
+                                return <PhotoLabel label="common.after" position={pickAfterLabelPosition(lps, m)} />;
+                              }
+                              if (role === 'progress') {
+                                return <PhotoLabel label="common.progress" position={pickAfterLabelPosition(lps, m)} />;
+                              }
+                              return null;
+                            })()}
                             {showStudioEdits && (
                               <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                                 <StudioEditOverlays
                                   photo={m}
                                   theme={theme}
-                                  showLabels={showLabels}
+                                  // Labels are rendered above this block
+                                  // so they show whether or not the
+                                  // Edited toggle is on. Pass false so
+                                  // StudioEditOverlays doesn't render
+                                  // them a second time.
+                                  showLabels={false}
                                   labelPositionSettings={{
                                     beforeLabelPosition,
                                     afterLabelPosition,
@@ -2653,35 +2700,6 @@ export default function HomeScreen({ navigation, route }) {
                                 />
                               </View>
                             )}
-                            {/* Mode badge pill — fills in for the role
-                                label ONLY when StudioEditOverlays
-                                isn't rendering one. When the "Edited"
-                                toggle is on, StudioEditOverlays already
-                                draws a positionable PhotoLabel, so the
-                                pill would double the badge. Skip the
-                                pill in that case so we always show
-                                exactly one BEFORE / AFTER indicator.
-                                Per design 16-photo-set-preview.png.
-                                pointerEvents none so it doesn't eat
-                                the tap-to-fullscreen press. */}
-                            {!showStudioEdits && (() => {
-                              const modeBadgeMap = {
-                                before: { bg: '#F2C31B', text: '#1E1E1E', label: 'BEFORE' },
-                                after: { bg: '#A78BFA', text: '#FFFFFF', label: 'AFTER' },
-                                progress: { bg: 'rgba(0,0,0,0.55)', text: '#FFFFFF', label: 'PROGRESS' },
-                                combined: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
-                                mix: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
-                              };
-                              const mb = modeBadgeMap[m?.mode];
-                              if (!mb) return null;
-                              return (
-                                <View pointerEvents="none" style={[styles.simplePreviewModeBadge, { backgroundColor: mb.bg }]}>
-                                  <Text style={[styles.simplePreviewModeBadgeText, { color: mb.text }]}>
-                                    {mb.label}
-                                  </Text>
-                                </View>
-                              );
-                            })()}
                           </View>
                           {/* BOTTOM action row — Edited toggle on the
                               left, Share on the right. Same width as
@@ -2946,15 +2964,6 @@ export default function HomeScreen({ navigation, route }) {
               setFullScreenPhotoSet({ before: nextBefore, after: after || null });
               setTappedFullPhoto(members[0]);
             };
-            const mode = tappedFullPhoto?.mode;
-            const badgeMap = {
-              before: { bg: '#F2C31B', text: '#1E1E1E', label: 'BEFORE' },
-              after: { bg: '#A78BFA', text: '#FFFFFF', label: 'AFTER' },
-              progress: { bg: 'rgba(255,255,255,0.18)', text: '#FFFFFF', label: 'PROGRESS' },
-              combined: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
-              mix: { bg: '#A78BFA', text: '#FFFFFF', label: 'B/A' },
-            };
-            const badge = badgeMap[mode];
             return (
               <>
                 {/* Top header: X / N-of-M / Set N+1 › */}
@@ -3022,16 +3031,52 @@ export default function HomeScreen({ navigation, route }) {
                       resizeMode="cover"
                       panOnLongPress
                     >
-                      {/* Overlays are children of PannableImage so the
-                          transform (pinch + pan) applies to them too —
-                          labels, watermark, etc. scale and translate with
-                          the photo instead of staying anchored. */}
+                      {/* PhotoLabel — single label rendering, gated on
+                          `showLabels` from Settings only. Rendered as a
+                          child of PannableImage so the pan / pinch
+                          transform travels with the label too. */}
+                      {showLabels && (() => {
+                        const role = tappedFullPhoto?.mode;
+                        const lps = {
+                          beforeLabelPosition,
+                          afterLabelPosition,
+                          beforeLabelPositionLandscape,
+                          afterLabelPositionLandscape,
+                        };
+                        if (role === 'combined' || role === 'mix') {
+                          return (
+                            <>
+                              <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
+                                <PhotoLabel label="common.before" position={pickBeforeLabelPosition(lps, tappedFullPhoto)} />
+                              </View>
+                              <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
+                                <PhotoLabel label="common.after" position={pickAfterLabelPosition(lps, tappedFullPhoto)} />
+                              </View>
+                            </>
+                          );
+                        }
+                        if (role === 'before') {
+                          return <PhotoLabel label="common.before" position={pickBeforeLabelPosition(lps, tappedFullPhoto)} />;
+                        }
+                        if (role === 'after') {
+                          return <PhotoLabel label="common.after" position={pickAfterLabelPosition(lps, tappedFullPhoto)} />;
+                        }
+                        if (role === 'progress') {
+                          return <PhotoLabel label="common.progress" position={pickAfterLabelPosition(lps, tappedFullPhoto)} />;
+                        }
+                        return null;
+                      })()}
+                      {/* Other Studio overlays (watermark, brand logo,
+                          metadata, markup) are still gated on the Edited
+                          toggle. showLabels=false because PhotoLabel
+                          renders above this block — passing the real
+                          showLabels here would double the label. */}
                       {showStudioEdits && (
                         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                           <StudioEditOverlays
                             photo={tappedFullPhoto}
                             theme={theme}
-                            showLabels={showLabels}
+                            showLabels={false}
                             labelPositionSettings={{
                               beforeLabelPosition,
                               afterLabelPosition,
@@ -3073,20 +3118,6 @@ export default function HomeScreen({ navigation, route }) {
                               ),
                             }}
                           />
-                        </View>
-                      )}
-                      {/* Mode badge pill — INSIDE PannableImage so the
-                          pan / pinch transform also moves the badge with
-                          the photo (per the user's spec: "label should
-                          move with dragging"). Hidden when StudioEdit-
-                          Overlays is already drawing a PhotoLabel (the
-                          "Edited" toggle is on), so we never show two
-                          BEFORE / AFTER indicators at the same time. */}
-                      {badge && !showStudioEdits && (
-                        <View pointerEvents="none" style={[styles.tappedFullModeBadge, { backgroundColor: badge.bg }]}>
-                          <Text style={[styles.tappedFullModeBadgeText, { color: badge.text }]}>
-                            {badge.label}
-                          </Text>
                         </View>
                       )}
                     </PannableImage>
@@ -4071,25 +4102,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  // Mode badge pill anchored at the top-left corner of each photo card
-  // in the fullscreen viewer (per design 17-fullscreen-viewer). BEFORE
-  // shows the warm accent, AFTER the design's purple, PROGRESS a neutral
-  // dark chip, COMBINED reuses the AFTER purple with a 'B/A' label.
-  simplePreviewModeBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    zIndex: 4,
-  },
-  simplePreviewModeBadgeText: {
-    fontFamily: FONTS.ALEXANDRIA,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
   // Horizontal scroll of set thumbnails — sits above the project name
   // / date row so the user can jump between sets without leaving the
   // preview. Mirrors the room tabs row on the project detail screen.
@@ -4357,23 +4369,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
     fontWeight: '600',
-  },
-  // Mode badge pill anchored top-left of the framed photo (outside
-  // the PannableImage transform, so it stays put when zoomed).
-  tappedFullModeBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    zIndex: 6,
-  },
-  tappedFullModeBadgeText: {
-    fontFamily: FONTS.ALEXANDRIA,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
   },
   // Left / right navigation chevrons sitting on top of the photo
   // frame. Outside the PannableImage transform too so they don't drift
