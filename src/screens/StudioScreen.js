@@ -26,6 +26,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../hooks/useTheme';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
+import DraggablePreviewItem from '../components/DraggablePreviewItem';
 import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
 import { pickBeforeLabelPosition, pickAfterLabelPosition, pickBeforeLabelOffset, pickAfterLabelOffset } from '../utils/labelPosition';
@@ -203,6 +204,8 @@ export default function StudioScreen({ route, navigation }) {
     watermarkColor,
     watermarkOpacity,
     watermarkPosition,
+    watermarkOffset,
+    updateWatermarkOffset,
     brandLogoUri,
     showBrandLogo,
     updateBrandLogoUri,
@@ -210,6 +213,7 @@ export default function StudioScreen({ route, navigation }) {
     brandLogoPosition,
     brandLogoSize,
     brandLogoOffset,
+    updateBrandLogoOffset,
     beforeLabelPosition,
     afterLabelPosition,
     beforeLabelPositionLandscape,
@@ -231,6 +235,9 @@ export default function StudioScreen({ route, navigation }) {
     metaFontSize,
     metaFontFamily,
     metaOffset,
+    updateMetaOffset,
+    labelMarginVertical,
+    labelMarginHorizontal,
     location,
   } = useSettings();
   const labelPositionSettings = {
@@ -965,36 +972,61 @@ export default function StudioScreen({ route, navigation }) {
             pipeline still consults `shouldShowWatermark` so soft-trial
             branding stays enforced on the final image — preview just
             shouldn't lie about the toggle. */}
-        {showWatermark && <PhotoWatermark photo={photo} />}
+        {showWatermark && photoFrameSize.width > 0 && photoFrameSize.height > 0 && (
+          <DraggablePreviewItem
+            bounds={{ x: 0, y: 0, w: photoFrameSize.width, h: photoFrameSize.height }}
+            offset={watermarkOffset}
+            fallbackPositionKey={watermarkPosition || 'right-bottom'}
+            marginV={labelMarginVertical ?? 10}
+            marginH={labelMarginHorizontal ?? 10}
+            onOffsetChange={updateWatermarkOffset}
+          >
+            <PhotoWatermark photo={photo} style={{ position: 'relative' }} />
+          </DraggablePreviewItem>
+        )}
         {/* Brand logo overlay — only when the user has uploaded one and
             the Logo toggle is on. Size and position come from the
             dedicated Logo Customization screen. */}
-        {showBrandLogo && brandLogoUri && (
-          <BrandLogoOverlay
-            uri={brandLogoUri}
-            position={brandLogoPosition}
-            size={brandLogoSize}
+        {showBrandLogo && brandLogoUri && photoFrameSize.width > 0 && photoFrameSize.height > 0 && (
+          <DraggablePreviewItem
+            bounds={{ x: 0, y: 0, w: photoFrameSize.width, h: photoFrameSize.height }}
             offset={brandLogoOffset}
-          />
+            fallbackPositionKey={brandLogoPosition || 'right-bottom'}
+            marginV={labelMarginVertical ?? 10}
+            marginH={labelMarginHorizontal ?? 10}
+            onOffsetChange={updateBrandLogoOffset}
+          >
+            <BrandLogoOverlay
+              uri={brandLogoUri}
+              size={brandLogoSize}
+            />
+          </DraggablePreviewItem>
         )}
         {/* Metadata overlay on the picture — fields, position, color,
             opacity and font size all come from the dedicated Metadata
             Customization screen. */}
-        {showPreviewMetadata && (
-          <MetadataOverlay
-            photo={photo}
-            location={location}
-            showDate={metaShowDate}
-            showTime={metaShowTime}
-            showAddress={metaShowAddress}
-            showGps={metaShowGps}
-            position={metaPosition}
-            color={metaColor}
-            opacity={metaOpacity}
-            fontSize={metaFontSize}
-            fontFamily={metaFontFamily}
+        {showPreviewMetadata && photoFrameSize.width > 0 && photoFrameSize.height > 0 && (
+          <DraggablePreviewItem
+            bounds={{ x: 0, y: 0, w: photoFrameSize.width, h: photoFrameSize.height }}
             offset={metaOffset}
-          />
+            fallbackPositionKey={metaPosition || 'left-bottom'}
+            marginV={labelMarginVertical ?? 10}
+            marginH={labelMarginHorizontal ?? 10}
+            onOffsetChange={updateMetaOffset}
+            containerStyle={{ opacity: typeof metaOpacity === 'number' ? metaOpacity : 0.85 }}
+          >
+            <MetadataOverlay
+              photo={photo}
+              location={location}
+              showDate={metaShowDate}
+              showTime={metaShowTime}
+              showAddress={metaShowAddress}
+              showGps={metaShowGps}
+              color={metaColor}
+              fontSize={metaFontSize}
+              fontFamily={metaFontFamily}
+            />
+          </DraggablePreviewItem>
         )}
         {/* Split / Overlay need the raw Before + After. If we can't
             resolve them for this combined photo, drop a hint instead of
@@ -2440,16 +2472,10 @@ const freeformPositionStyle = (offset) =>
       }
     : null;
 
-function BrandLogoOverlay({ uri, position, size, offset }) {
-  const positions = getLabelPositions(10, 10);
-  const posStyle = positions[position] || positions['right-bottom'];
-  const { name, horizontalAlign, verticalAlign, ...coords } = posStyle;
+function BrandLogoOverlay({ uri, size }) {
   const px = typeof size === 'number' ? size : (LOGO_SIZE_PX[size] || LOGO_SIZE_PX.medium);
-  const ff = freeformPositionStyle(offset);
   return (
-    <View pointerEvents="none" style={[styles.brandLogoOverlay, ff || coords]}>
-      <Image source={{ uri }} style={{ width: px, height: px }} resizeMode="contain" />
-    </View>
+    <Image source={{ uri }} style={{ width: px, height: px }} resizeMode="contain" />
   );
 }
 
@@ -2477,12 +2503,9 @@ function MetadataOverlay({
   showTime,
   showAddress,
   showGps,
-  position,
   color,
-  opacity,
   fontSize,
   fontFamily,
-  offset,
 }) {
   const ts = photo?.timestamp
     ? new Date(photo.timestamp)
@@ -2497,21 +2520,10 @@ function MetadataOverlay({
   if (showGps && photo?.gps) parts.push(String(photo.gps));
   if (parts.length === 0) return null;
   const text = parts.join(' · ');
-  const positions = getLabelPositions(10, 10);
-  const posStyle = positions[position] || positions['left-bottom'];
-  const { name, horizontalAlign, verticalAlign, ...coords } = posStyle;
   const fontSizePx = typeof fontSize === 'number' ? fontSize : (META_FONT_PX[fontSize] || META_FONT_PX.small);
   const family = META_FONT_FAMILY_MAP[fontFamily] || META_FONT_FAMILY_MAP.alexandria;
-  const ff = freeformPositionStyle(offset);
   return (
-    <View
-      pointerEvents="none"
-      style={[
-        styles.metadataOverlay,
-        ff || coords,
-        { opacity: typeof opacity === 'number' ? opacity : 0.85 },
-      ]}
-    >
+    <View style={styles.metadataOverlay}>
       <Text
         style={{
           color: color || '#FFFFFF',
@@ -2852,12 +2864,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  // On-picture overlays for logo + metadata
-  brandLogoOverlay: {
-    position: 'absolute',
-  },
+  // On-picture overlays for metadata
   metadataOverlay: {
-    position: 'absolute',
     paddingHorizontal: 8,
     paddingVertical: 3,
     maxWidth: '92%',
