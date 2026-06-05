@@ -35,3 +35,6 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The action's default model (claude-sonnet-4-20250514) is
+          # retired and returns 404 from the API. Pin a current model.
+          model: claude-sonnet-4-6
