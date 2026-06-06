@@ -1747,7 +1747,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 )}
               </TouchableOpacity>
               <Text style={[styles.reportFooterNote, { color: theme.textSecondary }]}>
-                Preview opens the rendered report in Safari. Reusing the saved file — tap "Edit" above and "Regenerate" if photos or title have changed.
+                Tap "Edit" above and "Regenerate" if photos, title, or style have changed since this was generated.
               </Text>
             </View>
           );

@@ -109,6 +109,7 @@ export default function ReportStyleScreen({ route, navigation }) {
   // state setter lands on the right component instance.
   const apply = (id) => {
     const cb = route?.params?.onSelect;
+    console.warn('[Report] ReportStyleScreen.apply', { id, hasCallback: typeof cb === 'function' });
     if (typeof cb === 'function') cb(id);
     navigation.goBack();
   };
