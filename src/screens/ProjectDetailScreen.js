@@ -13,7 +13,6 @@ import {
   Switch,
   ActivityIndicator,
   Platform,
-  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -36,6 +35,7 @@ import {
   OPTION_META,
   DEFAULT_LAYOUT_ID,
 } from '../reports';
+import ReportPreviewView from '../components/ReportPreview';
 
 // Storage key for the report's selected photo ids — legacy, retained
 // so the Default-settings reset can still wipe it cleanly when an
@@ -786,65 +786,6 @@ export default function ProjectDetailScreen({ route, navigation }) {
       }
     } catch (e) {
       Alert.alert('Could not share report', e?.message || 'Unknown error');
-    } finally {
-      setIsBuildingReport(false);
-    }
-  };
-
-  // Open the generated report in Safari / the system browser so the
-  // user can preview the rendered HTML before sharing. Tries
-  // Linking.openURL first (one tap on iOS when the runtime allows
-  // file:// URLs); falls back to the share sheet ("Open in Safari"
-  // is one of the actions) when direct open isn't supported.
-  const handlePreviewReport = async (reportId) => {
-    if (!project) return;
-    if (isBuildingReport) return;
-    setIsBuildingReport(true);
-    try {
-      const r = reports.find((rr) => rr.id === reportId);
-      if (!r) return;
-      let htmlTarget = r.generatedFilePath;
-      let needsRegenerate = !htmlTarget;
-      if (htmlTarget && !needsRegenerate) {
-        try {
-          const info = await FileSystem.getInfoAsync(htmlTarget);
-          if (!info.exists) needsRegenerate = true;
-        } catch (_) {
-          needsRegenerate = true;
-        }
-      }
-      if (needsRegenerate) {
-        const out = await generateReportFile(r);
-        htmlTarget = out?.html || null;
-      }
-      if (!htmlTarget) {
-        Alert.alert('Could not preview', 'No file produced.');
-        return;
-      }
-      const fileUrl = htmlTarget.startsWith('file://') ? htmlTarget : `file://${htmlTarget}`;
-      // Try a direct open. On iOS this usually fails for file:// (the
-      // SFSafariViewController only accepts http(s)) — that throws or
-      // returns false, and we fall through to Sharing where the user
-      // picks "Open in Safari" from the action row.
-      try {
-        const supported = await Linking.canOpenURL(fileUrl);
-        if (supported) {
-          await Linking.openURL(fileUrl);
-          return;
-        }
-      } catch (_) { /* fall through */ }
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(htmlTarget, {
-          mimeType: 'text/html',
-          UTI: 'public.html',
-          dialogTitle: 'Preview report — choose "Open in Safari"',
-        });
-      } else {
-        Alert.alert('Preview', `Saved to ${htmlTarget}. Open with any HTML viewer.`);
-      }
-    } catch (e) {
-      Alert.alert('Could not preview report', e?.message || 'Unknown error');
     } finally {
       setIsBuildingReport(false);
     }
@@ -1774,43 +1715,19 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 </View>
               </View>
 
-              {/* Photo grid preview — 4 cols, same layout the share
-                  output uses (stacked per page). Read-only; tapping
-                  a tile is a no-op here. */}
-              <View style={styles.timelineGrid}>
-                {cappedPreview.map((p) => (
-                  <View key={`preview-${p.id}`} style={styles.timelineGridTile}>
-                    {p.uri ? (
-                      <Image source={{ uri: p.uri }} style={styles.timelineGridThumb} />
-                    ) : (
-                      <View style={[styles.timelineGridThumb, styles.roomTilePlaceholder, { backgroundColor: theme.surfaceElevated }]}>
-                        <Ionicons name="image-outline" size={28} color={theme.textMuted} />
-                      </View>
-                    )}
-                  </View>
-                ))}
-              </View>
-
-              {/* Preview — opens the rendered HTML in Safari / the
-                  system browser so the user can review before sharing. */}
-              <TouchableOpacity
-                style={[
-                  styles.reportPrimaryBtn,
-                  {
-                    backgroundColor: 'transparent',
-                    borderWidth: 1,
-                    borderColor: theme.accent,
-                    marginBottom: 10,
-                    opacity: isBuildingReport ? 0.6 : 1,
-                  },
-                ]}
-                onPress={() => handlePreviewReport(activeReport.id)}
-                disabled={isBuildingReport}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="eye-outline" size={18} color={theme.accent} />
-                <Text style={[styles.reportPrimaryBtnText, { color: theme.accent }]}>Preview</Text>
-              </TouchableOpacity>
+              {/* Layout-aware inline preview — renders the report's
+                  content using React Native components so the user
+                  can see roughly what the shared file will look like
+                  without leaving the app. Inline-HTML preview would
+                  need react-native-webview (native module); this is
+                  the OTA-able alternative. */}
+              <ReportPreviewView
+                photos={cappedPreview}
+                layoutId={activeReport.layoutType || 'room-by-room'}
+                options={activeReport.options || {}}
+                displayRoomName={displayRoomName}
+                theme={theme}
+              />
 
               {/* Share action — re-uses the cached HTML file if
                   it's still on disk; regenerates only when missing. */}
