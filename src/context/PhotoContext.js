@@ -32,16 +32,25 @@ export const PhotoProvider = ({ children }) => {
   const [activeProjectId, setActiveProjectId] = useState(null);
 
   // Load photos on mount
-  // Load data on app start
+  // Load data on app start.
+  //
+  // Order matters here: HomeScreen has an auto-default useEffect that
+  // fires when `projects` is non-empty and `activeProjectId` is null,
+  // and overwrites the persisted active id with `projects[0]` (which
+  // is the most recently CREATED project since createProject prepends
+  // to the list). If we setProjects before the saved active id is
+  // applied, that auto-default fires once with a stale null and the
+  // user's real "last open" project gets clobbered on every relaunch.
+  //
+  // So: load + validate the active id first, set it, THEN set the
+  // projects list. By the time HomeScreen sees a populated list,
+  // activeProjectId is already correct and the auto-default no-ops.
   useEffect(() => {
     (async () => {
       await loadPhotos();
-      await loadProjectsList();
+      const projectsList = await loadProjects();
       const savedActive = await loadActiveProjectId();
-      
-      // Validate that savedActive project actually exists
       if (savedActive) {
-        const projectsList = await loadProjects();
         const projectExists = projectsList.some(p => p.id === savedActive);
         if (projectExists) {
           setActiveProjectId(savedActive);
@@ -50,6 +59,7 @@ export const PhotoProvider = ({ children }) => {
           await saveActiveProjectId(null);
         }
       }
+      setProjects(projectsList);
     })();
   }, []);
 
