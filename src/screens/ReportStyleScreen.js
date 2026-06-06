@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Rect, Line, G } from 'react-native-svg';
 
 import { LAYOUTS } from '../reports';
+import { setPendingLayoutSelection } from '../reports/pickerBridge';
 import { useTheme } from '../hooks/useTheme';
 
 // Small inline SVGs — one per layout — so the picker doesn't need a
@@ -108,9 +109,15 @@ export default function ReportStyleScreen({ route, navigation }) {
   // A callback runs synchronously in the editor's own closure so the
   // state setter lands on the right component instance.
   const apply = (id) => {
+    // Belt + suspenders: write to module-level bridge so the editor
+    // picks it up via useFocusEffect even if the callback param has
+    // been stripped or never made it across the nav boundary.
+    setPendingLayoutSelection(id);
     const cb = route?.params?.onSelect;
     console.warn('[Report] ReportStyleScreen.apply', { id, hasCallback: typeof cb === 'function' });
-    if (typeof cb === 'function') cb(id);
+    if (typeof cb === 'function') {
+      try { cb(id); } catch (e) { console.warn('[Report] picker callback threw', e?.message); }
+    }
     navigation.goBack();
   };
 

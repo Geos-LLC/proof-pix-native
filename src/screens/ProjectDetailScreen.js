@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -35,6 +36,7 @@ import {
   OPTION_META,
   DEFAULT_LAYOUT_ID,
 } from '../reports';
+import { consumePendingLayoutSelection } from '../reports/pickerBridge';
 import ReportPreviewView from '../components/ReportPreview';
 
 // Storage key for the report's selected photo ids — legacy, retained
@@ -354,6 +356,21 @@ export default function ProjectDetailScreen({ route, navigation }) {
       return next;
     });
   };
+
+  // When the editor regains focus (after the Style picker pops),
+  // check the module-level bridge for a pending selection. This is
+  // the reliable handoff path — the route-param callback could be
+  // stripped by React Navigation, but a module-level ref always
+  // survives. Consume-on-read so a stale selection doesn't reapply
+  // on every subsequent focus.
+  useFocusEffect(
+    useCallback(() => {
+      const picked = consumePendingLayoutSelection();
+      console.warn('[Report] editor focus, pending=', picked);
+      if (picked) applyPickedLayoutType(picked);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
   const timelineGroups = useMemo(() => buildTimeline(projectPhotos), [projectPhotos]);
 
   const handleRoomTap = (dateKey, roomName) => {
