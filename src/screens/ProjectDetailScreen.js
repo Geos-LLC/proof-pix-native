@@ -19,11 +19,12 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-// expo-print is lazy-loaded inside generateReportFile via require() so a
-// missing native module on older binaries doesn't crash this screen at
-// import time. Without the lazy guard, expo-print's top-level
-// `requireNativeModule('ExpoPrint')` throws on module load and takes
-// the whole report screen down.
+// expo-print is intentionally NOT imported. Its top-level
+// requireNativeModule('ExpoPrint') call routes errors through Hermes'
+// global handler — even a lazy `require()` inside try/catch produces a
+// FATAL uncaught error on builds that don't yet have the native side
+// linked (TestFlight build 76 and earlier). Reports are HTML-only
+// here; PDF generation will land alongside the next native build.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { usePhotos } from '../context/PhotoContext';
@@ -745,40 +746,22 @@ export default function ProjectDetailScreen({ route, navigation }) {
       .slice(0, 80);
     const target = `${reportsDir()}${safeName}-${report.id}.html`;
     await FileSystem.writeAsStringAsync(target, html);
-    // Try to render a companion PDF via expo-print. Loaded lazily
-    // because builds that pre-date the expo-print dependency don't
-    // have its native module, and expo-print throws at module
-    // import time when the native side is missing. Catching here
-    // keeps reports working (HTML-only) on older builds.
-    let pdfTarget = null;
-    try {
-      // eslint-disable-next-line global-require
-      const PrintMod = require('expo-print');
-      const printed = await PrintMod.printToFileAsync({ html, base64: false });
-      if (printed?.uri) {
-        const pdfDest = `${reportsDir()}${safeName}-${report.id}.pdf`;
-        try { await FileSystem.deleteAsync(pdfDest, { idempotent: true }); } catch (_) {}
-        await FileSystem.moveAsync({ from: printed.uri, to: pdfDest });
-        pdfTarget = pdfDest;
-      }
-    } catch (_) {
-      // PDF render failed (sandbox/perm/native module missing) —
-      // HTML still works.
-    }
-    // Patch the report record so future shares can skip regenerate.
+    // PDF generation lands in the next native build via expo-print.
+    // For now the share is HTML — opens cleanly in Safari → Print →
+    // Save as PDF.
     await patchReport(report.id, {
       generatedFilePath: target,
-      generatedPdfPath: pdfTarget,
+      generatedPdfPath: null,
       generatedAt: Date.now(),
     });
-    return { html: target, pdf: pdfTarget };
+    return { html: target, pdf: null };
   };
 
   // Share a report — uses the cached generated file when it still
   // exists on disk; regenerates and writes a fresh one otherwise.
   // Set `forceRegenerate` to true for the editor's "Generate & share"
   // button (the user explicitly wants the latest content).
-  const handleShareReport = async (reportId, { forceRegenerate = false, format = 'pdf' } = {}) => {
+  const handleShareReport = async (reportId, { forceRegenerate = false, format = 'html' } = {}) => {
     if (!project) return;
     if (isBuildingReport) return;
     setIsBuildingReport(true);
