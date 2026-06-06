@@ -357,12 +357,18 @@ export default function ProjectDetailScreen({ route, navigation }) {
       setSelectionDraft(new Set(r.photoIds || []));
     } else {
       // No persisted report yet (the editor is on a fresh draft).
-      // Use the in-memory editorPhotoIds as the starting set and
-      // mark that Save should write back into the draft, not
-      // create a new report.
+      // Use the in-memory editorPhotoIds as the starting set; fall
+      // back to all project photos when the draft is empty (e.g. the
+      // useEffect that seeds editorPhotoIds hasn't run yet because
+      // the user tapped "Pick photos" before the editor had a chance
+      // to populate the field). Mark that Save should write back into
+      // the draft, not create a new report.
       setSelectionEditingReportId(null);
       setSelectionEditingDraft(true);
-      setSelectionDraft(new Set(editorPhotoIds || []));
+      const seedIds = (editorPhotoIds && editorPhotoIds.length > 0)
+        ? editorPhotoIds
+        : projectPhotos.map((p) => p.id);
+      setSelectionDraft(new Set(seedIds));
     }
     setSelectionMode(true);
     setReportViewMode('list');
@@ -380,6 +386,21 @@ export default function ProjectDetailScreen({ route, navigation }) {
     const allSelected = projectPhotos.length > 0 && selectionDraft.size === projectPhotos.length;
     if (allSelected) setSelectionDraft(new Set());
     else setSelectionDraft(new Set(projectPhotos.map((p) => p.id)));
+  };
+  const toggleSelectByDate = (dateKey) => {
+    const group = timelineGroups.find((g) => g.dateKey === dateKey);
+    if (!group) return;
+    const datePhotoIds = group.rooms.flatMap((r) => r.photoTiles.map((t) => t.id));
+    const allSelected = datePhotoIds.length > 0 && datePhotoIds.every((id) => selectionDraft.has(id));
+    setSelectionDraft((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        datePhotoIds.forEach((id) => next.delete(id));
+      } else {
+        datePhotoIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
   };
   // "Add to report" / "Save to report" entrypoint from the Timeline
   // selection bar.
@@ -1002,15 +1023,41 @@ ${photoChunks.join('\n')}
                   </View>
                 );
               })()}
-              {timelineGroups.map((group) => (
+              {timelineGroups.map((group) => {
+                const datePhotoIds = group.rooms.flatMap((r) => r.photoTiles.map((t) => t.id));
+                const allDateSelected = selectionMode && datePhotoIds.length > 0 && datePhotoIds.every((id) => selectionDraft.has(id));
+                return (
               <View key={group.dateKey} style={styles.dateSection}>
                 <View style={styles.dateHeader}>
                   <Text style={[styles.dateLabel, { color: theme.textPrimary }]}>
                     {formatDateLabel(group.ts)}
                   </Text>
+                  {selectionMode ? (
+                    <TouchableOpacity
+                      onPress={() => toggleSelectByDate(group.dateKey)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={styles.dateSelectBtn}
+                    >
+                      <View style={[
+                        styles.dateSelectCheck,
+                        {
+                          backgroundColor: allDateSelected ? theme.accent : 'transparent',
+                          borderColor: allDateSelected ? theme.accent : theme.borderStrong,
+                        },
+                      ]}>
+                        {allDateSelected && (
+                          <Ionicons name="checkmark" size={11} color={theme.accentText} />
+                        )}
+                      </View>
+                      <Text style={[styles.dateSelectText, { color: allDateSelected ? theme.accent : theme.textSecondary }]}>
+                        {allDateSelected ? 'Deselect date' : 'Select date'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
                   <Text style={[styles.dateMeta, { color: theme.textSecondary }]}>
                     {group.totalPhotos} {group.totalPhotos === 1 ? 'photo' : 'photos'}
                   </Text>
+                  )}
                 </View>
                 {/* For each date, render one section per room — room
                     header (room name + count) then a 4-column grid of
@@ -1086,7 +1133,8 @@ ${photoChunks.join('\n')}
                   </View>
                 ))}
               </View>
-              ))}
+              );
+              })}
             </>
           )
         )}
@@ -1804,6 +1852,24 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '500',
+  },
+  dateSelectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dateSelectCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateSelectText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '600',
   },
   // Container for each room within a date. Stacks a small header
   // (room name + count metadata) above a grid of set tiles, with a
