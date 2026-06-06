@@ -30,12 +30,10 @@ import { usePhotos } from '../context/PhotoContext';
 import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
-import PhotoLabel from '../components/PhotoLabel';
 import { StudioEditOverlays } from '../components/StudioOverlays';
 import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
-import { pickBeforeLabelPosition, pickAfterLabelPosition, pickBeforeLabelOffset, pickAfterLabelOffset } from '../utils/labelPosition';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useSettings } from '../context/SettingsContext';
@@ -312,39 +310,18 @@ export default function HomeScreen({ navigation, route }) {
     toggleLabels,
     showPreviewMetadata,
     togglePreviewMetadata,
+    // The remaining label fields below are read only by the bake-time
+    // share pipeline (addLabelToImage). UI rendering reads from
+    // SettingsContext via <PhotoLabels>, so we don't destructure the
+    // landscape/freeform variants here.
     beforeLabelPosition,
     afterLabelPosition,
-    beforeLabelPositionLandscape,
-    afterLabelPositionLandscape,
-    beforeLabelOffset,
-    afterLabelOffset,
-    beforeLabelOffsetLandscape,
-    afterLabelOffsetLandscape,
     labelBackgroundColor,
     labelTextColor,
     labelSize,
     labelMarginHorizontal,
     labelMarginVertical,
     updateUserInfo,
-    // Extra Settings the preview's "Edited" toggle reads to mirror
-    // the Studio screen's overlay stack (watermark, brand logo,
-    // metadata caption).
-    showWatermark,
-    showBrandLogo,
-    brandLogoUri,
-    brandLogoPosition,
-    brandLogoSize,
-    brandLogoOffset,
-    metaShowDate,
-    metaShowTime,
-    metaShowAddress,
-    metaShowGps,
-    metaPosition,
-    metaColor,
-    metaOpacity,
-    metaFontSize,
-    metaFontFamily,
-    metaOffset,
   } = useSettings();
   const { userMode } = useAdmin();
   const fullScreenTopInset = Math.max(insets.top, 25);
@@ -2604,130 +2581,15 @@ export default function HomeScreen({ navigation, route }) {
                                 resizeMode="cover"
                               />
                             </TouchableOpacity>
-                            {/* PhotoLabel — the single label rendering
-                                in this view. Gated on `showLabels` from
-                                Settings (NOT on the Edited toggle), so
-                                the BEFORE / AFTER label is visible by
-                                default and follows the user's chosen
-                                position / color / font / freeform
-                                offset. Combined photos get one label
-                                per half. We render this here (outside
-                                StudioEditOverlays) and pass showLabels=
-                                false to StudioEditOverlays below, so
-                                labels never render twice. */}
-                            {showLabels && (() => {
-                              const role = m?.mode;
-                              const lps = {
-                                beforeLabelPosition,
-                                afterLabelPosition,
-                                beforeLabelPositionLandscape,
-                                afterLabelPositionLandscape,
-                                beforeLabelOffset,
-                                afterLabelOffset,
-                                beforeLabelOffsetLandscape,
-                                afterLabelOffsetLandscape,
-                              };
-                              if (role === 'combined' || role === 'mix') {
-                                return (
-                                  <>
-                                    <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
-                                      <PhotoLabel
-                                        label="common.before"
-                                        position={pickBeforeLabelPosition(lps, m)}
-                                        freeformOffset={pickBeforeLabelOffset(lps, m)}
-                                      />
-                                    </View>
-                                    <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
-                                      <PhotoLabel
-                                        label="common.after"
-                                        position={pickAfterLabelPosition(lps, m)}
-                                        freeformOffset={pickAfterLabelOffset(lps, m)}
-                                      />
-                                    </View>
-                                  </>
-                                );
-                              }
-                              if (role === 'before') {
-                                return (
-                                  <PhotoLabel
-                                    label="common.before"
-                                    position={pickBeforeLabelPosition(lps, m)}
-                                    freeformOffset={pickBeforeLabelOffset(lps, m)}
-                                  />
-                                );
-                              }
-                              if (role === 'after') {
-                                return (
-                                  <PhotoLabel
-                                    label="common.after"
-                                    position={pickAfterLabelPosition(lps, m)}
-                                    freeformOffset={pickAfterLabelOffset(lps, m)}
-                                  />
-                                );
-                              }
-                              if (role === 'progress') {
-                                return (
-                                  <PhotoLabel
-                                    label="common.progress"
-                                    position={pickAfterLabelPosition(lps, m)}
-                                    freeformOffset={pickAfterLabelOffset(lps, m)}
-                                  />
-                                );
-                              }
-                              return null;
-                            })()}
+                            {/* The Edited toggle is the master switch for
+                                all on-photo overlays — labels, watermark,
+                                brand logo, metadata, markup. PhotoLabels
+                                still respects Settings.showLabels too, so
+                                turning labels off in Settings hides them
+                                even when Edited is on. */}
                             {showStudioEdits && (
                               <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                                <StudioEditOverlays
-                                  photo={m}
-                                  theme={theme}
-                                  // Labels are rendered above this block
-                                  // so they show whether or not the
-                                  // Edited toggle is on. Pass false so
-                                  // StudioEditOverlays doesn't render
-                                  // them a second time.
-                                  showLabels={false}
-                                  labelPositionSettings={{
-                                    beforeLabelPosition,
-                                    afterLabelPosition,
-                                    beforeLabelPositionLandscape,
-                                    afterLabelPositionLandscape,
-                                    beforeLabelOffset,
-                                    afterLabelOffset,
-                                    beforeLabelOffsetLandscape,
-                                    afterLabelOffsetLandscape,
-                                  }}
-                                  showWatermark={showWatermark}
-                                  showBrandLogo={showBrandLogo}
-                                  brandLogoUri={brandLogoUri}
-                                  brandLogoPosition={brandLogoPosition}
-                                  brandLogoSize={brandLogoSize}
-                                  brandLogoOffset={brandLogoOffset}
-                                  showPreviewMetadata={showPreviewMetadata}
-                                  location={location}
-                                  metaShowDate={metaShowDate}
-                                  metaShowTime={metaShowTime}
-                                  metaShowAddress={metaShowAddress}
-                                  metaShowGps={metaShowGps}
-                                  metaPosition={metaPosition}
-                                  metaColor={metaColor}
-                                  metaOpacity={metaOpacity}
-                                  metaFontSize={metaFontSize}
-                                  metaFontFamily={metaFontFamily}
-                                  metaOffset={metaOffset}
-                                  combinedLabelLayout={{
-                                    LeftHalf: ({ children }) => (
-                                      <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
-                                        {children}
-                                      </View>
-                                    ),
-                                    RightHalf: ({ children }) => (
-                                      <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
-                                        {children}
-                                      </View>
-                                    ),
-                                  }}
-                                />
+                                <StudioEditOverlays photo={m} theme={theme} />
                               </View>
                             )}
                           </View>
@@ -2863,51 +2725,7 @@ export default function HomeScreen({ navigation, route }) {
             resizeMode="cover"
           />
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <StudioEditOverlays
-              photo={shareCaptureContext.photo}
-              theme={theme}
-              showLabels={showLabels}
-              labelPositionSettings={{
-                beforeLabelPosition,
-                afterLabelPosition,
-                beforeLabelPositionLandscape,
-                afterLabelPositionLandscape,
-                beforeLabelOffset,
-                afterLabelOffset,
-                beforeLabelOffsetLandscape,
-                afterLabelOffsetLandscape,
-              }}
-              showWatermark={showWatermark}
-              showBrandLogo={showBrandLogo}
-              brandLogoUri={brandLogoUri}
-              brandLogoPosition={brandLogoPosition}
-              brandLogoSize={brandLogoSize}
-              brandLogoOffset={brandLogoOffset}
-              showPreviewMetadata={showPreviewMetadata}
-              location={location}
-              metaShowDate={metaShowDate}
-              metaShowTime={metaShowTime}
-              metaShowAddress={metaShowAddress}
-              metaShowGps={metaShowGps}
-              metaPosition={metaPosition}
-              metaColor={metaColor}
-              metaOpacity={metaOpacity}
-              metaFontSize={metaFontSize}
-              metaFontFamily={metaFontFamily}
-              metaOffset={metaOffset}
-              combinedLabelLayout={{
-                LeftHalf: ({ children }) => (
-                  <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
-                    {children}
-                  </View>
-                ),
-                RightHalf: ({ children }) => (
-                  <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
-                    {children}
-                  </View>
-                ),
-              }}
-            />
+            <StudioEditOverlays photo={shareCaptureContext.photo} theme={theme} />
           </View>
         </View>
       )}
@@ -3061,128 +2879,12 @@ export default function HomeScreen({ navigation, route }) {
                       resizeMode="cover"
                       panOnLongPress
                     >
-                      {/* PhotoLabel — single label rendering, gated on
-                          `showLabels` from Settings only. Includes the
-                          freeform offset so the label sits at the exact
-                          spot the user picked in Customize Labels —
-                          mismatched offset is what made it look like the
-                          enlarged preview and the Studio screen rendered
-                          the label in different places. Rendered as a
-                          child of PannableImage so the pan / pinch
-                          transform travels with the label too. */}
-                      {showLabels && (() => {
-                        const role = tappedFullPhoto?.mode;
-                        const lps = {
-                          beforeLabelPosition,
-                          afterLabelPosition,
-                          beforeLabelPositionLandscape,
-                          afterLabelPositionLandscape,
-                          beforeLabelOffset,
-                          afterLabelOffset,
-                          beforeLabelOffsetLandscape,
-                          afterLabelOffsetLandscape,
-                        };
-                        if (role === 'combined' || role === 'mix') {
-                          return (
-                            <>
-                              <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
-                                <PhotoLabel
-                                  label="common.before"
-                                  position={pickBeforeLabelPosition(lps, tappedFullPhoto)}
-                                  freeformOffset={pickBeforeLabelOffset(lps, tappedFullPhoto)}
-                                />
-                              </View>
-                              <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
-                                <PhotoLabel
-                                  label="common.after"
-                                  position={pickAfterLabelPosition(lps, tappedFullPhoto)}
-                                  freeformOffset={pickAfterLabelOffset(lps, tappedFullPhoto)}
-                                />
-                              </View>
-                            </>
-                          );
-                        }
-                        if (role === 'before') {
-                          return (
-                            <PhotoLabel
-                              label="common.before"
-                              position={pickBeforeLabelPosition(lps, tappedFullPhoto)}
-                              freeformOffset={pickBeforeLabelOffset(lps, tappedFullPhoto)}
-                            />
-                          );
-                        }
-                        if (role === 'after') {
-                          return (
-                            <PhotoLabel
-                              label="common.after"
-                              position={pickAfterLabelPosition(lps, tappedFullPhoto)}
-                              freeformOffset={pickAfterLabelOffset(lps, tappedFullPhoto)}
-                            />
-                          );
-                        }
-                        if (role === 'progress') {
-                          return (
-                            <PhotoLabel
-                              label="common.progress"
-                              position={pickAfterLabelPosition(lps, tappedFullPhoto)}
-                              freeformOffset={pickAfterLabelOffset(lps, tappedFullPhoto)}
-                            />
-                          );
-                        }
-                        return null;
-                      })()}
-                      {/* Other Studio overlays (watermark, brand logo,
-                          metadata, markup) are still gated on the Edited
-                          toggle. showLabels=false because PhotoLabel
-                          renders above this block — passing the real
-                          showLabels here would double the label. */}
+                      {/* Edited toggle gates the full overlay stack
+                          (labels included). Settings → Show Labels still
+                          hides labels independently when Edited is on. */}
                       {showStudioEdits && (
                         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                          <StudioEditOverlays
-                            photo={tappedFullPhoto}
-                            theme={theme}
-                            showLabels={false}
-                            labelPositionSettings={{
-                              beforeLabelPosition,
-                              afterLabelPosition,
-                              beforeLabelPositionLandscape,
-                              afterLabelPositionLandscape,
-                              beforeLabelOffset,
-                              afterLabelOffset,
-                              beforeLabelOffsetLandscape,
-                              afterLabelOffsetLandscape,
-                            }}
-                            showWatermark={showWatermark}
-                            showBrandLogo={showBrandLogo}
-                            brandLogoUri={brandLogoUri}
-                            brandLogoPosition={brandLogoPosition}
-                            brandLogoSize={brandLogoSize}
-                            brandLogoOffset={brandLogoOffset}
-                            showPreviewMetadata={showPreviewMetadata}
-                            location={location}
-                            metaShowDate={metaShowDate}
-                            metaShowTime={metaShowTime}
-                            metaShowAddress={metaShowAddress}
-                            metaShowGps={metaShowGps}
-                            metaPosition={metaPosition}
-                            metaColor={metaColor}
-                            metaOpacity={metaOpacity}
-                            metaFontSize={metaFontSize}
-                            metaFontFamily={metaFontFamily}
-                            metaOffset={metaOffset}
-                            combinedLabelLayout={{
-                              LeftHalf: ({ children }) => (
-                                <View pointerEvents="none" style={styles.simplePreviewCombinedHalfLeft}>
-                                  {children}
-                                </View>
-                              ),
-                              RightHalf: ({ children }) => (
-                                <View pointerEvents="none" style={styles.simplePreviewCombinedHalfRight}>
-                                  {children}
-                                </View>
-                              ),
-                            }}
-                          />
+                          <StudioEditOverlays photo={tappedFullPhoto} theme={theme} />
                         </View>
                       )}
                     </PannableImage>
@@ -4468,26 +4170,6 @@ const styles = StyleSheet.create({
   tappedFullDot: {
     height: 6,
     borderRadius: 3,
-  },
-  // Combined-photo half overlays — PhotoLabel renders its label
-  // relative to its parent's bounds, so for COMBINED previews we
-  // confine each label to the matching half of the photo. Default
-  // SIDE layout (left = before, right = after); the bake-time
-  // letterbox / stack offsets only apply to share output, not the
-  // preview overlay.
-  simplePreviewCombinedHalfLeft: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: '50%',
-  },
-  simplePreviewCombinedHalfRight: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: 0,
-    width: '50%',
   },
   simplePreviewSwipeHintText: {
     fontFamily: FONTS.ALEXANDRIA,

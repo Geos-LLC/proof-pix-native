@@ -127,12 +127,16 @@
       "Bash(tee /tmp/pp_phase2_logs.txt)",
       "Bash(tee /tmp/pp_phase3.txt)",
       "Read(//c/Users/HP/Desktop/Projects/Active/Running/ProofPix/**)",
-      "Bash(tee /tmp/eas-ios-1525.log)"
+      "Bash(tee /tmp/eas-ios-1525.log)",
+      "Bash(git remote *)",
+      "Bash(unzip -l ProofPixUpdated.zip)",
+      "Bash(node --check src/screens/PhotoSetPreviewScreen.js)"
     ],
     "deny": [],
     "ask": [],
     "additionalDirectories": [
-      "c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-proxy"
+      "c:\\Users\\HP\\Desktop\\Projects\\Active\\Running\\ProofPix\\proof-pix-proxy",
+      "C:\\Users\\HP\\Desktop\\Projects\\Active\\Development\\proofpix-landing-page\\src"
     ]
   }
 }

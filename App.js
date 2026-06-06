@@ -111,6 +111,7 @@ import {
 import PersistentBottomNav from './src/components/PersistentBottomNav';
 import ProjectDetailScreen from './src/screens/ProjectDetailScreen';
 import PhotoSetPreviewScreen from './src/screens/PhotoSetPreviewScreen';
+import ReportStyleScreen from './src/screens/ReportStyleScreen';
 import LabelCustomizationScreen from './src/screens/LabelCustomizationScreen';
 import WatermarkCustomizationScreen from './src/screens/WatermarkCustomizationScreen';
 import FirstLoadScreen from './src/screens/FirstLoadScreen';
@@ -377,6 +378,13 @@ function AppNavigator() {
         }}
       />
       <Stack.Screen
+        name="ReportStyle"
+        component={ReportStyleScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      <Stack.Screen
         name="ContactUs"
         component={ContactUsScreen}
         options={{
@@ -418,29 +426,58 @@ function AppNavigator() {
         component={AppearanceScreen}
         options={{ animation: 'slide_from_right' }}
       />
+      {/* Studio customize screens present as a half-height bottom
+          sheet (iOS formSheet) instead of pushing a full screen, so the
+          user stays in Studio context. Swipe-down dismisses. iOS-only
+          sheet behavior; on Android these fall back to a slide-up
+          modal animation. */}
       <Stack.Screen
         name="LabelCustomization"
         component={LabelCustomizationScreen}
         options={{
-          animation: 'slide_from_right'
+          presentation: 'formSheet',
+          animation: 'slide_from_bottom',
+          sheetAllowedDetents: 'fitToContents',
+          sheetGrabberVisible: true,
+          sheetCornerRadius: 22,
+          headerShown: false,
         }}
       />
       <Stack.Screen
         name="WatermarkCustomization"
         component={WatermarkCustomizationScreen}
         options={{
-          animation: 'slide_from_right'
+          presentation: 'formSheet',
+          animation: 'slide_from_bottom',
+          sheetAllowedDetents: 'fitToContents',
+          sheetGrabberVisible: true,
+          sheetCornerRadius: 22,
+          headerShown: false,
         }}
       />
       <Stack.Screen
         name="LogoCustomization"
         component={LogoCustomizationScreen}
-        options={{ animation: 'slide_from_right' }}
+        options={{
+          presentation: 'formSheet',
+          animation: 'slide_from_bottom',
+          sheetAllowedDetents: 'fitToContents',
+          sheetGrabberVisible: true,
+          sheetCornerRadius: 22,
+          headerShown: false,
+        }}
       />
       <Stack.Screen
         name="MetadataCustomization"
         component={MetadataCustomizationScreen}
-        options={{ animation: 'slide_from_right' }}
+        options={{
+          presentation: 'formSheet',
+          animation: 'slide_from_bottom',
+          sheetAllowedDetents: 'fitToContents',
+          sheetGrabberVisible: true,
+          sheetCornerRadius: 22,
+          headerShown: false,
+        }}
       />
       <Stack.Screen
         name="MarkupEditor"

@@ -14,8 +14,7 @@ import { useSettings } from '../context/SettingsContext';
 import { COLORS, ROOMS } from '../constants/rooms';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
-import PhotoLabel from '../components/PhotoLabel';
-import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
+import PhotoLabels from '../components/PhotoLabels';
 
 /**
  * Section / folder detail screen — Compare-only.
@@ -37,15 +36,7 @@ export default function SectionDetailScreen({ route, navigation }) {
     getAfterPhotos,
   } = usePhotos();
   const settings = useSettings();
-  const {
-    showLabels,
-    beforeLabelPosition,
-    afterLabelPosition,
-    beforeLabelPositionLandscape,
-    afterLabelPositionLandscape,
-    sectionLanguage,
-    getRooms,
-  } = settings;
+  const { sectionLanguage, getRooms } = settings;
 
   const [compareMode, setCompareMode] = useState('split');
 
@@ -72,13 +63,6 @@ export default function SectionDetailScreen({ route, navigation }) {
     return { before: [...beforePhotos].sort(byTime)[0], after: afters[0] };
   }, [beforePhotos, afterPhotos]);
 
-  const labelPosSettings = {
-    beforeLabelPosition,
-    afterLabelPosition,
-    beforeLabelPositionLandscape,
-    afterLabelPositionLandscape,
-  };
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -96,18 +80,8 @@ export default function SectionDetailScreen({ route, navigation }) {
               beforePhoto={latestPair.before}
               afterPhoto={latestPair.after}
               mode={compareMode}
-              renderBeforeOverlay={() => (showLabels ? (
-                <PhotoLabel
-                  label="common.before"
-                  position={pickBeforeLabelPosition(labelPosSettings, latestPair.before)}
-                />
-              ) : null)}
-              renderAfterOverlay={() => (showLabels ? (
-                <PhotoLabel
-                  label="common.after"
-                  position={pickAfterLabelPosition(labelPosSettings, latestPair.after)}
-                />
-              ) : null)}
+              renderBeforeOverlay={() => <PhotoLabels photo={latestPair.before} role="before" />}
+              renderAfterOverlay={() => <PhotoLabels photo={latestPair.after} role="after" />}
             />
             <CompareModeSwitcher
               mode={compareMode}

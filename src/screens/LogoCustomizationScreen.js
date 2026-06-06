@@ -95,7 +95,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
+          <Ionicons name="close" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Logo</Text>
         <View style={{ width: 24 }} />
@@ -106,37 +106,8 @@ export default function LogoCustomizationScreen({ navigation, route }) {
         showsVerticalScrollIndicator={false}
         scrollEnabled={scrollEnabled}
       >
-        {/* Real photo preview with draggable logo overlay. */}
-        <View
-          style={[styles.previewSquare, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
-          onLayout={onPreviewLayout}
-        >
-          {previewPhoto?.uri ? (
-            <Image source={{ uri: previewPhoto.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <View style={styles.previewPlaceholder}>
-              <Ionicons name="image-outline" size={48} color={theme.textMuted} />
-            </View>
-          )}
-          {brandLogoUri && previewLayout.w > 0 && previewLayout.h > 0 && (
-            <DraggablePreviewItem
-              bounds={bounds}
-              offset={brandLogoOffset}
-              fallbackPositionKey={brandLogoPosition || 'right-bottom'}
-              marginV={labelMarginVertical}
-              marginH={labelMarginHorizontal}
-              onOffsetChange={updateBrandLogoOffset}
-              onDragStart={() => setScrollEnabled(false)}
-              onDragEnd={() => setScrollEnabled(true)}
-            >
-              <Image
-                source={{ uri: brandLogoUri }}
-                style={{ width: numericSize, height: numericSize }}
-                resizeMode="contain"
-              />
-            </DraggablePreviewItem>
-          )}
-        </View>
+        {/* Preview removed — sheet opens over Studio so the photo
+            behind it IS the preview. */}
 
         {/* ─── Upload ─── */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>UPLOAD</Text>

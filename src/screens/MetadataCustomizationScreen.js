@@ -136,7 +136,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
+          <Ionicons name="close" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Metadata</Text>
         <View style={{ width: 24 }} />
@@ -147,45 +147,8 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
         showsVerticalScrollIndicator={false}
         scrollEnabled={scrollEnabled}
       >
-        <View
-          style={[styles.previewSquare, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
-          onLayout={onPreviewLayout}
-        >
-          {previewPhoto?.uri ? (
-            <Image source={{ uri: previewPhoto.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <View style={styles.previewPlaceholder}>
-              <Ionicons name="image-outline" size={48} color={theme.textMuted} />
-            </View>
-          )}
-          {previewLayout.w > 0 && previewLayout.h > 0 && (
-            <DraggablePreviewItem
-              bounds={bounds}
-              offset={metaOffset}
-              fallbackPositionKey={metaPosition || 'left-bottom'}
-              marginV={labelMarginVertical}
-              marginH={labelMarginHorizontal}
-              onOffsetChange={updateMetaOffset}
-              onDragStart={() => setScrollEnabled(false)}
-              onDragEnd={() => setScrollEnabled(true)}
-              containerStyle={{ opacity: typeof metaOpacity === 'number' ? metaOpacity : 0.85 }}
-            >
-              <Text
-                style={{
-                  color: metaColor || '#FFFFFF',
-                  fontSize: numericSize,
-                  fontFamily: getPreviewFontFamily(metaFontFamily),
-                  fontWeight: '700',
-                  textShadowColor: 'rgba(0,0,0,0.5)',
-                  textShadowRadius: 4,
-                }}
-                numberOfLines={2}
-              >
-                {captionText}
-              </Text>
-            </DraggablePreviewItem>
-          )}
-        </View>
+        {/* Preview removed — sheet opens over Studio so the photo
+            behind it IS the preview. */}
 
         {/* ─── Fields ─── */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>FIELDS</Text>

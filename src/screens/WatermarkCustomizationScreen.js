@@ -122,7 +122,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
+          <Ionicons name="close" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Watermark</Text>
         <View style={{ width: 24 }} />
@@ -139,43 +139,8 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
           keyboardShouldPersistTaps="handled"
           scrollEnabled={scrollEnabled}
         >
-          <View
-            style={[styles.previewSquare, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
-            onLayout={onPreviewLayout}
-          >
-            {previewPhoto?.uri ? (
-              <Image source={{ uri: previewPhoto.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            ) : (
-              <View style={styles.previewPlaceholder}>
-                <Ionicons name="image-outline" size={48} color={theme.textMuted} />
-              </View>
-            )}
-            {previewLayout.w > 0 && previewLayout.h > 0 && (
-              <DraggablePreviewItem
-                bounds={bounds}
-                offset={watermarkOffset}
-                fallbackPositionKey={watermarkPosition || 'right-bottom'}
-                marginV={labelMarginVertical}
-                marginH={labelMarginHorizontal}
-                onOffsetChange={updateWatermarkOffset}
-                onDragStart={() => setScrollEnabled(false)}
-                onDragEnd={() => setScrollEnabled(true)}
-                containerStyle={{ opacity: typeof watermarkOpacity === 'number' ? watermarkOpacity : 0.5 }}
-              >
-                <Text
-                  style={{
-                    color: watermarkColor || '#FFD700',
-                    fontSize: numericSize,
-                    fontFamily: getPreviewFontFamily(watermarkFontFamily),
-                    fontWeight: '700',
-                  }}
-                  numberOfLines={2}
-                >
-                  {displayText}
-                </Text>
-              </DraggablePreviewItem>
-            )}
-          </View>
+          {/* Preview removed — the screen opens as a bottom sheet over
+              Studio, so the photo behind the sheet IS the preview. */}
 
           {/* Custom text toggle */}
           <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CUSTOM TEXT</Text>

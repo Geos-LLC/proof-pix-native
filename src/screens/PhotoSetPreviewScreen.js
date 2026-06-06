@@ -22,8 +22,7 @@ import { useTheme } from '../hooks/useTheme';
 import { FONTS } from '../constants/fonts';
 import { PHOTO_MODES } from '../constants/rooms';
 import { computeSetIds } from '../utils/photoSets';
-import PhotoLabel from '../components/PhotoLabel';
-import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
+import PhotoLabels from '../components/PhotoLabels';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -117,20 +116,7 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { getPhotosByProject, updatePhoto, deletePhoto, setCurrentRoom } = usePhotos();
-  const {
-    getRooms,
-    showLabels,
-    beforeLabelPosition,
-    afterLabelPosition,
-    beforeLabelPositionLandscape,
-    afterLabelPositionLandscape,
-  } = useSettings();
-  const labelPositionSettings = {
-    beforeLabelPosition,
-    afterLabelPosition,
-    beforeLabelPositionLandscape,
-    afterLabelPositionLandscape,
-  };
+  const { getRooms } = useSettings();
   const allRooms = useMemo(() => getRooms() || [], [getRooms]);
   const roomDataMap = useMemo(() => {
     const map = new Map();
@@ -794,44 +780,12 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
               <View key={p.id} style={styles.pagerSlide}>
                 <View style={[styles.photoArea, { aspectRatio: photoAspect }]}>
                   <Image source={{ uri: p.uri }} style={[styles.photo, { backgroundColor: theme.surface }]} resizeMode="cover" />
-                  {/* Labels now come from the shared PhotoLabel component +
-                      Settings, so they match the Studio screen's style and
-                      honor the Show Labels toggle. COMBINED photos get
-                      BEFORE/AFTER on opposing halves (default: side-by-side,
-                      mirroring the most common Original (side) template). */}
-                  {showLabels && (
-                    role === PHOTO_MODES.COMBINED ? (
-                      <>
-                        <View pointerEvents="none" style={styles.combinedHalfLeft}>
-                          <PhotoLabel
-                            label="common.before"
-                            position={pickBeforeLabelPosition(labelPositionSettings, p)}
-                          />
-                        </View>
-                        <View pointerEvents="none" style={styles.combinedHalfRight}>
-                          <PhotoLabel
-                            label="common.after"
-                            position={pickAfterLabelPosition(labelPositionSettings, p)}
-                          />
-                        </View>
-                      </>
-                    ) : role === PHOTO_MODES.BEFORE ? (
-                      <PhotoLabel
-                        label="common.before"
-                        position={pickBeforeLabelPosition(labelPositionSettings, p)}
-                      />
-                    ) : role === PHOTO_MODES.AFTER ? (
-                      <PhotoLabel
-                        label="common.after"
-                        position={pickAfterLabelPosition(labelPositionSettings, p)}
-                      />
-                    ) : role === PHOTO_MODES.PROGRESS ? (
-                      <PhotoLabel
-                        label="common.progress"
-                        position={pickAfterLabelPosition(labelPositionSettings, p)}
-                      />
-                    ) : null
-                  )}
+                  {/* PhotoLabels reads showLabels + positions from Settings.
+                      visualRoleOf can override photo.mode (a "this looks
+                      like a before but is filed as progress" reframe), so
+                      pass a synthetic photo carrying the visual role. */}
+                  <PhotoLabels photo={{ ...p, mode: role }} />
+
                   {setCount > 1 && (
                     <View style={styles.dotsOverlay}>
                       {Array.from({ length: setCount }, (_, i) => (
@@ -1192,23 +1146,6 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   photo: { width: '100%', height: '100%' },
-  // Halves used to position BEFORE/AFTER labels on each side of a merged
-  // (COMBINED) photo. Each half is absolute and contains a single
-  // PhotoLabel which positions itself within the half.
-  combinedHalfLeft: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '50%',
-    bottom: 0,
-  },
-  combinedHalfRight: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: '50%',
-    bottom: 0,
-  },
   modeBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,

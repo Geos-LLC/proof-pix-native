@@ -25,7 +25,7 @@ import { useAdmin } from '../context/AdminContext';
 import { PHOTO_MODES, ROOMS, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constants/rooms';
 import { RoomIcon } from '../utils/roomIcons';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
-import PhotoLabel from '../components/PhotoLabel';
+import PhotoLabels from '../components/PhotoLabels';
 import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
@@ -40,7 +40,6 @@ import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
 import { ensureLabelForPhoto } from '../services/labelService';
-import { pickBeforeLabelPosition, pickAfterLabelPosition } from '../utils/labelPosition';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadCompletionModal from '../components/UploadCompletionModal';
@@ -2310,28 +2309,7 @@ export default function GalleryScreen({ navigation, route }) {
                   setFullScreenError(null);
                 }}
               >
-                {showLabels && fullScreenPhoto.mode && !fullScreenError && (
-                  <PhotoLabel
-                    label={
-                      fullScreenPhoto.mode === 'before'
-                        ? 'common.before'
-                        : fullScreenPhoto.mode === 'progress'
-                          ? 'common.progress'
-                          : 'common.after'
-                    }
-                    position={
-                      fullScreenPhoto.mode === 'before'
-                        ? pickBeforeLabelPosition(
-                            { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                            fullScreenPhoto
-                          )
-                        : pickAfterLabelPosition(
-                            { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                            fullScreenPhoto
-                          )
-                    }
-                  />
-                )}
+                {!fullScreenError && <PhotoLabels photo={fullScreenPhoto} />}
               </PannableImage>
             </View>
           </View>
@@ -2405,24 +2383,8 @@ export default function GalleryScreen({ navigation, route }) {
                 beforePhoto={fullScreenPhotoSet.before}
                 afterPhoto={fullScreenPhotoSet.after}
                 mode={compareMode}
-                renderBeforeOverlay={() => (showLabels ? (
-                  <PhotoLabel
-                    label="common.before"
-                    position={pickBeforeLabelPosition(
-                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                      fullScreenPhotoSet.before
-                    )}
-                  />
-                ) : null)}
-                renderAfterOverlay={() => (showLabels ? (
-                  <PhotoLabel
-                    label="common.after"
-                    position={pickAfterLabelPosition(
-                      { beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape },
-                      fullScreenPhotoSet.after
-                    )}
-                  />
-                ) : null)}
+                renderBeforeOverlay={() => <PhotoLabels photo={fullScreenPhotoSet.before} role="before" />}
+                renderAfterOverlay={() => <PhotoLabels photo={fullScreenPhotoSet.after} role="after" />}
               />
             </View>
             <CompareModeSwitcher

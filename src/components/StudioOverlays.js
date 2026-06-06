@@ -2,13 +2,18 @@
 // screen and the Home preview's "Edited" toggle so the preview shows
 // the exact same composition that the Studio renders (and that the
 // share/export pipeline ultimately bakes in).
+//
+// Label rendering lives in <PhotoLabels> (one source of truth, reads
+// SettingsContext directly). This file owns the *other* on-photo
+// overlays: watermark, brand logo, metadata, markup. Callers compose
+// PhotoLabels + StudioEditOverlays however they need.
 import React from 'react';
 import { View, Image, Text, StyleSheet } from 'react-native';
 import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } from 'react-native-svg';
 import { getLabelPositions } from '../constants/rooms';
-import PhotoLabel from './PhotoLabel';
 import PhotoWatermark from './PhotoWatermark';
-import { pickBeforeLabelPosition, pickAfterLabelPosition, pickBeforeLabelOffset, pickAfterLabelOffset } from '../utils/labelPosition';
+import PhotoLabels from './PhotoLabels';
+import { useSettings } from '../context/SettingsContext';
 
 export const LOGO_SIZE_PX = { small: 40, medium: 60, large: 84 };
 export const META_FONT_PX = { small: 11, medium: 14, large: 18 };
@@ -246,121 +251,47 @@ export function PhotoMarkupOverlay({ photo, theme }) {
 
 // Composite renderer: stacks ALL studio-style overlays the user might
 // have enabled in Settings, in the same z-order the Studio screen uses.
-// Each piece is gated by the relevant Settings flag — so the preview
-// reflects exactly what's currently turned on. Callers pass the photo +
-// the full bundle of settings; this keeps the renderer dumb and easy
-// to reason about.
+// Reads watermark/brand/metadata state from SettingsContext so callers
+// only need to pass `photo` (+ optional `renderLabels` / `combinedLayout`).
+//
+// Labels delegate to <PhotoLabels> (single source of truth). Pass
+// `renderLabels={false}` when the caller is already drawing labels
+// outside this composite — e.g. HomeScreen draws PhotoLabels always,
+// but gates the rest of the overlays behind the "Edited" toggle.
 export function StudioEditOverlays({
   photo,
   theme,
-  // labels
-  showLabels,
-  labelPositionSettings,
-  // watermark
-  showWatermark,
-  // brand logo
-  showBrandLogo,
-  brandLogoUri,
-  brandLogoPosition,
-  brandLogoSize,
-  brandLogoOffset,
-  // metadata
-  showPreviewMetadata,
-  location,
-  metaShowDate,
-  metaShowTime,
-  metaShowAddress,
-  metaShowGps,
-  metaPosition,
-  metaColor,
-  metaOpacity,
-  metaFontSize,
-  metaFontFamily,
-  metaOffset,
-  // combined-photo label layout: when true, render BEFORE / AFTER on
-  // opposing halves of the photo. Callers pass the half-container Views
-  // because the geometry depends on the preview's slot dimensions.
-  combinedLabelLayout,
+  renderLabels = true,
+  combinedLayout = 'side',
 }) {
+  const s = useSettings();
   if (!photo) return null;
-  const role = photo.mode;
-  const isCombined = role === 'combined' || role === 'mix';
   return (
     <>
-      {showLabels && (() => {
-        if (isCombined && combinedLabelLayout) {
-          const { LeftHalf, RightHalf } = combinedLabelLayout;
-          return (
-            <>
-              <LeftHalf>
-                <PhotoLabel
-                  label="common.before"
-                  position={pickBeforeLabelPosition(labelPositionSettings, photo)}
-                  freeformOffset={pickBeforeLabelOffset(labelPositionSettings, photo)}
-                />
-              </LeftHalf>
-              <RightHalf>
-                <PhotoLabel
-                  label="common.after"
-                  position={pickAfterLabelPosition(labelPositionSettings, photo)}
-                  freeformOffset={pickAfterLabelOffset(labelPositionSettings, photo)}
-                />
-              </RightHalf>
-            </>
-          );
-        }
-        if (role === 'before') {
-          return (
-            <PhotoLabel
-              label="common.before"
-              position={pickBeforeLabelPosition(labelPositionSettings, photo)}
-              freeformOffset={pickBeforeLabelOffset(labelPositionSettings, photo)}
-            />
-          );
-        }
-        if (role === 'after') {
-          return (
-            <PhotoLabel
-              label="common.after"
-              position={pickAfterLabelPosition(labelPositionSettings, photo)}
-              freeformOffset={pickAfterLabelOffset(labelPositionSettings, photo)}
-            />
-          );
-        }
-        if (role === 'progress') {
-          return (
-            <PhotoLabel
-              label="common.progress"
-              position={pickAfterLabelPosition(labelPositionSettings, photo)}
-              freeformOffset={pickAfterLabelOffset(labelPositionSettings, photo)}
-            />
-          );
-        }
-        return null;
-      })()}
-      {showWatermark && <PhotoWatermark photo={photo} />}
-      {showBrandLogo && brandLogoUri && (
+      {renderLabels && <PhotoLabels photo={photo} combinedLayout={combinedLayout} />}
+      {s.showWatermark && <PhotoWatermark photo={photo} />}
+      {s.showBrandLogo && s.brandLogoUri && (
         <BrandLogoOverlay
-          uri={brandLogoUri}
-          position={brandLogoPosition}
-          size={brandLogoSize}
-          offset={brandLogoOffset}
+          uri={s.brandLogoUri}
+          position={s.brandLogoPosition}
+          size={s.brandLogoSize}
+          offset={s.brandLogoOffset}
         />
       )}
-      {showPreviewMetadata && (
+      {s.showPreviewMetadata && (
         <MetadataOverlay
           photo={photo}
-          location={location}
-          showDate={metaShowDate}
-          showTime={metaShowTime}
-          showAddress={metaShowAddress}
-          showGps={metaShowGps}
-          position={metaPosition}
-          color={metaColor}
-          opacity={metaOpacity}
-          fontSize={metaFontSize}
-          fontFamily={metaFontFamily}
-          offset={metaOffset}
+          location={s.location}
+          showDate={s.metaShowDate}
+          showTime={s.metaShowTime}
+          showAddress={s.metaShowAddress}
+          showGps={s.metaShowGps}
+          position={s.metaPosition}
+          color={s.metaColor}
+          opacity={s.metaOpacity}
+          fontSize={s.metaFontSize}
+          fontFamily={s.metaFontFamily}
+          offset={s.metaOffset}
         />
       )}
       <PhotoMarkupOverlay photo={photo} theme={theme} />

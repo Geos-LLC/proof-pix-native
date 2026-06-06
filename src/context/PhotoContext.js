@@ -365,6 +365,35 @@ export const PhotoProvider = ({ children }) => {
     await savePhotos(newPhotos);
   };
 
+  // Set or remove a single override field on a photo. The overrides
+  // object is sparse — only fields the user has explicitly customized
+  // for *this* photo land here. Reads cascade `photo.overrides[key] ??
+  // global[key]`, so unset fields keep following global Settings.
+  //
+  // Passing null/undefined as the value removes that key from the
+  // overrides object. When the object becomes empty, we collapse it
+  // to null so the photo cleanly follows global again.
+  const setPhotoOverride = async (photoId, key, value) => {
+    if (!photoId || !key) return;
+    const target = photosRef.current.find(p => p.id === photoId);
+    if (!target) return;
+    const next = { ...(target.overrides || {}) };
+    if (value === null || value === undefined) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    const nextOverrides = Object.keys(next).length ? next : null;
+    await updatePhoto(photoId, { overrides: nextOverrides });
+  };
+
+  // Drop the entire overrides object for a photo. The photo goes
+  // back to following global Settings live.
+  const clearPhotoOverrides = async (photoId) => {
+    if (!photoId) return;
+    await updatePhoto(photoId, { overrides: null });
+  };
+
   const deletePhoto = async (photoId, options = {}) => {
     if (!photosLoadedRef.current) {
       console.warn('[PhotoContext] deletePhoto called before loadPhotos completed — skipping to avoid wiping storage', photoId);
@@ -513,6 +542,20 @@ export const PhotoProvider = ({ children }) => {
     } catch (error) {
       throw error;
     }
+  };
+
+  // Generic shallow-merge patch for a project record. Used by the
+  // Report editor to remember the user's last-picked layout + options
+  // per project without bloating PhotoContext with one setter per field.
+  const patchProject = async (projectId, patch) => {
+    if (!projectId || !patch || typeof patch !== 'object') return;
+    const updated = projects.map(p =>
+      p.id === projectId ? { ...p, ...patch } : p
+    );
+    setProjects(updated);
+    try {
+      await saveProjects(updated);
+    } catch (_) { /* persistence best-effort; state still reflects patch */ }
   };
 
   const getPhotosByProject = (projectId) => {
@@ -664,6 +707,8 @@ export const PhotoProvider = ({ children }) => {
     loading,
     addPhoto,
     updatePhoto,
+    setPhotoOverride,
+    clearPhotoOverrides,
     deletePhoto,
     deletePhotoSet,
     deleteAllPhotos,
@@ -674,6 +719,7 @@ export const PhotoProvider = ({ children }) => {
     createProject,
     assignPhotosToProject,
     renameProject,
+    patchProject,
     getPhotosByProject,
     deleteProject,
     getPhotosByRoom,

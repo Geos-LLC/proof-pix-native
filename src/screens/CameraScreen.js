@@ -2491,6 +2491,11 @@ export default function CameraScreen({ route, navigation }) {
                   beforePhotoId: activeBeforePhoto.id,
                   combinedLayout: layout,
                   timestamp: Date.now(),
+                  // Inherit GPS from the before photo so combined photos
+                  // pin to the same place on the project map.
+                  ...(typeof activeBeforePhoto?.lat === 'number' && typeof activeBeforePhoto?.lng === 'number'
+                    ? { lat: activeBeforePhoto.lat, lng: activeBeforePhoto.lng }
+                    : {}),
                 };
                 await addPhoto(combinedPhoto);
 
@@ -2697,6 +2702,11 @@ export default function CameraScreen({ route, navigation }) {
                   beforePhotoId: activeBeforePhoto.id,
                   combinedLayout: layout,
                   timestamp: Date.now(),
+                  // Inherit GPS from the before photo so combined photos
+                  // pin to the same place on the project map.
+                  ...(typeof activeBeforePhoto?.lat === 'number' && typeof activeBeforePhoto?.lng === 'number'
+                    ? { lat: activeBeforePhoto.lat, lng: activeBeforePhoto.lng }
+                    : {}),
                 };
                 await addPhoto(combinedPhoto);
 
@@ -3489,8 +3499,18 @@ export default function CameraScreen({ route, navigation }) {
                       isLight
                         ? { backgroundColor: '#000', borderColor: '#000' }
                         : null,
+                      !selectedBeforePhoto?.id ? { opacity: 0.4 } : null,
                     ]}
-                    onPress={() => { /* recording wiring lands later */ }}
+                    onPress={() => {
+                      // Route to the working Studio Notes recorder
+                      // (StudioDetail defaults to the Notes tab). The
+                      // mid-icon button targets the active set's
+                      // before photo since that's the "current subject"
+                      // of the capture flow.
+                      if (!selectedBeforePhoto?.id) return;
+                      navigation.navigate('StudioDetail', { photoId: selectedBeforePhoto.id });
+                    }}
+                    disabled={!selectedBeforePhoto?.id}
                     activeOpacity={0.7}
                   >
                     <Ionicons
@@ -4122,12 +4142,17 @@ export default function CameraScreen({ route, navigation }) {
             return (
               <View style={styles.notesAudioRow}>
                 <TouchableOpacity
-                  style={styles.notesAudioBtn}
+                  style={[styles.notesAudioBtn, !centeredPhoto?.id ? { opacity: 0.5 } : null]}
                   onPress={() => {
-                    // Placeholder — recording wiring lands in a later
-                    // task. For now we just acknowledge the tap so the
-                    // button doesn't feel dead.
+                    // Hand off to the working Studio Notes recorder
+                    // (StudioDetail defaults to the Notes tab). Audio
+                    // attaches to the currently centered photo in the
+                    // gallery strip — same target as the Notes button
+                    // below.
+                    if (!centeredPhoto?.id) return;
+                    navigation.navigate('StudioDetail', { photoId: centeredPhoto.id });
                   }}
+                  disabled={!centeredPhoto?.id}
                   activeOpacity={0.7}
                 >
                   <Ionicons name="mic-outline" size={16} color="#F2C31B" />

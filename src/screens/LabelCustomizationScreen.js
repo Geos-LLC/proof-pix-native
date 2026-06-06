@@ -411,87 +411,22 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
+    <SafeAreaView style={styles.sheetContainer} edges={['top']}>
+      {/* Header — close (X) on the left matches the sheet presentation. */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.backButton}>
           <View style={styles.backButtonCircle}>
-            <Ionicons name="arrow-back" size={20} color={COLORS.TEXT} />
+            <Ionicons name="close" size={20} color={COLORS.TEXT} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Customize Labels</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      >
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          scrollEnabled={scrollEnabled}
-        >
-        {/* Preview — single square box that switches between portrait
-            (side-by-side, vertical divider) and landscape (stacked, horizontal
-            divider) per the codebase's isStackedLayout convention: portrait
-            photos combine side-by-side, landscape photos combine stacked. */}
-        <View style={styles.previewSection}>
-          <View style={styles.orientationTabsRow}>
-            {[
-              { key: 'portrait', label: 'Vertical' },
-              { key: 'landscape', label: 'Horizontal' },
-            ].map(({ key, label }) => (
-              <TouchableOpacity
-                key={key}
-                style={[
-                  styles.orientationTab,
-                  orientationTab === key && styles.orientationTabActive,
-                ]}
-                onPress={() => setOrientationTab(key)}
-              >
-                <Text style={[
-                  styles.orientationTabText,
-                  orientationTab === key && styles.orientationTabTextActive,
-                ]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* SINGLE photo background (no duplicated halves). For
-              combined photos we show the merged image once and overlay
-              BOTH labels at their respective half-positions. For single
-              photos (Before / After / Progress) we show the photo and a
-              single label. Labels are drag-and-droppable — release
-              snaps to the nearest of 9 grid cells in their half. */}
-          <PreviewArea
-            photo={previewPhoto}
-            isCombined={previewPhoto?.mode === PHOTO_MODES.COMBINED}
-            isHorizontal={isHorizontal}
-            beforePos={activeBeforePos}
-            afterPos={activeAfterPos}
-            beforeOffset={activeBeforeOffset}
-            afterOffset={activeAfterOffset}
-            onBeforeOffsetChange={updateActiveBeforeOffset}
-            onAfterOffsetChange={updateActiveAfterOffset}
-            onDragStart={() => setScrollEnabled(false)}
-            onDragEnd={() => setScrollEnabled(true)}
-            labelBackgroundColor={labelBackgroundColor}
-            labelTextColor={labelTextColor}
-            labelCornerStyle={labelCornerStyle}
-            labelFontFamily={labelFontFamily}
-            currentSize={currentSize}
-            marginV={labelMarginVertical}
-            marginH={labelMarginHorizontal}
-          />
-        </View>
-
-        {/* Label Section */}
-        <Text style={styles.sectionTitle}>Label</Text>
-        
-        {/* Control Buttons Row 1 */}
+      <View style={styles.sheetBody}>
+        {/* Sheet is tools only. Drag-and-drop happens on the Studio
+            photo behind the sheet — see DraggableLabelOverlay in
+            StudioScreen. */}
         <View style={styles.controlsRow}>
           <ControlButton
             icon="ellipse-outline"
@@ -502,53 +437,17 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
               await updateLabelCornerStyle(newStyle);
             }}
           />
-          <ControlButton
-            icon="text"
-            label="Font"
-            onPress={() => setFontModalVisible(true)}
-          />
-          <ControlButton
-            icon="resize"
-            label="Size"
-            onPress={() => setSizeModalVisible(true)}
-          />
-          <ColorControlButton
-            color={labelBackgroundColor}
-            label="BG Color"
-            selected={true}
-            onPress={() => openColorModal('bg')}
-          />
+          <ControlButton icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
+          <ControlButton icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
+          <ColorControlButton color={labelBackgroundColor} label="BG Color" selected={true} onPress={() => openColorModal('bg')} />
         </View>
-
-        {/* Control Buttons Row 2 — keeps an even 4+4 split with row 1 */}
         <View style={styles.controlsRow}>
-          <ColorControlButton
-            color={labelTextColor}
-            label="Text Color"
-            onPress={() => openColorModal('text')}
-          />
-          <ControlButton
-            icon="move"
-            label="Position"
-            onPress={() => setPositionModalVisible(true)}
-          />
-          <ControlButton
-            icon="swap-horizontal-outline"
-            label="Margin"
-            onPress={() => setMarginModalVisible(true)}
-          />
-          <ControlButton
-            icon="language"
-            label="Language"
-            onPress={() => setLanguageModalVisible(true)}
-          />
+          <ColorControlButton color={labelTextColor} label="Text Color" onPress={() => openColorModal('text')} />
+          <ControlButton icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+          <ControlButton icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
+          <ControlButton icon="language" label="Language" onPress={() => setLanguageModalVisible(true)} />
         </View>
-
-        {/* Watermark customization lives on the dedicated Watermark
-            Customization screen now — the Labels screen is for label
-            styling only. */}
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* Font Modal */}
       <BottomModal
@@ -1042,8 +941,14 @@ function PreviewArea({
         : { x: layout.w / 2, y: 0, w: layout.w / 2, h: layout.h })
     : null;
 
+  // Preview aspect tracks the active orientation tab — Vertical shows
+  // a 9:16 portrait box, Horizontal shows a 16:9 landscape box. Without
+  // this, both tabs look identical and the user can't tell that
+  // switching to Horizontal will edit a different stored position.
+  const previewAspect = isHorizontal ? 16 / 9 : 9 / 16;
+
   return (
-    <View style={styles.previewSquare} onLayout={onLayout}>
+    <View style={[styles.previewSquare, { aspectRatio: previewAspect }]} onLayout={onLayout}>
       {photo?.uri ? (
         <Image source={{ uri: photo.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       ) : (
@@ -1254,6 +1159,18 @@ function DraggableLabel({
 }
 
 const styles = StyleSheet.create({
+  // Sheet-mode root — no flex:1, so iOS formSheet's fitToContents
+  // detent can measure the screen's intrinsic content height and
+  // shrink the sheet to exactly that size.
+  sheetContainer: {
+    backgroundColor: 'white',
+  },
+  sheetBody: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+    gap: 16,
+  },
   container: {
     flex: 1,
     backgroundColor: 'white',
@@ -1309,13 +1226,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Compact preview for the sheet — fixed height (so the sheet stays
+  // small) with aspect-preserved width. Centered inside its slot via
+  // the parent's alignItems.
   previewSquare: {
-    width: '100%',
+    height: 160,
     aspectRatio: 1,
+    alignSelf: 'center',
     position: 'relative',
-    backgroundColor: '#E0E0E0',
-    borderRadius: 8,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 10,
     overflow: 'hidden',
+    marginBottom: 12,
   },
   previewHalfBefore: {
     flex: 1,

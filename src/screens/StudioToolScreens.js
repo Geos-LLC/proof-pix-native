@@ -12,6 +12,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { FONTS } from '../constants/fonts';
 import { usePhotos } from '../context/PhotoContext';
+import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../hooks/useTheme';
 
 // Common scaffold for each Studio sub-screen. Header with back arrow, title,
@@ -195,7 +196,11 @@ const LABEL_POSITIONS = [
 
 export function StudioLabelsScreen({ route, navigation }) {
   const theme = useTheme();
-  const [showLabels, setShowLabels] = useState(true);
+  // The Show Labels switch is the same global setting Settings + the
+  // Gallery toggle write to — local useState here would have been a
+  // no-op that silently lied to the user. Reading from SettingsContext
+  // wires this switch into the one source of truth.
+  const { showLabels, toggleLabels } = useSettings();
   const [beforeLabel, setBeforeLabel] = useState('Start');
   const [progressLabel, setProgressLabel] = useState('Progress');
   const [afterLabel, setAfterLabel] = useState('Finished');
@@ -207,8 +212,8 @@ export function StudioLabelsScreen({ route, navigation }) {
       <View style={[styles.toggleRow, { backgroundColor: theme.surface }]}>
         <Text style={[styles.toggleLabel, { color: theme.textPrimary }]}>Show Labels</Text>
         <Switch
-          value={showLabels}
-          onValueChange={setShowLabels}
+          value={!!showLabels}
+          onValueChange={toggleLabels}
           trackColor={{ false: '#E0E0E0', true: theme.accent }}
           thumbColor="#FFFFFF"
         />

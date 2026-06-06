@@ -69,6 +69,12 @@ export const savePhotosMetadata = async (photos) => {
       originalWidth: p.originalWidth,
       originalHeight: p.originalHeight,
       uri: p.uri, // File URI in device storage
+      // GPS pair captured at shutter time by CameraScreen
+      // (captureGpsForPhoto). Drives the ProjectDetail Location-tab
+      // MapView pins. Whitelisted explicitly because savePhotos used
+      // to drop these fields, leaving the map silently empty.
+      lat: typeof p.lat === 'number' ? p.lat : (typeof p.latitude === 'number' ? p.latitude : null),
+      lng: typeof p.lng === 'number' ? p.lng : (typeof p.longitude === 'number' ? p.longitude : null),
       projectId: p.projectId || null
     }));
 

@@ -19,9 +19,21 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+// expo-print is lazy-loaded inside generateReportFile via require() so a
+// missing native module on older binaries doesn't crash this screen at
+// import time. Without the lazy guard, expo-print's top-level
+// `requireNativeModule('ExpoPrint')` throws on module load and takes
+// the whole report screen down.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { usePhotos } from '../context/PhotoContext';
+import {
+  generateReport,
+  getLayout,
+  resolveOptions,
+  OPTION_META,
+  DEFAULT_LAYOUT_ID,
+} from '../reports';
 
 // Storage key for the report's selected photo ids — legacy, retained
 // so the Default-settings reset can still wipe it cleanly when an
@@ -31,8 +43,11 @@ const reportSelectionKey = (projectId) => `project:${projectId}:reportPhotoIds`;
 
 // Storage key for the project's reports list. Each report is a saved
 // configuration the user can re-open, update, or generate later:
-//   { id, title, photoIds, photoCount, includeNotes, includeMap,
-//     createdAt, updatedAt, generatedFilePath?, generatedAt? }
+//   { id, title, photoIds, photoCount, layoutType, options,
+//     createdAt, updatedAt, generatedFilePath?, generatedPdfPath?,
+//     generatedAt? }
+// Legacy records may carry `includeNotes`/`includeMap` instead of
+// `options`; the editor seeder migrates them on first open.
 // generatedFilePath + generatedAt are set after the user successfully
 // builds + shares the report; subsequent shares reuse the file from
 // disk without regenerating, until the user explicitly hits Regenerate.
@@ -151,7 +166,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto } = usePhotos();
+  const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject } = usePhotos();
   const {
     getRooms,
     showLabels,
@@ -184,13 +199,14 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // `reportTitle` is seeded from project name + global location once the
   // project is resolved; user can edit. `reportPhotoCount` is the max
   // number of photos to include (capped at the project's total).
-  // `reportIncludeNotes` toggles note text below each photo.
-  // `reportIncludeMap` is wired but disabled — implementation comes
-  // later. `isBuildingReport` blocks the button while we compose.
+  // `reportLayoutType` + `reportOptions` are the layout choice + the
+  // option overrides the user has flipped in the editor; both live as
+  // draft state and only get committed to the report record on
+  // Generate. `isBuildingReport` blocks the button while we compose.
   const [reportTitle, setReportTitle] = useState('');
   const [reportPhotoCount, setReportPhotoCount] = useState(0);
-  const [reportIncludeNotes, setReportIncludeNotes] = useState(true);
-  const [reportIncludeMap, setReportIncludeMap] = useState(false);
+  const [reportLayoutType, setReportLayoutType] = useState(DEFAULT_LAYOUT_ID);
+  const [reportOptions, setReportOptions] = useState({});
   const [isBuildingReport, setIsBuildingReport] = useState(false);
 
   // Selection mode for the Timeline grid. Enters via the
@@ -293,25 +309,52 @@ export default function ProjectDetailScreen({ route, navigation }) {
     if (reportViewMode !== 'editor') return;
     if (activeReport) {
       // Editing an existing report — load its fields into the form.
+      // Legacy reports without layoutType render as Room-by-Room.
       setReportTitle(activeReport.title || '');
       setReportPhotoCount(activeReport.photoCount || (activeReport.photoIds?.length ?? 0));
-      setReportIncludeNotes(activeReport.includeNotes !== false);
-      setReportIncludeMap(!!activeReport.includeMap);
+      setReportLayoutType(activeReport.layoutType || DEFAULT_LAYOUT_ID);
+      // Merge any legacy `includeNotes` field into the new options
+      // object so editing an old report doesn't silently flip the
+      // toggle off.
+      const legacyMerge = {};
+      if (typeof activeReport.includeNotes === 'boolean') legacyMerge.includeNotes = activeReport.includeNotes;
+      setReportOptions({ ...legacyMerge, ...(activeReport.options || {}) });
       setEditorPhotoIds(activeReport.photoIds || []);
     } else {
-      // New draft — sensible defaults that don't touch the reports
-      // list yet. The next sequence number is derived from the
-      // current list length so the user sees a unique title hint.
+      // New draft — seed from project's last-used layout/options when
+      // available, otherwise the engine defaults. Title gets a unique
+      // sequence hint from the current list length.
       const idx = reports.length + 1;
       const baseTitle = [project?.name || 'Report', `#${idx}`].join(' ');
       setReportTitle(baseTitle);
       setReportPhotoCount(projectPhotos.length);
-      setReportIncludeNotes(true);
-      setReportIncludeMap(false);
+      setReportLayoutType(project?.lastReportLayoutType || DEFAULT_LAYOUT_ID);
+      setReportOptions(project?.lastReportOptions ? { ...project.lastReportOptions } : {});
       setEditorPhotoIds(projectPhotos.map((p) => p.id));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportViewMode, activeReportId]);
+
+  // When the Report Style picker returns a selection it sets the
+  // `pendingLayoutType` route param. Apply it to draft state, clear
+  // the param so re-opening the editor doesn't re-trigger, and reset
+  // any options whose layout no longer supports them (so toggling
+  // back to a previous layout doesn't carry stale toggles forward).
+  useEffect(() => {
+    const pending = route?.params?.pendingLayoutType;
+    if (!pending) return;
+    setReportLayoutType(pending);
+    setReportOptions((prev) => {
+      const layout = getLayout(pending);
+      const supported = new Set(layout.supportedOptions);
+      const next = {};
+      for (const k of Object.keys(prev || {})) {
+        if (supported.has(k)) next[k] = prev[k];
+      }
+      return next;
+    });
+    navigation.setParams({ pendingLayoutType: undefined });
+  }, [route?.params?.pendingLayoutType, navigation]);
   const timelineGroups = useMemo(() => buildTimeline(projectPhotos), [projectPhotos]);
 
   const handleRoomTap = (dateKey, roomName) => {
@@ -430,8 +473,8 @@ export default function ProjectDetailScreen({ route, navigation }) {
       title: baseTitle,
       photoIds: ids,
       photoCount: ids.length,
-      includeNotes: true,
-      includeMap: false,
+      layoutType: project?.lastReportLayoutType || DEFAULT_LAYOUT_ID,
+      options: project?.lastReportOptions ? { ...project.lastReportOptions } : {},
       createdAt: ts,
       updatedAt: ts,
     };
@@ -565,77 +608,27 @@ export default function ProjectDetailScreen({ route, navigation }) {
     }
   };
 
-  const escapeHtml = (s) => String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-  // Build the report's HTML body. Self-contained — embeds the logo +
-  // every photo as data URIs so opening the file in Safari → Print →
-  // Save as PDF produces the full report end-to-end. When we add
-  // expo-print in a later native build, this same HTML string can be
-  // fed to Print.printToFileAsync({ html }) for a true PDF.
-  const buildReportHtml = async ({ title, photos, includeNotes, logoUri }) => {
-    const logoData = logoUri ? await fileToDataUri(logoUri, 'image/png') : null;
-    const today = new Date().toLocaleDateString('en-US', {
-      month: 'long', day: 'numeric', year: 'numeric',
+  // Build the report's HTML body via the layout dispatcher. The
+  // engine resolves the layout (legacy reports → Room-by-Room) and
+  // merges user options over the layout's defaults; output is a
+  // self-contained HTML string (logo + photos embedded as data URIs)
+  // suitable for sharing or feeding to expo-print for PDF.
+  const buildReportHtml = async ({ title, photos, layoutType, options, logoUri }) => {
+    return generateReport({
+      project: {
+        title,
+        location: location || '',
+        generatedAt: Date.now(),
+      },
+      photos,
+      layoutType: layoutType || DEFAULT_LAYOUT_ID,
+      options: options || {},
+      branding: { logoUri: logoUri || null },
+      helpers: {
+        fileToDataUri,
+        displayRoomName,
+      },
     });
-
-    const photoChunks = await Promise.all(photos.map(async (p) => {
-      const data = await fileToDataUri(p.uri);
-      const note = includeNotes && p?.notes ? p.notes : '';
-      const ts = typeof p.timestamp === 'number'
-        ? p.timestamp
-        : (p?.createdAt ? new Date(p.createdAt).getTime() : 0);
-      const dateLabel = ts
-        ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-        : '';
-      const roomName = displayRoomName(p.room || '');
-      return `
-        <div class="photo">
-          ${data ? `<img src="${data}" alt="" />` : `<div class="missing">Image unavailable</div>`}
-          <div class="meta">
-            <div class="meta-line">${escapeHtml(roomName)}${dateLabel ? ` &middot; ${escapeHtml(dateLabel)}` : ''}</div>
-            ${note ? `<div class="note">${escapeHtml(note)}</div>` : ''}
-          </div>
-        </div>
-      `;
-    }));
-
-    return `<!doctype html>
-<html><head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${escapeHtml(title)}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1A1A1A; background: #FFFFFF; }
-  header { display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #1A1A1A; padding-bottom: 14px; margin-bottom: 18px; }
-  header img.logo { max-height: 60px; max-width: 160px; object-fit: contain; }
-  header .header-text { flex: 1; }
-  h1 { font-size: 22px; margin: 0; }
-  .meta-subtitle { color: #555; font-size: 12px; margin-top: 4px; }
-  .photo { page-break-inside: avoid; margin-bottom: 22px; border: 1px solid #E5E5E5; border-radius: 8px; overflow: hidden; }
-  .photo img { width: 100%; display: block; }
-  .photo .missing { padding: 40px; text-align: center; background: #F3F3F3; color: #999; }
-  .photo .meta { padding: 8px 12px; }
-  .meta-line { font-size: 11px; color: #555; }
-  .note { margin-top: 6px; font-size: 13px; color: #1A1A1A; white-space: pre-wrap; }
-  footer { margin-top: 18px; font-size: 10px; color: #888; text-align: center; }
-</style>
-</head><body>
-<header>
-  ${logoData ? `<img class="logo" src="${logoData}" alt="" />` : ''}
-  <div class="header-text">
-    <h1>${escapeHtml(title)}</h1>
-    <div class="meta-subtitle">Generated ${escapeHtml(today)} &middot; ${photos.length} photo${photos.length === 1 ? '' : 's'}</div>
-  </div>
-</header>
-${photoChunks.join('\n')}
-<footer>Created with ProofPix.app</footer>
-</body></html>`;
   };
 
   // Build a report's HTML, save it to persistent storage, and patch
@@ -655,11 +648,17 @@ ${photoChunks.join('\n')}
     });
     const cap = Math.max(1, Math.min(report.photoCount || sorted.length, sorted.length));
     const chosen = sorted.slice(0, cap);
+    // Honor the "Include branding" option for which logo (if any) is
+    // passed to the engine. The engine also checks the option, but
+    // not passing the URI saves an unnecessary file read on the
+    // branding-off path.
+    const resolved = resolveOptions(report.layoutType || DEFAULT_LAYOUT_ID, report.options);
     const html = await buildReportHtml({
       title: report.title?.trim() || project.name,
       photos: chosen,
-      includeNotes: report.includeNotes !== false,
-      logoUri: brandLogoUri,
+      layoutType: report.layoutType || DEFAULT_LAYOUT_ID,
+      options: report.options || {},
+      logoUri: resolved.includeBranding === false ? null : brandLogoUri,
     });
     // Persistent reports/ directory inside documentDirectory.
     try {
@@ -672,47 +671,77 @@ ${photoChunks.join('\n')}
       .slice(0, 80);
     const target = `${reportsDir()}${safeName}-${report.id}.html`;
     await FileSystem.writeAsStringAsync(target, html);
+    // Try to render a companion PDF via expo-print. Loaded lazily
+    // because builds that pre-date the expo-print dependency don't
+    // have its native module, and expo-print throws at module
+    // import time when the native side is missing. Catching here
+    // keeps reports working (HTML-only) on older builds.
+    let pdfTarget = null;
+    try {
+      // eslint-disable-next-line global-require
+      const PrintMod = require('expo-print');
+      const printed = await PrintMod.printToFileAsync({ html, base64: false });
+      if (printed?.uri) {
+        const pdfDest = `${reportsDir()}${safeName}-${report.id}.pdf`;
+        try { await FileSystem.deleteAsync(pdfDest, { idempotent: true }); } catch (_) {}
+        await FileSystem.moveAsync({ from: printed.uri, to: pdfDest });
+        pdfTarget = pdfDest;
+      }
+    } catch (_) {
+      // PDF render failed (sandbox/perm/native module missing) —
+      // HTML still works.
+    }
     // Patch the report record so future shares can skip regenerate.
     await patchReport(report.id, {
       generatedFilePath: target,
+      generatedPdfPath: pdfTarget,
       generatedAt: Date.now(),
     });
-    return target;
+    return { html: target, pdf: pdfTarget };
   };
 
   // Share a report — uses the cached generated file when it still
   // exists on disk; regenerates and writes a fresh one otherwise.
   // Set `forceRegenerate` to true for the editor's "Generate & share"
   // button (the user explicitly wants the latest content).
-  const handleShareReport = async (reportId, { forceRegenerate = false } = {}) => {
+  const handleShareReport = async (reportId, { forceRegenerate = false, format = 'pdf' } = {}) => {
     if (!project) return;
     if (isBuildingReport) return;
     setIsBuildingReport(true);
     try {
       const r = reports.find((rr) => rr.id === reportId);
       if (!r) return;
-      let target = r.generatedFilePath;
-      let needsRegenerate = forceRegenerate || !target;
-      if (target && !needsRegenerate) {
+      let htmlTarget = r.generatedFilePath;
+      let pdfTarget = r.generatedPdfPath;
+      let needsRegenerate = forceRegenerate || !htmlTarget;
+      if (htmlTarget && !needsRegenerate) {
         try {
-          const info = await FileSystem.getInfoAsync(target);
+          const info = await FileSystem.getInfoAsync(htmlTarget);
           if (!info.exists) needsRegenerate = true;
         } catch (_) {
           needsRegenerate = true;
         }
       }
+      // Asking for PDF but we don't have one cached → regenerate.
+      if (format === 'pdf' && !pdfTarget) needsRegenerate = true;
       if (needsRegenerate) {
-        target = await generateReportFile(r);
+        const out = await generateReportFile(r);
+        htmlTarget = out?.html || null;
+        pdfTarget = out?.pdf || null;
       }
+      // Prefer the requested format; fall back gracefully when PDF
+      // failed to render (e.g. expo-print unavailable in this build).
+      const target = format === 'pdf' ? (pdfTarget || htmlTarget) : (htmlTarget || pdfTarget);
       if (!target) {
         Alert.alert('Could not share', 'No file produced.');
         return;
       }
+      const isPdf = target.endsWith('.pdf');
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(target, {
-          mimeType: 'text/html',
-          UTI: 'public.html',
+          mimeType: isPdf ? 'application/pdf' : 'text/html',
+          UTI: isPdf ? 'com.adobe.pdf' : 'public.html',
           dialogTitle: 'Share report',
         });
       } else {
@@ -754,8 +783,8 @@ ${photoChunks.join('\n')}
                 title: baseTitle,
                 photoIds: draftIds,
                 photoCount: Math.max(1, Math.min(reportPhotoCount || draftIds.length, draftIds.length || 1)),
-                includeNotes: reportIncludeNotes,
-                includeMap: reportIncludeMap,
+                layoutType: reportLayoutType || DEFAULT_LAYOUT_ID,
+                options: { ...reportOptions },
                 updatedAt: ts,
               }
             : r,
@@ -768,8 +797,8 @@ ${photoChunks.join('\n')}
           title: baseTitle,
           photoIds: draftIds,
           photoCount: Math.max(1, Math.min(reportPhotoCount || draftIds.length, draftIds.length || 1)),
-          includeNotes: reportIncludeNotes,
-          includeMap: reportIncludeMap,
+          layoutType: reportLayoutType || DEFAULT_LAYOUT_ID,
+          options: { ...reportOptions },
           createdAt: ts,
           updatedAt: ts,
         };
@@ -777,6 +806,16 @@ ${photoChunks.join('\n')}
         nextReports = [...reports, newReport];
       }
       await persistReports(nextReports);
+      // Remember the layout + options on the project record so the
+      // next new draft pre-fills the same style. Best-effort — if
+      // the save fails the editor still works; user just won't get
+      // the pre-fill next time.
+      if (project?.id && patchProject) {
+        await patchProject(project.id, {
+          lastReportLayoutType: reportLayoutType || DEFAULT_LAYOUT_ID,
+          lastReportOptions: { ...reportOptions },
+        });
+      }
       // generateReportFile reads from the reports list, so wait
       // a tick for state to settle before passing the target.
       const committedReport = nextReports.find((r) => r.id === targetReportId);
@@ -1421,39 +1460,118 @@ ${photoChunks.join('\n')}
                 </View>
               </View>
 
-              {/* Include notes toggle — draft only; persisted on
-                  Generate. */}
-              <View style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>Include notes</Text>
-                <Switch
-                  value={reportIncludeNotes}
-                  onValueChange={setReportIncludeNotes}
-                  trackColor={{ false: '#E0E0E0', true: theme.accent }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
+              {/* Style row — opens the layout picker. The label is
+                  the human-facing name of the selected layout (e.g.
+                  "Room-by-Room"). Selection round-trips via the
+                  pendingLayoutType route param + useEffect above. */}
+              {(() => {
+                const currentLayout = getLayout(reportLayoutType);
+                return (
+                  <>
+                    <Text style={[styles.reportSectionLabel, { color: theme.textSecondary }]}>STYLE</Text>
+                    <TouchableOpacity
+                      style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                      onPress={() => navigation.navigate('ReportStyle', { current: reportLayoutType })}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>
+                          {currentLayout.name}
+                        </Text>
+                        <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>
+                          {currentLayout.description}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+                    </TouchableOpacity>
 
-              {/* Include map — wired but disabled. The check below
-                  short-circuits the toggle so the visual state stays
-                  off until the implementation lands in a later pass. */}
-              <View style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border, opacity: 0.55 }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>Include map</Text>
-                  <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>Coming soon</Text>
-                </View>
-                <Switch
-                  value={reportIncludeMap}
-                  onValueChange={() => {}}
-                  disabled
-                  trackColor={{ false: '#E0E0E0', true: theme.accent }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
+                    {/* Layout-specific options — rendered from the
+                        layout's supportedOptions + OPTION_META. Hidden
+                        keys (i.e. options the active layout doesn't
+                        declare) are kept in `reportOptions` only until
+                        the user changes the layout, at which point the
+                        useEffect above prunes them. */}
+                    {currentLayout.supportedOptions.length > 0 && (
+                      <Text style={[styles.reportSectionLabel, { color: theme.textSecondary, marginTop: 6 }]}>OPTIONS</Text>
+                    )}
+                    {currentLayout.supportedOptions.map((key) => {
+                      const meta = OPTION_META[key];
+                      if (!meta) return null;
+                      const resolved = resolveOptions(currentLayout.id, reportOptions);
+                      const value = resolved[key];
+                      const update = (next) => {
+                        setReportOptions((prev) => ({ ...prev, [key]: next }));
+                      };
+                      if (meta.control === 'segmented') {
+                        return (
+                          <View
+                            key={key}
+                            style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                          >
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>{meta.label}</Text>
+                              {meta.description ? (
+                                <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
+                              ) : null}
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              {meta.choices.map((choice) => {
+                                const active = value === choice.value;
+                                return (
+                                  <TouchableOpacity
+                                    key={String(choice.value)}
+                                    onPress={() => update(choice.value)}
+                                    style={{
+                                      paddingHorizontal: 12,
+                                      paddingVertical: 6,
+                                      borderRadius: 6,
+                                      borderWidth: 1,
+                                      borderColor: active ? theme.accent : theme.border,
+                                      backgroundColor: active ? theme.accent : 'transparent',
+                                    }}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Text style={{
+                                      color: active ? theme.accentText : theme.textPrimary,
+                                      fontWeight: '600',
+                                      fontSize: 12,
+                                    }}>{choice.label}</Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        );
+                      }
+                      // default: switch
+                      return (
+                        <View
+                          key={key}
+                          style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>{meta.label}</Text>
+                            {meta.description ? (
+                              <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
+                            ) : null}
+                          </View>
+                          <Switch
+                            value={!!value}
+                            onValueChange={update}
+                            trackColor={{ false: '#E0E0E0', true: theme.accent }}
+                            thumbColor="#FFFFFF"
+                          />
+                        </View>
+                      );
+                    })}
+                  </>
+                );
+              })()}
 
               {/* Generate — commits the draft (new record on first
                   generate, or update on subsequent), builds the
-                  HTML file, then jumps to the preview view where
-                  the user can share. */}
+                  HTML + PDF files, then jumps to the preview view
+                  where the user can share. */}
               <TouchableOpacity
                 style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent, opacity: isBuildingReport ? 0.7 : 1 }]}
                 onPress={handleGenerateReport}
@@ -1472,7 +1590,7 @@ ${photoChunks.join('\n')}
                 )}
               </TouchableOpacity>
               <Text style={[styles.reportFooterNote, { color: theme.textSecondary }]}>
-                Report exports as a self-contained HTML file. Open it in Safari → Share → Print → Save as PDF to send a polished PDF version. Native PDF export ships in the next update.
+                Generates a PDF (and a portable HTML copy) using the selected style.
               </Text>
             </View>
           );
@@ -1522,8 +1640,8 @@ ${photoChunks.join('\n')}
                     {activeReport.title || 'Untitled report'}
                   </Text>
                   <Text style={[styles.reportPreviewMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {cappedPreview.length} {cappedPreview.length === 1 ? 'photo' : 'photos'}
-                    {activeReport.includeNotes === false ? '' : ' · notes'}
+                    {getLayout(activeReport.layoutType).name}
+                    {` · ${cappedPreview.length} ${cappedPreview.length === 1 ? 'photo' : 'photos'}`}
                     {activeReport.generatedAt ? ` · Generated ${new Date(activeReport.generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
                   </Text>
                 </View>

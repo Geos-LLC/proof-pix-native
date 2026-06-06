@@ -22,14 +22,14 @@ import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { PHOTO_MODES } from '../constants/rooms';
 import { usePhotos } from '../context/PhotoContext';
-import { useSettings } from '../context/SettingsContext';
+import { useScopedSettings, usePromoteOverridesToGlobal, useResetPhotoOverrides } from '../hooks/useScopedSettings';
 import { useTheme } from '../hooks/useTheme';
-import PhotoLabel from '../components/PhotoLabel';
+import PhotoLabels from '../components/PhotoLabels';
+import DraggableLabelOverlay from '../components/DraggableLabelOverlay';
 import PhotoWatermark from '../components/PhotoWatermark';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
 import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
-import { pickBeforeLabelPosition, pickAfterLabelPosition, pickBeforeLabelOffset, pickAfterLabelOffset } from '../utils/labelPosition';
 import { getLabelPositions } from '../constants/rooms';
 import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } from 'react-native-svg';
 import { Audio } from 'expo-av';
@@ -153,13 +153,6 @@ const modeBadgeText = (mode) => {
   return 'PROGRESS';
 };
 
-const labelForMode = (mode) => {
-  if (mode === PHOTO_MODES.BEFORE) return 'common.before';
-  if (mode === PHOTO_MODES.AFTER) return 'common.after';
-  if (mode === PHOTO_MODES.PROGRESS) return 'common.progress';
-  return null;
-};
-
 const watermarkPositionStyle = (pos) => {
   // Position keys come from SettingsContext; same set the watermark editor
   // uses. We map them to absolute coordinates inside the photo area.
@@ -193,6 +186,11 @@ export default function StudioScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { photos, updatePhoto } = usePhotos();
+  // Lifted above the settings destructure so useScopedSettings sees
+  // the photoId — every read here cascades photo.overrides over global,
+  // and the writers passed to the brand/watermark tile toggles route
+  // changes to photo.overrides so per-photo customizations persist.
+  const studioPhotoId = route?.params?.photoId;
   const {
     getRooms,
     showLabels,
@@ -214,14 +212,6 @@ export default function StudioScreen({ route, navigation }) {
     brandLogoSize,
     brandLogoOffset,
     updateBrandLogoOffset,
-    beforeLabelPosition,
-    afterLabelPosition,
-    beforeLabelPositionLandscape,
-    afterLabelPositionLandscape,
-    beforeLabelOffset,
-    afterLabelOffset,
-    beforeLabelOffsetLandscape,
-    afterLabelOffsetLandscape,
     showPreviewMetadata,
     togglePreviewMetadata,
     metaShowDate,
@@ -239,19 +229,9 @@ export default function StudioScreen({ route, navigation }) {
     labelMarginVertical,
     labelMarginHorizontal,
     location,
-  } = useSettings();
-  const labelPositionSettings = {
-    beforeLabelPosition,
-    afterLabelPosition,
-    beforeLabelPositionLandscape,
-    afterLabelPositionLandscape,
-    beforeLabelOffset,
-    afterLabelOffset,
-    beforeLabelOffsetLandscape,
-    afterLabelOffsetLandscape,
-  };
+  } = useScopedSettings(studioPhotoId);
 
-  const photoId = route?.params?.photoId;
+  const photoId = studioPhotoId;
   const photo = useMemo(
     () => (photoId ? photos.find((p) => String(p.id) === String(photoId)) : null),
     [photoId, photos]
@@ -527,6 +507,8 @@ export default function StudioScreen({ route, navigation }) {
   // the three apply-to scopes inline so the bottom of the screen stays
   // clean.
   const [saveMenuVisible, setSaveMenuVisible] = useState(false);
+  const promoteOverridesToGlobal = usePromoteOverridesToGlobal();
+  const resetPhotoOverrides = useResetPhotoOverrides();
   const [viewMode, setViewMode] = useState('side');
   // Initial pairTemplate is a neutral placeholder. The auto-default
   // effect below picks the right chip for each photo as it loads, but
@@ -801,18 +783,6 @@ export default function StudioScreen({ route, navigation }) {
     );
   }
 
-  // Use the same orientation-aware label-position picker HomeScreen does
-  // for its full-screen preview.
-  const labelKey = labelForMode(photo.mode);
-  const activeLabelPosition =
-    photo.mode === PHOTO_MODES.BEFORE
-      ? pickBeforeLabelPosition(labelPositionSettings, photo)
-      : pickAfterLabelPosition(labelPositionSettings, photo);
-  const activeLabelOffset =
-    photo.mode === PHOTO_MODES.BEFORE
-      ? pickBeforeLabelOffset(labelPositionSettings, photo)
-      : pickAfterLabelOffset(labelPositionSettings, photo);
-
   const beforeForCompare = pairResolved.beforePhoto;
   const afterForCompare = pairResolved.afterPhoto;
 
@@ -894,79 +864,46 @@ export default function StudioScreen({ route, navigation }) {
             // 400-px max cap so it can take the full frame.
             frameAspectRatio={templateAspect}
             style={{ maxWidth: undefined, maxHeight: undefined, width: '100%', height: '100%', borderWidth: 0 }}
-            renderBeforeOverlay={() => (showLabels ? (
-              <PhotoLabel
-                label="common.before"
-                position={pickBeforeLabelPosition(labelPositionSettings, beforeForCompare)}
-                freeformOffset={pickBeforeLabelOffset(labelPositionSettings, beforeForCompare)}
-              />
-            ) : null)}
-            renderAfterOverlay={() => (showLabels ? (
-              <PhotoLabel
-                label="common.after"
-                position={pickAfterLabelPosition(labelPositionSettings, afterForCompare)}
-                freeformOffset={pickAfterLabelOffset(labelPositionSettings, afterForCompare)}
-              />
-            ) : null)}
+            renderBeforeOverlay={() => <PhotoLabels photo={beforeForCompare} role="before" />}
+            renderAfterOverlay={() => <PhotoLabels photo={afterForCompare} role="after" />}
           />
         ) : (
-          <PannableImage
-            imageKey={photo.uri || photo.id}
-            source={{ uri: photo.uri }}
-            style={styles.photo}
-            // Drag/zoom only on the Layout menu — that's the menu where
-            // the user shapes the viewport over the picture. Markup
-            // captures touches via the photoFrame markupResponder.
-            // Labels / Notes / Branding / Export keep the picture
-            // locked so the panel below is the focus of interaction.
-            //   • Short 1-finger swipe → handled by the photoArea swipe
-            //     responder above (navigates to prev/next photo)
-            //   • Long-press (~350ms hold) → vibration pulse confirms
-            //     drag is armed, then 1-finger move pans the picture
-            //   • 2-finger pinch → scale 0.5–3 (immediate)
-            resizeMode="cover"
-            disabled={activeTool !== 'layout'}
-          >
-            {showLabels && labelKey && (
-              <PhotoLabel label={labelKey} position={activeLabelPosition} freeformOffset={activeLabelOffset} />
+          <>
+            <PannableImage
+              imageKey={photo.uri || photo.id}
+              source={{ uri: photo.uri }}
+              style={styles.photo}
+              resizeMode="cover"
+              disabled={activeTool !== 'layout'}
+            />
+            {/* Labels live OUTSIDE PannableImage so they anchor to the
+                photoFrame's corners — not the photo content. PannableImage
+                centers an overflowing Animated.View when frame and bitmap
+                aspects disagree (e.g. portrait photo in a 16:9 frame), so
+                a label placed inside its children would be clipped off
+                the top by the wrapper's overflow:hidden. Anchoring to the
+                frame keeps "top-left stays top-left" true across format
+                changes. */}
+            {/* DraggableLabelOverlay = PhotoLabels + finger-drag. The
+                user's drag updates beforeLabelOffset/afterLabelOffset
+                in SettingsContext, so the new position takes effect
+                everywhere else (Home, Gallery, bake pipeline) too. */}
+            {photo.mode !== PHOTO_MODES.COMBINED && (
+              <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+                <DraggableLabelOverlay photo={photo} />
+              </View>
             )}
-            {/* Combined photos don't have a single mode-driven label — we
-                overlay BEFORE on one half and AFTER on the other using the
-                template's split direction so each label sits over the photo
-                it describes. */}
-            {showLabels && photo.mode === PHOTO_MODES.COMBINED && (
-              <>
-                <View
-                  pointerEvents="none"
-                  style={
-                    combinedIsStacked
-                      ? styles.combinedHalfTop
-                      : styles.combinedHalfLeft
-                  }
-                >
-                  <PhotoLabel
-                    label="common.before"
-                    position={pickBeforeLabelPosition(labelPositionSettings, pairResolved.beforePhoto || photo)}
-                    freeformOffset={pickBeforeLabelOffset(labelPositionSettings, pairResolved.beforePhoto || photo)}
-                  />
+            {photo.mode === PHOTO_MODES.COMBINED && (
+              <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+                <View pointerEvents="box-none" style={combinedIsStacked ? styles.combinedHalfTop : styles.combinedHalfLeft}>
+                  <DraggableLabelOverlay photo={pairResolved.beforePhoto || photo} role="before" />
                 </View>
-                <View
-                  pointerEvents="none"
-                  style={
-                    combinedIsStacked
-                      ? styles.combinedHalfBottom
-                      : styles.combinedHalfRight
-                  }
-                >
-                  <PhotoLabel
-                    label="common.after"
-                    position={pickAfterLabelPosition(labelPositionSettings, pairResolved.afterPhoto || photo)}
-                    freeformOffset={pickAfterLabelOffset(labelPositionSettings, pairResolved.afterPhoto || photo)}
-                  />
+                <View pointerEvents="box-none" style={combinedIsStacked ? styles.combinedHalfBottom : styles.combinedHalfRight}>
+                  <DraggableLabelOverlay photo={pairResolved.afterPhoto || photo} role="after" />
                 </View>
-              </>
+              </View>
             )}
-          </PannableImage>
+          </>
         )}
         {/* Studio preview mirrors the user's toggle directly. The export
             pipeline still consults `shouldShowWatermark` so soft-trial
@@ -1385,9 +1322,17 @@ export default function StudioScreen({ route, navigation }) {
                 styles.saveMenuOption,
                 i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.divider },
               ]}
-              onPress={() => {
+              onPress={async () => {
                 setScope(s.key);
                 setSaveMenuVisible(false);
+                // 'photo' — overrides are already on the photo from
+                // each tile tap; just close. 'project' — promote this
+                // photo's overrides up to global Settings + drop them.
+                // 'room' — TODO: apply to other photos in the room
+                // (for now behaves like 'photo').
+                if (s.key === 'project' && photo?.id) {
+                  try { await promoteOverridesToGlobal(photo.id); } catch (_) {}
+                }
                 navigation.goBack();
               }}
             >
@@ -1397,6 +1342,23 @@ export default function StudioScreen({ route, navigation }) {
               )}
             </TouchableOpacity>
           ))}
+          {/* Reset action — drops this photo's overrides so it follows
+              global Settings again. Hidden when the photo has nothing
+              custom to reset. */}
+          {photo?.overrides && Object.keys(photo.overrides).length > 0 && (
+            <TouchableOpacity
+              style={[
+                styles.saveMenuOption,
+                { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.divider },
+              ]}
+              onPress={async () => {
+                try { await resetPhotoOverrides(photo.id); } catch (_) {}
+                setSaveMenuVisible(false);
+              }}
+            >
+              <Text style={[styles.saveMenuOptionText, { color: theme.danger || '#FF3B30' }]}>Reset this photo</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[styles.saveMenuCancel, { backgroundColor: theme.surface, borderColor: theme.border }]}
             onPress={() => setSaveMenuVisible(false)}
@@ -2039,7 +2001,16 @@ function VoiceTab({ theme, photo, updatePhoto }) {
   useSpeechRecognitionEvent('end', () => {
     setRecognitionActive(false);
   });
-  useSpeechRecognitionEvent('error', () => {
+  useSpeechRecognitionEvent('error', (event) => {
+    // Surface the recognizer's own error code/message. Common iOS
+    // codes: "not-allowed" (mic/speech perm denied), "audio-capture"
+    // (mic in use elsewhere), "service-not-allowed" (system speech
+    // disabled). Without this log, transcription silently never
+    // appears and we can't tell why.
+    console.warn('[StudioScreen] speech error', {
+      code: event?.error,
+      message: event?.message,
+    });
     setRecognitionActive(false);
   });
 
@@ -2094,7 +2065,9 @@ function VoiceTab({ theme, photo, updatePhoto }) {
       setTranscription('');
       try {
         const sp = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-        if (sp.granted) {
+        if (!sp.granted) {
+          console.warn('[StudioScreen] speech permission not granted', sp);
+        } else {
           await ExpoSpeechRecognitionModule.start({
             lang: 'en-US',
             interimResults: true,
@@ -2102,9 +2075,11 @@ function VoiceTab({ theme, photo, updatePhoto }) {
           });
           setRecognitionActive(true);
         }
-      } catch (_) {
+      } catch (e) {
         // Recognition is best-effort — the recording itself still
-        // happens even if the recognizer fails to start.
+        // happens even if the recognizer fails to start. Log so the
+        // failure mode is visible in device logs instead of silent.
+        console.warn('[StudioScreen] speech recognizer failed to start', e?.message || e);
       }
     } catch (e) {
       Alert.alert('Could not start recording', e?.message || 'Unknown error');
@@ -2121,7 +2096,9 @@ function VoiceTab({ theme, photo, updatePhoto }) {
       setIsRecording(false);
       // Stop the speech recognizer too — its `end` event will
       // settle `recognitionActive` shortly after.
-      try { await ExpoSpeechRecognitionModule.stop(); } catch (_) {}
+      try { await ExpoSpeechRecognitionModule.stop(); } catch (e) {
+        console.warn('[StudioScreen] speech recognizer stop failed', e?.message || e);
+      }
       const finalText = (transcription || '').trim();
       if (uri) {
         setAudioUri(uri);
