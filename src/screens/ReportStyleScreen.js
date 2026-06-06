@@ -100,22 +100,17 @@ export default function ReportStyleScreen({ route, navigation }) {
     [],
   );
 
-  // Route back to the report editor with the picked layout via
-  // setParams on the previous screen. The editor's useEffect on
-  // `route.params.pendingLayoutType` applies it and clears the param
-  // so navigating back into the picker again doesn't re-trigger.
+  // Hand the selection back to the editor via a callback param.
+  // The route-param round-trip we used before was unreliable —
+  // navigate(...merge:true...) sometimes pushed a new editor instance
+  // instead of merging onto the existing one, and the new instance's
+  // state would seed from the saved layout rather than the pick.
+  // A callback runs synchronously in the editor's own closure so the
+  // state setter lands on the right component instance.
   const apply = (id) => {
-    const parent = navigation.getState().routes;
-    const editor = parent[parent.length - 2];
-    if (editor) {
-      navigation.navigate({
-        name: editor.name,
-        params: { ...editor.params, pendingLayoutType: id },
-        merge: true,
-      });
-    } else {
-      navigation.goBack();
-    }
+    const cb = route?.params?.onSelect;
+    if (typeof cb === 'function') cb(id);
+    navigation.goBack();
   };
 
   return (

@@ -336,17 +336,14 @@ export default function ProjectDetailScreen({ route, navigation }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportViewMode, activeReportId]);
 
-  // When the Report Style picker returns a selection it sets the
-  // `pendingLayoutType` route param. Apply it to draft state, clear
-  // the param so re-opening the editor doesn't re-trigger, and reset
-  // any options whose layout no longer supports them (so toggling
-  // back to a previous layout doesn't carry stale toggles forward).
-  useEffect(() => {
-    const pending = route?.params?.pendingLayoutType;
-    if (!pending) return;
-    setReportLayoutType(pending);
+  // Layout pick from the ReportStyleScreen is delivered via a
+  // callback param (see openStylePicker below) rather than a
+  // round-tripped route param — the nav merge pattern was unreliable.
+  const applyPickedLayoutType = (id) => {
+    if (!id) return;
+    setReportLayoutType(id);
     setReportOptions((prev) => {
-      const layout = getLayout(pending);
+      const layout = getLayout(id);
       const supported = new Set(layout.supportedOptions);
       const next = {};
       for (const k of Object.keys(prev || {})) {
@@ -354,8 +351,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
       }
       return next;
     });
-    navigation.setParams({ pendingLayoutType: undefined });
-  }, [route?.params?.pendingLayoutType, navigation]);
+  };
   const timelineGroups = useMemo(() => buildTimeline(projectPhotos), [projectPhotos]);
 
   const handleRoomTap = (dateKey, roomName) => {
@@ -398,33 +394,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
       if (!r) return;
       setSelectionEditingReportId(reportId);
       setSelectionEditingDraft(false);
-      // Filter the saved selection down to photos that still exist on
-      // this project — older reports may reference deleted photos and
-      // the timeline shouldn't open showing ghost selections.
-      // If nothing survives (or the saved list was empty to begin
-      // with — common for legacy reports created before issue #7's
-      // fix), fall back to all project photos so the user lands on
-      // an "everything selected" state instead of a blank one.
-      const validSaved = (r.photoIds || []).filter(
-        (id) => projectPhotos.some((p) => p.id === id),
-      );
-      const startIds = validSaved.length > 0
-        ? validSaved
-        : projectPhotos.map((p) => p.id);
-      setSelectionDraft(new Set(startIds));
     } else {
-      // No persisted report yet (the editor is on a fresh draft).
-      // Use the in-memory editorPhotoIds as the starting set.
-      // If editorPhotoIds is empty (first tap before the effect
-      // fires), fall back to selecting all project photos so the
-      // timeline never opens with an empty selection.
       setSelectionEditingReportId(null);
       setSelectionEditingDraft(true);
-      const startIds = editorPhotoIds && editorPhotoIds.length > 0
-        ? editorPhotoIds
-        : projectPhotos.map((p) => p.id);
-      setSelectionDraft(new Set(startIds));
     }
+    // Default to ALL photos selected, regardless of the report's
+    // saved selection or the editor draft. The user has been
+    // explicit that the timeline should ALWAYS open with everything
+    // selected — they'll deselect what they don't want.
+    setSelectionDraft(new Set(projectPhotos.map((p) => p.id)));
     setSelectionMode(true);
     setReportViewMode('list');
     setActiveTab('timeline');
@@ -1555,7 +1533,10 @@ export default function ProjectDetailScreen({ route, navigation }) {
                     <Text style={[styles.reportSectionLabel, { color: theme.textSecondary }]}>STYLE</Text>
                     <TouchableOpacity
                       style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                      onPress={() => navigation.navigate('ReportStyle', { current: reportLayoutType })}
+                      onPress={() => navigation.navigate('ReportStyle', {
+                        current: reportLayoutType,
+                        onSelect: applyPickedLayoutType,
+                      })}
                       activeOpacity={0.7}
                     >
                       <View style={{ flex: 1 }}>
