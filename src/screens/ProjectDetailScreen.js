@@ -292,7 +292,16 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // The active report's saved photo ids (or empty set when no active
   // report). Drives the editor's photo pool and the Generate flow.
   const activeReport = useMemo(
-    () => reports.find((r) => r.id === activeReportId) || null,
+    () => {
+      const r = reports.find((rr) => rr.id === activeReportId) || null;
+      console.warn('[Report] activeReport resolve', {
+        activeReportId,
+        reportsLen: reports.length,
+        reportIds: reports.map((rr) => rr.id),
+        found: !!r,
+      });
+      return r;
+    },
     [reports, activeReportId],
   );
   const activeReportPhotoIds = useMemo(
@@ -874,7 +883,14 @@ export default function ProjectDetailScreen({ route, navigation }) {
       // generateReportFile reads from the reports list, so wait
       // a tick for state to settle before passing the target.
       const committedReport = nextReports.find((r) => r.id === targetReportId);
+      console.warn('[Report] handleGenerate: about to write file', {
+        targetReportId,
+        committedReportPresent: !!committedReport,
+        nextReportsLen: nextReports.length,
+        nextReportIds: nextReports.map((r) => r.id),
+      });
       await generateReportFile(committedReport);
+      console.warn('[Report] handleGenerate: setting activeReportId + preview', { targetReportId });
       setActiveReportId(targetReportId);
       setReportViewMode('preview');
     } catch (e) {
