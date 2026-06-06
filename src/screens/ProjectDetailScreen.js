@@ -397,7 +397,20 @@ export default function ProjectDetailScreen({ route, navigation }) {
       if (!r) return;
       setSelectionEditingReportId(reportId);
       setSelectionEditingDraft(false);
-      setSelectionDraft(new Set(r.photoIds || []));
+      // Filter the saved selection down to photos that still exist on
+      // this project — older reports may reference deleted photos and
+      // the timeline shouldn't open showing ghost selections.
+      // If nothing survives (or the saved list was empty to begin
+      // with — common for legacy reports created before issue #7's
+      // fix), fall back to all project photos so the user lands on
+      // an "everything selected" state instead of a blank one.
+      const validSaved = (r.photoIds || []).filter(
+        (id) => projectPhotos.some((p) => p.id === id),
+      );
+      const startIds = validSaved.length > 0
+        ? validSaved
+        : projectPhotos.map((p) => p.id);
+      setSelectionDraft(new Set(startIds));
     } else {
       // No persisted report yet (the editor is on a fresh draft).
       // Use the in-memory editorPhotoIds as the starting set.
