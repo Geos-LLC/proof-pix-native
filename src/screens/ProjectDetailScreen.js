@@ -1680,6 +1680,48 @@ export default function ProjectDetailScreen({ route, navigation }) {
             </View>
           );
         })()}
+        {/* Diagnostic + safety net: when the Report tab is active but
+            none of the three view-mode branches match (e.g. preview mode
+            but activeReport resolved to null after a state-update race),
+            render a fallback instead of an empty screen. */}
+        {activeTab === 'report' && (() => {
+          const inList = reportViewMode === 'list';
+          const inEditor = reportViewMode === 'editor';
+          const inPreview = reportViewMode === 'preview' && !!activeReport;
+          if (inList || inEditor || inPreview) return null;
+          console.warn('[Report] tab fallback fired', {
+            viewMode: reportViewMode,
+            activeReportId,
+            hasActiveReport: !!activeReport,
+            reportCount: reports.length,
+          });
+          return (
+            <View style={styles.reportPanel}>
+              <Text style={[styles.reportSectionLabel, { color: theme.textSecondary, marginBottom: 10 }]}>
+                REPORT
+              </Text>
+              <Text style={[styles.reportRowLabel, { color: theme.textPrimary, marginBottom: 6 }]}>
+                Something went sideways.
+              </Text>
+              <Text style={[styles.reportRowSubtle, { color: theme.textSecondary, marginBottom: 14 }]}>
+                The selected report didn't load. Try going back to the report list.
+              </Text>
+              <TouchableOpacity
+                style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent }]}
+                onPress={() => {
+                  setReportViewMode('list');
+                  setActiveReportId(null);
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="list-outline" size={18} color={theme.accentText} />
+                <Text style={[styles.reportPrimaryBtnText, { color: theme.accentText }]}>
+                  Back to reports
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })()}
         {activeTab === 'report' && reportViewMode === 'preview' && activeReport && (() => {
           // PREVIEW VIEW — read-only summary of a generated report
           // with the Share button as the primary action. Edit
