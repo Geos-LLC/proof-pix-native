@@ -340,6 +340,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // callback param (see openStylePicker below) rather than a
   // round-tripped route param — the nav merge pattern was unreliable.
   const applyPickedLayoutType = (id) => {
+    console.warn('[Report] picker -> applyPickedLayoutType', id);
     if (!id) return;
     setReportLayoutType(id);
     setReportOptions((prev) => {
@@ -699,7 +700,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
       );
     }
     console.warn(
-      `[Report] generate id=${report.id} layout=${report.layoutType || DEFAULT_LAYOUT_ID} photos=${chosen.length}`,
+      `[Report] generateReportFile id=${report.id} stored_layout=${report.layoutType} resolved_layout=${report.layoutType || DEFAULT_LAYOUT_ID} photos=${chosen.length}`,
     );
     // Honor the "Include branding" option for which logo (if any) is
     // passed to the engine. The engine also checks the option, but
@@ -800,6 +801,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
       return;
     }
     if (isBuildingReport) return;
+    console.warn('[Report] Generate tapped — reportLayoutType state =', reportLayoutType);
     setIsBuildingReport(true);
     try {
       const ts = Date.now();
