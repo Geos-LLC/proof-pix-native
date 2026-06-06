@@ -2094,7 +2094,7 @@ export default function HomeScreen({ navigation, route }) {
                   <Text style={styles.projectNameText} numberOfLines={1}>
                     {displayName}
                   </Text>
-                  <Ionicons name="pencil-outline" size={14} color="#999" style={{ marginLeft: 6 }} />
+                  <Ionicons name="chevron-down" size={14} color="#999" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
               );
             })()}
@@ -2945,20 +2945,51 @@ export default function HomeScreen({ navigation, route }) {
       >
         <View style={styles.optionsModalOverlay}>
           <View style={styles.optionsModalContent}>
-            {/* Single-project menu: only operates on the active project.
-                The project list + multi-select were removed because all
-                project management (switching, multi-select, multi-delete)
-                lives on the dedicated Projects screen. The capture-page
-                menu intentionally exposes only the four actions a user
-                needs mid-capture: rename current, create new, delete
-                current, share current. */}
             <Text style={styles.optionsTitle}>
-              {activeProject?.name || t('projects.noProjects')}
+              {t('projects.switchProject', { defaultValue: 'Projects' })}
             </Text>
+
+            {projects.length > 0 && (
+              <ScrollView style={styles.projectList} showsVerticalScrollIndicator={false}>
+                {projects.map((proj) => {
+                  const isActive = proj.id === activeProjectId;
+                  return (
+                    <TouchableOpacity
+                      key={proj.id}
+                      style={[
+                        styles.projectItem,
+                        isActive && { backgroundColor: '#FFEAA0', borderWidth: 1.5, borderColor: '#F2C31B' },
+                      ]}
+                      onPress={() => {
+                        setActiveProject(proj.id);
+                        setOpenProjectVisible(false);
+                      }}
+                    >
+                      <View style={styles.projectItemContent}>
+                        {isActive && (
+                          <Ionicons name="checkmark-circle" size={18} color="#B8860B" style={{ marginRight: 8 }} />
+                        )}
+                        <Text style={[styles.projectItemText, isActive && { fontWeight: '700', color: '#000' }]} numberOfLines={1}>
+                          {proj.name}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {projects.length === 0 && (
+              <Text style={{ textAlign: 'center', color: '#999', marginBottom: 12 }}>
+                {t('projects.noProjects')}
+              </Text>
+            )}
+
+            <View style={{ height: 1, backgroundColor: '#ECECEC', marginVertical: 12 }} />
 
             {activeProject && (
               <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#FFF8E1', marginTop: 20 }]}
+                style={[styles.actionBtn, { backgroundColor: '#FFF8E1' }]}
                 onPress={() => {
                   setOpenProjectVisible(false);
                   setTimeout(() => {
@@ -2973,7 +3004,7 @@ export default function HomeScreen({ navigation, route }) {
             )}
 
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#22A45D', marginTop: activeProject ? 8 : 20 }]}
+              style={[styles.actionBtn, { backgroundColor: '#22A45D', marginTop: 8 }]}
               onPress={() => {
                 setOpenProjectVisible(false);
                 setTimeout(() => openNewProjectModal(false), 50);
@@ -2986,10 +3017,6 @@ export default function HomeScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: '#FFE6E6', marginTop: 8 }]}
                 onPress={() => {
-                  // Reuse the existing multi-select delete plumbing —
-                  // populate the ref with just the active project and
-                  // open the same confirm modal (with the optional
-                  // "delete from phone" checkbox).
                   selectedProjectsForDeleteRef.current = new Set([activeProject.id]);
                   setOpenProjectVisible(false);
                   setTimeout(() => {
@@ -4569,7 +4596,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     width: '86%',
-    maxWidth: 380
+    maxWidth: 380,
+    maxHeight: '85%'
   },
   optionsTitle: {
     fontSize: 18,
