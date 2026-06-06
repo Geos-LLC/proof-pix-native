@@ -30,11 +30,24 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@beta
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # The action's default model (claude-sonnet-4-20250514) is
           # retired and returns 404 from the API. Pin a current model.
           model: claude-sonnet-4-6
+          claude_env: |
+            EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          allowed_tools: "Bash(eas update:*),Bash(eas whoami),Bash(npm install),Bash(npm ci),Bash(npx:*)"
