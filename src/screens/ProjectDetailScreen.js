@@ -13,6 +13,7 @@ import {
   Switch,
   ActivityIndicator,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -785,6 +786,65 @@ export default function ProjectDetailScreen({ route, navigation }) {
       }
     } catch (e) {
       Alert.alert('Could not share report', e?.message || 'Unknown error');
+    } finally {
+      setIsBuildingReport(false);
+    }
+  };
+
+  // Open the generated report in Safari / the system browser so the
+  // user can preview the rendered HTML before sharing. Tries
+  // Linking.openURL first (one tap on iOS when the runtime allows
+  // file:// URLs); falls back to the share sheet ("Open in Safari"
+  // is one of the actions) when direct open isn't supported.
+  const handlePreviewReport = async (reportId) => {
+    if (!project) return;
+    if (isBuildingReport) return;
+    setIsBuildingReport(true);
+    try {
+      const r = reports.find((rr) => rr.id === reportId);
+      if (!r) return;
+      let htmlTarget = r.generatedFilePath;
+      let needsRegenerate = !htmlTarget;
+      if (htmlTarget && !needsRegenerate) {
+        try {
+          const info = await FileSystem.getInfoAsync(htmlTarget);
+          if (!info.exists) needsRegenerate = true;
+        } catch (_) {
+          needsRegenerate = true;
+        }
+      }
+      if (needsRegenerate) {
+        const out = await generateReportFile(r);
+        htmlTarget = out?.html || null;
+      }
+      if (!htmlTarget) {
+        Alert.alert('Could not preview', 'No file produced.');
+        return;
+      }
+      const fileUrl = htmlTarget.startsWith('file://') ? htmlTarget : `file://${htmlTarget}`;
+      // Try a direct open. On iOS this usually fails for file:// (the
+      // SFSafariViewController only accepts http(s)) — that throws or
+      // returns false, and we fall through to Sharing where the user
+      // picks "Open in Safari" from the action row.
+      try {
+        const supported = await Linking.canOpenURL(fileUrl);
+        if (supported) {
+          await Linking.openURL(fileUrl);
+          return;
+        }
+      } catch (_) { /* fall through */ }
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(htmlTarget, {
+          mimeType: 'text/html',
+          UTI: 'public.html',
+          dialogTitle: 'Preview report — choose "Open in Safari"',
+        });
+      } else {
+        Alert.alert('Preview', `Saved to ${htmlTarget}. Open with any HTML viewer.`);
+      }
+    } catch (e) {
+      Alert.alert('Could not preview report', e?.message || 'Unknown error');
     } finally {
       setIsBuildingReport(false);
     }
@@ -1731,6 +1791,27 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 ))}
               </View>
 
+              {/* Preview — opens the rendered HTML in Safari / the
+                  system browser so the user can review before sharing. */}
+              <TouchableOpacity
+                style={[
+                  styles.reportPrimaryBtn,
+                  {
+                    backgroundColor: 'transparent',
+                    borderWidth: 1,
+                    borderColor: theme.accent,
+                    marginBottom: 10,
+                    opacity: isBuildingReport ? 0.6 : 1,
+                  },
+                ]}
+                onPress={() => handlePreviewReport(activeReport.id)}
+                disabled={isBuildingReport}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="eye-outline" size={18} color={theme.accent} />
+                <Text style={[styles.reportPrimaryBtnText, { color: theme.accent }]}>Preview</Text>
+              </TouchableOpacity>
+
               {/* Share action — re-uses the cached HTML file if
                   it's still on disk; regenerates only when missing. */}
               <TouchableOpacity
@@ -1749,7 +1830,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 )}
               </TouchableOpacity>
               <Text style={[styles.reportFooterNote, { color: theme.textSecondary }]}>
-                Reusing the saved file. Tap "Edit" above and "Regenerate" if the photos or title have changed since this report was last generated.
+                Preview opens the rendered report in Safari. Reusing the saved file — tap "Edit" above and "Regenerate" if photos or title have changed.
               </Text>
             </View>
           );
