@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -621,16 +621,49 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // the photos inline even without the original file:// paths.
   // Returns null on failure so the report can keep rendering with a
   // placeholder slot.
+  //
+  // Concurrency semaphore: every report layout calls fileToDataUri
+  // through Promise.all, so without a limit ALL the photos in the
+  // selection are base64-encoded simultaneously — that's enough
+  // memory pressure to make iOS silently force-quit the app on
+  // larger projects. Refs (not useState) so the queue + counter
+  // survive re-renders without retriggering effects.
+  const fileReadActiveRef = useRef(0);
+  const fileReadQueueRef = useRef([]);
+  const FILE_READ_LIMIT = 3;
+  const fileReadSlot = async () => {
+    if (fileReadActiveRef.current < FILE_READ_LIMIT) {
+      fileReadActiveRef.current += 1;
+      return;
+    }
+    await new Promise((resolve) => fileReadQueueRef.current.push(resolve));
+    fileReadActiveRef.current += 1;
+  };
+  const fileReadRelease = () => {
+    fileReadActiveRef.current = Math.max(0, fileReadActiveRef.current - 1);
+    const next = fileReadQueueRef.current.shift();
+    if (next) next();
+  };
+
+  // Bounded-concurrency base64 reader. Each layout runs Promise.all
+  // over its photo list, which previously meant every photo in the
+  // report was being loaded as base64 simultaneously. For projects
+  // with ~30+ photos that's hundreds of MB of string allocation at
+  // once, and iOS force-kills the app under that memory pressure
+  // (silent — the JS try/catch never fires). Capping at 3 reads at a
+  // time keeps the working set bounded without slowing single-photo
+  // layouts perceptibly.
   const fileToDataUri = async (uri, mime = 'image/jpeg') => {
     if (!uri) return null;
+    await fileReadSlot();
     try {
-      // Strip the file:// prefix so FileSystem reads consistently
-      // across iOS / Android.
       const path = uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
       const b64 = await FileSystem.readAsStringAsync(path, { encoding: 'base64' });
       return `data:${mime};base64,${b64}`;
     } catch (_) {
       return null;
+    } finally {
+      fileReadRelease();
     }
   };
 
@@ -672,8 +705,23 @@ export default function ProjectDetailScreen({ route, navigation }) {
       const bt = typeof b.timestamp === 'number' ? b.timestamp : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
       return at - bt;
     });
-    const cap = Math.max(1, Math.min(report.photoCount || sorted.length, sorted.length));
+    // Hard cap on photos per report. Each photo is embedded as a
+    // base64 data URI in the HTML; without a cap a project with
+    // hundreds of photos blows past iOS's memory budget and the OS
+    // force-kills the app before any JS handler can fire. 50 is a
+    // good balance — covers most real reports without OOM risk.
+    const HARD_PHOTO_CAP = 50;
+    const requested = report.photoCount || sorted.length;
+    const cap = Math.max(1, Math.min(requested, sorted.length, HARD_PHOTO_CAP));
     const chosen = sorted.slice(0, cap);
+    if (requested > HARD_PHOTO_CAP) {
+      console.warn(
+        `[Report] capped at ${HARD_PHOTO_CAP} photos (requested ${requested}) to avoid OOM`,
+      );
+    }
+    console.warn(
+      `[Report] generate id=${report.id} layout=${report.layoutType || DEFAULT_LAYOUT_ID} photos=${chosen.length}`,
+    );
     // Honor the "Include branding" option for which logo (if any) is
     // passed to the engine. The engine also checks the option, but
     // not passing the URI saves an unnecessary file read on the
