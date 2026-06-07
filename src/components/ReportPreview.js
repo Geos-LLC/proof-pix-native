@@ -54,6 +54,12 @@ const Note = ({ note, theme }) => (
   ) : null
 );
 
+const PhotoLabel = ({ name, theme }) => (
+  name ? (
+    <Text style={[styles.photoLabel, { color: theme.textSecondary }]}>{name}</Text>
+  ) : null
+);
+
 // ---------------------------------------------------------------
 // ROOM BY ROOM
 // ---------------------------------------------------------------
@@ -74,6 +80,12 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme }) => {
               <PhotoSlot uri={firstBefore?.uri} label="BEFORE" theme={theme} missing="No before" />
               <PhotoSlot uri={latestAfter?.uri} label="AFTER" theme={theme} missing="No after" />
             </View>
+            {options.showLabels !== false && (firstBefore?.name || latestAfter?.name) ? (
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <View style={{ flex: 1 }}><PhotoLabel name={firstBefore?.name} theme={theme} /></View>
+                <View style={{ flex: 1 }}><PhotoLabel name={latestAfter?.name} theme={theme} /></View>
+              </View>
+            ) : null}
             {options.includeProgressPhotos && progress.length > 0 && (
               <View style={styles.progressRow}>
                 {sortByTime(progress).slice(0, 4).map((p) => (
@@ -119,6 +131,7 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
                 <View style={styles.slotTag}>
                   <Text style={styles.slotTagText}>BEFORE & AFTER</Text>
                 </View>
+                {options.showLabels !== false && c.name ? <PhotoLabel name={c.name} theme={theme} /> : null}
                 {options.includeNotes && c.notes ? <Note note={c.notes} theme={theme} /> : null}
               </View>
             ))}
@@ -128,6 +141,13 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
                   <PhotoSlot uri={before?.uri} label="BEFORE" theme={theme} missing="No before" />
                   <PhotoSlot uri={after?.uri} label="AFTER" theme={theme} missing="No after" />
                 </View>
+                {options.showLabels !== false && (before?.name || after?.name) ? (
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <View style={{ flex: 1 }}><PhotoLabel name={before?.name} theme={theme} /></View>
+                    <View style={{ flex: 1 }}><PhotoLabel name={after?.name} theme={theme} /></View>
+                  </View>
+                ) : null}
+                {options.includeNotes && before?.notes ? <Note note={before.notes} theme={theme} /> : null}
                 {options.includeNotes && after?.notes ? <Note note={after.notes} theme={theme} /> : null}
               </View>
             ))}
@@ -169,6 +189,7 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme }) => {
                 </View>
                 <View style={[styles.timelineCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
                   {p.uri ? <Image source={{ uri: p.uri }} style={styles.timelineImage} resizeMode="cover" /> : null}
+                  {options.showLabels !== false && p.name ? <PhotoLabel name={p.name} theme={theme} /> : null}
                   {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
                 </View>
               </View>
@@ -191,6 +212,9 @@ const GalleryPreview = ({ photos, options, theme }) => {
       {ordered.map((p) => (
         <View key={p.id} style={[styles.galleryTile, { width: `${(100 / cols) - 1}%` }]}>
           {p.uri ? <Image source={{ uri: p.uri }} style={styles.galleryThumb} /> : null}
+          {options.showLabels !== false && p.name ? (
+            <Text style={[styles.galleryLabel, { color: theme.textSecondary }]} numberOfLines={1}>{p.name}</Text>
+          ) : null}
         </View>
       ))}
     </View>
@@ -229,6 +253,12 @@ const ExecutivePreview = ({ photos, options, displayRoomName, theme }) => {
                 <PhotoSlot uri={pair.before?.uri} label="BEFORE" theme={theme} />
                 <PhotoSlot uri={pair.after?.uri} label="AFTER" theme={theme} />
               </View>
+              {options.showLabels !== false && (pair.before?.name || pair.after?.name) ? (
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <View style={{ flex: 1 }}><PhotoLabel name={pair.before?.name} theme={theme} /></View>
+                  <View style={{ flex: 1 }}><PhotoLabel name={pair.after?.name} theme={theme} /></View>
+                </View>
+              ) : null}
               {options.includeNotes && pair.after?.notes ? <Note note={pair.after.notes} theme={theme} /> : null}
             </View>
           );
@@ -240,6 +270,7 @@ const ExecutivePreview = ({ photos, options, displayRoomName, theme }) => {
           <View key={`hl-${room}`} style={styles.section}>
             <SectionHeader name={displayRoomName(room)} theme={theme} />
             {fallback.uri ? <Image source={{ uri: fallback.uri }} style={styles.coverImage} resizeMode="cover" /> : null}
+            {options.showLabels !== false && fallback.name ? <PhotoLabel name={fallback.name} theme={theme} /> : null}
           </View>
         );
       })}
@@ -362,6 +393,8 @@ const styles = StyleSheet.create({
   progressThumb: { width: '100%', height: '100%' },
   note: { padding: 8, borderRadius: 6, marginTop: 6 },
   noteText: { fontSize: 12, lineHeight: 16 },
+  photoLabel: { fontSize: 11, fontWeight: '600', marginTop: 4, paddingHorizontal: 2 },
+  galleryLabel: { fontSize: 9, paddingHorizontal: 4, paddingBottom: 4, paddingTop: 2 },
   combinedHero: { borderRadius: 8, overflow: 'hidden', marginBottom: 12, position: 'relative' },
   combinedHeroImage: { width: '100%', aspectRatio: 16 / 9 },
   timelineRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
@@ -371,8 +404,8 @@ const styles = StyleSheet.create({
   timelineCard: { flex: 1, borderRadius: 8, borderWidth: 1, overflow: 'hidden' },
   timelineImage: { width: '100%', aspectRatio: 16 / 10 },
   galleryGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  galleryTile: { aspectRatio: 1, marginBottom: 4 },
-  galleryThumb: { width: '100%', height: '100%', borderRadius: 4 },
+  galleryTile: { marginBottom: 4 },
+  galleryThumb: { width: '100%', aspectRatio: 1, borderRadius: 4 },
   coverWrap: { borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
   coverImage: { width: '100%', aspectRatio: 16 / 9 },
   statsRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },

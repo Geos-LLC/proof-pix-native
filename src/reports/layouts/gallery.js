@@ -4,7 +4,7 @@
 import {
   formatLongDate, sortByTime,
   htmlDocument, headerHtml, footerHtml, photoToData,
-  photoCaption,
+  photoCaption, labelHtml,
 } from './_shared.js';
 
 const css = (cols) => `
@@ -41,13 +41,14 @@ export default {
     const tiles = await Promise.all(
       sortByTime(photos).map(async (p) => {
         const data = await photoToData(p, helpers);
-        const caption = options.showLabels
+        const label = labelHtml({ photo: p, options });
+        const caption = options.showLabels !== false
           ? photoCaption({ photo: p, helpers, options })
           : '';
         return `
           <div class="tile no-break">
             ${data ? `<img src="${data}" alt="" />` : `<div class="missing">Image unavailable</div>`}
-            ${caption ? `<div class="cap">${caption}</div>` : ''}
+            ${(label || caption) ? `<div class="cap">${label}${caption ? `<span>${caption}</span>` : ''}</div>` : ''}
           </div>`;
       }),
     );
