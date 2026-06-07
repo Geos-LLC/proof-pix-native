@@ -179,8 +179,13 @@ export default function ProjectDetailScreen({ route, navigation }) {
     togglePreviewMetadata,
     updateShowBrandLogo,
     brandLogoUri,
+    reportBrandLogoUri,
+    reportCompanyName,
+    reportBrandColor,
     location,
   } = useSettings();
+
+  const effectiveReportLogoUri = reportBrandLogoUri || brandLogoUri;
   const roomDataMap = useMemo(() => {
     const map = new Map();
     for (const room of (getRooms() || [])) {
@@ -679,7 +684,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // merges user options over the layout's defaults; output is a
   // self-contained HTML string (logo + photos embedded as data URIs)
   // suitable for sharing or feeding to expo-print for PDF.
-  const buildReportHtml = async ({ title, photos, layoutType, options, logoUri }) => {
+  const buildReportHtml = async ({ title, photos, layoutType, options, logoUri, companyName, brandColor }) => {
     return generateReport({
       project: {
         title,
@@ -689,7 +694,11 @@ export default function ProjectDetailScreen({ route, navigation }) {
       photos,
       layoutType: layoutType || DEFAULT_LAYOUT_ID,
       options: options || {},
-      branding: { logoUri: logoUri || null },
+      branding: {
+        logoUri: logoUri || null,
+        companyName: companyName || null,
+        brandColor: brandColor || null,
+      },
       helpers: {
         fileToDataUri,
         displayRoomName,
@@ -739,7 +748,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
       photos: chosen,
       layoutType: report.layoutType || DEFAULT_LAYOUT_ID,
       options: report.options || {},
-      logoUri: resolved.includeBranding === false ? null : brandLogoUri,
+      logoUri: resolved.includeBranding === false ? null : effectiveReportLogoUri,
+      companyName: resolved.includeBranding === false ? null : (reportCompanyName || null),
+      brandColor: resolved.includeBranding === false ? null : (reportBrandColor || null),
     });
     // Persistent reports/ directory inside documentDirectory.
     try {
@@ -1501,15 +1512,40 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 style={[styles.reportInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
               />
 
-              {/* Logo preview — only when a brand logo is configured. */}
-              {brandLogoUri && (
-                <View style={[styles.reportLogoRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Image source={{ uri: brandLogoUri }} style={styles.reportLogoThumb} resizeMode="contain" />
+              {/* Branding row — shows report branding status + link to settings. */}
+              <View style={styles.reportSectionHeader}>
+                <Text style={[styles.reportSectionLabel, { color: theme.textSecondary }]}>BRANDING</Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('BrandingSettings')}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Text style={[styles.reportSectionLink, { color: theme.accent }]}>Edit →</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={[styles.reportLogoRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                {effectiveReportLogoUri ? (
+                  <Image source={{ uri: effectiveReportLogoUri }} style={styles.reportLogoThumb} resizeMode="contain" />
+                ) : (
+                  <View style={[styles.reportLogoThumb, { backgroundColor: theme.surfaceElevated, alignItems: 'center', justifyContent: 'center' }]}>
+                    <Ionicons name="business-outline" size={20} color={theme.textMuted} />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  {reportCompanyName ? (
+                    <Text style={[styles.reportLogoText, { color: theme.textPrimary, fontWeight: '600' }]} numberOfLines={1}>
+                      {reportCompanyName}
+                    </Text>
+                  ) : null}
                   <Text style={[styles.reportLogoText, { color: theme.textSecondary }]}>
-                    Brand logo will appear in the report header
+                    {effectiveReportLogoUri
+                      ? (reportBrandLogoUri ? 'Report logo set' : 'Using photo editor logo')
+                      : 'No logo configured'}
                   </Text>
                 </View>
-              )}
+                {reportBrandColor && (
+                  <View style={[{ width: 18, height: 18, borderRadius: 4, backgroundColor: reportBrandColor, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border }]} />
+                )}
+              </View>
 
               {/* Photo count stepper. Max is the active report's
                   saved photo pool; min 1. The "Pick photos" link
@@ -1774,11 +1810,16 @@ export default function ProjectDetailScreen({ route, navigation }) {
               {/* Title + meta block — mirrors the bake-time HTML
                   header so the user sees roughly what the share
                   will look like before sending. */}
-              <View style={[styles.reportPreviewHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                {brandLogoUri && (
-                  <Image source={{ uri: brandLogoUri }} style={styles.reportPreviewLogo} resizeMode="contain" />
+              <View style={[styles.reportPreviewHeader, { backgroundColor: theme.surface, borderColor: theme.border, borderLeftWidth: 3, borderLeftColor: reportBrandColor || theme.accent }]}>
+                {effectiveReportLogoUri && (
+                  <Image source={{ uri: effectiveReportLogoUri }} style={styles.reportPreviewLogo} resizeMode="contain" />
                 )}
                 <View style={{ flex: 1 }}>
+                  {reportCompanyName ? (
+                    <Text style={[styles.reportPreviewMeta, { color: theme.textMuted, marginBottom: 2 }]} numberOfLines={1}>
+                      {reportCompanyName}
+                    </Text>
+                  ) : null}
                   <Text style={[styles.reportPreviewTitle, { color: theme.textPrimary }]} numberOfLines={2}>
                     {activeReport.title || 'Untitled report'}
                   </Text>

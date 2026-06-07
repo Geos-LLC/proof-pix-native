@@ -99,6 +99,7 @@ import AppearanceScreen from './src/screens/AppearanceScreen';
 import ProjectsScreen from './src/screens/ProjectsScreen';
 import StudioScreen from './src/screens/StudioScreen';
 import LogoCustomizationScreen from './src/screens/LogoCustomizationScreen';
+import BrandingSettingsScreen from './src/screens/BrandingSettingsScreen';
 import MetadataCustomizationScreen from './src/screens/MetadataCustomizationScreen';
 import MarkupEditorScreen from './src/screens/MarkupEditorScreen';
 import {
@@ -458,6 +459,18 @@ function AppNavigator() {
       <Stack.Screen
         name="LogoCustomization"
         component={LogoCustomizationScreen}
+        options={{
+          presentation: 'formSheet',
+          animation: 'slide_from_bottom',
+          sheetAllowedDetents: 'fitToContents',
+          sheetGrabberVisible: true,
+          sheetCornerRadius: 22,
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="BrandingSettings"
+        component={BrandingSettingsScreen}
         options={{
           presentation: 'formSheet',
           animation: 'slide_from_bottom',

@@ -85,6 +85,8 @@ export default {
         title: project.title,
         subtitle: `Timeline &middot; ${photos.length} stage${photos.length === 1 ? '' : 's'}`,
         logoData,
+        companyName: branding?.companyName || null,
+        brandColor: branding?.brandColor || null,
       })}
       ${sections.join('')}
       ${footerHtml()}

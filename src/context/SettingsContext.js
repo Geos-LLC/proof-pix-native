@@ -91,6 +91,13 @@ export const SettingsProvider = ({ children }) => {
   // from the new slider (60 by default).
   const [brandLogoSize, setBrandLogoSize] = useState(60);
   const [brandLogoOffset, setBrandLogoOffset] = useState(null);
+  // Report branding — used in report title sheet and header color.
+  // Distinct from brandLogoUri which is for photo overlays in the editor.
+  // Falls back to brandLogoUri when not set so reports get a logo even
+  // before the user configures dedicated report branding.
+  const [reportBrandLogoUri, setReportBrandLogoUri] = useState(null);
+  const [reportCompanyName, setReportCompanyName] = useState('');
+  const [reportBrandColor, setReportBrandColor] = useState('#1A1A1A');
   // Metadata overlay styling — independent from the watermark's. Driven
   // by the dedicated Metadata Customization screen.
   const [metaPosition, setMetaPosition] = useState('left-bottom');
@@ -316,6 +323,9 @@ export const SettingsProvider = ({ children }) => {
         setAfterLabelOffsetLandscape(sanitizeOffset(settings.afterLabelOffsetLandscape));
         setCombinedLabelOffset(sanitizeOffset(settings.combinedLabelOffset));
         setBrandLogoOffset(sanitizeOffset(settings.brandLogoOffset));
+        setReportBrandLogoUri(settings.reportBrandLogoUri ?? null);
+        setReportCompanyName(settings.reportCompanyName ?? '');
+        setReportBrandColor(settings.reportBrandColor ?? '#1A1A1A');
         setMetaOffset(sanitizeOffset(settings.metaOffset));
         setWatermarkOffset(sanitizeOffset(settings.watermarkOffset));
         setLabelMarginVertical(settings.labelMarginVertical ?? 10);
@@ -546,6 +556,21 @@ export const SettingsProvider = ({ children }) => {
     const next = sanitizeOffsetIn(offset);
     setBrandLogoOffset(next);
     await saveSettings({ brandLogoOffset: next });
+  };
+  const updateReportBrandLogoUri = async (uri) => {
+    const next = typeof uri === 'string' && uri ? uri : null;
+    setReportBrandLogoUri(next);
+    await saveSettings({ reportBrandLogoUri: next });
+  };
+  const updateReportCompanyName = async (name) => {
+    const next = typeof name === 'string' ? name : '';
+    setReportCompanyName(next);
+    await saveSettings({ reportCompanyName: next });
+  };
+  const updateReportBrandColor = async (color) => {
+    const next = normalizeColorHex(color, '#1A1A1A');
+    setReportBrandColor(next);
+    await saveSettings({ reportBrandColor: next });
   };
   const updateMetaPosition = async (pos) => {
     setMetaPosition(pos);
@@ -1049,6 +1074,12 @@ export const SettingsProvider = ({ children }) => {
     updateBrandLogoPosition,
     updateBrandLogoSize,
     updateBrandLogoOffset,
+    reportBrandLogoUri,
+    reportCompanyName,
+    reportBrandColor,
+    updateReportBrandLogoUri,
+    updateReportCompanyName,
+    updateReportBrandColor,
     metaPosition,
     metaColor,
     metaOpacity,

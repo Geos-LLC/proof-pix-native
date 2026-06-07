@@ -137,6 +137,8 @@ export default {
         title: project.title,
         subtitle: `${formatLongDate(project.generatedAt || Date.now())} &middot; ${sections.length} section${sections.length === 1 ? '' : 's'}`,
         logoData,
+        companyName: branding?.companyName || null,
+        brandColor: branding?.brandColor || null,
       })}
       ${sections.length > 0 ? sections.join('') : `<div class="missing">No matched before/after pairs in this report.</div>`}
       ${footerHtml()}

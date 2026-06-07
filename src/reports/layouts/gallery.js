@@ -57,6 +57,8 @@ export default {
         title: project.title,
         subtitle: `${formatLongDate(project.generatedAt || Date.now())} &middot; ${photos.length} photo${photos.length === 1 ? '' : 's'}`,
         logoData,
+        companyName: branding?.companyName || null,
+        brandColor: branding?.brandColor || null,
       })}
       <div class="grid">${tiles.join('')}</div>
       ${footerHtml()}

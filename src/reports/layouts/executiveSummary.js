@@ -124,6 +124,8 @@ export default {
         title: project.title,
         subtitle: `Executive Summary &middot; ${formatLongDate(project.generatedAt || Date.now())}`,
         logoData,
+        companyName: branding?.companyName || null,
+        brandColor: branding?.brandColor || null,
       })}
       ${locationLine}
       ${coverData ? `<div class="cover"><img src="${coverData}" alt="" /></div>` : ''}

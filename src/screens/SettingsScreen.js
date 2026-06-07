@@ -3480,7 +3480,7 @@ export default function SettingsScreen({ navigation, route }) {
                   Navigates to LogoCustomization which lets the user
                   upload + place a brand logo overlay. */}
               <TouchableOpacity
-                style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}
+                style={styles.settingRow}
                 onPress={() => {
                   if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
                     navigation.navigate('LogoCustomization');
@@ -3503,6 +3503,20 @@ export default function SettingsScreen({ navigation, route }) {
                 ) : (
                   <Ionicons name="chevron-forward" size={20} color="#666666" />
                 )}
+              </TouchableOpacity>
+
+              {/* Report Branding — logo, company name, brand color for reports */}
+              <TouchableOpacity
+                style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}
+                onPress={() => navigation.navigate('BrandingSettings')}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.reportBranding', { defaultValue: 'Report Branding' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.reportBrandingDescription', { defaultValue: 'Logo, company name and color used in generated reports.' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
               </TouchableOpacity>
 
               {/* Customize Timestamp (Metadata overlay) — pro gated

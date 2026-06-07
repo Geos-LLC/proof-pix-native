@@ -103,9 +103,10 @@ export const baseCss = `
 @page { margin: 18mm 14mm; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1A1A1A; background: #FFFFFF; }
 .no-break { page-break-inside: avoid; }
-.header { display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #1A1A1A; padding-bottom: 14px; margin-bottom: 18px; }
+.header { display: flex; align-items: center; gap: 16px; padding-bottom: 14px; margin-bottom: 18px; }
 .header img.logo { max-height: 56px; max-width: 160px; object-fit: contain; }
 .header .htext { flex: 1; }
+.header .company { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
 .header h1 { font-size: 22px; margin: 0; }
 .header .sub { color: #555; font-size: 12px; margin-top: 4px; }
 .footer { margin-top: 22px; font-size: 10px; color: #888; text-align: center; }
@@ -117,15 +118,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 `;
 
 // Common header used by most layouts. Pass `subtitle` to override the
-// default "Generated <date> · N photos" line.
-export const headerHtml = ({ title, subtitle, logoData }) =>
-  `<div class="header">
+// default "Generated <date> · N photos" line. Pass `companyName` and
+// `brandColor` to incorporate report branding (company name above title,
+// colored left border accent).
+export const headerHtml = ({ title, subtitle, logoData, companyName, brandColor }) => {
+  const accentColor = brandColor && /^#[0-9A-Fa-f]{3,6}$/.test(brandColor) ? brandColor : '#1A1A1A';
+  return `<div class="header" style="border-left: 4px solid ${accentColor}; padding-left: 14px;">
     ${logoData ? `<img class="logo" src="${logoData}" alt="" />` : ''}
     <div class="htext">
+      ${companyName ? `<div class="company">${escapeHtml(companyName)}</div>` : ''}
       <h1>${escapeHtml(title)}</h1>
       <div class="sub">${escapeHtml(subtitle || '')}</div>
     </div>
   </div>`;
+};
 
 export const footerHtml = () =>
   `<div class="footer">Created with ProofPix.app</div>`;

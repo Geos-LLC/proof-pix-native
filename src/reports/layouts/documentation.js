@@ -113,6 +113,8 @@ export default {
         title: project.title,
         subtitle: `Documentation report &middot; ${photos.length} entr${photos.length === 1 ? 'y' : 'ies'}`,
         logoData,
+        companyName: branding?.companyName || null,
+        brandColor: branding?.brandColor || null,
       })}
       ${entries.join('')}
       ${footerHtml()}
