@@ -37,6 +37,8 @@ export default {
     const logoData = showBranding && branding?.logoUri
       ? await helpers.fileToDataUri(branding.logoUri, 'image/png')
       : null;
+    const companyName = showBranding ? (branding?.companyName || '') : '';
+    const brandColor = branding?.brandColor || null;
 
     const tiles = await Promise.all(
       sortByTime(photos).map(async (p) => {
@@ -57,6 +59,8 @@ export default {
         title: project.title,
         subtitle: `${formatLongDate(project.generatedAt || Date.now())} &middot; ${photos.length} photo${photos.length === 1 ? '' : 's'}`,
         logoData,
+        companyName,
+        brandColor,
       })}
       <div class="grid">${tiles.join('')}</div>
       ${footerHtml()}

@@ -179,6 +179,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
     togglePreviewMetadata,
     updateShowBrandLogo,
     brandLogoUri,
+    reportBrandLogoUri,
+    reportCompanyName,
+    reportBrandColor,
     location,
   } = useSettings();
   const roomDataMap = useMemo(() => {
@@ -691,6 +694,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // self-contained HTML string (logo + photos embedded as data URIs)
   // suitable for sharing or feeding to expo-print for PDF.
   const buildReportHtml = async ({ title, photos, layoutType, options, logoUri }) => {
+    const effectiveLogoUri = logoUri || null;
     return generateReport({
       project: {
         title,
@@ -700,7 +704,11 @@ export default function ProjectDetailScreen({ route, navigation }) {
       photos,
       layoutType: layoutType || DEFAULT_LAYOUT_ID,
       options: options || {},
-      branding: { logoUri: logoUri || null },
+      branding: {
+        logoUri: effectiveLogoUri,
+        companyName: reportCompanyName || '',
+        brandColor: reportBrandColor || '#1A1A1A',
+      },
       helpers: {
         fileToDataUri,
         displayRoomName,
@@ -756,7 +764,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
       photos: chosen,
       layoutType: report.layoutType || DEFAULT_LAYOUT_ID,
       options: report.options || {},
-      logoUri: resolved.includeBranding === false ? null : brandLogoUri,
+      logoUri: resolved.includeBranding === false ? null : (reportBrandLogoUri || brandLogoUri),
     });
     // Persistent reports/ directory inside documentDirectory.
     try {
@@ -1529,15 +1537,40 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 style={[styles.reportInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
               />
 
-              {/* Logo preview — only when a brand logo is configured. */}
-              {brandLogoUri && (
-                <View style={[styles.reportLogoRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Image source={{ uri: brandLogoUri }} style={styles.reportLogoThumb} resizeMode="contain" />
-                  <Text style={[styles.reportLogoText, { color: theme.textSecondary }]}>
-                    Brand logo will appear in the report header
+              {/* Branding section — shows current report branding summary
+                  with a link to open BrandingSettings. Falls back to
+                  the photo-editor logo when no report logo is set. */}
+              <View style={styles.reportSectionHeader}>
+                <Text style={[styles.reportSectionLabel, { color: theme.textSecondary }]}>BRANDING</Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('BrandingSettings')}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Text style={[styles.reportSectionLink, { color: theme.accent }]}>Edit →</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                {(reportBrandLogoUri || brandLogoUri) ? (
+                  <Image
+                    source={{ uri: reportBrandLogoUri || brandLogoUri }}
+                    style={styles.reportLogoThumb}
+                    resizeMode="contain"
+                  />
+                ) : null}
+                <View style={{ flex: 1, marginLeft: (reportBrandLogoUri || brandLogoUri) ? 10 : 0 }}>
+                  {reportCompanyName ? (
+                    <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>{reportCompanyName}</Text>
+                  ) : (
+                    <Text style={[styles.reportRowSubtle, { color: theme.textMuted || theme.textSecondary }]}>No company name set</Text>
+                  )}
+                  <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>
+                    {reportBrandLogoUri ? 'Report logo' : brandLogoUri ? 'Using photo logo (no report logo set)' : 'No logo set'}
                   </Text>
                 </View>
-              )}
+                {reportBrandColor ? (
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: reportBrandColor, marginLeft: 8 }} />
+                ) : null}
+              </View>
 
               {/* Photo count stepper. Max is the active report's
                   saved photo pool; min 1. The "Pick photos" link

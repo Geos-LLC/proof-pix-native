@@ -81,6 +81,12 @@ export const SettingsProvider = ({ children }) => {
   const [metaShowTime, setMetaShowTime] = useState(true);
   const [metaShowAddress, setMetaShowAddress] = useState(true);
   const [metaShowGps, setMetaShowGps] = useState(false);
+  // Report branding — logo, company name, and accent color used in
+  // generated report headers. Separate from the photo-editor logo overlay.
+  const [reportBrandLogoUri, setReportBrandLogoUri] = useState(null);
+  const [reportCompanyName, setReportCompanyName] = useState('');
+  const [reportBrandColor, setReportBrandColor] = useState('#1A73E8');
+
   // Brand logo overlay — separate from the watermark text. URI is the
   // file:// path to the user-uploaded image; null means no custom logo
   // has been uploaded yet, so the toggle does nothing.
@@ -259,6 +265,9 @@ export const SettingsProvider = ({ children }) => {
         setMetaShowTime(settings.metaShowTime ?? true);
         setMetaShowAddress(settings.metaShowAddress ?? true);
         setMetaShowGps(settings.metaShowGps ?? false);
+        setReportBrandLogoUri(settings.reportBrandLogoUri ?? null);
+        setReportCompanyName(settings.reportCompanyName ?? '');
+        setReportBrandColor(settings.reportBrandColor ?? '#1A73E8');
         setBrandLogoUri(settings.brandLogoUri ?? null);
         setShowBrandLogo(settings.showBrandLogo ?? false);
         setBrandLogoPosition(settings.brandLogoPosition ?? 'right-bottom');
@@ -416,6 +425,9 @@ export const SettingsProvider = ({ children }) => {
       const existingSettings = (await readSecureJSON(SETTINGS_KEY)) || {};
 
       const stateSnapshot = {
+        reportBrandLogoUri,
+        reportCompanyName,
+        reportBrandColor,
         showLabels,
         showPreviewMetadata,
         showWatermark,
@@ -546,6 +558,21 @@ export const SettingsProvider = ({ children }) => {
     const next = sanitizeOffsetIn(offset);
     setBrandLogoOffset(next);
     await saveSettings({ brandLogoOffset: next });
+  };
+  const updateReportBrandLogoUri = async (uri) => {
+    const next = typeof uri === 'string' && uri ? uri : null;
+    setReportBrandLogoUri(next);
+    await saveSettings({ reportBrandLogoUri: next });
+  };
+  const updateReportCompanyName = async (name) => {
+    const next = typeof name === 'string' ? name : '';
+    setReportCompanyName(next);
+    await saveSettings({ reportCompanyName: next });
+  };
+  const updateReportBrandColor = async (color) => {
+    const next = typeof color === 'string' && color ? color : '#1A73E8';
+    setReportBrandColor(next);
+    await saveSettings({ reportBrandColor: next });
   };
   const updateMetaPosition = async (pos) => {
     setMetaPosition(pos);
@@ -1039,6 +1066,12 @@ export const SettingsProvider = ({ children }) => {
     metaShowAddress,
     metaShowGps,
     setMetaField,
+    reportBrandLogoUri,
+    reportCompanyName,
+    reportBrandColor,
+    updateReportBrandLogoUri,
+    updateReportCompanyName,
+    updateReportBrandColor,
     brandLogoUri,
     showBrandLogo,
     updateBrandLogoUri,

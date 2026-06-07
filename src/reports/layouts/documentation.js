@@ -64,6 +64,8 @@ export default {
     const logoData = showBranding && branding?.logoUri
       ? await helpers.fileToDataUri(branding.logoUri, 'image/png')
       : null;
+    const companyName = showBranding ? (branding?.companyName || '') : '';
+    const brandColor = branding?.brandColor || null;
 
     const ordered = sortByTime(photos);
 
@@ -113,6 +115,8 @@ export default {
         title: project.title,
         subtitle: `Documentation report &middot; ${photos.length} entr${photos.length === 1 ? 'y' : 'ies'}`,
         logoData,
+        companyName,
+        brandColor,
       })}
       ${entries.join('')}
       ${footerHtml()}
