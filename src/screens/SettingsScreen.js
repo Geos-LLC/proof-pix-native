@@ -3534,6 +3534,21 @@ export default function SettingsScreen({ navigation, route }) {
                 )}
               </TouchableOpacity>
 
+              {/* Report Branding — logo, company name, accent color for
+                  generated reports. Always accessible (not pro-gated). */}
+              <TouchableOpacity
+                style={[styles.settingRow, { borderBottomWidth: 0 }]}
+                onPress={() => navigation.navigate('BrandingSettings')}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.reportBranding', { defaultValue: 'Report Branding' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.reportBrandingDescription', { defaultValue: 'Logo, company name, and accent color for generated reports.' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
+              </TouchableOpacity>
+
               {/* Inline watermark customization fields removed — the
                   user spec wants the deep watermark editor only in
                   the dedicated WatermarkCustomization screen. Keeping

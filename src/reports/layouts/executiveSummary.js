@@ -50,6 +50,8 @@ export default {
     const logoData = showBranding && branding?.logoUri
       ? await helpers.fileToDataUri(branding.logoUri, 'image/png')
       : null;
+    const companyName = showBranding ? (branding?.companyName || '') : '';
+    const brandColor = branding?.brandColor || null;
 
     const cover = pickCover(photos);
     const coverData = cover ? await photoToData(cover, helpers) : null;
@@ -124,6 +126,8 @@ export default {
         title: project.title,
         subtitle: `Executive Summary &middot; ${formatLongDate(project.generatedAt || Date.now())}`,
         logoData,
+        companyName,
+        brandColor,
       })}
       ${locationLine}
       ${coverData ? `<div class="cover"><img src="${coverData}" alt="" /></div>` : ''}

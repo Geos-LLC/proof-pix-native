@@ -41,6 +41,8 @@ export default {
     const logoData = showBranding && branding?.logoUri
       ? await helpers.fileToDataUri(branding.logoUri, 'image/png')
       : null;
+    const companyName = showBranding ? (branding?.companyName || '') : '';
+    const brandColor = branding?.brandColor || null;
 
     const groups = groupByRoom(photos);
     const sections = [];
@@ -137,6 +139,8 @@ export default {
         title: project.title,
         subtitle: `${formatLongDate(project.generatedAt || Date.now())} &middot; ${sections.length} section${sections.length === 1 ? '' : 's'}`,
         logoData,
+        companyName,
+        brandColor,
       })}
       ${sections.length > 0 ? sections.join('') : `<div class="missing">No matched before/after pairs in this report.</div>`}
       ${footerHtml()}

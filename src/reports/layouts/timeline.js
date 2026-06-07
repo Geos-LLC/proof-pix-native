@@ -41,6 +41,8 @@ export default {
     const logoData = showBranding && branding?.logoUri
       ? await helpers.fileToDataUri(branding.logoUri, 'image/png')
       : null;
+    const companyName = showBranding ? (branding?.companyName || '') : '';
+    const brandColor = branding?.brandColor || null;
 
     const groups = groupByRoom(photos);
     const sections = [];
@@ -85,6 +87,8 @@ export default {
         title: project.title,
         subtitle: `Timeline &middot; ${photos.length} stage${photos.length === 1 ? '' : 's'}`,
         logoData,
+        companyName,
+        brandColor,
       })}
       ${sections.join('')}
       ${footerHtml()}
