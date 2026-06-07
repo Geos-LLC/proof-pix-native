@@ -288,6 +288,17 @@ export default function ProjectDetailScreen({ route, navigation }) {
       try { await AsyncStorage.setItem(reportsKey(project.id), JSON.stringify(next)); } catch (_) {}
     }
   };
+  // Storage-only variant: writes to AsyncStorage without touching
+  // React state. Used by flows that batch multiple state updates
+  // together at the end so an `await` between them doesn't split
+  // them into separate React renders (which created a window where
+  // setActiveReportId saw stale `reports` and the preview view
+  // resolved activeReport to null).
+  const persistReportsToStorageOnly = async (next) => {
+    if (project?.id) {
+      try { await AsyncStorage.setItem(reportsKey(project.id), JSON.stringify(next)); } catch (_) {}
+    }
+  };
 
   // The active report's saved photo ids (or empty set when no active
   // report). Drives the editor's photo pool and the Generate flow.
@@ -702,7 +713,13 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // saved file path (or null on failure). The actual share is done
   // by handleShareReport, which calls this when a regenerate is
   // needed.
-  const generateReportFile = async (report) => {
+  //
+  // `skipStatePatch=true` skips the patchReport call. Used by
+  // handleGenerateReport which batches the file paths into its own
+  // final setReports/setActiveReportId/setReportViewMode block —
+  // patchReport reads stale React state and would clobber the
+  // not-yet-applied new report.
+  const generateReportFile = async (report, { skipStatePatch = false } = {}) => {
     if (!report || !project) return null;
     const pool = (report.photoIds && report.photoIds.length > 0)
       ? projectPhotos.filter((p) => report.photoIds.includes(p.id))
@@ -755,12 +772,14 @@ export default function ProjectDetailScreen({ route, navigation }) {
     // PDF generation lands in the next native build via expo-print.
     // For now the share is HTML — opens cleanly in Safari → Print →
     // Save as PDF.
-    await patchReport(report.id, {
-      generatedFilePath: target,
-      generatedPdfPath: null,
-      generatedAt: Date.now(),
-    });
-    return { html: target, pdf: null };
+    if (!skipStatePatch) {
+      await patchReport(report.id, {
+        generatedFilePath: target,
+        generatedPdfPath: null,
+        generatedAt: Date.now(),
+      });
+    }
+    return { html: target, pdf: null, generatedAt: Date.now() };
   };
 
   // Share a report — uses the cached generated file when it still
@@ -869,28 +888,37 @@ export default function ProjectDetailScreen({ route, navigation }) {
         targetReportId = newReport.id;
         nextReports = [...reports, newReport];
       }
-      await persistReports(nextReports);
-      // Remember the layout + options on the project record so the
-      // next new draft pre-fills the same style. Best-effort — if
-      // the save fails the editor still works; user just won't get
-      // the pre-fill next time.
+      // Two-phase commit so React batches all state updates:
+      //
+      //  1. Render the HTML/PDF file with the new report config
+      //     (passing skipStatePatch so it doesn't call patchReport,
+      //     which reads stale `reports` state via closure and would
+      //     clobber the not-yet-applied new report).
+      //  2. Bake the resulting file paths into the report record.
+      //  3. Write to AsyncStorage and patch the project last-used.
+      //  4. Apply ALL React state updates synchronously at the end.
+      //     No more `await` between them — they batch into one
+      //     render so activeReport useMemo sees the new record.
+      const committedReport = nextReports.find((r) => r.id === targetReportId);
+      const fileOut = await generateReportFile(committedReport, { skipStatePatch: true });
+      const finalizedReports = nextReports.map((r) =>
+        r.id === targetReportId
+          ? {
+              ...r,
+              generatedFilePath: fileOut?.html || null,
+              generatedPdfPath: fileOut?.pdf || null,
+              generatedAt: fileOut?.generatedAt || Date.now(),
+            }
+          : r,
+      );
+      await persistReportsToStorageOnly(finalizedReports);
       if (project?.id && patchProject) {
         await patchProject(project.id, {
           lastReportLayoutType: reportLayoutType || DEFAULT_LAYOUT_ID,
           lastReportOptions: { ...reportOptions },
         });
       }
-      // generateReportFile reads from the reports list, so wait
-      // a tick for state to settle before passing the target.
-      const committedReport = nextReports.find((r) => r.id === targetReportId);
-      console.warn('[Report] handleGenerate: about to write file', {
-        targetReportId,
-        committedReportPresent: !!committedReport,
-        nextReportsLen: nextReports.length,
-        nextReportIds: nextReports.map((r) => r.id),
-      });
-      await generateReportFile(committedReport);
-      console.warn('[Report] handleGenerate: setting activeReportId + preview', { targetReportId });
+      setReports(finalizedReports);
       setActiveReportId(targetReportId);
       setReportViewMode('preview');
     } catch (e) {
