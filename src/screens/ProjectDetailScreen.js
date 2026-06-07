@@ -38,6 +38,8 @@ import {
 } from '../reports';
 import { consumePendingLayoutSelection } from '../reports/pickerBridge';
 import ReportPreviewView from '../components/ReportPreview';
+import { getCachedLabeledPhoto, calculateSettingsHash } from '../services/labelCacheService';
+import { readSecureJSON } from '../services/secureStorageService';
 
 // Storage key for the report's selected photo ids — legacy, retained
 // so the Default-settings reset can still wipe it cleanly when an
@@ -729,6 +731,32 @@ export default function ProjectDetailScreen({ route, navigation }) {
     console.warn(
       `[Report] generateReportFile id=${report.id} stored_layout=${report.layoutType} resolved_layout=${report.layoutType || DEFAULT_LAYOUT_ID} photos=${chosen.length}`,
     );
+
+    // Resolve cached labeled URIs (BEFORE/AFTER labels + watermarks baked in).
+    // If the label cache has a processed version we use that so the report
+    // photos show the same overlays the user sees in the app.
+    let resolvedPhotos = chosen;
+    try {
+      const appSettings = (await readSecureJSON('app-settings')) || {};
+      if (appSettings.showLabels !== false || appSettings.showWatermark) {
+        const settingsHash = calculateSettingsHash(appSettings);
+        resolvedPhotos = await Promise.all(
+          chosen.map(async (photo) => {
+            const effectiveMode = photo.type || photo.mode;
+            if (!effectiveMode) return photo;
+            try {
+              const cachedUri = await getCachedLabeledPhoto(
+                { ...photo, mode: effectiveMode },
+                settingsHash,
+              );
+              if (cachedUri) return { ...photo, uri: cachedUri };
+            } catch (_) {}
+            return photo;
+          }),
+        );
+      }
+    } catch (_) {}
+
     // Honor the "Include branding" option for which logo (if any) is
     // passed to the engine. The engine also checks the option, but
     // not passing the URI saves an unnecessary file read on the
@@ -736,7 +764,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
     const resolved = resolveOptions(report.layoutType || DEFAULT_LAYOUT_ID, report.options);
     const html = await buildReportHtml({
       title: report.title?.trim() || project.name,
-      photos: chosen,
+      photos: resolvedPhotos,
       layoutType: report.layoutType || DEFAULT_LAYOUT_ID,
       options: report.options || {},
       logoUri: resolved.includeBranding === false ? null : brandLogoUri,
