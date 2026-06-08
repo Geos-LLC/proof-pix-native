@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { CommonActions } from '@react-navigation/native';
 import { FONTS } from '../constants/fonts';
 import { useTheme } from '../hooks/useTheme';
 
@@ -62,14 +63,27 @@ export default function PersistentBottomNav({ currentRoute, navigationRef }) {
   const isDark = theme.mode === 'dark';
 
   const go = (tab) => {
-    if (activeTab === tab) return;
-    // Every tab lands on its corresponding main page (Home / Projects
-    // / Studio grid / Settings) regardless of how deep the user is in
-    // the current stack. reset() blows away the nested route history
-    // so back-button behavior matches the user's mental model — "I
-    // tapped Settings, now Back closes the app" rather than "Back
-    // takes me 8 screens deep into where I was before."
-    navigationRef.current?.reset({ index: 0, routes: [{ name: tab }] });
+    const navRef = navigationRef?.current;
+    if (!navRef) return;
+
+    // Always dispatch the reset — even when activeTab === tab. The
+    // reset remounts the destination screen, which dismisses any
+    // local overlays the screen was rendering on top of itself
+    // (HomeScreen's tappedFullPhoto enlarged view, for example).
+    // Previously this no-op'd when activeTab matched, leaving the
+    // user stuck inside their own overlay with no way out via the
+    // bottom nav.
+    //
+    // Going through dispatch + CommonActions is the canonical path
+    // React Navigation uses internally; on some iOS native-stack
+    // configurations a direct navRef.reset(...) silently no-ops.
+    try {
+      navRef.dispatch(
+        CommonActions.reset({ index: 0, routes: [{ name: tab }] })
+      );
+    } catch (_) {
+      try { navRef.navigate(tab); } catch (_) {}
+    }
   };
 
   const inactiveTint = theme.textSecondary;

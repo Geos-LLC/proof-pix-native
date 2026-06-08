@@ -17,7 +17,7 @@ import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { FONTS } from '../constants/fonts';
-import { useSettings } from '../context/SettingsContext';
+import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
@@ -84,7 +84,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,
     location,
-  } = useSettings();
+  } = useScopedSettings(route?.params?.photoId);
 
   const photoId = route?.params?.photoId;
   const { photos } = usePhotos();

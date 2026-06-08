@@ -33,7 +33,10 @@ export async function ensureLabelForPhoto(photo, opts = {}) {
     try {
       // First, check if labels are already cached from background preparation.
       // Reads from Keychain on iOS so settings survive reinstall.
-      const settings = (await readSecureJSON('app-settings')) || {};
+      // Then merge the photo's per-photo overrides on top of global so
+      // the bake reflects any per-photo customizations made in Studio.
+      const baseSettings = (await readSecureJSON('app-settings')) || {};
+      const settings = photo?.overrides ? { ...baseSettings, ...photo.overrides } : baseSettings;
 
       // If labels are disabled, return original (default to true if not set)
       if (settings.showLabels === false) {
@@ -84,11 +87,13 @@ export async function ensureLabelForPhoto(photo, opts = {}) {
           type: effectiveType,
         });
 
-        // Use pre-computed hash or compute once
+        // Use pre-computed hash or compute once. Merge photo.overrides
+        // so the hash distinguishes per-photo customizations.
         let prepSettingsHash = settingsHash;
         if (!prepSettingsHash) {
           try {
-            const prepSettings = (await readSecureJSON('app-settings')) || {};
+            const baseSettings = (await readSecureJSON('app-settings')) || {};
+            const prepSettings = photo?.overrides ? { ...baseSettings, ...photo.overrides } : baseSettings;
             prepSettingsHash = calculateSettingsHash(prepSettings);
           } catch (e) {
             console.warn('[LABEL] Failed to get settings hash for preparation:', e);
@@ -184,7 +189,15 @@ export async function ensureLabelsForPhotoBatch(photos, opts = {}) {
     const cacheKey = `${photo.id}_${effectiveType}`;
     const cached = cacheMetadata[cacheKey];
 
-    if (cached && cached.settingsHash === settingsHash) {
+    // Per-photo effective hash — when a photo has overrides, its
+    // cache key must reflect that, otherwise it'd share a cache entry
+    // with global-styled photos and the user's per-photo look would
+    // never bake.
+    const photoEffectiveHash = photo?.overrides
+      ? calculateSettingsHash({ ...settings, ...photo.overrides })
+      : settingsHash;
+
+    if (cached && cached.settingsHash === photoEffectiveHash) {
       // Quick file existence check (no AsyncStorage needed)
       try {
         const fileInfo = await FileSystem.getInfoAsync(cached.uri);
@@ -205,7 +218,7 @@ export async function ensureLabelsForPhotoBatch(photos, opts = {}) {
     try {
       const photoWithType = { ...photo, type: effectiveType };
       const labeledUri = await Promise.race([
-        ensureLabelForPhoto(photoWithType, { settingsHash, skipCacheCheck: true }),
+        ensureLabelForPhoto(photoWithType, { settingsHash: photoEffectiveHash, skipCacheCheck: true }),
         new Promise((resolve) => setTimeout(() => {
           console.warn(`[LABEL_BATCH] ⚠️ Timeout for ${photo.id} (mode: ${effectiveType}), using original URI`);
           resolve(photo.uri);

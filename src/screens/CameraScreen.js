@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
   Share,
   TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import Slider from '@react-native-community/slider';
@@ -27,6 +28,8 @@ import { compositeImages, isNativeCompositorAvailable } from '../utils/imageComp
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as ExpoLocation from 'expo-location';
+import { Audio } from 'expo-av';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
@@ -123,13 +126,30 @@ export default function CameraScreen({ route, navigation }) {
   const [tempPhotoLabel, setTempPhotoLabel] = useState(null);
   const [tempPhotoDimensions, setTempPhotoDimensions] = useState({ width: 1080, height: 1920 });
   const [showRoomIndicator, setShowRoomIndicator] = useState(false);
-  // Per-photo note modal: opens when the user taps "Add Note" in the
-  // half-screen gallery panel. noteDraft holds the live text while the
-  // modal is open; on save we updatePhoto({ note }) so the note is
-  // persisted with the photo metadata (used later in the report).
+  // Per-photo note modal: opens when the user taps the mic or notes
+  // mid-icon in the half-screen gallery panel. State for the modal
+  // body lives inside NoteModalContent; the parent only tracks which
+  // photo we're targeting (null for pre-note) and whether to prime
+  // the recorder on open.
+  // Unified Note modal — opens for BOTH the mic and the notes icon
+  // beside the capture button. The mic entry point sets
+  // `noteModalAutoRecord` so the modal starts dictation immediately;
+  // the notes entry point opens it in plain-text mode. When the
+  // centered strip slot is the "next capture" placeholder (no real
+  // photo yet), `noteTargetPhotoId` is null and the modal's save
+  // path writes to `pendingNote` instead of a photo — that queued
+  // note attaches automatically to whatever photo the user shoots
+  // next ("pre-note" workflow).
   const [showNoteModal, setShowNoteModal] = useState(false);
-  const [noteDraft, setNoteDraft] = useState('');
   const [noteTargetPhotoId, setNoteTargetPhotoId] = useState(null);
+  const [noteModalAutoRecord, setNoteModalAutoRecord] = useState(false);
+  // Queued note/audio waiting for the user's next capture. Shape:
+  //   { note: string, audioUri: string|null, audioDurationMs: number,
+  //     audioTranscription: string|null }
+  // Cleared after the next photo is added (handleBeforePhoto /
+  // handleAfterPhoto / handleProgressPhoto). Done-button intercept
+  // prompts discard/keep if this is non-null on leave.
+  const [pendingNote, setPendingNote] = useState(null);
   const longPressGalleryTimer = useRef(null);
   const roomIndicatorTimer = useRef(null);
   const enlargedGalleryScrollRef = useRef(null);
@@ -198,7 +218,7 @@ export default function CameraScreen({ route, navigation }) {
   const showEnlargedGalleryRef = useRef(showEnlargedGallery);
   const enlargedGalleryPhotoRef = useRef(enlargedGalleryPhoto);
   const isGalleryAnimatingRef = useRef(false);
-  const { addPhoto, updatePhoto, getBeforePhotos, getUnpairedBeforePhotos, getAfterPhotos, getProgressPhotos, getCombinedPhotos, deletePhoto, setCurrentRoom, activeProjectId, createProject, setActiveProject, projects } = usePhotos();
+  const { photos, addPhoto, updatePhoto, getBeforePhotos, getUnpairedBeforePhotos, getAfterPhotos, getProgressPhotos, getCombinedPhotos, deletePhoto, setCurrentRoom, activeProjectId, createProject, setActiveProject, projects } = usePhotos();
   const {
     showLabels,
     shouldShowWatermark,
@@ -856,6 +876,83 @@ export default function CameraScreen({ route, navigation }) {
       isGalleryAnimatingRef.current = false;
       setIsGalleryAnimating(false);
     });
+  };
+
+  // Wraps a "leave the camera" callback so a queued pre-note doesn't
+  // disappear silently. If pendingNote is set, prompt the user to
+  // discard or keep — Keep stays on the camera so the next capture
+  // can absorb the queue; Discard drops it and proceeds with the
+  // original action. Called from the Done button.
+  const guardLeaveForPendingNote = (proceed) => {
+    if (!pendingNote) { proceed(); return; }
+    const label = pendingNote.audioUri ? 'voice memo' : 'note';
+    Alert.alert(
+      `Unsaved ${label}`,
+      `You have a ${label} queued for your next photo. What would you like to do?`,
+      [
+        { text: 'Keep for next photo', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            setPendingNote(null);
+            proceed();
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
+  // Returns the photo currently centered under the strip's anchor
+  // frame at `idx`, or null if that slot is the "next capture"
+  // placeholder. The strip composition mirrors what the gallery
+  // renders: in Before mode it's the room's Befores; in After /
+  // Progress mode it's the active set's members (Before →
+  // Progresses → After). Used by the mic + note mid-icon buttons to
+  // decide whether to write to a real photo or queue a pre-note.
+  const getCenteredStripPhoto = (idx) => {
+    const activeBefore = getActiveBeforePhoto();
+    const stripPhotos = mode === 'before'
+      ? (getBeforePhotos(room) || [])
+      : (activeBefore
+          ? [
+              activeBefore,
+              ...(getProgressPhotos?.(room) || [])
+                .filter((p) => p.beforePhotoId === activeBefore.id)
+                .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)),
+              ...((getAfterPhotos?.(room) || []).filter((p) => p.beforePhotoId === activeBefore.id)),
+            ]
+          : []);
+    if (idx >= 0 && idx < stripPhotos.length) return stripPhotos[idx];
+    // Out of range → placeholder is centered. Return null so the
+    // caller can route to the pre-note queue.
+    return null;
+  };
+
+  // Applies a queued pre-note/pre-audio to a freshly captured photo.
+  // Called from the three photo handlers right after addPhoto so the
+  // queued payload lands on the new id. Clears pendingNote whether
+  // the write succeeded or not — leaving it would attach the same
+  // note to subsequent captures, which is not the intended behavior.
+  const applyPendingNoteToNewPhoto = async (photoId) => {
+    if (!pendingNote || !photoId) return;
+    const { note, audioUri, audioDurationMs, audioTranscription } = pendingNote;
+    const updates = {};
+    if (note) updates.note = note;
+    if (audioUri) {
+      updates.audioUri = audioUri;
+      updates.audioDurationMs = audioDurationMs;
+      updates.audioTranscription = audioTranscription || note;
+    }
+    if (Object.keys(updates).length > 0) {
+      try {
+        await updatePhoto(photoId, updates);
+      } catch (e) {
+        console.warn('[CameraScreen] failed to apply pending note to new photo:', e?.message);
+      }
+    }
+    setPendingNote(null);
   };
 
   // PanResponder for swipe-to-dismiss carousel (swipe DOWN)
@@ -2078,6 +2175,9 @@ export default function CameraScreen({ route, navigation }) {
       };
 
       await addPhoto(newPhoto);
+      // Pre-note flow: if the user queued a note/audio while the
+      // placeholder was centered, flush it onto this Before now.
+      await applyPendingNoteToNewPhoto(newPhoto.id);
       logPhotoCapture('before', 'camera', activeProjectId);
       logBeforePhotoStarted(activeProjectId, 'camera');
       onBeforePhotoTaken(newPhoto).catch(() => {}); // schedule job reminder (non-blocking)
@@ -2187,6 +2287,7 @@ export default function CameraScreen({ route, navigation }) {
       };
 
       await addPhoto(newPhoto);
+      await applyPendingNoteToNewPhoto(newPhoto.id);
       logPhotoCapture('progress', 'camera', activeProjectId);
 
       // Progress flow: one photo per set, auto-advance through EVERY
@@ -2333,6 +2434,7 @@ export default function CameraScreen({ route, navigation }) {
           : null),
       };
       await addPhoto(newAfterPhoto);
+      await applyPendingNoteToNewPhoto(newAfterPhoto.id);
       logPhotoCapture('after', 'camera', activeProjectId);
       const timeSinceBefore = activeBeforePhoto?.timestamp ? Math.round((Date.now() - activeBeforePhoto.timestamp) / 1000) : null;
       logAfterPhotoCompleted(activeProjectId, timeSinceBefore);
@@ -3374,6 +3476,37 @@ export default function CameraScreen({ route, navigation }) {
           )}
 
 
+          {/* Pre-note hint / "queued note" chip — visible only in
+              split-camera mode (gallery or enlarged open). Shows the
+              user that mic/notes taps WILL queue when the centered
+              slot is the "next capture" placeholder, and confirms
+              the queue is primed once they save one. */}
+          {(showGallery || showEnlargedGallery) && (() => {
+            const idx = showEnlargedGallery ? enlargedGalleryIndex : galleryIndex;
+            const placeholderCentered = !getCenteredStripPhoto(idx);
+            if (pendingNote) {
+              const label = pendingNote.audioUri
+                ? '1 audio ready for next photo'
+                : '1 note ready for next photo';
+              return (
+                <View style={styles.preNoteChipRow} pointerEvents="none">
+                  <View style={styles.preNoteChip}>
+                    <Ionicons name="checkmark-circle" size={14} color="#000" />
+                    <Text style={styles.preNoteChipText}>{label}</Text>
+                  </View>
+                </View>
+              );
+            }
+            if (placeholderCentered) {
+              return (
+                <View style={styles.preNoteChipRow} pointerEvents="none">
+                  <Text style={styles.preNoteHintText}>Will attach to next photo</Text>
+                </View>
+              );
+            }
+            return null;
+          })()}
+
           {/* Main control row */}
           <View style={styles.mainControlRow}>
             {/* Left container - Thumbnail */}
@@ -3487,34 +3620,32 @@ export default function CameraScreen({ route, navigation }) {
                 itself only appears in half-screen mode. */}
             <View style={styles.midIconSlot}>
               {(showGallery || showEnlargedGallery) && (() => {
-                // Light theme: solid-black pill with a white icon so
-                // it reads on the white panel surface. Dark theme:
-                // translucent dark pill with a yellow icon (existing
-                // chrome on the dark background).
+                // Centered slot → real photo: target it. Placeholder
+                // (no real photo at that strip index): leave target as
+                // null and the modal's save path will queue a
+                // pre-note/audio that attaches to the next capture.
+                const idx = showEnlargedGallery ? enlargedGalleryIndex : galleryIndex;
+                const centeredPhoto = getCenteredStripPhoto(idx);
                 const isLight = theme.mode === 'light';
+                const hasAudio = !!centeredPhoto?.audioUri;
                 return (
                   <TouchableOpacity
                     style={[
                       styles.inlineMidIcon,
-                      isLight
-                        ? { backgroundColor: '#000', borderColor: '#000' }
-                        : null,
-                      !selectedBeforePhoto?.id ? { opacity: 0.4 } : null,
+                      isLight ? { backgroundColor: '#000', borderColor: '#000' } : null,
                     ]}
                     onPress={() => {
-                      // Route to the working Studio Notes recorder
-                      // (StudioDetail defaults to the Notes tab). The
-                      // mid-icon button targets the active set's
-                      // before photo since that's the "current subject"
-                      // of the capture flow.
-                      if (!selectedBeforePhoto?.id) return;
-                      navigation.navigate('StudioDetail', { photoId: selectedBeforePhoto.id });
+                      // Open the unified Note modal with dictation
+                      // primed. Target is the centered photo when one
+                      // exists; null routes the save to pendingNote.
+                      setNoteTargetPhotoId(centeredPhoto?.id || null);
+                      setNoteModalAutoRecord(true);
+                      setShowNoteModal(true);
                     }}
-                    disabled={!selectedBeforePhoto?.id}
                     activeOpacity={0.7}
                   >
                     <Ionicons
-                      name="mic-outline"
+                      name={hasAudio ? 'mic' : 'mic-outline'}
                       size={22}
                       color={isLight ? '#FFFFFF' : '#F2C31B'}
                     />
@@ -3556,22 +3687,8 @@ export default function CameraScreen({ route, navigation }) {
                 visual balance. */}
             <View style={styles.midIconSlot}>
               {(showGallery || showEnlargedGallery) && (() => {
-                const activeBefore = getActiveBeforePhoto();
-                const stripPhotos = mode === 'before'
-                  ? (getBeforePhotos(room) || [])
-                  : (activeBefore
-                      ? [
-                          activeBefore,
-                          ...(getProgressPhotos?.(room) || [])
-                            .filter((p) => p.beforePhotoId === activeBefore.id)
-                            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)),
-                          ...((getAfterPhotos?.(room) || []).filter((p) => p.beforePhotoId === activeBefore.id)),
-                        ]
-                      : []);
                 const idx = showEnlargedGallery ? enlargedGalleryIndex : galleryIndex;
-                const centeredPhoto = (idx >= 0 && idx < stripPhotos.length)
-                  ? stripPhotos[idx]
-                  : (stripPhotos[stripPhotos.length - 1] || activeBefore || null);
+                const centeredPhoto = getCenteredStripPhoto(idx);
                 const hasNote = !!(centeredPhoto && centeredPhoto.note && String(centeredPhoto.note).trim());
                 const isLight = theme.mode === 'light';
                 return (
@@ -3583,9 +3700,11 @@ export default function CameraScreen({ route, navigation }) {
                         : null,
                     ]}
                     onPress={() => {
-                      if (!centeredPhoto?.id) return;
-                      setNoteTargetPhotoId(centeredPhoto.id);
-                      setNoteDraft(centeredPhoto.note || '');
+                      // Same unified modal as the mic icon, but with
+                      // dictation OFF — user can still tap Record
+                      // inside if they change their mind.
+                      setNoteTargetPhotoId(centeredPhoto?.id || null);
+                      setNoteModalAutoRecord(false);
                       setShowNoteModal(true);
                     }}
                     activeOpacity={0.7}
@@ -3608,25 +3727,27 @@ export default function CameraScreen({ route, navigation }) {
                 <TouchableOpacity
                   style={styles.checkmarkButton}
                   onPress={() => {
-                    if (mode === 'progress' && navigation.canGoBack && navigation.canGoBack()) {
-                      navigation.goBack();
-                      return;
-                    }
-                    // Prefer navigate('Home') when Home is already in the
-                    // stack — it pops Camera off without re-mounting Home,
-                    // which avoids the brief layout glitch (folders un-
-                    // scrolled, nav missing) caused by reset's full
-                    // remount. Falls back to reset if Home isn't in the
-                    // stack (e.g. when Camera was reset-pushed directly).
-                    try {
-                      const state = navigation.getState?.();
-                      const hasHome = state?.routes?.some?.((r) => r.name === 'Home');
-                      if (hasHome) {
-                        navigation.navigate('Home');
+                    guardLeaveForPendingNote(() => {
+                      if (mode === 'progress' && navigation.canGoBack && navigation.canGoBack()) {
+                        navigation.goBack();
                         return;
                       }
-                    } catch {}
-                    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                      // Prefer navigate('Home') when Home is already in the
+                      // stack — it pops Camera off without re-mounting Home,
+                      // which avoids the brief layout glitch (folders un-
+                      // scrolled, nav missing) caused by reset's full
+                      // remount. Falls back to reset if Home isn't in the
+                      // stack (e.g. when Camera was reset-pushed directly).
+                      try {
+                        const state = navigation.getState?.();
+                        const hasHome = state?.routes?.some?.((r) => r.name === 'Home');
+                        if (hasHome) {
+                          navigation.navigate('Home');
+                          return;
+                        }
+                      } catch {}
+                      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                    });
                   }}
                   activeOpacity={0.7}
                 >
@@ -4066,6 +4187,21 @@ export default function CameraScreen({ route, navigation }) {
                           </View>
                         );
                       })()}
+                      {/* Note indicator — small document glyph on the
+                          BOTTOM-LEFT of the thumbnail whenever this
+                          photo has a written or transcribed note.
+                          Keeps clear of the top-right count badge and
+                          the top-left "Match" tag in After mode. */}
+                      {(!!(photo.note && String(photo.note).trim()) ||
+                        !!(photo.audioTranscription && String(photo.audioTranscription).trim())) && (
+                        <View style={styles.galleryItemNoteBadge} pointerEvents="none">
+                          <Ionicons
+                            name={photo.audioUri ? 'mic' : 'document-text'}
+                            size={11}
+                            color="#000"
+                          />
+                        </View>
+                      )}
                       {/* Per-set photo count badge — Before-mode only.
                           Shows how many photos belong to THIS set
                           (Before + every Progress + the After, if
@@ -4107,132 +4243,75 @@ export default function CameraScreen({ route, navigation }) {
           )}
           </View>
 
-          {/*
-            Record Audio + Add Note row used to live here (inside the
-            gallery's Animated.View, zIndex 150). It got rendered
-            beneath the 3 round buttons because the fixedUILayer
-            wrapping those buttons sits at zIndex 260. The row has
-            since been moved into bottomControls right above
-            mainControlRow so it floats correctly between the thumb
-            strip and the round buttons.
-          */}
-          {false && (() => {
-            // Figure out which photo gets the note (or audio later):
-            // the currently centered slot in the strip, falling back to
-            // the active Before if the centered slot is a placeholder.
-            const centeredPhoto = (() => {
-              const activeBefore = getActiveBeforePhoto();
-              const stripPhotos = mode === 'before'
-                ? (getBeforePhotos(room) || [])
-                : (activeBefore
-                    ? [
-                        activeBefore,
-                        ...(getProgressPhotos?.(room) || [])
-                          .filter((p) => p.beforePhotoId === activeBefore.id)
-                          .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)),
-                        ...((getAfterPhotos?.(room) || []).filter((p) => p.beforePhotoId === activeBefore.id)),
-                      ]
-                    : []);
-              if (galleryIndex >= 0 && galleryIndex < stripPhotos.length) {
-                return stripPhotos[galleryIndex];
-              }
-              return stripPhotos[stripPhotos.length - 1] || activeBefore || null;
-            })();
-            const hasNote = !!(centeredPhoto && centeredPhoto.note && String(centeredPhoto.note).trim());
-            return (
-              <View style={styles.notesAudioRow}>
-                <TouchableOpacity
-                  style={[styles.notesAudioBtn, !centeredPhoto?.id ? { opacity: 0.5 } : null]}
-                  onPress={() => {
-                    // Hand off to the working Studio Notes recorder
-                    // (StudioDetail defaults to the Notes tab). Audio
-                    // attaches to the currently centered photo in the
-                    // gallery strip — same target as the Notes button
-                    // below.
-                    if (!centeredPhoto?.id) return;
-                    navigation.navigate('StudioDetail', { photoId: centeredPhoto.id });
-                  }}
-                  disabled={!centeredPhoto?.id}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="mic-outline" size={16} color="#F2C31B" />
-                  <Text style={styles.notesAudioBtnText}>Record Audio</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.notesAudioBtn}
-                  onPress={() => {
-                    if (!centeredPhoto?.id) return;
-                    setNoteTargetPhotoId(centeredPhoto.id);
-                    setNoteDraft(centeredPhoto.note || '');
-                    setShowNoteModal(true);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={hasNote ? 'document-text' : 'document-text-outline'}
-                    size={16}
-                    color="#F2C31B"
-                  />
-                  <Text style={styles.notesAudioBtnText}>{hasNote ? 'Edit Note' : 'Add Note'}</Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })()}
         </Animated.View>
       )}
 
-      {/* Add Note modal — text input that writes the note onto the
-          targeted photo's metadata when saved. */}
+      {/* Unified Note modal — same visual treatment for the mic and
+          notes mid-icons. The body always shows a Record control plus
+          an editable transcript/text area. Mic entry sets
+          noteModalAutoRecord so dictation starts immediately on open;
+          notes entry opens in text mode (Record is still one tap
+          away). If noteTargetPhotoId is null, the save path queues
+          the payload to pendingNote — that "pre-note" attaches to
+          whichever photo the user shoots next. Wrapped in
+          KeyboardAvoidingView so the card lifts above the keyboard. */}
       <Modal
         visible={showNoteModal}
         transparent
         animationType="fade"
         onRequestClose={() => setShowNoteModal(false)}
       >
-        <View style={styles.noteModalOverlay}>
-          <View style={styles.noteModalCard}>
-            <Text style={styles.noteModalTitle}>Add Note</Text>
-            <TextInput
-              style={styles.noteModalInput}
-              value={noteDraft}
-              onChangeText={setNoteDraft}
-              placeholder="Type your note…"
-              placeholderTextColor="#888"
-              multiline
-              autoFocus
-              textAlignVertical="top"
-            />
-            <View style={styles.noteModalActions}>
-              <TouchableOpacity
-                style={[styles.noteModalBtn, { backgroundColor: '#333' }]}
-                onPress={() => {
-                  setShowNoteModal(false);
-                  setNoteDraft('');
-                  setNoteTargetPhotoId(null);
-                }}
-              >
-                <Text style={[styles.noteModalBtnText, { color: '#FFF' }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.noteModalBtn, { backgroundColor: '#F2C31B' }]}
-                onPress={async () => {
-                  if (noteTargetPhotoId) {
-                    try {
-                      await updatePhoto(noteTargetPhotoId, { note: noteDraft });
-                    } catch (e) {
-                      console.warn('[CameraScreen] failed to save note:', e?.message);
+        <KeyboardAvoidingView
+          style={styles.noteModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          {showNoteModal && (
+            <NoteModalContent
+              photo={noteTargetPhotoId
+                ? ((photos || []).find((p) => p.id === noteTargetPhotoId) || null)
+                : null}
+              isPreNote={!noteTargetPhotoId}
+              autoStartRecording={noteModalAutoRecord}
+              onSave={async ({ note, audioUri, audioDurationMs }) => {
+                const transcription = audioUri ? note : null;
+                if (noteTargetPhotoId) {
+                  try {
+                    const updates = { note };
+                    if (audioUri) {
+                      updates.audioUri = audioUri;
+                      updates.audioDurationMs = audioDurationMs;
+                      updates.audioTranscription = transcription;
                     }
+                    await updatePhoto(noteTargetPhotoId, updates);
+                  } catch (e) {
+                    console.warn('[CameraScreen] failed to save note:', e?.message);
                   }
-                  setShowNoteModal(false);
-                  setNoteDraft('');
-                  setNoteTargetPhotoId(null);
-                }}
-              >
-                <Text style={[styles.noteModalBtnText, { color: '#000' }]}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                } else {
+                  // Pre-note path: queue for the next capture. If the
+                  // user closes the modal without entering anything,
+                  // we don't want a phantom queue — only set when
+                  // there's actually content.
+                  if ((note && note.trim()) || audioUri) {
+                    setPendingNote({
+                      note: note || '',
+                      audioUri: audioUri || null,
+                      audioDurationMs: audioUri ? audioDurationMs : 0,
+                      audioTranscription: transcription,
+                    });
+                  }
+                }
+                setShowNoteModal(false);
+                setNoteTargetPhotoId(null);
+                setNoteModalAutoRecord(false);
+              }}
+              onCancel={() => {
+                setShowNoteModal(false);
+                setNoteTargetPhotoId(null);
+                setNoteModalAutoRecord(false);
+              }}
+            />
+          )}
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Android combined photos are now handled by GlobalBackgroundCombinedPhotoCreator */}
@@ -4970,6 +5049,215 @@ export default function CameraScreen({ route, navigation }) {
   );
 }
 
+// Body of the unified Note modal — extracted so the speech-recognition
+// hook only fires while the modal is mounted (i.e. visible). The
+// textarea is pre-filled with the target photo's existing note so
+// dictation appends instead of clobbering. While recording, finals
+// lock into baseTranscriptRef and partials append live for visual
+// feedback. Props:
+//   photo               — the target photo (null when this is a
+//                         pre-note for the next capture)
+//   isPreNote           — true when there is no target photo; the
+//                         header subtitle reminds the user the
+//                         payload will queue
+//   autoStartRecording  — when true, the mic flow primes the
+//                         recorder on mount so the user can speak
+//                         immediately
+//   onSave / onCancel   — caller decides whether to write to the
+//                         photo or to the pendingNote queue
+function NoteModalContent({ photo, isPreNote = false, autoStartRecording = false, onSave, onCancel }) {
+  const initialNote = photo?.note || '';
+  const [text, setText] = useState(initialNote);
+  const [isRecording, setIsRecording] = useState(false);
+  const [durationMs, setDurationMs] = useState(0);
+  const recordingRef = useRef(null);
+  const audioUriRef = useRef(null);
+  const tickRef = useRef(null);
+  // Holds the last `final` transcript so live partials don't keep
+  // wiping it — partials append to this baseline. Seeded with the
+  // existing note so the user's prior text is preserved.
+  const baseTranscriptRef = useRef(initialNote);
+
+  useSpeechRecognitionEvent('result', (event) => {
+    const seg = event?.results?.[0]?.transcript || '';
+    if (!seg) return;
+    const sep = baseTranscriptRef.current ? ' ' : '';
+    if (event.isFinal) {
+      baseTranscriptRef.current = (baseTranscriptRef.current + sep + seg).trim();
+      setText(baseTranscriptRef.current);
+    } else {
+      setText((baseTranscriptRef.current + sep + seg).trim());
+    }
+  });
+
+  useEffect(() => {
+    // Hard cleanup: if the modal unmounts mid-recording (user backs
+    // out via OS back gesture), stop the recorder so the native
+    // session is released.
+    return () => {
+      if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+      const r = recordingRef.current;
+      if (r) {
+        recordingRef.current = null;
+        r.stopAndUnloadAsync().catch(() => {});
+      }
+      try { ExpoSpeechRecognitionModule.stop(); } catch (_) {}
+    };
+  }, []);
+
+  const formatMs = (ms) => {
+    const total = Math.floor((ms || 0) / 1000);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const startRec = async () => {
+    if (isRecording) return;
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Microphone permission needed', 'Enable microphone access in Settings to record voice notes.');
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const r = new Audio.Recording();
+      await r.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await r.startAsync();
+      recordingRef.current = r;
+      setIsRecording(true);
+      setDurationMs(0);
+      tickRef.current = setInterval(async () => {
+        try {
+          const st = await r.getStatusAsync();
+          if (st?.isRecording) setDurationMs(st.durationMillis || 0);
+        } catch (_) {}
+      }, 250);
+      // Reseed the baseline with whatever's currently in the textarea
+      // so manual edits before tapping record are honored when the
+      // recognizer's partial results start streaming.
+      baseTranscriptRef.current = text;
+      try {
+        const sp = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (sp.granted) {
+          await ExpoSpeechRecognitionModule.start({
+            lang: 'en-US',
+            interimResults: true,
+            continuous: true,
+          });
+        }
+      } catch (e) {
+        console.warn('[CameraScreen] speech recognizer failed to start', e?.message || e);
+      }
+    } catch (e) {
+      Alert.alert('Could not start recording', e?.message || 'Unknown error');
+    }
+  };
+
+  const stopRec = async () => {
+    const r = recordingRef.current;
+    if (!r) return;
+    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+    recordingRef.current = null;
+    setIsRecording(false);
+    try { await ExpoSpeechRecognitionModule.stop(); } catch (_) {}
+    try {
+      await r.stopAndUnloadAsync();
+      const uri = r.getURI();
+      if (uri) audioUriRef.current = uri;
+    } catch (e) {
+      Alert.alert('Could not stop recording', e?.message || 'Unknown error');
+    }
+  };
+
+  // Mic entry-point: start recording on mount so the user can speak
+  // without the extra Record tap. Runs once. If the perm prompt is
+  // denied, startRec surfaces an alert and bails — modal stays open
+  // so the user can type or cancel.
+  useEffect(() => {
+    if (autoStartRecording) {
+      startRec();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <View style={styles.noteModalCard}>
+      <View style={styles.voiceModalHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.noteModalTitle}>Note</Text>
+          {isPreNote && (
+            <Text style={styles.noteModalSubtitle}>Will attach to next photo</Text>
+          )}
+        </View>
+        <TouchableOpacity
+          style={[
+            styles.voiceRecBtn,
+            isRecording ? { backgroundColor: '#FF3B30' } : null,
+          ]}
+          onPress={isRecording ? stopRec : startRec}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={isRecording ? 'stop' : 'mic'}
+            size={18}
+            color={isRecording ? '#FFFFFF' : '#000000'}
+          />
+          <Text
+            style={[
+              styles.voiceRecBtnText,
+              { color: isRecording ? '#FFFFFF' : '#000000' },
+            ]}
+          >
+            {isRecording ? formatMs(durationMs) : 'Record'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <TextInput
+        style={styles.noteModalInput}
+        value={text}
+        onChangeText={(v) => {
+          setText(v);
+          // Manual edits update the baseline so subsequent partials
+          // append to the user's correction, not the prior transcript.
+          baseTranscriptRef.current = v;
+        }}
+        placeholder={isRecording ? 'Listening…' : 'Tap Record, or type your note…'}
+        placeholderTextColor="#888"
+        multiline
+        textAlignVertical="top"
+      />
+      <View style={styles.noteModalActions}>
+        <TouchableOpacity
+          style={[styles.noteModalBtn, { backgroundColor: '#333' }]}
+          onPress={async () => {
+            if (isRecording) await stopRec();
+            onCancel();
+          }}
+        >
+          <Text style={[styles.noteModalBtnText, { color: '#FFF' }]}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.noteModalBtn, { backgroundColor: '#F2C31B' }]}
+          onPress={async () => {
+            if (isRecording) await stopRec();
+            onSave({
+              note: text,
+              audioUri: audioUriRef.current,
+              audioDurationMs: durationMs,
+            });
+          }}
+        >
+          <Text style={[styles.noteModalBtnText, { color: '#000' }]}>Save</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -5274,6 +5562,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 15,
+  },
+  voiceModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 10,
+  },
+  noteModalSubtitle: {
+    color: '#F2C31B',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  preNoteChipRow: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    marginBottom: 2,
+  },
+  preNoteChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F2C31B',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  preNoteChipText: {
+    color: '#000',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  preNoteHintText: {
+    color: '#FFFFFF',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.85,
+  },
+  voiceRecBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F2C31B',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  voiceRecBtnText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '700',
   },
   controlsRowAboveCapture: {
     width: '100%',
@@ -6101,6 +6446,26 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 11,
     fontWeight: '800',
+  },
+  // Note indicator — bottom-left corner of the thumbnail, opposite
+  // the top-right count badge so the two never collide. Yellow chip
+  // with a black document/mic glyph (mic when the photo carries a
+  // voice memo; document otherwise).
+  galleryItemNoteBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#F2C31B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
   },
   // Yellow "Match" label — After-mode strip thumbnail, top-left
   // corner. Marks the photo that the camera ghost overlay (and the

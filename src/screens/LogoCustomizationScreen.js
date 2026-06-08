@@ -14,7 +14,7 @@ import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { FONTS } from '../constants/fonts';
-import { useSettings } from '../context/SettingsContext';
+import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
@@ -44,7 +44,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
     labelMarginHorizontal,
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,
-  } = useSettings();
+  } = useScopedSettings(route?.params?.photoId);
 
   const photoId = route?.params?.photoId;
   const { photos } = usePhotos();

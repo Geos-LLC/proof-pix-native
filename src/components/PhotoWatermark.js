@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
-import { useSettings } from '../context/SettingsContext';
+import { useScopedSettings } from '../hooks/useScopedSettings';
 import { getLabelPositions } from '../constants/rooms';
 
 const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
@@ -49,7 +49,7 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, ph
     labelMarginVertical,
     labelMarginHorizontal,
     location,
-  } = useSettings();
+  } = useScopedSettings(photo?.id);
 
   const fallbackUrl = process.env.EXPO_PUBLIC_WATERMARK_URL || 'https://geos-ai.com/';
 

@@ -13,7 +13,7 @@ import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } fro
 import { getLabelPositions } from '../constants/rooms';
 import PhotoWatermark from './PhotoWatermark';
 import PhotoLabels from './PhotoLabels';
-import { useSettings } from '../context/SettingsContext';
+import { useScopedSettings } from '../hooks/useScopedSettings';
 
 export const LOGO_SIZE_PX = { small: 40, medium: 60, large: 84 };
 export const META_FONT_PX = { small: 11, medium: 14, large: 18 };
@@ -264,7 +264,7 @@ export function StudioEditOverlays({
   renderLabels = true,
   combinedLayout = 'side',
 }) {
-  const s = useSettings();
+  const s = useScopedSettings(photo?.id);
   if (!photo) return null;
   return (
     <>

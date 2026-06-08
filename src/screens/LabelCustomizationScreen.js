@@ -17,7 +17,7 @@ import {
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useSettings } from '../context/SettingsContext';
+import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 // useFeaturePermissions / FEATURES removed — used to gate the watermark
 // section, which now lives on the dedicated Watermark Customization
@@ -32,6 +32,26 @@ const POSITION_GRID = [
   ['left-middle',  'center-middle',  'right-middle'],
   ['left-bottom',  'center-bottom',  'right-bottom'],
 ];
+
+// Map a 9-cell grid key to a fractional freeform offset (0..1 each).
+// The grid taps write THIS offset instead of a position key — the
+// label renderer treats freeform offsets as the source of truth when
+// present, so the label lands in the corresponding corner on the
+// Studio photo regardless of the photo's orientation or which
+// position-key field would have been read. This is also why the
+// drag-to-position path "just works": it writes the same offset
+// shape.
+const POSITION_KEY_TO_OFFSET = {
+  'left-top':      { x: 0,   y: 0   },
+  'center-top':    { x: 0.5, y: 0   },
+  'right-top':     { x: 1,   y: 0   },
+  'left-middle':   { x: 0,   y: 0.5 },
+  'center-middle': { x: 0.5, y: 0.5 },
+  'right-middle':  { x: 1,   y: 0.5 },
+  'left-bottom':   { x: 0,   y: 1   },
+  'center-bottom': { x: 0.5, y: 1   },
+  'right-bottom':  { x: 1,   y: 1   },
+};
 const positionToCoords = (key) => {
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 3; c++) {
@@ -82,13 +102,24 @@ const COLORS = {
   BACKGROUND: '#F5F5F5',
 };
 
-// Font Options
+// Font Options — wide variety so the user can pick a real look,
+// not just "five subtle shades of similar". Each key maps to a
+// concretely different typeface or weight from PREVIEW_FONT_MAP
+// below (kept in sync with PhotoLabel's FONT_FAMILY_MAP).
 const FONT_OPTIONS = [
-  { key: 'system', label: 'Arial Blank' },
-  { key: 'shadow', label: 'Shadow Into Light' },
-  { key: 'shanatel', label: 'Shanatel Light' },
-  { key: 'sf', label: 'SF Compact' },
-  { key: 'share', label: 'Share Tech' },
+  { key: 'system',           label: 'Alexandria Regular' },
+  { key: 'alexandriaMedium', label: 'Alexandria Medium' },
+  { key: 'alexandriaBold',   label: 'Alexandria Bold' },
+  { key: 'alexandriaBlack',  label: 'Alexandria Black' },
+  { key: 'alexandriaLight',  label: 'Alexandria Light' },
+  { key: 'montserratBold',   label: 'Montserrat Bold' },
+  { key: 'playfairBold',     label: 'Playfair Display' },
+  { key: 'oswaldSemiBold',   label: 'Oswald' },
+  { key: 'poppinsSemiBold',  label: 'Poppins' },
+  { key: 'latoBold',         label: 'Lato' },
+  { key: 'robotoMonoBold',   label: 'Roboto Mono' },
+  { key: 'quicksandRegular', label: 'Quicksand' },
+  { key: 'quicksandBold',    label: 'Quicksand Bold' },
 ];
 
 // Maps the abstract font-family setting keys to the real font names
@@ -96,6 +127,20 @@ const FONT_OPTIONS = [
 // preview renders with the same typeface the saved labels will use).
 const PREVIEW_FONT_MAP = {
   system: 'Alexandria_400Regular',
+  alexandriaThin: 'Alexandria_200ExtraLight',
+  alexandriaLight: 'Alexandria_300Light',
+  alexandriaMedium: 'Alexandria_500Medium',
+  alexandriaBold: 'Alexandria_700Bold',
+  alexandriaBlack: 'Alexandria_900Black',
+  montserratBold: 'Montserrat_700Bold',
+  playfairBold: 'PlayfairDisplay_700Bold',
+  robotoMonoBold: 'RobotoMono_700Bold',
+  latoBold: 'Lato_700Bold',
+  poppinsSemiBold: 'Poppins_600SemiBold',
+  oswaldSemiBold: 'Oswald_600SemiBold',
+  quicksandRegular: 'Quicksand_400Regular',
+  quicksandBold: 'Quicksand_700Bold',
+  // Legacy aliases retained so any saved keys still preview correctly.
   shadow: 'PlayfairDisplay_700Bold',
   shanatel: 'Quicksand_400Regular',
   sf: 'Lato_700Bold',
@@ -196,6 +241,11 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   // *Landscape variants, which are applied to photos wider than they are tall.
   const [orientationTab, setOrientationTab] = useState('portrait');
 
+  // Studio passes a photoId so all writes target this one photo's
+  // overrides. From main Settings the sheet is opened without a
+  // photoId — useScopedSettings falls through to global writes.
+  const photoId = route?.params?.photoId;
+
   // Get settings from context (these are persisted to AsyncStorage)
   const {
     labelBackgroundColor,
@@ -231,7 +281,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
     // Label language (independent of app language)
     labelLanguage,
     updateLabelLanguage,
-  } = useSettings();
+  } = useScopedSettings(photoId);
 
   // While a label is being dragged, disable the outer ScrollView so the
   // page doesn't pan along with the label. Re-enabled on release.
@@ -346,8 +396,8 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
   // Pull the actual photo through if Studio passed a photoId — that way
   // the preview reflects what the labels will look like on the user's
-  // own picture, not a placeholder icon.
-  const photoId = route?.params?.photoId;
+  // own picture, not a placeholder icon. `photoId` was already
+  // extracted at the top of the component for the scoped-writes hook.
   const { photos } = usePhotos();
   const previewPhoto = useMemo(
     () => (photoId ? photos.find((p) => String(p.id) === String(photoId)) : null),
@@ -389,18 +439,30 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   const activeAfterOffset = orientationTab === 'landscape'
     ? afterLabelOffsetLandscape
     : afterLabelOffset;
-  const updateActiveBeforePos = orientationTab === 'landscape'
-    ? updateBeforeLabelPositionLandscape
-    : updateBeforeLabelPosition;
-  const updateActiveAfterPos = orientationTab === 'landscape'
-    ? updateAfterLabelPositionLandscape
-    : updateAfterLabelPosition;
-  const updateActiveBeforeOffset = orientationTab === 'landscape'
-    ? updateBeforeLabelOffsetLandscape
-    : updateBeforeLabelOffset;
-  const updateActiveAfterOffset = orientationTab === 'landscape'
-    ? updateAfterLabelOffsetLandscape
-    : updateAfterLabelOffset;
+  // Write to BOTH portrait + landscape variants on every position /
+  // offset pick. The picker (pickBeforeLabelPosition / Offset) chooses
+  // which key to READ based on the photo's actual orientation, so if
+  // we only wrote one variant the user's pick would silently be
+  // ignored whenever the photo's orientation differs from the
+  // orientation tab. Per-photo overrides also store both keys so the
+  // Studio render reflects the choice regardless of how the photo's
+  // orientation is detected.
+  const updateActiveBeforePos = async (v) => {
+    await updateBeforeLabelPosition(v);
+    await updateBeforeLabelPositionLandscape(v);
+  };
+  const updateActiveAfterPos = async (v) => {
+    await updateAfterLabelPosition(v);
+    await updateAfterLabelPositionLandscape(v);
+  };
+  const updateActiveBeforeOffset = async (v) => {
+    await updateBeforeLabelOffset(v);
+    await updateBeforeLabelOffsetLandscape(v);
+  };
+  const updateActiveAfterOffset = async (v) => {
+    await updateAfterLabelOffset(v);
+    await updateAfterLabelOffsetLandscape(v);
+  };
 
   const activeBeforeStyle = getPositionStyle(activeBeforePos, labelMarginVertical, labelMarginHorizontal);
   const activeAfterStyle = getPositionStyle(activeAfterPos, labelMarginVertical, labelMarginHorizontal);
@@ -449,36 +511,24 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* Font Modal */}
-      <BottomModal
+      {/* Font wheel — opens as a docked sheet that does NOT dim the
+          photo behind, so the user can scroll fonts and watch the
+          label restyle live on the Studio photo. Tapping above the
+          sheet closes it; the wheel inside scrolls freely (the
+          previous shared BottomModal blocked scrolling with an
+          onStartShouldSetResponder shim). */}
+      <FontWheelSheet
         visible={fontModalVisible}
         onClose={() => setFontModalVisible(false)}
         title="Label Font"
       >
-        <View style={styles.fontListContainer}>
-          {FONT_OPTIONS.map((font) => {
-            const isSelected = labelFontFamily === font.key;
-            return (
-              <TouchableOpacity
-                key={font.key}
-                style={[
-                  styles.fontListItem,
-                  isSelected && styles.fontListItemSelected
-                ]}
-                onPress={async () => {
-                  await updateLabelFontFamily(font.key);
-                  setFontModalVisible(false);
-                }}
-              >
-                <Text style={[
-                  styles.fontListItemText,
-                  isSelected && styles.fontListItemTextSelected
-                ]}>{font.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </BottomModal>
+        <WheelFontPicker
+          options={FONT_OPTIONS}
+          value={labelFontFamily}
+          onChange={(v) => { updateLabelFontFamily(v); }}
+          getFontFamily={getPreviewFontFamily}
+        />
+      </FontWheelSheet>
 
       {/* Label Language Modal */}
       <BottomModal
@@ -627,19 +677,19 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
                 <Text style={styles.positionHalfLabel}>Before</Text>
                 {POSITION_GRID.map((row, rowIdx) => (
                   <View key={rowIdx} style={styles.positionRow}>
-                    {row.map((pos) => (
-                      <TouchableOpacity
-                        key={pos}
-                        style={[
-                          styles.positionCell,
-                          activeBeforePos === pos && !activeBeforeOffset && styles.positionCellSelected,
-                        ]}
-                        onPress={async () => {
-                          await updateActiveBeforeOffset(null);
-                          await updateActiveBeforePos(pos);
-                        }}
-                      />
-                    ))}
+                    {row.map((pos) => {
+                      const off = POSITION_KEY_TO_OFFSET[pos];
+                      const isSelected = activeBeforeOffset
+                        && activeBeforeOffset.x === off.x
+                        && activeBeforeOffset.y === off.y;
+                      return (
+                        <TouchableOpacity
+                          key={pos}
+                          style={[styles.positionCell, isSelected && styles.positionCellSelected]}
+                          onPress={() => updateActiveBeforeOffset(off)}
+                        />
+                      );
+                    })}
                   </View>
                 ))}
               </View>
@@ -648,19 +698,19 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
                 <Text style={styles.positionHalfLabel}>After</Text>
                 {POSITION_GRID.map((row, rowIdx) => (
                   <View key={rowIdx} style={styles.positionRow}>
-                    {row.map((pos) => (
-                      <TouchableOpacity
-                        key={pos}
-                        style={[
-                          styles.positionCell,
-                          activeAfterPos === pos && !activeAfterOffset && styles.positionCellSelected,
-                        ]}
-                        onPress={async () => {
-                          await updateActiveAfterOffset(null);
-                          await updateActiveAfterPos(pos);
-                        }}
-                      />
-                    ))}
+                    {row.map((pos) => {
+                      const off = POSITION_KEY_TO_OFFSET[pos];
+                      const isSelected = activeAfterOffset
+                        && activeAfterOffset.x === off.x
+                        && activeAfterOffset.y === off.y;
+                      return (
+                        <TouchableOpacity
+                          key={pos}
+                          style={[styles.positionCell, isSelected && styles.positionCellSelected]}
+                          onPress={() => updateActiveAfterOffset(off)}
+                        />
+                      );
+                    })}
                   </View>
                 ))}
               </View>
@@ -669,19 +719,19 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
             <View style={styles.positionFullGrid}>
               {POSITION_GRID.map((row, rowIdx) => (
                 <View key={rowIdx} style={styles.positionRow}>
-                  {row.map((pos) => (
-                    <TouchableOpacity
-                      key={pos}
-                      style={[
-                        styles.positionCell,
-                        activeBeforePos === pos && !activeBeforeOffset && styles.positionCellSelected,
-                      ]}
-                      onPress={async () => {
-                        await updateActiveBeforeOffset(null);
-                        await updateActiveBeforePos(pos);
-                      }}
-                    />
-                  ))}
+                  {row.map((pos) => {
+                    const off = POSITION_KEY_TO_OFFSET[pos];
+                    const isSelected = activeBeforeOffset
+                      && activeBeforeOffset.x === off.x
+                      && activeBeforeOffset.y === off.y;
+                    return (
+                      <TouchableOpacity
+                        key={pos}
+                        style={[styles.positionCell, isSelected && styles.positionCellSelected]}
+                        onPress={() => updateActiveBeforeOffset(off)}
+                      />
+                    );
+                  })}
                 </View>
               ))}
             </View>
@@ -893,6 +943,178 @@ function SliderInput({ value, onValueChange, onSlidingComplete, min = 0, max = 1
           {step < 1 ? `${Math.round(value * 100)}%` : `${displayValue}px`}
         </Text>
       )}
+    </View>
+  );
+}
+
+// ───────── Font wheel sheet (no-dim modal) ─────────
+// Lightweight transparent-backdrop sheet just for the font wheel. Two
+// reasons it can't reuse BottomModal: (1) BottomModal dims the screen
+// with rgba(0,0,0,0.5) which makes the live photo behind look blurred
+// — the whole point here is the user scrolls fonts and watches the
+// photo update; (2) BottomModal wraps its body in a View with
+// `onStartShouldSetResponder={() => true}` to prevent backdrop taps
+// from leaking in, but that also claims every touch so ScrollView
+// gestures inside die. Here the backdrop is only the *top* spacer
+// (above the sheet); the sheet itself is a regular View, so the
+// wheel scrolls normally.
+function FontWheelSheet({ visible, onClose, title, children }) {
+  if (!visible) return null;
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.fontSheetRoot}>
+        <Pressable style={styles.fontSheetBackdrop} onPress={onClose} />
+        <View style={styles.fontSheetContent}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
+              <View style={styles.closeButtonCircle}>
+                <Ionicons name="close" size={20} color="#666666" />
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>{title}</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+          <View style={styles.modalBody}>{children}</View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ───────── Wheel font picker ─────────
+// iOS-style vertical wheel — 5 fonts visible, active one centered and
+// crisp, ±1 half-bright, ±2 faded further. Snaps on release and loops
+// circularly by rendering three copies of the options and silently
+// re-centering when the user scrolls into the first or last copy.
+const WHEEL_ITEM_HEIGHT = 48;
+const WHEEL_VISIBLE_COUNT = 5;
+const WHEEL_CENTER_OFFSET = (WHEEL_VISIBLE_COUNT - 1) / 2; // 2
+const WHEEL_PICKER_HEIGHT = WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT;
+
+function WheelFontPicker({ options, value, onChange, getFontFamily }) {
+  const scrollRef = useRef(null);
+  // Seed scrollY at the initial selected item's pixel offset so the
+  // per-item opacity/scale interpolations resolve correctly on the
+  // FIRST paint (before the user has scrolled). Without this seed,
+  // every item starts at scrollY=0, which puts every item far from
+  // the "center" and renders the whole wheel as faded.
+  const initialIndex = Math.max(0, options.findIndex((o) => o.key === value));
+  const initialScrollY = (options.length + initialIndex) * WHEEL_ITEM_HEIGHT;
+  const scrollY = useRef(new Animated.Value(initialScrollY)).current;
+  const programmaticScrollRef = useRef(false);
+
+  // Triple the list so the middle copy gives the user room to scroll
+  // up or down before we silently jump back to center.
+  const tripled = useMemo(() => [...options, ...options, ...options], [options]);
+  const n = options.length;
+
+  const selectedIndex = useMemo(() => {
+    const idx = options.findIndex((o) => o.key === value);
+    return idx < 0 ? 0 : idx;
+  }, [options, value]);
+
+  // On mount (and when the selected font changes from outside the
+  // picker), position the scroll at the middle copy at the right
+  // offset. animated:false so it lands instantly without a swipe.
+  useEffect(() => {
+    const ref = scrollRef.current;
+    if (!ref) return;
+    const targetY = (n + selectedIndex) * WHEEL_ITEM_HEIGHT;
+    programmaticScrollRef.current = true;
+    ref.scrollTo({ y: targetY, animated: false });
+    // Keep scrollY in lockstep so the interpolations recenter on the
+    // newly-selected item without waiting for a real scroll event.
+    scrollY.setValue(targetY);
+    setTimeout(() => { programmaticScrollRef.current = false; }, 50);
+  }, [n, selectedIndex, scrollY]);
+
+  const handleMomentumEnd = (e) => {
+    if (programmaticScrollRef.current) return;
+    const offset = e.nativeEvent.contentOffset.y;
+    const flatIndex = Math.round(offset / WHEEL_ITEM_HEIGHT);
+    // Real index in the original options list (mod n).
+    const realIndex = ((flatIndex % n) + n) % n;
+    const nextKey = options[realIndex].key;
+    if (nextKey !== value && onChange) onChange(nextKey);
+
+    // If we drifted into the first or last copy, jump back to the
+    // middle copy at the same real position so the user can keep
+    // scrolling in either direction.
+    if (flatIndex < n || flatIndex >= n * 2) {
+      const middleFlat = n + realIndex;
+      programmaticScrollRef.current = true;
+      scrollRef.current?.scrollTo({ y: middleFlat * WHEEL_ITEM_HEIGHT, animated: false });
+      setTimeout(() => { programmaticScrollRef.current = false; }, 50);
+    }
+  };
+
+  return (
+    <View style={styles.wheelOuter}>
+      {/* Center band — visually anchors which item is "active". */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.wheelCenterBand,
+          { top: WHEEL_CENTER_OFFSET * WHEEL_ITEM_HEIGHT },
+        ]}
+      />
+      <Animated.ScrollView
+        ref={scrollRef}
+        style={{ height: WHEEL_PICKER_HEIGHT }}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={WHEEL_ITEM_HEIGHT}
+        decelerationRate="fast"
+        contentContainerStyle={{ paddingVertical: WHEEL_CENTER_OFFSET * WHEEL_ITEM_HEIGHT }}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={handleMomentumEnd}
+      >
+        {tripled.map((opt, i) => {
+          // Center each item by mapping scrollY → distance from the
+          // viewport center. Five inputs (±2, ±1, 0) give a smooth
+          // taper from 1 → 0.5 → 0.18.
+          const inputRange = [
+            (i - 2) * WHEEL_ITEM_HEIGHT,
+            (i - 1) * WHEEL_ITEM_HEIGHT,
+            i * WHEEL_ITEM_HEIGHT,
+            (i + 1) * WHEEL_ITEM_HEIGHT,
+            (i + 2) * WHEEL_ITEM_HEIGHT,
+          ];
+          const opacity = scrollY.interpolate({
+            inputRange,
+            outputRange: [0.18, 0.5, 1, 0.5, 0.18],
+            extrapolate: 'clamp',
+          });
+          const scale = scrollY.interpolate({
+            inputRange,
+            outputRange: [0.78, 0.9, 1, 0.9, 0.78],
+            extrapolate: 'clamp',
+          });
+          return (
+            <Animated.View
+              key={`${opt.key}-${i}`}
+              style={[
+                styles.wheelItem,
+                { opacity, transform: [{ scale }] },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.wheelItemText,
+                  { fontFamily: getFontFamily ? getFontFamily(opt.key) : undefined },
+                ]}
+                numberOfLines={1}
+              >
+                {opt.label}
+              </Text>
+            </Animated.View>
+          );
+        })}
+      </Animated.ScrollView>
     </View>
   );
 }
@@ -1416,6 +1638,55 @@ const styles = StyleSheet.create({
   },
   fontListContainer: {
     paddingHorizontal: 20,
+  },
+  // Font wheel sheet — backdrop transparent so the photo behind stays
+  // crisp; the content area sits at the bottom and never overlaps the
+  // photo above. Tap above the sheet to dismiss.
+  fontSheetRoot: {
+    flex: 1,
+    flexDirection: 'column',
+    backgroundColor: 'transparent',
+  },
+  fontSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  fontSheetContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  // Wheel font picker styles.
+  wheelOuter: {
+    height: 240, // WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT
+    overflow: 'hidden',
+    position: 'relative',
+    marginHorizontal: 20,
+  },
+  wheelCenterBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 48,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: 'rgba(0,0,0,0.02)',
+  },
+  wheelItem: {
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wheelItemText: {
+    fontSize: 20,
+    color: '#000',
   },
   modalActionButton: {
     backgroundColor: '#000000',

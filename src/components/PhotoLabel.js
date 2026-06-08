@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useSettings } from '../context/SettingsContext';
+import { useScopedSettings } from '../hooks/useScopedSettings';
 import { LABEL_POSITIONS, getLabelPositions } from '../constants/rooms';
 
 // Map font keys to the actual font families loaded in App.js. Previously
@@ -9,14 +9,24 @@ import { LABEL_POSITIONS, getLabelPositions } from '../constants/rooms';
 // "did nothing" — every option rendered the same. Each key here matches
 // a real font name registered with `useFonts({...})`.
 const FONT_FAMILY_MAP = {
+  // Alexandria weights — full family loaded in App.js so we can offer
+  // a real weight range under one typeface.
   alexandria: 'Alexandria_400Regular',
   system: 'Alexandria_400Regular',
+  alexandriaThin: 'Alexandria_200ExtraLight',
+  alexandriaLight: 'Alexandria_300Light',
+  alexandriaMedium: 'Alexandria_500Medium',
+  alexandriaBold: 'Alexandria_700Bold',
+  alexandriaBlack: 'Alexandria_900Black',
+  // Other typefaces — each a distinct look.
   montserratBold: 'Montserrat_700Bold',
   playfairBold: 'PlayfairDisplay_700Bold',
   robotoMonoBold: 'RobotoMono_700Bold',
   latoBold: 'Lato_700Bold',
   poppinsSemiBold: 'Poppins_600SemiBold',
   oswaldSemiBold: 'Oswald_600SemiBold',
+  quicksandRegular: 'Quicksand_400Regular',
+  quicksandBold: 'Quicksand_700Bold',
   // Friendlier aliases used by the WatermarkCustomization screen.
   shadow: 'PlayfairDisplay_700Bold',
   shanatel: 'Quicksand_400Regular',
@@ -61,7 +71,10 @@ const LABEL_SIZE_MAP = {
  * @param {object} style - Additional custom styles to override
  * @param {object} textStyle - Additional custom text styles
  */
-export default function PhotoLabel({ label, position = 'left-top', style = {}, textStyle = {}, backgroundColor, textColor, size, freeformOffset = null }) {
+export default function PhotoLabel({ label, position = 'left-top', style = {}, textStyle = {}, backgroundColor, textColor, size, freeformOffset = null, photo = null }) {
+  // When `photo` is provided, useScopedSettings cascades `photo.overrides`
+  // over global Settings for color/font/size/etc. Without a photo prop
+  // (legacy call sites) this is identical to useSettings().
   const {
     labelBackgroundColor,
     labelTextColor,
@@ -71,7 +84,7 @@ export default function PhotoLabel({ label, position = 'left-top', style = {}, t
     labelMarginVertical,
     labelMarginHorizontal,
     labelLanguage,
-  } = useSettings();
+  } = useScopedSettings(photo?.id);
   const { t, i18n } = useTranslation();
 
   const getLabelText = () => {
@@ -111,7 +124,11 @@ export default function PhotoLabel({ label, position = 'left-top', style = {}, t
       }
     : null;
   const sizeStyle = sizeConfigFromNumber || LABEL_SIZE_MAP[sizeKey];
-  const cornerRadius = labelCornerStyle === 'square' ? 0 : sizeStyle.borderRadius;
+  // `rounded` should be a real pill (fully rounded ends) so the
+  // square/rounded toggle reads as a meaningful visual change. Using
+  // a large radius capped by half the size lets RN render a true
+  // capsule regardless of the label's actual width.
+  const cornerRadius = labelCornerStyle === 'square' ? 0 : 999;
 
   // Get position styles with custom margins
   const positions = getLabelPositions(labelMarginVertical, labelMarginHorizontal);

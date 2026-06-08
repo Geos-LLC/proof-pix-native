@@ -65,8 +65,10 @@ export default function PhotoDetailScreen({ route, navigation }) {
 
       const newDisplayUriMap = {};
 
-      // Calculate settings hash once
-      const settingsHash = showLabels ? calculateSettingsHash({
+      // Compute base settings once, then per-photo merge `photo.overrides`
+      // before hashing — two photos with the same global settings but
+      // different overrides need DIFFERENT cache keys.
+      const baseSettingsForHash = {
         showLabels,
         beforeLabelPosition,
         afterLabelPosition,
@@ -78,9 +80,16 @@ export default function PhotoDetailScreen({ route, navigation }) {
         labelFontFamily,
         labelMarginVertical,
         labelMarginHorizontal,
-      }) : null;
+      };
+      const hashFor = (photoItem) => {
+        if (!showLabels) return null;
+        const eff = photoItem?.overrides
+          ? { ...baseSettingsForHash, ...photoItem.overrides }
+          : baseSettingsForHash;
+        return calculateSettingsHash(eff);
+      };
 
-      console.log('[PhotoDetailScreen] Loading display images for', allPhotos.length, 'photos with hash:', settingsHash);
+      console.log('[PhotoDetailScreen] Loading display images for', allPhotos.length, 'photos');
 
       // Load display URIs for all photos
       for (const photoItem of allPhotos) {
@@ -89,6 +98,8 @@ export default function PhotoDetailScreen({ route, navigation }) {
           newDisplayUriMap[photoItem.id] = photoItem.uri;
           continue;
         }
+
+        const settingsHash = hashFor(photoItem);
 
         try {
           // Try to get cached labeled image
@@ -149,7 +160,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
       if (state.pendingPreparations.length === 0 && allPhotos.length > 0 && showLabels) {
         console.log('[PhotoDetailScreen] Background labeling queue empty - refreshing display URIs');
 
-        const settingsHash = calculateSettingsHash({
+        const baseSettingsForHash = {
           showLabels,
           beforeLabelPosition,
           afterLabelPosition,
@@ -161,7 +172,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
           labelFontFamily,
           labelMarginVertical,
           labelMarginHorizontal,
-        });
+        };
 
         const updatedMap = {};
         for (const photoItem of allPhotos) {
@@ -169,6 +180,11 @@ export default function PhotoDetailScreen({ route, navigation }) {
             updatedMap[photoItem.id] = photoItem.uri;
             continue;
           }
+
+          // Per-photo hash so per-photo overrides land in their own cache entry.
+          const settingsHash = calculateSettingsHash(
+            photoItem.overrides ? { ...baseSettingsForHash, ...photoItem.overrides } : baseSettingsForHash
+          );
 
           try {
             const cachedUri = await getCachedLabeledPhoto(photoItem, settingsHash);

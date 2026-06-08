@@ -89,7 +89,11 @@ export default function GlobalBackgroundLabelPreparation() {
 
     isProcessingRef.current = true;
     const taskId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-    const settings = settingsRef.current;
+    // Merge per-photo overrides over global settings so the bake honors
+    // any per-photo customizations the user set in Studio.
+    const baseSettings = settingsRef.current;
+    const overrides = photoToProcess?.photo?.overrides;
+    const settings = overrides ? { ...baseSettings, ...overrides } : baseSettings;
     const translate = tRef.current || t;
 
     try {
@@ -129,12 +133,35 @@ export default function GlobalBackgroundLabelPreparation() {
         }
         return false;
       })();
-      const beforePosKey = isLandscapePhoto
-        ? (settings.beforeLabelPositionLandscape || 'left-top')
-        : (settings.beforeLabelPosition || 'left-top');
-      const afterPosKey = isLandscapePhoto
-        ? (settings.afterLabelPositionLandscape || 'left-top')
-        : (settings.afterLabelPosition || 'right-top');
+      // The native addLabelToImage only supports 4-corner position
+      // keys, but the user may have dragged the label to a freeform
+      // offset. Snap the offset's fractional coords to the nearest
+      // corner so the baked image at least lands in the right
+      // quadrant. A future native build can accept the full freeform
+      // offset directly; this is the OTA-able approximation.
+      const offsetToCornerKey = (off, fallback) => {
+        if (!off || typeof off.x !== 'number' || typeof off.y !== 'number') return fallback;
+        const left = off.x < 0.5;
+        const top = off.y < 0.5;
+        if (top && left) return 'left-top';
+        if (top && !left) return 'right-top';
+        if (!top && left) return 'left-bottom';
+        return 'right-bottom';
+      };
+      const beforeOff = isLandscapePhoto ? settings.beforeLabelOffsetLandscape : settings.beforeLabelOffset;
+      const afterOff = isLandscapePhoto ? settings.afterLabelOffsetLandscape : settings.afterLabelOffset;
+      const beforePosKey = offsetToCornerKey(
+        beforeOff,
+        isLandscapePhoto
+          ? (settings.beforeLabelPositionLandscape || 'left-top')
+          : (settings.beforeLabelPosition || 'left-top')
+      );
+      const afterPosKey = offsetToCornerKey(
+        afterOff,
+        isLandscapePhoto
+          ? (settings.afterLabelPositionLandscape || 'left-top')
+          : (settings.afterLabelPosition || 'right-top')
+      );
 
       // Determine label position based on photo mode
       let labelPosition;
@@ -320,7 +347,14 @@ export default function GlobalBackgroundLabelPreparation() {
             color: wmColor,
             opacity: wmOpacity,
             fontSize: 32,
-            position: settings.watermarkPosition || 'right-bottom',
+            // Same offset → corner snap as labels: when the user has
+            // dragged the watermark to a freeform position, derive the
+            // nearest corner key for the native bake (which only
+            // supports 4 positions). Position key wins otherwise.
+            position: offsetToCornerKey(
+              settings.watermarkOffset,
+              settings.watermarkPosition || 'right-bottom'
+            ),
             fontFamily: settings.watermarkFontFamily || 'Alexandria_400Regular',
           };
 
