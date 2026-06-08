@@ -3,7 +3,7 @@
 
 import {
   formatLongDate, sortByTime,
-  htmlDocument, headerHtml, footerHtml, photoToData,
+  htmlDocument, headerHtml, footerHtml, photoToData, photoImgHtml,
   photoCaption,
 } from './_shared.js';
 
@@ -48,7 +48,7 @@ export default {
           : '';
         return `
           <div class="tile no-break">
-            ${data ? `<img src="${data}" alt="" />` : `<div class="missing">Image unavailable</div>`}
+            ${photoImgHtml({ data, photo: p })}
             ${caption ? `<div class="cap">${caption}</div>` : ''}
           </div>`;
       }),

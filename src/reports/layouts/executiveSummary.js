@@ -5,7 +5,7 @@
 
 import {
   escapeHtml, formatLongDate, sortByTime, groupByRoom, pairBeforeAfter, splitByMode,
-  htmlDocument, headerHtml, footerHtml, photoToData,
+  htmlDocument, headerHtml, footerHtml, photoToData, photoImgHtml,
   noteHtml,
 } from './_shared.js';
 
@@ -17,12 +17,9 @@ const css = `
 .summary .num { font-size: 22px; font-weight: 700; color: #1A1A1A; }
 .summary .lbl { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #666; margin-top: 4px; }
 .highlight { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-.highlight .slot { border-radius: 10px; overflow: hidden; background: #000; position: relative; }
-.highlight .slot img { width: 100%; display: block; }
-.highlight .tag { position: absolute; top: 8px; left: 8px; padding: 3px 8px; background: rgba(0,0,0,0.55); color: #fff; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 4px; }
+.highlight .slot { border-radius: 10px; overflow: hidden; background: #000; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .tile { border-radius: 6px; overflow: hidden; }
-.tile img { width: 100%; display: block; }
 .location-line { font-size: 12px; color: #555; margin-top: 2px; }
 `;
 
@@ -77,12 +74,10 @@ export default {
             <div class="section-title">${escapeHtml(helpers.displayRoomName(room))}</div>
             <div class="highlight">
               <div class="slot">
-                ${bd ? `<img src="${bd}" alt="" />` : `<div class="missing">No before</div>`}
-                <span class="tag">Before</span>
+                ${photoImgHtml({ data: bd, photo: pair.before })}
               </div>
               <div class="slot">
-                ${ad ? `<img src="${ad}" alt="" />` : `<div class="missing">No after</div>`}
-                <span class="tag">After</span>
+                ${photoImgHtml({ data: ad, photo: pair.after })}
               </div>
             </div>
             ${noteHtml({ photo: pair.after, options })}
@@ -98,7 +93,7 @@ export default {
             <div class="section-title">${escapeHtml(helpers.displayRoomName(room))}</div>
             <div class="highlight">
               <div class="slot" style="grid-column: 1 / span 2;">
-                ${data ? `<img src="${data}" alt="" />` : `<div class="missing">Image unavailable</div>`}
+                ${photoImgHtml({ data, photo: fallback })}
               </div>
             </div>
             ${noteHtml({ photo: fallback, options })}
@@ -113,7 +108,7 @@ export default {
     const galleryTiles = await Promise.all(
       sortByTime(photos).map(async (p) => {
         const data = await photoToData(p, helpers);
-        return `<div class="tile">${data ? `<img src="${data}" alt="" />` : `<div class="missing">·</div>`}</div>`;
+        return `<div class="tile">${photoImgHtml({ data, photo: p })}</div>`;
       }),
     );
 

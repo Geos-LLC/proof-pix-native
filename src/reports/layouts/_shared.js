@@ -116,6 +116,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 .note { margin-top: 6px; font-size: 12px; color: #1A1A1A; white-space: pre-wrap; }
 .caption { font-size: 11px; color: #555; }
 .label-name { color: var(--brand-color, #1A1A1A); }
+.photo-wrap { position: relative; display: block; }
+.photo-wrap img { width: 100%; display: block; }
+.chip { position: absolute; top: 8px; left: 8px; padding: 3px 8px; font-size: 9px; font-weight: 700; letter-spacing: 0.08em; border-radius: 4px; background: var(--brand-color, rgba(0,0,0,0.6)); color: var(--brand-chip-text, #FFFFFF); }
 `;
 
 // Common header used by most layouts. Pass `subtitle` to override the
@@ -138,11 +141,53 @@ export const footerHtml = () =>
 
 // Render the full HTML document shell. Layouts return body fragments;
 // this wraps them in <html>/<head>/<body> with the merged stylesheet.
+// YIQ luminance — pick black or white text so chips stay legible on
+// any brand color. Mirror of contrastText() in ReportPreview.js so
+// HTML and in-app preview agree.
+export const contrastTextColor = (bgHex) => {
+  const hex = String(bgHex || '').replace('#', '');
+  if (hex.length !== 6) return '#FFFFFF';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return '#FFFFFF';
+  return ((r * 299 + g * 587 + b * 114) / 1000) >= 140 ? '#1A1A1A' : '#FFFFFF';
+};
+
+const CHIP_LABEL = {
+  before: 'BEFORE',
+  after: 'AFTER',
+  progress: 'PROGRESS',
+  mix: 'BEFORE &amp; AFTER',
+};
+
+// Returns a chip overlay HTML element for a photo's mode, or '' if the
+// mode doesn't get a chip. Inline color override is intentional: the
+// PDF renderer used by some clients ignores CSS vars set on :root.
+export const chipForMode = (mode) => {
+  const label = CHIP_LABEL[mode];
+  if (!label) return '';
+  return `<div class="chip">${label}</div>`;
+};
+
+// Wraps an image (or missing placeholder) in a .photo-wrap container
+// with a positioned BEFORE/AFTER/PROGRESS chip overlay. Layouts call
+// this in place of inlining the <img> tag so chip styling and
+// positioning stays consistent across the report engine.
+export const photoImgHtml = ({ data, photo, alt = '' }) => {
+  const inner = data
+    ? `<img src="${data}" alt="${escapeHtml(alt)}" />`
+    : `<div class="missing">Image unavailable</div>`;
+  return `<div class="photo-wrap">${inner}${chipForMode(photo?.mode)}</div>`;
+};
+
 export const htmlDocument = ({ title, css, body, brandColor }) => {
   // Inject brand color as a CSS custom property so any layout can
   // reference it via var(--brand-color, fallback). Layouts that don't
   // pass brandColor get their hardcoded fallbacks.
-  const brandVar = brandColor ? `:root { --brand-color: ${brandColor}; }` : '';
+  const brandVar = brandColor
+    ? `:root { --brand-color: ${brandColor}; --brand-chip-text: ${contrastTextColor(brandColor)}; }`
+    : '';
   return `<!doctype html>
 <html><head>
 <meta charset="utf-8" />

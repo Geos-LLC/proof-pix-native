@@ -7,7 +7,7 @@
 
 import {
   escapeHtml, formatLongDate, sortByTime, groupByRoom, pairBeforeAfter,
-  htmlDocument, headerHtml, footerHtml, photoToData,
+  htmlDocument, headerHtml, footerHtml, photoToData, photoImgHtml,
   noteHtml,
 } from './_shared.js';
 
@@ -16,11 +16,7 @@ const css = `
 .section-title { font-size: 18px; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: stretch; }
 .pair .slot { border-radius: 10px; overflow: hidden; background: #000; }
-.pair .slot img { width: 100%; display: block; }
-.pair .slot .tag { position: relative; top: -28px; left: 10px; display: inline-block; padding: 4px 10px; background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 4px; margin-bottom: -28px; }
 .combined { border-radius: 10px; overflow: hidden; background: #000; }
-.combined img { width: 100%; display: block; }
-.combined .tag { position: relative; top: -28px; left: 10px; display: inline-block; padding: 4px 10px; background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 4px; margin-bottom: -28px; }
 .meta-strip { margin-top: 6px; font-size: 11px; color: #555; }
 .section-notes { margin-top: 8px; }
 `;
@@ -70,8 +66,7 @@ export default {
           return `
             <div class="no-break" style="margin-bottom: 18px;">
               <div class="combined">
-                ${data ? `<img src="${data}" alt="" />` : `<div class="missing">Image unavailable</div>`}
-                <span class="tag">Before &amp; After</span>
+                ${photoImgHtml({ data, photo: c })}
               </div>
               ${labelLine}
               ${note ? `<div class="section-notes">${note}</div>` : ''}
@@ -109,12 +104,10 @@ export default {
             <div class="no-break" style="margin-bottom: 18px;">
               <div class="pair">
                 <div class="slot">
-                  ${bd ? `<img src="${bd}" alt="" />` : `<div class="missing">No before</div>`}
-                  <span class="tag">Before</span>
+                  ${photoImgHtml({ data: bd, photo: before })}
                 </div>
                 <div class="slot">
-                  ${ad ? `<img src="${ad}" alt="" />` : `<div class="missing">No after</div>`}
-                  <span class="tag">After</span>
+                  ${photoImgHtml({ data: ad, photo: after })}
                 </div>
               </div>
               ${labelLine}

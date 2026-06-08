@@ -5,7 +5,7 @@
 
 import {
   escapeHtml, formatLongDate, sortByTime, groupByRoom, splitByMode,
-  htmlDocument, headerHtml, footerHtml, photoToData, photoCaption,
+  htmlDocument, headerHtml, footerHtml, photoToData, photoImgHtml, photoCaption,
   noteHtml, labelHtml,
 } from './_shared.js';
 
@@ -63,7 +63,7 @@ export default {
       const slot = (label, data, photo) => `
         <div class="slot">
           <div class="label">${escapeHtml(label)}</div>
-          ${data ? `<img src="${data}" alt="" />` : `<div class="missing">No ${escapeHtml(label.toLowerCase())} photo</div>`}
+          ${photo ? photoImgHtml({ data, photo }) : `<div class="missing">No ${escapeHtml(label.toLowerCase())} photo</div>`}
           <div class="meta">
             ${photo ? labelHtml({ photo, options }) : ''}
             <div class="caption">${photo ? photoCaption({ photo, helpers, options }) : ''}</div>
@@ -77,7 +77,7 @@ export default {
           sortByTime(progress).map(async (p) => {
             const d = await photoToData(p, helpers);
             return `<div class="slot">
-              ${d ? `<img src="${d}" alt="" />` : `<div class="missing">Image unavailable</div>`}
+              ${photoImgHtml({ data: d, photo: p })}
               <div class="meta">${photoCaption({ photo: p, helpers, options })}</div>
             </div>`;
           }),

@@ -1863,6 +1863,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 options={activeReport.options || {}}
                 displayRoomName={displayRoomName}
                 theme={theme}
+                branding={{ brandColor: reportBrandColor }}
               />
 
               {/* Share action — re-uses the cached HTML file if

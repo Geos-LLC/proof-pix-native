@@ -17,8 +17,28 @@ import {
   formatShortStamp,
   formatLongDate,
 } from '../reports/layouts/_shared.js';
+import { resolveOptions } from '../reports/index.js';
 
 const PHOTO_MODE_COMBINED = 'mix';
+
+// YIQ luminance — pick black or white text so the chip stays legible
+// no matter what brand color the user picks.
+const contrastText = (bgHex) => {
+  const hex = String(bgHex || '').replace('#', '');
+  if (hex.length !== 6) return '#FFFFFF';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return '#FFFFFF';
+  return ((r * 299 + g * 587 + b * 114) / 1000) >= 140 ? '#1A1A1A' : '#FFFFFF';
+};
+
+const MODE_CHIP = {
+  before: 'BEFORE',
+  after: 'AFTER',
+  progress: 'PROGRESS',
+  mix: 'BEFORE & AFTER',
+};
 
 const SectionHeader = ({ name, theme }) => (
   <Text style={[styles.sectionTitle, { color: theme.textPrimary, borderBottomColor: theme.border }]}>
@@ -26,7 +46,7 @@ const SectionHeader = ({ name, theme }) => (
   </Text>
 );
 
-const PhotoSlot = ({ uri, label, theme, missing }) => (
+const PhotoSlot = ({ uri, label, theme, missing, chipBg, chipText }) => (
   <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
     {uri ? (
       <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
@@ -39,8 +59,8 @@ const PhotoSlot = ({ uri, label, theme, missing }) => (
       </View>
     )}
     {label ? (
-      <View style={styles.slotTag}>
-        <Text style={styles.slotTagText}>{label}</Text>
+      <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
+        <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{label}</Text>
       </View>
     ) : null}
   </View>
@@ -57,7 +77,7 @@ const Note = ({ note, theme }) => (
 // ---------------------------------------------------------------
 // ROOM BY ROOM
 // ---------------------------------------------------------------
-const RoomByRoomPreview = ({ photos, options, displayRoomName, theme }) => {
+const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText }) => {
   const groups = groupByRoom(photos);
   if (groups.length === 0) return <Empty theme={theme} />;
   return (
@@ -71,8 +91,8 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme }) => {
           <View key={`room-${room}`} style={styles.section}>
             <SectionHeader name={displayRoomName(room)} theme={theme} />
             <View style={styles.pairRow}>
-              <PhotoSlot uri={firstBefore?.uri} label="BEFORE" theme={theme} missing="No before" />
-              <PhotoSlot uri={latestAfter?.uri} label="AFTER" theme={theme} missing="No after" />
+              <PhotoSlot uri={firstBefore?.uri} label="BEFORE" theme={theme} missing="No before" chipBg={chipBg} chipText={chipText} />
+              <PhotoSlot uri={latestAfter?.uri} label="AFTER" theme={theme} missing="No after" chipBg={chipBg} chipText={chipText} />
             </View>
             {options.includeProgressPhotos && progress.length > 0 && (
               <View style={styles.progressRow}>
@@ -95,7 +115,7 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme }) => {
 // ---------------------------------------------------------------
 // BEFORE & AFTER (prefers combined photos)
 // ---------------------------------------------------------------
-const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
+const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText }) => {
   const groups = groupByRoom(photos);
   return (
     <View>
@@ -116,8 +136,8 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
             {combinedPhotos.map((c) => (
               <View key={`combined-${c.id}`} style={styles.combinedHero}>
                 {c.uri ? <Image source={{ uri: c.uri }} style={styles.combinedHeroImage} resizeMode="cover" /> : null}
-                <View style={styles.slotTag}>
-                  <Text style={styles.slotTagText}>BEFORE & AFTER</Text>
+                <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
+                  <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>BEFORE & AFTER</Text>
                 </View>
                 {options.includeNotes && c.notes ? <Note note={c.notes} theme={theme} /> : null}
               </View>
@@ -125,9 +145,10 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
             {pairs.map(({ before, after }, idx) => (
               <View key={`pair-${idx}`} style={{ marginBottom: 12 }}>
                 <View style={styles.pairRow}>
-                  <PhotoSlot uri={before?.uri} label="BEFORE" theme={theme} missing="No before" />
-                  <PhotoSlot uri={after?.uri} label="AFTER" theme={theme} missing="No after" />
+                  <PhotoSlot uri={before?.uri} label="BEFORE" theme={theme} missing="No before" chipBg={chipBg} chipText={chipText} />
+                  <PhotoSlot uri={after?.uri} label="AFTER" theme={theme} missing="No after" chipBg={chipBg} chipText={chipText} />
                 </View>
+                {options.includeNotes && before?.notes ? <Note note={before.notes} theme={theme} /> : null}
                 {options.includeNotes && after?.notes ? <Note note={after.notes} theme={theme} /> : null}
               </View>
             ))}
@@ -147,7 +168,7 @@ const TIMELINE_STAGE_LABEL = {
   after: 'After',
   mix: 'Combined',
 };
-const TimelinePreview = ({ photos, options, displayRoomName, theme }) => {
+const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText }) => {
   const groups = groupByRoom(photos);
   return (
     <View>
@@ -159,7 +180,7 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme }) => {
             <SectionHeader name={displayRoomName(room)} theme={theme} />
             {ordered.map((p) => (
               <View key={p.id} style={styles.timelineRow}>
-                <View style={[styles.timelineColumn, { borderRightColor: theme.accent }]}>
+                <View style={[styles.timelineColumn, { borderRightColor: chipBg || theme.accent }]}>
                   <Text style={[styles.timelineStamp, { color: theme.textSecondary }]}>
                     {formatShortStamp(tsOf(p))}
                   </Text>
@@ -169,6 +190,11 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme }) => {
                 </View>
                 <View style={[styles.timelineCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
                   {p.uri ? <Image source={{ uri: p.uri }} style={styles.timelineImage} resizeMode="cover" /> : null}
+                  {MODE_CHIP[p.mode] ? (
+                    <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
+                      <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{MODE_CHIP[p.mode]}</Text>
+                    </View>
+                  ) : null}
                   {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
                 </View>
               </View>
@@ -183,7 +209,7 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme }) => {
 // ---------------------------------------------------------------
 // GALLERY
 // ---------------------------------------------------------------
-const GalleryPreview = ({ photos, options, theme }) => {
+const GalleryPreview = ({ photos, options, theme, chipBg, chipText }) => {
   const cols = [2, 3, 4].includes(options.galleryColumns) ? options.galleryColumns : 3;
   const ordered = sortByTime(photos);
   return (
@@ -191,6 +217,11 @@ const GalleryPreview = ({ photos, options, theme }) => {
       {ordered.map((p) => (
         <View key={p.id} style={[styles.galleryTile, { width: `${(100 / cols) - 1}%` }]}>
           {p.uri ? <Image source={{ uri: p.uri }} style={styles.galleryThumb} /> : null}
+          {MODE_CHIP[p.mode] ? (
+            <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
+              <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{MODE_CHIP[p.mode]}</Text>
+            </View>
+          ) : null}
         </View>
       ))}
     </View>
@@ -200,7 +231,7 @@ const GalleryPreview = ({ photos, options, theme }) => {
 // ---------------------------------------------------------------
 // EXECUTIVE SUMMARY
 // ---------------------------------------------------------------
-const ExecutivePreview = ({ photos, options, displayRoomName, theme }) => {
+const ExecutivePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText }) => {
   const groups = groupByRoom(photos);
   const ordered = sortByTime(photos);
   const cover = ordered.filter((p) => p.mode === 'after').slice(-1)[0] || ordered.slice(-1)[0] || null;
@@ -226,8 +257,8 @@ const ExecutivePreview = ({ photos, options, displayRoomName, theme }) => {
             <View key={`hl-${room}`} style={styles.section}>
               <SectionHeader name={displayRoomName(room)} theme={theme} />
               <View style={styles.pairRow}>
-                <PhotoSlot uri={pair.before?.uri} label="BEFORE" theme={theme} />
-                <PhotoSlot uri={pair.after?.uri} label="AFTER" theme={theme} />
+                <PhotoSlot uri={pair.before?.uri} label="BEFORE" theme={theme} chipBg={chipBg} chipText={chipText} />
+                <PhotoSlot uri={pair.after?.uri} label="AFTER" theme={theme} chipBg={chipBg} chipText={chipText} />
               </View>
               {options.includeNotes && pair.after?.notes ? <Note note={pair.after.notes} theme={theme} /> : null}
             </View>
@@ -261,7 +292,7 @@ const Stat = ({ n, text, label, theme }) => (
 // ---------------------------------------------------------------
 // DOCUMENTATION
 // ---------------------------------------------------------------
-const DocumentationPreview = ({ photos, options, displayRoomName, theme }) => {
+const DocumentationPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText }) => {
   const ordered = sortByTime(photos);
   if (ordered.length === 0) return <Empty theme={theme} />;
   return (
@@ -294,6 +325,11 @@ const DocumentationPreview = ({ photos, options, displayRoomName, theme }) => {
           <View key={p.id} style={[styles.docEntry, { borderColor: theme.border, backgroundColor: theme.surface }]}>
             <View style={styles.docPhotoWrap}>
               {p.uri ? <Image source={{ uri: p.uri }} style={styles.docPhoto} resizeMode="cover" /> : null}
+              {MODE_CHIP[p.mode] ? (
+                <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
+                  <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{MODE_CHIP[p.mode]}</Text>
+                </View>
+              ) : null}
             </View>
             <View style={{ flex: 1, padding: 8 }}>
               <Text style={[styles.docEntryTitle, { color: theme.textPrimary }]}>Entry {idx + 1}</Text>
@@ -324,10 +360,17 @@ const Empty = ({ theme }) => (
 // ---------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------
-export default function ReportPreviewView({ photos, layoutId, options, displayRoomName, theme }) {
+export default function ReportPreviewView({ photos, layoutId, options, displayRoomName, theme, branding }) {
   const safePhotos = photos || [];
-  const opts = options || {};
-  const props = { photos: safePhotos, options: opts, displayRoomName, theme };
+  // Run user options through the same merge that the HTML engine
+  // uses so the preview honors per-layout defaults (e.g. timeline's
+  // includeNotes: true). Without this, an unset switch reads as
+  // falsey here but truthy in the rendered PDF — exactly the
+  // "preview shows different thing than the file" issue.
+  const opts = resolveOptions(layoutId || 'room-by-room', options || {});
+  const chipBg = branding?.brandColor || null;
+  const chipText = chipBg ? contrastText(chipBg) : null;
+  const props = { photos: safePhotos, options: opts, displayRoomName, theme, chipBg, chipText };
   switch (layoutId) {
     case 'before-after':       return <BeforeAfterPreview {...props} />;
     case 'timeline':           return <TimelinePreview {...props} />;

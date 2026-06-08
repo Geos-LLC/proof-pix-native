@@ -4,7 +4,7 @@
 
 import {
   escapeHtml, formatShortStamp, sortByTime, groupByRoom,
-  htmlDocument, headerHtml, footerHtml, photoToData,
+  htmlDocument, headerHtml, footerHtml, photoToData, photoImgHtml,
   noteHtml, labelHtml, tsOf,
 } from './_shared.js';
 
@@ -65,7 +65,7 @@ export default {
               <div class="tag">${escapeHtml(tag)}</div>
             </div>
             <div class="card">
-              ${data ? `<img src="${data}" alt="" />` : `<div class="missing">Image unavailable</div>`}
+              ${photoImgHtml({ data, photo: p })}
               <div class="meta">
                 ${labelHtml({ photo: p, options })}
                 ${noteHtml({ photo: p, options })}

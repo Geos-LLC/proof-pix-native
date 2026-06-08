@@ -5,7 +5,7 @@
 
 import {
   escapeHtml, formatShortStamp, sortByTime,
-  htmlDocument, headerHtml, footerHtml, photoToData,
+  htmlDocument, headerHtml, footerHtml, photoToData, photoImgHtml,
   noteHtml, tsOf,
 } from './_shared.js';
 
@@ -99,7 +99,7 @@ export default {
       return `
         <div class="entry">
           <div class="photo">
-            ${data ? `<img src="${data}" alt="" />` : `<div class="missing">Image unavailable</div>`}
+            ${photoImgHtml({ data, photo: p })}
           </div>
           <div>
             <div class="entry-title">Entry ${idx + 1}</div>
