@@ -115,6 +115,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 .section-title { font-size: 16px; font-weight: 600; margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #ECECEC; }
 .note { margin-top: 6px; font-size: 12px; color: #1A1A1A; white-space: pre-wrap; }
 .caption { font-size: 11px; color: #555; }
+.label-name { color: var(--brand-color, #1A1A1A); }
 `;
 
 // Common header used by most layouts. Pass `subtitle` to override the
@@ -137,16 +138,21 @@ export const footerHtml = () =>
 
 // Render the full HTML document shell. Layouts return body fragments;
 // this wraps them in <html>/<head>/<body> with the merged stylesheet.
-export const htmlDocument = ({ title, css, body }) =>
-  `<!doctype html>
+export const htmlDocument = ({ title, css, body, brandColor }) => {
+  // Inject brand color as a CSS custom property so any layout can
+  // reference it via var(--brand-color, fallback). Layouts that don't
+  // pass brandColor get their hardcoded fallbacks.
+  const brandVar = brandColor ? `:root { --brand-color: ${brandColor}; }` : '';
+  return `<!doctype html>
 <html><head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${escapeHtml(title)}</title>
-<style>${baseCss}${css || ''}</style>
+<style>${brandVar}${baseCss}${css || ''}</style>
 </head><body>
 ${body}
 </body></html>`;
+};
 
 // Resolve a photo's source as a data: URI so the produced HTML is
 // portable (Safari Print → PDF, expo-print, share sheet). When the
@@ -185,5 +191,5 @@ export const noteHtml = ({ photo, options }) => {
 export const labelHtml = ({ photo, options }) => {
   if (options?.showLabels === false) return '';
   if (!photo?.name) return '';
-  return `<div class="caption"><strong>${escapeHtml(photo.name)}</strong></div>`;
+  return `<div class="caption label-name"><strong>${escapeHtml(photo.name)}</strong></div>`;
 };

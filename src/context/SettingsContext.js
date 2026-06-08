@@ -258,6 +258,15 @@ export const SettingsProvider = ({ children }) => {
       // survive app reinstall.
       const settings = await readSecureJSON(SETTINGS_KEY);
 
+      // Company name entered during onboarding (UserInfoSetupScreen
+      // persists to @proofpix_company). Used as the initial value for
+      // Report Branding so the user doesn't have to retype it.
+      let onboardingCompany = '';
+      try {
+        const raw = await AsyncStorage.getItem('@proofpix_company');
+        if (raw && raw.trim()) onboardingCompany = raw.trim();
+      } catch {}
+
       if (settings) {
         setShowLabels(settings.showLabels ?? true);
         setShowPreviewMetadata(settings.showPreviewMetadata ?? false);
@@ -266,7 +275,7 @@ export const SettingsProvider = ({ children }) => {
         setMetaShowAddress(settings.metaShowAddress ?? true);
         setMetaShowGps(settings.metaShowGps ?? false);
         setReportBrandLogoUri(settings.reportBrandLogoUri ?? null);
-        setReportCompanyName(settings.reportCompanyName ?? '');
+        setReportCompanyName(settings.reportCompanyName || onboardingCompany || '');
         setReportBrandColor(settings.reportBrandColor ?? '#1A73E8');
         setBrandLogoUri(settings.brandLogoUri ?? null);
         setShowBrandLogo(settings.showBrandLogo ?? false);
@@ -383,6 +392,7 @@ export const SettingsProvider = ({ children }) => {
             setUserName(backupName.trim());
           }
         } catch {}
+        if (onboardingCompany) setReportCompanyName(onboardingCompany);
       }
 
       // Hydrate custom folder names from AsyncStorage. This used to be an
