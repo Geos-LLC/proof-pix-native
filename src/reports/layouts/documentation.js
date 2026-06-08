@@ -121,6 +121,6 @@ export default {
       ${entries.join('')}
       ${footerHtml()}
     `;
-    return htmlDocument({ title: project.title, css, body });
+    return htmlDocument({ title: project.title, css, body, brandColor });
   },
 };

@@ -65,6 +65,6 @@ export default {
       <div class="grid">${tiles.join('')}</div>
       ${footerHtml()}
     `;
-    return htmlDocument({ title: project.title, css: css(cols), body });
+    return htmlDocument({ title: project.title, css: css(cols), body, brandColor });
   },
 };

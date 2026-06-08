@@ -145,6 +145,6 @@ export default {
       ${sections.length > 0 ? sections.join('') : `<div class="missing">No matched before/after pairs in this report.</div>`}
       ${footerHtml()}
     `;
-    return htmlDocument({ title: project.title, css, body });
+    return htmlDocument({ title: project.title, css, body, brandColor });
   },
 };

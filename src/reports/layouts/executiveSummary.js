@@ -142,6 +142,6 @@ export default {
       <div class="grid">${galleryTiles.join('')}</div>
       ${footerHtml()}
     `;
-    return htmlDocument({ title: project.title, css, body });
+    return htmlDocument({ title: project.title, css, body, brandColor });
   },
 };

@@ -9,7 +9,7 @@ import { readSecureJSON, writeSecureJSON, deleteSecure } from '../services/secur
 
 const SETTINGS_KEY = 'app-settings';
 const CUSTOM_ROOMS_KEY = 'custom-rooms';
-const DEFAULT_LABEL_BACKGROUND = '#FFD700';
+const DEFAULT_LABEL_BACKGROUND = '#F2C31B';
 const DEFAULT_LABEL_TEXT = '#000000';
 const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
 const DEFAULT_WATERMARK_LINK = 'https://proofpix.app/';
@@ -85,7 +85,7 @@ export const SettingsProvider = ({ children }) => {
   // generated report headers. Separate from the photo-editor logo overlay.
   const [reportBrandLogoUri, setReportBrandLogoUri] = useState(null);
   const [reportCompanyName, setReportCompanyName] = useState('');
-  const [reportBrandColor, setReportBrandColor] = useState('#1A73E8');
+  const [reportBrandColor, setReportBrandColor] = useState('#F2C31B');
 
   // Brand logo overlay — separate from the watermark text. URI is the
   // file:// path to the user-uploaded image; null means no custom logo
@@ -276,7 +276,7 @@ export const SettingsProvider = ({ children }) => {
         setMetaShowGps(settings.metaShowGps ?? false);
         setReportBrandLogoUri(settings.reportBrandLogoUri ?? null);
         setReportCompanyName(settings.reportCompanyName || onboardingCompany || '');
-        setReportBrandColor(settings.reportBrandColor ?? '#1A73E8');
+        setReportBrandColor(settings.reportBrandColor ?? '#F2C31B');
         setBrandLogoUri(settings.brandLogoUri ?? null);
         setShowBrandLogo(settings.showBrandLogo ?? false);
         setBrandLogoPosition(settings.brandLogoPosition ?? 'right-bottom');
@@ -580,9 +580,13 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ reportCompanyName: next });
   };
   const updateReportBrandColor = async (color) => {
-    const next = typeof color === 'string' && color ? color : '#1A73E8';
+    const next = typeof color === 'string' && color ? color : '#F2C31B';
     setReportBrandColor(next);
-    await saveSettings({ reportBrandColor: next });
+    // Cascade brand color → in-app photo labels so the BEFORE/AFTER
+    // chips track the brand. The user can still override per-label in
+    // LabelCustomizationScreen; the next brand-color change reapplies.
+    setLabelBackgroundColor(next);
+    await saveSettings({ reportBrandColor: next, labelBackgroundColor: next });
   };
   const updateMetaPosition = async (pos) => {
     setMetaPosition(pos);

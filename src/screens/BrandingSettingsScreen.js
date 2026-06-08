@@ -15,13 +15,13 @@ import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../hooks/useTheme';
 
 const PRESET_COLORS = [
+  '#F2C31B',
   '#1A73E8',
   '#E53935',
   '#43A047',
   '#FB8C00',
   '#8E24AA',
   '#00ACC1',
-  '#F4511E',
   '#1A1A1A',
 ];
 
