@@ -238,26 +238,21 @@ export const chipForMode = (mode) => {
   return `<div class="chip">${label}</div>`;
 };
 
-// Wraps an image (or missing placeholder) in a .photo-wrap container
-// with a positioned BEFORE/AFTER/PROGRESS chip overlay. Layouts call
-// this in place of inlining the <img> tag so chip styling and
-// positioning stays consistent across the report engine.
-//
-// Optional overlays for layouts that opt in: pass `watermarkText` to
-// burn a watermark string into the bottom-right; pass `showTimestamp`
-// (with `photo.timestamp`) to render the formatted capture time in
-// the bottom-left. Both are gated by the caller's report options.
-export const photoImgHtml = ({ data, photo, alt = '', watermarkText, showTimestamp }) => {
+// Wraps an image (or missing placeholder) in a .photo-wrap container.
+// We *intentionally* do NOT paint BEFORE/AFTER chips or watermark
+// overlays here anymore — the report pipeline now feeds in the baked
+// photo URI (label + watermark already composited by labelService),
+// so adding them again would duplicate. The only optional overlay
+// kept is the timestamp, since the bake doesn't include one and the
+// editor doesn't either.
+export const photoImgHtml = ({ data, photo, alt = '', showTimestamp }) => {
   const inner = data
     ? `<img src="${data}" alt="${escapeHtml(alt)}" />`
     : `<div class="missing">Image unavailable</div>`;
   const ts = showTimestamp && photo
     ? `<div class="ts-overlay">${escapeHtml(formatShortStamp(tsOf(photo)))}</div>`
     : '';
-  const wm = watermarkText
-    ? `<div class="watermark-overlay">${escapeHtml(watermarkText)}</div>`
-    : '';
-  return `<div class="photo-wrap">${inner}${chipForMode(photo?.mode)}${ts}${wm}</div>`;
+  return `<div class="photo-wrap">${inner}${ts}</div>`;
 };
 
 export const htmlDocument = ({ title, css, body, brandColor }) => {

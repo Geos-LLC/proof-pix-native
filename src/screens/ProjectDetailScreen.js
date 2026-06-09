@@ -29,6 +29,7 @@ import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { usePhotos } from '../context/PhotoContext';
+import { ensureLabelsForPhotoBatch } from '../services/labelService';
 import {
   generateReport,
   getLayout,
@@ -330,6 +331,40 @@ export default function ProjectDetailScreen({ route, navigation }) {
     () => (project ? getPhotosByProject(project.id) : []),
     [project, getPhotosByProject]
   );
+
+  // Map of photo.id → labeled/baked URI. The bake composites the
+  // user's configured BEFORE/AFTER label and watermark into the
+  // image, so feeding these URIs into the report makes the picture
+  // look exactly the way it does in the editor / share sheet. Cache
+  // is filesystem-backed (labelCacheService) so this is fast after
+  // the first pass on a project.
+  const [bakedUriMap, setBakedUriMap] = useState({});
+  useEffect(() => {
+    if (!projectPhotos || projectPhotos.length === 0) {
+      setBakedUriMap({});
+      return;
+    }
+    let cancelled = false;
+    ensureLabelsForPhotoBatch(projectPhotos)
+      .then((results) => {
+        if (cancelled) return;
+        const next = {};
+        for (const { photo, labeledUri } of results) {
+          if (labeledUri && labeledUri !== photo.uri) next[photo.id] = labeledUri;
+        }
+        setBakedUriMap(next);
+      })
+      .catch((e) => {
+        console.warn('[Report] Failed to bake photos for preview:', e?.message);
+      });
+    return () => { cancelled = true; };
+  }, [projectPhotos]);
+
+  // Swap each photo's uri to its baked version when one exists.
+  // Cheap: leaves the photo objects identical (===) when no bake
+  // landed, so memo'd consumers don't re-render needlessly.
+  const withBakedUri = (photos) =>
+    photos.map((p) => (bakedUriMap[p.id] ? { ...p, uri: bakedUriMap[p.id] } : p));
 
   // When entering the editor — either with an existing report or
   // a fresh draft — seed the form inputs + the editorPhotoIds draft
@@ -698,13 +733,26 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // suitable for sharing or feeding to expo-print for PDF.
   const buildReportHtml = async ({ title, photos, layoutType, options, logoUri }) => {
     const effectiveLogoUri = logoUri || null;
+    // Bake labels + watermark into the report photos so the rendered
+    // HTML/PDF carries the exact same per-photo composition the user
+    // sees in Studio/Gallery. ensureLabelsForPhotoBatch is cache-first;
+    // first generation may take a moment, subsequent ones are fast.
+    let preparedPhotos = photos;
+    try {
+      const baked = await ensureLabelsForPhotoBatch(photos);
+      preparedPhotos = baked.map(({ photo, labeledUri }) =>
+        labeledUri && labeledUri !== photo.uri ? { ...photo, uri: labeledUri } : photo
+      );
+    } catch (e) {
+      console.warn('[Report] Bake failed; falling back to raw photo URIs:', e?.message);
+    }
     return generateReport({
       project: {
         title,
         location: location || '',
         generatedAt: Date.now(),
       },
-      photos,
+      photos: preparedPhotos,
       layoutType: layoutType || DEFAULT_LAYOUT_ID,
       options: options || {},
       branding: {
@@ -1866,7 +1914,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   need react-native-webview (native module); this is
                   the OTA-able alternative. */}
               <ReportPreviewView
-                photos={cappedPreview}
+                photos={withBakedUri(cappedPreview)}
                 layoutId={activeReport.layoutType || 'room-by-room'}
                 options={activeReport.options || {}}
                 displayRoomName={displayRoomName}

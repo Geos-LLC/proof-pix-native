@@ -47,7 +47,12 @@ const SectionHeader = ({ name, theme }) => (
   </Text>
 );
 
-const PhotoSlot = ({ uri, label, theme, missing, chipBg, chipText, timestamp, watermarkText }) => (
+// Photo cell for previews. Chips and watermark overlays were removed
+// once the report pipeline started feeding baked photo URIs (the
+// editor's bake already composites label + watermark into the
+// image). The optional `label` prop now drops because the baked
+// image carries it; we keep `timestamp` since the bake doesn't.
+const PhotoSlot = ({ uri, theme, missing, timestamp }) => (
   <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
     {uri ? (
       <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
@@ -59,19 +64,9 @@ const PhotoSlot = ({ uri, label, theme, missing, chipBg, chipText, timestamp, wa
         </Text>
       </View>
     )}
-    {label ? (
-      <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
-        <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{label}</Text>
-      </View>
-    ) : null}
     {timestamp ? (
       <View style={styles.tsOverlay}>
         <Text style={styles.overlayText}>{timestamp}</Text>
-      </View>
-    ) : null}
-    {watermarkText ? (
-      <View style={styles.watermarkOverlay}>
-        <Text style={styles.overlayText} numberOfLines={1}>{watermarkText}</Text>
       </View>
     ) : null}
   </View>
@@ -147,9 +142,6 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, chipBg, c
             {combinedPhotos.map((c) => (
               <View key={`combined-${c.id}`} style={styles.combinedHero}>
                 {c.uri ? <Image source={{ uri: c.uri }} style={styles.combinedHeroImage} resizeMode="cover" /> : null}
-                <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
-                  <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>BEFORE & AFTER</Text>
-                </View>
                 {options.includeNotes && c.notes ? <Note note={c.notes} theme={theme} /> : null}
               </View>
             ))}
@@ -315,11 +307,6 @@ const GalleryPreview = ({ photos, options, theme, chipBg, chipText }) => {
       {ordered.map((p) => (
         <View key={p.id} style={[styles.galleryTile, { width: `${(100 / cols) - 1}%` }]}>
           {p.uri ? <Image source={{ uri: p.uri }} style={styles.galleryThumb} /> : null}
-          {MODE_CHIP[p.mode] ? (
-            <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
-              <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{MODE_CHIP[p.mode]}</Text>
-            </View>
-          ) : null}
         </View>
       ))}
     </View>
@@ -423,11 +410,6 @@ const DocumentationPreview = ({ photos, options, displayRoomName, theme, chipBg,
           <View key={p.id} style={[styles.docEntry, { borderColor: theme.border, backgroundColor: theme.surface }]}>
             <View style={styles.docPhotoWrap}>
               {p.uri ? <Image source={{ uri: p.uri }} style={styles.docPhoto} resizeMode="cover" /> : null}
-              {MODE_CHIP[p.mode] ? (
-                <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
-                  <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{MODE_CHIP[p.mode]}</Text>
-                </View>
-              ) : null}
             </View>
             <View style={{ flex: 1, padding: 8 }}>
               <Text style={[styles.docEntryTitle, { color: theme.textPrimary }]}>Entry {idx + 1}</Text>
