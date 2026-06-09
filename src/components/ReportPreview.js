@@ -173,7 +173,59 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, chipBg, c
 // ---------------------------------------------------------------
 // TIMELINE
 // ---------------------------------------------------------------
-const clampTimelineCols = (n) => ([1, 2, 3].includes(Number(n)) ? Number(n) : 2);
+const TIMELINE_STAGE_LABEL = {
+  before: 'Before',
+  progress: 'Progress',
+  after: 'After',
+  mix: 'Combined',
+};
+const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText }) => {
+  const groups = groupByRoom(photos);
+  const showTimestamp = options.includeMetadata === true;
+  return (
+    <View>
+      {groups.map(({ room, photos: roomPhotos }) => {
+        const ordered = sortByTime(roomPhotos);
+        if (ordered.length === 0) return null;
+        return (
+          <View key={`room-${room}`} style={styles.section}>
+            <SectionHeader name={displayRoomName(room)} theme={theme} />
+            {ordered.map((p) => (
+              <View key={p.id} style={styles.timelineRow}>
+                <View style={[styles.timelineColumn, { borderRightColor: chipBg || theme.accent }]}>
+                  <Text style={[styles.timelineStamp, { color: theme.textSecondary }]}>
+                    {formatShortStamp(tsOf(p))}
+                  </Text>
+                  <Text style={[styles.timelineStage, { color: theme.textMuted }]}>
+                    {(TIMELINE_STAGE_LABEL[p.mode] || 'Photo').toUpperCase()}
+                  </Text>
+                </View>
+                <View style={[styles.timelineCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+                  <PhotoSlot
+                    uri={p.uri}
+                    label={MODE_CHIP[p.mode] || ''}
+                    theme={theme}
+                    chipBg={chipBg}
+                    chipText={chipText}
+                    timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
+                    watermarkText={watermarkText || null}
+                  />
+                  {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
+                </View>
+              </View>
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+};
+
+// Sets — chronological + grouped by before/progress/after sets.
+// Photos inside a set render in an N-column grid using a
+// negative-margin trick so percentage widths fit exactly without
+// the gap pushing the last column to wrap.
+const clampSetCols = (n) => ([1, 2, 3].includes(Number(n)) ? Number(n) : 2);
 
 const setRangeStampPreview = (set) => {
   const ps = [set.before, ...(set.progress || []), set.after, set.mix].filter(Boolean);
@@ -184,9 +236,9 @@ const setRangeStampPreview = (set) => {
   return first === last ? first : `${first} → ${last}`;
 };
 
-const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText }) => {
+const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText }) => {
   const groups = groupByRoom(photos);
-  const cols = clampTimelineCols(options.timelineColumns);
+  const cols = clampSetCols(options.timelineColumns);
   const showTimestamp = options.includeMetadata === true;
   return (
     <View>
@@ -218,11 +270,11 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chip
                       {stamp}
                     </Text>
                   ) : null}
-                  <View style={[styles.timelineSetGrid, { gap: 6 }]}>
+                  <View style={styles.setGrid}>
                     {setPhotos.map((p) => (
                       <View
                         key={p.id}
-                        style={{ width: `${(100 / cols) - 1}%` }}
+                        style={[styles.setCell, { width: `${100 / cols}%` }]}
                       >
                         <PhotoSlot
                           uri={p.uri}
@@ -418,6 +470,7 @@ export default function ReportPreviewView({ photos, layoutId, options, displayRo
   switch (layoutId) {
     case 'before-after':       return <BeforeAfterPreview {...props} />;
     case 'timeline':           return <TimelinePreview {...props} />;
+    case 'sets':               return <SetsPreview {...props} />;
     case 'gallery':            return <GalleryPreview {...props} />;
     case 'executive-summary':  return <ExecutivePreview {...props} />;
     case 'documentation':      return <DocumentationPreview {...props} />;
@@ -472,7 +525,11 @@ const styles = StyleSheet.create({
   timelineSet: { marginBottom: 16, paddingLeft: 10, borderLeftWidth: 2 },
   timelineSetHeader: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, marginBottom: 2 },
   timelineSetStamp: { fontSize: 10, marginBottom: 6 },
-  timelineSetGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  // Negative horizontal margin offsets each cell's padding so the
+  // grid edges sit flush. With width = exactly 100/cols%, three
+  // 33.33% cells fit a row without wrapping.
+  setGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -3 },
+  setCell: { paddingHorizontal: 3, paddingVertical: 3 },
   galleryGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   galleryTile: { aspectRatio: 1, marginBottom: 4 },
   galleryThumb: { width: '100%', height: '100%', borderRadius: 4 },

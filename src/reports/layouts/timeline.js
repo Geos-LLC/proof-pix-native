@@ -1,56 +1,41 @@
-// Timeline — multi-stage projects rendered set-by-set. Within each
-// room/section, photos are grouped into sets (one before, the progress
-// shots between it and its after, then the after). A set renders as a
-// stamped header row + an N-column photo grid (timelineColumns). Each
-// photo carries its BEFORE/AFTER/PROGRESS chip and, when the report
-// options request them, a timestamp overlay and the user's watermark.
+// Timeline — multi-stage projects in pure chronological order. Per
+// section: every photo (before / progress / after) on its own row,
+// timestamp on the left, photo on the right. No grouping into sets —
+// reach for the Sets layout when that's what you need.
 
 import {
-  escapeHtml, formatShortStamp, sortByTime, groupByRoom, groupBySet,
+  escapeHtml, formatShortStamp, sortByTime, groupByRoom,
   htmlDocument, headerHtml, footerHtml, photoToData, photoImgHtml,
   noteHtml, labelHtml, tsOf,
 } from './_shared.js';
 
 const css = `
 .section { margin-bottom: 30px; }
-.timeline-set { margin-bottom: 22px; padding-left: 14px; border-left: 2px solid var(--brand-color, #F2C31B); }
-.timeline-set .set-header { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #888; margin-bottom: 6px; }
-.timeline-set .set-stamp { font-size: 11px; color: #555; margin-bottom: 8px; }
-.timeline-set .set-grid { display: grid; gap: 10px; }
-.timeline-set .photo-card { border: 1px solid #EEE; border-radius: 8px; overflow: hidden; }
-.timeline-set .photo-card .meta { padding: 6px 10px 10px; }
+.stage { display: grid; grid-template-columns: 110px 1fr; gap: 14px; margin-bottom: 14px; align-items: start; }
+.stage .when { font-size: 11px; color: #555; padding-top: 6px; border-right: 2px solid var(--brand-color, #F2C31B); padding-right: 10px; min-height: 60px; }
+.stage .tag { display: inline-block; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #888; margin-top: 4px; }
+.stage .card { border: 1px solid #EEE; border-radius: 8px; overflow: hidden; }
+.stage .card .meta { padding: 6px 10px 10px; }
 `;
 
-const clampCols = (n) => {
-  const v = Number(n);
-  if (v === 1 || v === 2 || v === 3) return v;
-  return 2;
-};
-
-const setRangeStamp = (set) => {
-  const photos = [
-    set.before, ...set.progress, set.after, set.mix,
-  ].filter(Boolean);
-  if (photos.length === 0) return '';
-  const ts = photos.map(tsOf).filter((t) => t > 0);
-  if (ts.length === 0) return '';
-  const first = formatShortStamp(Math.min(...ts));
-  const last = formatShortStamp(Math.max(...ts));
-  return first === last ? first : `${first} → ${last}`;
+const STAGE_LABEL = {
+  before: 'Before',
+  progress: 'Progress',
+  after: 'After',
+  mix: 'Combined',
 };
 
 export default {
   id: 'timeline',
   name: 'Timeline',
-  description: 'Set-by-set: before → progress → after, with stamps.',
-  supportedOptions: ['includeNotes', 'includeBranding', 'includeMetadata', 'includeWatermark', 'showLabels', 'timelineColumns'],
+  description: 'Chronological view of multi-stage work.',
+  supportedOptions: ['includeNotes', 'includeBranding', 'includeMetadata', 'includeWatermark', 'showLabels'],
   defaults: {
     includeNotes: true,
     includeBranding: true,
     includeMetadata: false,
     includeWatermark: false,
     showLabels: true,
-    timelineColumns: 2,
   },
 
   async render({ project, photos, options, branding, helpers }) {
@@ -60,7 +45,6 @@ export default {
       : null;
     const companyName = showBranding ? (branding?.companyName || '') : '';
     const brandColor = branding?.brandColor || null;
-    const cols = clampCols(options.timelineColumns);
     const watermarkText = options.includeWatermark ? (branding?.watermarkText || '') : '';
     const showTimestamp = options.includeMetadata === true;
 
@@ -68,38 +52,25 @@ export default {
     const sections = [];
 
     for (const { room, photos: roomPhotos } of groups) {
-      const sets = groupBySet(roomPhotos);
-      if (sets.length === 0) continue;
+      const ordered = sortByTime(roomPhotos);
+      if (ordered.length === 0) continue;
 
-      const setChunks = await Promise.all(sets.map(async (set, idx) => {
-        // Preserve before → progress → after order inside the set.
-        const setPhotos = [
-          ...(set.before ? [set.before] : []),
-          ...sortByTime(set.progress || []),
-          ...(set.after ? [set.after] : []),
-          ...(set.mix ? [set.mix] : []),
-        ];
-        if (setPhotos.length === 0) return '';
-
-        const cards = await Promise.all(setPhotos.map(async (p) => {
-          const data = await photoToData(p, helpers);
-          return `
-            <div class="photo-card no-break">
+      const stages = await Promise.all(ordered.map(async (p) => {
+        const data = await photoToData(p, helpers);
+        const stamp = formatShortStamp(tsOf(p));
+        const tag = STAGE_LABEL[p.mode] || 'Photo';
+        return `
+          <div class="stage no-break">
+            <div class="when">
+              ${escapeHtml(stamp)}
+              <div class="tag">${escapeHtml(tag)}</div>
+            </div>
+            <div class="card">
               ${photoImgHtml({ data, photo: p, watermarkText, showTimestamp })}
               <div class="meta">
                 ${labelHtml({ photo: p, options })}
                 ${noteHtml({ photo: p, options })}
               </div>
-            </div>`;
-        }));
-
-        const stamp = setRangeStamp(set);
-        return `
-          <div class="timeline-set no-break">
-            <div class="set-header">Set ${idx + 1}</div>
-            ${stamp ? `<div class="set-stamp">${escapeHtml(stamp)}</div>` : ''}
-            <div class="set-grid" style="grid-template-columns: repeat(${cols}, 1fr);">
-              ${cards.join('')}
             </div>
           </div>`;
       }));
@@ -107,7 +78,7 @@ export default {
       sections.push(`
         <section class="section">
           <div class="section-title">${escapeHtml(helpers.displayRoomName(room))}</div>
-          ${setChunks.join('')}
+          ${stages.join('')}
         </section>
       `);
     }
@@ -115,7 +86,7 @@ export default {
     const body = `
       ${headerHtml({
         title: project.title,
-        subtitle: `Timeline &middot; ${photos.length} photo${photos.length === 1 ? '' : 's'}`,
+        subtitle: `Timeline &middot; ${photos.length} stage${photos.length === 1 ? '' : 's'}`,
         logoData,
         companyName,
         brandColor,

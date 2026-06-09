@@ -6,6 +6,7 @@
 import roomByRoom from './layouts/roomByRoom.js';
 import beforeAfter from './layouts/beforeAfter.js';
 import timeline from './layouts/timeline.js';
+import sets from './layouts/sets.js';
 import gallery from './layouts/gallery.js';
 import executiveSummary from './layouts/executiveSummary.js';
 import documentation from './layouts/documentation.js';
@@ -14,6 +15,7 @@ export const LAYOUTS = [
   roomByRoom,
   beforeAfter,
   timeline,
+  sets,
   gallery,
   executiveSummary,
   documentation,
