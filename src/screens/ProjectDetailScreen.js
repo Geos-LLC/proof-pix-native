@@ -182,6 +182,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
     reportBrandLogoUri,
     reportCompanyName,
     reportBrandColor,
+    showWatermark,
+    watermarkText,
+    customWatermarkEnabled,
     location,
   } = useSettings();
   const roomDataMap = useMemo(() => {
@@ -708,6 +711,11 @@ export default function ProjectDetailScreen({ route, navigation }) {
         logoUri: effectiveLogoUri,
         companyName: reportCompanyName || '',
         brandColor: reportBrandColor || '#1A1A1A',
+        // Watermark text + whether the global "show watermark" switch
+        // is on. The layout still gates rendering on its own
+        // includeWatermark option so the report editor can toggle it
+        // per report.
+        watermarkText: (showWatermark && watermarkText) ? watermarkText : '',
       },
       helpers: {
         fileToDataUri,
@@ -1863,7 +1871,10 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 options={activeReport.options || {}}
                 displayRoomName={displayRoomName}
                 theme={theme}
-                branding={{ brandColor: reportBrandColor }}
+                branding={{
+                  brandColor: reportBrandColor,
+                  watermarkText: (showWatermark && watermarkText) ? watermarkText : '',
+                }}
               />
 
               {/* Share action — re-uses the cached HTML file if

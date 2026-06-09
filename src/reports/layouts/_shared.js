@@ -63,6 +63,72 @@ export const splitByMode = (photos) => {
   return { before, after, progress, other };
 };
 
+// Group a room's photos into "sets" — each set is one before, the
+// progress shots between it and its after, and the after itself. A
+// set's after is linked via `beforePhotoId`; if that's missing we
+// pair by chronological proximity (next before opens a new set;
+// next after closes the current one). Orphan progress/before/after
+// photos still get their own minimal sets so nothing is dropped.
+// Returns an array of { before, progress: [], after } in capture order.
+export const groupBySet = (photos) => {
+  const sorted = sortByTime(photos);
+  const sets = [];
+  // First pass: build explicit sets from before photos and link
+  // afters/progress via beforePhotoId where available.
+  const beforeIdToSet = new Map();
+  for (const p of sorted) {
+    if (p.mode === 'before') {
+      const set = { before: p, progress: [], after: null };
+      beforeIdToSet.set(p.id, set);
+      sets.push(set);
+    }
+  }
+  // Pass 2: explicit-link afters + progress to their before's set.
+  const consumed = new Set();
+  for (const p of sorted) {
+    if (p.mode === 'after' && p.beforePhotoId && beforeIdToSet.has(p.beforePhotoId)) {
+      const set = beforeIdToSet.get(p.beforePhotoId);
+      if (!set.after) {
+        set.after = p;
+        consumed.add(p.id);
+      }
+    } else if (p.mode === 'progress' && p.beforePhotoId && beforeIdToSet.has(p.beforePhotoId)) {
+      beforeIdToSet.get(p.beforePhotoId).progress.push(p);
+      consumed.add(p.id);
+    }
+  }
+  // Pass 3: chronological fill — for unlinked afters/progress, walk
+  // forward and assign to the most recent open set (one with no
+  // after yet). Orphans land in their own set so they still render.
+  let openSet = null;
+  for (const p of sorted) {
+    if (p.mode === 'before') {
+      openSet = beforeIdToSet.get(p.id);
+      continue;
+    }
+    if (consumed.has(p.id)) {
+      // already linked above; advance openSet if this closed it
+      if (openSet && openSet.after && openSet.after.id === p.id) openSet = null;
+      continue;
+    }
+    if (p.mode === 'after') {
+      if (openSet && !openSet.after) {
+        openSet.after = p;
+        openSet = null;
+      } else {
+        sets.push({ before: null, progress: [], after: p });
+      }
+    } else if (p.mode === 'progress') {
+      if (openSet) openSet.progress.push(p);
+      else sets.push({ before: null, progress: [p], after: null });
+    } else if (p.mode === 'mix') {
+      // Combined photos render as their own single-card set.
+      sets.push({ before: null, progress: [], after: null, mix: p });
+    }
+  }
+  return sets;
+};
+
 // Pair before/after photos in a room. An after photo is paired to a
 // before via `beforePhotoId`; falls back to chronological pairing when
 // the explicit link is missing. Returns ordered pairs + leftovers so a
@@ -119,6 +185,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 .photo-wrap { position: relative; display: block; }
 .photo-wrap img { width: 100%; display: block; }
 .chip { position: absolute; top: 8px; left: 8px; padding: 3px 8px; font-size: 9px; font-weight: 700; letter-spacing: 0.08em; border-radius: 4px; background: var(--brand-color, rgba(0,0,0,0.6)); color: var(--brand-chip-text, #FFFFFF); }
+.ts-overlay { position: absolute; bottom: 8px; left: 8px; padding: 2px 6px; background: rgba(0,0,0,0.55); color: #FFFFFF; font-size: 9px; border-radius: 3px; letter-spacing: 0.03em; }
+.watermark-overlay { position: absolute; bottom: 8px; right: 8px; padding: 2px 6px; background: rgba(0,0,0,0.45); color: #FFFFFF; font-size: 9px; border-radius: 3px; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `;
 
 // Common header used by most layouts. Pass `subtitle` to override the
@@ -174,11 +242,22 @@ export const chipForMode = (mode) => {
 // with a positioned BEFORE/AFTER/PROGRESS chip overlay. Layouts call
 // this in place of inlining the <img> tag so chip styling and
 // positioning stays consistent across the report engine.
-export const photoImgHtml = ({ data, photo, alt = '' }) => {
+//
+// Optional overlays for layouts that opt in: pass `watermarkText` to
+// burn a watermark string into the bottom-right; pass `showTimestamp`
+// (with `photo.timestamp`) to render the formatted capture time in
+// the bottom-left. Both are gated by the caller's report options.
+export const photoImgHtml = ({ data, photo, alt = '', watermarkText, showTimestamp }) => {
   const inner = data
     ? `<img src="${data}" alt="${escapeHtml(alt)}" />`
     : `<div class="missing">Image unavailable</div>`;
-  return `<div class="photo-wrap">${inner}${chipForMode(photo?.mode)}</div>`;
+  const ts = showTimestamp && photo
+    ? `<div class="ts-overlay">${escapeHtml(formatShortStamp(tsOf(photo)))}</div>`
+    : '';
+  const wm = watermarkText
+    ? `<div class="watermark-overlay">${escapeHtml(watermarkText)}</div>`
+    : '';
+  return `<div class="photo-wrap">${inner}${chipForMode(photo?.mode)}${ts}${wm}</div>`;
 };
 
 export const htmlDocument = ({ title, css, body, brandColor }) => {

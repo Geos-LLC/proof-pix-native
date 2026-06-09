@@ -10,6 +10,7 @@ import { View, Text, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   groupByRoom,
+  groupBySet,
   sortByTime,
   splitByMode,
   pairBeforeAfter,
@@ -46,7 +47,7 @@ const SectionHeader = ({ name, theme }) => (
   </Text>
 );
 
-const PhotoSlot = ({ uri, label, theme, missing, chipBg, chipText }) => (
+const PhotoSlot = ({ uri, label, theme, missing, chipBg, chipText, timestamp, watermarkText }) => (
   <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
     {uri ? (
       <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
@@ -61,6 +62,16 @@ const PhotoSlot = ({ uri, label, theme, missing, chipBg, chipText }) => (
     {label ? (
       <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
         <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{label}</Text>
+      </View>
+    ) : null}
+    {timestamp ? (
+      <View style={styles.tsOverlay}>
+        <Text style={styles.overlayText}>{timestamp}</Text>
+      </View>
+    ) : null}
+    {watermarkText ? (
+      <View style={styles.watermarkOverlay}>
+        <Text style={styles.overlayText} numberOfLines={1}>{watermarkText}</Text>
       </View>
     ) : null}
   </View>
@@ -162,43 +173,75 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, chipBg, c
 // ---------------------------------------------------------------
 // TIMELINE
 // ---------------------------------------------------------------
-const TIMELINE_STAGE_LABEL = {
-  before: 'Before',
-  progress: 'Progress',
-  after: 'After',
-  mix: 'Combined',
+const clampTimelineCols = (n) => ([1, 2, 3].includes(Number(n)) ? Number(n) : 2);
+
+const setRangeStampPreview = (set) => {
+  const ps = [set.before, ...(set.progress || []), set.after, set.mix].filter(Boolean);
+  const ts = ps.map(tsOf).filter((t) => t > 0);
+  if (ts.length === 0) return '';
+  const first = formatShortStamp(Math.min(...ts));
+  const last = formatShortStamp(Math.max(...ts));
+  return first === last ? first : `${first} → ${last}`;
 };
-const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText }) => {
+
+const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText }) => {
   const groups = groupByRoom(photos);
+  const cols = clampTimelineCols(options.timelineColumns);
+  const showTimestamp = options.includeMetadata === true;
   return (
     <View>
       {groups.map(({ room, photos: roomPhotos }) => {
-        const ordered = sortByTime(roomPhotos);
-        if (ordered.length === 0) return null;
+        const sets = groupBySet(roomPhotos);
+        if (sets.length === 0) return null;
         return (
           <View key={`room-${room}`} style={styles.section}>
             <SectionHeader name={displayRoomName(room)} theme={theme} />
-            {ordered.map((p) => (
-              <View key={p.id} style={styles.timelineRow}>
-                <View style={[styles.timelineColumn, { borderRightColor: chipBg || theme.accent }]}>
-                  <Text style={[styles.timelineStamp, { color: theme.textSecondary }]}>
-                    {formatShortStamp(tsOf(p))}
+            {sets.map((set, idx) => {
+              const setPhotos = [
+                ...(set.before ? [set.before] : []),
+                ...sortByTime(set.progress || []),
+                ...(set.after ? [set.after] : []),
+                ...(set.mix ? [set.mix] : []),
+              ];
+              if (setPhotos.length === 0) return null;
+              const stamp = setRangeStampPreview(set);
+              return (
+                <View
+                  key={`set-${idx}`}
+                  style={[styles.timelineSet, { borderLeftColor: chipBg || theme.accent }]}
+                >
+                  <Text style={[styles.timelineSetHeader, { color: theme.textSecondary }]}>
+                    SET {idx + 1}
                   </Text>
-                  <Text style={[styles.timelineStage, { color: theme.textMuted }]}>
-                    {(TIMELINE_STAGE_LABEL[p.mode] || 'Photo').toUpperCase()}
-                  </Text>
-                </View>
-                <View style={[styles.timelineCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-                  {p.uri ? <Image source={{ uri: p.uri }} style={styles.timelineImage} resizeMode="cover" /> : null}
-                  {MODE_CHIP[p.mode] ? (
-                    <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
-                      <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]}>{MODE_CHIP[p.mode]}</Text>
-                    </View>
+                  {stamp ? (
+                    <Text style={[styles.timelineSetStamp, { color: theme.textSecondary }]}>
+                      {stamp}
+                    </Text>
                   ) : null}
-                  {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
+                  <View style={[styles.timelineSetGrid, { gap: 6 }]}>
+                    {setPhotos.map((p) => (
+                      <View
+                        key={p.id}
+                        style={{ width: `${(100 / cols) - 1}%` }}
+                      >
+                        <PhotoSlot
+                          uri={p.uri}
+                          label={MODE_CHIP[p.mode] || ''}
+                          theme={theme}
+                          chipBg={chipBg}
+                          chipText={chipText}
+                          timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
+                          watermarkText={watermarkText || null}
+                        />
+                        {options.includeNotes && p.notes ? (
+                          <Note note={p.notes} theme={theme} />
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         );
       })}
@@ -370,7 +413,8 @@ export default function ReportPreviewView({ photos, layoutId, options, displayRo
   const opts = resolveOptions(layoutId || 'room-by-room', options || {});
   const chipBg = branding?.brandColor || null;
   const chipText = chipBg ? contrastText(chipBg) : null;
-  const props = { photos: safePhotos, options: opts, displayRoomName, theme, chipBg, chipText };
+  const watermarkText = opts.includeWatermark ? (branding?.watermarkText || '') : '';
+  const props = { photos: safePhotos, options: opts, displayRoomName, theme, chipBg, chipText, watermarkText };
   switch (layoutId) {
     case 'before-after':       return <BeforeAfterPreview {...props} />;
     case 'timeline':           return <TimelinePreview {...props} />;
@@ -400,6 +444,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4,
   },
   slotTagText: { color: '#FFF', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  tsOverlay: {
+    position: 'absolute', bottom: 6, left: 6,
+    paddingHorizontal: 5, paddingVertical: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 3,
+  },
+  watermarkOverlay: {
+    position: 'absolute', bottom: 6, right: 6,
+    paddingHorizontal: 5, paddingVertical: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 3,
+    maxWidth: '60%',
+  },
+  overlayText: { color: '#FFF', fontSize: 8, fontWeight: '600' },
   progressRow: { flexDirection: 'row', gap: 4, marginTop: 6 },
   progressTile: { width: 60, height: 60, borderRadius: 4, overflow: 'hidden' },
   progressThumb: { width: '100%', height: '100%' },
@@ -413,6 +469,10 @@ const styles = StyleSheet.create({
   timelineStage: { fontSize: 9, marginTop: 2, fontWeight: '600' },
   timelineCard: { flex: 1, borderRadius: 8, borderWidth: 1, overflow: 'hidden' },
   timelineImage: { width: '100%', aspectRatio: 16 / 10 },
+  timelineSet: { marginBottom: 16, paddingLeft: 10, borderLeftWidth: 2 },
+  timelineSetHeader: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, marginBottom: 2 },
+  timelineSetStamp: { fontSize: 10, marginBottom: 6 },
+  timelineSetGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   galleryGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   galleryTile: { aspectRatio: 1, marginBottom: 4 },
   galleryThumb: { width: '100%', height: '100%', borderRadius: 4 },

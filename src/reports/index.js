@@ -85,6 +85,21 @@ export const OPTION_META = {
     description: 'Include dimensions, aspect ratio, and template.',
     control: 'switch',
   },
+  includeWatermark: {
+    label: 'Include watermark',
+    description: 'Overlay your watermark on report photos.',
+    control: 'switch',
+  },
+  timelineColumns: {
+    label: 'Photos per row',
+    description: 'How many photos appear side-by-side inside one set.',
+    control: 'segmented',
+    choices: [
+      { value: 1, label: '1' },
+      { value: 2, label: '2' },
+      { value: 3, label: '3' },
+    ],
+  },
 };
 
 // Merge a layout's defaults over an empty object, then patch the
