@@ -201,11 +201,11 @@ export default function BrandingSettingsScreen({ navigation }) {
             header/footer. */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CONTACT</Text>
 
-        {/* Address: textContentType + autoComplete light up iOS QuickType
-            / Android autofill so the user can pick a saved address
-            straight from the keyboard suggestion bar. No GPS / current-
-            location fallback — this is a business address, not where
-            you happen to be standing. */}
+        {/* Address: single-line is intentional. iOS's QuickType
+            autofill bar only appears on single-line TextInputs — make
+            it multiline and the suggestions silently vanish. Source
+            for saved addresses on iOS is the "Me" card in Contacts
+            (Settings → Contacts → My Info). */}
         <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Ionicons name="location-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
           <TextInput
@@ -214,9 +214,10 @@ export default function BrandingSettingsScreen({ navigation }) {
             placeholder="Street, City, State ZIP"
             placeholderTextColor={theme.textMuted}
             style={[styles.iconInputField, { color: theme.textPrimary }]}
-            multiline
             textContentType="fullStreetAddress"
             autoComplete={Platform.OS === 'android' ? 'postal-address' : 'street-address'}
+            autoCorrect={false}
+            autoCapitalize="words"
             dataDetectorTypes="address"
           />
         </View>
@@ -232,6 +233,7 @@ export default function BrandingSettingsScreen({ navigation }) {
             style={[styles.iconInputField, { color: theme.textPrimary }]}
             textContentType="telephoneNumber"
             autoComplete="tel"
+            autoCorrect={false}
             dataDetectorTypes="phoneNumber"
           />
         </View>
@@ -273,6 +275,10 @@ export default function BrandingSettingsScreen({ navigation }) {
             stored. */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>SOCIAL MEDIA</Text>
 
+        {/* Social handles: no iOS textContentType. "username" there
+            would trigger the Passwords AutoFill prompt, which is wrong
+            for a social handle. Android still gets a hint via
+            autoComplete. */}
         {SOCIAL_PLATFORMS.map(({ key, label, icon, placeholder }) => (
           <View
             key={key}
@@ -287,7 +293,6 @@ export default function BrandingSettingsScreen({ navigation }) {
               autoCapitalize="none"
               autoCorrect={false}
               style={[styles.iconInputField, { color: theme.textPrimary }]}
-              textContentType="username"
               autoComplete="username"
             />
           </View>
