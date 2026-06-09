@@ -8,13 +8,10 @@ import {
   TextInput,
   Image,
   Alert,
-  ActivityIndicator,
-  Linking,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as ExpoLocation from 'expo-location';
 import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../hooks/useTheme';
 
@@ -63,54 +60,6 @@ export default function BrandingSettingsScreen({ navigation }) {
 
   const [customColorInput, setCustomColorInput] = useState('');
   const [editingCustomColor, setEditingCustomColor] = useState(false);
-  const [locatingAddress, setLocatingAddress] = useState(false);
-
-  // Mirror of ProjectsScreen's "use current location" flow — GPS →
-  // reverseGeocodeAsync → "<street>, <city>, <region>". Falls back to
-  // city/country if no street info comes back. Asks Settings if perm
-  // was previously denied.
-  const useCurrentAddress = async () => {
-    if (locatingAddress) return;
-    setLocatingAddress(true);
-    try {
-      let { status } = await ExpoLocation.getForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        const ask = await ExpoLocation.requestForegroundPermissionsAsync();
-        status = ask.status;
-        if (status === 'denied' && !ask.canAskAgain) {
-          Alert.alert(
-            'Location permission needed',
-            'Enable Location in Settings to autofill your business address.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Open Settings', onPress: () => Linking.openSettings() },
-            ]
-          );
-          return;
-        }
-      }
-      if (status !== 'granted') return;
-      const position = await ExpoLocation.getCurrentPositionAsync({
-        accuracy: ExpoLocation.Accuracy.Balanced,
-      });
-      const [address] = await ExpoLocation.reverseGeocodeAsync({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      });
-      const streetLine = [address?.streetNumber, address?.street].filter(Boolean).join(' ').trim();
-      const cityLine = address?.city || address?.subregion;
-      const regionLine = address?.region;
-      const postal = address?.postalCode;
-      const segments = [streetLine, [cityLine, regionLine, postal].filter(Boolean).join(' ')].filter(Boolean);
-      const display = segments.filter(Boolean).join(', ').trim() || address?.country || '';
-      if (display) await updateReportAddress(display);
-    } catch (e) {
-      console.warn('[BrandingSettings] reverse geocode failed:', e?.message);
-      Alert.alert("Couldn't find your address", 'Try entering it manually.');
-    } finally {
-      setLocatingAddress(false);
-    }
-  };
 
   const pickLogo = async () => {
     try {
@@ -252,10 +201,11 @@ export default function BrandingSettingsScreen({ navigation }) {
             header/footer. */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CONTACT</Text>
 
-        {/* Address: tap the pin icon to autofill from GPS reverse-geocode
-            (same flow as the project creation modal). textContentType +
-            autoComplete light up iOS QuickType / Android autofill so the
-            user can also pick a saved address straight from the keyboard. */}
+        {/* Address: textContentType + autoComplete light up iOS QuickType
+            / Android autofill so the user can pick a saved address
+            straight from the keyboard suggestion bar. No GPS / current-
+            location fallback — this is a business address, not where
+            you happen to be standing. */}
         <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Ionicons name="location-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
           <TextInput
@@ -269,16 +219,6 @@ export default function BrandingSettingsScreen({ navigation }) {
             autoComplete={Platform.OS === 'android' ? 'postal-address' : 'street-address'}
             dataDetectorTypes="address"
           />
-          <TouchableOpacity
-            onPress={useCurrentAddress}
-            disabled={locatingAddress}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={styles.iconInputAction}
-          >
-            {locatingAddress
-              ? <ActivityIndicator size="small" color={theme.accent} />
-              : <Ionicons name="navigate-circle-outline" size={22} color={theme.accent} />}
-          </TouchableOpacity>
         </View>
 
         <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -443,7 +383,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
   },
-  iconInputAction: { paddingHorizontal: 6, paddingVertical: 4 },
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
   colorSwatch: {
     width: 36,
