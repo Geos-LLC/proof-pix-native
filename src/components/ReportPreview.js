@@ -181,6 +181,7 @@ const TIMELINE_STAGE_LABEL = {
 };
 const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText }) => {
   const groups = groupByRoom(photos);
+  const cols = clampSetCols(options.timelineColumns);
   const showTimestamp = options.includeMetadata === true;
   return (
     <View>
@@ -190,30 +191,32 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chip
         return (
           <View key={`room-${room}`} style={styles.section}>
             <SectionHeader name={displayRoomName(room)} theme={theme} />
-            {ordered.map((p) => (
-              <View key={p.id} style={styles.timelineRow}>
-                <View style={[styles.timelineColumn, { borderRightColor: chipBg || theme.accent }]}>
-                  <Text style={[styles.timelineStamp, { color: theme.textSecondary }]}>
-                    {formatShortStamp(tsOf(p))}
-                  </Text>
-                  <Text style={[styles.timelineStage, { color: theme.textMuted }]}>
-                    {(TIMELINE_STAGE_LABEL[p.mode] || 'Photo').toUpperCase()}
-                  </Text>
+            <View style={styles.setGrid}>
+              {ordered.map((p) => (
+                <View key={p.id} style={[styles.setCell, { width: `${100 / cols}%` }]}>
+                  <View style={[styles.timelineGridCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+                    <View style={[styles.timelineGridWhen, { borderBottomColor: chipBg || theme.accent }]}>
+                      <Text style={[styles.timelineStamp, { color: theme.textSecondary }]}>
+                        {formatShortStamp(tsOf(p))}
+                      </Text>
+                      <Text style={[styles.timelineStage, { color: theme.textMuted }]}>
+                        {(TIMELINE_STAGE_LABEL[p.mode] || 'Photo').toUpperCase()}
+                      </Text>
+                    </View>
+                    <PhotoSlot
+                      uri={p.uri}
+                      label={MODE_CHIP[p.mode] || ''}
+                      theme={theme}
+                      chipBg={chipBg}
+                      chipText={chipText}
+                      timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
+                      watermarkText={watermarkText || null}
+                    />
+                    {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
+                  </View>
                 </View>
-                <View style={[styles.timelineCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-                  <PhotoSlot
-                    uri={p.uri}
-                    label={MODE_CHIP[p.mode] || ''}
-                    theme={theme}
-                    chipBg={chipBg}
-                    chipText={chipText}
-                    timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
-                    watermarkText={watermarkText || null}
-                  />
-                  {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
-                </View>
-              </View>
-            ))}
+              ))}
+            </View>
           </View>
         );
       })}
@@ -519,9 +522,14 @@ const styles = StyleSheet.create({
   timelineRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   timelineColumn: { width: 80, borderRightWidth: 2, paddingRight: 8, paddingTop: 4 },
   timelineStamp: { fontSize: 10 },
-  timelineStage: { fontSize: 9, marginTop: 2, fontWeight: '600' },
+  timelineStage: { fontSize: 9, fontWeight: '700' },
   timelineCard: { flex: 1, borderRadius: 8, borderWidth: 1, overflow: 'hidden' },
   timelineImage: { width: '100%', aspectRatio: 16 / 10 },
+  timelineGridCard: { borderRadius: 8, borderWidth: 1, overflow: 'hidden' },
+  timelineGridWhen: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 8, paddingVertical: 5, borderBottomWidth: 2,
+  },
   timelineSet: { marginBottom: 16, paddingLeft: 10, borderLeftWidth: 2 },
   timelineSetHeader: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, marginBottom: 2 },
   timelineSetStamp: { fontSize: 10, marginBottom: 6 },

@@ -1,7 +1,8 @@
 // Timeline — multi-stage projects in pure chronological order. Per
-// section: every photo (before / progress / after) on its own row,
-// timestamp on the left, photo on the right. No grouping into sets —
-// reach for the Sets layout when that's what you need.
+// section: every photo (before / progress / after) gets its own card
+// with the timestamp + stage tag stamped on top. timelineColumns
+// controls how many cards sit side-by-side per row (1, 2, or 3).
+// For set-based grouping (one before → progress → after), use Sets.
 
 import {
   escapeHtml, formatShortStamp, sortByTime, groupByRoom,
@@ -11,11 +12,11 @@ import {
 
 const css = `
 .section { margin-bottom: 30px; }
-.stage { display: grid; grid-template-columns: 110px 1fr; gap: 14px; margin-bottom: 14px; align-items: start; }
-.stage .when { font-size: 11px; color: #555; padding-top: 6px; border-right: 2px solid var(--brand-color, #F2C31B); padding-right: 10px; min-height: 60px; }
-.stage .tag { display: inline-block; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #888; margin-top: 4px; }
-.stage .card { border: 1px solid #EEE; border-radius: 8px; overflow: hidden; }
-.stage .card .meta { padding: 6px 10px 10px; }
+.timeline-grid { display: grid; gap: 12px; }
+.timeline-grid .stage { border: 1px solid #EEE; border-radius: 8px; overflow: hidden; page-break-inside: avoid; }
+.timeline-grid .stage .when { padding: 6px 10px; font-size: 11px; color: #555; border-bottom: 2px solid var(--brand-color, #F2C31B); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.timeline-grid .stage .when .tag { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #888; font-weight: 700; }
+.timeline-grid .stage .meta { padding: 6px 10px 10px; }
 `;
 
 const STAGE_LABEL = {
@@ -25,17 +26,24 @@ const STAGE_LABEL = {
   mix: 'Combined',
 };
 
+const clampCols = (n) => {
+  const v = Number(n);
+  if (v === 1 || v === 2 || v === 3) return v;
+  return 1;
+};
+
 export default {
   id: 'timeline',
   name: 'Timeline',
   description: 'Chronological view of multi-stage work.',
-  supportedOptions: ['includeNotes', 'includeBranding', 'includeMetadata', 'includeWatermark', 'showLabels'],
+  supportedOptions: ['includeNotes', 'includeBranding', 'includeMetadata', 'includeWatermark', 'showLabels', 'timelineColumns'],
   defaults: {
     includeNotes: true,
     includeBranding: true,
     includeMetadata: false,
     includeWatermark: false,
     showLabels: true,
+    timelineColumns: 1,
   },
 
   async render({ project, photos, options, branding, helpers }) {
@@ -45,6 +53,7 @@ export default {
       : null;
     const companyName = showBranding ? (branding?.companyName || '') : '';
     const brandColor = branding?.brandColor || null;
+    const cols = clampCols(options.timelineColumns);
     const watermarkText = options.includeWatermark ? (branding?.watermarkText || '') : '';
     const showTimestamp = options.includeMetadata === true;
 
@@ -60,17 +69,15 @@ export default {
         const stamp = formatShortStamp(tsOf(p));
         const tag = STAGE_LABEL[p.mode] || 'Photo';
         return `
-          <div class="stage no-break">
+          <div class="stage">
             <div class="when">
-              ${escapeHtml(stamp)}
-              <div class="tag">${escapeHtml(tag)}</div>
+              <span>${escapeHtml(stamp)}</span>
+              <span class="tag">${escapeHtml(tag)}</span>
             </div>
-            <div class="card">
-              ${photoImgHtml({ data, photo: p, watermarkText, showTimestamp })}
-              <div class="meta">
-                ${labelHtml({ photo: p, options })}
-                ${noteHtml({ photo: p, options })}
-              </div>
+            ${photoImgHtml({ data, photo: p, watermarkText, showTimestamp })}
+            <div class="meta">
+              ${labelHtml({ photo: p, options })}
+              ${noteHtml({ photo: p, options })}
             </div>
           </div>`;
       }));
@@ -78,7 +85,9 @@ export default {
       sections.push(`
         <section class="section">
           <div class="section-title">${escapeHtml(helpers.displayRoomName(room))}</div>
-          ${stages.join('')}
+          <div class="timeline-grid" style="grid-template-columns: repeat(${cols}, 1fr);">
+            ${stages.join('')}
+          </div>
         </section>
       `);
     }
