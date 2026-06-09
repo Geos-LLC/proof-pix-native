@@ -25,6 +25,17 @@ const PRESET_COLORS = [
   '#1A1A1A',
 ];
 
+// Each entry: ionicon name, label, optional URL helper note that gets
+// shown as the placeholder. Order here is the order the inputs appear
+// in the UI.
+const SOCIAL_PLATFORMS = [
+  { key: 'instagram', label: 'Instagram', icon: 'logo-instagram', placeholder: '@username or profile URL' },
+  { key: 'facebook',  label: 'Facebook',  icon: 'logo-facebook',  placeholder: 'Page name or URL' },
+  { key: 'linkedin',  label: 'LinkedIn',  icon: 'logo-linkedin',  placeholder: 'Profile or company URL' },
+  { key: 'youtube',   label: 'YouTube',   icon: 'logo-youtube',   placeholder: 'Channel URL' },
+  { key: 'twitter',   label: 'X (Twitter)', icon: 'logo-twitter', placeholder: '@username or profile URL' },
+];
+
 export default function BrandingSettingsScreen({ navigation }) {
   const theme = useTheme();
   const {
@@ -34,6 +45,16 @@ export default function BrandingSettingsScreen({ navigation }) {
     updateReportCompanyName,
     reportBrandColor,
     updateReportBrandColor,
+    reportAddress,
+    updateReportAddress,
+    reportPhone,
+    updateReportPhone,
+    reportEmail,
+    updateReportEmail,
+    reportWebsite,
+    updateReportWebsite,
+    reportSocialLinks,
+    updateReportSocialLink,
   } = useSettings();
 
   const [customColorInput, setCustomColorInput] = useState('');
@@ -174,6 +195,86 @@ export default function BrandingSettingsScreen({ navigation }) {
           </View>
         )}
 
+        {/* Contact details — address, phone, email, website. All are
+            optional; whatever the user fills in surfaces in the report
+            header/footer. */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CONTACT</Text>
+
+        <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="location-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
+          <TextInput
+            value={reportAddress}
+            onChangeText={updateReportAddress}
+            placeholder="Street, City, State ZIP"
+            placeholderTextColor={theme.textMuted}
+            style={[styles.iconInputField, { color: theme.textPrimary }]}
+            multiline
+          />
+        </View>
+
+        <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="call-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
+          <TextInput
+            value={reportPhone}
+            onChangeText={updateReportPhone}
+            placeholder="(555) 123-4567"
+            placeholderTextColor={theme.textMuted}
+            keyboardType="phone-pad"
+            style={[styles.iconInputField, { color: theme.textPrimary }]}
+          />
+        </View>
+
+        <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="mail-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
+          <TextInput
+            value={reportEmail}
+            onChangeText={updateReportEmail}
+            placeholder="you@company.com"
+            placeholderTextColor={theme.textMuted}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[styles.iconInputField, { color: theme.textPrimary }]}
+          />
+        </View>
+
+        <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Ionicons name="globe-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
+          <TextInput
+            value={reportWebsite}
+            onChangeText={updateReportWebsite}
+            placeholder="www.company.com"
+            placeholderTextColor={theme.textMuted}
+            keyboardType="url"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[styles.iconInputField, { color: theme.textPrimary }]}
+          />
+        </View>
+
+        {/* Social media — leave any platform blank to hide it from
+            reports. Reports iterate Object.entries() on whatever's
+            stored. */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>SOCIAL MEDIA</Text>
+
+        {SOCIAL_PLATFORMS.map(({ key, label, icon, placeholder }) => (
+          <View
+            key={key}
+            style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <Ionicons name={icon} size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
+            <TextInput
+              value={(reportSocialLinks && reportSocialLinks[key]) || ''}
+              onChangeText={(v) => updateReportSocialLink(key, v)}
+              placeholder={placeholder}
+              placeholderTextColor={theme.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[styles.iconInputField, { color: theme.textPrimary }]}
+            />
+          </View>
+        ))}
+
         <View style={[styles.previewBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.previewLabel, { color: theme.textSecondary }]}>PREVIEW</Text>
           <View style={[styles.reportHeaderPreview, { borderLeftColor: reportBrandColor }]}>
@@ -249,6 +350,20 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     marginBottom: 4,
+  },
+  iconInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  iconInputIcon: { marginRight: 8 },
+  iconInputField: {
+    flex: 1,
+    paddingVertical: 10,
+    fontSize: 14,
   },
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
   colorSwatch: {

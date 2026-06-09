@@ -86,6 +86,13 @@ export const SettingsProvider = ({ children }) => {
   const [reportBrandLogoUri, setReportBrandLogoUri] = useState(null);
   const [reportCompanyName, setReportCompanyName] = useState('');
   const [reportBrandColor, setReportBrandColor] = useState('#F2C31B');
+  // Contact + social — shown in report headers/footers when set. All
+  // free-form strings; user owns whatever format they paste in.
+  const [reportAddress, setReportAddress] = useState('');
+  const [reportPhone, setReportPhone] = useState('');
+  const [reportEmail, setReportEmail] = useState('');
+  const [reportWebsite, setReportWebsite] = useState('');
+  const [reportSocialLinks, setReportSocialLinks] = useState({});
 
   // Brand logo overlay — separate from the watermark text. URI is the
   // file:// path to the user-uploaded image; null means no custom logo
@@ -277,6 +284,15 @@ export const SettingsProvider = ({ children }) => {
         setReportBrandLogoUri(settings.reportBrandLogoUri ?? null);
         setReportCompanyName(settings.reportCompanyName || onboardingCompany || '');
         setReportBrandColor(settings.reportBrandColor ?? '#F2C31B');
+        setReportAddress(settings.reportAddress ?? '');
+        setReportPhone(settings.reportPhone ?? '');
+        setReportEmail(settings.reportEmail ?? '');
+        setReportWebsite(settings.reportWebsite ?? '');
+        setReportSocialLinks(
+          settings.reportSocialLinks && typeof settings.reportSocialLinks === 'object'
+            ? settings.reportSocialLinks
+            : {}
+        );
         setBrandLogoUri(settings.brandLogoUri ?? null);
         setShowBrandLogo(settings.showBrandLogo ?? false);
         setBrandLogoPosition(settings.brandLogoPosition ?? 'right-bottom');
@@ -438,6 +454,11 @@ export const SettingsProvider = ({ children }) => {
         reportBrandLogoUri,
         reportCompanyName,
         reportBrandColor,
+        reportAddress,
+        reportPhone,
+        reportEmail,
+        reportWebsite,
+        reportSocialLinks,
         showLabels,
         showPreviewMetadata,
         showWatermark,
@@ -587,6 +608,41 @@ export const SettingsProvider = ({ children }) => {
     // LabelCustomizationScreen; the next brand-color change reapplies.
     setLabelBackgroundColor(next);
     await saveSettings({ reportBrandColor: next, labelBackgroundColor: next });
+  };
+  const updateReportAddress = async (v) => {
+    const next = typeof v === 'string' ? v : '';
+    setReportAddress(next);
+    await saveSettings({ reportAddress: next });
+  };
+  const updateReportPhone = async (v) => {
+    const next = typeof v === 'string' ? v : '';
+    setReportPhone(next);
+    await saveSettings({ reportPhone: next });
+  };
+  const updateReportEmail = async (v) => {
+    const next = typeof v === 'string' ? v : '';
+    setReportEmail(next);
+    await saveSettings({ reportEmail: next });
+  };
+  const updateReportWebsite = async (v) => {
+    const next = typeof v === 'string' ? v : '';
+    setReportWebsite(next);
+    await saveSettings({ reportWebsite: next });
+  };
+  // Update a single social-platform handle/URL. Pass an empty string
+  // to clear that platform. The stored shape stays a plain object so
+  // reports can iterate Object.entries() to render whatever the user
+  // has filled in, in any order.
+  const updateReportSocialLink = async (platform, value) => {
+    if (!platform || typeof platform !== 'string') return;
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    setReportSocialLinks((prev) => {
+      const next = { ...(prev || {}) };
+      if (trimmed) next[platform] = trimmed;
+      else delete next[platform];
+      saveSettings({ reportSocialLinks: next });
+      return next;
+    });
   };
   const updateMetaPosition = async (pos) => {
     setMetaPosition(pos);
@@ -1083,9 +1139,19 @@ export const SettingsProvider = ({ children }) => {
     reportBrandLogoUri,
     reportCompanyName,
     reportBrandColor,
+    reportAddress,
+    reportPhone,
+    reportEmail,
+    reportWebsite,
+    reportSocialLinks,
     updateReportBrandLogoUri,
     updateReportCompanyName,
     updateReportBrandColor,
+    updateReportAddress,
+    updateReportPhone,
+    updateReportEmail,
+    updateReportWebsite,
+    updateReportSocialLink,
     brandLogoUri,
     showBrandLogo,
     updateBrandLogoUri,
