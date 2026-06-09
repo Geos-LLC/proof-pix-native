@@ -63,6 +63,39 @@ export const splitByMode = (photos) => {
   return { before, after, progress, other };
 };
 
+// Group photos by their capture date (local timezone), newest day
+// first. Within each day, photos are sub-grouped by room in capture
+// order so the day reads chronologically top-to-bottom. Mirrors the
+// in-app Timeline tab's buildTimeline() so reports match what the
+// user sees on the screen.
+export const groupByDateThenRoom = (photos) => {
+  const byDate = new Map();
+  for (const p of photos) {
+    const ts = tsOf(p);
+    if (!ts) continue;
+    const dateKey = new Date(ts).toLocaleDateString('en-CA'); // YYYY-MM-DD
+    if (!byDate.has(dateKey)) byDate.set(dateKey, { ts, byRoom: new Map() });
+    const day = byDate.get(dateKey);
+    if (ts > day.ts) day.ts = ts;
+    const roomKey = p.room || '__unsorted__';
+    if (!day.byRoom.has(roomKey)) {
+      day.byRoom.set(roomKey, { room: roomKey, photos: [], firstTs: ts });
+    }
+    const bucket = day.byRoom.get(roomKey);
+    bucket.photos.push(p);
+    if (ts < bucket.firstTs) bucket.firstTs = ts;
+  }
+  return Array.from(byDate.entries())
+    .map(([dateKey, { ts, byRoom }]) => ({
+      dateKey,
+      ts,
+      rooms: Array.from(byRoom.values())
+        .sort((a, b) => a.firstTs - b.firstTs)
+        .map((r) => ({ ...r, photos: sortByTime(r.photos) })),
+    }))
+    .sort((a, b) => b.ts - a.ts);
+};
+
 // Group a room's photos into "sets" — each set is one before, the
 // progress shots between it and its after, and the after itself. A
 // set's after is linked via `beforePhotoId`; if that's missing we

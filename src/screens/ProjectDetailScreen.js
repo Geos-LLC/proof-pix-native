@@ -1891,11 +1891,20 @@ export default function ProjectDetailScreen({ route, navigation }) {
               {/* Title + meta block — mirrors the bake-time HTML
                   header so the user sees roughly what the share
                   will look like before sending. */}
-              <View style={[styles.reportPreviewHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                {brandLogoUri && (
-                  <Image source={{ uri: brandLogoUri }} style={styles.reportPreviewLogo} resizeMode="contain" />
-                )}
+              <View style={[styles.reportPreviewHeader, { backgroundColor: theme.surface, borderColor: theme.border, borderBottomColor: reportBrandColor || theme.border }]}>
+                {(reportBrandLogoUri || brandLogoUri) ? (
+                  <Image
+                    source={{ uri: reportBrandLogoUri || brandLogoUri }}
+                    style={styles.reportPreviewLogo}
+                    resizeMode="contain"
+                  />
+                ) : null}
                 <View style={{ flex: 1 }}>
+                  {reportCompanyName ? (
+                    <Text style={[styles.reportPreviewCompany, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {reportCompanyName.toUpperCase()}
+                    </Text>
+                  ) : null}
                   <Text style={[styles.reportPreviewTitle, { color: theme.textPrimary }]} numberOfLines={2}>
                     {activeReport.title || 'Untitled report'}
                   </Text>
@@ -2462,6 +2471,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   // Preview-view header card — title + meta + optional logo.
+  // Mirrors the HTML headerHtml so the in-app preview's title block
+  // matches the rendered PDF: logo on the left, company name in a
+  // small uppercase label above the title, and a brand-coloured
+  // bottom border.
   reportPreviewHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2469,11 +2482,19 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 2,
   },
   reportPreviewLogo: {
-    width: 48,
-    height: 48,
+    width: 56,
+    height: 56,
     borderRadius: 8,
+  },
+  reportPreviewCompany: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: 2,
   },
   reportPreviewTitle: {
     fontFamily: FONTS.ALEXANDRIA,

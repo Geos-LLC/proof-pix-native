@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   groupByRoom,
   groupBySet,
+  groupByDateThenRoom,
   sortByTime,
   splitByMode,
   pairBeforeAfter,
@@ -171,44 +172,52 @@ const TIMELINE_STAGE_LABEL = {
   after: 'After',
   mix: 'Combined',
 };
-const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText }) => {
-  const groups = groupByRoom(photos);
+const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, watermarkText }) => {
+  const days = groupByDateThenRoom(photos);
   const cols = clampSetCols(options.timelineColumns);
   const showTimestamp = options.includeMetadata === true;
   return (
     <View>
-      {groups.map(({ room, photos: roomPhotos }) => {
-        const ordered = sortByTime(roomPhotos);
-        if (ordered.length === 0) return null;
+      {days.map((day) => {
+        const total = day.rooms.reduce((acc, r) => acc + r.photos.length, 0);
+        const dayLabel = formatLongDate(day.ts);
         return (
-          <View key={`room-${room}`} style={styles.section}>
-            <SectionHeader name={displayRoomName(room)} theme={theme} />
-            <View style={styles.setGrid}>
-              {ordered.map((p) => (
-                <View key={p.id} style={[styles.setCell, { width: `${100 / cols}%` }]}>
-                  <View style={[styles.timelineGridCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-                    <View style={[styles.timelineGridWhen, { borderBottomColor: chipBg || theme.accent }]}>
-                      <Text style={[styles.timelineStamp, { color: theme.textSecondary }]}>
-                        {formatShortStamp(tsOf(p))}
-                      </Text>
-                      <Text style={[styles.timelineStage, { color: theme.textMuted }]}>
-                        {(TIMELINE_STAGE_LABEL[p.mode] || 'Photo').toUpperCase()}
-                      </Text>
-                    </View>
-                    <PhotoSlot
-                      uri={p.uri}
-                      label={MODE_CHIP[p.mode] || ''}
-                      theme={theme}
-                      chipBg={chipBg}
-                      chipText={chipText}
-                      timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
-                      watermarkText={watermarkText || null}
-                    />
-                    {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
-                  </View>
-                </View>
-              ))}
+          <View key={`day-${day.dateKey}`} style={styles.timelineDay}>
+            <View style={[styles.timelineDayHeader, { borderBottomColor: chipBg || theme.accent }]}>
+              <Text style={[styles.timelineDayDate, { color: theme.textPrimary }]}>{dayLabel}</Text>
+              <Text style={[styles.timelineDayCount, { color: theme.textSecondary }]}>
+                {total} {total === 1 ? 'photo' : 'photos'}
+              </Text>
             </View>
+            {day.rooms.map((r) => (
+              <View key={`room-${day.dateKey}-${r.room}`} style={styles.timelineRoomBlock}>
+                <Text style={[styles.timelineRoomName, { color: theme.textSecondary }]}>
+                  {displayRoomName(r.room).toUpperCase()}
+                </Text>
+                <View style={styles.setGrid}>
+                  {r.photos.map((p) => (
+                    <View key={p.id} style={[styles.setCell, { width: `${100 / cols}%` }]}>
+                      <View style={[styles.timelineGridCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+                        <View style={[styles.timelineGridWhen, { borderBottomColor: chipBg || theme.accent }]}>
+                          <Text style={[styles.timelineStamp, { color: theme.textSecondary }]}>
+                            {formatShortStamp(tsOf(p))}
+                          </Text>
+                          <Text style={[styles.timelineStage, { color: theme.textMuted }]}>
+                            {(TIMELINE_STAGE_LABEL[p.mode] || 'Photo').toUpperCase()}
+                          </Text>
+                        </View>
+                        <PhotoSlot
+                          uri={p.uri}
+                          theme={theme}
+                          timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
+                        />
+                        {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ))}
           </View>
         );
       })}
@@ -512,6 +521,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 8, paddingVertical: 5, borderBottomWidth: 2,
   },
+  timelineDay: { marginBottom: 20 },
+  timelineDayHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',
+    paddingBottom: 4, marginBottom: 10, borderBottomWidth: 2,
+  },
+  timelineDayDate: { fontSize: 15, fontWeight: '700' },
+  timelineDayCount: { fontSize: 10 },
+  timelineRoomBlock: { marginBottom: 14, paddingLeft: 8, borderLeftWidth: 1, borderLeftColor: '#ECECEC' },
+  timelineRoomName: { fontSize: 10, fontWeight: '600', letterSpacing: 0.4, marginBottom: 6 },
   timelineSet: { marginBottom: 16, paddingLeft: 10, borderLeftWidth: 2 },
   timelineSetHeader: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, marginBottom: 2 },
   timelineSetStamp: { fontSize: 10, marginBottom: 6 },
