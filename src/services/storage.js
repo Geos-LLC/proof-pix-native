@@ -75,6 +75,16 @@ export const savePhotosMetadata = async (photos) => {
       // to drop these fields, leaving the map silently empty.
       lat: typeof p.lat === 'number' ? p.lat : (typeof p.latitude === 'number' ? p.latitude : null),
       lng: typeof p.lng === 'number' ? p.lng : (typeof p.longitude === 'number' ? p.longitude : null),
+      // Text note + voice memo per photo. The whitelist used to drop
+      // every one of these silently — the user could type a note in
+      // the camera flow's modal and it would vanish on every save.
+      // Normalize note/notes (singular was an older field name) into
+      // the canonical `notes` going forward.
+      notes: (typeof p.notes === 'string' && p.notes) || (typeof p.note === 'string' && p.note) || '',
+      noteType: p.noteType || null,
+      audioUri: p.audioUri || null,
+      audioDurationMs: typeof p.audioDurationMs === 'number' ? p.audioDurationMs : null,
+      audioTranscription: p.audioTranscription || null,
       projectId: p.projectId || null
     }));
 

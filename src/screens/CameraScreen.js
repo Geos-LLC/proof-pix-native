@@ -939,7 +939,7 @@ export default function CameraScreen({ route, navigation }) {
     if (!pendingNote || !photoId) return;
     const { note, audioUri, audioDurationMs, audioTranscription } = pendingNote;
     const updates = {};
-    if (note) updates.note = note;
+    if (note) updates.notes = note;
     if (audioUri) {
       updates.audioUri = audioUri;
       updates.audioDurationMs = audioDurationMs;
@@ -3689,7 +3689,7 @@ export default function CameraScreen({ route, navigation }) {
               {(showGallery || showEnlargedGallery) && (() => {
                 const idx = showEnlargedGallery ? enlargedGalleryIndex : galleryIndex;
                 const centeredPhoto = getCenteredStripPhoto(idx);
-                const hasNote = !!(centeredPhoto && centeredPhoto.note && String(centeredPhoto.note).trim());
+                const hasNote = !!(centeredPhoto && (centeredPhoto.notes || centeredPhoto.note) && String(centeredPhoto.notes || centeredPhoto.note).trim());
                 const isLight = theme.mode === 'light';
                 return (
                   <TouchableOpacity
@@ -4192,7 +4192,7 @@ export default function CameraScreen({ route, navigation }) {
                           photo has a written or transcribed note.
                           Keeps clear of the top-right count badge and
                           the top-left "Match" tag in After mode. */}
-                      {(!!(photo.note && String(photo.note).trim()) ||
+                      {(!!((photo.notes || photo.note) && String(photo.notes || photo.note).trim()) ||
                         !!(photo.audioTranscription && String(photo.audioTranscription).trim())) && (
                         <View style={styles.galleryItemNoteBadge} pointerEvents="none">
                           <Ionicons
@@ -4276,7 +4276,11 @@ export default function CameraScreen({ route, navigation }) {
                 const transcription = audioUri ? note : null;
                 if (noteTargetPhotoId) {
                   try {
-                    const updates = { note };
+                    // Canonicalize on `notes` (plural) — matches Studio,
+                    // report engine, and ReportPreview readers. The
+                    // old singular `note` field was being dropped by
+                    // savePhotosMetadata's whitelist anyway.
+                    const updates = { notes: note };
                     if (audioUri) {
                       updates.audioUri = audioUri;
                       updates.audioDurationMs = audioDurationMs;
@@ -4293,6 +4297,9 @@ export default function CameraScreen({ route, navigation }) {
                   // there's actually content.
                   if ((note && note.trim()) || audioUri) {
                     setPendingNote({
+                      // pendingNote.note is the local in-flight buffer
+                      // until applyPendingNoteToNewPhoto writes it as
+                      // `notes` on the photo record.
                       note: note || '',
                       audioUri: audioUri || null,
                       audioDurationMs: audioUri ? audioDurationMs : 0,
@@ -5066,7 +5073,7 @@ export default function CameraScreen({ route, navigation }) {
 //   onSave / onCancel   — caller decides whether to write to the
 //                         photo or to the pendingNote queue
 function NoteModalContent({ photo, isPreNote = false, autoStartRecording = false, onSave, onCancel }) {
-  const initialNote = photo?.note || '';
+  const initialNote = photo?.notes || photo?.note || '';
   const [text, setText] = useState(initialNote);
   const [isRecording, setIsRecording] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
