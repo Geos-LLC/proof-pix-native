@@ -173,11 +173,25 @@ export const PhotoProvider = ({ children }) => {
       }
 
       // Migrate URIs after app update (iOS changes container UUID on reinstall)
-      // Extract filename from stored URI and rebuild with current documentDirectory
+      // Extract filename from stored URI and rebuild with current documentDirectory.
+      //
+      // IMPORTANT: only migrate URIs that came from a prior install's
+      // Documents directory — i.e. the path contains "/Documents/". Do NOT
+      // migrate arbitrary file:// paths. PhotoKit's `localUri` returns
+      // things like `file:///private/var/mobile/Media/DCIM/IMG_0042.HEIC`
+      // which would otherwise get rewritten to `${docDir}IMG_0042.HEIC`,
+      // a path that does not exist on disk. (That's the bug behind
+      // "photos showed on launch 1, gone on launch 2 after reinstall".)
       const docDir = FileSystem.documentDirectory;
       let urisMigrated = false;
       const migratedPhotos = validPhotos.map(photo => {
-        if (photo.uri && photo.uri.startsWith('file://') && docDir && !photo.uri.startsWith(docDir)) {
+        if (
+          photo.uri &&
+          photo.uri.startsWith('file://') &&
+          docDir &&
+          !photo.uri.startsWith(docDir) &&
+          photo.uri.includes('/Documents/')
+        ) {
           const filename = photo.uri.split('/').pop();
           if (filename) {
             urisMigrated = true;
@@ -215,12 +229,64 @@ export const PhotoProvider = ({ children }) => {
           // restoring. On a true fresh first launch (no prior photos)
           // assetMap is empty and we never prompt.
           let perm = await MediaLibrary.getPermissionsAsync();
-          if (perm.status !== 'granted') {
+          if (perm.status !== 'granted' && perm.status !== 'limited') {
             perm = await MediaLibrary.requestPermissionsAsync();
           }
-          if (perm.status !== 'granted') return baseForResolve;
+          // Accept `limited` access too — PhotoKit returns valid URIs
+          // for the assets in the limited set. Photos outside the
+          // limited set will silently fail to resolve and stay as the
+          // canonical "broken" URI, which is correct.
+          if (perm.status !== 'granted' && perm.status !== 'limited') return baseForResolve;
+
+          // RECOVERY for storage corrupted by a previous version that
+          // persisted PhotoKit `localUri` (which has the asset's
+          // filename like IMG_0042.HEIC, not our app's
+          // <room>_<name>_BEFORE_<ts>.jpg). The Documents-migration
+          // step then rewrote those to `${docDir}IMG_0042.HEIC`, a
+          // path that doesn't exist and that re-resolve can't look up
+          // (assetMap is keyed by our app filenames, not PhotoKit's).
+          //
+          // Fix: walk the assetMap once, build a reverse lookup
+          // PhotoKit-filename → app-filename, then rewrite any photo
+          // whose URI filename isn't already in assetMap. After this
+          // pass the URIs are canonical and the re-resolve loop below
+          // works normally.
+          let recoveredAny = false;
+          const reverseMap = {};
+          const needsRecovery = baseForResolve.some(p => {
+            if (!p.uri || !p.uri.startsWith('file://')) return false;
+            const fn = p.uri.split('/').pop();
+            return fn && !assetMap[fn];
+          });
+          if (needsRecovery) {
+            for (const [appFilename, entry] of Object.entries(assetMap)) {
+              const assetId = typeof entry === 'string' ? entry : entry?.id;
+              if (!assetId) continue;
+              try {
+                const a = await MediaLibrary.getAssetInfoAsync(assetId);
+                const pk = a?.localUri;
+                if (pk) {
+                  const pkFn = pk.split('/').pop();
+                  if (pkFn && pkFn !== appFilename) reverseMap[pkFn] = appFilename;
+                }
+              } catch {}
+            }
+          }
+          const recoveredBase = baseForResolve.map(photo => {
+            if (!photo.uri || !photo.uri.startsWith('file://')) return photo;
+            const filename = photo.uri.split('/').pop();
+            if (!filename || assetMap[filename]) return photo;
+            const appFilename = reverseMap[filename];
+            if (!appFilename) return photo;
+            recoveredAny = true;
+            return { ...photo, uri: `${docDir}${appFilename}` };
+          });
+          if (recoveredAny) {
+            console.log('[PhotoContext] Recovered photo URIs from PhotoKit-corrupted state');
+            await savePhotosMetadata(recoveredBase);
+          }
           const out = [];
-          for (const photo of baseForResolve) {
+          for (const photo of recoveredBase) {
             if (!photo.uri || !photo.uri.startsWith('file://')) {
               out.push(photo);
               continue;
@@ -262,18 +328,40 @@ export const PhotoProvider = ({ children }) => {
           return baseForResolve;
         }
       })() : baseForResolve;
+      // IMPORTANT: do NOT persist the PhotoKit-resolved URIs back to
+      // storage. PhotoKit's `localUri` looks like
+      //   file:///private/var/mobile/Media/DCIM/IMG_0042.HEIC
+      // — different filename, different prefix from what our
+      // asset-id-map is keyed on (`<room>_<name>_BEFORE_<ts>.jpg`).
+      // If we save it, the next cold start runs the URI through the
+      // Documents-migration step at line ~179, which rewrites the
+      // PhotoKit path to `${docDir}IMG_0042.HEIC`. Then re-resolve
+      // tries `assetMap["IMG_0042.HEIC"]` and gets nothing, so the
+      // URI stays as a non-existent Documents/ path and the Image
+      // renders blank. Symptom: photos disappear on the SECOND cold
+      // start after reinstall (worked on launch 1, lost on launch 2).
+      //
+      // Fix: keep storage at the ORIGINAL app-controlled URIs and
+      // re-resolve to PhotoKit URIs in memory every launch. The
+      // resolve loop is keyed off the original Documents filename
+      // every time, so it always finds the assetId.
       if (urisResolvedFromAssets) {
-        console.log('[PhotoContext] Re-resolved photo URIs from PhotoKit asset IDs');
-        await savePhotosMetadata(resolvedPhotos);
+        console.log('[PhotoContext] Re-resolved photo URIs from PhotoKit asset IDs (in-memory only)');
       }
 
       // Reassign photo names sequentially
       const renamedPhotos = reassignPhotoNames(resolvedPhotos);
 
-      // Save if names changed
+      // Save if names changed — but use baseForResolve (pre-resolve)
+      // URIs so we don't accidentally persist transient PhotoKit
+      // paths via this branch either.
       const namesChanged = renamedPhotos.some((photo, idx) => photo.name !== resolvedPhotos[idx]?.name);
       if (namesChanged) {
-        await savePhotosMetadata(renamedPhotos);
+        const persistable = renamedPhotos.map((photo, idx) => ({
+          ...photo,
+          uri: baseForResolve[idx]?.uri || photo.uri,
+        }));
+        await savePhotosMetadata(persistable);
       }
 
       // Sync the ref synchronously BEFORE setPhotos so mutating helpers
