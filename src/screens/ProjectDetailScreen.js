@@ -34,8 +34,7 @@ import JSZip from 'jszip';
 import { usePhotos } from '../context/PhotoContext';
 import { useAdmin } from '../context/AdminContext';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
-import { FEATURES } from '../constants/featurePermissions';
-import { PHOTO_MODES, COLORS, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constants/rooms';
+import { PHOTO_MODES, COLORS } from '../constants/rooms';
 import dropboxAuthService from '../services/dropboxAuthService';
 import googleDriveService from '../services/googleDriveService';
 import dropboxService from '../services/dropboxService';
@@ -199,7 +198,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const theme = useTheme();
   const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos } = usePhotos();
   const { isAuthenticated } = useAdmin();
-  const { canUse, effectivePlan } = useFeaturePermissions();
+  const { effectivePlan } = useFeaturePermissions();
   const {
     getRooms,
     showLabels,
@@ -243,30 +242,13 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const [shareLinkProvider, setShareLinkProvider] = useState(() =>
     !isAuthenticated && dropboxAuthService.isAuthenticated() ? 'dropbox' : 'google'
   );
-  const [selectedShareTypes, setSelectedShareTypes] = useState({ before: true, after: true, combined: true });
-  const [selectedFormats, setSelectedFormats] = useState(() => {
-    const initial = {};
-    Object.keys(TEMPLATE_CONFIGS || {}).forEach((key) => { initial[key] = false; });
-    return initial;
-  });
-  const [showAdvancedShareFormats, setShowAdvancedShareFormats] = useState(false);
+  // Modal that opens after the user finishes picking photos via the
+  // Timeline selection flow with selectionPurpose='share'. Picks
+  // Files / ZIP / PDF / Link, optional Drive/Dropbox provider, fires.
+  const [shareFormatModalVisible, setShareFormatModalVisible] = useState(false);
+  const [pendingSharePhotoIds, setPendingSharePhotoIds] = useState([]);
   const [sharing, setSharing] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
-
-  const handleShareFormatToggle = (key) => {
-    if (!canUse(FEATURES.ADVANCED_TEMPLATES)) {
-      Alert.alert(
-        'Paid feature',
-        'Advanced templates are available on the Pro plan. Upgrade to unlock all formats and side-by-side layouts.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Upgrade to Pro', onPress: () => navigation.navigate('PlanSelection') },
-        ]
-      );
-      return;
-    }
-    setSelectedFormats(prev => ({ ...prev, [key]: !prev[key] }));
-  };
 
   // PDF: lazy-require expo-print so older binaries (build 76 etc.)
   // can still load this JS bundle without crashing. See note at the
@@ -401,29 +383,63 @@ export default function ProjectDetailScreen({ route, navigation }) {
     Alert.alert('Link ready', 'The share link was also copied to your clipboard.');
   };
 
+  // Entrypoint #1 — "Share Project Photos" card on the Share tab.
+  // Switches to Timeline with selectionPurpose='share'. The user
+  // picks photos via the existing gallery selection UI; when they
+  // tap the bottom "Share Selected" bar, we open the format modal.
+  const handleStartSharePhotosFlow = () => {
+    if ((projectPhotos?.length || 0) === 0) {
+      Alert.alert('No photos', 'This project has no photos yet.');
+      return;
+    }
+    setSelectionPurpose('share');
+    setSelectionDraft(new Set());
+    setSelectionMode(true);
+    setActiveTab('timeline');
+  };
+
+  // Entrypoint #2 — "Share Project Report" card. Routes into the
+  // existing Report tab. If a report exists, jump to its preview;
+  // if not, open the editor to build one.
+  const handleStartShareReportFlow = () => {
+    setActiveTab('report');
+    if (reports && reports.length > 0) {
+      setActiveReportId(reports[0].id);
+      setReportViewMode('preview');
+    } else {
+      setReportViewMode('editor');
+    }
+  };
+
+  // Called from the bottom selection bar when selectionPurpose==='share'.
+  // Stashes the picked ids, exits selection mode, opens the format modal.
+  const handleConfirmShareSelection = () => {
+    if (selectionDraft.size === 0) return;
+    setPendingSharePhotoIds(Array.from(selectionDraft));
+    setSelectionMode(false);
+    setSelectionDraft(new Set());
+    setSelectionPurpose('report'); // reset for future selections
+    setActiveTab('share');
+    setShareFormatModalVisible(true);
+  };
+
+  // Runs after the user picks a format in the modal. Pulls the
+  // pending photo ids from state, gathers their full photo objects,
+  // and dispatches to the format-specific helpers.
   const startShareTabSharing = async () => {
     if (!project) return;
+    setShareFormatModalVisible(false);
     const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
     if (!allowed) return;
     try {
       setSharing(true);
+      const ids = new Set(pendingSharePhotoIds);
       const source = getPhotosByProject(project.id) || [];
-      const sharePhotos = [];
-      if (selectedShareTypes.before) {
-        source.filter(p => p.mode === 'before' && p.uri).forEach(p => sharePhotos.push({ uri: p.uri, mode: p.mode, id: p.id }));
-      }
-      if (selectedShareTypes.after) {
-        source.filter(p => p.mode === 'after' && p.uri).forEach(p => sharePhotos.push({ uri: p.uri, mode: p.mode, id: p.id }));
-      }
-      if (selectedShareTypes.combined) {
-        const beforePhotos = source.filter(p => p.mode === 'before');
-        for (const beforePhoto of beforePhotos) {
-          const combined = (allPhotos || []).find(p => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === beforePhoto.id);
-          if (combined) sharePhotos.push({ uri: combined.uri, mode: combined.mode, id: combined.id });
-        }
-      }
+      const sharePhotos = source
+        .filter(p => ids.has(p.id) && p.uri)
+        .map(p => ({ uri: p.uri, mode: p.mode, id: p.id }));
       if (sharePhotos.length === 0) {
-        Alert.alert('No Photos', 'Please select at least one photo type to share.');
+        Alert.alert('No Photos', 'No photos were selected to share.');
         setSharing(false);
         return;
       }
@@ -511,6 +527,11 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // updating an existing report or creating a new one.
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectionDraft, setSelectionDraft] = useState(new Set());
+  // What the user is selecting FOR. 'report' is the existing flow
+  // (Add to report bottom bar). 'share' is the new Share-tab flow:
+  // the bottom bar reads "Share Selected" and opens the format
+  // chooser instead of routing into the report editor.
+  const [selectionPurpose, setSelectionPurpose] = useState('report');
   // Long-press-to-enlarge overlay on the Timeline grid. The URI
   // stays in state while the user holds; clearing it on press-out
   // closes the overlay.
@@ -735,6 +756,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
     setSelectionMode(false);
     setSelectionDraft(new Set());
     setSelectionEditingReportId(null);
+    // Reset the share-flow flag so a future selection (e.g. for
+    // "Add to report") goes back to its default behavior.
+    setSelectionPurpose('report');
     if (selectionEditingDraft) {
       setSelectionEditingDraft(false);
       setActiveTab('report');
@@ -2258,161 +2282,152 @@ export default function ProjectDetailScreen({ route, navigation }) {
         })()}
         {activeTab === 'share' && (
           <View style={shareTabStyles.container}>
-            {/* Photo Types */}
-            <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary }]}>Photo types</Text>
-            <View style={shareTabStyles.pillRow}>
-              {['before', 'after', 'combined'].map((k) => (
-                <TouchableOpacity
-                  key={k}
-                  style={[
-                    shareTabStyles.pill,
-                    { borderColor: theme.border },
-                    selectedShareTypes[k] && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
-                  ]}
-                  onPress={() => setSelectedShareTypes(p => ({ ...p, [k]: !p[k] }))}
-                >
-                  <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>
-                    {k.charAt(0).toUpperCase() + k.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={[shareTabStyles.heading, { color: theme.textPrimary }]}>
+              Share this project
+            </Text>
+            <Text style={[shareTabStyles.subheading, { color: theme.textSecondary }]}>
+              Send a generated report, or pick photos to send out.
+            </Text>
 
-            {/* Format */}
-            <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 24 }]}>Share as</Text>
-            <View style={shareTabStyles.pillRow}>
-              {[
-                { key: 'files', label: 'Files' },
-                { key: 'zip', label: 'ZIP' },
-                { key: 'pdf', label: 'PDF' },
-                { key: 'link', label: 'Link' },
-              ].map(({ key, label }) => (
-                <TouchableOpacity
-                  key={key}
-                  style={[
-                    shareTabStyles.pill,
-                    { borderColor: theme.border },
-                    shareFormat === key && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
-                  ]}
-                  onPress={() => setShareFormat(key)}
-                >
-                  <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Link Provider */}
-            {shareFormat === 'link' && (
-              <>
-                <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 24 }]}>Link via</Text>
-                {[
-                  { key: 'google', label: 'Google Drive', icon: 'logo-google', connected: !!isAuthenticated },
-                  { key: 'dropbox', label: 'Dropbox', icon: 'cloud-outline', connected: dropboxAuthService.isAuthenticated() },
-                ].map(({ key, label, icon, connected }) => (
-                  <TouchableOpacity
-                    key={key}
-                    style={[
-                      shareTabStyles.providerRow,
-                      { backgroundColor: theme.surfaceElevated },
-                      shareLinkProvider === key && { backgroundColor: '#FFF9E0', borderWidth: 1, borderColor: COLORS.PRIMARY },
-                    ]}
-                    onPress={() => setShareLinkProvider(key)}
-                  >
-                    <Ionicons name={icon} size={20} color={shareLinkProvider === key ? '#000' : theme.textMuted} />
-                    <Text style={[
-                      shareTabStyles.providerText,
-                      { color: shareLinkProvider === key ? '#000' : theme.textSecondary },
-                    ]}>{label}</Text>
-                    {!connected && (
-                      <Text style={shareTabStyles.providerHint}>Not connected</Text>
-                    )}
-                    {shareLinkProvider === key && connected && (
-                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </>
-            )}
-
-            {/* Advanced Templates */}
             <TouchableOpacity
-              style={shareTabStyles.advancedHeader}
-              onPress={() => setShowAdvancedShareFormats(v => !v)}
+              style={[shareTabStyles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={handleStartShareReportFlow}
+              activeOpacity={0.85}
             >
-              <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 0 }]}>Advance Options</Text>
-              <Ionicons
-                name={showAdvancedShareFormats ? 'chevron-up' : 'chevron-down'}
-                size={20}
-                color={theme.textSecondary}
-              />
+              <View style={[shareTabStyles.actionIconWrap, { backgroundColor: COLORS.PRIMARY }]}>
+                <Ionicons name="document-text-outline" size={26} color="#000" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[shareTabStyles.actionTitle, { color: theme.textPrimary }]}>
+                  Share Project Report
+                </Text>
+                <Text style={[shareTabStyles.actionSubtitle, { color: theme.textSecondary }]}>
+                  {reports && reports.length > 0
+                    ? `Open "${reports[0].title || 'your report'}" and share it`
+                    : 'Build a polished PDF report from this project'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
             </TouchableOpacity>
-            {showAdvancedShareFormats && TEMPLATE_TYPES && (
-              <>
-                <Text style={[shareTabStyles.sublabel, { color: theme.textSecondary }]}>Stacked formats</Text>
-                <View style={shareTabStyles.pillRow}>
-                  {[TEMPLATE_TYPES.STACK_PORTRAIT, TEMPLATE_TYPES.STACK_LANDSCAPE, TEMPLATE_TYPES.SQUARE_STACK].map((key) => {
-                    const cfg = TEMPLATE_CONFIGS?.[key];
-                    if (!cfg) return null;
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        style={[
-                          shareTabStyles.pill,
-                          { borderColor: theme.border },
-                          selectedFormats[key] && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
-                        ]}
-                        onPress={() => handleShareFormatToggle(key)}
-                      >
-                        <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{cfg.name || key}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <Text style={[shareTabStyles.sublabel, { color: theme.textSecondary, marginTop: 16 }]}>Side-by-side formats</Text>
-                <View style={shareTabStyles.pillRow}>
-                  {[TEMPLATE_TYPES.SIDE_BY_SIDE_LANDSCAPE, TEMPLATE_TYPES.SIDE_BY_SIDE_WIDE, TEMPLATE_TYPES.BLOG_FORMAT, TEMPLATE_TYPES.SQUARE_SIDE].map((key) => {
-                    const cfg = TEMPLATE_CONFIGS?.[key];
-                    if (!cfg) return null;
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        style={[
-                          shareTabStyles.pill,
-                          { borderColor: theme.border },
-                          selectedFormats[key] && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
-                        ]}
-                        onPress={() => handleShareFormatToggle(key)}
-                      >
-                        <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{cfg.name || key}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </>
-            )}
 
-            {/* Share Now */}
             <TouchableOpacity
-              style={[
-                shareTabStyles.shareNowButton,
-                sharing && { opacity: 0.6 },
-              ]}
-              onPress={startShareTabSharing}
-              disabled={sharing}
+              style={[shareTabStyles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={handleStartSharePhotosFlow}
+              activeOpacity={0.85}
             >
-              {sharing ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <ActivityIndicator size="small" color="#FFF" />
-                  <Text style={shareTabStyles.shareNowButtonText}>
-                    {shareStatus || 'Sharing...'}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={shareTabStyles.shareNowButtonText}>Share Now</Text>
-              )}
+              <View style={[shareTabStyles.actionIconWrap, { backgroundColor: COLORS.PRIMARY }]}>
+                <Ionicons name="images-outline" size={26} color="#000" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[shareTabStyles.actionTitle, { color: theme.textPrimary }]}>
+                  Share Project Photos
+                </Text>
+                <Text style={[shareTabStyles.actionSubtitle, { color: theme.textSecondary }]}>
+                  Pick photos from the gallery, then send as Files, ZIP, PDF, or a Drive/Dropbox link
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Format chooser — opens after the user finishes picking
+            photos via the Timeline selection flow with
+            selectionPurpose==='share'. Same Files/ZIP/PDF/Link options
+            as ProjectsScreen but slim (no photo-type pills since the
+            user already curated the exact set). */}
+        <Modal
+          visible={shareFormatModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShareFormatModalVisible(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setShareFormatModalVisible(false)}>
+            <View style={shareTabStyles.modalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={[shareTabStyles.modalContent, { backgroundColor: theme.surface }]}>
+                  <View style={shareTabStyles.modalGrabberWrap}>
+                    <View style={[shareTabStyles.modalGrabber, { backgroundColor: theme.borderStrong }]} />
+                  </View>
+                  <View style={shareTabStyles.modalHeader}>
+                    <TouchableOpacity onPress={() => setShareFormatModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="close" size={22} color={theme.textMuted} />
+                    </TouchableOpacity>
+                    <Text style={[shareTabStyles.modalTitle, { color: theme.textPrimary }]}>
+                      Share {pendingSharePhotoIds.length} {pendingSharePhotoIds.length === 1 ? 'photo' : 'photos'}
+                    </Text>
+                  </View>
+
+                  <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary }]}>Share as</Text>
+                  <View style={shareTabStyles.pillRow}>
+                    {[
+                      { key: 'files', label: 'Files' },
+                      { key: 'zip', label: 'ZIP' },
+                      { key: 'pdf', label: 'PDF' },
+                      { key: 'link', label: 'Link' },
+                    ].map(({ key, label }) => (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          shareTabStyles.pill,
+                          { borderColor: theme.border },
+                          shareFormat === key && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
+                        ]}
+                        onPress={() => setShareFormat(key)}
+                      >
+                        <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {shareFormat === 'link' && (
+                    <>
+                      <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 18 }]}>Link via</Text>
+                      {[
+                        { key: 'google', label: 'Google Drive', icon: 'logo-google', connected: !!isAuthenticated },
+                        { key: 'dropbox', label: 'Dropbox', icon: 'cloud-outline', connected: dropboxAuthService.isAuthenticated() },
+                      ].map(({ key, label, icon, connected }) => (
+                        <TouchableOpacity
+                          key={key}
+                          style={[
+                            shareTabStyles.providerRow,
+                            { backgroundColor: theme.surfaceElevated },
+                            shareLinkProvider === key && { backgroundColor: '#FFF9E0', borderWidth: 1, borderColor: COLORS.PRIMARY },
+                          ]}
+                          onPress={() => setShareLinkProvider(key)}
+                        >
+                          <Ionicons name={icon} size={20} color={shareLinkProvider === key ? '#000' : theme.textMuted} />
+                          <Text style={[shareTabStyles.providerText, { color: shareLinkProvider === key ? '#000' : theme.textSecondary }]}>
+                            {label}
+                          </Text>
+                          {!connected && <Text style={shareTabStyles.providerHint}>Not connected</Text>}
+                          {shareLinkProvider === key && connected && (
+                            <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </>
+                  )}
+
+                  <TouchableOpacity
+                    style={[shareTabStyles.shareNowButton, sharing && { opacity: 0.6 }]}
+                    onPress={startShareTabSharing}
+                    disabled={sharing}
+                  >
+                    {sharing ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <ActivityIndicator size="small" color="#FFF" />
+                        <Text style={shareTabStyles.shareNowButtonText}>{shareStatus || 'Sharing...'}</Text>
+                      </View>
+                    ) : (
+                      <Text style={shareTabStyles.shareNowButtonText}>Share Now</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       </ScrollView>
 
       {/* Floating "Add to report" bar — only while the user is in
@@ -2425,18 +2440,25 @@ export default function ProjectDetailScreen({ route, navigation }) {
         const editingReport = selectionEditingReportId
           ? reports.find((r) => r.id === selectionEditingReportId)
           : null;
-        const label = editingReport
+        const isShareFlow = selectionPurpose === 'share';
+        const label = isShareFlow
+          ? `Share Selected (${selectionDraft.size})`
+          : editingReport
           ? `Save to "${editingReport.title || 'report'}" (${selectionDraft.size})`
           : `Add to report (${selectionDraft.size})`;
+        const iconName = isShareFlow
+          ? 'share-outline'
+          : editingReport ? 'checkmark-circle' : 'add-circle';
+        const onPress = isShareFlow ? handleConfirmShareSelection : handleAddSelectionToReport;
         return (
           <View style={[styles.selectionSaveBar, { bottom: insets.bottom + 50 + 8 }]} pointerEvents="box-none">
             <TouchableOpacity
               style={[styles.selectionSaveBtn, { backgroundColor: theme.accent }]}
-              onPress={handleAddSelectionToReport}
+              onPress={onPress}
               activeOpacity={0.85}
               disabled={selectionDraft.size === 0}
             >
-              <Ionicons name={editingReport ? 'checkmark-circle' : 'add-circle'} size={18} color={theme.accentText} />
+              <Ionicons name={iconName} size={18} color={theme.accentText} />
               <Text style={[styles.selectionSaveBtnText, { color: theme.accentText }]} numberOfLines={1}>
                 {label}
               </Text>
@@ -3291,8 +3313,74 @@ const styles = StyleSheet.create({
 const shareTabStyles = StyleSheet.create({
   container: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 16,
     paddingBottom: 24,
+  },
+  heading: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  subheading: {
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  actionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  actionIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  actionSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 34,
+  },
+  modalGrabberWrap: {
+    alignItems: 'center',
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  modalGrabber: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.4,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
   },
   sectionLabel: {
     fontSize: 14,
