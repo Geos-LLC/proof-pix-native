@@ -28,7 +28,33 @@ import * as Sharing from 'expo-sharing';
 // here; PDF generation will land alongside the next native build.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import { Share as RNShareDialog } from 'react-native';
+import Constants from 'expo-constants';
+import JSZip from 'jszip';
 import { usePhotos } from '../context/PhotoContext';
+import { useAdmin } from '../context/AdminContext';
+import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { FEATURES } from '../constants/featurePermissions';
+import { PHOTO_MODES, COLORS, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constants/rooms';
+import dropboxAuthService from '../services/dropboxAuthService';
+import googleDriveService from '../services/googleDriveService';
+import dropboxService from '../services/dropboxService';
+import { ensureLabelForPhoto } from '../services/uploadService';
+import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
+
+// react-native-share for multi-file sharing (not available in Expo Go)
+let __RNShare = { open: async () => {} };
+const __isExpoGo = Constants?.appOwnership === 'expo';
+if (!__isExpoGo) {
+  try {
+    const shareModule = require('react-native-share');
+    __RNShare = shareModule.default || shareModule;
+  } catch (e) {
+    console.warn('[ProjectDetail] react-native-share not available:', e?.message);
+  }
+}
+
+const __ensureFileUri = (uri) => uri.startsWith('file://') ? uri : `file://${uri}`;
 import { ensureLabelsForPhotoBatch } from '../services/labelService';
 import {
   generateReport,
@@ -171,7 +197,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject } = usePhotos();
+  const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos } = usePhotos();
+  const { isAuthenticated } = useAdmin();
+  const { canUse, effectivePlan } = useFeaturePermissions();
   const {
     getRooms,
     showLabels,
@@ -206,6 +234,258 @@ export default function ProjectDetailScreen({ route, navigation }) {
 
   const [activeTab, setActiveTab] = useState('timeline');
   const [actionsVisible, setActionsVisible] = useState(false);
+
+  // Share-tab state. Mirrors ProjectsScreen's share modal — kept here
+  // because the Share tab is in-page (not a modal) and needs its own
+  // local state. TODO: extract into a shared hook if any third surface
+  // needs sharing.
+  const [shareFormat, setShareFormat] = useState('files');
+  const [shareLinkProvider, setShareLinkProvider] = useState(() =>
+    !isAuthenticated && dropboxAuthService.isAuthenticated() ? 'dropbox' : 'google'
+  );
+  const [selectedShareTypes, setSelectedShareTypes] = useState({ before: true, after: true, combined: true });
+  const [selectedFormats, setSelectedFormats] = useState(() => {
+    const initial = {};
+    Object.keys(TEMPLATE_CONFIGS || {}).forEach((key) => { initial[key] = false; });
+    return initial;
+  });
+  const [showAdvancedShareFormats, setShowAdvancedShareFormats] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareStatus, setShareStatus] = useState('');
+
+  const handleShareFormatToggle = (key) => {
+    if (!canUse(FEATURES.ADVANCED_TEMPLATES)) {
+      Alert.alert(
+        'Paid feature',
+        'Advanced templates are available on the Pro plan. Upgrade to unlock all formats and side-by-side layouts.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Upgrade to Pro', onPress: () => navigation.navigate('PlanSelection') },
+        ]
+      );
+      return;
+    }
+    setSelectedFormats(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // PDF: lazy-require expo-print so older binaries (build 76 etc.)
+  // can still load this JS bundle without crashing. See note at the
+  // top of this file about why the top-level import is intentionally
+  // omitted.
+  const sharePhotosAsPdf = async (urls, sharePhotos) => {
+    if (!urls.length) {
+      Alert.alert('No Photos', 'Nothing to put in the report.');
+      return;
+    }
+    let Print;
+    try { Print = require('expo-print'); }
+    catch {
+      Alert.alert(
+        'PDF not supported in this build',
+        'Update to the latest TestFlight build to share as PDF. Try Files, ZIP, or Link in the meantime.',
+      );
+      return;
+    }
+    setShareStatus('Preparing PDF...');
+    const modeLabel = (m) => {
+      if (m === 'before') return 'Before';
+      if (m === 'after') return 'After';
+      if (m === PHOTO_MODES.COMBINED || m === 'combined' || m === 'mix') return 'Before / After';
+      if (m === 'progress') return 'Progress';
+      return '';
+    };
+    const photoBlocks = [];
+    for (let i = 0; i < urls.length; i++) {
+      const uri = urls[i];
+      const meta = sharePhotos[i] || {};
+      const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      photoBlocks.push(`
+        <div class="photo">
+          <img src="data:image/jpeg;base64,${b64}" />
+          <div class="caption">${modeLabel(meta.mode) || ''}</div>
+        </div>
+      `);
+    }
+    const safeName = (project?.name || 'Project').replace(/[<>&]/g, '');
+    const reportDate = new Date().toLocaleDateString();
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 32px; color: #1C274C; }
+            .header { border-bottom: 2px solid #F2C31B; padding-bottom: 16px; margin-bottom: 24px; }
+            .title { font-size: 24px; font-weight: 700; margin: 0 0 4px 0; }
+            .meta { font-size: 12px; color: #666; margin: 0; }
+            .photo { page-break-inside: avoid; margin-bottom: 24px; text-align: center; }
+            .photo img { max-width: 100%; max-height: 720px; border-radius: 8px; }
+            .caption { font-size: 12px; color: #444; margin-top: 6px; font-weight: 600; }
+            .footer { text-align: center; font-size: 10px; color: #999; margin-top: 32px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title">${safeName}</div>
+            <div class="meta">${urls.length} photo${urls.length === 1 ? '' : 's'} · Generated ${reportDate}</div>
+          </div>
+          ${photoBlocks.join('\n')}
+          <div class="footer">Generated by ProofPix</div>
+        </body>
+      </html>
+    `;
+    setShareStatus('Rendering PDF...');
+    const { uri: pdfUri } = await Print.printToFileAsync({ html, base64: false });
+    const friendlyName = `${safeName}_${Date.now()}.pdf`;
+    const targetUri = `${FileSystem.cacheDirectory}${friendlyName}`;
+    try { await FileSystem.copyAsync({ from: pdfUri, to: targetUri }); } catch {}
+    const finalUri = (await FileSystem.getInfoAsync(targetUri)).exists ? targetUri : pdfUri;
+    await Sharing.shareAsync(__ensureFileUri(finalUri), {
+      mimeType: 'application/pdf',
+      dialogTitle: friendlyName,
+      UTI: 'com.adobe.pdf',
+    });
+    await recordShare();
+    try { await FileSystem.deleteAsync(finalUri, { idempotent: true }); } catch {}
+  };
+
+  const sharePhotosAsLink = async (urls) => {
+    const provider = shareLinkProvider;
+    if (provider === 'google' && !isAuthenticated) {
+      Alert.alert('Google Drive not connected', 'Connect Google Drive in Settings to share a link.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+      ]);
+      return;
+    }
+    if (provider === 'dropbox' && !dropboxAuthService.isAuthenticated()) {
+      Alert.alert('Dropbox not connected', 'Connect Dropbox in Settings to share a link.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+      ]);
+      return;
+    }
+    const safeName = (project?.name || 'ProofPix Project').replace(/[\\/:*?"<>|]/g, '_');
+    setShareStatus(`Uploading to ${provider === 'google' ? 'Google Drive' : 'Dropbox'}...`);
+    let shareUrl = '';
+    if (provider === 'google') {
+      const rootId = await googleDriveService.findOrCreateProofPixFolder();
+      const uniqueAlbumName = await googleDriveService.findUniqueAlbumName(rootId, safeName);
+      const albumId = await googleDriveService.findOrCreateAlbumFolder(rootId, uniqueAlbumName);
+      for (let i = 0; i < urls.length; i++) {
+        setShareStatus(`Uploading ${i + 1}/${urls.length} to Google Drive...`);
+        const filename = urls[i].split('/').pop() || `photo_${i}.jpg`;
+        await googleDriveService.uploadFileFromUri(urls[i], filename, albumId, 'image/jpeg');
+      }
+      setShareStatus('Generating shareable link...');
+      shareUrl = await googleDriveService.createShareableFolderLink(albumId);
+    } else {
+      const rootPath = await dropboxService.findOrCreateProofPixFolder();
+      const albumPath = await dropboxService.findOrCreateAlbumFolder(rootPath, safeName);
+      for (let i = 0; i < urls.length; i++) {
+        setShareStatus(`Uploading ${i + 1}/${urls.length} to Dropbox...`);
+        const filename = urls[i].split('/').pop() || `photo_${i}.jpg`;
+        await dropboxService.uploadFile(`${albumPath}/${filename}`, urls[i]);
+      }
+      setShareStatus('Generating shareable link...');
+      shareUrl = await dropboxService.createSharedLink(albumPath);
+    }
+    if (!shareUrl) throw new Error('No share URL returned by provider.');
+    try {
+      const Clipboard = require('expo-clipboard');
+      await Clipboard.setStringAsync(shareUrl);
+    } catch {}
+    await RNShareDialog.share({ title: safeName, message: `${safeName}\n${shareUrl}` });
+    await recordShare();
+    Alert.alert('Link ready', 'The share link was also copied to your clipboard.');
+  };
+
+  const startShareTabSharing = async () => {
+    if (!project) return;
+    const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
+    if (!allowed) return;
+    try {
+      setSharing(true);
+      const source = getPhotosByProject(project.id) || [];
+      const sharePhotos = [];
+      if (selectedShareTypes.before) {
+        source.filter(p => p.mode === 'before' && p.uri).forEach(p => sharePhotos.push({ uri: p.uri, mode: p.mode, id: p.id }));
+      }
+      if (selectedShareTypes.after) {
+        source.filter(p => p.mode === 'after' && p.uri).forEach(p => sharePhotos.push({ uri: p.uri, mode: p.mode, id: p.id }));
+      }
+      if (selectedShareTypes.combined) {
+        const beforePhotos = source.filter(p => p.mode === 'before');
+        for (const beforePhoto of beforePhotos) {
+          const combined = (allPhotos || []).find(p => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === beforePhoto.id);
+          if (combined) sharePhotos.push({ uri: combined.uri, mode: combined.mode, id: combined.id });
+        }
+      }
+      if (sharePhotos.length === 0) {
+        Alert.alert('No Photos', 'Please select at least one photo type to share.');
+        setSharing(false);
+        return;
+      }
+      setShareStatus('Preparing photos...');
+      if (showLabels) {
+        for (let i = 0; i < sharePhotos.length; i++) {
+          try {
+            const photo = sharePhotos[i];
+            const labeledUri = await ensureLabelForPhoto({ ...photo, type: photo.mode });
+            if (labeledUri && labeledUri !== photo.uri) sharePhotos[i] = { ...photo, uri: labeledUri };
+          } catch (e) {
+            console.warn('[ProjectDetail] Label failed for share photo:', e?.message);
+          }
+        }
+      }
+      const urls = sharePhotos.map(p => p.uri).filter(Boolean);
+      if (shareFormat === 'pdf') {
+        await sharePhotosAsPdf(urls, sharePhotos);
+      } else if (shareFormat === 'link') {
+        await sharePhotosAsLink(urls);
+      } else if (shareFormat === 'zip') {
+        setShareStatus(`Zipping ${urls.length} photos...`);
+        const zip = new JSZip();
+        for (const uri of urls) {
+          const fileName = uri.split('/').pop() || `photo_${Date.now()}.jpg`;
+          const fileData = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+          zip.file(fileName, fileData, { base64: true });
+        }
+        const zipContent = await zip.generateAsync({ type: 'base64' });
+        const zipFileName = `${project.name || 'photos'}_${Date.now()}.zip`;
+        const zipUri = `${FileSystem.cacheDirectory}${zipFileName}`;
+        await FileSystem.writeAsStringAsync(zipUri, zipContent, { encoding: FileSystem.EncodingType.Base64 });
+        await Sharing.shareAsync(__ensureFileUri(zipUri), { mimeType: 'application/zip', dialogTitle: zipFileName });
+        await recordShare();
+        await FileSystem.deleteAsync(zipUri, { idempotent: true });
+      } else if (urls.length === 1) {
+        await Sharing.shareAsync(__ensureFileUri(urls[0]), { mimeType: 'image/jpeg', dialogTitle: 'Share Photo' });
+        await recordShare();
+      } else if (urls.length > 1) {
+        setShareStatus(`Preparing ${urls.length} photos...`);
+        const tempDir = `${FileSystem.cacheDirectory}share_temp_${Date.now()}/`;
+        await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true });
+        const tempUris = [];
+        for (let i = 0; i < urls.length; i++) {
+          const fileName = urls[i].split('/').pop() || `photo_${i}.jpg`;
+          const tempPath = `${tempDir}${fileName}`;
+          await FileSystem.copyAsync({ from: urls[i], to: tempPath });
+          tempUris.push(__ensureFileUri(tempPath));
+        }
+        await __RNShare.open({ urls: tempUris, type: 'image/jpeg', failOnCancel: false });
+        await recordShare();
+        await FileSystem.deleteAsync(tempDir, { idempotent: true });
+      }
+    } catch (error) {
+      if (error?.message === 'User did not share' || error?.dismissedAction) return;
+      console.error('[ProjectDetail] Share error:', error);
+      Alert.alert('Share Error', 'Failed to share photos. Please try again.');
+    } finally {
+      setSharing(false);
+      setShareStatus('');
+    }
+  };
   // Report tab state — see the Report panel further down for usage.
   // `reportTitle` is seeded from project name + global location once the
   // project is resolved; user can edit. `reportPhotoCount` is the max
@@ -1958,12 +2238,160 @@ export default function ProjectDetailScreen({ route, navigation }) {
           );
         })()}
         {activeTab === 'share' && (
-          <View style={styles.stubState}>
-            <Ionicons name="share-social-outline" size={40} color={theme.textMuted} />
-            <Text style={[styles.stubTitle, { color: theme.textPrimary }]}>Share</Text>
-            <Text style={[styles.stubSubtitle, { color: theme.textSecondary }]}>
-              PDF, link, photos, and ZIP options coming soon.
-            </Text>
+          <View style={shareTabStyles.container}>
+            {/* Photo Types */}
+            <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary }]}>Photo types</Text>
+            <View style={shareTabStyles.pillRow}>
+              {['before', 'after', 'combined'].map((k) => (
+                <TouchableOpacity
+                  key={k}
+                  style={[
+                    shareTabStyles.pill,
+                    { borderColor: theme.border },
+                    selectedShareTypes[k] && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
+                  ]}
+                  onPress={() => setSelectedShareTypes(p => ({ ...p, [k]: !p[k] }))}
+                >
+                  <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>
+                    {k.charAt(0).toUpperCase() + k.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Format */}
+            <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 24 }]}>Share as</Text>
+            <View style={shareTabStyles.pillRow}>
+              {[
+                { key: 'files', label: 'Files' },
+                { key: 'zip', label: 'ZIP' },
+                { key: 'pdf', label: 'PDF' },
+                { key: 'link', label: 'Link' },
+              ].map(({ key, label }) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[
+                    shareTabStyles.pill,
+                    { borderColor: theme.border },
+                    shareFormat === key && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
+                  ]}
+                  onPress={() => setShareFormat(key)}
+                >
+                  <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Link Provider */}
+            {shareFormat === 'link' && (
+              <>
+                <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 24 }]}>Link via</Text>
+                {[
+                  { key: 'google', label: 'Google Drive', icon: 'logo-google', connected: !!isAuthenticated },
+                  { key: 'dropbox', label: 'Dropbox', icon: 'cloud-outline', connected: dropboxAuthService.isAuthenticated() },
+                ].map(({ key, label, icon, connected }) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={[
+                      shareTabStyles.providerRow,
+                      { backgroundColor: theme.surfaceElevated },
+                      shareLinkProvider === key && { backgroundColor: '#FFF9E0', borderWidth: 1, borderColor: COLORS.PRIMARY },
+                    ]}
+                    onPress={() => setShareLinkProvider(key)}
+                  >
+                    <Ionicons name={icon} size={20} color={shareLinkProvider === key ? '#000' : theme.textMuted} />
+                    <Text style={[
+                      shareTabStyles.providerText,
+                      { color: shareLinkProvider === key ? '#000' : theme.textSecondary },
+                    ]}>{label}</Text>
+                    {!connected && (
+                      <Text style={shareTabStyles.providerHint}>Not connected</Text>
+                    )}
+                    {shareLinkProvider === key && connected && (
+                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {/* Advanced Templates */}
+            <TouchableOpacity
+              style={shareTabStyles.advancedHeader}
+              onPress={() => setShowAdvancedShareFormats(v => !v)}
+            >
+              <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 0 }]}>Advance Options</Text>
+              <Ionicons
+                name={showAdvancedShareFormats ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={theme.textSecondary}
+              />
+            </TouchableOpacity>
+            {showAdvancedShareFormats && TEMPLATE_TYPES && (
+              <>
+                <Text style={[shareTabStyles.sublabel, { color: theme.textSecondary }]}>Stacked formats</Text>
+                <View style={shareTabStyles.pillRow}>
+                  {[TEMPLATE_TYPES.STACK_PORTRAIT, TEMPLATE_TYPES.STACK_LANDSCAPE, TEMPLATE_TYPES.SQUARE_STACK].map((key) => {
+                    const cfg = TEMPLATE_CONFIGS?.[key];
+                    if (!cfg) return null;
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          shareTabStyles.pill,
+                          { borderColor: theme.border },
+                          selectedFormats[key] && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
+                        ]}
+                        onPress={() => handleShareFormatToggle(key)}
+                      >
+                        <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{cfg.name || key}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <Text style={[shareTabStyles.sublabel, { color: theme.textSecondary, marginTop: 16 }]}>Side-by-side formats</Text>
+                <View style={shareTabStyles.pillRow}>
+                  {[TEMPLATE_TYPES.SIDE_BY_SIDE_LANDSCAPE, TEMPLATE_TYPES.SIDE_BY_SIDE_WIDE, TEMPLATE_TYPES.BLOG_FORMAT, TEMPLATE_TYPES.SQUARE_SIDE].map((key) => {
+                    const cfg = TEMPLATE_CONFIGS?.[key];
+                    if (!cfg) return null;
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          shareTabStyles.pill,
+                          { borderColor: theme.border },
+                          selectedFormats[key] && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
+                        ]}
+                        onPress={() => handleShareFormatToggle(key)}
+                      >
+                        <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{cfg.name || key}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
+            {/* Share Now */}
+            <TouchableOpacity
+              style={[
+                shareTabStyles.shareNowButton,
+                sharing && { opacity: 0.6 },
+              ]}
+              onPress={startShareTabSharing}
+              disabled={sharing}
+            >
+              {sharing ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <ActivityIndicator size="small" color="#FFF" />
+                  <Text style={shareTabStyles.shareNowButtonText}>
+                    {shareStatus || 'Sharing...'}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={shareTabStyles.shareNowButtonText}>Share Now</Text>
+              )}
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -2838,5 +3266,83 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '600',
+  },
+});
+
+const shareTabStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  sublabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  pill: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 30,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  pillText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  providerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  providerText: {
+    fontSize: 15,
+    fontWeight: '500',
+    fontFamily: FONTS.ALEXANDRIA,
+  },
+  providerHint: {
+    fontSize: 12,
+    fontFamily: FONTS.ALEXANDRIA,
+    color: '#CC0000',
+    marginLeft: 'auto',
+  },
+  advancedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginTop: 8,
+  },
+  shareNowButton: {
+    marginTop: 24,
+    backgroundColor: '#000000',
+    borderRadius: 100,
+    height: 54,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  shareNowButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
 });
