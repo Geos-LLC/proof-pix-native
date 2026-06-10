@@ -43,8 +43,12 @@ import { logProjectCreated } from '../utils/analytics';
 import * as FileSystem from 'expo-file-system/legacy';
 import JSZip from 'jszip';
 import Constants from 'expo-constants';
-import * as Print from 'expo-print';
-import * as Clipboard from 'expo-clipboard';
+// expo-print is a native module that was added to package.json AFTER
+// some older binaries were compiled (build 76 = pre-expo-print). An
+// eager top-level `import` would fail JS bundle init on those older
+// binaries and brick the entire OTA. Lazy-require inside the PDF
+// handler so the bundle loads on any build; only the PDF action
+// itself fails if expo-print isn't compiled into the host binary.
 import dropboxAuthService from '../services/dropboxAuthService';
 import googleDriveService from '../services/googleDriveService';
 import dropboxService from '../services/dropboxService';
@@ -462,6 +466,21 @@ export default function ProjectsScreen({ navigation, route }) {
       Alert.alert('No Photos', 'Nothing to put in the report.');
       return;
     }
+    // Lazy-load expo-print so older binaries (e.g. build 76, which was
+    // compiled before expo-print was added to package.json) can still
+    // load this JS bundle over the air. If the native module isn't in
+    // the host binary, this throws — we catch and show a clear error
+    // instead of crashing the share flow.
+    let Print;
+    try {
+      Print = require('expo-print');
+    } catch (e) {
+      Alert.alert(
+        'PDF not supported in this build',
+        'Update to the latest TestFlight build to share as PDF. Try Files, ZIP, or Link in the meantime.',
+      );
+      return;
+    }
     setShareStatus(t('gallery.preparingPhotos', { defaultValue: 'Preparing PDF...' }));
     const modeLabel = (m) => {
       if (m === 'before') return 'Before';
@@ -599,7 +618,10 @@ export default function ProjectsScreen({ navigation, route }) {
     // downloadable resource, so AirDrop / Mail / Files try to fetch the
     // page contents and end up grabbing the Drive/Dropbox download
     // instead of just sharing the link. Sending text keeps it a link.
-    try { await Clipboard.setStringAsync(shareUrl); } catch {}
+    try {
+      const Clipboard = require('expo-clipboard');
+      await Clipboard.setStringAsync(shareUrl);
+    } catch {}
     await RNShareDialog.share({
       title: safeName,
       message: `${safeName}\n${shareUrl}`,
