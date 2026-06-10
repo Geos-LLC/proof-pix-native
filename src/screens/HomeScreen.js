@@ -53,6 +53,8 @@ import Constants from 'expo-constants';
 import UnfinishedJobBanner from '../components/UnfinishedJobBanner';
 import SoftTrialBadge from '../components/SoftTrialBadge';
 import QualificationPromptModal, { hasCompletedQualification } from '../components/QualificationPromptModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { INDUSTRIES } from '../constants/industries';
 
 // Pair-preview template helpers — orientation-aware list and aspect-ratio
 // lookup. Mirrors the existing PhotoEditor logic but stripped down to what
@@ -366,19 +368,76 @@ export default function HomeScreen({ navigation, route }) {
     setRooms(newRooms);
   }, [customRooms]);
 
-  // Show qualification prompt immediately on first landing.
+  // Show qualification prompt on first landing — UNLESS the user is
+  // a returning user whose projects survived an iOS reinstall via
+  // Keychain. In that case we infer the original industry from the
+  // photos' rooms and silently mark qualification complete, so the
+  // (out-of-date) prompt never shows and the user's restored rooms
+  // list isn't overwritten by a fresh saveCustomRooms call.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const done = await hasCompletedQualification();
       if (cancelled) return;
-      if (!done) {
-        logEvent('qualification_prompt_shown', { context: 'onboarding' });
-        setShowQualification(true);
+      if (done) return;
+
+      // Returning user: projects survived reinstall via Keychain.
+      // Pick the industry whose folder set best matches the rooms
+      // the user's existing photos sit in. If we can match, we set
+      // both the qualification flag AND the customRooms list so the
+      // app behaves identically to a user who completed onboarding
+      // originally on this industry. If we can't match (rooms were
+      // heavily customized post-onboarding), still mark qualification
+      // complete so the prompt doesn't pop and overwrite the rooms
+      // that were already restored from Keychain.
+      if (projects && projects.length > 0) {
+        const photoRoomIds = new Set();
+        for (const p of photos || []) {
+          if (p?.room) photoRoomIds.add(p.room);
+        }
+        let bestIndustry = null;
+        let bestOverlap = 0;
+        for (const ind of INDUSTRIES) {
+          const folderIds = new Set((ind.folders || []).map(f => f.id));
+          let overlap = 0;
+          for (const rid of photoRoomIds) if (folderIds.has(rid)) overlap++;
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            bestIndustry = ind;
+          }
+        }
+        if (bestIndustry && bestOverlap > 0) {
+          await AsyncStorage.setItem('@user_qualification', bestIndustry.id);
+          // Only reseed rooms if customRooms is empty (i.e. they
+          // didn't restore from Keychain). Don't clobber a restored
+          // customRooms list with our inferred seed.
+          if (!customRooms || customRooms.length === 0) {
+            await saveCustomRooms(bestIndustry.folders);
+          }
+          logEvent('qualification_auto_restored', {
+            industry_id: bestIndustry.id,
+            inferred_from_photos: true,
+            overlap_count: bestOverlap,
+          });
+        } else {
+          // No match — just mark complete so the prompt doesn't pop.
+          await AsyncStorage.setItem('@user_qualification', 'returning_user');
+          logEvent('qualification_auto_restored', {
+            industry_id: null,
+            inferred_from_photos: false,
+            overlap_count: 0,
+          });
+        }
+        return;
       }
+
+      // True first-time user — show the prompt.
+      logEvent('qualification_prompt_shown', { context: 'onboarding' });
+      setShowQualification(true);
     })();
     return () => { cancelled = true; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects?.length]);
 
   // Refresh banner when screen focuses (user may have completed a job)
   useEffect(() => {
