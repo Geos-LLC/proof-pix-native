@@ -205,12 +205,19 @@ export const PhotoProvider = ({ children }) => {
         try {
           const assetMap = await getAssetIdMap();
           if (!assetMap || Object.keys(assetMap).length === 0) return baseForResolve;
-          // Only attempt PhotoKit lookups if we have permission. We
-          // explicitly do not REQUEST permission here — that would
-          // surface a dialog on a cold start. If permission was already
-          // granted (it is for any user who has saved photos before),
-          // we resolve; otherwise we leave the URIs alone.
-          const perm = await MediaLibrary.getPermissionsAsync();
+          // We need Photos access to re-resolve URIs from PhotoKit asset
+          // IDs after a reinstall. Previous behavior silently bailed when
+          // permission wasn't granted yet — that left every photo as a
+          // black square on a fresh reinstall (Keychain holds the
+          // metadata + asset-id-map; iOS revokes the Photos permission
+          // on uninstall). Now we ASK on the spot since assetMap is
+          // non-empty, which means there's actual photo data worth
+          // restoring. On a true fresh first launch (no prior photos)
+          // assetMap is empty and we never prompt.
+          let perm = await MediaLibrary.getPermissionsAsync();
+          if (perm.status !== 'granted') {
+            perm = await MediaLibrary.requestPermissionsAsync();
+          }
           if (perm.status !== 'granted') return baseForResolve;
           const out = [];
           for (const photo of baseForResolve) {
