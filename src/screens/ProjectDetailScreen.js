@@ -1113,24 +1113,43 @@ export default function ProjectDetailScreen({ route, navigation }) {
       .slice(0, 80);
     const target = `${reportsDir()}${safeName}-${report.id}.html`;
     await FileSystem.writeAsStringAsync(target, html);
-    // PDF generation lands in the next native build via expo-print.
-    // For now the share is HTML — opens cleanly in Safari → Print →
-    // Save as PDF.
+    // PDF: lazy-require expo-print so older binaries (build 76 etc.)
+    // don't crash this whole flow at module-load time. If the native
+    // module isn't compiled in, we silently keep the HTML-only output
+    // and the share path falls back to HTML. Same pattern as
+    // sharePhotosAsPdf for the Projects share modal.
+    let pdfTarget = null;
+    try {
+      const Print = require('expo-print');
+      const printed = await Print.printToFileAsync({ html, base64: false });
+      if (printed?.uri) {
+        const pdfDest = `${reportsDir()}${safeName}-${report.id}.pdf`;
+        try { await FileSystem.deleteAsync(pdfDest, { idempotent: true }); } catch (_) {}
+        try {
+          await FileSystem.moveAsync({ from: printed.uri, to: pdfDest });
+          pdfTarget = pdfDest;
+        } catch (_) {
+          pdfTarget = printed.uri;
+        }
+      }
+    } catch (_) {
+      // expo-print not in this binary — HTML-only output stays valid.
+    }
     if (!skipStatePatch) {
       await patchReport(report.id, {
         generatedFilePath: target,
-        generatedPdfPath: null,
+        generatedPdfPath: pdfTarget,
         generatedAt: Date.now(),
       });
     }
-    return { html: target, pdf: null, generatedAt: Date.now() };
+    return { html: target, pdf: pdfTarget, generatedAt: Date.now() };
   };
 
   // Share a report — uses the cached generated file when it still
   // exists on disk; regenerates and writes a fresh one otherwise.
   // Set `forceRegenerate` to true for the editor's "Generate & share"
   // button (the user explicitly wants the latest content).
-  const handleShareReport = async (reportId, { forceRegenerate = false, format = 'html' } = {}) => {
+  const handleShareReport = async (reportId, { forceRegenerate = false, format = 'pdf' } = {}) => {
     if (!project) return;
     if (isBuildingReport) return;
     setIsBuildingReport(true);
