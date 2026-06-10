@@ -14,8 +14,8 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   Platform,
-  Switch,
   Linking,
+  Share as RNShareDialog,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -43,7 +43,11 @@ import { logProjectCreated } from '../utils/analytics';
 import * as FileSystem from 'expo-file-system/legacy';
 import JSZip from 'jszip';
 import Constants from 'expo-constants';
+import * as Print from 'expo-print';
+import * as Clipboard from 'expo-clipboard';
 import dropboxAuthService from '../services/dropboxAuthService';
+import googleDriveService from '../services/googleDriveService';
+import dropboxService from '../services/dropboxService';
 import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 
 // Ensure a URI has the file:// prefix (expo FileSystem URIs already include it on Android)
@@ -198,7 +202,12 @@ export default function ProjectsScreen({ navigation, route }) {
     Object.keys(TEMPLATE_CONFIGS).forEach((key) => { initial[key] = false; });
     return initial;
   });
-  const [shareAsArchive, setShareAsArchive] = useState(false);
+  // Share format: 'files' (system sheet w/ individual photos), 'zip',
+  // 'pdf' (rendered report), 'link' (upload to cloud + shareable URL).
+  const [shareFormat, setShareFormat] = useState('files');
+  // Which cloud the shareable link comes from. Auto-defaults to whichever
+  // cloud is connected when the modal opens.
+  const [shareLinkProvider, setShareLinkProvider] = useState('google');
   const [showAdvancedShareFormats, setShowAdvancedShareFormats] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
@@ -417,6 +426,15 @@ export default function ProjectsScreen({ navigation, route }) {
       Alert.alert(t('gallery.noPhotosTitle'), t('gallery.noPhotosInProject'));
       return;
     }
+    // Seed link provider default to whichever cloud the user has connected
+    // (Google wins ties since most users start there). Without this the
+    // selector would default to Google even when only Dropbox is linked.
+    if (!isAuthenticated && dropboxAuthService.isAuthenticated()) {
+      setShareLinkProvider('dropbox');
+    } else {
+      setShareLinkProvider('google');
+    }
+    setShareFormat('files');
     setProjectToShare(project);
     setShareOptionsVisible(true);
   };
@@ -434,6 +452,160 @@ export default function ProjectsScreen({ navigation, route }) {
       return;
     }
     setSelectedFormats(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Build an HTML report from the labeled photos and hand it to
+  // expo-print so iOS/Android render a real PDF. Images are embedded as
+  // base64 so the resulting PDF works fully offline once shared.
+  const sharePhotosAsPdf = async (urls, sharePhotos) => {
+    if (!urls.length) {
+      Alert.alert('No Photos', 'Nothing to put in the report.');
+      return;
+    }
+    setShareStatus(t('gallery.preparingPhotos', { defaultValue: 'Preparing PDF...' }));
+    const modeLabel = (m) => {
+      if (m === 'before') return 'Before';
+      if (m === 'after') return 'After';
+      if (m === PHOTO_MODES.COMBINED || m === 'combined' || m === 'mix') return 'Before / After';
+      if (m === 'progress') return 'Progress';
+      return '';
+    };
+    const photoBlocks = [];
+    for (let i = 0; i < urls.length; i++) {
+      const uri = urls[i];
+      const meta = sharePhotos[i] || {};
+      const b64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      photoBlocks.push(`
+        <div class="photo">
+          <img src="data:image/jpeg;base64,${b64}" />
+          <div class="caption">${modeLabel(meta.mode) || ''}</div>
+        </div>
+      `);
+    }
+    const safeName = (projectToShare?.name || 'Project').replace(/[<>&]/g, '');
+    const reportDate = new Date().toLocaleDateString();
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 32px; color: #1C274C; }
+            .header { border-bottom: 2px solid #F2C31B; padding-bottom: 16px; margin-bottom: 24px; }
+            .title { font-size: 24px; font-weight: 700; margin: 0 0 4px 0; }
+            .meta { font-size: 12px; color: #666; margin: 0; }
+            .photo { page-break-inside: avoid; margin-bottom: 24px; text-align: center; }
+            .photo img { max-width: 100%; max-height: 720px; border-radius: 8px; }
+            .caption { font-size: 12px; color: #444; margin-top: 6px; font-weight: 600; }
+            .footer { text-align: center; font-size: 10px; color: #999; margin-top: 32px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title">${safeName}</div>
+            <div class="meta">${urls.length} photo${urls.length === 1 ? '' : 's'} · Generated ${reportDate}</div>
+          </div>
+          ${photoBlocks.join('\n')}
+          <div class="footer">Generated by ProofPix</div>
+        </body>
+      </html>
+    `;
+    setShareStatus('Rendering PDF...');
+    const { uri: pdfUri } = await Print.printToFileAsync({ html, base64: false });
+    const friendlyName = `${safeName}_${Date.now()}.pdf`;
+    const targetUri = `${FileSystem.cacheDirectory}${friendlyName}`;
+    try {
+      await FileSystem.copyAsync({ from: pdfUri, to: targetUri });
+    } catch {
+      // Fall back to the raw printer URI if copy fails
+    }
+    const finalUri = (await FileSystem.getInfoAsync(targetUri)).exists ? targetUri : pdfUri;
+    await Sharing.shareAsync(ensureFileUri(finalUri), {
+      mimeType: 'application/pdf',
+      dialogTitle: friendlyName,
+      UTI: 'com.adobe.pdf',
+    });
+    await recordShare();
+    try { await FileSystem.deleteAsync(finalUri, { idempotent: true }); } catch {}
+  };
+
+  // Upload photos to Drive or Dropbox and share the resulting folder URL.
+  // Both providers serve a single "anyone with the link can view" folder
+  // link; we don't try to add per-file ACLs, just inherit from the folder.
+  const sharePhotosAsLink = async (urls) => {
+    const provider = shareLinkProvider;
+    if (provider === 'google' && !isAuthenticated) {
+      Alert.alert(
+        'Google Drive not connected',
+        'Connect Google Drive in Settings to share a link.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+        ]
+      );
+      return;
+    }
+    if (provider === 'dropbox' && !dropboxAuthService.isAuthenticated()) {
+      Alert.alert(
+        'Dropbox not connected',
+        'Connect Dropbox in Settings to share a link.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+        ]
+      );
+      return;
+    }
+
+    const safeName = (projectToShare?.name || 'ProofPix Project').replace(/[\\/:*?"<>|]/g, '_');
+    setShareStatus(`Uploading to ${provider === 'google' ? 'Google Drive' : 'Dropbox'}...`);
+
+    let shareUrl = '';
+    if (provider === 'google') {
+      const rootId = await googleDriveService.findOrCreateProofPixFolder();
+      const uniqueAlbumName = await googleDriveService.findUniqueAlbumName(rootId, safeName);
+      const albumId = await googleDriveService.findOrCreateAlbumFolder(rootId, uniqueAlbumName);
+      for (let i = 0; i < urls.length; i++) {
+        setShareStatus(`Uploading ${i + 1}/${urls.length} to Google Drive...`);
+        const filename = urls[i].split('/').pop() || `photo_${i}.jpg`;
+        await googleDriveService.uploadFileFromUri(urls[i], filename, albumId, 'image/jpeg');
+      }
+      setShareStatus('Generating shareable link...');
+      shareUrl = await googleDriveService.createShareableFolderLink(albumId);
+    } else {
+      const rootPath = await dropboxService.findOrCreateProofPixFolder();
+      const albumPath = await dropboxService.findOrCreateAlbumFolder(rootPath, safeName);
+      for (let i = 0; i < urls.length; i++) {
+        setShareStatus(`Uploading ${i + 1}/${urls.length} to Dropbox...`);
+        const filename = urls[i].split('/').pop() || `photo_${i}.jpg`;
+        await dropboxService.uploadFile(`${albumPath}/${filename}`, urls[i]);
+      }
+      setShareStatus('Generating shareable link...');
+      shareUrl = await dropboxService.createSharedLink(albumPath);
+    }
+
+    if (!shareUrl) {
+      throw new Error('No share URL returned by provider.');
+    }
+
+    // Copy to clipboard as a safety net, then hand to the native share
+    // sheet so the user can paste into iMessage, Mail, Slack, etc.
+    //
+    // IMPORTANT: pass the URL as text inside `message` only — NOT in the
+    // `url` field. On iOS the `url` activity item is treated as a
+    // downloadable resource, so AirDrop / Mail / Files try to fetch the
+    // page contents and end up grabbing the Drive/Dropbox download
+    // instead of just sharing the link. Sending text keeps it a link.
+    try { await Clipboard.setStringAsync(shareUrl); } catch {}
+    await RNShareDialog.share({
+      title: safeName,
+      message: `${safeName}\n${shareUrl}`,
+    });
+    await recordShare();
+    Alert.alert('Link ready', 'The share link was also copied to your clipboard.');
   };
 
   const startSharingWithOptions = async () => {
@@ -493,7 +665,11 @@ export default function ProjectsScreen({ navigation, route }) {
 
       const urls = sharePhotos.map(p => p.uri).filter(Boolean);
 
-      if (shareAsArchive) {
+      if (shareFormat === 'pdf') {
+        await sharePhotosAsPdf(urls, sharePhotos);
+      } else if (shareFormat === 'link') {
+        await sharePhotosAsLink(urls);
+      } else if (shareFormat === 'zip') {
         setShareStatus(t('gallery.zippingPhotos', { defaultValue: `Zipping ${urls.length} photos...`, count: urls.length }));
         const zip = new JSZip();
         for (const uri of urls) {
@@ -1416,17 +1592,64 @@ export default function ProjectsScreen({ navigation, route }) {
                   {/* Divider */}
                   <View style={styles.shareDivider} />
 
-                  {/* Share as Archive Toggle */}
-                  <View style={styles.archiveToggleRow}>
-                    <Switch
-                      value={shareAsArchive}
-                      onValueChange={setShareAsArchive}
-                      trackColor={{ false: '#E0E0E0', true: '#34C759' }}
-                      thumbColor="#FFFFFF"
-                      ios_backgroundColor="#E0E0E0"
-                    />
-                    <Text style={styles.archiveToggleLabel}>Share as archive (zip)</Text>
+                  {/* Format Selector — Files / ZIP / PDF / Link */}
+                  <Text style={styles.shareSectionLabel}>Share as</Text>
+                  <View style={styles.shareFormatButtons}>
+                    {[
+                      { key: 'files', label: 'Files' },
+                      { key: 'zip', label: 'ZIP' },
+                      { key: 'pdf', label: 'PDF' },
+                      { key: 'link', label: 'Link' },
+                    ].map(({ key, label }) => (
+                      <TouchableOpacity
+                        key={key}
+                        style={[styles.shareFormatButton, shareFormat === key && styles.shareFormatButtonActive]}
+                        onPress={() => setShareFormat(key)}
+                      >
+                        <Text style={[styles.shareFormatButtonText, shareFormat === key && styles.shareFormatButtonTextActive]}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
+
+                  {/* Link provider sub-selector (only when format === 'link') */}
+                  {shareFormat === 'link' && (
+                    <>
+                      <Text style={styles.shareSectionLabel}>Link via</Text>
+                      <TouchableOpacity
+                        style={[styles.uploadDestRow, shareLinkProvider === 'google' && styles.uploadDestRowActive]}
+                        onPress={() => setShareLinkProvider('google')}
+                      >
+                        <Ionicons name="logo-google" size={20} color={shareLinkProvider === 'google' ? '#000' : '#999'} />
+                        <Text style={[styles.uploadDestText, shareLinkProvider === 'google' && styles.uploadDestTextActive]}>
+                          Google Drive
+                        </Text>
+                        {!isAuthenticated && (
+                          <Text style={styles.uploadDestHint}>Not connected</Text>
+                        )}
+                        {shareLinkProvider === 'google' && isAuthenticated && (
+                          <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                        )}
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.uploadDestRow, shareLinkProvider === 'dropbox' && styles.uploadDestRowActive]}
+                        onPress={() => setShareLinkProvider('dropbox')}
+                      >
+                        <Ionicons name="cloud-outline" size={20} color={shareLinkProvider === 'dropbox' ? '#000' : '#999'} />
+                        <Text style={[styles.uploadDestText, shareLinkProvider === 'dropbox' && styles.uploadDestTextActive]}>
+                          Dropbox
+                        </Text>
+                        {!dropboxAuthService.isAuthenticated() && (
+                          <Text style={styles.uploadDestHint}>Not connected</Text>
+                        )}
+                        {shareLinkProvider === 'dropbox' && dropboxAuthService.isAuthenticated() && (
+                          <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </ScrollView>
 
                 {/* Share Now Button */}

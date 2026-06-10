@@ -321,6 +321,63 @@ class DropboxService {
       throw error;
     }
   }
+
+  /**
+   * Create (or recover) a public shared link for a Dropbox folder. If a
+   * shared link already exists for the path, Dropbox returns
+   * `shared_link_already_exists` with the existing link metadata — we use
+   * that instead of erroring so the share flow stays idempotent.
+   */
+  async createSharedLink(folderPath) {
+    // Dropbox URLs end with ?dl=0 (preview in browser) or ?dl=1 (force
+    // download). We always want preview — recovered links sometimes come
+    // back with dl=1 and that's how recipients end up downloading a ZIP
+    // of the folder instead of seeing the photo grid.
+    const toPreviewUrl = (url) => {
+      if (!url) return url;
+      if (/[?&]dl=1\b/.test(url)) return url.replace(/([?&])dl=1\b/, '$1dl=0');
+      if (/[?&]dl=0\b/.test(url)) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'dl=0';
+    };
+
+    const createResp = await dropboxAuthService.makeAuthenticatedRequest(
+      `${DROPBOX_API_URL}/sharing/create_shared_link_with_settings`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          path: folderPath,
+          settings: { requested_visibility: { '.tag': 'public' } },
+        }),
+      }
+    );
+
+    if (createResp.ok) {
+      const data = await createResp.json();
+      return toPreviewUrl(data.url);
+    }
+
+    const errorText = await createResp.text();
+    let errorData = {};
+    try { errorData = JSON.parse(errorText); } catch {}
+    const tag = errorData?.error?.['.tag'];
+
+    if (tag === 'shared_link_already_exists') {
+      const listResp = await dropboxAuthService.makeAuthenticatedRequest(
+        `${DROPBOX_API_URL}/sharing/list_shared_links`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ path: folderPath, direct_only: true }),
+        }
+      );
+      if (listResp.ok) {
+        const listData = await listResp.json();
+        const existing = listData.links?.[0];
+        if (existing?.url) return toPreviewUrl(existing.url);
+      }
+    }
+
+    throw new Error(`Failed to create Dropbox shared link: ${errorText}`);
+  }
 }
 
 // Export singleton instance

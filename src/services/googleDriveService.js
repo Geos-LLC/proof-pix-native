@@ -333,6 +333,33 @@ class GoogleDriveService {
   }
 
   /**
+   * Make a folder shareable with "anyone with the link" (reader role) and
+   * return the webViewLink so callers can hand that URL to the system share
+   * sheet. Idempotent — adding the same anyone-reader permission twice is a
+   * no-op on Drive's side, so we just always set it before reading the link.
+   */
+  async createShareableFolderLink(folderId) {
+    const permUrl = `${DRIVE_API_URL}/${folderId}/permissions`;
+    const permResp = await googleAuthService.makeAuthenticatedRequest(permUrl, {
+      method: 'POST',
+      body: JSON.stringify({ role: 'reader', type: 'anyone', allowFileDiscovery: false }),
+    });
+    if (!permResp.ok) {
+      const errorText = await permResp.text();
+      throw new Error(`Failed to set Drive folder permission: ${permResp.status} ${errorText}`);
+    }
+
+    const metaUrl = `${DRIVE_API_URL}/${folderId}?fields=webViewLink`;
+    const metaResp = await googleAuthService.makeAuthenticatedRequest(metaUrl);
+    if (!metaResp.ok) {
+      const errorText = await metaResp.text();
+      throw new Error(`Failed to read Drive folder webViewLink: ${metaResp.status} ${errorText}`);
+    }
+    const metaData = await metaResp.json();
+    return metaData.webViewLink || `https://drive.google.com/drive/folders/${folderId}`;
+  }
+
+  /**
    * Upload a file directly to Google Drive using multipart upload (legacy - base64)
    * @param {string} fileData - Base64 encoded file data
    * @param {string} filename - File name
