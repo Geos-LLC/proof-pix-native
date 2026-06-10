@@ -69,6 +69,12 @@ export const savePhotosMetadata = async (photos) => {
       originalWidth: p.originalWidth,
       originalHeight: p.originalHeight,
       uri: p.uri, // File URI in device storage
+      // PhotoKit `localUri` cache (iOS reinstall recovery). When set,
+      // PhotoContext.loadPhotos uses this instead of calling
+      // MediaLibrary.getAssetInfoAsync on cold start — turns a
+      // sequential N-call PhotoKit walk into a single existence
+      // probe per photo. See `runConcurrent` block in PhotoContext.
+      cachedLocalUri: p.cachedLocalUri || null,
       // GPS pair captured at shutter time by CameraScreen
       // (captureGpsForPhoto). Drives the ProjectDetail Location-tab
       // MapView pins. Whitelisted explicitly because savePhotos used

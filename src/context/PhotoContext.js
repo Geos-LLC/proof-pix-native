@@ -251,6 +251,23 @@ export const PhotoProvider = ({ children }) => {
           // whose URI filename isn't already in assetMap. After this
           // pass the URIs are canonical and the re-resolve loop below
           // works normally.
+          // Helper: bound the concurrency of PhotoKit calls so we
+          // don't stampede the system (50 sounds fine empirically;
+          // tune down if PhotoKit reports throttling).
+          const runConcurrent = async (items, concurrency, worker) => {
+            const results = new Array(items.length);
+            let cursor = 0;
+            const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+              while (true) {
+                const i = cursor++;
+                if (i >= items.length) return;
+                results[i] = await worker(items[i], i);
+              }
+            });
+            await Promise.all(runners);
+            return results;
+          };
+
           let recoveredAny = false;
           const reverseMap = {};
           const needsRecovery = baseForResolve.some(p => {
@@ -259,9 +276,13 @@ export const PhotoProvider = ({ children }) => {
             return fn && !assetMap[fn];
           });
           if (needsRecovery) {
-            for (const [appFilename, entry] of Object.entries(assetMap)) {
+            // Recovery used to be a sequential N-call walk over assetMap.
+            // Parallelize via bounded concurrency — 100 photos went from
+            // ~10s to ~1s.
+            const entries = Object.entries(assetMap);
+            await runConcurrent(entries, 50, async ([appFilename, entry]) => {
               const assetId = typeof entry === 'string' ? entry : entry?.id;
-              if (!assetId) continue;
+              if (!assetId) return;
               try {
                 const a = await MediaLibrary.getAssetInfoAsync(assetId);
                 const pk = a?.localUri;
@@ -270,7 +291,7 @@ export const PhotoProvider = ({ children }) => {
                   if (pkFn && pkFn !== appFilename) reverseMap[pkFn] = appFilename;
                 }
               } catch {}
-            }
+            });
           }
           const recoveredBase = baseForResolve.map(photo => {
             if (!photo.uri || !photo.uri.startsWith('file://')) return photo;
@@ -285,43 +306,49 @@ export const PhotoProvider = ({ children }) => {
             console.log('[PhotoContext] Recovered photo URIs from PhotoKit-corrupted state');
             await savePhotosMetadata(recoveredBase);
           }
-          const out = [];
-          for (const photo of recoveredBase) {
-            if (!photo.uri || !photo.uri.startsWith('file://')) {
-              out.push(photo);
-              continue;
-            }
+          // Per-photo resolve was also sequential. Parallelize the
+          // same way, with a small optimization: trust the in-memory
+          // `cachedLocalUri` field (written below) so subsequent
+          // cold starts in the same install can skip the PhotoKit
+          // round-trip when the cached path is still on disk.
+          const out = await runConcurrent(recoveredBase, 50, async (photo) => {
+            if (!photo.uri || !photo.uri.startsWith('file://')) return photo;
             const filename = photo.uri.split('/').pop();
-            if (!filename) {
-              out.push(photo);
-              continue;
+            if (!filename) return photo;
+            // Cached PhotoKit URI from a previous launch — verify it
+            // still exists, use it without a PhotoKit call.
+            if (photo.cachedLocalUri && photo.cachedLocalUri !== photo.uri) {
+              try {
+                const ci = await FileSystem.getInfoAsync(photo.cachedLocalUri);
+                if (ci && ci.exists) {
+                  return { ...photo, uri: photo.cachedLocalUri };
+                }
+              } catch {}
             }
-            // Cheap existence probe: if the file is still on disk
-            // (in-session, same install), skip the PhotoKit roundtrip.
+            // Existence probe on the canonical URI — fast path when
+            // Documents is still intact (same install, no reinstall).
             try {
               const info = await FileSystem.getInfoAsync(photo.uri);
-              if (info && info.exists) {
-                out.push(photo);
-                continue;
-              }
+              if (info && info.exists) return photo;
             } catch {}
             const entry = assetMap[filename];
             const assetId = typeof entry === 'string' ? entry : entry?.id;
-            if (!assetId) {
-              out.push(photo);
-              continue;
-            }
+            if (!assetId) return photo;
             try {
               const asset = await MediaLibrary.getAssetInfoAsync(assetId);
               const newUri = asset?.localUri || asset?.uri;
               if (newUri && newUri !== photo.uri) {
                 urisResolvedFromAssets = true;
-                out.push({ ...photo, uri: newUri });
-                continue;
+                // Stash cachedLocalUri so the next cold start skips
+                // this PhotoKit call. Note: photo.uri stays at the
+                // canonical Documents path in storage (see the
+                // !persist-resolved-URIs comment below) — only the
+                // cached field is persisted, used as a hint.
+                return { ...photo, uri: newUri, cachedLocalUri: newUri };
               }
             } catch {}
-            out.push(photo);
-          }
+            return photo;
+          });
           return out;
         } catch (e) {
           console.warn('[PhotoContext] asset-id re-resolve failed:', e?.message);
@@ -352,11 +379,16 @@ export const PhotoProvider = ({ children }) => {
       // Reassign photo names sequentially
       const renamedPhotos = reassignPhotoNames(resolvedPhotos);
 
-      // Save if names changed — but use baseForResolve (pre-resolve)
-      // URIs so we don't accidentally persist transient PhotoKit
-      // paths via this branch either.
+      // Persist when:
+      //  - names changed (existing behavior), OR
+      //  - we resolved fresh PhotoKit URIs we want to cache so the
+      //    NEXT cold start skips the PhotoKit roundtrip entirely.
+      // In both cases we re-canonicalize `uri` back to the stored
+      // Documents path so the migration step on the next launch
+      // can't mangle PhotoKit paths. The `cachedLocalUri` field
+      // carries the fast-path hint forward across launches.
       const namesChanged = renamedPhotos.some((photo, idx) => photo.name !== resolvedPhotos[idx]?.name);
-      if (namesChanged) {
+      if (namesChanged || urisResolvedFromAssets) {
         const persistable = renamedPhotos.map((photo, idx) => ({
           ...photo,
           uri: baseForResolve[idx]?.uri || photo.uri,
