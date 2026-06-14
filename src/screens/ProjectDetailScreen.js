@@ -14,6 +14,7 @@ import {
   Switch,
   ActivityIndicator,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +39,7 @@ import { PHOTO_MODES, COLORS } from '../constants/rooms';
 import dropboxAuthService from '../services/dropboxAuthService';
 import googleDriveService from '../services/googleDriveService';
 import dropboxService from '../services/dropboxService';
+import iCloudService from '../services/iCloudService';
 import { ensureLabelForPhoto } from '../services/uploadService';
 import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 
@@ -197,7 +199,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos } = usePhotos();
-  const { isAuthenticated } = useAdmin();
+  const { isAuthenticated, connectedAccounts } = useAdmin();
   const { effectivePlan } = useFeaturePermissions();
   const {
     getRooms,
@@ -334,6 +336,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
 
   const sharePhotosAsLink = async (urls) => {
     const provider = shareLinkProvider;
+    const isAppleConnected = !!(connectedAccounts || []).find(
+      a => a.accountType === 'apple' && a.isActive
+    );
     if (provider === 'google' && !isAuthenticated) {
       Alert.alert('Google Drive not connected', 'Connect Google Drive in Settings to share a link.', [
         { text: 'Cancel', style: 'cancel' },
@@ -348,9 +353,48 @@ export default function ProjectDetailScreen({ route, navigation }) {
       ]);
       return;
     }
+    if (provider === 'apple' && !isAppleConnected) {
+      Alert.alert('iCloud Drive not connected', 'Turn on iCloud Drive sync for ProofPix in Settings to use this option.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+      ]);
+      return;
+    }
+    const providerLabel = provider === 'google' ? 'Google Drive' : provider === 'dropbox' ? 'Dropbox' : 'iCloud Drive';
     const safeName = (project?.name || 'ProofPix Project').replace(/[\\/:*?"<>|]/g, '_');
-    setShareStatus(`Uploading to ${provider === 'google' ? 'Google Drive' : 'Dropbox'}...`);
+    setShareStatus(`Uploading to ${providerLabel}...`);
     let shareUrl = '';
+    if (provider === 'apple') {
+      const proofPixPath = await iCloudService.findOrCreateProofPixFolder();
+      const albumPath = `${proofPixPath}${safeName}/`;
+      const info = await FileSystem.getInfoAsync(albumPath);
+      if (!info.exists) {
+        await FileSystem.makeDirectoryAsync(albumPath, { intermediates: true });
+      }
+      for (let i = 0; i < urls.length; i++) {
+        setShareStatus(`Uploading ${i + 1}/${urls.length} to iCloud Drive...`);
+        const filename = urls[i].split('/').pop() || `photo_${i}.jpg`;
+        const cleanUri = urls[i].startsWith('file://') ? urls[i] : `file://${urls[i]}`;
+        try {
+          await FileSystem.copyAsync({ from: cleanUri, to: `${albumPath}${filename}` });
+        } catch (e) {
+          console.warn('[ProjectDetail] iCloud copy failed for', filename, e?.message);
+        }
+      }
+      await recordShare();
+      Alert.alert(
+        'Saved to iCloud Drive',
+        `Photos are in iCloud Drive → ProofPix-Uploads → ${safeName}. Open the Files app to share the folder.`,
+        [
+          { text: 'OK', style: 'cancel' },
+          {
+            text: 'Open Files',
+            onPress: () => { try { Linking.openURL('shareddocuments://'); } catch {} },
+          },
+        ]
+      );
+      return;
+    }
     if (provider === 'google') {
       const rootId = await googleDriveService.findOrCreateProofPixFolder();
       const uniqueAlbumName = await googleDriveService.findUniqueAlbumName(rootId, safeName);
@@ -2383,29 +2427,43 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   {shareFormat === 'link' && (
                     <>
                       <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 18 }]}>Link via</Text>
-                      {[
-                        { key: 'google', label: 'Google Drive', icon: 'logo-google', connected: !!isAuthenticated },
-                        { key: 'dropbox', label: 'Dropbox', icon: 'cloud-outline', connected: dropboxAuthService.isAuthenticated() },
-                      ].map(({ key, label, icon, connected }) => (
-                        <TouchableOpacity
-                          key={key}
-                          style={[
-                            shareTabStyles.providerRow,
-                            { backgroundColor: theme.surfaceElevated },
-                            shareLinkProvider === key && { backgroundColor: '#FFF9E0', borderWidth: 1, borderColor: COLORS.PRIMARY },
-                          ]}
-                          onPress={() => setShareLinkProvider(key)}
-                        >
-                          <Ionicons name={icon} size={20} color={shareLinkProvider === key ? '#000' : theme.textMuted} />
-                          <Text style={[shareTabStyles.providerText, { color: shareLinkProvider === key ? '#000' : theme.textSecondary }]}>
-                            {label}
-                          </Text>
-                          {!connected && <Text style={shareTabStyles.providerHint}>Not connected</Text>}
-                          {shareLinkProvider === key && connected && (
-                            <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
-                          )}
-                        </TouchableOpacity>
-                      ))}
+                      {(() => {
+                        const isAppleConnected = !!(connectedAccounts || []).find(
+                          a => a.accountType === 'apple' && a.isActive
+                        );
+                        const providers = [
+                          { key: 'google', label: 'Google Drive', icon: 'logo-google', connected: !!isAuthenticated, show: true },
+                          { key: 'dropbox', label: 'Dropbox', icon: 'cloud-outline', connected: dropboxAuthService.isAuthenticated(), show: true },
+                          { key: 'apple', label: 'iCloud Drive', icon: 'logo-apple', connected: isAppleConnected, show: Platform.OS === 'ios' },
+                        ].filter(p => p.show);
+                        return providers.map(p => (
+                          <TouchableOpacity
+                            key={p.key}
+                            style={[
+                              shareTabStyles.providerRow,
+                              { backgroundColor: theme.surfaceElevated },
+                              shareLinkProvider === p.key && p.connected && { backgroundColor: '#FFF9E0', borderWidth: 1, borderColor: COLORS.PRIMARY },
+                            ]}
+                            onPress={() => {
+                              if (!p.connected) {
+                                setShareFormatModalVisible(false);
+                                navigation.navigate('Settings', { scrollToCloudSync: true });
+                                return;
+                              }
+                              setShareLinkProvider(p.key);
+                            }}
+                          >
+                            <Ionicons name={p.icon} size={20} color={shareLinkProvider === p.key && p.connected ? '#000' : theme.textMuted} />
+                            <Text style={[shareTabStyles.providerText, { color: shareLinkProvider === p.key && p.connected ? '#000' : theme.textSecondary }]}>
+                              {p.label}
+                            </Text>
+                            {!p.connected && <Text style={shareTabStyles.providerHint}>Tap to connect</Text>}
+                            {shareLinkProvider === p.key && p.connected && (
+                              <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                            )}
+                          </TouchableOpacity>
+                        ));
+                      })()}
                     </>
                   )}
 

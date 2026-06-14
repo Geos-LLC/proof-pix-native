@@ -52,6 +52,7 @@ import Constants from 'expo-constants';
 import dropboxAuthService from '../services/dropboxAuthService';
 import googleDriveService from '../services/googleDriveService';
 import dropboxService from '../services/dropboxService';
+import iCloudService from '../services/iCloudService';
 import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 
 // Ensure a URI has the file:// prefix (expo FileSystem URIs already include it on Android)
@@ -120,7 +121,7 @@ export default function ProjectsScreen({ navigation, route }) {
     }
     return map;
   }, [getRooms]);
-  const { userMode, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType } = useAdmin();
+  const { userMode, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType, connectedAccounts } = useAdmin();
   const { exceedsLimit, canUse, effectivePlan } = useFeaturePermissions();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
   const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
@@ -556,6 +557,9 @@ export default function ProjectsScreen({ navigation, route }) {
   // link; we don't try to add per-file ACLs, just inherit from the folder.
   const sharePhotosAsLink = async (urls) => {
     const provider = shareLinkProvider;
+    const isAppleConnected = !!(connectedAccounts || []).find(
+      a => a.accountType === 'apple' && a.isActive
+    );
     if (provider === 'google' && !isAuthenticated) {
       Alert.alert(
         'Google Drive not connected',
@@ -578,11 +582,59 @@ export default function ProjectsScreen({ navigation, route }) {
       );
       return;
     }
+    if (provider === 'apple' && !isAppleConnected) {
+      Alert.alert(
+        'iCloud Drive not connected',
+        'Turn on iCloud Drive sync for ProofPix in Settings to use this option.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+        ]
+      );
+      return;
+    }
 
+    const providerLabel = provider === 'google' ? 'Google Drive' : provider === 'dropbox' ? 'Dropbox' : 'iCloud Drive';
     const safeName = (projectToShare?.name || 'ProofPix Project').replace(/[\\/:*?"<>|]/g, '_');
-    setShareStatus(`Uploading to ${provider === 'google' ? 'Google Drive' : 'Dropbox'}...`);
+    setShareStatus(`Uploading to ${providerLabel}...`);
 
     let shareUrl = '';
+    if (provider === 'apple') {
+      // iCloud: there's no app-facing API for a public URL. We copy
+      // photos into the app's iCloud-synced Documents directory and
+      // point the user at the Files app to share the folder by hand.
+      const proofPixPath = await iCloudService.findOrCreateProofPixFolder();
+      const albumPath = `${proofPixPath}${safeName}/`;
+      const info = await FileSystem.getInfoAsync(albumPath);
+      if (!info.exists) {
+        await FileSystem.makeDirectoryAsync(albumPath, { intermediates: true });
+      }
+      for (let i = 0; i < urls.length; i++) {
+        setShareStatus(`Uploading ${i + 1}/${urls.length} to iCloud Drive...`);
+        const filename = urls[i].split('/').pop() || `photo_${i}.jpg`;
+        const cleanUri = urls[i].startsWith('file://') ? urls[i] : `file://${urls[i]}`;
+        try {
+          await FileSystem.copyAsync({ from: cleanUri, to: `${albumPath}${filename}` });
+        } catch (e) {
+          console.warn('[Projects] iCloud copy failed for', filename, e?.message);
+        }
+      }
+      await recordShare();
+      Alert.alert(
+        'Saved to iCloud Drive',
+        `Photos are in iCloud Drive → ProofPix-Uploads → ${safeName}. Open the Files app to share the folder.`,
+        [
+          { text: 'OK', style: 'cancel' },
+          {
+            text: 'Open Files',
+            onPress: () => {
+              try { Linking.openURL('shareddocuments://'); } catch {}
+            },
+          },
+        ]
+      );
+      return;
+    }
     if (provider === 'google') {
       const rootId = await googleDriveService.findOrCreateProofPixFolder();
       const uniqueAlbumName = await googleDriveService.findUniqueAlbumName(rootId, safeName);
@@ -1639,37 +1691,41 @@ export default function ProjectsScreen({ navigation, route }) {
                   {shareFormat === 'link' && (
                     <>
                       <Text style={styles.shareSectionLabel}>Link via</Text>
-                      <TouchableOpacity
-                        style={[styles.uploadDestRow, shareLinkProvider === 'google' && styles.uploadDestRowActive]}
-                        onPress={() => setShareLinkProvider('google')}
-                      >
-                        <Ionicons name="logo-google" size={20} color={shareLinkProvider === 'google' ? '#000' : '#999'} />
-                        <Text style={[styles.uploadDestText, shareLinkProvider === 'google' && styles.uploadDestTextActive]}>
-                          Google Drive
-                        </Text>
-                        {!isAuthenticated && (
-                          <Text style={styles.uploadDestHint}>Not connected</Text>
-                        )}
-                        {shareLinkProvider === 'google' && isAuthenticated && (
-                          <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
-                        )}
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[styles.uploadDestRow, shareLinkProvider === 'dropbox' && styles.uploadDestRowActive]}
-                        onPress={() => setShareLinkProvider('dropbox')}
-                      >
-                        <Ionicons name="cloud-outline" size={20} color={shareLinkProvider === 'dropbox' ? '#000' : '#999'} />
-                        <Text style={[styles.uploadDestText, shareLinkProvider === 'dropbox' && styles.uploadDestTextActive]}>
-                          Dropbox
-                        </Text>
-                        {!dropboxAuthService.isAuthenticated() && (
-                          <Text style={styles.uploadDestHint}>Not connected</Text>
-                        )}
-                        {shareLinkProvider === 'dropbox' && dropboxAuthService.isAuthenticated() && (
-                          <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
-                        )}
-                      </TouchableOpacity>
+                      {(() => {
+                        const isAppleConnected = !!(connectedAccounts || []).find(
+                          a => a.accountType === 'apple' && a.isActive
+                        );
+                        const providers = [
+                          { key: 'google', label: 'Google Drive', icon: 'logo-google', connected: !!isAuthenticated, show: true },
+                          { key: 'dropbox', label: 'Dropbox', icon: 'cloud-outline', connected: dropboxAuthService.isAuthenticated(), show: true },
+                          { key: 'apple', label: 'iCloud Drive', icon: 'logo-apple', connected: isAppleConnected, show: Platform.OS === 'ios' },
+                        ].filter(p => p.show);
+                        return providers.map(p => (
+                          <TouchableOpacity
+                            key={p.key}
+                            style={[styles.uploadDestRow, shareLinkProvider === p.key && p.connected && styles.uploadDestRowActive]}
+                            onPress={() => {
+                              if (!p.connected) {
+                                setShareOptionsVisible(false);
+                                navigation.navigate('Settings', { scrollToCloudSync: true });
+                                return;
+                              }
+                              setShareLinkProvider(p.key);
+                            }}
+                          >
+                            <Ionicons name={p.icon} size={20} color={shareLinkProvider === p.key && p.connected ? '#000' : '#999'} />
+                            <Text style={[styles.uploadDestText, shareLinkProvider === p.key && p.connected && styles.uploadDestTextActive]}>
+                              {p.label}
+                            </Text>
+                            {!p.connected && (
+                              <Text style={styles.uploadDestHint}>Tap to connect</Text>
+                            )}
+                            {shareLinkProvider === p.key && p.connected && (
+                              <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                            )}
+                          </TouchableOpacity>
+                        ));
+                      })()}
                     </>
                   )}
                 </ScrollView>
