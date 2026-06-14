@@ -1181,43 +1181,27 @@ export default function ProjectDetailScreen({ route, navigation }) {
       .slice(0, 80);
     const target = `${reportsDir()}${safeName}-${report.id}.html`;
     await FileSystem.writeAsStringAsync(target, html);
-    // PDF: lazy-require expo-print so older binaries (build 76 etc.)
-    // don't crash this whole flow at module-load time. If the native
-    // module isn't compiled in, we silently keep the HTML-only output
-    // and the share path falls back to HTML. Same pattern as
-    // sharePhotosAsPdf for the Projects share modal.
-    let pdfTarget = null;
-    try {
-      const Print = require('expo-print');
-      const printed = await Print.printToFileAsync({ html, base64: false });
-      if (printed?.uri) {
-        const pdfDest = `${reportsDir()}${safeName}-${report.id}.pdf`;
-        try { await FileSystem.deleteAsync(pdfDest, { idempotent: true }); } catch (_) {}
-        try {
-          await FileSystem.moveAsync({ from: printed.uri, to: pdfDest });
-          pdfTarget = pdfDest;
-        } catch (_) {
-          pdfTarget = printed.uri;
-        }
-      }
-    } catch (_) {
-      // expo-print not in this binary — HTML-only output stays valid.
-    }
+    // PDF generation removed AGAIN — even a lazy `require('expo-print')`
+    // inside try/catch is not safe on Hermes when the native module
+    // isn't compiled in. The throw routes through ErrorUtils' global
+    // handler and surfaces as an uncaught fatal, blanking the screen.
+    // Stick with HTML-only here; the Projects share modal has its own
+    // path that the user accepted the risk on.
     if (!skipStatePatch) {
       await patchReport(report.id, {
         generatedFilePath: target,
-        generatedPdfPath: pdfTarget,
+        generatedPdfPath: null,
         generatedAt: Date.now(),
       });
     }
-    return { html: target, pdf: pdfTarget, generatedAt: Date.now() };
+    return { html: target, pdf: null, generatedAt: Date.now() };
   };
 
   // Share a report — uses the cached generated file when it still
   // exists on disk; regenerates and writes a fresh one otherwise.
   // Set `forceRegenerate` to true for the editor's "Generate & share"
   // button (the user explicitly wants the latest content).
-  const handleShareReport = async (reportId, { forceRegenerate = false, format = 'pdf' } = {}) => {
+  const handleShareReport = async (reportId, { forceRegenerate = false, format = 'html' } = {}) => {
     if (!project) return;
     if (isBuildingReport) return;
     setIsBuildingReport(true);
@@ -1847,7 +1831,8 @@ export default function ProjectDetailScreen({ route, navigation }) {
                             {r.title || 'Untitled report'}
                           </Text>
                           <Text style={[styles.addToReportRowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                            {r.photoIds?.length ?? 0} {r.photoIds?.length === 1 ? 'photo' : 'photos'}
+                            {getLayout(r.layoutType).name}
+                            {` · ${r.photoIds?.length ?? 0} ${r.photoIds?.length === 1 ? 'photo' : 'photos'}`}
                             {hasGenerated && r.generatedAt
                               ? ` · Generated ${new Date(r.generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                               : (r.updatedAt ? ` · Updated ${new Date(r.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '')}
