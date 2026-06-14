@@ -983,8 +983,8 @@ export default function SettingsScreen({ navigation, route }) {
   // Section refs added for the design's WORKSPACE / CLOUD & TEAM rows
   // so a row tap can scroll to the existing inline section where the
   // user does the actual editing.
-  // sectionsSectionRef / labelsSectionRef removed alongside their
-  // inline sections (now lives in IndustrySections / LabelsLanguage).
+  const sectionsSectionRef = useRef(null);
+  const labelsSectionRef = useRef(null);
   const teamSectionRef = useRef(null);
   const watermarkSectionY = useRef(null);
   const watermarkSectionAbsoluteY = useRef(null);
@@ -3392,6 +3392,584 @@ export default function SettingsScreen({ navigation, route }) {
     
         {userMode !== 'team_member' && (
           <>
+            {/* Label Customization */}
+            <View ref={labelsSectionRef} style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('settings.labels', { defaultValue: 'Labels' })}</Text>
+              <Text style={styles.sectionDescription}>
+                {t('settings.labelCustomizationDescription', { defaultValue: 'Customize the appearance of before/after labels on your photos.' })}
+              </Text>
+
+              {/* Labels Toggle */}
+              <View style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.showLabels', { defaultValue: 'Labels' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.showLabelsDescription', { defaultValue: 'Show BEFORE/AFTER labels on photos' })}
+                  </Text>
+                </View>
+                <Switch
+                  value={showLabels}
+                  onValueChange={toggleLabels}
+                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+                  thumbColor="white"
+                />
+              </View>
+
+              {/* Customize Labels link removed — label customization
+                  now lives in the editor (Studio → Labels tab). Per
+                  the user's spec, Settings keeps only the on/off
+                  toggle for labels; the deeper customization for
+                  Watermark / Logo / Timestamp stays as navigation
+                  links below (still gated for pro). */}
+
+              {/* Customize Watermark Option */}
+              <TouchableOpacity
+                ref={watermarkSectionRef}
+                style={styles.settingRow}
+                onPress={() => {
+                  // Navigate to watermark customization screen
+                  console.log('Customize Watermark pressed');
+                  console.log('canUse CUSTOM_WATERMARKS:', canUse(FEATURES.CUSTOM_WATERMARKS));
+                  if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                    console.log('Navigating to WatermarkCustomization');
+                    if (navigation && navigation.navigate) {
+                      navigation.navigate('WatermarkCustomization');
+                    } else {
+                      console.error('Navigation not available');
+                    }
+                  } else {
+                    console.log('Feature not available, showing plan modal');
+                    navigation.navigate('PlanSelection');
+                  }
+                }}
+                onLayout={(event) => {
+                  const { y } = event.nativeEvent.layout;
+                  watermarkSectionY.current = y;
+                  // Also measure absolute position for later scrolling
+                  if (watermarkSectionRef.current && mainScrollViewRef.current) {
+                    watermarkSectionRef.current.measureLayout(
+                      mainScrollViewRef.current,
+                      (x, absoluteY) => {
+                        watermarkSectionAbsoluteY.current = absoluteY;
+                      },
+                      () => {}
+                    );
+                  }
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.customizeWatermark', { defaultValue: 'Customize Watermark' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {customWatermarkEnabled
+                      ? t('settings.watermarkCustomDescription', { defaultValue: 'Using custom watermark' })
+                      : t('settings.watermarkDefaultDescription', { defaultValue: 'Using default watermark (Powered by ProofPix)' })}
+                  </Text>
+                </View>
+                {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                    <Ionicons name="lock-closed" size={16} color="#EAB308" />
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color="#666666" />
+                )}
+              </TouchableOpacity>
+
+              {/* Customize Logo — gated by the same pro feature flag
+                  as watermark (no separate logo capability today).
+                  Navigates to LogoCustomization which lets the user
+                  upload + place a brand logo overlay. */}
+              <TouchableOpacity
+                style={[styles.settingRow, {borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)'}]}
+                onPress={() => {
+                  if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                    navigation.navigate('LogoCustomization');
+                  } else {
+                    navigation.navigate('PlanSelection');
+                  }
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.customizeLogo', { defaultValue: 'Customize Logo' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.customizeLogoDescription', { defaultValue: 'Upload and position a brand logo on photos.' })}
+                  </Text>
+                </View>
+                {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                    <Ionicons name="lock-closed" size={16} color="#EAB308" />
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color="#666666" />
+                )}
+              </TouchableOpacity>
+
+              {/* Customize Timestamp (Metadata overlay) — pro gated
+                  too. Navigates to MetadataCustomization for field
+                  toggles + styling. */}
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => {
+                  if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                    navigation.navigate('MetadataCustomization');
+                  } else {
+                    navigation.navigate('PlanSelection');
+                  }
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.customizeTimestamp', { defaultValue: 'Customize Timestamp' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.customizeTimestampDescription', { defaultValue: 'Pick which date / time / location fields appear on photos.' })}
+                  </Text>
+                </View>
+                {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                    <Ionicons name="lock-closed" size={16} color="#EAB308" />
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color="#666666" />
+                )}
+              </TouchableOpacity>
+
+              {/* Report Branding — logo, company name, accent color for
+                  generated reports. Always accessible (not pro-gated). */}
+              <TouchableOpacity
+                style={[styles.settingRow, { borderBottomWidth: 0 }]}
+                onPress={() => navigation.navigate('BrandingSettings')}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.reportBranding', { defaultValue: 'Report Branding' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.reportBrandingDescription', { defaultValue: 'Logo, company name, and accent color for generated reports.' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
+              </TouchableOpacity>
+
+              {/* Inline watermark customization fields removed — the
+                  user spec wants the deep watermark editor only in
+                  the dedicated WatermarkCustomization screen. Keeping
+                  the inline rendering below would surface the same
+                  controls twice. */}
+              {false && customWatermarkEnabled && canUse(FEATURES.CUSTOM_WATERMARKS) && (
+                <View style={styles.watermarkCustomization}>
+                  {/* Add Watermark Checkbox */}
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.settingLabel}>{t('settings.addWatermark', { defaultValue: 'Add watermark' })}</Text>
+                      <Text style={styles.settingDescription}>
+                        {t('settings.addWatermarkDescription', { defaultValue: 'Show watermark on photos' })}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={showWatermark}
+                      onValueChange={(value) => {
+                        updateShowWatermark(value);
+                      }}
+                      trackColor={{ false: COLORS.BORDER, true: COLORS.PRIMARY }}
+                      thumbColor="white"
+                    />
+                  </View>
+
+                  <View style={styles.watermarkField}>
+                    <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkText')}</Text>
+                    <Pressable
+                      onPress={() => {
+                        if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                          try {
+                            logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                            logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'edit_text_blocked');
+                          } catch (e) {
+                            // non‑critical
+                          }
+                          navigation.navigate('PlanSelection');
+                        } else {
+                          // Focus the input if user has access
+                          if (watermarkTextInputRef.current) {
+                            watermarkTextInputRef.current.focus();
+                          }
+                        }
+                      }}
+                    >
+                      <TextInput
+                        ref={watermarkTextInputRef}
+                        style={styles.watermarkInput}
+                        value={watermarkText}
+                        onChangeText={updateWatermarkText}
+                        onFocus={() => {
+                          // Check if user has access to customize watermark
+                          if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                            try {
+                              logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                              logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'focus_text_blocked');
+                            } catch (e) {
+                              // non‑critical
+                            }
+                            navigation.navigate('PlanSelection');
+                            // Blur the input to prevent typing
+                            if (watermarkTextInputRef.current) {
+                              watermarkTextInputRef.current.blur();
+                            }
+                          }
+                        }}
+                        placeholder={t('settings.watermarkTextPlaceholder')}
+                        placeholderTextColor={COLORS.GRAY}
+                        editable={canUse(FEATURES.CUSTOM_WATERMARKS)}
+                        pointerEvents={canUse(FEATURES.CUSTOM_WATERMARKS) ? 'auto' : 'none'}
+                      />
+                    </Pressable>
+                  </View>
+                  <View style={styles.watermarkField}>
+                    <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkLink')}</Text>
+                    <Pressable
+                      onPress={() => {
+                        if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                          try {
+                            logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                            logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'edit_link_blocked');
+                          } catch (e) {
+                            // non‑critical
+                          }
+                          navigation.navigate('PlanSelection');
+                        } else {
+                          // Focus the input if user has access
+                          if (watermarkLinkInputRef.current) {
+                            watermarkLinkInputRef.current.focus();
+                          }
+                        }
+                      }}
+                    >
+                      <TextInput
+                        ref={watermarkLinkInputRef}
+                        style={styles.watermarkInput}
+                        value={watermarkLink}
+                        onChangeText={updateWatermarkLink}
+                        onFocus={() => {
+                          // Check if user has access to customize watermark
+                          if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                            try {
+                              logFeatureGateShown('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark');
+                              logFeatureGateAction('CUSTOM_WATERMARKS', userPlan, 'Settings_Watermark', 'focus_link_blocked');
+                            } catch (e) {
+                              // non‑critical
+                            }
+                            navigation.navigate('PlanSelection');
+                            // Blur the input to prevent typing
+                            if (watermarkLinkInputRef.current) {
+                              watermarkLinkInputRef.current.blur();
+                            }
+                          }
+                        }}
+                        placeholder={t('settings.watermarkLinkPlaceholder')}
+                        placeholderTextColor={COLORS.GRAY}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        editable={canUse(FEATURES.CUSTOM_WATERMARKS)}
+                        pointerEvents={canUse(FEATURES.CUSTOM_WATERMARKS) ? 'auto' : 'none'}
+                      />
+                    </Pressable>
+                  </View>
+                  <View style={styles.watermarkColorRow}>
+                    <View style={styles.watermarkColorInfo}>
+                      <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkColor')}</Text>
+                      <Text style={styles.watermarkColorValue}>{watermarkSwatchColor}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.watermarkColorButton}
+                      onPress={() => {
+                        // Check if user has access to customize watermark
+                        if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                          navigation.navigate('PlanSelection');
+                          return;
+                        }
+                        openColorModal('watermark');
+                      }}
+                    >
+                      <View
+                        style={[
+                          styles.colorPreviewSwatch,
+                          styles.watermarkColorSwatch,
+                          { backgroundColor: watermarkSwatchColor },
+                        ]}
+                      />
+                      <Text style={styles.customSelectorButtonText}>{t('settings.pickColor')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.watermarkOpacityRow}>
+                    <Text style={styles.watermarkFieldLabel}>{t('settings.opacity')}</Text>
+                    <View style={styles.watermarkOpacityControls}>
+                      <WatermarkOpacitySlider
+                        value={watermarkOpacityPreview}
+                        onChange={(value) => {
+                          // Update preview during dragging (don't check permissions here to avoid jumping)
+                          setWatermarkOpacityPreview(value);
+                        }}
+                        onChangeEnd={(value) => {
+                          // Check if user has access to customize watermark when dragging ends
+                          if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                            navigation.navigate('PlanSelection');
+                            // Reset to original value
+                            setWatermarkOpacityPreview(watermarkOpacity);
+                            return;
+                          }
+                          updateWatermarkOpacity(value);
+                        }}
+                        onStartShouldSetResponder={() => {
+                          // Check permissions at the start of interaction
+                          if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                            navigation.navigate('PlanSelection');
+                            return false; // Don't allow interaction
+                          }
+                          return true; // Allow interaction
+                        }}
+                        fillColor={watermarkSwatchColor}
+                      />
+                      <Text style={styles.watermarkOpacityValue}>
+                        {Math.round(watermarkOpacityPreview * 100)}%
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Watermark Position */}
+                  <View style={styles.watermarkField}>
+                    <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkPosition', { defaultValue: 'Watermark Position' })}</Text>
+                    <View style={styles.positionGrid}>
+                      <View style={styles.gridRow}>
+                        {['left-top', 'center-top', 'right-top'].map((key) => {
+                          const pos = getLabelPositions(10, 10)[key];
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              style={[
+                                styles.positionGridCell,
+                                watermarkPosition === key && styles.positionGridCellSelected,
+                              ]}
+                              onPress={() => {
+                                if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                                  navigation.navigate('PlanSelection');
+                                  return;
+                                }
+                                updateWatermarkPosition(key);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.positionGridText}>{pos.name}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      <View style={styles.gridRow}>
+                        {['left-middle', 'center-middle', 'right-middle'].map((key) => {
+                          const pos = getLabelPositions(10, 10)[key];
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              style={[
+                                styles.positionGridCell,
+                                watermarkPosition === key && styles.positionGridCellSelected,
+                              ]}
+                              onPress={() => {
+                                if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                                  navigation.navigate('PlanSelection');
+                                  return;
+                                }
+                                updateWatermarkPosition(key);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.positionGridText}>{pos.name}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      <View style={styles.gridRow}>
+                        {['left-bottom', 'center-bottom', 'right-bottom'].map((key) => {
+                          const pos = getLabelPositions(10, 10)[key];
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              style={[
+                                styles.positionGridCell,
+                                watermarkPosition === key && styles.positionGridCellSelected,
+                              ]}
+                              onPress={() => {
+                                if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                                  navigation.navigate('PlanSelection');
+                                  return;
+                                }
+                                updateWatermarkPosition(key);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.positionGridText}>{pos.name}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Watermark Font */}
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingInfo}>
+                      <Text style={styles.watermarkFieldLabel}>{t('settings.watermarkFont', { defaultValue: 'Watermark Font' })}</Text>
+                      <Text style={styles.settingDescription}>
+                        {FONT_OPTIONS.find(opt => opt.key === watermarkFontFamily)?.label || FONT_OPTIONS[0]?.label}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.fontSelectorButton}
+                      onPress={() => {
+                        if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                          navigation.navigate('PlanSelection');
+                          return;
+                        }
+                        setWatermarkFontModalVisible(true);
+                      }}
+                    >
+                      <Text style={styles.fontSelectorButtonText}>{t('settings.chooseFont', { defaultValue: 'Choose Font' })}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.watermarkHelperText}>
+                    {t('settings.watermarkHelperText')}
+                  </Text>
+                </View>
+              )}
+
+            </View>
+
+            {/* Appearance — hidden in the legacy section flow because the
+                "Appearance" design row above already toggles themeMode.
+                Wrapping in `{false && (` so the JSX subtree doesn't
+                render but the code stays in place for a quick re-enable. */}
+            {false && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('settings.appearance', { defaultValue: 'Appearance' })}</Text>
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.darkMode', { defaultValue: 'Dark mode' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.darkModeDescription', { defaultValue: 'Use a dark color scheme. Applies to redesigned screens.' })}
+                  </Text>
+                </View>
+                <Switch
+                  value={themeMode === 'dark'}
+                  onValueChange={(v) => setThemeMode(v ? 'dark' : 'light')}
+                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+                  thumbColor="white"
+                />
+              </View>
+            </View>
+            )}
+
+            {/* Sections */}
+            <View ref={sectionsSectionRef} style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('settings.folderCustomization_short', { defaultValue: 'Sections' })}</Text>
+              <Text style={styles.sectionDescription}>
+                {t('settings.folderCustomizationDescription', { defaultValue: 'Customize the names and default status of your project sections.' })}
+              </Text>
+
+              {/* Industry dropdown — replaces the old Cleaning
+                  Service toggle. Defaults to the industry the user
+                  picked during onboarding (loaded from
+                  @user_qualification); picking a different one
+                  re-seeds the project's room folders with that
+                  industry's preset list. */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.industry', { defaultValue: 'Industry' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.industryDescription', { defaultValue: 'Used to seed your section names. Customize any section after selecting.' })}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.locationPicker}
+                  onPress={() => setIndustryDropdownOpen((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.locationPickerText} numberOfLines={1}>
+                    {(getIndustryById(currentIndustryId)?.defaultLabel) || t('settings.industryPick', { defaultValue: 'Pick an industry' })}
+                  </Text>
+                  <Ionicons
+                    name={industryDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={COLORS.GRAY}
+                    style={styles.locationPickerArrow}
+                  />
+                </TouchableOpacity>
+              </View>
+              {industryDropdownOpen && (
+                <View style={styles.locationDropdown}>
+                  {INDUSTRIES.map((ind) => {
+                    const isActive = currentIndustryId === ind.id;
+                    return (
+                      <TouchableOpacity
+                        key={ind.id}
+                        style={[styles.locationOption, isActive && styles.locationOptionSelected]}
+                        onPress={async () => {
+                          setIndustryDropdownOpen(false);
+                          setCurrentIndustryId(ind.id);
+                          try {
+                            await AsyncStorage.setItem('@user_qualification', ind.id);
+                          } catch (_) {}
+                          if (ind.folders?.length) {
+                            try { await saveCustomRooms(ind.folders); } catch (_) {}
+                          }
+                        }}
+                      >
+                        <Text style={[styles.locationOptionText, isActive && styles.locationOptionTextSelected]}>
+                          {ind.defaultLabel}
+                        </Text>
+                        {isActive && (
+                          <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={styles.locationOptionCheck} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+
+              {renderRoomTabs()}
+
+              {/* Customize Sections Option */}
+              <TouchableOpacity
+                style={[styles.settingRow, {borderTopWidth: 1, borderTopColor: 'rgba(0, 0, 0, 0.1)'}]}
+                onPress={() => {
+                  setShowRoomEditor(true);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.customizeSections', { defaultValue: 'Customize Sections' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.customizeSectionsDescription', { defaultValue: 'Add/edit/remove sections' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
+              </TouchableOpacity>
+
+              {/* Reset folders by industry. Opens the qualification modal in
+                  non-mandatory mode so it can be dismissed without changes. */}
+              <TouchableOpacity
+                style={[styles.settingRow, {borderTopWidth: 1, borderTopColor: 'rgba(0, 0, 0, 0.1)'}]}
+                onPress={() => {
+                  logEvent('qualification_prompt_shown', { context: 'settings_repick' });
+                  setShowIndustryPicker(true);
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>{t('settings.chooseIndustry', { defaultValue: 'Choose industry' })}</Text>
+                  <Text style={styles.settingDescription}>
+                    {t('settings.chooseIndustryDescription', { defaultValue: 'Replace your sections with a preset list for your business type.' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#666666" />
+              </TouchableOpacity>
+            </View>
 
             {/* Upload Structure — collapsed down to a single
                 Split-by-date switch per the user's spec. The old
@@ -5049,6 +5627,71 @@ export default function SettingsScreen({ navigation, route }) {
           ) : null}
         </View>
 
+        {/* Invite Friends */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.inviteFriends', { defaultValue: 'Invite Friends' })}</Text>
+          <Text style={styles.sectionDescription}>
+            {t('settings.inviteFriendsDescription', { defaultValue: 'Earn rewards for inviting friends' })}
+          </Text>
+
+          {/* Stats Cards */}
+          <View style={styles.referralStatsContainer}>
+            <View style={styles.referralStatCard}>
+              <Image source={require('../../assets/icons/team.png')} style={{height:25, width: 25}}/>
+              <View >
+              <Text style={styles.referralStatValue}>
+                {t('settings.outOf', { current: referralInfo.completedInvites || 0, total: 3, defaultValue: `${referralInfo.completedInvites || 0} out of 3` })}
+              </Text>
+              <Text style={styles.referralStatLabel}>
+                {t('settings.friendsJoined', { defaultValue: 'Friends Joined' })}
+              </Text>
+              </View>
+            </View>
+            <View style={styles.referralStatCard}>
+              <Image source={require('../../assets/icons/cup.png')} style={{height:25, width: 25}}/>
+              <View>
+              <Text style={styles.referralStatValue}>
+                {t('settings.daysCount', { count: (referralInfo.completedInvites || 0) * 15, defaultValue: `${(referralInfo.completedInvites || 0) * 15} Days` })}
+              </Text>
+              <Text style={styles.referralStatLabel}>
+                {t('settings.daysEarned', { defaultValue: 'Days earned' })}
+              </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Invite Friends Button */}
+          <TouchableOpacity
+            style={styles.inviteFriendsButton}
+            onPress={() => navigation.navigate('Referral')}
+          >
+            <Text style={styles.inviteFriendsButtonText}>
+              {t('settings.inviteFriends', { defaultValue: 'Invite Friends' })}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Referral Code Input */}
+          <View style={styles.referralCodeContainer}>
+            <TextInput
+              style={styles.referralCodeInput}
+              value={referralCodeInput}
+              onChangeText={setReferralCodeInput}
+              placeholder={t('settings.enterReferralCode', { defaultValue: 'Enter referral code' })}
+              placeholderTextColor={COLORS.GRAY}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={[styles.referralApplyButton, isApplyingReferral && styles.referralApplyButtonDisabled]}
+              onPress={handleApplyReferralCode}
+              disabled={isApplyingReferral}
+            >
+              <Text style={styles.referralApplyButtonText}>
+                {isApplyingReferral ? t('settings.applying', { defaultValue: 'Applying...' }) : t('settings.apply', { defaultValue: 'Apply' })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         
 
