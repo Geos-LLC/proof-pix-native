@@ -252,6 +252,13 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const [sharing, setSharing] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
 
+  // Report-share format modal. Mirrors the photos share modal but
+  // operates on the generated report HTML file instead of a photo
+  // selection — the user picks Files / ZIP / PDF / Link.
+  const [reportShareModalVisible, setReportShareModalVisible] = useState(false);
+  const [reportShareTargetId, setReportShareTargetId] = useState(null);
+  const [reportShareFormat, setReportShareFormat] = useState('files');
+
   // PDF: lazy-require expo-print so older binaries (build 76 etc.)
   // can still load this JS bundle without crashing. See note at the
   // top of this file about why the top-level import is intentionally
@@ -1251,6 +1258,111 @@ export default function ProjectDetailScreen({ route, navigation }) {
     }
   };
 
+  // Open the report-share format modal. Mirrors the Projects share
+  // modal so the user gets the same four options (Files/ZIP/PDF/Link).
+  const openReportShareModal = (reportId) => {
+    if (!project || !reportId) return;
+    setReportShareTargetId(reportId);
+    setReportShareFormat('files');
+    setReportShareModalVisible(true);
+  };
+
+  // Dispatch the report share by selected format. Each path operates
+  // on the generated HTML file. Reuses shareLinkProvider state and
+  // sharePhotosAsLink for the Link path so the user's last picked
+  // cloud carries over from the project share.
+  const handleReportShareConfirm = async () => {
+    if (!project || !reportShareTargetId) return;
+    const r = reports.find((rr) => rr.id === reportShareTargetId);
+    if (!r) {
+      Alert.alert('Report not found', 'Pick a report from the list and try again.');
+      return;
+    }
+    setReportShareModalVisible(false);
+    if (isBuildingReport) return;
+    setIsBuildingReport(true);
+    try {
+      let htmlTarget = r.generatedFilePath;
+      let needs = !htmlTarget;
+      if (htmlTarget && !needs) {
+        try { const info = await FileSystem.getInfoAsync(htmlTarget); if (!info.exists) needs = true; }
+        catch (_) { needs = true; }
+      }
+      if (needs) {
+        const out = await generateReportFile(r);
+        htmlTarget = out?.html || null;
+      }
+      if (!htmlTarget) {
+        Alert.alert('Could not share', 'Report file failed to render.');
+        return;
+      }
+      const safeName = (r.title || project.name || 'report').replace(/[\\/:*?"<>|]/g, '_');
+
+      if (reportShareFormat === 'files') {
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(htmlTarget, {
+            mimeType: 'text/html', UTI: 'public.html',
+            dialogTitle: `Share ${safeName}`,
+          });
+        } else {
+          Alert.alert('Saved', `Report saved to ${htmlTarget}`);
+        }
+        return;
+      }
+
+      if (reportShareFormat === 'pdf') {
+        // Same lazy-require risk as sharePhotosAsPdf — on Hermes the
+        // throw can bypass try/catch when ExpoPrint isn't compiled in.
+        // User accepted this risk for the Projects share PDF path.
+        try {
+          const Print = require('expo-print');
+          const htmlString = await FileSystem.readAsStringAsync(htmlTarget);
+          const printed = await Print.printToFileAsync({ html: htmlString, base64: false });
+          const pdfDest = `${reportsDir()}${safeName}-${r.id}.pdf`;
+          try { await FileSystem.deleteAsync(pdfDest, { idempotent: true }); } catch (_) {}
+          try { await FileSystem.moveAsync({ from: printed.uri, to: pdfDest }); } catch (_) {}
+          const finalPdf = (await FileSystem.getInfoAsync(pdfDest)).exists ? pdfDest : printed.uri;
+          await Sharing.shareAsync(finalPdf, {
+            mimeType: 'application/pdf', UTI: 'com.adobe.pdf',
+            dialogTitle: `Share ${safeName}`,
+          });
+        } catch (_) {
+          Alert.alert(
+            'PDF not supported in this build',
+            'A new TestFlight build is required to share as PDF. Try Files, ZIP, or Link instead.',
+          );
+        }
+        return;
+      }
+
+      if (reportShareFormat === 'zip') {
+        const htmlContent = await FileSystem.readAsStringAsync(htmlTarget);
+        const zip = new JSZip();
+        zip.file(`${safeName}.html`, htmlContent);
+        const zipB64 = await zip.generateAsync({ type: 'base64' });
+        const zipPath = `${reportsDir()}${safeName}-${r.id}.zip`;
+        await FileSystem.writeAsStringAsync(zipPath, zipB64, { encoding: FileSystem.EncodingType.Base64 });
+        await Sharing.shareAsync(zipPath, {
+          mimeType: 'application/zip', UTI: 'public.zip-archive',
+          dialogTitle: `Share ${safeName}.zip`,
+        });
+        return;
+      }
+
+      if (reportShareFormat === 'link') {
+        // Reuse sharePhotosAsLink with the HTML file as the single
+        // upload target. Provider picked via shareLinkProvider state.
+        await sharePhotosAsLink([htmlTarget]);
+        return;
+      }
+    } catch (e) {
+      Alert.alert('Could not share report', e?.message || 'Unknown error');
+    } finally {
+      setIsBuildingReport(false);
+    }
+  };
+
   // "Generate" in the editor — commits the editor draft (creating
   // a new report or updating the existing one), then builds the
   // HTML file and transitions to the preview view. The user shares
@@ -1854,7 +1966,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                           <Ionicons name="pencil-outline" size={18} color={theme.textPrimary} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          onPress={() => handleShareReport(r.id)}
+                          onPress={() => openReportShareModal(r.id)}
                           style={styles.reportListActionBtn}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           disabled={isBuildingReport}
@@ -2290,7 +2402,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   it's still on disk; regenerates only when missing. */}
               <TouchableOpacity
                 style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent, opacity: isBuildingReport ? 0.7 : 1 }]}
-                onPress={() => handleShareReport(activeReport.id)}
+                onPress={() => openReportShareModal(activeReport.id)}
                 disabled={isBuildingReport}
                 activeOpacity={0.85}
               >
@@ -2359,6 +2471,122 @@ export default function ProjectDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Report-share format chooser — same UX as the photos
+            share modal but operates on the generated report HTML
+            file. Each option re-uses the existing share machinery:
+            Files = direct Sharing.shareAsync, PDF = lazy-require
+            expo-print, ZIP = JSZip wrap of the HTML, Link = upload
+            via sharePhotosAsLink with the HTML as the single file. */}
+        <Modal
+          visible={reportShareModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setReportShareModalVisible(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setReportShareModalVisible(false)}>
+            <View style={shareTabStyles.modalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={[shareTabStyles.modalContent, { backgroundColor: theme.surface }]}>
+                  <View style={shareTabStyles.modalGrabberWrap}>
+                    <View style={[shareTabStyles.modalGrabber, { backgroundColor: theme.borderStrong }]} />
+                  </View>
+                  <View style={shareTabStyles.modalHeader}>
+                    <TouchableOpacity onPress={() => setReportShareModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="close" size={22} color={theme.textMuted} />
+                    </TouchableOpacity>
+                    <Text style={[shareTabStyles.modalTitle, { color: theme.textPrimary }]}>
+                      Share report
+                    </Text>
+                  </View>
+
+                  <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary }]}>Share as</Text>
+                  <View style={shareTabStyles.pillRow}>
+                    {[
+                      { key: 'files', label: 'Files' },
+                      { key: 'zip', label: 'ZIP' },
+                      { key: 'pdf', label: 'PDF' },
+                      { key: 'link', label: 'Link' },
+                    ].map(({ key, label }) => (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          shareTabStyles.pill,
+                          { borderColor: theme.border },
+                          reportShareFormat === key && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
+                        ]}
+                        onPress={() => setReportShareFormat(key)}
+                      >
+                        <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {reportShareFormat === 'link' && (
+                    <>
+                      <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 18 }]}>Link via</Text>
+                      {(() => {
+                        const isAppleConnected = !!(connectedAccounts || []).find(
+                          a => a.accountType === 'apple' && a.isActive
+                        );
+                        const providers = [
+                          { key: 'google', label: 'Google Drive', icon: 'logo-google', connected: !!isAuthenticated, show: true },
+                          { key: 'dropbox', label: 'Dropbox', icon: 'cloud-outline', connected: dropboxAuthService.isAuthenticated(), show: true },
+                          { key: 'apple', label: 'iCloud Drive', icon: 'logo-apple', connected: isAppleConnected, show: Platform.OS === 'ios' },
+                        ].filter(p => p.show);
+                        return providers.map(p => (
+                          <TouchableOpacity
+                            key={p.key}
+                            style={[
+                              shareTabStyles.providerRow,
+                              { backgroundColor: theme.surfaceElevated },
+                              shareLinkProvider === p.key && p.connected && { backgroundColor: '#FFF9E0', borderWidth: 1, borderColor: COLORS.PRIMARY },
+                            ]}
+                            onPress={() => {
+                              if (!p.connected) {
+                                setReportShareModalVisible(false);
+                                navigation.navigate('Settings', { scrollToCloudSync: true });
+                                return;
+                              }
+                              setShareLinkProvider(p.key);
+                            }}
+                          >
+                            <Ionicons name={p.icon} size={20} color={shareLinkProvider === p.key && p.connected ? '#000' : theme.textMuted} />
+                            <Text style={[shareTabStyles.providerText, { color: shareLinkProvider === p.key && p.connected ? '#000' : theme.textSecondary }]}>
+                              {p.label}
+                            </Text>
+                            {!p.connected && <Text style={shareTabStyles.providerHint}>Tap to connect</Text>}
+                            {shareLinkProvider === p.key && p.connected && (
+                              <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                            )}
+                          </TouchableOpacity>
+                        ));
+                      })()}
+                    </>
+                  )}
+
+                  <TouchableOpacity
+                    style={[
+                      shareTabStyles.confirmBtn,
+                      { backgroundColor: COLORS.PRIMARY, opacity: isBuildingReport ? 0.7 : 1 },
+                    ]}
+                    onPress={handleReportShareConfirm}
+                    disabled={isBuildingReport}
+                    activeOpacity={0.85}
+                  >
+                    {isBuildingReport ? (
+                      <ActivityIndicator color="#000" />
+                    ) : (
+                      <Text style={[shareTabStyles.confirmBtnText, { color: '#000' }]}>
+                        {reportShareFormat === 'link' ? 'Generate link' : 'Share'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
 
         {/* Format chooser — opens after the user finishes picking
             photos via the Timeline selection flow with
