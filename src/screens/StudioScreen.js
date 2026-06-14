@@ -1448,29 +1448,6 @@ export default function StudioScreen({ route, navigation }) {
                   <Text style={[styles.swapPickerLabel, { color: theme.textPrimary }]} numberOfLines={1}>
                     {roleLabel}
                   </Text>
-                  {/* TEMP DIAGNOSTIC — shows the URI filename so we can
-                      tell whether an After/Progress photo's bitmap was
-                      overwritten with a side-by-side composite by the
-                      pre-fix handlePickSwap. A clean After should read
-                      `..._AFTER_<ts>.jpg`; a corrupted one will read
-                      `..._COMBINED_BASE_...` or `..._COMBINED_EDIT_...`.
-                      Remove once confirmed. */}
-                  <Text
-                    style={{
-                      fontSize: 8,
-                      color: theme.textSecondary,
-                      textAlign: 'center',
-                      marginTop: 2,
-                      paddingHorizontal: 2,
-                    }}
-                    numberOfLines={2}
-                  >
-                    {(() => {
-                      const u = String(m.uri || '');
-                      const slash = u.lastIndexOf('/');
-                      return slash >= 0 ? u.slice(slash + 1) : u;
-                    })()}
-                  </Text>
                   {isCurrent && (
                     <View style={[styles.swapPickerCurrent, { backgroundColor: theme.accent }]}>
                       <Ionicons name="checkmark" size={12} color={theme.accentText} />

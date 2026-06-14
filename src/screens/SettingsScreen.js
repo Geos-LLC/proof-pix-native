@@ -6982,6 +6982,47 @@ export default function SettingsScreen({ navigation, route }) {
                       >
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Clear All Team Members</Text>
                       </TouchableOpacity>
+
+                      {/* Heals Before/After/Progress photos whose `uri`
+                          was overwritten with a side-by-side composite
+                          by the pre-fix Source Photos picker. Looks up
+                          the original AFTER/BEFORE/PROGRESS bitmap by
+                          filename pattern in the Keychain asset-id-map
+                          (with a MediaLibrary album scan fallback) and
+                          re-links the photo record to it. Safe to run
+                          multiple times — only touches photos whose uri
+                          filename currently has COMBINED_BASE/EDIT. */}
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#3F51B5' }]}
+                        onPress={async () => {
+                          Alert.alert(
+                            'Repair Photo URIs',
+                            'Scan all photos and re-link any Before/After/Progress whose stored uri was overwritten with a side-by-side composite. Restart the app after to refresh the in-memory list.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Repair',
+                                onPress: async () => {
+                                  setShowTestToolsModal(false);
+                                  try {
+                                    const { repairCorruptedPhotoUris } = await import('../services/storage');
+                                    const r = await repairCorruptedPhotoUris();
+                                    Alert.alert(
+                                      'Repair done',
+                                      `Scanned ${r.total} photo(s).\nContaminated: ${r.scanned}.\nRepaired: ${r.repaired}.\nUnrecoverable: ${r.unrecoverable}.\n\nRestart the app to see the restored thumbnails in Timeline.`
+                                    );
+                                  } catch (err) {
+                                    console.error('[Repair Photo URIs] failed', err);
+                                    Alert.alert('Repair failed', String(err?.message || err));
+                                  }
+                                },
+                              },
+                            ]
+                          );
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>🛠 Repair Photo URIs</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </ScrollView>

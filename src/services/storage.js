@@ -380,6 +380,161 @@ const setAssetIdMap = async (map) => {
   try { await writeSecureJSON(ASSET_ID_MAP_KEY, map); } catch {}
 };
 
+/**
+ * One-shot recovery for Before/After/Progress photos whose `uri` field
+ * was overwritten by the pre-fix Studio "Source Photos" picker with a
+ * side-by-side composite (`*_COMBINED_BASE_*.jpg` / `*_COMBINED_EDIT_*.jpg`
+ * in app docs). Walks the photos metadata, finds the contaminated
+ * records, and re-links each one to its original AFTER/BEFORE/PROGRESS
+ * bitmap via the Keychain `asset-id-map` (or a MediaLibrary album scan
+ * as fallback).
+ *
+ * Returns { repaired, unrecoverable, scanned, total } counters so the
+ * caller can show a result alert. Does NOT delete the contaminated
+ * composite files on disk — leaving them lets us roll back if a
+ * mistake is found. Caller should ask the user to restart the app (or
+ * call PhotoContext.loadPhotos) afterward so the in-memory array
+ * refreshes.
+ */
+export const repairCorruptedPhotoUris = async () => {
+  const photos = await loadPhotosMetadata();
+  const map = await getAssetIdMap();
+  let scanned = 0;
+  let repaired = 0;
+  let unrecoverable = 0;
+
+  // Resolve a MediaLibrary assetId to a usable local URI. The
+  // `localUri` from getAssetInfoAsync is what the rest of the app
+  // already consumes (see PhotoContext.loadPhotos).
+  const resolveAssetIdToUri = async (assetId) => {
+    if (!assetId) return null;
+    try {
+      const info = await MediaLibrary.getAssetInfoAsync(assetId);
+      return info?.localUri || info?.uri || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Pull out the per-photo prefix (`<room>_<safeName>`) from a
+  // contaminated composite filename like
+  //   `seed_front_roof_seed_front_roof_17_COMBINED_BASE_SIDE_<ts>_Pproj_xxx.jpg`
+  //   `seed_front_roof_seed_front_roof_17_COMBINED_EDIT_STACK_<ts>.jpg`
+  // Returns null when the filename doesn't match the composite shape.
+  const parsePrefix = (uri) => {
+    const u = String(uri || '');
+    const slash = u.lastIndexOf('/');
+    const file = slash >= 0 ? u.slice(slash + 1) : u;
+    const m = file.match(/^(.+)_COMBINED_(?:BASE|EDIT)_(?:SIDE|STACK)_\d+(?:_P[^/]+)?\.jpg$/i);
+    return m ? m[1] : null;
+  };
+
+  // Map photo.mode → the role token used in the original
+  // savePhotoToDevice filename.
+  const roleOf = (mode) => {
+    if (mode === 'before') return 'BEFORE';
+    if (mode === 'after') return 'AFTER';
+    if (mode === 'progress') return 'PROGRESS';
+    return null;
+  };
+
+  // Search the asset-id-map for the most recent original-role entry
+  // sharing the same `<room>_<safeName>` prefix. Falls back to a
+  // MediaLibrary album scan when the Keychain map has no hit (e.g.,
+  // post-reinstall before the map was rebuilt).
+  let mediaLibraryAssetsCache = null;
+  const loadMediaLibraryAssets = async () => {
+    if (mediaLibraryAssetsCache) return mediaLibraryAssetsCache;
+    try {
+      const album = await MediaLibrary.getAlbumAsync('ProofPix');
+      if (!album) { mediaLibraryAssetsCache = []; return mediaLibraryAssetsCache; }
+      const out = [];
+      let endCursor;
+      let hasNext = true;
+      while (hasNext) {
+        const page = await MediaLibrary.getAssetsAsync({
+          album: album.id,
+          mediaType: 'photo',
+          first: 200,
+          ...(endCursor ? { after: endCursor } : null),
+        });
+        for (const a of (page.assets || [])) out.push(a);
+        endCursor = page.endCursor;
+        hasNext = page.hasNextPage;
+      }
+      mediaLibraryAssetsCache = out;
+      return out;
+    } catch {
+      mediaLibraryAssetsCache = [];
+      return mediaLibraryAssetsCache;
+    }
+  };
+
+  const findOriginalUri = async (prefix, role) => {
+    const reAssetMap = new RegExp(`^${prefix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}_${role}_(\\d+)\\.jpg$`, 'i');
+    let best = null;
+    for (const [filename, entry] of Object.entries(map || {})) {
+      const mm = reAssetMap.exec(filename);
+      if (!mm) continue;
+      const ts = parseInt(mm[1], 10);
+      if (!Number.isFinite(ts)) continue;
+      const id = typeof entry === 'string' ? entry : entry?.id;
+      if (!id) continue;
+      if (!best || ts > best.ts) best = { ts, id, filename };
+    }
+    if (best) {
+      const uri = await resolveAssetIdToUri(best.id);
+      if (uri) return { uri, source: 'asset-id-map', via: best.filename };
+    }
+    // Fallback: scan the ProofPix album for an asset whose filename
+    // matches the same pattern. Useful after a reinstall when the
+    // Keychain map exists but a specific entry got dropped.
+    const assets = await loadMediaLibraryAssets();
+    let fallback = null;
+    for (const a of assets) {
+      const name = a.filename || '';
+      const mm = reAssetMap.exec(name);
+      if (!mm) continue;
+      const ts = parseInt(mm[1], 10);
+      if (!Number.isFinite(ts)) continue;
+      if (!fallback || ts > fallback.ts) fallback = { ts, asset: a };
+    }
+    if (fallback) {
+      const uri = await resolveAssetIdToUri(fallback.asset.id);
+      if (uri) return { uri, source: 'media-library-scan', via: fallback.asset.filename };
+    }
+    return null;
+  };
+
+  const next = [];
+  for (const p of photos) {
+    next.push(p);
+    if (!p) continue;
+    if (p.mode === 'mix') continue;        // combined — composite is correct
+    const prefix = parsePrefix(p.uri);
+    if (!prefix) continue;                 // uri isn't a composite filename
+    scanned += 1;
+    const role = roleOf(p.mode);
+    if (!role) { unrecoverable += 1; continue; }
+    const found = await findOriginalUri(prefix, role);
+    if (!found) {
+      unrecoverable += 1;
+      continue;
+    }
+    // Replace the URI in place; keep `localUri` cleared so PhotoContext
+    // re-derives it on next load (avoids stale cache reads).
+    next[next.length - 1] = { ...p, uri: found.uri, localUri: null };
+    repaired += 1;
+    console.warn(`[repairCorruptedPhotoUris] repaired photo id=${p.id} mode=${p.mode} via=${found.source} (${found.via})`);
+  }
+
+  if (repaired > 0) {
+    await savePhotosMetadata(next);
+  }
+
+  return { repaired, unrecoverable, scanned, total: photos.length };
+};
+
 // Sanitize filename for loose matching (remove spaces and non-alphanumerics, lowercase)
 const normalizeName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
