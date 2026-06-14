@@ -139,12 +139,27 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
       {visible.map(({ room, combinedPhotos }) => (
         <View key={`room-${room}`} style={styles.section}>
           <SectionHeader name={displayRoomName(room)} theme={theme} />
-          {combinedPhotos.map((c) => (
-            <View key={`combined-${c.id}`} style={styles.combinedHero}>
-              {c.uri ? <Image source={{ uri: c.uri }} style={styles.combinedHeroImage} resizeMode="cover" /> : null}
-              {options.includeNotes && c.notes ? <Note note={c.notes} theme={theme} /> : null}
-            </View>
-          ))}
+          {combinedPhotos.map((c) => {
+            // Use the photo's actual aspect so the entire composite
+            // shows — combined photos can be 2:1 (side-by-side) or
+            // 1:2 (stacked). Forcing 16:9 with `cover` was cropping
+            // the "After" half off the right of side-by-side shots.
+            const w = c.originalWidth || c.width;
+            const h = c.originalHeight || c.height;
+            const aspect = (w && h) ? (w / h) : (16 / 9);
+            return (
+              <View key={`combined-${c.id}`} style={styles.combinedHero}>
+                {c.uri ? (
+                  <Image
+                    source={{ uri: c.uri }}
+                    style={{ width: '100%', aspectRatio: aspect }}
+                    resizeMode="contain"
+                  />
+                ) : null}
+                {options.includeNotes && c.notes ? <Note note={c.notes} theme={theme} /> : null}
+              </View>
+            );
+          })}
         </View>
       ))}
     </View>
