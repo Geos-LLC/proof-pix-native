@@ -6,7 +6,7 @@
 // proof shot the user crafted.
 
 import {
-  escapeHtml, formatLongDate, sortByTime, groupByRoom, pairBeforeAfter,
+  escapeHtml, formatLongDate, sortByTime, groupByRoom,
   htmlDocument, headerHtml, footerHtml, photoToData, photoImgHtml,
   noteHtml,
 } from './_shared.js';
@@ -44,18 +44,16 @@ export default {
     const sections = [];
 
     for (const { room, photos: roomPhotos } of groups) {
-      // Combined photos for this room. PHOTO_MODES.COMBINED uses the
-      // string 'mix' (see src/constants/rooms.js). Each combined has a
-      // `beforePhotoId` linking back to its before — we use that to
-      // skip re-pairing those befores below.
+      // ONLY combined photos. The Before & After report is meant to
+      // surface the polished side-by-side shots the user crafted in
+      // the camera flow ('mix' mode = PHOTO_MODES.COMBINED). We do
+      // not synthesize fresh pairs from the raw before/after photos
+      // — sets without a combined are intentionally skipped here.
       const combinedPhotos = sortByTime(
         roomPhotos.filter((p) => p.mode === 'mix'),
       );
-      const coveredBeforeIds = new Set(
-        combinedPhotos.map((c) => c.beforePhotoId).filter(Boolean),
-      );
+      if (combinedPhotos.length === 0) continue;
 
-      // Render combined photos first — one hero image per set.
       const combinedChunks = await Promise.all(
         combinedPhotos.map(async (c) => {
           const data = await photoToData(c, helpers);
@@ -74,55 +72,10 @@ export default {
         }),
       );
 
-      // For befores that DON'T already have a combined, fall back to
-      // the original side-by-side pair so we don't drop them.
-      const remainingPhotos = roomPhotos.filter((p) => {
-        if (p.mode === 'mix') return false;
-        if (p.mode === 'before' && coveredBeforeIds.has(p.id)) return false;
-        if (p.mode === 'after' && p.beforePhotoId && coveredBeforeIds.has(p.beforePhotoId)) return false;
-        return true;
-      });
-      const { pairs } = pairBeforeAfter(remainingPhotos);
-
-      const pairChunks = await Promise.all(
-        pairs.map(async ({ before, after }) => {
-          const [bd, ad] = await Promise.all([
-            photoToData(before, helpers),
-            photoToData(after, helpers),
-          ]);
-          const labelLine = options.showLabels
-            ? `<div class="meta-strip">${[
-                before?.name ? `Before: <strong>${escapeHtml(before.name)}</strong>` : '',
-                after?.name ? `After: <strong>${escapeHtml(after.name)}</strong>` : '',
-              ].filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>`
-            : '';
-          const noteLine = [
-            noteHtml({ photo: before, options }),
-            noteHtml({ photo: after, options }),
-          ].filter(Boolean).join('');
-          return `
-            <div class="no-break" style="margin-bottom: 18px;">
-              <div class="pair">
-                <div class="slot">
-                  ${photoImgHtml({ data: bd, photo: before })}
-                </div>
-                <div class="slot">
-                  ${photoImgHtml({ data: ad, photo: after })}
-                </div>
-              </div>
-              ${labelLine}
-              ${noteLine ? `<div class="section-notes">${noteLine}</div>` : ''}
-            </div>`;
-        }),
-      );
-
-      if (combinedChunks.length === 0 && pairChunks.length === 0) continue;
-
       sections.push(`
         <section class="section">
           <div class="section-title">${escapeHtml(helpers.displayRoomName(room))}</div>
           ${combinedChunks.join('')}
-          ${pairChunks.join('')}
         </section>
       `);
     }
@@ -135,7 +88,7 @@ export default {
         companyName,
         brandColor,
       })}
-      ${sections.length > 0 ? sections.join('') : `<div class="missing">No matched before/after pairs in this report.</div>`}
+      ${sections.length > 0 ? sections.join('') : `<div class="missing">No combined before/after photos in this report. Create one from the camera or photo editor first.</div>`}
       ${footerHtml()}
     `;
     return htmlDocument({ title: project.title, css, body, brandColor });

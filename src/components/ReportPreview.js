@@ -122,43 +122,31 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, ch
 // ---------------------------------------------------------------
 // BEFORE & AFTER (prefers combined photos)
 // ---------------------------------------------------------------
-const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText }) => {
+const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
+  // Mirror the HTML layout: ONLY combined ('mix') photos. Don't
+  // synthesize fresh before/after pairs from raw photos — sets that
+  // don't have a combined are intentionally omitted.
   const groups = groupByRoom(photos);
+  const visible = groups
+    .map(({ room, photos: roomPhotos }) => ({
+      room,
+      combinedPhotos: sortByTime(roomPhotos.filter((p) => p.mode === PHOTO_MODE_COMBINED)),
+    }))
+    .filter((g) => g.combinedPhotos.length > 0);
+  if (visible.length === 0) return <Empty theme={theme} />;
   return (
     <View>
-      {groups.map(({ room, photos: roomPhotos }) => {
-        const combinedPhotos = sortByTime(roomPhotos.filter((p) => p.mode === PHOTO_MODE_COMBINED));
-        const coveredBeforeIds = new Set(combinedPhotos.map((c) => c.beforePhotoId).filter(Boolean));
-        const remainingPhotos = roomPhotos.filter((p) => {
-          if (p.mode === PHOTO_MODE_COMBINED) return false;
-          if (p.mode === 'before' && coveredBeforeIds.has(p.id)) return false;
-          if (p.mode === 'after' && p.beforePhotoId && coveredBeforeIds.has(p.beforePhotoId)) return false;
-          return true;
-        });
-        const { pairs } = pairBeforeAfter(remainingPhotos);
-        if (combinedPhotos.length === 0 && pairs.length === 0) return null;
-        return (
-          <View key={`room-${room}`} style={styles.section}>
-            <SectionHeader name={displayRoomName(room)} theme={theme} />
-            {combinedPhotos.map((c) => (
-              <View key={`combined-${c.id}`} style={styles.combinedHero}>
-                {c.uri ? <Image source={{ uri: c.uri }} style={styles.combinedHeroImage} resizeMode="cover" /> : null}
-                {options.includeNotes && c.notes ? <Note note={c.notes} theme={theme} /> : null}
-              </View>
-            ))}
-            {pairs.map(({ before, after }, idx) => (
-              <View key={`pair-${idx}`} style={{ marginBottom: 12 }}>
-                <View style={styles.pairRow}>
-                  <PhotoSlot uri={before?.uri} label="BEFORE" theme={theme} missing="No before" chipBg={chipBg} chipText={chipText} />
-                  <PhotoSlot uri={after?.uri} label="AFTER" theme={theme} missing="No after" chipBg={chipBg} chipText={chipText} />
-                </View>
-                {options.includeNotes && before?.notes ? <Note note={before.notes} theme={theme} /> : null}
-                {options.includeNotes && after?.notes ? <Note note={after.notes} theme={theme} /> : null}
-              </View>
-            ))}
-          </View>
-        );
-      })}
+      {visible.map(({ room, combinedPhotos }) => (
+        <View key={`room-${room}`} style={styles.section}>
+          <SectionHeader name={displayRoomName(room)} theme={theme} />
+          {combinedPhotos.map((c) => (
+            <View key={`combined-${c.id}`} style={styles.combinedHero}>
+              {c.uri ? <Image source={{ uri: c.uri }} style={styles.combinedHeroImage} resizeMode="cover" /> : null}
+              {options.includeNotes && c.notes ? <Note note={c.notes} theme={theme} /> : null}
+            </View>
+          ))}
+        </View>
+      ))}
     </View>
   );
 };
