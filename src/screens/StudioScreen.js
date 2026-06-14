@@ -29,7 +29,6 @@ import { PHOTO_MODES } from '../constants/rooms';
 import { usePhotos } from '../context/PhotoContext';
 import { compositeImages } from '../utils/imageCompositor';
 import { savePhotoToDevice } from '../services/storage';
-import { computeSetIds } from '../utils/photoSets';
 import { useScopedSettings, usePromoteOverridesToGlobal, useResetPhotoOverrides } from '../hooks/useScopedSettings';
 import { useTheme } from '../hooks/useTheme';
 import PhotoLabels from '../components/PhotoLabels';
@@ -633,40 +632,42 @@ export default function StudioScreen({ route, navigation }) {
   // Progresses + After). Same list for both the Before and After
   // pickers: a Progress shot is a legal candidate for either slot,
   // and a Before can be swapped to the After slot (or vice-versa) if
-  // the user prefers the framing. We use computeSetIds (scoped to
-  // room+date) so the set membership matches the rest of the app
-  // (Timeline, Reports). The active Combined itself is excluded — you
-  // can't pair a composite with itself.
+  // the user prefers the framing. Membership follows the explicit
+  // `beforePhotoId` link, which spans days correctly (e.g. when the
+  // user updates the After weeks after the Before was captured). The
+  // active Combined itself is excluded — you can't pair a composite
+  // with itself.
   const setSwapCandidates = useMemo(() => {
     if (!photo) return [];
     const room = photo.room;
     if (!room) return [];
-    const photoTs = tsOf(photo);
-    if (!photoTs) return [];
-    const dayKey = new Date(photoTs).toLocaleDateString('en-CA');
-    const sameRoomDay = photos.filter((p) => {
-      if (p.room !== room) return false;
-      const ts = tsOf(p);
-      if (!ts) return false;
-      return new Date(ts).toLocaleDateString('en-CA') === dayKey;
-    });
-    const setIdMap = computeSetIds(sameRoomDay);
-    // The Combined's setId == its beforePhotoId (the Before anchors
-    // the set). For a Before/After active photo, computeSetIds knows.
-    // Legacy combined photos may lack beforePhotoId — recover it from
-    // the `combined_<beforeId>` id prefix, same fallback pairResolved
-    // uses. Last resort: trust computeSetIds' timestamp-order guess.
-    const idStr = String(photo.id || '');
-    const idPrefixBeforeId = idStr.startsWith('combined_')
-      ? idStr.slice('combined_'.length)
-      : null;
-    const activeSetId = photo.mode === PHOTO_MODES.COMBINED
-      ? (photo.beforePhotoId || idPrefixBeforeId || setIdMap.get(photo.id))
-      : setIdMap.get(photo.id);
+    // Resolve the set anchor — always the Before photo's id.
+    //   • COMBINED:  photo.beforePhotoId (legacy fallback: parse the
+    //     `combined_<beforeId>` id prefix, same trick pairResolved uses).
+    //   • BEFORE:    photo.id itself.
+    //   • AFTER / PROGRESS:  photo.beforePhotoId.
+    let activeSetId = null;
+    if (photo.mode === PHOTO_MODES.COMBINED) {
+      const idStr = String(photo.id || '');
+      activeSetId = photo.beforePhotoId
+        || (idStr.startsWith('combined_') ? idStr.slice('combined_'.length) : null);
+    } else if (photo.mode === PHOTO_MODES.BEFORE) {
+      activeSetId = photo.id;
+    } else {
+      activeSetId = photo.beforePhotoId || null;
+    }
     if (!activeSetId) return [];
-    return sameRoomDay
-      .filter((p) => setIdMap.get(p.id) === activeSetId
-        && p.mode !== PHOTO_MODES.COMBINED)
+    return photos
+      .filter((p) => {
+        if (p.room !== room) return false;
+        if (p.mode === PHOTO_MODES.COMBINED) return false;
+        // The Before itself (anchor) and anything linked via
+        // beforePhotoId. ID equality is string-safe — set anchors are
+        // numbers but `beforePhotoId` and ids may come back from
+        // storage as either type after JSON round-trips.
+        return String(p.id) === String(activeSetId)
+          || String(p.beforePhotoId) === String(activeSetId);
+      })
       .sort((a, b) => tsOf(a) - tsOf(b));
   }, [photo, photos]);
   // Convenience: at least two candidates means there's something to
