@@ -14,6 +14,11 @@ import {
   Modal,
   PanResponder,
   Animated,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
+  PixelRatio,
+  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +27,9 @@ import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { PHOTO_MODES } from '../constants/rooms';
 import { usePhotos } from '../context/PhotoContext';
+import { compositeImages } from '../utils/imageCompositor';
+import { savePhotoToDevice } from '../services/storage';
+import { computeSetIds } from '../utils/photoSets';
 import { useScopedSettings, usePromoteOverridesToGlobal, useResetPhotoOverrides } from '../hooks/useScopedSettings';
 import { useTheme } from '../hooks/useTheme';
 import PhotoLabels from '../components/PhotoLabels';
@@ -404,6 +412,21 @@ export default function StudioScreen({ route, navigation }) {
   // sized to the template aspect without needing to know screen width.
   const [photoAreaLayout, setPhotoAreaLayout] = useState({ w: 0, h: 0 });
 
+  // Track keyboard visibility so the Notes tool can shrink the photo area
+  // and float the textarea directly above the keyboard (same pattern as
+  // the Camera screen's Note modal).
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   // Markup state — annotation tools (draw, arrow, circle, etc.) drawn on
   // top of the picture. Persisted on the photo so they survive reload /
   // navigation. Drawing happens in photo-frame coordinates (not bitmap
@@ -606,50 +629,147 @@ export default function StudioScreen({ route, navigation }) {
   // doesn't reset what the user picked.
   const availablePairTemplates = FORMAT_TEMPLATES;
 
-  // Pools of swap candidates for the Layout panel's "Change before
-  // / after" picker. Scoped to the photo's ROOM so a single-photo
-  // set (no progresses, no after) still gives the user something
-  // to swap to — they can pick a Before from another set in the
-  // same room, for example. Each pool filters to mode-appropriate
-  // candidates so the picker for "Change Before" doesn't surface
-  // Afters and vice-versa.
-  const beforeSwapCandidates = useMemo(() => {
-    const room = photo?.room;
+  // Pool of swap candidates — the photos in the active SET (Before +
+  // Progresses + After). Same list for both the Before and After
+  // pickers: a Progress shot is a legal candidate for either slot,
+  // and a Before can be swapped to the After slot (or vice-versa) if
+  // the user prefers the framing. We use computeSetIds (scoped to
+  // room+date) so the set membership matches the rest of the app
+  // (Timeline, Reports). The active Combined itself is excluded — you
+  // can't pair a composite with itself.
+  const setSwapCandidates = useMemo(() => {
+    if (!photo) return [];
+    const room = photo.room;
     if (!room) return [];
-    return photos.filter((p) => p.room === room && p.mode === PHOTO_MODES.BEFORE);
-  }, [photo?.room, photos]);
-  const afterSwapCandidates = useMemo(() => {
-    const room = photo?.room;
-    if (!room) return [];
-    // Afters + Progresses are both legal targets for an "After"
-    // override (a progress can stand in for the after when retakes
-    // moved things around).
-    return photos.filter(
-      (p) => p.room === room && (p.mode === PHOTO_MODES.AFTER || p.mode === PHOTO_MODES.PROGRESS),
-    );
-  }, [photo?.room, photos]);
-  // Convenience: any candidates at all? Drives whether the Change
-  // controls render. We still hide for photos that don't have a
-  // pairing concept (markups, deleted, etc.).
-  const canSwapBefore = beforeSwapCandidates.length > 1
-    || (beforeSwapCandidates.length === 1 && pairResolved.beforePhoto && beforeSwapCandidates[0].id !== pairResolved.beforePhoto.id);
-  const canSwapAfter = afterSwapCandidates.length > 1
-    || (afterSwapCandidates.length === 1 && pairResolved.afterPhoto && afterSwapCandidates[0].id !== pairResolved.afterPhoto.id);
+    const photoTs = tsOf(photo);
+    if (!photoTs) return [];
+    const dayKey = new Date(photoTs).toLocaleDateString('en-CA');
+    const sameRoomDay = photos.filter((p) => {
+      if (p.room !== room) return false;
+      const ts = tsOf(p);
+      if (!ts) return false;
+      return new Date(ts).toLocaleDateString('en-CA') === dayKey;
+    });
+    const setIdMap = computeSetIds(sameRoomDay);
+    // The Combined's setId == its beforePhotoId (the Before anchors
+    // the set). For a Before/After active photo, computeSetIds knows.
+    // Legacy combined photos may lack beforePhotoId — recover it from
+    // the `combined_<beforeId>` id prefix, same fallback pairResolved
+    // uses. Last resort: trust computeSetIds' timestamp-order guess.
+    const idStr = String(photo.id || '');
+    const idPrefixBeforeId = idStr.startsWith('combined_')
+      ? idStr.slice('combined_'.length)
+      : null;
+    const activeSetId = photo.mode === PHOTO_MODES.COMBINED
+      ? (photo.beforePhotoId || idPrefixBeforeId || setIdMap.get(photo.id))
+      : setIdMap.get(photo.id);
+    if (!activeSetId) return [];
+    return sameRoomDay
+      .filter((p) => setIdMap.get(p.id) === activeSetId
+        && p.mode !== PHOTO_MODES.COMBINED)
+      .sort((a, b) => tsOf(a) - tsOf(b));
+  }, [photo, photos]);
+  // Convenience: at least two candidates means there's something to
+  // swap with. Hidden when the set has only one source photo (just a
+  // lone Before, no After or Progresses).
+  const canSwap = setSwapCandidates.length >= 2;
+  // LayoutPanel still asks per-card; both flags collapse to canSwap
+  // since the picker now offers the same list either way.
+  const canSwapBefore = canSwap;
+  const canSwapAfter = canSwap;
 
   // Which slot the user is currently re-picking — 'before' / 'after' /
   // null. Drives the swap-picker Modal at the screen root.
   const [swapTargetSlot, setSwapTargetSlot] = useState(null);
-  const handlePickSwap = (picked) => {
-    if (!photo?.id || !picked?.id) {
+  // True while we're re-compositing the combined bitmap after a swap.
+  // Disables the picker + shows a spinner on the photo so taps don't
+  // queue up while the native module is working.
+  const [isRegeneratingComposite, setIsRegeneratingComposite] = useState(false);
+
+  // Re-composite the COMBINED photo's bitmap using the given before /
+  // after URIs, preserving the original layout (SIDE / STACK) so the
+  // baked image actually changes the moment the user picks a new
+  // source — not only at export time. Mirrors the camera's original
+  // composite path (1:1 square output, sourceMaxWidth-driven size,
+  // PixelRatio scaling on Android).
+  const regenerateCombinedComposite = useCallback(async (beforeUri, afterUri) => {
+    if (!photo?.id || !beforeUri || !afterUri) return null;
+    const layout = (photo.combinedLayout === 'STACK') ? 'STACK' : 'SIDE';
+    const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
+    const getSize = (u) => new Promise((resolve) => {
+      Image.getSize(u, (w, h) => resolve({
+        w: Math.round(w * pixelRatio),
+        h: Math.round(h * pixelRatio),
+      }), () => resolve({ w: 1080, h: 1920 }));
+    });
+    const aSize = await getSize(beforeUri);
+    const bSize = await getSize(afterUri);
+    const sourceMaxWidth = Math.max(aSize.w, bSize.w);
+    const totalW = Math.min(Math.max(sourceMaxWidth, 2048), 4096);
+    const totalH = totalW;
+    const dims = layout === 'STACK'
+      ? { width: totalW, height: totalH, topH: Math.round(totalH / 2), bottomH: totalH - Math.round(totalH / 2) }
+      : { width: totalW, height: totalH, leftW: Math.round(totalW / 2), rightW: totalW - Math.round(totalW / 2) };
+    const capUri = await compositeImages(beforeUri, afterUri, layout, dims);
+    const safeName = (photo.name || 'Photo').replace(/\s+/g, '_');
+    const projectSuffix = photo.projectId ? `_P${photo.projectId}` : '';
+    const filename = `${photo.room || 'Combined'}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectSuffix}.jpg`;
+    return await savePhotoToDevice(capUri, filename, photo.projectId || null);
+  }, [photo?.id, photo?.combinedLayout, photo?.name, photo?.room, photo?.projectId]);
+
+  const handlePickSwap = async (picked) => {
+    if (!photo?.id || !picked?.id || isRegeneratingComposite) {
       setSwapTargetSlot(null);
       return;
     }
-    if (swapTargetSlot === 'before') {
-      updatePhoto(photo.id, { beforeOverrideId: picked.id });
-    } else if (swapTargetSlot === 'after') {
-      updatePhoto(photo.id, { afterOverrideId: picked.id });
-    }
+    const targetSlot = swapTargetSlot;
     setSwapTargetSlot(null);
+    if (targetSlot !== 'before' && targetSlot !== 'after') return;
+    // No-op if the picked photo is already the resolved photo for
+    // this slot. Saves an unnecessary regen and keeps overrides
+    // sparse.
+    const currentSlotPhoto = targetSlot === 'before'
+      ? pairResolved.beforePhoto
+      : pairResolved.afterPhoto;
+    if (currentSlotPhoto?.id === picked.id) return;
+
+    // Resolve the new before / after pair after applying this pick.
+    // If the picked photo equals the natural anchor (i.e., it IS the
+    // original Before / After), clear the override instead of saving
+    // a redundant pointer.
+    const naturalBeforeId = photo.beforePhotoId;
+    const naturalAfter = photos.find(
+      (p) => p.beforePhotoId === naturalBeforeId && p.mode === PHOTO_MODES.AFTER,
+    );
+    const updates = {};
+    let newBefore = pairResolved.beforePhoto;
+    let newAfter = pairResolved.afterPhoto;
+    if (targetSlot === 'before') {
+      updates.beforeOverrideId = picked.id === naturalBeforeId ? null : picked.id;
+      newBefore = picked;
+    } else {
+      updates.afterOverrideId = picked.id === naturalAfter?.id ? null : picked.id;
+      newAfter = picked;
+    }
+    if (!newBefore?.uri || !newAfter?.uri) {
+      // No pair to composite — write override only.
+      await updatePhoto(photo.id, updates);
+      return;
+    }
+    // Re-composite with the new pair so the user sees the new picture
+    // immediately. Fall back to override-only if native compositing
+    // fails (the next render of pairResolved still picks up the
+    // override for label rendering even without a fresh bitmap).
+    setIsRegeneratingComposite(true);
+    try {
+      const newUri = await regenerateCombinedComposite(newBefore.uri, newAfter.uri);
+      if (newUri) updates.uri = newUri;
+    } catch (err) {
+      console.warn('[StudioScreen] regenerate composite failed', err);
+    } finally {
+      await updatePhoto(photo.id, updates);
+      setIsRegeneratingComposite(false);
+    }
   };
 
   // Bitmap aspect tracked per-photo so we can apply each photo's
@@ -802,6 +922,10 @@ export default function StudioScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <View style={styles.headerRow}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -833,7 +957,14 @@ export default function StudioScreen({ route, navigation }) {
       </Text>
 
       <View
-        style={[styles.photoArea, { backgroundColor: theme.background }]}
+        style={[
+          styles.photoArea,
+          { backgroundColor: theme.background },
+          // While editing a note with the keyboard up, collapse the photo
+          // area so the textarea + toolbar slot comfortably above the
+          // keyboard (matches the Camera note-modal pattern).
+          keyboardVisible && activeTool === 'notes' && styles.photoAreaCompact,
+        ]}
         onLayout={(e) => {
           const { width, height } = e.nativeEvent.layout;
           setPhotoAreaLayout((prev) =>
@@ -965,6 +1096,16 @@ export default function StudioScreen({ route, navigation }) {
             />
           </DraggablePreviewItem>
         )}
+        {/* Re-composite spinner — covers the photo while the native
+            module rebuilds the combined bitmap from the picked Before /
+            After. Without this the user sees the OLD picture for ~1s
+            after picking a swap, which reads as "nothing happened". */}
+        {isRegeneratingComposite && (
+          <View style={styles.regenOverlay} pointerEvents="none">
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.regenOverlayText}>Updating combined…</Text>
+          </View>
+        )}
         {/* Split / Overlay need the raw Before + After. If we can't
             resolve them for this combined photo, drop a hint instead of
             silently falling back to the merged image. */}
@@ -1081,6 +1222,8 @@ export default function StudioScreen({ route, navigation }) {
         style={styles.toolPanel}
         contentContainerStyle={styles.toolPanelContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
       >
         {activeTool === 'layout' && (
           <LayoutPanel
@@ -1209,6 +1352,7 @@ export default function StudioScreen({ route, navigation }) {
           );
         })}
       </View>
+      </KeyboardAvoidingView>
 
       {/* Swap picker — opens from the Layout panel's Change-before /
           Change-after buttons. Shows every photo in the active set
@@ -1239,24 +1383,34 @@ export default function StudioScreen({ route, navigation }) {
             {swapTargetSlot === 'before' ? 'Change Before' : swapTargetSlot === 'after' ? 'Change After' : 'Change photo'}
           </Text>
           <Text style={[styles.swapPickerSubtitle, { color: theme.textSecondary }]}>
-            Pick a photo from this room
+            Pick a photo from this set
           </Text>
           <ScrollView
             horizontal={false}
             contentContainerStyle={styles.swapPickerGrid}
             showsVerticalScrollIndicator={false}
           >
-            {(swapTargetSlot === 'before' ? beforeSwapCandidates : afterSwapCandidates).map((m) => {
+            {setSwapCandidates.map((m) => {
               const isCurrent = swapTargetSlot === 'before'
                 ? pairResolved.beforePhoto?.id === m.id
                 : pairResolved.afterPhoto?.id === m.id;
-              const roleLabel = m.mode === PHOTO_MODES.BEFORE
+              // Effective role for THIS combined view: a Progress that's
+              // currently slotted as the Before reads as "Before" here,
+              // so the chip matches what the combined renders.
+              const effectiveRole = pairResolved.beforePhoto?.id === m.id
+                ? 'before'
+                : pairResolved.afterPhoto?.id === m.id
+                  ? 'after'
+                  : m.mode === PHOTO_MODES.BEFORE
+                    ? 'before'
+                    : m.mode === PHOTO_MODES.AFTER
+                      ? 'after'
+                      : 'progress';
+              const roleLabel = effectiveRole === 'before'
                 ? 'Before'
-                : m.mode === PHOTO_MODES.AFTER
+                : effectiveRole === 'after'
                   ? 'After'
-                  : m.mode === PHOTO_MODES.PROGRESS
-                    ? 'Progress'
-                    : '';
+                  : 'Progress';
               return (
                 <TouchableOpacity
                   key={m.id}
@@ -2565,6 +2719,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Compact photo area used while the Notes tool is active and the
+  // keyboard is up — leaves enough vertical room for the textarea to
+  // sit directly above the keyboard.
+  photoAreaCompact: {
+    height: 140,
+  },
   // Inner frame: matches the selected template's aspect, centered inside
   // the outer box. This is the thing whose shape changes when the user
   // switches formats.
@@ -2636,6 +2796,19 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     flex: 1,
+  },
+  regenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  regenOverlayText: {
+    color: '#FFFFFF',
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '600',
   },
   watermarkOverlay: {
     position: 'absolute',
