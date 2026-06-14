@@ -117,6 +117,18 @@ const tsOfPhoto = (photo) =>
 const buildTimeline = (photos) => {
   const byDate = new Map();
   for (const photo of photos) {
+    // Combined photos are derived from a Before / After pair — they're
+    // a Studio-tab concept, not a Timeline one. Timeline should only
+    // surface the original capture records (Before / After / Progress)
+    // so the user isn't staring at the same content twice.
+    if (photo?.mode === 'mix' || photo?.mode === 'combined') continue;
+    // Defensive: a non-combined record whose `uri` filename is still a
+    // side-by-side composite means the pre-fix picker overwrote it
+    // and the auto-repair couldn't recover the original (see
+    // repairCorruptedPhotoUris in storage.js). Hide it from Timeline
+    // so the user isn't staring at a fake combined tile — the record
+    // stays in storage so future repair runs can still rescue it.
+    if (photo?.uri && /_COMBINED_(?:BASE|EDIT)_(?:SIDE|STACK)_/i.test(photo.uri)) continue;
     const ts = tsOfPhoto(photo);
     if (!ts) continue;
     const dateKey = new Date(ts).toLocaleDateString('en-CA');
