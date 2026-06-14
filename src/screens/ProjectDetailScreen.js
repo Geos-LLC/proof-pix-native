@@ -2566,18 +2566,18 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   )}
 
                   <TouchableOpacity
-                    style={[
-                      shareTabStyles.confirmBtn,
-                      { backgroundColor: COLORS.PRIMARY, opacity: isBuildingReport ? 0.7 : 1 },
-                    ]}
+                    style={[shareTabStyles.shareNowButton, isBuildingReport && { opacity: 0.6 }]}
                     onPress={handleReportShareConfirm}
                     disabled={isBuildingReport}
                     activeOpacity={0.85}
                   >
                     {isBuildingReport ? (
-                      <ActivityIndicator color="#000" />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <ActivityIndicator size="small" color="#FFF" />
+                        <Text style={shareTabStyles.shareNowButtonText}>Sharing...</Text>
+                      </View>
                     ) : (
-                      <Text style={[shareTabStyles.confirmBtnText, { color: '#000' }]}>
+                      <Text style={shareTabStyles.shareNowButtonText}>
                         {reportShareFormat === 'link' ? 'Generate link' : 'Share'}
                       </Text>
                     )}
