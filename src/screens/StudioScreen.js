@@ -28,7 +28,6 @@ import { FONTS } from '../constants/fonts';
 import { PHOTO_MODES } from '../constants/rooms';
 import { usePhotos } from '../context/PhotoContext';
 import { compositeImages } from '../utils/imageCompositor';
-import { savePhotoToDevice } from '../services/storage';
 import { useScopedSettings, usePromoteOverridesToGlobal, useResetPhotoOverrides } from '../hooks/useScopedSettings';
 import { useTheme } from '../hooks/useTheme';
 import PhotoLabels from '../components/PhotoLabels';
@@ -693,8 +692,19 @@ export default function StudioScreen({ route, navigation }) {
   // source — not only at export time. Mirrors the camera's original
   // composite path (1:1 square output, sourceMaxWidth-driven size,
   // PixelRatio scaling on Android).
+  //
+  // Mid-edit regens are written to documentDirectory only (NOT
+  // MediaLibrary) — exploratory taps used to add a new Photos-library
+  // asset per pick, so 10 swap attempts polluted the Photos library
+  // with 10 near-identical files. The final composite goes through
+  // savePhotoToDevice at Save time elsewhere; this path is in-app
+  // working storage.
   const regenerateCombinedComposite = useCallback(async (beforeUri, afterUri) => {
     if (!photo?.id || !beforeUri || !afterUri) return null;
+    // Hard guard — the side-by-side composite only makes sense for a
+    // combined photo. Calling this on a Before/After/Progress would
+    // overwrite the single photo's uri with a merged bitmap.
+    if (photo.mode !== PHOTO_MODES.COMBINED) return null;
     const layout = (photo.combinedLayout === 'STACK') ? 'STACK' : 'SIDE';
     const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
     const getSize = (u) => new Promise((resolve) => {
@@ -712,11 +722,20 @@ export default function StudioScreen({ route, navigation }) {
       ? { width: totalW, height: totalH, topH: Math.round(totalH / 2), bottomH: totalH - Math.round(totalH / 2) }
       : { width: totalW, height: totalH, leftW: Math.round(totalW / 2), rightW: totalW - Math.round(totalW / 2) };
     const capUri = await compositeImages(beforeUri, afterUri, layout, dims);
+    // Persist the bitmap in app-private storage. We deliberately skip
+    // MediaLibrary here — see the function header.
+    const FileSystem = require('expo-file-system/legacy');
     const safeName = (photo.name || 'Photo').replace(/\s+/g, '_');
     const projectSuffix = photo.projectId ? `_P${photo.projectId}` : '';
-    const filename = `${photo.room || 'Combined'}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectSuffix}.jpg`;
-    return await savePhotoToDevice(capUri, filename, photo.projectId || null);
-  }, [photo?.id, photo?.combinedLayout, photo?.name, photo?.room, photo?.projectId]);
+    const filename = `${photo.room || 'Combined'}_${safeName}_COMBINED_EDIT_${layout}_${Date.now()}${projectSuffix}.jpg`;
+    const docUri = `${FileSystem.documentDirectory}${filename}`;
+    try { await FileSystem.copyAsync({ from: capUri, to: docUri }); }
+    catch (err) {
+      console.warn('[StudioScreen] copy composite to doc dir failed; using native result uri directly', err);
+      return capUri;
+    }
+    return docUri;
+  }, [photo?.id, photo?.combinedLayout, photo?.name, photo?.room, photo?.projectId, photo?.mode]);
 
   const handlePickSwap = async (picked) => {
     if (!photo?.id || !picked?.id || isRegeneratingComposite) {
@@ -1581,24 +1600,17 @@ function LayoutPanel({
   onChangeBefore,
   onChangeAfter,
 }) {
-  // Decide which Change cards to render per active photo role:
-  //   - COMBINED  → both Before + After (current combined sources)
-  //   - BEFORE    → only the Before card
-  //   - AFTER     → only the After card
-  //   - PROGRESS  → only the After card (progresses can stand in)
-  //   - other     → none
-  // Each card additionally requires canSwap{Before,After} so we don't
-  // render a Change button with nothing to swap to.
+  // Source Photos cards only make sense for a COMBINED photo — that's
+  // the only role where there are two slots (Before + After) to retarget
+  // and where a re-composite produces a sensible result. On a single
+  // Before / After / Progress, picking a source would either no-op or,
+  // worse, bake a side-by-side composite over the single photo's uri.
   const isCombinedMode = isCombined
     || activePhotoMode === 'combined'
     || activePhotoMode === 'mix'
     || activePhotoMode === PHOTO_MODES.COMBINED;
-  const showBeforeCard = canSwapBefore
-    && (isCombinedMode || activePhotoMode === PHOTO_MODES.BEFORE);
-  const showAfterCard = canSwapAfter
-    && (isCombinedMode
-        || activePhotoMode === PHOTO_MODES.AFTER
-        || activePhotoMode === PHOTO_MODES.PROGRESS);
+  const showBeforeCard = canSwapBefore && isCombinedMode;
+  const showAfterCard = canSwapAfter && isCombinedMode;
   return (
     <View>
       {/* Source photo card(s) — see role-driven gates above. The
