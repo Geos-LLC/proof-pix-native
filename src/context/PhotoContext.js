@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
-import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch } from '../services/storage';
+import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch, repairCorruptedPhotoUris } from '../services/storage';
 import { deleteImagesFromGalleryNative, deleteImagesByProjectIdNative } from '../utils/mediaStoreSaver';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
@@ -230,6 +230,50 @@ export const PhotoProvider = ({ children }) => {
       photosRef.current = fastRenamed;
       setPhotos(fastRenamed);
       photosLoadedRef.current = true;
+
+      // ─── BACKGROUND: heal Before/After/Progress URIs overwritten by
+      // the pre-fix Studio Source Photos picker. Quick guard first —
+      // only enter the heal path if any photo's uri filename matches
+      // the contaminated COMBINED_BASE / COMBINED_EDIT pattern. For
+      // clean libraries this is one O(n) string scan and we're done.
+      // Idempotent — re-runs no-op once data is clean.
+      const isContaminated = fastRenamed.some(p => {
+        if (!p || p.mode === 'mix') return false;
+        const u = String(p.uri || '');
+        return /_COMBINED_(BASE|EDIT)_(SIDE|STACK)_\d+/i.test(u);
+      });
+      if (isContaminated) {
+        (async () => {
+          try {
+            const result = await repairCorruptedPhotoUris();
+            console.warn('[PhotoContext] auto-repair photo URIs:', result);
+            if (result?.repaired > 0) {
+              // Re-load metadata + push the healed photos into React
+              // state by id, same merge pattern as the PhotoKit
+              // recovery block below so concurrent edits aren't lost.
+              const fresh = await loadPhotosMetadata();
+              const freshById = new Map(fresh.map(p => [p.id, p]));
+              setPhotos(prev => {
+                let changed = false;
+                const merged = prev.map(p => {
+                  const r = freshById.get(p.id);
+                  if (!r) return p;
+                  if (r.uri === p.uri) return p;
+                  changed = true;
+                  return { ...p, uri: r.uri, cachedLocalUri: null };
+                });
+                if (changed) {
+                  photosRef.current = merged;
+                  return merged;
+                }
+                return prev;
+              });
+            }
+          } catch (err) {
+            console.warn('[PhotoContext] auto-repair failed:', err?.message);
+          }
+        })();
+      }
 
       // ─── BACKGROUND: PhotoKit recovery + re-resolve ─────────────
       // Fire-and-forget. When done, patch state by photo.id so we

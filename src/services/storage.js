@@ -486,22 +486,45 @@ export const repairCorruptedPhotoUris = async () => {
       const uri = await resolveAssetIdToUri(best.id);
       if (uri) return { uri, source: 'asset-id-map', via: best.filename };
     }
-    // Fallback: scan the ProofPix album for an asset whose filename
-    // matches the same pattern. Useful after a reinstall when the
-    // Keychain map exists but a specific entry got dropped.
+    // Fallback A — scan the documentDirectory for files matching the
+    // pattern. This is the MOST reliable lookup: savePhotoToDevice
+    // always copies into documentDirectory with the canonical filename
+    // before doing the MediaLibrary write, so a clean original is
+    // almost always sitting on disk here even if the Keychain map or
+    // the Photos album lost the entry.
+    try {
+      const docDir = FileSystem.documentDirectory;
+      const dirEntries = await FileSystem.readDirectoryAsync(docDir);
+      let docBest = null;
+      for (const name of dirEntries) {
+        const mm = reAssetMap.exec(name);
+        if (!mm) continue;
+        const ts = parseInt(mm[1], 10);
+        if (!Number.isFinite(ts)) continue;
+        if (!docBest || ts > docBest.ts) docBest = { ts, name };
+      }
+      if (docBest) {
+        return { uri: `${docDir}${docBest.name}`, source: 'document-directory-scan', via: docBest.name };
+      }
+    } catch (err) {
+      console.warn('[repairCorruptedPhotoUris] documentDirectory scan failed', err);
+    }
+    // Fallback B — scan the ProofPix MediaLibrary album by filename.
+    // Useful after a reinstall when documentDirectory was wiped but
+    // the iOS Photos album survived.
     const assets = await loadMediaLibraryAssets();
-    let fallback = null;
+    let mlFallback = null;
     for (const a of assets) {
       const name = a.filename || '';
       const mm = reAssetMap.exec(name);
       if (!mm) continue;
       const ts = parseInt(mm[1], 10);
       if (!Number.isFinite(ts)) continue;
-      if (!fallback || ts > fallback.ts) fallback = { ts, asset: a };
+      if (!mlFallback || ts > mlFallback.ts) mlFallback = { ts, asset: a };
     }
-    if (fallback) {
-      const uri = await resolveAssetIdToUri(fallback.asset.id);
-      if (uri) return { uri, source: 'media-library-scan', via: fallback.asset.filename };
+    if (mlFallback) {
+      const uri = await resolveAssetIdToUri(mlFallback.asset.id);
+      if (uri) return { uri, source: 'media-library-scan', via: mlFallback.asset.filename };
     }
     return null;
   };
