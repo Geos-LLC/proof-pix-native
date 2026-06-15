@@ -8,6 +8,7 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { StudioEditOverlays } from './StudioOverlays';
 import {
   groupByRoom,
   groupBySet,
@@ -141,25 +142,34 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
           <SectionHeader name={displayRoomName(room)} theme={theme} />
           {combinedPhotos.map((c) => {
             // Use the photo's actual aspect so the entire composite
-            // shows — combined photos can be 2:1 (side-by-side) or
-            // 1:2 (stacked). Forcing 16:9 with `cover` was cropping
-            // the "After" half off the right of side-by-side shots.
+            // shows. StudioEditOverlays is overlaid for parity with
+            // the single-photo viewer: PhotoLabels (Before/After
+            // chips positioned per Settings), PhotoWatermark, the
+            // brand logo, and the MetadataOverlay (date/time/location
+            // band). All read from SettingsContext so they respect
+            // the user's per-photo + global toggles.
             const w = c.originalWidth || c.width;
             const h = c.originalHeight || c.height;
             const aspect = (w && h) ? (w / h) : (16 / 9);
+            const combinedLayout = c.combinedLayout === 'stack' ? 'stack' : 'side';
             return (
-              <View key={`combined-${c.id}`} style={styles.combinedHero}>
+              <View key={`combined-${c.id}`} style={[styles.combinedHero, { aspectRatio: aspect }]}>
                 {c.uri ? (
                   <Image
                     source={{ uri: c.uri }}
-                    style={{ width: '100%', aspectRatio: aspect }}
+                    style={{ width: '100%', height: '100%' }}
                     resizeMode="contain"
                   />
                 ) : null}
-                {options.includeNotes && c.notes ? <Note note={c.notes} theme={theme} /> : null}
+                <StudioEditOverlays photo={c} theme={theme} combinedLayout={combinedLayout} />
               </View>
             );
           })}
+          {/* Notes rendered outside the photo frame so they don't
+              overlay the image. */}
+          {options.includeNotes && combinedPhotos.map((c) => (
+            c.notes ? <Note key={`n-${c.id}`} note={c.notes} theme={theme} /> : null
+          ))}
         </View>
       ))}
     </View>
