@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
+import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { FEATURES } from '../constants/featurePermissions';
 import { FONTS } from '../constants/fonts';
 import proxyService from '../services/proxyService';
 import { generateInviteToken } from '../utils/tokens';
@@ -44,12 +46,23 @@ export default function TeamMembersScreen({ navigation }) {
     adminSignIn,
   } = useAdmin();
   const { userPlan } = useSettings();
+  const { canUse } = useFeaturePermissions();
 
   const [isWorkingSetup, setIsWorkingSetup] = useState(false);
   const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
   const [teamMembers, setTeamMembers] = useState([]);
 
-  const isBusinessOrEnterprise = userPlan === 'business' || userPlan === 'enterprise';
+  // Gate: use the feature-permission system (trial-aware + tier-aware
+  // via effectivePlan) instead of literal string compare on userPlan.
+  // Also let through anyone who already has a working proxySessionId —
+  // they've clearly already paid + set up team, so even if `userPlan`
+  // is stored in some other casing/SKU shape we should NOT paywall
+  // them. This was the bug that sent Business-with-team users to
+  // PlanSelection when tapping Manage team.
+  const hasTeamFeature = !!proxySessionId
+    || canUse(FEATURES.TEAM_MANAGEMENT)
+    || canUse(FEATURES.TEAM_COLLABORATION);
+  const isBusinessOrEnterprise = hasTeamFeature;
   const isTeamReady = !!proxySessionId;
   const googleAdminConnected = isAuthenticated && accountType === 'google';
 
