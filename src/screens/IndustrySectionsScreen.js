@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +34,8 @@ export default function IndustrySectionsScreen({ navigation }) {
     getRooms,
     sectionLanguage,
     cleaningServiceEnabled,
+    splitPhotosByDate,
+    updateSplitPhotosByDate,
   } = useSettings();
 
   // Local copy of the rooms list — re-derived whenever customRooms changes
@@ -239,6 +242,37 @@ export default function IndustrySectionsScreen({ navigation }) {
             </View>
             <Ionicons name="chevron-forward" size={20} color="#666666" />
           </TouchableOpacity>
+        </View>
+
+        {/* ───── Upload Structure card (moved from LabelsLanguage) ──
+            Lives here because it's a folder-organization concern, not
+            a labels concern — the user wanted it next to the Sections
+            controls. Same SettingsContext flag (splitPhotosByDate)
+            the legacy inline section toggled. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            {t('settings.uploadStructure', { defaultValue: 'Upload Structure' })}
+          </Text>
+          <Text style={styles.sectionDescription}>
+            {t('settings.uploadStructureDescription', { defaultValue: 'Configure how photos are organized in cloud storage.' })}
+          </Text>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>
+                {t('settings.splitByDate', { defaultValue: 'Split photos by date' })}
+              </Text>
+              <Text style={styles.settingDescription}>
+                {t('settings.splitByDateDescription', { defaultValue: 'Group uploaded photos into per-day subfolders.' })}
+              </Text>
+            </View>
+            <Switch
+              value={!!splitPhotosByDate}
+              onValueChange={updateSplitPhotosByDate}
+              trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+              thumbColor="white"
+            />
+          </View>
         </View>
       </ScrollView>
 

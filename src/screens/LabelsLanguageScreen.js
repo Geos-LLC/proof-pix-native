@@ -44,8 +44,6 @@ export default function LabelsLanguageScreen({ navigation }) {
     showBrandLogo,
     updateShowBrandLogo,
     brandLogoUri,
-    splitPhotosByDate,
-    updateSplitPhotosByDate,
   } = useSettings();
 
   const labelLanguageSubtitle = useLabelLanguageSubtitle();
@@ -158,35 +156,6 @@ export default function LabelsLanguageScreen({ navigation }) {
 
         </View>
 
-        <Text style={styles.eyebrow}>
-          {t('labelsLanguage.uploadStructureEyebrow', { defaultValue: 'Upload structure' })}
-        </Text>
-        <View style={styles.rowGroup}>
-          {/* Split photos by date — same SettingsContext flag the legacy
-              inline section toggles. Wired directly here so the user
-              never has to leave this screen for it. */}
-          <View style={styles.row}>
-            <View style={styles.rowIc}>
-              <Ionicons name="calendar-outline" size={19} color="#1E1E1E" />
-            </View>
-            <View style={styles.rowMeta}>
-              <Text style={styles.rowTitle}>
-                {t('labelsLanguage.splitByDate', { defaultValue: 'Split photos by date' })}
-              </Text>
-              <Text style={styles.rowSub} numberOfLines={2}>
-                {t('labelsLanguage.splitByDateSub', {
-                  defaultValue: 'Group uploaded photos into per-day subfolders in your cloud.',
-                })}
-              </Text>
-            </View>
-            <Switch
-              value={!!splitPhotosByDate}
-              onValueChange={updateSplitPhotosByDate}
-              trackColor={{ false: '#E0E0E0', true: '#F2C31B' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -213,22 +182,25 @@ function BrandTile({ icon, title, subtitle, switchValue, switchDisabled, onSwitc
   const showSwitch = typeof onSwitch === 'function';
   return (
     <View style={styles.row}>
-      <TouchableOpacity
-        style={styles.rowTappable}
-        onPress={onPress}
-        activeOpacity={0.85}
-      >
-        <View style={styles.rowIc}>
-          <Ionicons name={icon} size={19} color="#1E1E1E" />
-        </View>
-        <View style={styles.rowMeta}>
-          <View style={styles.rowTitleRow}>
-            <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
-            <Text style={styles.customizeChip}>Customize ›</Text>
-          </View>
-          <Text style={styles.rowSub} numberOfLines={1}>{subtitle}</Text>
-        </View>
-      </TouchableOpacity>
+      <View style={styles.rowIc}>
+        <Ionicons name={icon} size={19} color="#1E1E1E" />
+      </View>
+      <View style={styles.rowMeta}>
+        <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
+        <Text style={styles.rowSub} numberOfLines={1}>{subtitle}</Text>
+        {/* Explicit Customize link — its own tap target so the
+            customize destination is obvious. Whole-row tap also still
+            works for switch-less tiles via the chevron path below. */}
+        <TouchableOpacity
+          style={styles.customizeLink}
+          onPress={onPress}
+          hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.customizeLinkText}>Customize</Text>
+          <Ionicons name="chevron-forward" size={13} color="#7A5B00" />
+        </TouchableOpacity>
+      </View>
       {showSwitch ? (
         <Switch
           value={!!switchValue}
@@ -239,7 +211,9 @@ function BrandTile({ icon, title, subtitle, switchValue, switchDisabled, onSwitc
           style={styles.brandTileSwitch}
         />
       ) : (
-        <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+        <TouchableOpacity onPress={onPress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -355,12 +329,26 @@ const styles = StyleSheet.create({
     color: '#1E1E1E',
     letterSpacing: -0.1,
   },
-  customizeChip: {
+  // Visible "Customize ›" link below the subtitle on each BrandTile.
+  // Its own tap target so users don't have to guess that the row body
+  // itself is tappable. Accent-tinted to read as a link, not as body
+  // copy.
+  customizeLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 2,
+    marginTop: 4,
+    paddingVertical: 2,
+    paddingRight: 4,
+  },
+  customizeLinkText: {
     fontFamily: FONTS.ALEXANDRIA,
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#9A9A9A',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7A5B00',
     letterSpacing: -0.1,
+    textDecorationLine: 'underline',
   },
   rowSub: {
     fontFamily: FONTS.ALEXANDRIA,
