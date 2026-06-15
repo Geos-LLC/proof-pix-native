@@ -11,7 +11,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
+import { COLORS } from '../constants/rooms';
 import { useSettings } from '../context/SettingsContext';
+import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { FEATURES } from '../constants/featurePermissions';
 
 // LabelsLanguageScreen — dedicated route.
 //
@@ -46,7 +49,9 @@ export default function LabelsLanguageScreen({ navigation }) {
     brandLogoUri,
     splitPhotosByDate,
     updateSplitPhotosByDate,
+    customWatermarkEnabled,
   } = useSettings();
+  const { canUse } = useFeaturePermissions();
 
   const labelLanguageSubtitle = useLabelLanguageSubtitle();
 
@@ -177,6 +182,144 @@ export default function LabelsLanguageScreen({ navigation }) {
               thumbColor="#FFFFFF"
             />
           </View>
+        </View>
+
+        {/* ───── EXACT inline "Labels" card from SettingsScreen ──────
+            Hoisted here so this screen has 1:1 parity with the section
+            that used to live in Settings. Same handlers, same nav
+            targets (WatermarkCustomization / LogoCustomization /
+            MetadataCustomization / BrandingSettings) and the same
+            PRO-gate behaviour via canUse(FEATURES.CUSTOM_WATERMARKS). */}
+        <View style={inlineStyles.section}>
+          <Text style={inlineStyles.sectionTitle}>
+            {t('settings.labels', { defaultValue: 'Labels' })}
+          </Text>
+          <Text style={inlineStyles.sectionDescription}>
+            {t('settings.labelCustomizationDescription', { defaultValue: 'Customize the appearance of before/after labels on your photos.' })}
+          </Text>
+
+          {/* Labels Toggle */}
+          <View style={[inlineStyles.settingRow, { borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)' }]}>
+            <View style={inlineStyles.settingInfo}>
+              <Text style={inlineStyles.settingLabel}>
+                {t('settings.showLabels', { defaultValue: 'Labels' })}
+              </Text>
+              <Text style={inlineStyles.settingDescription}>
+                {t('settings.showLabelsDescription', { defaultValue: 'Show BEFORE/AFTER labels on photos' })}
+              </Text>
+            </View>
+            <Switch
+              value={showLabels}
+              onValueChange={toggleLabels}
+              trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
+              thumbColor="white"
+            />
+          </View>
+
+          {/* Customize Watermark Option */}
+          <TouchableOpacity
+            style={inlineStyles.settingRow}
+            onPress={() => {
+              if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                navigation.navigate('WatermarkCustomization');
+              } else {
+                navigation.navigate('PlanSelection');
+              }
+            }}
+          >
+            <View style={inlineStyles.settingInfo}>
+              <Text style={inlineStyles.settingLabel}>
+                {t('settings.customizeWatermark', { defaultValue: 'Customize Watermark' })}
+              </Text>
+              <Text style={inlineStyles.settingDescription}>
+                {customWatermarkEnabled
+                  ? t('settings.watermarkCustomDescription', { defaultValue: 'Using custom watermark' })
+                  : t('settings.watermarkDefaultDescription', { defaultValue: 'Using default watermark (Powered by ProofPix)' })}
+              </Text>
+            </View>
+            {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                <Ionicons name="lock-closed" size={16} color="#EAB308" />
+              </View>
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color="#666666" />
+            )}
+          </TouchableOpacity>
+
+          {/* Customize Logo */}
+          <TouchableOpacity
+            style={[inlineStyles.settingRow, { borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.1)' }]}
+            onPress={() => {
+              if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                navigation.navigate('LogoCustomization');
+              } else {
+                navigation.navigate('PlanSelection');
+              }
+            }}
+          >
+            <View style={inlineStyles.settingInfo}>
+              <Text style={inlineStyles.settingLabel}>
+                {t('settings.customizeLogo', { defaultValue: 'Customize Logo' })}
+              </Text>
+              <Text style={inlineStyles.settingDescription}>
+                {t('settings.customizeLogoDescription', { defaultValue: 'Upload and position a brand logo on photos.' })}
+              </Text>
+            </View>
+            {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                <Ionicons name="lock-closed" size={16} color="#EAB308" />
+              </View>
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color="#666666" />
+            )}
+          </TouchableOpacity>
+
+          {/* Customize Timestamp (Metadata overlay) */}
+          <TouchableOpacity
+            style={inlineStyles.settingRow}
+            onPress={() => {
+              if (canUse(FEATURES.CUSTOM_WATERMARKS)) {
+                navigation.navigate('MetadataCustomization');
+              } else {
+                navigation.navigate('PlanSelection');
+              }
+            }}
+          >
+            <View style={inlineStyles.settingInfo}>
+              <Text style={inlineStyles.settingLabel}>
+                {t('settings.customizeTimestamp', { defaultValue: 'Customize Timestamp' })}
+              </Text>
+              <Text style={inlineStyles.settingDescription}>
+                {t('settings.customizeTimestampDescription', { defaultValue: 'Pick which date / time / location fields appear on photos.' })}
+              </Text>
+            </View>
+            {!canUse(FEATURES.CUSTOM_WATERMARKS) ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#EAB308' }}>PRO</Text>
+                <Ionicons name="lock-closed" size={16} color="#EAB308" />
+              </View>
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color="#666666" />
+            )}
+          </TouchableOpacity>
+
+          {/* Report Branding */}
+          <TouchableOpacity
+            style={[inlineStyles.settingRow, { borderBottomWidth: 0 }]}
+            onPress={() => navigation.navigate('BrandingSettings')}
+          >
+            <View style={inlineStyles.settingInfo}>
+              <Text style={inlineStyles.settingLabel}>
+                {t('settings.reportBranding', { defaultValue: 'Report Branding' })}
+              </Text>
+              <Text style={inlineStyles.settingDescription}>
+                {t('settings.reportBrandingDescription', { defaultValue: 'Logo, company name, and accent color for generated reports.' })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666666" />
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -355,5 +498,63 @@ const styles = StyleSheet.create({
   },
   brandTileSwitch: {
     transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
+  },
+});
+
+// ───── Mirror of SettingsScreen.styles for the appended inline Labels
+// card so it renders identically to what used to live in Settings.
+// Kept in a separate stylesheet to avoid colliding with this screen's
+// row-style tokens (`row`, `rowTitle`, etc.). If SettingsScreen's
+// design tokens change, mirror them here too.
+const inlineStyles = StyleSheet.create({
+  section: {
+    backgroundColor: '#FFFFFF',
+    marginTop: 10,
+    marginHorizontal: 18,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#ECECEC',
+    shadowColor: '#141420',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  sectionTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    marginBottom: 2,
+    letterSpacing: -0.3,
+  },
+  sectionDescription: {
+    fontSize: 12,
+    color: 'grey',
+    marginBottom: 2,
+    lineHeight: 20,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  settingInfo: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  settingLabel: {
+    color: COLORS.TEXT,
+    fontWeight: '600',
+    fontSize: 15,
+    flexShrink: 1,
+  },
+  settingDescription: {
+    color: COLORS.GRAY,
+    fontSize: 12,
+    flexShrink: 1,
   },
 });
