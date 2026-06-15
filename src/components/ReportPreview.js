@@ -8,7 +8,8 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { StudioEditOverlays } from './StudioOverlays';
+import { MetadataOverlay } from './StudioOverlays';
+import { useScopedSettings } from '../hooks/useScopedSettings';
 import {
   groupByRoom,
   groupBySet,
@@ -123,6 +124,47 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, ch
 // ---------------------------------------------------------------
 // BEFORE & AFTER (prefers combined photos)
 // ---------------------------------------------------------------
+// One combined photo cell with the metadata band overlaid. We do
+// NOT overlay PhotoLabels or PhotoWatermark here — the report
+// pipeline's `bakedUriMap` already feeds the URI with chips +
+// watermark baked into the pixels. Adding the overlay components
+// would double them (the user flagged this). The metadata band is
+// the only piece the bake doesn't include, so MetadataOverlay is
+// the only thing we add.
+const CombinedHero = ({ photo }) => {
+  const s = useScopedSettings(photo?.id);
+  const w = photo?.originalWidth || photo?.width;
+  const h = photo?.originalHeight || photo?.height;
+  const aspect = (w && h) ? (w / h) : (16 / 9);
+  return (
+    <View style={[styles.combinedHero, { aspectRatio: aspect }]}>
+      {photo?.uri ? (
+        <Image
+          source={{ uri: photo.uri }}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="contain"
+        />
+      ) : null}
+      {s.showPreviewMetadata && (
+        <MetadataOverlay
+          photo={photo}
+          location={s.location}
+          showDate={s.metaShowDate}
+          showTime={s.metaShowTime}
+          showAddress={s.metaShowAddress}
+          showGps={s.metaShowGps}
+          position={s.metaPosition}
+          color={s.metaColor}
+          opacity={s.metaOpacity}
+          fontSize={s.metaFontSize}
+          fontFamily={s.metaFontFamily}
+          offset={s.metaOffset}
+        />
+      )}
+    </View>
+  );
+};
+
 const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
   // Mirror the HTML layout: ONLY combined ('mix') photos. Don't
   // synthesize fresh before/after pairs from raw photos — sets that
@@ -140,31 +182,9 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
       {visible.map(({ room, combinedPhotos }) => (
         <View key={`room-${room}`} style={styles.section}>
           <SectionHeader name={displayRoomName(room)} theme={theme} />
-          {combinedPhotos.map((c) => {
-            // Use the photo's actual aspect so the entire composite
-            // shows. StudioEditOverlays is overlaid for parity with
-            // the single-photo viewer: PhotoLabels (Before/After
-            // chips positioned per Settings), PhotoWatermark, the
-            // brand logo, and the MetadataOverlay (date/time/location
-            // band). All read from SettingsContext so they respect
-            // the user's per-photo + global toggles.
-            const w = c.originalWidth || c.width;
-            const h = c.originalHeight || c.height;
-            const aspect = (w && h) ? (w / h) : (16 / 9);
-            const combinedLayout = c.combinedLayout === 'stack' ? 'stack' : 'side';
-            return (
-              <View key={`combined-${c.id}`} style={[styles.combinedHero, { aspectRatio: aspect }]}>
-                {c.uri ? (
-                  <Image
-                    source={{ uri: c.uri }}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode="contain"
-                  />
-                ) : null}
-                <StudioEditOverlays photo={c} theme={theme} combinedLayout={combinedLayout} />
-              </View>
-            );
-          })}
+          {combinedPhotos.map((c) => (
+            <CombinedHero key={`combined-${c.id}`} photo={c} />
+          ))}
           {/* Notes rendered outside the photo frame so they don't
               overlay the image. */}
           {options.includeNotes && combinedPhotos.map((c) => (
