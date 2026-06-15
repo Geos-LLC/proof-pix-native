@@ -3899,16 +3899,24 @@ export default function SettingsScreen({ navigation, route }) {
                       ]}
                       onPress={async () => {
                         const plan = effectivePlan || userPlan;
-                        const isStarter = !plan || plan === 'starter';
                         const isPro = plan === 'pro';
                         const isBusiness = plan === 'business';
                         const isEnterprise = plan === 'enterprise';
+                        // Recognise team access through canUse + an existing
+                        // proxySessionId so we don't paywall users whose stored
+                        // plan string drifted (capitalised, SKU-style, trial
+                        // override leaving userPlan='starter', etc.).
+                        const hasTeamFeature = !!proxySessionId
+                          || canUse(FEATURES.TEAM_MANAGEMENT)
+                          || canUse(FEATURES.TEAM_COLLABORATION)
+                          || isBusiness
+                          || isEnterprise;
 
                         // Check if team is already connected
-                        const teamConnected = proxySessionId && userMode === 'admin' && (isBusiness || isEnterprise);
-                        console.log('[SET_UP_TEAM] Button pressed, teamConnected:', teamConnected, 'proxySessionId:', proxySessionId, 'userMode:', userMode);
+                        const teamConnected = !!proxySessionId && hasTeamFeature;
+                        console.log('[SET_UP_TEAM] Button pressed, teamConnected:', teamConnected, 'proxySessionId:', proxySessionId, 'userMode:', userMode, 'hasTeamFeature:', hasTeamFeature, 'plan:', plan);
 
-                        if (isStarter) {
+                        if (!hasTeamFeature) {
                           navigation.navigate('PlanSelection');
                           return;
                         }
@@ -4157,7 +4165,18 @@ export default function SettingsScreen({ navigation, route }) {
                   const isAppleAccount = accountType === 'apple';
 
                   // Check if team is connected (proxySessionId exists, userMode === 'admin', AND plan supports teams)
-                  const isTeamConnected = proxySessionId && (userPlan === 'business' || userPlan === 'enterprise');
+                  // isTeamConnected — relaxed so the gate doesn't depend on the
+                  // exact stored plan string. If the user has a working
+                  // proxySessionId, they've already paid + set up — show
+                  // Manage Team regardless of what `userPlan` happens to
+                  // read as. Falls back to the canonical team feature
+                  // check (trial-aware via effectivePlan) when the session
+                  // is gone but the plan still includes team.
+                  const isTeamConnected = !!proxySessionId
+                    && (canUse(FEATURES.TEAM_MANAGEMENT)
+                        || canUse(FEATURES.TEAM_COLLABORATION)
+                        || userPlan === 'business'
+                        || userPlan === 'enterprise');
                   
                   return (
                     <>
@@ -4335,22 +4354,39 @@ export default function SettingsScreen({ navigation, route }) {
                           style={[
                             styles.setupTeamButtonNew,
                             isSigningIn && styles.buttonDisabled,
-                            (proxySessionId && (userPlan === 'business' || userPlan === 'enterprise')) && styles.setupTeamButtonConnected
+                            // Connected-style if we have an active team session OR the
+                            // effective plan recognises team — string-compare on userPlan
+                            // alone misses trial users + non-canonical SKU strings.
+                            (!!proxySessionId || canUse(FEATURES.TEAM_MANAGEMENT) || canUse(FEATURES.TEAM_COLLABORATION) || userPlan === 'business' || userPlan === 'enterprise')
+                              && proxySessionId
+                              && styles.setupTeamButtonConnected
                           ]}
                           onPress={async () => {
-                            // Re-compute isTeamConnected using fresh values to avoid stale closure
-                            const currentIsTeamConnected = proxySessionId && (userPlan === 'business' || userPlan === 'enterprise');
+                            // Re-compute with the canUse-based gate so the button
+                            // doesn't bounce Business-with-team users to PlanSelection
+                            // when `userPlan` happens to read as something other than
+                            // the literal 'business' / 'enterprise' strings.
+                            const hasTeamFeature = !!proxySessionId
+                              || canUse(FEATURES.TEAM_MANAGEMENT)
+                              || canUse(FEATURES.TEAM_COLLABORATION)
+                              || userPlan === 'business'
+                              || userPlan === 'enterprise';
+                            const currentIsTeamConnected = !!proxySessionId && hasTeamFeature;
 
                             console.log('[MANAGE_TEAM] Button pressed!');
-                            console.log('[MANAGE_TEAM] userPlan:', userPlan);
-                            console.log('[MANAGE_TEAM] isTeamConnected (closure):', isTeamConnected);
-                            console.log('[MANAGE_TEAM] currentIsTeamConnected (fresh):', currentIsTeamConnected);
+                            console.log('[MANAGE_TEAM] userPlan:', userPlan, 'effectivePlan:', effectivePlan);
+                            console.log('[MANAGE_TEAM] hasTeamFeature:', hasTeamFeature);
+                            console.log('[MANAGE_TEAM] currentIsTeamConnected:', currentIsTeamConnected);
                             console.log('[MANAGE_TEAM] proxySessionId:', proxySessionId);
                             console.log('[MANAGE_TEAM] userMode:', userMode);
 
-                            // Show tier selection modal for Starter/Pro users
-                            if (userPlan === 'starter' || userPlan === 'pro') {
-                              console.log('[MANAGE_TEAM] Showing plan modal for starter/pro');
+                            // Show tier selection modal ONLY when the user truly
+                            // doesn't have team feature access AND no team session.
+                            // The old `userPlan === 'starter' || userPlan === 'pro'`
+                            // check was the bug — it fired even for Business users
+                            // whose stored userPlan string didn't match.
+                            if (!hasTeamFeature) {
+                              console.log('[MANAGE_TEAM] No team feature — opening PlanSelection');
                               navigation.navigate('PlanSelection');
                               return;
                             }
