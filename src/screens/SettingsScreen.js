@@ -3159,9 +3159,31 @@ export default function SettingsScreen({ navigation, route }) {
           {t('settings.workspaceGroup', { defaultValue: 'Workspace' })}
         </Text>
         <View style={styles.rowGroup}>
+          {/* Labels & language — opens the standalone LabelsLanguage
+              screen (Branding tiles + Language). Moved to top of
+              the Workspace group per the user's spec. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => navigation.navigate('LabelsLanguage')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="text" size={19} color="#1E1E1E" />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <Text style={styles.ppRowTitle}>
+                {t('settings.labelsLanguage', { defaultValue: 'Labels & language' })}
+              </Text>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {getCurrentLanguage()?.name || 'English'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          </TouchableOpacity>
+
           {/* Industry & sections — opens the standalone IndustrySections
-              screen (industry picker + sections list + Edit in Settings
-              CTA for deep edits). */}
+              screen (industry picker + sections list + folder-name
+              location picker + Upload structure switch). */}
           <TouchableOpacity
             style={styles.ppRow}
             onPress={() => navigation.navigate('IndustrySections')}
@@ -3178,28 +3200,6 @@ export default function SettingsScreen({ navigation, route }) {
                 {t('settings.industryFoldersSub', {
                   defaultValue: `${(Array.isArray(customRooms) ? customRooms.length : 0) || 5} folders`,
                 })}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
-          </TouchableOpacity>
-
-          {/* Labels & language — opens the standalone LabelsLanguage
-              screen (Labels / Watermark / Logo / Metadata tiles +
-              Label language + Upload structure rows). */}
-          <TouchableOpacity
-            style={styles.ppRow}
-            onPress={() => navigation.navigate('LabelsLanguage')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.ppRowIc}>
-              <Ionicons name="text" size={19} color="#1E1E1E" />
-            </View>
-            <View style={styles.ppRowMeta}>
-              <Text style={styles.ppRowTitle}>
-                {t('settings.labelsLanguage', { defaultValue: 'Labels & language' })}
-              </Text>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
-                {getCurrentLanguage()?.name || 'English'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
@@ -3333,61 +3333,6 @@ export default function SettingsScreen({ navigation, route }) {
             full editing access — they handle the actual data binding
             (folder list, watermark customization, cloud provider state,
             etc.) and the rows above are quick-entry points to them. */}
-
-        {/* Folder location - manual pick + Use current location (GPS) */}
-        {userMode !== 'team_member' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('settings.folderName', { defaultValue: 'Folder name' })}</Text>
-            <Text style={styles.sectionDescription}>
-              {t('settings.folderNameDescription', { defaultValue: 'Defaults to the name you create for each project; falls back to this saved location when none is set.' })}
-            </Text>
-            <TouchableOpacity
-              style={styles.locationPicker}
-              onPress={() => setShowLocationDropdown((v) => !v)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.locationPickerText} numberOfLines={1}>
-                {getLocationName(location)}
-              </Text>
-              <Ionicons name={showLocationDropdown ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.GRAY} style={styles.locationPickerArrow} />
-            </TouchableOpacity>
-            {showLocationDropdown && (
-              <View style={styles.locationDropdown}>
-                <TouchableOpacity
-                  style={[styles.locationOption, styles.locationOptionUseCurrent]}
-                  onPress={handleUseCurrentLocation}
-                  disabled={useCurrentLocationLoading}
-                >
-                  {useCurrentLocationLoading ? (
-                    <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginRight: 8 }} />
-                  ) : (
-                    <Ionicons name="locate" size={20} color={COLORS.PRIMARY} style={{ marginRight: 8 }} />
-                  )}
-                  <Text style={styles.locationOptionText}>
-                    {t('settings.useCurrentLocation', { defaultValue: 'Use current location' })}
-                  </Text>
-                </TouchableOpacity>
-                {LOCATIONS.map((loc) => (
-                  <TouchableOpacity
-                    key={loc.id}
-                    style={[styles.locationOption, location === loc.id && styles.locationOptionSelected]}
-                    onPress={async () => {
-                      await updateUserInfo(undefined, loc.id);
-                      setShowLocationDropdown(false);
-                    }}
-                  >
-                    <Text style={[styles.locationOptionText, location === loc.id && styles.locationOptionTextSelected]}>
-                      {loc.name}
-                    </Text>
-                    {location === loc.id && (
-                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={styles.locationOptionCheck} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
 
     
         {userMode !== 'team_member' && (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,19 @@ import {
   ScrollView,
   Image,
   Switch,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ExpoLocation from 'expo-location';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { COLORS } from '../constants/rooms';
 import { useSettings } from '../context/SettingsContext';
 import { INDUSTRIES, getIndustryById } from '../constants/industries';
+import { LOCATIONS, getLocationName } from '../config/locations';
 import QualificationPromptModal, { getStoredUserType } from '../components/QualificationPromptModal';
 import RoomEditor from '../components/RoomEditor';
 import { logEvent } from '../utils/analytics';
@@ -36,7 +40,59 @@ export default function IndustrySectionsScreen({ navigation }) {
     cleaningServiceEnabled,
     splitPhotosByDate,
     updateSplitPhotosByDate,
+    location,
+    updateUserInfo,
   } = useSettings();
+
+  // Folder-name location state (moved from SettingsScreen). Manual
+  // dropdown + "Use current location" GPS path. Picks an entry from
+  // LOCATIONS preset list or stores the reverse-geocoded city name
+  // directly when no entry matches.
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [useCurrentLocationLoading, setUseCurrentLocationLoading] = useState(false);
+
+  const handleUseCurrentLocation = useCallback(async () => {
+    setUseCurrentLocationLoading(true);
+    try {
+      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          t('settings.locationPermissionTitle', { defaultValue: 'Location access' }),
+          t('settings.locationPermissionMessage', { defaultValue: 'Permission to use location is required to set folder location from GPS.' }),
+          [{ text: 'OK', style: 'cancel' }]
+        );
+        return;
+      }
+      const position = await ExpoLocation.getCurrentPositionAsync({
+        accuracy: ExpoLocation.Accuracy.Balanced,
+      });
+      const [address] = await ExpoLocation.reverseGeocodeAsync({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+      const cityName = address?.city || address?.region || address?.subregion || address?.country || 'Unknown';
+      const matchedLocation = LOCATIONS.find(
+        (loc) => loc.name.toLowerCase() === cityName.toLowerCase()
+      );
+      const locationToSave = matchedLocation ? matchedLocation.id : cityName;
+      await updateUserInfo(undefined, locationToSave);
+      setShowLocationDropdown(false);
+      Alert.alert(
+        t('settings.locationUpdated', { defaultValue: 'Location updated' }),
+        t('settings.locationUpdatedMessage', { defaultValue: 'Folder location set to: ' }) + getLocationName(locationToSave),
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('[IndustrySections] Use current location error:', error);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('settings.locationError', { defaultValue: 'Could not get current location. Please try again or select a location manually.' }),
+        [{ text: 'OK', style: 'cancel' }]
+      );
+    } finally {
+      setUseCurrentLocationLoading(false);
+    }
+  }, [t, updateUserInfo]);
 
   // Local copy of the rooms list — re-derived whenever customRooms changes
   // (e.g. after the user re-seeds via an industry pick or edits in
@@ -129,6 +185,78 @@ export default function IndustrySectionsScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
+        {/* ───── Folder name card (moved from SettingsScreen) ───────
+            Sets the default location appended to each project's
+            folder name. Picker shows the LOCATIONS preset list +
+            "Use current location" GPS shortcut at the top. Stored
+            via SettingsContext.updateUserInfo. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            {t('settings.folderName', { defaultValue: 'Folder name' })}
+          </Text>
+          <Text style={styles.sectionDescription}>
+            {t('settings.folderNameDescription', { defaultValue: 'Defaults to the name you create for each project; falls back to this saved location when none is set.' })}
+          </Text>
+          <TouchableOpacity
+            style={styles.locationPicker}
+            onPress={() => setShowLocationDropdown((v) => !v)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.locationPickerText} numberOfLines={1}>
+              {getLocationName(location)}
+            </Text>
+            <Ionicons
+              name={showLocationDropdown ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={COLORS.GRAY}
+              style={styles.locationPickerArrow}
+            />
+          </TouchableOpacity>
+          {showLocationDropdown && (
+            <View style={styles.locationDropdown}>
+              <TouchableOpacity
+                style={[styles.locationOption, styles.locationOptionUseCurrent]}
+                onPress={handleUseCurrentLocation}
+                disabled={useCurrentLocationLoading}
+              >
+                {useCurrentLocationLoading ? (
+                  <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginRight: 8 }} />
+                ) : (
+                  <Ionicons name="locate" size={20} color={COLORS.PRIMARY} style={{ marginRight: 8 }} />
+                )}
+                <Text style={styles.locationOptionText}>
+                  {t('settings.useCurrentLocation', { defaultValue: 'Use current location' })}
+                </Text>
+              </TouchableOpacity>
+              {LOCATIONS.map((loc) => (
+                <TouchableOpacity
+                  key={loc.id}
+                  style={[styles.locationOption, location === loc.id && styles.locationOptionSelected]}
+                  onPress={async () => {
+                    await updateUserInfo(undefined, loc.id);
+                    setShowLocationDropdown(false);
+                  }}
+                >
+                  <Text style={[
+                    styles.locationOptionText,
+                    location === loc.id && styles.locationOptionTextSelected,
+                  ]}>
+                    {loc.name}
+                  </Text>
+                  {location === loc.id && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color={COLORS.PRIMARY}
+                      style={styles.locationOptionCheck}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
         {/* ───── EXACT inline Sections card ────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
@@ -403,6 +531,14 @@ const styles = StyleSheet.create({
     paddingRight: 40,
     backgroundColor: 'white',
     position: 'relative',
+  },
+  // "Use current location" row at the top of the dropdown — inline
+  // row with leading icon, separator below from the rest of the list.
+  locationOptionUseCurrent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER,
   },
   locationOptionSelected: { backgroundColor: '#f7f7f7' },
   locationOptionText: { color: COLORS.TEXT },
