@@ -8,8 +8,6 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { MetadataOverlay } from './StudioOverlays';
-import { useScopedSettings } from '../hooks/useScopedSettings';
 import {
   groupByRoom,
   groupBySet,
@@ -124,47 +122,10 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, ch
 // ---------------------------------------------------------------
 // BEFORE & AFTER (prefers combined photos)
 // ---------------------------------------------------------------
-// One combined photo cell with the metadata band overlaid. We do
-// NOT overlay PhotoLabels or PhotoWatermark here — the report
-// pipeline's `bakedUriMap` already feeds the URI with chips +
-// watermark baked into the pixels. Adding the overlay components
-// would double them (the user flagged this). The metadata band is
-// the only piece the bake doesn't include, so MetadataOverlay is
-// the only thing we add.
-const CombinedHero = ({ photo }) => {
-  const s = useScopedSettings(photo?.id);
-  const w = photo?.originalWidth || photo?.width;
-  const h = photo?.originalHeight || photo?.height;
-  const aspect = (w && h) ? (w / h) : (16 / 9);
-  return (
-    <View style={[styles.combinedHero, { aspectRatio: aspect }]}>
-      {photo?.uri ? (
-        <Image
-          source={{ uri: photo.uri }}
-          style={{ width: '100%', height: '100%' }}
-          resizeMode="contain"
-        />
-      ) : null}
-      {s.showPreviewMetadata && (
-        <MetadataOverlay
-          photo={photo}
-          location={s.location}
-          showDate={s.metaShowDate}
-          showTime={s.metaShowTime}
-          showAddress={s.metaShowAddress}
-          showGps={s.metaShowGps}
-          position={s.metaPosition}
-          color={s.metaColor}
-          opacity={s.metaOpacity}
-          fontSize={s.metaFontSize}
-          fontFamily={s.metaFontFamily}
-          offset={s.metaOffset}
-        />
-      )}
-    </View>
-  );
-};
-
+// Render the combined photo's URI flat — no PhotoLabels, no
+// PhotoWatermark, no MetadataOverlay. The report pipeline feeds a
+// baked URI that already has whatever labels/watermark/timestamps
+// the user chose; layering more chrome on top duplicates them.
 const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
   // Mirror the HTML layout: ONLY combined ('mix') photos. Don't
   // synthesize fresh before/after pairs from raw photos — sets that
@@ -182,9 +143,22 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
       {visible.map(({ room, combinedPhotos }) => (
         <View key={`room-${room}`} style={styles.section}>
           <SectionHeader name={displayRoomName(room)} theme={theme} />
-          {combinedPhotos.map((c) => (
-            <CombinedHero key={`combined-${c.id}`} photo={c} />
-          ))}
+          {combinedPhotos.map((c) => {
+            const w = c.originalWidth || c.width;
+            const h = c.originalHeight || c.height;
+            const aspect = (w && h) ? (w / h) : (16 / 9);
+            return (
+              <View key={`combined-${c.id}`} style={[styles.combinedHero, { aspectRatio: aspect }]}>
+                {c.uri ? (
+                  <Image
+                    source={{ uri: c.uri }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="contain"
+                  />
+                ) : null}
+              </View>
+            );
+          })}
           {/* Notes rendered outside the photo frame so they don't
               overlay the image. */}
           {options.includeNotes && combinedPhotos.map((c) => (
