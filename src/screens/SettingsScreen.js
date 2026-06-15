@@ -3335,62 +3335,6 @@ export default function SettingsScreen({ navigation, route }) {
             etc.) and the rows above are quick-entry points to them. */}
 
     
-        {userMode !== 'team_member' && (
-          <>
-
-            {/* Appearance — hidden in the legacy section flow because the
-                "Appearance" design row above already toggles themeMode.
-                Wrapping in `{false && (` so the JSX subtree doesn't
-                render but the code stays in place for a quick re-enable. */}
-            {false && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('settings.appearance', { defaultValue: 'Appearance' })}</Text>
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>{t('settings.darkMode', { defaultValue: 'Dark mode' })}</Text>
-                  <Text style={styles.settingDescription}>
-                    {t('settings.darkModeDescription', { defaultValue: 'Use a dark color scheme. Applies to redesigned screens.' })}
-                  </Text>
-                </View>
-                <Switch
-                  value={themeMode === 'dark'}
-                  onValueChange={(v) => setThemeMode(v ? 'dark' : 'light')}
-                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                  thumbColor="white"
-                />
-              </View>
-            </View>
-            )}
-
-
-            {/* Upload Structure — collapsed down to a single
-                Split-by-date switch per the user's spec. The old
-                Before / After / Combined sub-toggles still exist in
-                Settings storage (for upload-service back-compat) but
-                are no longer surfaced in the UI. */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('settings.uploadStructure', { defaultValue: 'Upload Structure' })}</Text>
-              <Text style={styles.sectionDescription}>
-                {t('settings.uploadStructureDescription', { defaultValue: 'Configure how photos are organized in cloud storage.' })}
-              </Text>
-
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>{t('settings.splitByDate', { defaultValue: 'Split photos by date' })}</Text>
-                  <Text style={styles.settingDescription}>
-                    {t('settings.splitByDateDescription', { defaultValue: 'Group uploaded photos into per-day subfolders.' })}
-                  </Text>
-                </View>
-                <Switch
-                  value={splitPhotosByDate}
-                  onValueChange={updateSplitPhotosByDate}
-                  trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                  thumbColor="white"
-                />
-              </View>
-            </View>
-          </>
-        )}
 
         {/* Cloud & Team Sync Section */}
         <View 
@@ -5019,71 +4963,6 @@ export default function SettingsScreen({ navigation, route }) {
           ) : null}
         </View>
 
-        {/* Invite Friends */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.inviteFriends', { defaultValue: 'Invite Friends' })}</Text>
-          <Text style={styles.sectionDescription}>
-            {t('settings.inviteFriendsDescription', { defaultValue: 'Earn rewards for inviting friends' })}
-          </Text>
-
-          {/* Stats Cards */}
-          <View style={styles.referralStatsContainer}>
-            <View style={styles.referralStatCard}>
-              <Image source={require('../../assets/icons/team.png')} style={{height:25, width: 25}}/>
-              <View >
-              <Text style={styles.referralStatValue}>
-                {t('settings.outOf', { current: referralInfo.completedInvites || 0, total: 3, defaultValue: `${referralInfo.completedInvites || 0} out of 3` })}
-              </Text>
-              <Text style={styles.referralStatLabel}>
-                {t('settings.friendsJoined', { defaultValue: 'Friends Joined' })}
-              </Text>
-              </View>
-            </View>
-            <View style={styles.referralStatCard}>
-              <Image source={require('../../assets/icons/cup.png')} style={{height:25, width: 25}}/>
-              <View>
-              <Text style={styles.referralStatValue}>
-                {t('settings.daysCount', { count: (referralInfo.completedInvites || 0) * 15, defaultValue: `${(referralInfo.completedInvites || 0) * 15} Days` })}
-              </Text>
-              <Text style={styles.referralStatLabel}>
-                {t('settings.daysEarned', { defaultValue: 'Days earned' })}
-              </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Invite Friends Button */}
-          <TouchableOpacity
-            style={styles.inviteFriendsButton}
-            onPress={() => navigation.navigate('Referral')}
-          >
-            <Text style={styles.inviteFriendsButtonText}>
-              {t('settings.inviteFriends', { defaultValue: 'Invite Friends' })}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Referral Code Input */}
-          <View style={styles.referralCodeContainer}>
-            <TextInput
-              style={styles.referralCodeInput}
-              value={referralCodeInput}
-              onChangeText={setReferralCodeInput}
-              placeholder={t('settings.enterReferralCode', { defaultValue: 'Enter referral code' })}
-              placeholderTextColor={COLORS.GRAY}
-              autoCapitalize="characters"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              style={[styles.referralApplyButton, isApplyingReferral && styles.referralApplyButtonDisabled]}
-              onPress={handleApplyReferralCode}
-              disabled={isApplyingReferral}
-            >
-              <Text style={styles.referralApplyButtonText}>
-                {isApplyingReferral ? t('settings.applying', { defaultValue: 'Applying...' }) : t('settings.apply', { defaultValue: 'Apply' })}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         
 
