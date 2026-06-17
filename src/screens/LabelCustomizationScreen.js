@@ -19,11 +19,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
+import OverrideConflictModal from '../components/OverrideConflictModal';
 // useFeaturePermissions / FEATURES removed — used to gate the watermark
 // section, which now lives on the dedicated Watermark Customization
 // screen.
 import { getLabelPositions, PHOTO_MODES } from '../constants/rooms';
 import { Animated } from 'react-native';
+import PositionGrid from '../components/PositionGrid';
 
 // 9-cell position grid keys, organised by (column, row) so a drag can
 // snap to the nearest cell by checking centres.
@@ -278,6 +280,15 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
     updateAfterLabelOffsetLandscape,
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,
+    // Single-photo label defaults (separate from before/after combined halves)
+    singleLabelPosition,
+    singleLabelPositionLandscape,
+    singleLabelOffset,
+    singleLabelOffsetLandscape,
+    updateSingleLabelPosition,
+    updateSingleLabelPositionLandscape,
+    updateSingleLabelOffset,
+    updateSingleLabelOffsetLandscape,
     // Label language (independent of app language)
     labelLanguage,
     updateLabelLanguage,
@@ -376,9 +387,9 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   const applyColor = async () => {
     const hexColor = convertToHex(tempColor);
     if (colorModalType === 'bg') {
-      await updateLabelBackgroundColor(hexColor);
+      await guardedUpdateLabelBackgroundColor(hexColor);
     } else if (colorModalType === 'text') {
-      await updateLabelTextColor(hexColor);
+      await guardedUpdateLabelTextColor(hexColor);
     }
     setColorModalVisible(false);
   };
@@ -398,7 +409,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   // the preview reflects what the labels will look like on the user's
   // own picture, not a placeholder icon. `photoId` was already
   // extracted at the top of the component for the scoped-writes hook.
-  const { photos } = usePhotos();
+  const { photos, setPhotoOverride } = usePhotos();
   const previewPhoto = useMemo(
     () => (photoId ? photos.find((p) => String(p.id) === String(photoId)) : null),
     [photoId, photos]
@@ -455,13 +466,152 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
     await updateAfterLabelPosition(v);
     await updateAfterLabelPositionLandscape(v);
   };
-  const updateActiveBeforeOffset = async (v) => {
+  const writeActiveBeforeOffset = async (v) => {
     await updateBeforeLabelOffset(v);
     await updateBeforeLabelOffsetLandscape(v);
   };
-  const updateActiveAfterOffset = async (v) => {
+  const writeActiveAfterOffset = async (v) => {
     await updateAfterLabelOffset(v);
     await updateAfterLabelOffsetLandscape(v);
+  };
+
+  // ── Per-photo override conflict handling ─────────────────────────────
+  // When the user picks a position at GLOBAL scope (no photoId), check
+  // whether any photo carries a per-photo override for the side being
+  // changed. If yes, surface a confirmation modal so the user can pick
+  // which photos to bring along to the new default.
+  const BEFORE_OVERRIDE_KEYS = [
+    'beforeLabelOffset',
+    'beforeLabelOffsetLandscape',
+    'beforeLabelPosition',
+    'beforeLabelPositionLandscape',
+  ];
+  const AFTER_OVERRIDE_KEYS = [
+    'afterLabelOffset',
+    'afterLabelOffsetLandscape',
+    'afterLabelPosition',
+    'afterLabelPositionLandscape',
+  ];
+  const isCombinedPhoto = (p) => p?.mode === 'combined' || p?.mode === 'mix';
+  const isSinglePhoto = (p) => !isCombinedPhoto(p);
+
+  const findPhotosWithOverrideKeys = (keys, modeFilter) =>
+    photos.filter((p) => {
+      const ov = p?.overrides;
+      if (!ov) return false;
+      if (modeFilter && !modeFilter(p)) return false;
+      return keys.some((k) => Object.prototype.hasOwnProperty.call(ov, k));
+    });
+
+  // For a SINGLE-label global change we also have to surface
+  // non-combined photos whose overrides still live on the legacy
+  // beforeLabel / afterLabel fields. Pre-refactor those drove the
+  // single label too; with the new data model the conflict-detect
+  // would silently miss them and the modal would let the global
+  // change land without offering to bring those photos along.
+  const findSinglePhotoConflicts = () => {
+    const newField = findPhotosWithOverrideKeys(SINGLE_OVERRIDE_KEYS);
+    const legacy = findPhotosWithOverrideKeys(
+      [...BEFORE_OVERRIDE_KEYS, ...AFTER_OVERRIDE_KEYS],
+      isSinglePhoto,
+    );
+    const seen = new Set();
+    const merged = [];
+    for (const p of [...newField, ...legacy]) {
+      if (!seen.has(p.id)) {
+        seen.add(p.id);
+        merged.push(p);
+      }
+    }
+    return merged;
+  };
+  // Combined-half conflicts are scoped to combined photos only — a
+  // legacy override on `beforeLabelOffset` for a SINGLE before photo
+  // shouldn't show up when the user changes the combined-Before half
+  // default. The Single conflict above handles those.
+  const findCombinedBeforeConflicts = () =>
+    findPhotosWithOverrideKeys(BEFORE_OVERRIDE_KEYS, isCombinedPhoto);
+  const findCombinedAfterConflicts = () =>
+    findPhotosWithOverrideKeys(AFTER_OVERRIDE_KEYS, isCombinedPhoto);
+
+  const [conflictModal, setConflictModal] = useState({
+    visible: false,
+    photos: [],
+    pendingWrite: null,
+    overrideKeys: [],
+  });
+
+  // Wrap any global-scope setting writer with the conflict check. At
+  // per-photo scope (photoId set) the writer runs directly — only one
+  // photo is affected, no conflict surface is needed. At global scope,
+  // we look for photos whose overrides intersect with the field(s)
+  // about to change; if any exist, the writer is deferred until the
+  // user makes a choice in OverrideConflictModal.
+  //
+  // `findConflicts` lets each call site decide how to enumerate
+  // conflicting photos — e.g. the Single grid scans both new and
+  // legacy override fields; the Combined-Before/After grids restrict
+  // to combined photos.
+  const guardedUpdater = (writer, overrideKeys, findConflicts) => async (value) => {
+    if (photoId) {
+      console.warn('[LabelPos] guarded -> per-photo direct write', overrideKeys?.[0]);
+      return writer(value);
+    }
+    const conflicts = findConflicts
+      ? findConflicts()
+      : findPhotosWithOverrideKeys(overrideKeys);
+    console.warn('[LabelPos] guarded -> global', overrideKeys?.[0], 'conflicts=', conflicts.length);
+    if (conflicts.length === 0) return writer(value);
+    setConflictModal({
+      visible: true,
+      photos: conflicts,
+      pendingWrite: () => writer(value),
+      overrideKeys,
+    });
+  };
+
+  const updateActiveBeforeOffset = guardedUpdater(
+    writeActiveBeforeOffset,
+    BEFORE_OVERRIDE_KEYS,
+    findCombinedBeforeConflicts,
+  );
+  const updateActiveAfterOffset = guardedUpdater(
+    writeActiveAfterOffset,
+    AFTER_OVERRIDE_KEYS,
+    findCombinedAfterConflicts,
+  );
+
+  // Guarded wrappers for the non-position label setting writers, so
+  // changing color / font / size / corner / margin at the global Settings
+  // level also surfaces the conflict modal when individual photos
+  // override the same field.
+  const guardedUpdateLabelBackgroundColor = guardedUpdater(updateLabelBackgroundColor, ['labelBackgroundColor']);
+  const guardedUpdateLabelTextColor = guardedUpdater(updateLabelTextColor, ['labelTextColor']);
+  const guardedUpdateLabelFontFamily = guardedUpdater(updateLabelFontFamily, ['labelFontFamily']);
+  const guardedUpdateLabelSize = guardedUpdater(updateLabelSize, ['labelSize']);
+  const guardedUpdateLabelCornerStyle = guardedUpdater(updateLabelCornerStyle, ['labelCornerStyle']);
+  const guardedUpdateLabelMarginVertical = guardedUpdater(updateLabelMarginVertical, ['labelMarginVertical']);
+  const guardedUpdateLabelMarginHorizontal = guardedUpdater(updateLabelMarginHorizontal, ['labelMarginHorizontal']);
+
+  const closeConflict = () =>
+    setConflictModal({ visible: false, photos: [], pendingWrite: null, overrideKeys: [] });
+
+  const onConflictApply = async (photoIdsToOverwrite) => {
+    const { pendingWrite, overrideKeys } = conflictModal;
+    // Clear the relevant overrides on each selected photo, then run
+    // the global write that triggered this modal.
+    for (const id of photoIdsToOverwrite) {
+      for (const key of overrideKeys) {
+        try { await setPhotoOverride(id, key, null); } catch (_) {}
+      }
+    }
+    try { if (pendingWrite) await pendingWrite(); } catch (_) {}
+    closeConflict();
+  };
+  const onConflictSkipAll = async () => {
+    const { pendingWrite } = conflictModal;
+    try { if (pendingWrite) await pendingWrite(); } catch (_) {}
+    closeConflict();
   };
 
   const activeBeforeStyle = getPositionStyle(activeBeforePos, labelMarginVertical, labelMarginHorizontal);
@@ -470,6 +620,102 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   // photos render side-by-side (row flex, vertical divider), landscape photos
   // render stacked (column flex, horizontal divider).
   const isHorizontal = orientationTab === 'landscape';
+
+  // ── PositionGrid bridge ──────────────────────────────────────────────
+  // PositionGrid speaks position keys (left-top, center-middle, …) but
+  // the label customization screen tracks fractional offsets so a drag
+  // can land mid-cell. Convert between the two at the boundary.
+  const offsetToPositionKey = (off) => {
+    if (!off) return null;
+    for (const [k, o] of Object.entries(POSITION_KEY_TO_OFFSET)) {
+      if (o.x === off.x && o.y === off.y) return k;
+    }
+    return null;
+  };
+  const gridBeforeKey = offsetToPositionKey(activeBeforeOffset) || activeBeforePos;
+  const gridAfterKey = offsetToPositionKey(activeAfterOffset) || activeAfterPos;
+  const handleGridBeforeChange = (k) => updateActiveBeforeOffset(POSITION_KEY_TO_OFFSET[k]);
+  const handleGridAfterChange = (k) => updateActiveAfterOffset(POSITION_KEY_TO_OFFSET[k]);
+  const gridLayout = previewPhoto?.mode === PHOTO_MODES.COMBINED
+    ? (isHorizontal ? 'stack' : 'side')
+    : 'single';
+
+  // ── Single-photo grid wiring ─────────────────────────────────────────
+  // The combined grid (above) maps to beforeLabelOffset / afterLabelOffset
+  // which are now combined-only. The single grid writes to the new
+  // singleLabel* fields, which the labelPosition.js picker prefers for
+  // any non-combined photo. Both portrait + landscape variants are
+  // written on every pick so a portrait-tab change still applies to a
+  // landscape single photo and vice versa.
+  // The picker's "active selection" should fall back through the same
+  // chain the renderer uses: photo override on the new field → photo
+  // override on the legacy beforeLabel field → merged setting. This
+  // keeps the picker in sync with what the photo actually renders,
+  // including for pre-refactor per-photo overrides.
+  const ov = previewPhoto?.overrides;
+  const activeSinglePos = orientationTab === 'landscape'
+    ? (ov?.singleLabelPositionLandscape
+        || ov?.beforeLabelPositionLandscape
+        || singleLabelPositionLandscape
+        || singleLabelPosition)
+    : (ov?.singleLabelPosition
+        || ov?.beforeLabelPosition
+        || singleLabelPosition);
+  const activeSingleOffset = orientationTab === 'landscape'
+    ? (ov?.singleLabelOffsetLandscape
+        || ov?.beforeLabelOffsetLandscape
+        || singleLabelOffsetLandscape)
+    : (ov?.singleLabelOffset
+        || ov?.beforeLabelOffset
+        || singleLabelOffset);
+  const gridSingleKey = offsetToPositionKey(activeSingleOffset) || activeSinglePos;
+  // Writes both portrait + landscape variants of the single offset.
+  // The reader's chain (pickSingleChain) ensures the new value wins
+  // over any stale legacy ov.beforeLabelOffset on the same photo, so
+  // we don't need to clear those here — keeping this path minimal
+  // avoids sequential setPhotoOverride races when state hasn't settled.
+  const writeActiveSingleOffset = async (v) => {
+    console.warn('[LabelPos] writeActiveSingleOffset', JSON.stringify(v), 'photoId=', photoId);
+    await updateSingleLabelOffset(v);
+    await updateSingleLabelOffsetLandscape(v);
+  };
+  const SINGLE_OVERRIDE_KEYS = [
+    'singleLabelOffset',
+    'singleLabelOffsetLandscape',
+    'singleLabelPosition',
+    'singleLabelPositionLandscape',
+    // Legacy fields cleared on Apply too, since they hold the
+    // pre-refactor per-photo single-label overrides.
+    'beforeLabelOffset',
+    'beforeLabelOffsetLandscape',
+    'beforeLabelPosition',
+    'beforeLabelPositionLandscape',
+    'afterLabelOffset',
+    'afterLabelOffsetLandscape',
+    'afterLabelPosition',
+    'afterLabelPositionLandscape',
+  ];
+  const updateActiveSingleOffset = guardedUpdater(
+    writeActiveSingleOffset,
+    SINGLE_OVERRIDE_KEYS,
+    findSinglePhotoConflicts,
+  );
+  const handleGridSingleChange = (k) => {
+    console.warn('[LabelPos] handleGridSingleChange tap', k, 'photoId=', photoId);
+    return updateActiveSingleOffset(POSITION_KEY_TO_OFFSET[k]);
+  };
+
+  // Show both Single + Combined sections only at GLOBAL scope. In
+  // per-photo scope (Studio entry), the picker shows only the grid that
+  // matches the photo being customized.
+  const showBothGrids = !photoId;
+  // Toggled by the Single/Combined switcher inside the Position modal.
+  // Default to whichever grid is more relevant: single when no preview
+  // photo exists or the photo is single, combined when the preview is
+  // a combined.
+  const [positionGridView, setPositionGridView] = useState(
+    previewPhoto?.mode === PHOTO_MODES.COMBINED ? 'combined' : 'single'
+  );
 
 
   return (
@@ -496,7 +742,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
             selected={labelCornerStyle === 'rounded'}
             onPress={async () => {
               const newStyle = labelCornerStyle === 'rounded' ? 'square' : 'rounded';
-              await updateLabelCornerStyle(newStyle);
+              await guardedUpdateLabelCornerStyle(newStyle);
             }}
           />
           <ControlButton icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
@@ -525,7 +771,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
         <WheelFontPicker
           options={FONT_OPTIONS}
           value={labelFontFamily}
-          onChange={(v) => { updateLabelFontFamily(v); }}
+          onChange={(v) => { guardedUpdateLabelFontFamily(v); }}
           getFontFamily={getPreviewFontFamily}
         />
       </FontWheelSheet>
@@ -671,70 +917,68 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
             Editing {orientationTab === 'portrait' ? 'vertical (portrait + square)' : 'horizontal (landscape)'} photo positions. Switch in the preview above.
           </Text>
 
-          {previewPhoto?.mode === PHOTO_MODES.COMBINED ? (
-            <View style={styles.positionGrid}>
-              <View style={styles.positionHalf}>
-                <Text style={styles.positionHalfLabel}>Before</Text>
-                {POSITION_GRID.map((row, rowIdx) => (
-                  <View key={rowIdx} style={styles.positionRow}>
-                    {row.map((pos) => {
-                      const off = POSITION_KEY_TO_OFFSET[pos];
-                      const isSelected = activeBeforeOffset
-                        && activeBeforeOffset.x === off.x
-                        && activeBeforeOffset.y === off.y;
-                      return (
-                        <TouchableOpacity
-                          key={pos}
-                          style={[styles.positionCell, isSelected && styles.positionCellSelected]}
-                          onPress={() => updateActiveBeforeOffset(off)}
-                        />
-                      );
-                    })}
-                  </View>
-                ))}
+          {showBothGrids ? (
+            <>
+              {/* Switcher — Single / Combined. One grid at a time so
+                  both views render at the same cell size. */}
+              <View style={styles.gridSwitcher}>
+                <TouchableOpacity
+                  style={[
+                    styles.gridSwitcherTab,
+                    positionGridView === 'single' && styles.gridSwitcherTabActive,
+                  ]}
+                  onPress={() => setPositionGridView('single')}
+                >
+                  <Text style={[
+                    styles.gridSwitcherText,
+                    positionGridView === 'single' && styles.gridSwitcherTextActive,
+                  ]}>Single picture</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.gridSwitcherTab,
+                    positionGridView === 'combined' && styles.gridSwitcherTabActive,
+                  ]}
+                  onPress={() => setPositionGridView('combined')}
+                >
+                  <Text style={[
+                    styles.gridSwitcherText,
+                    positionGridView === 'combined' && styles.gridSwitcherTextActive,
+                  ]}>Combined picture</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.positionDivider} />
-              <View style={styles.positionHalf}>
-                <Text style={styles.positionHalfLabel}>After</Text>
-                {POSITION_GRID.map((row, rowIdx) => (
-                  <View key={rowIdx} style={styles.positionRow}>
-                    {row.map((pos) => {
-                      const off = POSITION_KEY_TO_OFFSET[pos];
-                      const isSelected = activeAfterOffset
-                        && activeAfterOffset.x === off.x
-                        && activeAfterOffset.y === off.y;
-                      return (
-                        <TouchableOpacity
-                          key={pos}
-                          style={[styles.positionCell, isSelected && styles.positionCellSelected]}
-                          onPress={() => updateActiveAfterOffset(off)}
-                        />
-                      );
-                    })}
-                  </View>
-                ))}
-              </View>
-            </View>
+
+              {positionGridView === 'single' ? (
+                <PositionGrid
+                  layout="single"
+                  mode="single"
+                  value={gridSingleKey}
+                  onChange={handleGridSingleChange}
+                  showCornerSnapWarning
+                />
+              ) : (
+                <PositionGrid
+                  layout={isHorizontal ? 'stack' : 'side'}
+                  mode="dual"
+                  beforeValue={gridBeforeKey}
+                  afterValue={gridAfterKey}
+                  onBeforeChange={handleGridBeforeChange}
+                  onAfterChange={handleGridAfterChange}
+                />
+              )}
+            </>
           ) : (
-            <View style={styles.positionFullGrid}>
-              {POSITION_GRID.map((row, rowIdx) => (
-                <View key={rowIdx} style={styles.positionRow}>
-                  {row.map((pos) => {
-                    const off = POSITION_KEY_TO_OFFSET[pos];
-                    const isSelected = activeBeforeOffset
-                      && activeBeforeOffset.x === off.x
-                      && activeBeforeOffset.y === off.y;
-                    return (
-                      <TouchableOpacity
-                        key={pos}
-                        style={[styles.positionCell, isSelected && styles.positionCellSelected]}
-                        onPress={() => updateActiveBeforeOffset(off)}
-                      />
-                    );
-                  })}
-                </View>
-              ))}
-            </View>
+            <PositionGrid
+              layout={gridLayout}
+              mode={previewPhoto?.mode === PHOTO_MODES.COMBINED ? 'dual' : 'single'}
+              beforeValue={gridBeforeKey}
+              afterValue={gridAfterKey}
+              onBeforeChange={handleGridBeforeChange}
+              onAfterChange={handleGridAfterChange}
+              value={gridSingleKey}
+              onChange={handleGridSingleChange}
+              showCornerSnapWarning={previewPhoto?.mode !== PHOTO_MODES.COMBINED}
+            />
           )}
         </View>
       </BottomModal>
@@ -761,8 +1005,11 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
               value={typeof labelSize === 'number'
                 ? labelSize
                 : (SIZE_OPTIONS.find((s) => s.key === labelSize)?.fontSize || 14)}
+              // Live preview during the drag uses the raw writer so we
+              // don't pop the conflict modal on every tick. Conflict
+              // check fires only on release (onSlidingComplete).
               onValueChange={(v) => updateLabelSize(Math.round(v))}
-              onSlidingComplete={(v) => updateLabelSize(Math.round(v))}
+              onSlidingComplete={(v) => guardedUpdateLabelSize(Math.round(v))}
               min={10}
               max={32}
               step={1}
@@ -787,6 +1034,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
             <SliderInput
               value={labelMarginVertical}
               onValueChange={updateLabelMarginVertical}
+              onSlidingComplete={guardedUpdateLabelMarginVertical}
               min={0}
               max={50}
               step={1}
@@ -802,6 +1050,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
             <SliderInput
               value={labelMarginHorizontal}
               onValueChange={updateLabelMarginHorizontal}
+              onSlidingComplete={guardedUpdateLabelMarginHorizontal}
               min={0}
               max={50}
               step={1}
@@ -814,6 +1063,16 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
       {/* Watermark modals removed — watermark customization lives on its
           own screen. The color modal here still handles BG + text only. */}
+
+      <OverrideConflictModal
+        visible={conflictModal.visible}
+        photos={conflictModal.photos}
+        title="Some photos have a custom label position"
+        description="These photos kept a position you set just for them. Apply the new default to the checked photos, or uncheck to leave a photo on its custom value."
+        onApply={onConflictApply}
+        onSkipAll={onConflictSkipAll}
+        onCancel={closeConflict}
+      />
 
     </SafeAreaView>
   );
@@ -1899,6 +2158,35 @@ const styles = StyleSheet.create({
     color: COLORS.GRAY,
     textAlign: 'center',
     marginBottom: 16,
+  },
+  gridSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.BORDER,
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 18,
+    alignSelf: 'center',
+  },
+  gridSwitcherTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  gridSwitcherTabActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  gridSwitcherText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+  },
+  gridSwitcherTextActive: {
+    color: '#000',
   },
   positionGrid: {
     flexDirection: 'row',

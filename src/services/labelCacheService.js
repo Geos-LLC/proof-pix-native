@@ -72,7 +72,50 @@ const LABEL_CACHE_DIR = '_labeled_cache';
 //      labelLanguage is critical — changing the label language changes BEFORE/AFTER text.
 // v25: Added beforeLabelPositionLandscape and afterLabelPositionLandscape so cached
 //      labels invalidate when the user changes orientation-specific positions.
-const CACHE_VERSION = 25;
+// v26: PROGRESS mode now gets labeled (was previously skipped, leaving progress shots
+//      blank in reports). Also forces re-bake of pre-existing After photos that were
+//      cached before progress-support, so older reports finally surface the After label.
+// v27: CRITICAL FIX — added beforeLabelOffset / afterLabelOffset (and the landscape
+//      variants) to the settings hash. The new PositionGrid writes the user's pick
+//      into the offset fields, not the legacy position keys. Without the offsets in
+//      the hash, picking a new corner left the cache hash unchanged, so the cache
+//      served the previously-baked photo at the OLD position.
+// v28: Split single-photo and combined-photo label defaults. New settings
+//      fields singleLabelPosition / singleLabelOffset (+ landscape variants)
+//      drive single before / after / progress photos; the before/after fields
+//      now apply only to combined photo halves. Hash must include the singles
+//      so changing the Single grid in Settings invalidates the cache.
+// v29: Override-aware priority chain in the bake. Without bumping, photos
+//      previously baked under v28's merged-settings logic would still hit
+//      cache (same hash) and serve the wrong-positioned bake. Bump forces
+//      a fresh re-bake project-wide so every photo lands at the position
+//      the new chain produces.
+// v30: settingsRef in GlobalBackgroundLabelPreparation was missing the offset
+//      and singleLabel* fields, so every v29 single-photo bake fell through
+//      to hardcoded fallbacks (center-middle / right-top). Those wrong-position
+//      bakes got cached at the v29 hash; settings unchanged so the hash matches
+//      and the new code keeps serving the bad bake. Bump to drop them.
+// v31: Position format flip before addLabelToImage. v30 bakes were saving
+//      labeled URIs that the native module silently no-op'd on (returned
+//      copies without labels). Bump to invalidate so the v31 code runs and
+//      actually draws the label.
+// v32: Drop v31 bakes that ran while the device was out of space — the
+//      native compositor and the cache copy can both produce 0-byte /
+//      truncated files in that state without throwing, which then cache
+//      HIT forever and serve label-less photos. Paired with a min-size
+//      sanity check in getCachedLabeledPhoto so future disk-full bakes
+//      self-heal on the next read.
+// v33: Diagnostic bump. The native compositor appears to be returning
+//      label-less copies on the current binary, but every existing
+//      cache entry serves the suspect file on cache HIT, so
+//      addLabelToImage never gets called and we can't observe the
+//      [ImgComp:*] diagnostic in the OTA. Bumping the version forces
+//      a fresh bake of every flat photo on next access so the logs
+//      capture the call.
+// v34: Build 77 / runtime 1.7.7 — fresh native binary. Bump to drop
+//      any v33 cache entries baked under the (suspected) broken Swift
+//      and force a fresh bake against the new compiled compositor.
+const CACHE_VERSION = 34;
 
 /**
  * Calculate a hash of label settings to determine if cached version is still valid
@@ -84,6 +127,14 @@ export const calculateSettingsHash = (settings) => {
     afterLabelPosition,
     beforeLabelPositionLandscape,
     afterLabelPositionLandscape,
+    beforeLabelOffset,
+    afterLabelOffset,
+    beforeLabelOffsetLandscape,
+    afterLabelOffsetLandscape,
+    singleLabelPosition,
+    singleLabelPositionLandscape,
+    singleLabelOffset,
+    singleLabelOffsetLandscape,
     labelBackgroundColor,
     labelTextColor,
     labelSize,
@@ -102,6 +153,17 @@ export const calculateSettingsHash = (settings) => {
     watermarkFontFamily,
   } = settings;
 
+  // The PositionGrid in LabelCustomizationScreen writes the user's
+  // pick into the *offset* fields (fractional {x, y}) — NOT into the
+  // position-key fields. Including the offsets in the hash is the
+  // load-bearing fix: without it, picking a new corner doesn't change
+  // the hash, so the cache returns the previously-baked photo with
+  // the old position.
+  const offsetKey = (off) =>
+    off && typeof off.x === 'number' && typeof off.y === 'number'
+      ? `${off.x},${off.y}`
+      : '';
+
   // Create a string representation of all settings including cache version
   const settingsObj = {
     version: CACHE_VERSION, // Include version to invalidate old cache
@@ -110,6 +172,14 @@ export const calculateSettingsHash = (settings) => {
     afterLabelPosition: afterLabelPosition || 'top-right',
     beforeLabelPositionLandscape: beforeLabelPositionLandscape || 'left-top',
     afterLabelPositionLandscape: afterLabelPositionLandscape || 'left-top',
+    beforeLabelOffset: offsetKey(beforeLabelOffset),
+    afterLabelOffset: offsetKey(afterLabelOffset),
+    beforeLabelOffsetLandscape: offsetKey(beforeLabelOffsetLandscape),
+    afterLabelOffsetLandscape: offsetKey(afterLabelOffsetLandscape),
+    singleLabelPosition: singleLabelPosition || '',
+    singleLabelPositionLandscape: singleLabelPositionLandscape || '',
+    singleLabelOffset: offsetKey(singleLabelOffset),
+    singleLabelOffsetLandscape: offsetKey(singleLabelOffsetLandscape),
     labelBackgroundColor: labelBackgroundColor || '#FFD700',
     labelTextColor: labelTextColor || '#000000',
     labelSize: labelSize || 'medium',
@@ -205,10 +275,24 @@ export const getCachedLabeledPhoto = async (photo, settingsHash) => {
     }
 
     // Check if file exists
-    const fileInfo = await FileSystem.getInfoAsync(cached.uri);
+    const fileInfo = await FileSystem.getInfoAsync(cached.uri, { size: true });
     if (!fileInfo.exists) {
       console.log(`[LabelCache:${checkId}] ❌ Cached file doesn't exist, removing from metadata`);
       // File was deleted, remove from metadata
+      delete metadata[cacheKey];
+      await saveCacheMetadata(metadata);
+      return null;
+    }
+
+    // Sanity check on size — when the bake or the cache copy ran
+    // during a disk-full condition, the resulting file can be 0
+    // bytes or a truncated header even though `exists` is true.
+    // A real labeled JPEG is always tens of KB at minimum. Anything
+    // below 4 KB is almost certainly a corrupted partial write; drop
+    // it so the next read re-bakes from the original.
+    if (typeof fileInfo.size === 'number' && fileInfo.size < 4096) {
+      console.warn(`[LabelCache:${checkId}] ❌ Cached file suspiciously small (${fileInfo.size} bytes) — treating as corrupt, removing`);
+      try { await FileSystem.deleteAsync(cached.uri, { idempotent: true }); } catch (_) {}
       delete metadata[cacheKey];
       await saveCacheMetadata(metadata);
       return null;

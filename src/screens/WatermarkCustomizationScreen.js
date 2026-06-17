@@ -22,12 +22,26 @@ import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
+import PositionGrid, { resolvePositionKey } from '../components/PositionGrid';
+import { PHOTO_MODES } from '../constants/rooms';
 
 const POSITIONS = [
   ['left-top', 'center-top', 'right-top'],
   ['left-middle', 'center-middle', 'right-middle'],
   ['left-bottom', 'center-bottom', 'right-bottom'],
 ];
+
+// Combined photos render side-by-side when the source pair is portrait
+// and stacked when landscape — mirrors isStackedLayout in HomeScreen.
+const combinedGridLayout = (photo) => {
+  if (!photo || photo.mode !== PHOTO_MODES.COMBINED) return 'single';
+  const ar = photo.aspectRatio;
+  if (typeof ar === 'string') {
+    const [w, h] = ar.split(':').map(Number);
+    if (w && h) return h > w ? 'side' : 'stack';
+  }
+  return 'side';
+};
 
 const FONT_OPTIONS = [
   { key: 'system', label: 'Arial Blank' },
@@ -246,32 +260,17 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
 
       {/* Position Modal */}
       <BottomModal visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title="Position" theme={theme}>
-        <View style={[styles.positionGrid, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {POSITIONS.map((row, ri) => (
-            <View key={ri} style={styles.positionRow}>
-              {row.map((pos) => {
-                const isActive = watermarkPosition === pos && !watermarkOffset;
-                return (
-                  <TouchableOpacity
-                    key={pos}
-                    onPress={async () => {
-                      await updateWatermarkOffset(null);
-                      await updateWatermarkPosition(pos);
-                    }}
-                    style={[
-                      styles.positionCell,
-                      {
-                        backgroundColor: isActive ? theme.accent : theme.surfaceElevated,
-                        borderColor: isActive ? theme.accent : theme.border,
-                      },
-                    ]}
-                  >
-                    {isActive && <Ionicons name="checkmark" size={16} color={theme.accentText} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
+        <View style={{ padding: 16 }}>
+          <PositionGrid
+            layout={combinedGridLayout(previewPhoto)}
+            mode="single"
+            value={resolvePositionKey(watermarkOffset, watermarkPosition)}
+            onChange={async (pos) => {
+              await updateWatermarkOffset(null);
+              await updateWatermarkPosition(pos);
+            }}
+            theme={theme}
+          />
         </View>
       </BottomModal>
 

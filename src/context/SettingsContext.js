@@ -154,6 +154,14 @@ export const SettingsProvider = ({ children }) => {
   const [beforeLabelOffsetLandscape, setBeforeLabelOffsetLandscape] = useState(null);
   const [afterLabelOffsetLandscape, setAfterLabelOffsetLandscape] = useState(null);
   const [combinedLabelOffset, setCombinedLabelOffset] = useState(null);
+  // Single-photo label defaults — applied to single before / after /
+  // progress photos. Combined photos keep using the before/after offsets
+  // above for their two halves. Lets users configure a different default
+  // for single shots without disturbing combined-photo placement.
+  const [singleLabelPosition, setSingleLabelPosition] = useState('left-top');
+  const [singleLabelPositionLandscape, setSingleLabelPositionLandscape] = useState('left-top');
+  const [singleLabelOffset, setSingleLabelOffset] = useState(null);
+  const [singleLabelOffsetLandscape, setSingleLabelOffsetLandscape] = useState(null);
   const [labelMarginVertical, setLabelMarginVertical] = useState(10); // Top/bottom margin
   const [labelMarginHorizontal, setLabelMarginHorizontal] = useState(10); // Left/right margin
   const [userName, setUserName] = useState('');
@@ -349,6 +357,29 @@ export const SettingsProvider = ({ children }) => {
         setBeforeLabelOffsetLandscape(sanitizeOffset(settings.beforeLabelOffsetLandscape));
         setAfterLabelOffsetLandscape(sanitizeOffset(settings.afterLabelOffsetLandscape));
         setCombinedLabelOffset(sanitizeOffset(settings.combinedLabelOffset));
+        // Single-photo defaults — migration: if the user has saved
+        // beforeLabelOffset but no singleLabelOffset, surface the before
+        // value as the single default so existing single photos keep
+        // their previous rendering. Once the user changes the Single
+        // grid in Settings, the migration is moot.
+        setSingleLabelPosition(
+          settings.singleLabelPosition
+            ?? settings.beforeLabelPosition
+            ?? 'left-top'
+        );
+        setSingleLabelPositionLandscape(
+          settings.singleLabelPositionLandscape
+            ?? settings.beforeLabelPositionLandscape
+            ?? 'left-top'
+        );
+        setSingleLabelOffset(
+          sanitizeOffset(settings.singleLabelOffset)
+            ?? sanitizeOffset(settings.beforeLabelOffset)
+        );
+        setSingleLabelOffsetLandscape(
+          sanitizeOffset(settings.singleLabelOffsetLandscape)
+            ?? sanitizeOffset(settings.beforeLabelOffsetLandscape)
+        );
         setBrandLogoOffset(sanitizeOffset(settings.brandLogoOffset));
         setMetaOffset(sanitizeOffset(settings.metaOffset));
         setWatermarkOffset(sanitizeOffset(settings.watermarkOffset));
@@ -485,6 +516,10 @@ export const SettingsProvider = ({ children }) => {
         beforeLabelOffsetLandscape,
         afterLabelOffsetLandscape,
         combinedLabelOffset,
+        singleLabelPosition,
+        singleLabelPositionLandscape,
+        singleLabelOffset,
+        singleLabelOffsetLandscape,
         brandLogoOffset,
         brandLogoSize,
         metaOffset,
@@ -890,6 +925,24 @@ export const SettingsProvider = ({ children }) => {
     setCombinedLabelOffset(next);
     await saveSettings({ combinedLabelOffset: next });
   };
+  const updateSingleLabelPosition = async (position) => {
+    setSingleLabelPosition(position);
+    await saveSettings({ singleLabelPosition: position });
+  };
+  const updateSingleLabelPositionLandscape = async (position) => {
+    setSingleLabelPositionLandscape(position);
+    await saveSettings({ singleLabelPositionLandscape: position });
+  };
+  const updateSingleLabelOffset = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setSingleLabelOffset(next);
+    await saveSettings({ singleLabelOffset: next });
+  };
+  const updateSingleLabelOffsetLandscape = async (offset) => {
+    const next = sanitizeOffsetIn(offset);
+    setSingleLabelOffsetLandscape(next);
+    await saveSettings({ singleLabelOffsetLandscape: next });
+  };
 
   const updateLabelMarginVertical = async (margin) => {
     setLabelMarginVertical(margin);
@@ -1232,6 +1285,14 @@ export const SettingsProvider = ({ children }) => {
     updateBeforeLabelOffsetLandscape,
     updateAfterLabelOffsetLandscape,
     updateCombinedLabelOffset,
+    singleLabelPosition,
+    singleLabelPositionLandscape,
+    singleLabelOffset,
+    singleLabelOffsetLandscape,
+    updateSingleLabelPosition,
+    updateSingleLabelPositionLandscape,
+    updateSingleLabelOffset,
+    updateSingleLabelOffsetLandscape,
     updateLabelMarginVertical,
     updateLabelMarginHorizontal,
     userName,

@@ -30,6 +30,14 @@ export default function GlobalBackgroundLabelPreparation() {
     afterLabelPosition,
     beforeLabelPositionLandscape,
     afterLabelPositionLandscape,
+    beforeLabelOffset,
+    afterLabelOffset,
+    beforeLabelOffsetLandscape,
+    afterLabelOffsetLandscape,
+    singleLabelPosition,
+    singleLabelPositionLandscape,
+    singleLabelOffset,
+    singleLabelOffsetLandscape,
     labelBackgroundColor,
     labelTextColor,
     labelSize,
@@ -53,6 +61,14 @@ export default function GlobalBackgroundLabelPreparation() {
       afterLabelPosition,
       beforeLabelPositionLandscape,
       afterLabelPositionLandscape,
+      beforeLabelOffset,
+      afterLabelOffset,
+      beforeLabelOffsetLandscape,
+      afterLabelOffsetLandscape,
+      singleLabelPosition,
+      singleLabelPositionLandscape,
+      singleLabelOffset,
+      singleLabelOffsetLandscape,
       labelBackgroundColor,
       labelTextColor,
       labelSize,
@@ -66,7 +82,19 @@ export default function GlobalBackgroundLabelPreparation() {
       watermarkPosition,
       watermarkFontFamily,
     };
-  }, [showLabels, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, labelBackgroundColor, labelTextColor, labelSize, labelMarginHorizontal, labelMarginVertical, showWatermark, customWatermarkEnabled, watermarkText, watermarkColor, watermarkOpacity, watermarkPosition, watermarkFontFamily]);
+  }, [
+    showLabels,
+    beforeLabelPosition, afterLabelPosition,
+    beforeLabelPositionLandscape, afterLabelPositionLandscape,
+    beforeLabelOffset, afterLabelOffset,
+    beforeLabelOffsetLandscape, afterLabelOffsetLandscape,
+    singleLabelPosition, singleLabelPositionLandscape,
+    singleLabelOffset, singleLabelOffsetLandscape,
+    labelBackgroundColor, labelTextColor, labelSize,
+    labelMarginHorizontal, labelMarginVertical,
+    showWatermark, customWatermarkEnabled, watermarkText,
+    watermarkColor, watermarkOpacity, watermarkPosition, watermarkFontFamily,
+  ]);
 
   useEffect(() => {
     tRef.current = t;
@@ -83,6 +111,29 @@ export default function GlobalBackgroundLabelPreparation() {
     return positionMap[position] || position || 'left-top';
   }, []);
 
+  // The iOS / Android native labeler doc lists positions in vertical-
+  // horizontal order ('top-left', 'top-right', 'bottom-left',
+  // 'bottom-right'). Our internal pipeline normalizes to horizontal-
+  // vertical ('left-top', 'right-top', 'left-bottom', 'right-bottom'),
+  // which the native module silently rejects (returns a copy of the
+  // image with no label drawn). Flip the order JUST before the native
+  // call so the label is actually rendered. Also map any 9-position
+  // center variant down to the nearest 4-corner equivalent.
+  const toNativePosition = useCallback((p) => {
+    const map = {
+      'left-top': 'top-left',
+      'right-top': 'top-right',
+      'left-bottom': 'bottom-left',
+      'right-bottom': 'bottom-right',
+      'center-top': 'top-left',
+      'center-bottom': 'bottom-left',
+      'left-middle': 'top-left',
+      'right-middle': 'top-right',
+      'center-middle': 'top-left',
+    };
+    return map[p] || p || 'top-left';
+  }, []);
+
   // Process a specific photo - accepts photo directly instead of reading from state
   const processPhoto = useCallback(async (photoToProcess) => {
     if (!photoToProcess || isProcessingRef.current) return;
@@ -97,18 +148,8 @@ export default function GlobalBackgroundLabelPreparation() {
     const translate = tRef.current || t;
 
     try {
-      console.log(`[BackgroundLabelPrep:${taskId}] START Processing`, {
-        photoId: photoToProcess.photo.id,
-        mode: photoToProcess.photo.mode,
-        isCombined: photoToProcess.isCombined,
-        hasBeforePhoto: !!photoToProcess.beforePhoto,
-        hasAfterPhoto: !!photoToProcess.afterPhoto,
-        key: photoToProcess.key,
-      });
-
       // Skip if labels are disabled
       if (!settings.showLabels) {
-        console.log(`[BackgroundLabelPrep:${taskId}] Labels disabled, skipping`);
         if (photoToProcess.resolve) {
           photoToProcess.resolve(photoToProcess.photo.uri);
         }
@@ -150,6 +191,36 @@ export default function GlobalBackgroundLabelPreparation() {
       };
       const beforeOff = isLandscapePhoto ? settings.beforeLabelOffsetLandscape : settings.beforeLabelOffset;
       const afterOff = isLandscapePhoto ? settings.afterLabelOffsetLandscape : settings.afterLabelOffset;
+      // Single-photo offset / position key. Walk the same priority
+      // chain pickSingleChain uses in labelPosition.js so the bake
+      // matches the picker + renderer. CRITICAL: read overrides
+      // separately from baseSettings — a per-photo legacy override on
+      // beforeLabelOffset must win over a freshly-changed global
+      // singleLabelOffset, but `merged.singleLabelOffset` always
+      // resolves to the global value when the override only touches
+      // beforeLabelOffset, which was making baked photos drift.
+      const photoMode = photoToProcess.photo?.mode;
+      const legacyOffKey = photoMode === PHOTO_MODES.AFTER
+        ? (isLandscapePhoto ? 'afterLabelOffsetLandscape' : 'afterLabelOffset')
+        : (isLandscapePhoto ? 'beforeLabelOffsetLandscape' : 'beforeLabelOffset');
+      const legacyPosKey = photoMode === PHOTO_MODES.AFTER
+        ? (isLandscapePhoto ? 'afterLabelPositionLandscape' : 'afterLabelPosition')
+        : (isLandscapePhoto ? 'beforeLabelPositionLandscape' : 'beforeLabelPosition');
+      const newOffKey = isLandscapePhoto ? 'singleLabelOffsetLandscape' : 'singleLabelOffset';
+      const newPosKey = isLandscapePhoto ? 'singleLabelPositionLandscape' : 'singleLabelPosition';
+      const singleOff =
+        (overrides && overrides[newOffKey])
+        || (overrides && overrides[legacyOffKey])
+        || baseSettings[newOffKey]
+        || baseSettings[legacyOffKey]
+        || null;
+      const singlePosFallback =
+        (overrides && overrides[newPosKey])
+        || (overrides && overrides[legacyPosKey])
+        || baseSettings[newPosKey]
+        || baseSettings[legacyPosKey]
+        || (photoMode === PHOTO_MODES.AFTER ? 'right-top' : 'left-top');
+
       const beforePosKey = offsetToCornerKey(
         beforeOff,
         isLandscapePhoto
@@ -162,15 +233,22 @@ export default function GlobalBackgroundLabelPreparation() {
           ? (settings.afterLabelPositionLandscape || 'left-top')
           : (settings.afterLabelPosition || 'right-top')
       );
+      const singlePosKey = offsetToCornerKey(singleOff, singlePosFallback);
 
-      // Determine label position based on photo mode
+      // Determine label position based on photo mode. Combined photos
+      // use the before/after offsets for their two halves. Single
+      // photos (BEFORE / AFTER / PROGRESS captured alone) use the
+      // singleLabel default so the user can configure them independently.
       let labelPosition;
-      if (photoToProcess.photo.mode === PHOTO_MODES.BEFORE) {
-        labelPosition = convertLabelPosition(beforePosKey);
-      } else if (photoToProcess.photo.mode === PHOTO_MODES.AFTER) {
-        labelPosition = convertLabelPosition(afterPosKey);
-      } else if (photoToProcess.isCombined) {
+      if (photoToProcess.isCombined) {
+        // Combined-photo path handles both labels itself below.
         labelPosition = 'top-left';
+      } else if (
+        photoToProcess.photo.mode === PHOTO_MODES.BEFORE
+        || photoToProcess.photo.mode === PHOTO_MODES.AFTER
+        || photoToProcess.photo.mode === PHOTO_MODES.PROGRESS
+      ) {
+        labelPosition = convertLabelPosition(singlePosKey);
       } else {
         labelPosition = 'top-left';
       }
@@ -181,6 +259,8 @@ export default function GlobalBackgroundLabelPreparation() {
         labelText = translate('common.before') || 'BEFORE';
       } else if (photoToProcess.photo.mode === PHOTO_MODES.AFTER) {
         labelText = translate('common.after') || 'AFTER';
+      } else if (photoToProcess.photo.mode === PHOTO_MODES.PROGRESS) {
+        labelText = translate('common.progress') || 'PROGRESS';
       } else {
         labelText = '';
       }
@@ -189,9 +269,11 @@ export default function GlobalBackgroundLabelPreparation() {
       const labelSizeMap = { small: 48, medium: 56, large: 64 };
       const fontSize = labelSizeMap[settings.labelSize] || 56;
 
-      // Build label configuration
+      // Build label configuration. Position flipped to the native
+      // module's documented format ('top-left' etc.) right at the
+      // boundary so internal code stays in 'left-top' format.
       const labelConfig = {
-        position: labelPosition,
+        position: toNativePosition(labelPosition),
         backgroundColor: settings.labelBackgroundColor || '#FFD700',
         textColor: settings.labelTextColor || '#000000',
         fontSize: fontSize,
@@ -331,8 +413,12 @@ export default function GlobalBackgroundLabelPreparation() {
 
       } else {
         // Standard single photo labeling
-        console.log(`[BackgroundLabelPrep:${taskId}] PATH 3: Standard single photo labeling`);
-        labeledUri = await addLabelToImage(photoToProcess.photo.uri, labelText, labelConfig);
+        try {
+          labeledUri = await addLabelToImage(photoToProcess.photo.uri, labelText, labelConfig);
+        } catch (err) {
+          console.warn(`[BackgroundLabelPrep] single bake FAILED photo=${photoToProcess.photo.id} mode=${photoMode} error=${err?.message || String(err)}`);
+          labeledUri = null;
+        }
       }
 
       // Apply watermark if enabled

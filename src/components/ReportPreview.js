@@ -53,7 +53,7 @@ const SectionHeader = ({ name, theme }) => (
 // editor's bake already composites label + watermark into the
 // image). The optional `label` prop now drops because the baked
 // image carries it; we keep `timestamp` since the bake doesn't.
-const PhotoSlot = ({ uri, theme, missing, timestamp }) => (
+const PhotoSlot = ({ uri, theme, missing, timestamp, watermark }) => (
   <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
     {uri ? (
       <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
@@ -70,6 +70,11 @@ const PhotoSlot = ({ uri, theme, missing, timestamp }) => (
         <Text style={styles.overlayText}>{timestamp}</Text>
       </View>
     ) : null}
+    {watermark ? (
+      <View style={styles.watermarkOverlay}>
+        <Text style={styles.overlayText} numberOfLines={1}>{watermark}</Text>
+      </View>
+    ) : null}
   </View>
 );
 
@@ -84,34 +89,124 @@ const Note = ({ note, theme }) => (
 // ---------------------------------------------------------------
 // ROOM BY ROOM
 // ---------------------------------------------------------------
-const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText }) => {
+const combinedToBeforeId = (combined) => {
+  if (!combined) return null;
+  const idStr = String(combined.id || '');
+  if (idStr.startsWith('combined_')) return idStr.slice('combined_'.length);
+  if (combined.beforePhotoId) return String(combined.beforePhotoId);
+  return null;
+};
+
+const RoleLabel = ({ text, show, theme }) => (
+  show ? (
+    <Text style={[styles.roleLabel, { color: theme.textSecondary }]}>{text}</Text>
+  ) : null
+);
+
+const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkText }) => {
   const groups = groupByRoom(photos);
   if (groups.length === 0) return <Empty theme={theme} />;
+  const showTimestamp = options.includeMetadata === true;
+  const wm = options.includeWatermark ? (watermarkText || '') : '';
+  const includeProgress = options.includeProgressPhotos !== false;
+  const showLabels = options.showLabels !== false;
+
+  const fullSlot = (key, photo, role) => (
+    <View key={key} style={{ marginBottom: 12 }}>
+      <RoleLabel text={role} show={showLabels} theme={theme} />
+      <PhotoSlot
+        uri={photo.uri}
+        theme={theme}
+        missing=""
+        timestamp={showTimestamp ? formatShortStamp(tsOf(photo)) : null}
+        watermark={wm || null}
+      />
+      {options.includeNotes && photo.notes ? <Note note={photo.notes} theme={theme} /> : null}
+    </View>
+  );
+
   return (
     <View>
       {groups.map(({ room, photos: roomPhotos }) => {
-        const { before, after, progress } = splitByMode(roomPhotos);
-        const firstBefore = sortByTime(before)[0] || null;
-        const latestAfter = sortByTime(after).slice(-1)[0] || null;
-        if (!firstBefore && !latestAfter && progress.length === 0) return null;
+        const rawSets = groupBySet(roomPhotos);
+        const beforeIdToSet = new Map();
+        for (const s of rawSets) if (s.before) beforeIdToSet.set(String(s.before.id), s);
+        const sets = [];
+        for (const s of rawSets) {
+          if (s.mix) {
+            const bid = combinedToBeforeId(s.mix);
+            if (bid && beforeIdToSet.has(bid)) {
+              beforeIdToSet.get(bid).mix = s.mix;
+              continue;
+            }
+            sets.push(s);
+            continue;
+          }
+          sets.push(s);
+        }
+        if (sets.length === 0) return null;
         return (
           <View key={`room-${room}`} style={styles.section}>
             <SectionHeader name={displayRoomName(room)} theme={theme} />
-            <View style={styles.pairRow}>
-              <PhotoSlot uri={firstBefore?.uri} label="BEFORE" theme={theme} missing="No before" chipBg={chipBg} chipText={chipText} />
-              <PhotoSlot uri={latestAfter?.uri} label="AFTER" theme={theme} missing="No after" chipBg={chipBg} chipText={chipText} />
-            </View>
-            {options.includeProgressPhotos && progress.length > 0 && (
-              <View style={styles.progressRow}>
-                {sortByTime(progress).slice(0, 4).map((p) => (
-                  <View key={p.id} style={styles.progressTile}>
-                    {p.uri ? <Image source={{ uri: p.uri }} style={styles.progressThumb} /> : null}
-                  </View>
-                ))}
-              </View>
-            )}
-            {options.includeNotes && firstBefore?.notes ? <Note note={firstBefore.notes} theme={theme} /> : null}
-            {options.includeNotes && latestAfter?.notes ? <Note note={latestAfter.notes} theme={theme} /> : null}
+            {sets.map((set, idx) => {
+              const key = `set-${room}-${idx}`;
+              const hasAny =
+                set.before
+                || set.after
+                || set.mix
+                || (includeProgress && set.progress.length > 0);
+              if (!hasAny) return null;
+              return (
+                <View key={key} style={{ marginBottom: 18 }}>
+                  {set.mix ? fullSlot(`${key}-mix`, set.mix, 'Before & After') : null}
+                  {set.before && set.after ? (
+                    <View style={{ marginBottom: 12 }}>
+                      <View style={styles.pairRow}>
+                        <View style={{ flex: 1 }}>
+                          <RoleLabel text="Before" show={showLabels} theme={theme} />
+                          <PhotoSlot
+                            uri={set.before.uri}
+                            theme={theme}
+                            missing=""
+                            timestamp={showTimestamp ? formatShortStamp(tsOf(set.before)) : null}
+                            watermark={wm || null}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <RoleLabel text="After" show={showLabels} theme={theme} />
+                          <PhotoSlot
+                            uri={set.after.uri}
+                            theme={theme}
+                            missing=""
+                            timestamp={showTimestamp ? formatShortStamp(tsOf(set.after)) : null}
+                            watermark={wm || null}
+                          />
+                        </View>
+                      </View>
+                      {options.includeNotes && set.before.notes ? <Note note={set.before.notes} theme={theme} /> : null}
+                      {options.includeNotes && set.after.notes ? <Note note={set.after.notes} theme={theme} /> : null}
+                    </View>
+                  ) : (
+                    <>
+                      {set.before ? fullSlot(`${key}-b`, set.before, 'Before') : null}
+                      {set.after ? fullSlot(`${key}-a`, set.after, 'After') : null}
+                    </>
+                  )}
+                  {includeProgress && set.progress.length > 0 ? (
+                    <View>
+                      <RoleLabel text="Progress" show={showLabels} theme={theme} />
+                      <View style={styles.progressRow}>
+                        {sortByTime(set.progress).slice(0, 4).map((p) => (
+                          <View key={p.id} style={styles.progressTile}>
+                            {p.uri ? <Image source={{ uri: p.uri }} style={styles.progressThumb} /> : null}
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         );
       })}
@@ -289,12 +384,10 @@ const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText
                       >
                         <PhotoSlot
                           uri={p.uri}
-                          label={MODE_CHIP[p.mode] || ''}
                           theme={theme}
                           chipBg={chipBg}
                           chipText={chipText}
                           timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
-                          watermarkText={watermarkText || null}
                         />
                         {options.includeNotes && p.notes ? (
                           <Note note={p.notes} theme={theme} />
@@ -486,6 +579,16 @@ const styles = StyleSheet.create({
     fontSize: 14, fontWeight: '600',
     marginBottom: 8, paddingBottom: 4,
     borderBottomWidth: 1,
+  },
+  subhead: {
+    fontSize: 10, fontWeight: '700',
+    letterSpacing: 0.6, textTransform: 'uppercase',
+    marginTop: 10, marginBottom: 6,
+  },
+  roleLabel: {
+    fontSize: 10, fontWeight: '700',
+    letterSpacing: 0.6, textTransform: 'uppercase',
+    marginBottom: 4,
   },
   pairRow: { flexDirection: 'row', gap: 6 },
   slot: { flex: 1, aspectRatio: 1, borderRadius: 8, borderWidth: 1, overflow: 'hidden' },

@@ -20,10 +20,17 @@ import { readSecureJSON } from './secureStorageService';
  * @returns {Promise<string>} - URI of labeled photo (or original if labeling disabled/failed)
  */
 export async function ensureLabelForPhoto(photo, opts = {}) {
-  // Only apply to before/after photos (combined/mix usually handled elsewhere or don't need standard labels)
-  // Check both type and mode to be safe
+  // Apply to before/after/progress photos. Combined/mix is handled
+  // elsewhere via the chromeBakeService captureRef path. Anything else
+  // (unknown mode) skips labeling.
   const effectiveType = photo.type || photo.mode;
-  if (effectiveType !== 'before' && effectiveType !== 'after' && effectiveType !== 'combined' && effectiveType !== 'mix') {
+  if (
+    effectiveType !== 'before'
+    && effectiveType !== 'after'
+    && effectiveType !== 'progress'
+    && effectiveType !== 'combined'
+    && effectiveType !== 'mix'
+  ) {
     return photo.uri;
   }
 
@@ -160,7 +167,6 @@ export async function ensureLabelsForPhotoBatch(photos, opts = {}) {
 
   // If labels disabled, return all originals immediately
   if (!labelsEnabled) {
-    console.log('[LABEL_BATCH] Labels disabled, returning all originals');
     return photos.map(p => ({ photo: p, labeledUri: p.uri }));
   }
 
@@ -174,16 +180,29 @@ export async function ensureLabelsForPhotoBatch(photos, opts = {}) {
   }
 
   // Check all photos against cache in parallel (only file existence checks, no AsyncStorage)
-  const { onProgress } = opts;
+  const { onProgress, onPhotoComplete } = opts;
   let completed = 0;
   const total = photos.length;
 
+  const finishPhoto = (photo, labeledUri) => {
+    completed++;
+    if (onProgress) onProgress(completed, total);
+    if (onPhotoComplete) {
+      try { onPhotoComplete(photo, labeledUri); } catch (_) {}
+    }
+    return { photo, labeledUri };
+  };
+
   const results = await Promise.all(photos.map(async (photo) => {
     const effectiveType = photo.type || photo.mode;
-    if (effectiveType !== 'before' && effectiveType !== 'after' && effectiveType !== 'combined' && effectiveType !== 'mix') {
-      completed++;
-      if (onProgress) onProgress(completed, total);
-      return { photo, labeledUri: photo.uri };
+    if (
+      effectiveType !== 'before'
+      && effectiveType !== 'after'
+      && effectiveType !== 'progress'
+      && effectiveType !== 'combined'
+      && effectiveType !== 'mix'
+    ) {
+      return finishPhoto(photo, photo.uri);
     }
 
     const cacheKey = `${photo.id}_${effectiveType}`;
@@ -198,17 +217,26 @@ export async function ensureLabelsForPhotoBatch(photos, opts = {}) {
       : settingsHash;
 
     if (cached && cached.settingsHash === photoEffectiveHash) {
-      // Quick file existence check (no AsyncStorage needed)
+      // Quick file existence + sanity check (no AsyncStorage needed).
+      // A baked JPEG with a label always weighs tens of KB; anything
+      // under 4 KB is almost certainly a truncated write left behind
+      // by a disk-full session and would render blank in the report.
       try {
-        const fileInfo = await FileSystem.getInfoAsync(cached.uri);
+        const fileInfo = await FileSystem.getInfoAsync(cached.uri, { size: true });
+        if (fileInfo.exists && (typeof fileInfo.size !== 'number' || fileInfo.size >= 4096)) {
+          console.warn(`[Report] cache HIT photo=${photo.id} mode=${effectiveType} uri=${String(cached.uri).slice(-40)}`);
+          return finishPhoto(photo, cached.uri);
+        }
         if (fileInfo.exists) {
-          completed++;
-          if (onProgress) onProgress(completed, total);
-          return { photo, labeledUri: cached.uri };
+          console.warn(`[Report] cache miss-corrupt photo=${photo.id} mode=${effectiveType} size=${fileInfo.size}`);
+        } else {
+          console.warn(`[Report] cache miss-existence photo=${photo.id} mode=${effectiveType} cachedUri=${String(cached.uri).slice(-40)}`);
         }
       } catch (e) {
-        // File check failed, fall through
+        console.warn(`[Report] cache miss-error photo=${photo.id} mode=${effectiveType}`);
       }
+    } else {
+      console.warn(`[Report] cache miss-hash photo=${photo.id} mode=${effectiveType} cached=${cached ? cached.settingsHash : 'none'} want=${photoEffectiveHash}`);
     }
 
     // Not in cache or file missing — prepare label with timeout.
@@ -224,14 +252,10 @@ export async function ensureLabelsForPhotoBatch(photos, opts = {}) {
           resolve(photo.uri);
         }, 30000))
       ]);
-      completed++;
-      if (onProgress) onProgress(completed, total);
-      return { photo, labeledUri };
+      return finishPhoto(photo, labeledUri);
     } catch (e) {
       console.warn(`[LABEL_BATCH] Failed for ${photo.id}:`, e.message);
-      completed++;
-      if (onProgress) onProgress(completed, total);
-      return { photo, labeledUri: photo.uri };
+      return finishPhoto(photo, photo.uri);
     }
   }));
 

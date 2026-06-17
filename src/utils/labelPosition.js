@@ -27,7 +27,54 @@ const isLandscape = (photo) => {
   return false;
 };
 
-export function pickBeforeLabelPosition(settings, photo) {
+// Combined photos have two labels (one per half); single photos have
+// one. The single-photo defaults live in `singleLabelPosition*` so the
+// user can configure them independently of the before/after combined
+// halves. When a photo is NOT combined and a singleLabel* value is
+// present, it wins over the legacy before/after fields. The legacy
+// fields stay as the fallback so users without a single value (or
+// before the migration ran) keep their previous rendering.
+//
+// `combinedContext` lets callers force the combined-half behavior even
+// when the photo's own mode is 'before'/'after' — Studio's combined
+// preview wraps two DraggableLabelOverlays passing the source single
+// photos for per-photo override lookup, but the labels should still
+// land using the COMBINED before/after defaults, not the single one.
+const isCombinedPhoto = (photo) =>
+  photo?.mode === 'combined' || photo?.mode === 'mix';
+const treatAsCombined = (photo, combinedContext) =>
+  combinedContext === true || isCombinedPhoto(photo);
+
+// Priority chain for a single photo's stored value: photo override on the
+// new field → photo override on the legacy field → global new field →
+// global legacy field. Preserves per-photo customizations made BEFORE
+// the single/combined data-model split, since those landed on the
+// legacy beforeLabel* / afterLabel* fields.
+const pickSingleChain = (photo, settings, newKey, newKeyLs, legacyKey, legacyKeyLs) => {
+  const land = isLandscape(photo);
+  const ov = photo?.overrides;
+  if (ov) {
+    const ovNew = land ? ov[newKeyLs] : ov[newKey];
+    if (ovNew) return ovNew;
+    const ovLegacy = land ? ov[legacyKeyLs] : ov[legacyKey];
+    if (ovLegacy) return ovLegacy;
+  }
+  const gNew = land ? settings?.[newKeyLs] : settings?.[newKey];
+  if (gNew) return gNew;
+  const gLegacy = land ? settings?.[legacyKeyLs] : settings?.[legacyKey];
+  return gLegacy || null;
+};
+
+export function pickBeforeLabelPosition(settings, photo, combinedContext) {
+  // Single before photo → singleLabel*; combined → before-half settings.
+  if (!treatAsCombined(photo, combinedContext)) {
+    const v = pickSingleChain(
+      photo, settings,
+      'singleLabelPosition', 'singleLabelPositionLandscape',
+      'beforeLabelPosition', 'beforeLabelPositionLandscape',
+    );
+    if (v) return v;
+  }
   if (isLandscape(photo)) {
     return settings?.beforeLabelPositionLandscape
       || 'left-top';
@@ -35,7 +82,16 @@ export function pickBeforeLabelPosition(settings, photo) {
   return settings?.beforeLabelPosition || 'left-top';
 }
 
-export function pickAfterLabelPosition(settings, photo) {
+export function pickAfterLabelPosition(settings, photo, combinedContext) {
+  // Single after photo → singleLabel*; combined → after-half settings.
+  if (!treatAsCombined(photo, combinedContext)) {
+    const v = pickSingleChain(
+      photo, settings,
+      'singleLabelPosition', 'singleLabelPositionLandscape',
+      'afterLabelPosition', 'afterLabelPositionLandscape',
+    );
+    if (v) return v;
+  }
   if (isLandscape(photo)) {
     // Landscape photos combine stacked (top/bottom). `left-top` for the After
     // label sits at the top-left of the bottom half (just below the divider
@@ -57,16 +113,32 @@ export function pickLabelPosition(settings, mode, photo) {
 // above: when a photo is landscape, use the *Landscape variant. Returns
 // null when no freeform offset is set, in which case the renderer falls
 // back to the position key.
-export function pickBeforeLabelOffset(settings, photo) {
+export function pickBeforeLabelOffset(settings, photo, combinedContext) {
   if (!settings) return null;
+  if (!treatAsCombined(photo, combinedContext)) {
+    const v = pickSingleChain(
+      photo, settings,
+      'singleLabelOffset', 'singleLabelOffsetLandscape',
+      'beforeLabelOffset', 'beforeLabelOffsetLandscape',
+    );
+    if (v) return v;
+  }
   if (isLandscape(photo)) {
     return settings.beforeLabelOffsetLandscape || null;
   }
   return settings.beforeLabelOffset || null;
 }
 
-export function pickAfterLabelOffset(settings, photo) {
+export function pickAfterLabelOffset(settings, photo, combinedContext) {
   if (!settings) return null;
+  if (!treatAsCombined(photo, combinedContext)) {
+    const v = pickSingleChain(
+      photo, settings,
+      'singleLabelOffset', 'singleLabelOffsetLandscape',
+      'afterLabelOffset', 'afterLabelOffsetLandscape',
+    );
+    if (v) return v;
+  }
   if (isLandscape(photo)) {
     return settings.afterLabelOffsetLandscape || null;
   }

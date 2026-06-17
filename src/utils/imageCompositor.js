@@ -161,39 +161,13 @@ export async function compositeImages(beforeUri, afterUri, layout, dimensions) {
  * @returns {Promise<string>} - URI of the labeled image
  */
 export async function addLabelToImage(imageUri, labelText, labelConfig = {}) {
-  const callId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-  console.log(`[ImageCompositor:${callId}] 🏷️  addLabelToImage CALLED`, {
-    imageUri: imageUri?.substring(0, 50) + '...',
-    labelText,
-    position: labelConfig.position,
-    callStack: new Error().stack?.split('\n').slice(2, 5).join(' <- '),
-  });
-
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
-    console.warn(`[ImageCompositor:${callId}] ❌ Unsupported platform:`, Platform.OS);
     throw new Error('Label addition is only supported on native mobile platforms');
   }
-
   if (!ImageCompositor || !ImageCompositor.addLabelToImage) {
-    console.error(`[ImageCompositor:${callId}] ❌ addLabelToImage method not found.`);
     throw new Error('ImageCompositor.addLabelToImage is not available');
   }
-
-  try {
-    console.log(`[ImageCompositor:${callId}] 📤 Sending to native module...`, {
-      platform: Platform.OS,
-      labelText,
-      labelConfig,
-    });
-
-    const resultUri = await ImageCompositor.addLabelToImage(imageUri, labelText, labelConfig);
-
-    console.log(`[ImageCompositor:${callId}] ✅ SUCCESS - resultUri:`, resultUri?.substring(0, 50) + '...');
-    return resultUri;
-  } catch (error) {
-    console.error(`[ImageCompositor:${callId}] ❌ ERROR:`, error);
-    throw error;
-  }
+  return ImageCompositor.addLabelToImage(imageUri, labelText, labelConfig);
 }
 
 /**

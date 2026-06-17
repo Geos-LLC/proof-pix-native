@@ -1047,10 +1047,10 @@ export default function StudioScreen({ route, navigation }) {
             {photo.mode === PHOTO_MODES.COMBINED && (
               <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
                 <View pointerEvents="box-none" style={combinedIsStacked ? styles.combinedHalfTop : styles.combinedHalfLeft}>
-                  <DraggableLabelOverlay photo={pairResolved.beforePhoto || photo} role="before" />
+                  <DraggableLabelOverlay photo={pairResolved.beforePhoto || photo} role="before" combinedContext />
                 </View>
                 <View pointerEvents="box-none" style={combinedIsStacked ? styles.combinedHalfBottom : styles.combinedHalfRight}>
-                  <DraggableLabelOverlay photo={pairResolved.afterPhoto || photo} role="after" />
+                  <DraggableLabelOverlay photo={pairResolved.afterPhoto || photo} role="after" combinedContext />
                 </View>
               </View>
             )}

@@ -18,12 +18,24 @@ import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
+import PositionGrid, { resolvePositionKey } from '../components/PositionGrid';
+import { PHOTO_MODES } from '../constants/rooms';
 
 const POSITIONS = [
   ['left-top', 'center-top', 'right-top'],
   ['left-middle', 'center-middle', 'right-middle'],
   ['left-bottom', 'center-bottom', 'right-bottom'],
 ];
+
+const combinedGridLayout = (photo) => {
+  if (!photo || photo.mode !== PHOTO_MODES.COMBINED) return 'single';
+  const ar = photo.aspectRatio;
+  if (typeof ar === 'string') {
+    const [w, h] = ar.split(':').map(Number);
+    if (w && h) return h > w ? 'side' : 'stack';
+  }
+  return 'side';
+};
 
 // Legacy string sizes mapped to pixels — only used when the user hasn't
 // touched the new slider yet.
@@ -202,32 +214,17 @@ export default function LogoCustomizationScreen({ navigation, route }) {
         title="Logo Position"
         theme={theme}
       >
-        <View style={[styles.positionGrid, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {POSITIONS.map((row, ri) => (
-            <View key={ri} style={styles.positionRow}>
-              {row.map((pos) => {
-                const isActive = brandLogoPosition === pos && !brandLogoOffset;
-                return (
-                  <TouchableOpacity
-                    key={pos}
-                    onPress={async () => {
-                      await updateBrandLogoOffset(null);
-                      await updateBrandLogoPosition(pos);
-                    }}
-                    style={[
-                      styles.positionCell,
-                      {
-                        backgroundColor: isActive ? theme.accent : theme.surfaceElevated,
-                        borderColor: isActive ? theme.accent : theme.border,
-                      },
-                    ]}
-                  >
-                    {isActive && <Ionicons name="checkmark" size={16} color={theme.accentText} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
+        <View style={{ padding: 16 }}>
+          <PositionGrid
+            layout={combinedGridLayout(previewPhoto)}
+            mode="single"
+            value={resolvePositionKey(brandLogoOffset, brandLogoPosition)}
+            onChange={async (pos) => {
+              await updateBrandLogoOffset(null);
+              await updateBrandLogoPosition(pos);
+            }}
+            theme={theme}
+          />
         </View>
       </BottomModal>
 

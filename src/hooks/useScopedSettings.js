@@ -49,6 +49,10 @@ const OVERRIDE_KEYS = [
   'afterLabelOffsetLandscape',
   'combinedLabelPosition',
   'combinedLabelOffset',
+  'singleLabelPosition',
+  'singleLabelPositionLandscape',
+  'singleLabelOffset',
+  'singleLabelOffsetLandscape',
   // Watermark
   'showWatermark',
   'customWatermarkEnabled',

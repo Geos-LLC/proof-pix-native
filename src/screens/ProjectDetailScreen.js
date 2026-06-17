@@ -228,6 +228,16 @@ export default function ProjectDetailScreen({ route, navigation }) {
     watermarkText,
     customWatermarkEnabled,
     location,
+    labelBackgroundColor,
+    labelTextColor,
+    labelMarginHorizontal,
+    labelMarginVertical,
+    beforeLabelPosition,
+    afterLabelPosition,
+    beforeLabelOffset,
+    afterLabelOffset,
+    singleLabelPosition,
+    singleLabelOffset,
   } = useSettings();
   const roomDataMap = useMemo(() => {
     const map = new Map();
@@ -696,33 +706,55 @@ export default function ProjectDetailScreen({ route, navigation }) {
     [project, getPhotosByProject]
   );
 
-  // Map of photo.id → labeled/baked URI. The bake composites the
-  // user's configured BEFORE/AFTER label and watermark into the
-  // image, so feeding these URIs into the report makes the picture
-  // look exactly the way it does in the editor / share sheet. Cache
-  // is filesystem-backed (labelCacheService) so this is fast after
-  // the first pass on a project.
+  // Map of photo.id → labeled URI. Flat photos (before/after/progress)
+  // go through ensureLabelsForPhotoBatch → native addLabelToImage,
+  // which writes the chip into the JPEG and caches the result. Combined
+  // ('mix') photos are NOT re-baked here — they're already labeled +
+  // watermarked at capture time by PATH 1, so the stored URI is the
+  // final asset.
   const [bakedUriMap, setBakedUriMap] = useState({});
+  const [bakingProgress, setBakingProgress] = useState({ total: 0, completed: 0 });
   useEffect(() => {
+    if (activeTab !== 'report') return;
     if (!projectPhotos || projectPhotos.length === 0) {
       setBakedUriMap({});
+      setBakingProgress({ total: 0, completed: 0 });
       return;
     }
     let cancelled = false;
-    ensureLabelsForPhotoBatch(projectPhotos)
-      .then((results) => {
-        if (cancelled) return;
-        const next = {};
-        for (const { photo, labeledUri } of results) {
-          if (labeledUri && labeledUri !== photo.uri) next[photo.id] = labeledUri;
-        }
-        setBakedUriMap(next);
-      })
+    const flatPhotos = projectPhotos.filter(
+      (p) => p.mode !== 'mix' && p.mode !== 'combined',
+    );
+    if (flatPhotos.length === 0) {
+      setBakingProgress({ total: 0, completed: 0 });
+      return;
+    }
+    const total = flatPhotos.length;
+    setBakingProgress({ total, completed: 0 });
+    console.warn(`[Report] bake start n=${total} (flats only; combined photos use stored URI)`);
+    const collected = {};
+    let completed = 0;
+    const handleResult = (photo, labeledUri) => {
+      if (cancelled) return;
+      completed += 1;
+      setBakingProgress({ total, completed });
+      if (labeledUri && labeledUri !== photo.uri) {
+        collected[photo.id] = labeledUri;
+        setBakedUriMap({ ...collected });
+      }
+    };
+    ensureLabelsForPhotoBatch(flatPhotos, { onPhotoComplete: handleResult })
       .catch((e) => {
         console.warn('[Report] Failed to bake photos for preview:', e?.message);
       });
     return () => { cancelled = true; };
-  }, [projectPhotos]);
+  }, [activeTab, projectPhotos]);
+
+  // Derived: are we still baking? Cache HITs resolve near-instantly
+  // so this flips fast on second-open; first-open waits on native
+  // compositor for any missing flats.
+  const isBakingReportPhotos = bakingProgress.total > 0
+    && bakingProgress.completed < bakingProgress.total;
 
   // Swap each photo's uri to its baked version when one exists.
   // Cheap: leaves the photo objects identical (===) when no bake
@@ -1100,16 +1132,30 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // suitable for sharing or feeding to expo-print for PDF.
   const buildReportHtml = async ({ title, photos, layoutType, options, logoUri }) => {
     const effectiveLogoUri = logoUri || null;
-    // Bake labels + watermark into the report photos so the rendered
-    // HTML/PDF carries the exact same per-photo composition the user
-    // sees in Studio/Gallery. ensureLabelsForPhotoBatch is cache-first;
-    // first generation may take a moment, subsequent ones are fast.
+    // Flat photos run through the native compositor's
+    // ensureLabelsForPhotoBatch (cache-first, fast). Combined ('mix')
+    // photos are already labeled + watermarked at capture time by
+    // PATH 1, so their stored URI is the final asset — we skip them
+    // here.
     let preparedPhotos = photos;
     try {
-      const baked = await ensureLabelsForPhotoBatch(photos);
-      preparedPhotos = baked.map(({ photo, labeledUri }) =>
-        labeledUri && labeledUri !== photo.uri ? { ...photo, uri: labeledUri } : photo
+      const flatPhotos = photos.filter(
+        (p) => p.mode !== 'mix' && p.mode !== 'combined',
       );
+      const flatResults = flatPhotos.length > 0
+        ? await ensureLabelsForPhotoBatch(flatPhotos)
+        : [];
+      const swap = new Map();
+      for (const { photo, labeledUri } of flatResults) {
+        if (labeledUri && labeledUri !== photo.uri) swap.set(photo.id, labeledUri);
+      }
+      preparedPhotos = photos.map((p) =>
+        swap.has(p.id) ? { ...p, uri: swap.get(p.id) } : p
+      );
+      const unswapped = preparedPhotos.filter(
+        (p) => !swap.has(p.id) && p.mode !== 'mix' && p.mode !== 'combined',
+      ).length;
+      console.warn(`[Report] build n=${preparedPhotos.length} swapped=${swap.size} unswapped=${unswapped}`);
     } catch (e) {
       console.warn('[Report] Bake failed; falling back to raw photo URIs:', e?.message);
     }
@@ -1200,20 +1246,40 @@ export default function ProjectDetailScreen({ route, navigation }) {
       .slice(0, 80);
     const target = `${reportsDir()}${safeName}-${report.id}.html`;
     await FileSystem.writeAsStringAsync(target, html);
-    // PDF generation removed AGAIN — even a lazy `require('expo-print')`
-    // inside try/catch is not safe on Hermes when the native module
-    // isn't compiled in. The throw routes through ErrorUtils' global
-    // handler and surfaces as an uncaught fatal, blanking the screen.
-    // Stick with HTML-only here; the Projects share modal has its own
-    // path that the user accepted the risk on.
+    // PDF via expo-print. Native module is now bundled in build 77+
+    // (runtime 1.7.7 in app.config.js), so the top-level import in
+    // the require() call below is safe — Hermes will resolve the
+    // native ExpoPrint module without throwing. If a future OTA ever
+    // lands on a pre-1.7.7 binary, the runtimeVersion mismatch will
+    // already filter the bundle out before this code runs.
+    let pdfTarget = null;
+    try {
+      // Lazy require keeps the module reference out of the module
+      // init phase, so even if expo-print is somehow missing the
+      // failure happens here (catchable) rather than during bundle
+      // evaluation (uncatchable).
+      const Print = require('expo-print');
+      const pdfPath = `${reportsDir()}${safeName}-${report.id}.pdf`;
+      const pdfResult = await Print.printToFileAsync({
+        html,
+        base64: false,
+      });
+      // expo-print writes to a temp path; move it to reportsDir/ so
+      // we control its lifetime and can find it again from the
+      // saved report record.
+      await FileSystem.moveAsync({ from: pdfResult.uri, to: pdfPath });
+      pdfTarget = pdfPath;
+    } catch (e) {
+      console.warn('[Report] PDF generation failed:', e?.message);
+    }
     if (!skipStatePatch) {
       await patchReport(report.id, {
         generatedFilePath: target,
-        generatedPdfPath: null,
+        generatedPdfPath: pdfTarget,
         generatedAt: Date.now(),
       });
     }
-    return { html: target, pdf: null, generatedAt: Date.now() };
+    return { html: target, pdf: pdfTarget, generatedAt: Date.now() };
   };
 
   // Share a report — uses the cached generated file when it still
@@ -2237,7 +2303,12 @@ export default function ProjectDetailScreen({ route, navigation }) {
                           </View>
                         );
                       }
-                      // default: switch
+                      // default: switch. The Labels switch gets an
+                      // extra "Customize →" link that jumps to the
+                      // Labels & Languages settings screen so the user
+                      // can change colors, font, language, and position
+                      // without leaving the report editor flow.
+                      const isLabelsToggle = key === 'showLabels';
                       return (
                         <View
                           key={key}
@@ -2248,6 +2319,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
                             {meta.description ? (
                               <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
                             ) : null}
+                            {isLabelsToggle && (
+                              <TouchableOpacity
+                                onPress={() => navigation.navigate('LabelsLanguage')}
+                                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                style={{ marginTop: 4 }}
+                              >
+                                <Text style={[styles.reportSectionLink, { color: theme.accent }]}>Customize →</Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
                           <Switch
                             value={!!value}
@@ -2398,27 +2478,61 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   without leaving the app. Inline-HTML preview would
                   need react-native-webview (native module); this is
                   the OTA-able alternative. */}
-              <ReportPreviewView
-                photos={withBakedUri(cappedPreview)}
-                layoutId={activeReport.layoutType || 'room-by-room'}
-                options={activeReport.options || {}}
-                displayRoomName={displayRoomName}
-                theme={theme}
-                branding={{
-                  brandColor: reportBrandColor,
-                  watermarkText: (showWatermark && watermarkText) ? watermarkText : '',
-                }}
-              />
+              {/* Pinch-zoom + pan via nested ScrollView. iOS handles
+                  this natively when maximumZoomScale > 1; the user can
+                  pinch to zoom and drag to pan once zoomed. Android
+                  doesn't pinch-zoom inside a ScrollView so this is a
+                  no-op there, but the preview still scrolls via the
+                  outer panel ScrollView on both platforms. */}
+              {isBakingReportPhotos ? (
+                // Gate the preview behind a progress block until every
+                // photo's bake has resolved. Without this gate the user
+                // sees a half-baked report (some labels in, some not)
+                // and reasonably reads it as a bug. The progress count
+                // gives them a sense of how long until it's ready.
+                <View style={[styles.reportPreparingWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <ActivityIndicator size="large" color={theme.accent} />
+                  <Text style={[styles.reportPreparingTitle, { color: theme.textPrimary }]}>
+                    Preparing report…
+                  </Text>
+                  <Text style={[styles.reportPreparingSub, { color: theme.textSecondary }]}>
+                    Baking labels into {bakingProgress.total} {bakingProgress.total === 1 ? 'photo' : 'photos'} ({bakingProgress.completed}/{bakingProgress.total}). This runs once per project; subsequent opens are instant.
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView
+                  maximumZoomScale={4}
+                  minimumZoomScale={1}
+                  bouncesZoom
+                  pinchGestureEnabled
+                  showsHorizontalScrollIndicator={false}
+                  showsVerticalScrollIndicator={false}
+                >
+                  <ReportPreviewView
+                    photos={withBakedUri(cappedPreview)}
+                    layoutId={activeReport.layoutType || 'room-by-room'}
+                    options={activeReport.options || {}}
+                    displayRoomName={displayRoomName}
+                    theme={theme}
+                    branding={{
+                      brandColor: reportBrandColor,
+                      watermarkText: (showWatermark && watermarkText) ? watermarkText : '',
+                    }}
+                  />
+                </ScrollView>
+              )}
 
-              {/* Share action — re-uses the cached HTML file if
-                  it's still on disk; regenerates only when missing. */}
+              {/* Share action — disabled during bake so the user
+                  doesn't trigger another bakeChrome pass that just
+                  waits on the same queue and leaves the button
+                  visually frozen. */}
               <TouchableOpacity
-                style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent, opacity: isBuildingReport ? 0.7 : 1 }]}
+                style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent, opacity: (isBuildingReport || isBakingReportPhotos) ? 0.7 : 1 }]}
                 onPress={() => openReportShareModal(activeReport.id)}
-                disabled={isBuildingReport}
+                disabled={isBuildingReport || isBakingReportPhotos}
                 activeOpacity={0.85}
               >
-                {isBuildingReport ? (
+                {(isBuildingReport || isBakingReportPhotos) ? (
                   <ActivityIndicator color={theme.accentText} />
                 ) : (
                   <>
@@ -3429,6 +3543,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     marginTop: 4,
+    textAlign: 'center',
+  },
+  reportPreparingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 36,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+    marginTop: 8,
+  },
+  reportPreparingTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  reportPreparingSub: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    lineHeight: 17,
     textAlign: 'center',
   },
   // Location tab — list of distinct location strings aggregated from

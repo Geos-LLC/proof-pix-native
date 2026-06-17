@@ -245,6 +245,11 @@ const CAPTURE_TAG_PATTERNS = [
   /^\[CAMDIAG\b/,
   /^\[Storage\b/,
   /^\[PHOTODEL\b/,
+  /^\[BUNDLE\b/,
+  /^\[Report\b/,
+  /^\[ChromeBake\b/,
+  /^\[ChromeBaker\b/,
+  /^\[LabelPos\b/,
 ];
 
 const stringifyArg = (arg) => {

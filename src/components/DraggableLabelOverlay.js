@@ -51,7 +51,7 @@ const positionToTopLeft = (key, regionW, regionH, labelW, labelH, marginH, margi
   return { x, y };
 };
 
-function DraggableSide({ role, photo, parentSize }) {
+function DraggableSide({ role, photo, parentSize, combinedContext }) {
   // Scoped — drag updates go to photo.overrides when the photo has any
   // (or starts having any) so per-photo dragging persists at the
   // photo level instead of mutating global Settings.
@@ -67,10 +67,16 @@ function DraggableSide({ role, photo, parentSize }) {
     afterLabelOffset,
     beforeLabelOffsetLandscape,
     afterLabelOffsetLandscape,
+    singleLabelPosition,
+    singleLabelPositionLandscape,
+    singleLabelOffset,
+    singleLabelOffsetLandscape,
     updateBeforeLabelOffset,
     updateAfterLabelOffset,
     updateBeforeLabelOffsetLandscape,
     updateAfterLabelOffsetLandscape,
+    updateSingleLabelOffset,
+    updateSingleLabelOffsetLandscape,
   } = settings;
 
   // Pick the right stored position / offset / updater for this side
@@ -84,14 +90,18 @@ function DraggableSide({ role, photo, parentSize }) {
     afterLabelOffset,
     beforeLabelOffsetLandscape,
     afterLabelOffsetLandscape,
+    singleLabelPosition,
+    singleLabelPositionLandscape,
+    singleLabelOffset,
+    singleLabelOffsetLandscape,
   };
 
   const positionKey = role === 'before'
-    ? pickBeforeLabelPosition(lps, photo)
-    : pickAfterLabelPosition(lps, photo);
+    ? pickBeforeLabelPosition(lps, photo, combinedContext)
+    : pickAfterLabelPosition(lps, photo, combinedContext);
   const savedOffset = role === 'before'
-    ? pickBeforeLabelOffset(lps, photo)
-    : pickAfterLabelOffset(lps, photo);
+    ? pickBeforeLabelOffset(lps, photo, combinedContext)
+    : pickAfterLabelOffset(lps, photo, combinedContext);
 
   // labelPosition's picker swaps to *Landscape variants when the photo
   // is landscape — the persist updater must match.
@@ -106,9 +116,20 @@ function DraggableSide({ role, photo, parentSize }) {
     }
     return false;
   })();
-  const persistOffset = role === 'before'
-    ? (isLandscape ? updateBeforeLabelOffsetLandscape : updateBeforeLabelOffset)
-    : (isLandscape ? updateAfterLabelOffsetLandscape  : updateAfterLabelOffset);
+  // Dragging a label on a single photo writes to singleLabel* (the
+  // combined-only before/after fields don't apply). Dragging on a
+  // combined-half writes to the combined before/after field, matching
+  // where the renderer reads from.
+  const isCombined = combinedContext === true
+    || photo?.mode === 'combined' || photo?.mode === 'mix';
+  let persistOffset;
+  if (!isCombined) {
+    persistOffset = isLandscape ? updateSingleLabelOffsetLandscape : updateSingleLabelOffset;
+  } else if (role === 'before') {
+    persistOffset = isLandscape ? updateBeforeLabelOffsetLandscape : updateBeforeLabelOffset;
+  } else {
+    persistOffset = isLandscape ? updateAfterLabelOffsetLandscape : updateAfterLabelOffset;
+  }
 
   const [labelSize, setLabelSize] = useState({ w: 0, h: 0 });
   const pos = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
@@ -157,6 +178,19 @@ function DraggableSide({ role, photo, parentSize }) {
         );
     pos.setValue(target);
     posRef.current = target;
+    // Diagnostic — once per offset/photo change so the user can share
+    // the captured values when a label appears at the wrong spot.
+    console.warn(
+      '[LabelPos]', role,
+      'photoId=', photo?.id,
+      'mode=', photo?.mode,
+      'overrides=', photo?.overrides ? Object.keys(photo.overrides).join(',') : 'none',
+      'savedOffset=', JSON.stringify(savedOffset),
+      'positionKey=', positionKey,
+      'parent=', `${Math.round(parentSize.w)}x${Math.round(parentSize.h)}`,
+      'label=', `${Math.round(labelSize.w)}x${Math.round(labelSize.h)}`,
+      'target=', `${Math.round(target.x)},${Math.round(target.y)}`,
+    );
   }, [
     savedOffset?.x, savedOffset?.y, positionKey,
     parentSize.w, parentSize.h, labelSize.w, labelSize.h,
@@ -247,7 +281,7 @@ function DraggableSide({ role, photo, parentSize }) {
   );
 }
 
-export default function DraggableLabelOverlay({ photo, role, combinedLayout = 'side' }) {
+export default function DraggableLabelOverlay({ photo, role, combinedLayout = 'side', combinedContext }) {
   const settings = useScopedSettings(photo?.id);
   const [parentSize, setParentSize] = useState({ w: 0, h: 0 });
 
@@ -265,7 +299,7 @@ export default function DraggableLabelOverlay({ photo, role, combinedLayout = 's
     return (
       <View pointerEvents="box-none" style={StyleSheet.absoluteFill} onLayout={onLayout}>
         {parentSize.w > 0 && (
-          <DraggableSide role={role} photo={photo} parentSize={parentSize} />
+          <DraggableSide role={role} photo={photo} parentSize={parentSize} combinedContext={combinedContext} />
         )}
       </View>
     );
@@ -279,12 +313,12 @@ export default function DraggableLabelOverlay({ photo, role, combinedLayout = 's
       <>
         <View pointerEvents="box-none" style={isStack ? halves.top : halves.left} onLayout={onLayout}>
           {parentSize.w > 0 && (
-            <DraggableSide role="before" photo={photo} parentSize={parentSize} />
+            <DraggableSide role="before" photo={photo} parentSize={parentSize} combinedContext />
           )}
         </View>
         <View pointerEvents="box-none" style={isStack ? halves.bottom : halves.right}>
           {/* Right/bottom half measures itself via its own DraggableSide */}
-          <DraggableHalf role="after" photo={photo} />
+          <DraggableHalf role="after" photo={photo} combinedContext />
         </View>
       </>
     );
@@ -304,7 +338,7 @@ export default function DraggableLabelOverlay({ photo, role, combinedLayout = 's
 }
 
 // Small helper for the combined case so each half measures itself.
-function DraggableHalf({ role, photo }) {
+function DraggableHalf({ role, photo, combinedContext }) {
   const [parentSize, setParentSize] = useState({ w: 0, h: 0 });
   return (
     <View
@@ -316,7 +350,7 @@ function DraggableHalf({ role, photo }) {
       }}
     >
       {parentSize.w > 0 && (
-        <DraggableSide role={role} photo={photo} parentSize={parentSize} />
+        <DraggableSide role={role} photo={photo} parentSize={parentSize} combinedContext={combinedContext} />
       )}
     </View>
   );

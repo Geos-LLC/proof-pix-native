@@ -219,6 +219,9 @@ export default function HomeScreen({ navigation, route }) {
   // Photo opened via tap inside the preview pager — drives a simple
   // full-screen modal viewer (image only, tap or chevron to close).
   const [tappedFullPhoto, setTappedFullPhoto] = useState(null);
+  // Read-only notes viewer opened by tapping the document glyph on a
+  // preview card. `{ text, type }` while open, null when dismissed.
+  const [viewingNotes, setViewingNotes] = useState(null);
   // Off-screen composite renderer used by Share when the "Edited"
   // toggle is on. We mount a hidden View containing the Image + the
   // same StudioEditOverlays stack, captureRef it to a file, and share
@@ -2668,41 +2671,57 @@ export default function HomeScreen({ navigation, route }) {
                                 style={styles.simplePreviewEditedSwitch}
                               />
                             </View>
-                            <TouchableOpacity
-                              style={[styles.simplePreviewActionBtn, { backgroundColor: theme.surface }]}
-                              onPress={async () => {
-                                if (!m?.uri) return;
-                                try {
-                                  let shareUri = m.uri;
-                                  if (showStudioEdits) {
-                                    setShareCaptureContext({ photo: m, w: cardW, h: cardH });
-                                    await new Promise((resolve) => setTimeout(resolve, 120));
-                                    if (shareCaptureRef.current) {
-                                      try {
-                                        const composed = await captureRef(shareCaptureRef, {
-                                          format: 'jpg',
-                                          quality: 0.95,
-                                          result: 'tmpfile',
-                                        });
-                                        shareUri = composed;
-                                      } catch (capErr) {
-                                        console.warn('[HomeScreen] composite capture failed, falling back to original URI:', capErr?.message);
+                            <View style={styles.simplePreviewActionRowEnd}>
+                              {/* Notes glyph — only shown when this photo
+                                  has a non-empty note. Tapping it opens a
+                                  read-only viewer; private notes are
+                                  surfaced here too since this is the
+                                  photographer's own preview. */}
+                              {!!(m?.notes && String(m.notes).trim()) && (
+                                <TouchableOpacity
+                                  style={[styles.simplePreviewActionBtn, { backgroundColor: theme.surface }]}
+                                  onPress={() => setViewingNotes({ text: String(m.notes).trim(), type: m?.noteType || 'report' })}
+                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                >
+                                  <Ionicons name="document-text-outline" size={18} color={theme.textPrimary} />
+                                </TouchableOpacity>
+                              )}
+                              <TouchableOpacity
+                                style={[styles.simplePreviewActionBtn, { backgroundColor: theme.surface }]}
+                                onPress={async () => {
+                                  if (!m?.uri) return;
+                                  try {
+                                    let shareUri = m.uri;
+                                    if (showStudioEdits) {
+                                      setShareCaptureContext({ photo: m, w: cardW, h: cardH });
+                                      await new Promise((resolve) => setTimeout(resolve, 120));
+                                      if (shareCaptureRef.current) {
+                                        try {
+                                          const composed = await captureRef(shareCaptureRef, {
+                                            format: 'jpg',
+                                            quality: 0.95,
+                                            result: 'tmpfile',
+                                          });
+                                          shareUri = composed;
+                                        } catch (capErr) {
+                                          console.warn('[HomeScreen] composite capture failed, falling back to original URI:', capErr?.message);
+                                        }
                                       }
+                                      setShareCaptureContext(null);
                                     }
+                                    await RNShare.share({
+                                      url: shareUri,
+                                      message: activeProject?.name || '',
+                                    });
+                                  } catch (_) {
                                     setShareCaptureContext(null);
                                   }
-                                  await RNShare.share({
-                                    url: shareUri,
-                                    message: activeProject?.name || '',
-                                  });
-                                } catch (_) {
-                                  setShareCaptureContext(null);
-                                }
-                              }}
-                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            >
-                              <Ionicons name="share-outline" size={18} color={theme.textPrimary} />
-                            </TouchableOpacity>
+                                }}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                <Ionicons name="share-outline" size={18} color={theme.textPrimary} />
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         </View>
                       );
@@ -3244,6 +3263,47 @@ export default function HomeScreen({ navigation, route }) {
         mandatory
         onClose={() => setShowQualification(false)}
       />
+
+      {/* Read-only notes viewer — opens from the document glyph next to
+          the share button on each preview card. Plain centered card with
+          a single Close action; private vs. report type is shown as a
+          small label so the user can tell at a glance. */}
+      <Modal
+        visible={!!viewingNotes}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewingNotes(null)}
+      >
+        <TouchableWithoutFeedback onPress={() => setViewingNotes(null)}>
+          <View style={styles.notesViewerBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={styles.notesViewerCenter} pointerEvents="box-none">
+          <View style={[styles.notesViewerCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}>
+            <View style={styles.notesViewerHeader}>
+              <Ionicons name="document-text-outline" size={18} color={theme.textPrimary} />
+              <Text style={[styles.notesViewerTitle, { color: theme.textPrimary }]}>Note</Text>
+              {viewingNotes?.type === 'private' && (
+                <Text style={[styles.notesViewerTag, { color: theme.textSecondary, borderColor: theme.border }]}>Private</Text>
+              )}
+            </View>
+            <ScrollView
+              style={styles.notesViewerScroll}
+              contentContainerStyle={styles.notesViewerScrollContent}
+              showsVerticalScrollIndicator
+            >
+              <Text style={[styles.notesViewerText, { color: theme.textPrimary }]}>
+                {viewingNotes?.text || ''}
+              </Text>
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.notesViewerClose, { backgroundColor: COLORS.PRIMARY }]}
+              onPress={() => setViewingNotes(null)}
+            >
+              <Text style={styles.notesViewerCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -4105,6 +4165,86 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 3,
     elevation: 3,
+  },
+  // Right-hand cluster on the bottom action row — wraps the optional
+  // notes glyph and the share button so they sit together at the right
+  // edge without expanding the row's overall layout.
+  simplePreviewActionRowEnd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  // Centered card backing the read-only notes viewer modal.
+  notesViewerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  notesViewerCenter: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  notesViewerCard: {
+    width: '100%',
+    maxWidth: 420,
+    maxHeight: '70%',
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  notesViewerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  notesViewerTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+  },
+  notesViewerTag: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  notesViewerScroll: {
+    maxHeight: 320,
+  },
+  notesViewerScrollContent: {
+    paddingBottom: 4,
+  },
+  notesViewerText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  notesViewerClose: {
+    marginTop: 16,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notesViewerCloseText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E1E1E',
   },
   // Fullscreen modal swipe-down close gesture target. Fills the
   // screen behind the framed photo; the PanResponder lives on this

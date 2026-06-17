@@ -278,14 +278,22 @@ export const chipForMode = (mode) => {
 // so adding them again would duplicate. The only optional overlay
 // kept is the timestamp, since the bake doesn't include one and the
 // editor doesn't either.
-export const photoImgHtml = ({ data, photo, alt = '', showTimestamp }) => {
+export const photoImgHtml = ({ data, photo, alt = '', showTimestamp, watermarkText }) => {
   const inner = data
     ? `<img src="${data}" alt="${escapeHtml(alt)}" />`
     : `<div class="missing">Image unavailable</div>`;
   const ts = showTimestamp && photo
     ? `<div class="ts-overlay">${escapeHtml(formatShortStamp(tsOf(photo)))}</div>`
     : '';
-  return `<div class="photo-wrap">${inner}${ts}</div>`;
+  // Watermark overlay: layouts that already feed in a baked URI with
+  // the watermark composited skip this by not passing watermarkText.
+  // Layouts that want a fallback HTML watermark (e.g. when the bake
+  // pipeline doesn't include it — combined photos today) pass the
+  // text and we render it here.
+  const wm = watermarkText
+    ? `<div class="watermark-overlay">${escapeHtml(watermarkText)}</div>`
+    : '';
+  return `<div class="photo-wrap">${inner}${ts}${wm}</div>`;
 };
 
 export const htmlDocument = ({ title, css, body, brandColor }) => {
