@@ -12,12 +12,14 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { FEATURES } from '../constants/featurePermissions';
 import { FONTS } from '../constants/fonts';
 import proxyService from '../services/proxyService';
+import googleDriveService from '../services/googleDriveService';
 import { generateInviteToken } from '../utils/tokens';
 import { generateInviteLink } from '../utils/inviteLinkGenerator';
 import { logTeamInvitesCreated } from '../utils/analytics';
@@ -44,6 +46,10 @@ export default function TeamMembersScreen({ navigation }) {
     inviteTokens,
     addInviteToken,
     adminSignIn,
+    initializeProxySession,
+    saveFolderId,
+    updateTeamName,
+    userInfo: adminUserInfo,
   } = useAdmin();
   const { userPlan } = useSettings();
   const { canUse } = useFeaturePermissions();
@@ -79,24 +85,76 @@ export default function TeamMembersScreen({ navigation }) {
     return () => { mounted = false; };
   }, [proxySessionId]);
 
-  // Set-up path — for Business/Enterprise users who haven't initialized
-  // their team yet. Team mode runs through the admin Google sign-in
-  // (adminSignIn from AdminContext), which sets up the proxy session
-  // and shared drive on completion.
+  // Set-up path — three-step flow ported from SettingsScreen.handleSetupTeam:
+  //   1. Admin Google sign-in (adminSignIn from AdminContext)
+  //   2. Find or create the "ProofPix-Uploads" Drive folder
+  //   3. Initialize the proxy session — THIS is the step that sets
+  //      proxySessionId, which is the gate for the "Active team" view.
+  //      Earlier versions only did step 1 and then waited forever for
+  //      proxySessionId to appear, which is why the screen looped back
+  //      to "Set up your team" after the Google consent sheet closed.
   const handleSetupTeam = async () => {
     if (isWorkingSetup) return;
-    if (!isBusinessOrEnterprise) {
+    if (!hasTeamFeature) {
       promptUpgrade();
       return;
     }
     setIsWorkingSetup(true);
     try {
-      const result = await adminSignIn();
-      if (!result?.success) {
-        const errMsg = result?.error || 'Team setup failed';
-        if (!/cancel/i.test(String(errMsg))) {
-          Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
+      // Step 1 — admin Google sign-in (only if not already signed in
+      // as admin). Reuses the existing session when present so the
+      // user doesn't have to re-consent on every retry.
+      if (!(isAuthenticated && accountType === 'google')) {
+        const signInResult = await adminSignIn();
+        if (!signInResult?.success) {
+          const errMsg = signInResult?.error || 'Team setup failed';
+          if (!/cancel/i.test(String(errMsg))) {
+            Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
+          }
+          return;
         }
+      }
+
+      // Step 2 — find/create the shared Drive folder.
+      let folderId = null;
+      try {
+        folderId = await googleDriveService.findOrCreateProofPixFolder();
+      } catch (e) {
+        Alert.alert(
+          t('common.error', { defaultValue: 'Error' }),
+          e?.message || 'Could not create the shared Drive folder.',
+        );
+        return;
+      }
+      if (!folderId) {
+        Alert.alert(
+          t('common.error', { defaultValue: 'Error' }),
+          'Could not create the shared Drive folder.',
+        );
+        return;
+      }
+      try { await saveFolderId(folderId); } catch {}
+
+      // Step 3 — initialize the proxy session. This sets
+      // proxySessionId via AdminContext, which causes the screen to
+      // re-render into the "Active team" surface on the next tick.
+      const sessionResult = await initializeProxySession(folderId, 'google');
+      if (!sessionResult || !sessionResult.sessionId) {
+        if (sessionResult?.skippable) {
+          Alert.alert(
+            'Setup Incomplete',
+            'Team setup requires a valid Google connection. Please ensure you are signed in to Google Drive.',
+          );
+          return;
+        }
+        throw new Error(sessionResult?.error || 'Failed to initialize proxy session');
+      }
+
+      // Step 4 — seed a default team name if there isn't one yet.
+      const defaultName = adminUserInfo?.name || '';
+      if (!teamName && defaultName) {
+        try { await updateTeamName(defaultName); } catch {}
+        try { await AsyncStorage.setItem('@team_name', defaultName); } catch {}
       }
     } catch (e) {
       const errMsg = e?.message || '';
