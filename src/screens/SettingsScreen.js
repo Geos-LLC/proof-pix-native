@@ -3897,98 +3897,15 @@ export default function SettingsScreen({ navigation, route }) {
                         ((!effectivePlan || effectivePlan === 'starter') || effectivePlan === 'pro' || isSigningIn) && styles.teamButtonDisabled,
                         (proxySessionId && (effectivePlan === 'business' || effectivePlan === 'enterprise')) && styles.teamButtonConnected
                       ]}
-                      onPress={async () => {
-                        const plan = effectivePlan || userPlan;
-                        const isPro = plan === 'pro';
-                        const isBusiness = plan === 'business';
-                        const isEnterprise = plan === 'enterprise';
-                        // Recognise team access through canUse + an existing
-                        // proxySessionId so we don't paywall users whose stored
-                        // plan string drifted (capitalised, SKU-style, trial
-                        // override leaving userPlan='starter', etc.).
-                        const hasTeamFeature = !!proxySessionId
-                          || canUse(FEATURES.TEAM_MANAGEMENT)
-                          || canUse(FEATURES.TEAM_COLLABORATION)
-                          || isBusiness
-                          || isEnterprise;
-
-                        // Check if team is already connected
-                        const teamConnected = !!proxySessionId && hasTeamFeature;
-                        console.log('[SET_UP_TEAM] Button pressed, teamConnected:', teamConnected, 'proxySessionId:', proxySessionId, 'userMode:', userMode, 'hasTeamFeature:', hasTeamFeature, 'plan:', plan);
-
-                        if (!hasTeamFeature) {
-                          navigation.navigate('PlanSelection');
-                          return;
-                        }
-
-                        if (isPro) {
-                          Alert.alert(
-                            t('settings.featureUnavailable'),
-                            t('settings.teamSetupFeature')
-                          );
-                          return;
-                        }
-
-                        // If team is already connected, open Manage Team modal
-                        if (teamConnected) {
-                          console.log('[SET_UP_TEAM] Team already connected, opening manage modal');
-                          setTeamNameInput(teamName || '');
-                          setLoadingTeamMembers(true);
-                          try {
-                            const result = await proxyService.getTeamMembers(proxySessionId);
-                            if (result.success && result.teamMembers) {
-                              setTeamMembersList(result.teamMembers);
-                            } else {
-                              setTeamMembersList([]);
-                            }
-                          } catch (error) {
-                            console.error('[SETTINGS] Failed to fetch team members:', error);
-                            setTeamMembersList([]);
-                          } finally {
-                            setLoadingTeamMembers(false);
-                            setShowManageTeamModal(true);
-                          }
-                          return;
-                        }
-
-                        if (isBusiness) {
-                          const maxTeamMembers = getLimit('maxTeamMembers', plan);
-                          const currentTeamMembers = inviteTokens?.length || 0;
-
-                          if (exceedsLimit('maxTeamMembers', plan, currentTeamMembers)) {
-                            Alert.alert(
-                              t('settings.teamLimitReached'),
-                              t('settings.teamLimitMessage', { limit: maxTeamMembers })
-                            );
-                            return;
-                          }
-
-                          if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
-                            Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
-                            return;
-                          }
-                          try {
-                            await handleSetupTeam();
-                          } catch (err) {
-                            console.error('[SET_UP_TEAM] Business setup error:', err);
-                            Alert.alert('Error', err?.message || 'Failed to set up team. Please try again.');
-                          }
-                          return;
-                        }
-
-                        if (isEnterprise) {
-                          if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
-                            Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
-                            return;
-                          }
-                          try {
-                            await handleSetupTeam();
-                          } catch (err) {
-                            console.error('[SET_UP_TEAM] Enterprise setup error:', err);
-                            Alert.alert('Error', err?.message || 'Failed to set up team. Please try again.');
-                          }
-                          return;
-                        }
+                      onPress={() => {
+                        // All team setup + management lives in the
+                        // TeamMembersScreen now. This button is just a
+                        // navigation shortcut — no inline plan checks,
+                        // no inline modal. Stops Business users from
+                        // hitting the paywall via stale userPlan-string
+                        // comparisons; the dedicated screen handles its
+                        // own gating (canUse + proxySessionId).
+                        navigation.navigate('TeamMembers');
                       }}
                       disabled={isSigningIn}
                     >
@@ -4361,116 +4278,12 @@ export default function SettingsScreen({ navigation, route }) {
                               && proxySessionId
                               && styles.setupTeamButtonConnected
                           ]}
-                          onPress={async () => {
-                            // Re-compute with the canUse-based gate so the button
-                            // doesn't bounce Business-with-team users to PlanSelection
-                            // when `userPlan` happens to read as something other than
-                            // the literal 'business' / 'enterprise' strings.
-                            const hasTeamFeature = !!proxySessionId
-                              || canUse(FEATURES.TEAM_MANAGEMENT)
-                              || canUse(FEATURES.TEAM_COLLABORATION)
-                              || userPlan === 'business'
-                              || userPlan === 'enterprise';
-                            const currentIsTeamConnected = !!proxySessionId && hasTeamFeature;
-
-                            console.log('[MANAGE_TEAM] Button pressed!');
-                            console.log('[MANAGE_TEAM] userPlan:', userPlan, 'effectivePlan:', effectivePlan);
-                            console.log('[MANAGE_TEAM] hasTeamFeature:', hasTeamFeature);
-                            console.log('[MANAGE_TEAM] currentIsTeamConnected:', currentIsTeamConnected);
-                            console.log('[MANAGE_TEAM] proxySessionId:', proxySessionId);
-                            console.log('[MANAGE_TEAM] userMode:', userMode);
-
-                            // Show tier selection modal ONLY when the user truly
-                            // doesn't have team feature access AND no team session.
-                            // The old `userPlan === 'starter' || userPlan === 'pro'`
-                            // check was the bug — it fired even for Business users
-                            // whose stored userPlan string didn't match.
-                            if (!hasTeamFeature) {
-                              console.log('[MANAGE_TEAM] No team feature — opening PlanSelection');
-                              navigation.navigate('PlanSelection');
-                              return;
-                            }
-
-                            // If team is connected, open Manage Team modal
-                            // Use fresh computed value to ensure we have the latest state
-                            if (currentIsTeamConnected) {
-                              console.log('[MANAGE_TEAM] Team is connected, opening manage modal');
-                              // Fetch team members before opening modal
-                              setTeamNameInput(teamName || ''); // Initialize with current team name
-                              setLoadingTeamMembers(true);
-                              try {
-                                console.log('[MANAGE_TEAM] Fetching team members...');
-                                const result = await proxyService.getTeamMembers(proxySessionId);
-                                console.log('[MANAGE_TEAM] Team members result:', result);
-                                if (result.success && result.teamMembers) {
-                                  setTeamMembersList(result.teamMembers);
-                                } else {
-                                  setTeamMembersList([]);
-                                }
-                              } catch (error) {
-                                console.error('[SETTINGS] Failed to fetch team members:', error);
-                                setTeamMembersList([]);
-                              } finally {
-                                console.log('[MANAGE_TEAM] Opening manage team modal NOW');
-                                setLoadingTeamMembers(false);
-                                setShowManageTeamModal(true);
-                              }
-                              return;
-                            }
-
-                            console.log('[MANAGE_TEAM] Team not connected, proceeding with setup');
-                            
-                            // If team is not connected, proceed with setup
-                            const isPro = userPlan === 'pro';
-                            const isBusiness = userPlan === 'business';
-                            const isEnterprise = userPlan === 'enterprise';
-
-                            // Pro - show popup saying not available
-                            if (isPro) {
-                              Alert.alert(
-                                t('settings.featureUnavailable'),
-                                t('settings.teamSetupFeature')
-                              );
-                              return;
-                            }
-
-                            // Business - check team member limit
-                            if (isBusiness) {
-                              try {
-                                const maxTeamMembers = getLimit('maxTeamMembers', userPlan);
-                                const currentTeamMembers = inviteTokens?.length || 0;
-
-                                if (exceedsLimit('maxTeamMembers', userPlan, currentTeamMembers)) {
-                                  Alert.alert(
-                                    t('settings.teamLimitReached'),
-                                    t('settings.teamLimitMessage', { limit: maxTeamMembers })
-                                  );
-                                  return;
-                                }
-
-                                if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
-                                  Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
-                                  return;
-                                }
-
-                                await handleSetupTeam();
-                                return;
-                              } catch (error) {
-                                console.error('[SETTINGS] Error in Business handler:', error);
-                                Alert.alert('Error', error.message || 'Failed to setup team');
-                                return;
-                              }
-                            }
-
-                            // Enterprise - allow unlimited team members
-                            if (isEnterprise) {
-                              if (!isAuthenticated && !isDropboxAuthenticatedForDisplay) {
-                                Alert.alert(t('settings.signInRequired'), t('settings.connectCloudFirst', { defaultValue: 'Please connect a Google or Dropbox account first before setting up team features.' }));
-                                return;
-                              }
-                              await handleSetupTeam();
-                              return;
-                            }
+                          onPress={() => {
+                            // Hand off to TeamMembersScreen — same
+                            // rationale as the first inline button:
+                            // all setup + management lives there now,
+                            // no inline plan-string checks here.
+                            navigation.navigate('TeamMembers');
                           }}
                           disabled={(() => {
                             const isDisabled = isSigningIn;
