@@ -22,7 +22,7 @@ import proxyService from '../services/proxyService';
 import googleDriveService from '../services/googleDriveService';
 import googleAuthService from '../services/googleAuthService';
 import { generateInviteToken } from '../utils/tokens';
-import { generateInviteLink } from '../utils/inviteLinkGenerator';
+import { generateInviteLink, generateShareContent } from '../utils/inviteLinkGenerator';
 import { logTeamInvitesCreated } from '../utils/analytics';
 
 // TeamMembersScreen — dedicated route for team setup + member
@@ -225,11 +225,16 @@ export default function TeamMembersScreen({ navigation }) {
           team_size_after: teamMembers?.length || 0,
         });
       } catch {}
-      const link = generateInviteLink(newToken, proxySessionId);
+      // Use the shared util that includes greeting + manual invite
+      // code + iOS/Android download links, matching the older
+      // SettingsScreen invite share UX. A bare link alone meant
+      // recipients without the deep-link working had no fallback.
+      const shareContent = generateShareContent(newToken, proxySessionId, teamName);
       try {
         await Share.share({
-          message: `Join ${teamName || 'ProofPix Team'} on ProofPix: ${link}`,
-          url: link,
+          title: shareContent.title,
+          message: shareContent.message,
+          url: shareContent.inviteLink,
         });
       } catch {}
     } catch (e) {
