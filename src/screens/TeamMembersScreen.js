@@ -20,6 +20,7 @@ import { FEATURES } from '../constants/featurePermissions';
 import { FONTS } from '../constants/fonts';
 import proxyService from '../services/proxyService';
 import googleDriveService from '../services/googleDriveService';
+import googleAuthService from '../services/googleAuthService';
 import { generateInviteToken } from '../utils/tokens';
 import { generateInviteLink } from '../utils/inviteLinkGenerator';
 import { logTeamInvitesCreated } from '../utils/analytics';
@@ -140,13 +141,25 @@ export default function TeamMembersScreen({ navigation }) {
       // re-render into the "Active team" surface on the next tick.
       let sessionResult = await initializeProxySession(folderId, 'google');
 
-      // AUTH_CODE_UNAVAILABLE means refreshServerAuthCode's silent
-      // sign-in didn't return a fresh code (no offline-access token
-      // cached). Force an INTERACTIVE adminSignIn to mint one, then
-      // retry. This was the missing piece behind the "Continue team
-      // setup loops" symptom — the screen was already past step 1 so
-      // the silent path failed and we never re-prompted.
-      if (sessionResult?.error === 'AUTH_CODE_UNAVAILABLE') {
+      // Two failure modes that mean "the stored serverAuthCode is no
+      // good — re-prompt for a fresh one":
+      //  1. AUTH_CODE_UNAVAILABLE — refreshServerAuthCode's silent
+      //     sign-in returned nothing AND nothing was cached. Proxy
+      //     was never called.
+      //  2. "authorization code has expired" / "already been used" —
+      //     the stored code was sent to the proxy and rejected with
+      //     400. This is what the user was hitting.
+      // Both need: clear the stale code, force INTERACTIVE adminSignIn
+      // (which mints a fresh serverAuthCode), then retry the proxy
+      // init.
+      const needsFreshAuth = (() => {
+        const err = String(sessionResult?.error || '');
+        return err === 'AUTH_CODE_UNAVAILABLE'
+          || /authorization code has expired/i.test(err)
+          || /already been used/i.test(err);
+      })();
+      if (needsFreshAuth) {
+        try { await googleAuthService.clearServerAuthCode(); } catch {}
         const reSign = await adminSignIn();
         if (!reSign?.success) {
           const errMsg = reSign?.error || 'Could not refresh Google authorization';
