@@ -138,7 +138,26 @@ export default function TeamMembersScreen({ navigation }) {
       // Step 3 — initialize the proxy session. This sets
       // proxySessionId via AdminContext, which causes the screen to
       // re-render into the "Active team" surface on the next tick.
-      const sessionResult = await initializeProxySession(folderId, 'google');
+      let sessionResult = await initializeProxySession(folderId, 'google');
+
+      // AUTH_CODE_UNAVAILABLE means refreshServerAuthCode's silent
+      // sign-in didn't return a fresh code (no offline-access token
+      // cached). Force an INTERACTIVE adminSignIn to mint one, then
+      // retry. This was the missing piece behind the "Continue team
+      // setup loops" symptom — the screen was already past step 1 so
+      // the silent path failed and we never re-prompted.
+      if (sessionResult?.error === 'AUTH_CODE_UNAVAILABLE') {
+        const reSign = await adminSignIn();
+        if (!reSign?.success) {
+          const errMsg = reSign?.error || 'Could not refresh Google authorization';
+          if (!/cancel/i.test(String(errMsg))) {
+            Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
+          }
+          return;
+        }
+        sessionResult = await initializeProxySession(folderId, 'google');
+      }
+
       if (!sessionResult || !sessionResult.sessionId) {
         if (sessionResult?.skippable) {
           Alert.alert(
