@@ -74,12 +74,32 @@ export default function TeamMembersScreen({ navigation }) {
   const isTeamReady = !!proxySessionId;
   const googleAdminConnected = isAuthenticated && accountType === 'google';
 
-  const fetchMembers = async () => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastFetchAt, setLastFetchAt] = useState(null);
+
+  const fetchMembers = async (opts = {}) => {
     if (!proxySessionId) return;
+    if (opts.userInitiated) setIsRefreshing(true);
     try {
       const result = await proxyService.getTeamMembers(proxySessionId);
+      console.log('[TeamMembers] getTeamMembers result:', JSON.stringify({
+        success: result?.success,
+        count: result?.teamMembers?.length || 0,
+        teamMembers: result?.teamMembers,
+      }));
       if (result?.teamMembers) setTeamMembers(result.teamMembers);
-    } catch {}
+      setLastFetchAt(Date.now());
+    } catch (e) {
+      console.warn('[TeamMembers] fetchMembers failed:', e?.message);
+      if (opts.userInitiated) {
+        Alert.alert(
+          t('common.error', { defaultValue: 'Error' }),
+          e?.message || 'Could not refresh from server',
+        );
+      }
+    } finally {
+      if (opts.userInitiated) setIsRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -453,11 +473,13 @@ export default function TeamMembersScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            {/* Merge proxy team members + any local invite tokens
-                the user generated this session that haven't propagated
-                yet. Dedupe by token. Each row shows the invite code
-                + a Share / Revoke action so the user can see exactly
-                who they invited. */}
+            {/* Members & invites — merged list of:
+                  - proxy.getTeamMembers (server's view, capped to
+                    invites within the 7-day TTL window — older
+                    invites are auto-purged server-side)
+                  - local inviteTokens (AsyncStorage, may survive
+                    longer than 7d but is wiped on iOS reinstall)
+                Dedupe by token. */}
             {(() => {
               const proxyItems = (teamMembers || []).map(m => ({
                 token: m?.token || null,
@@ -470,12 +492,43 @@ export default function TeamMembersScreen({ navigation }) {
                 .filter(tok => tok && !proxyTokens.has(tok))
                 .map(tok => ({ token: tok, name: null, email: null, hasJoined: false }));
               const all = [...proxyItems, ...localOnly];
-              if (all.length === 0) return null;
               return (
                 <>
-                  <Text style={[styles.eyebrow, { marginTop: 14 }]}>
-                    {t('teamMembers.membersList', { defaultValue: 'Members & invites' })}
-                  </Text>
+                  <View style={[styles.eyebrowRow, { marginTop: 14, paddingHorizontal: 0 }]}>
+                    <Text style={styles.eyebrow}>
+                      {t('teamMembers.membersList', { defaultValue: 'Members & invites' })}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => fetchMembers({ userInitiated: true })}
+                      disabled={isRefreshing}
+                      hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+                      style={styles.refreshLink}
+                    >
+                      {isRefreshing ? (
+                        <ActivityIndicator size="small" color="#7A5B00" />
+                      ) : (
+                        <>
+                          <Ionicons name="refresh" size={13} color="#7A5B00" />
+                          <Text style={styles.refreshLinkText}>
+                            {t('teamMembers.refresh', { defaultValue: 'Refresh' })}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {all.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                      <Ionicons name="information-circle-outline" size={20} color="#7A5B00" />
+                      <Text style={styles.emptyText}>
+                        {t('teamMembers.emptyHint', {
+                          defaultValue:
+                            'No invites or members yet. Older invites may have expired — the server keeps invites for 7 days, then auto-purges them. If you reinstalled the app, local copies were wiped too. Generate a new invite to add a member.',
+                        })}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {all.length > 0 ? (
                   <View style={styles.rowGroup}>
                     {all.map((m, i) => (
                       <View key={`${m.token || 'no-token'}-${i}`} style={styles.row}>
@@ -528,6 +581,7 @@ export default function TeamMembersScreen({ navigation }) {
                       </View>
                     ))}
                   </View>
+                  ) : null}
                 </>
               );
             })()}
@@ -765,6 +819,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#7A5B00',
+    letterSpacing: -0.1,
+  },
+  // Refresh action next to the "Members & invites" eyebrow — pulls
+  // a fresh list from the proxy. Tiny accent-coloured link.
+  refreshLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  refreshLinkText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7A5B00',
+    letterSpacing: -0.1,
+  },
+  // Soft accent card shown when the list is empty — explains
+  // proxy 7-day TTL + reinstall-wipe so the user knows why old
+  // invites might not be visible.
+  emptyCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginHorizontal: 18,
+    marginTop: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#FFF4C2',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#F2C31B',
+  },
+  emptyText: {
+    flex: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#7A5B00',
+    lineHeight: 17,
     letterSpacing: -0.1,
   },
 });
