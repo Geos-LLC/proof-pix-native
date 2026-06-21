@@ -46,6 +46,7 @@ export default function TeamMembersScreen({ navigation }) {
     teamInfo,
     inviteTokens,
     addInviteToken,
+    removeInviteToken,
     adminSignIn,
     initializeProxySession,
     saveFolderId,
@@ -73,6 +74,14 @@ export default function TeamMembersScreen({ navigation }) {
   const isTeamReady = !!proxySessionId;
   const googleAdminConnected = isAuthenticated && accountType === 'google';
 
+  const fetchMembers = async () => {
+    if (!proxySessionId) return;
+    try {
+      const result = await proxyService.getTeamMembers(proxySessionId);
+      if (result?.teamMembers) setTeamMembers(result.teamMembers);
+    } catch {}
+  };
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -85,6 +94,57 @@ export default function TeamMembersScreen({ navigation }) {
     })();
     return () => { mounted = false; };
   }, [proxySessionId]);
+
+  // Revoke a member or pending invite — removes the invite token on
+  // the proxy AND from local state. Same flow as the old Settings
+  // Manage Team modal: hit removeTeamMember (which may not exist on
+  // the proxy yet, so swallow that error) and always hit
+  // removeInviteToken which is the authoritative wipe.
+  const handleRevoke = async (token) => {
+    if (!token) return;
+    Alert.alert(
+      t('teamMembers.revokeTitle', { defaultValue: 'Revoke access?' }),
+      t('teamMembers.revokeMessage', {
+        defaultValue: 'This removes the team member and revokes their access. They will not be able to upload using this code.',
+      }),
+      [
+        { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        {
+          text: t('teamMembers.revoke', { defaultValue: 'Revoke' }),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (proxySessionId) {
+                try { await proxyService.removeTeamMember(proxySessionId, token); } catch {}
+                try { await proxyService.removeInviteToken(proxySessionId, token); } catch {}
+              }
+              try { await removeInviteToken(token); } catch {}
+              await fetchMembers();
+            } catch (e) {
+              Alert.alert(
+                t('common.error', { defaultValue: 'Error' }),
+                e?.message || 'Failed to revoke access',
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // Re-share a previously generated invite — same rich message
+  // (greeting + manual code + store links) as the Generate flow.
+  const handleReshare = async (token) => {
+    if (!token || !proxySessionId) return;
+    try {
+      const shareContent = generateShareContent(token, proxySessionId, teamName);
+      await Share.share({
+        title: shareContent.title,
+        message: shareContent.message,
+        url: shareContent.inviteLink,
+      });
+    } catch {}
+  };
 
   // Set-up path — three-step flow ported from SettingsScreen.handleSetupTeam:
   //   1. Admin Google sign-in (adminSignIn from AdminContext)
@@ -237,6 +297,9 @@ export default function TeamMembersScreen({ navigation }) {
           url: shareContent.inviteLink,
         });
       } catch {}
+      // Refresh the proxy list so the new invite shows up in the
+      // members section below without a full app restart.
+      await fetchMembers();
     } catch (e) {
       Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Failed to generate invite');
     } finally {
@@ -390,30 +453,84 @@ export default function TeamMembersScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            {memberCount > 0 ? (
-              <>
-                <Text style={[styles.eyebrow, { marginTop: 14 }]}>
-                  {t('teamMembers.membersList', { defaultValue: 'Members' })}
-                </Text>
-                <View style={styles.rowGroup}>
-                  {teamMembers.map((m, i) => (
-                    <View key={m?.id || m?.userId || i} style={styles.row}>
-                      <View style={styles.rowIc}>
-                        <Ionicons name="person-outline" size={19} color="#1E1E1E" />
+            {/* Merge proxy team members + any local invite tokens
+                the user generated this session that haven't propagated
+                yet. Dedupe by token. Each row shows the invite code
+                + a Share / Revoke action so the user can see exactly
+                who they invited. */}
+            {(() => {
+              const proxyItems = (teamMembers || []).map(m => ({
+                token: m?.token || null,
+                name: m?.name || m?.userName || null,
+                email: m?.email || null,
+                hasJoined: !!(m?.name || m?.userName || m?.email),
+              }));
+              const proxyTokens = new Set(proxyItems.map(p => p.token).filter(Boolean));
+              const localOnly = (inviteTokens || [])
+                .filter(tok => tok && !proxyTokens.has(tok))
+                .map(tok => ({ token: tok, name: null, email: null, hasJoined: false }));
+              const all = [...proxyItems, ...localOnly];
+              if (all.length === 0) return null;
+              return (
+                <>
+                  <Text style={[styles.eyebrow, { marginTop: 14 }]}>
+                    {t('teamMembers.membersList', { defaultValue: 'Members & invites' })}
+                  </Text>
+                  <View style={styles.rowGroup}>
+                    {all.map((m, i) => (
+                      <View key={`${m.token || 'no-token'}-${i}`} style={styles.row}>
+                        <View style={styles.rowIc}>
+                          <Ionicons
+                            name={m.hasJoined ? 'person-outline' : 'mail-outline'}
+                            size={19}
+                            color="#1E1E1E"
+                          />
+                        </View>
+                        <View style={styles.rowMeta}>
+                          <Text style={styles.rowTitle} numberOfLines={1}>
+                            {m.name || t('teamMembers.pendingInvite', { defaultValue: 'Pending invite' })}
+                          </Text>
+                          {m.email && m.email !== m.name ? (
+                            <Text style={styles.rowSub} numberOfLines={1}>{m.email}</Text>
+                          ) : null}
+                          {m.token ? (
+                            <Text style={styles.inviteCodeText} numberOfLines={1} selectable>
+                              {t('teamMembers.codeLabel', { defaultValue: 'Code:' })} {m.token}
+                            </Text>
+                          ) : null}
+                          <View style={styles.rowActions}>
+                            {m.token ? (
+                              <>
+                                <TouchableOpacity
+                                  onPress={() => handleReshare(m.token)}
+                                  style={styles.rowActionLink}
+                                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
+                                >
+                                  <Ionicons name="share-outline" size={13} color="#7A5B00" />
+                                  <Text style={styles.rowActionLinkText}>
+                                    {t('teamMembers.share', { defaultValue: 'Share' })}
+                                  </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => handleRevoke(m.token)}
+                                  style={styles.rowActionLink}
+                                  hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+                                >
+                                  <Ionicons name="close-circle-outline" size={13} color="#C0392B" />
+                                  <Text style={[styles.rowActionLinkText, { color: '#C0392B' }]}>
+                                    {t('teamMembers.revoke', { defaultValue: 'Revoke' })}
+                                  </Text>
+                                </TouchableOpacity>
+                              </>
+                            ) : null}
+                          </View>
+                        </View>
                       </View>
-                      <View style={styles.rowMeta}>
-                        <Text style={styles.rowTitle} numberOfLines={1}>
-                          {m?.name || m?.userName || m?.email || `Member ${i + 1}`}
-                        </Text>
-                        {m?.email && m?.email !== m?.name ? (
-                          <Text style={styles.rowSub} numberOfLines={1}>{m.email}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </>
-            ) : null}
+                    ))}
+                  </View>
+                </>
+              );
+            })()}
           </>
         )}
       </ScrollView>
@@ -618,5 +735,36 @@ const styles = StyleSheet.create({
     color: '#9A9A9A',
     letterSpacing: -0.1,
     marginTop: 1,
+  },
+  // Per-row invite-code badge so the user can read + select the code
+  // even for pending invites. Selectable so iOS long-press → Copy works.
+  inviteCodeText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#1E1E1E',
+    backgroundColor: '#F4F4F4',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  rowActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  rowActionLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  rowActionLinkText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7A5B00',
+    letterSpacing: -0.1,
   },
 });
