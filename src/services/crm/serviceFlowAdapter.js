@@ -78,18 +78,27 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
   static icon = 'briefcase-outline';
 
   /**
-   * Redeem a connect code the admin generated in the Service Flow
-   * web UI. Persists the refresh token in Keychain + workspace
-   * metadata.
-   * @param {{ code: string, deviceLabel?: string }} options
+   * Redeem a credential and persist the resulting refresh token +
+   * workspace metadata. Accepts either:
+   *   - `code`: the 16-char human-readable QR/paste code (legacy
+   *     surface — admin generated in SF web at a laptop, scanned/
+   *     typed on the phone)
+   *   - `token`: the URL-safe base64url token from the SF web/PWA
+   *     /authorize redirect (new same-device surface)
+   *
+   * Same redemption endpoint either way — SF backend discriminates
+   * by shape (hyphenated uppercase = code; base64url-clean = token).
+   *
+   * @param {{ code?: string, token?: string, deviceLabel?: string }} options
    * @returns {Promise<ConnectResult>}
    */
-  async connect({ code, deviceLabel = 'ProofPix mobile' } = {}) {
-    if (!code) return { success: false, error: 'INVALID_PAYLOAD' };
-    const response = await fetch(apiUrl('/connect/code/redeem'), {
+  async connect({ code, token, deviceLabel = 'ProofPix mobile' } = {}) {
+    const credential = code || token;
+    if (!credential) return { success: false, error: 'INVALID_PAYLOAD' };
+    const response = await fetch(apiUrl('/connect/redeem'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, device_label: deviceLabel }),
+      body: JSON.stringify({ code: credential, device_label: deviceLabel }),
     });
     if (!response.ok) {
       const err = await parseErrorEnvelope(response);

@@ -102,6 +102,7 @@ import LogoCustomizationScreen from './src/screens/LogoCustomizationScreen';
 import BrandingSettingsScreen from './src/screens/BrandingSettingsScreen';
 import MetadataCustomizationScreen from './src/screens/MetadataCustomizationScreen';
 import MarkupEditorScreen from './src/screens/MarkupEditorScreen';
+import SharePreviewScreen from './src/screens/SharePreviewScreen';
 import {
   StudioLayoutScreen,
   StudioLabelsScreen,
@@ -110,6 +111,7 @@ import {
   StudioExportScreen,
 } from './src/screens/StudioToolScreens';
 import PersistentBottomNav from './src/components/PersistentBottomNav';
+import { UiOverlayProvider } from './src/components/uiOverlayState';
 import ProjectDetailScreen from './src/screens/ProjectDetailScreen';
 import PhotoSetPreviewScreen from './src/screens/PhotoSetPreviewScreen';
 import ReportStyleScreen from './src/screens/ReportStyleScreen';
@@ -121,6 +123,7 @@ import InviteScreen from './src/screens/InviteScreen';
 import JoinTeamScreen from './src/screens/JoinTeamScreen';
 import ReferralScreen from './src/screens/ReferralScreen';
 import AdminReferralScreen from './src/screens/AdminReferralScreen';
+import CRMRedeemScreen from './src/screens/CRMRedeemScreen';
 import GoogleSignUpScreen from './src/screens/GoogleSignUpScreen';
 import LabelLanguageSetupScreen from './src/screens/LabelLanguageSetupScreen';
 import SectionLanguageSetupScreen from './src/screens/SectionLanguageSetupScreen';
@@ -131,6 +134,7 @@ import UserInfoSetupScreen from './src/screens/UserInfoSetupScreen';
 import PermissionsSetupScreen from './src/screens/PermissionsSetupScreen';
 import GlobalBackgroundLabelPreparation from './src/components/GlobalBackgroundLabelPreparation';
 import GlobalBackgroundCombinedPhotoCreator from './src/components/GlobalBackgroundCombinedPhotoCreator';
+import GlobalBackgroundChromeBaker from './src/components/GlobalBackgroundChromeBaker';
 import UploadIndicatorLine from './src/components/UploadIndicatorLine';
 import { useBackgroundUpload } from './src/hooks/useBackgroundUpload';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -491,6 +495,11 @@ function AppNavigator() {
         options={{ animation: 'slide_from_bottom' }}
       />
       <Stack.Screen
+        name="SharePreview"
+        component={SharePreviewScreen}
+        options={{ animation: 'slide_from_bottom', headerShown: false }}
+      />
+      <Stack.Screen
         name="Invite"
         component={InviteScreen}
         options={{
@@ -548,6 +557,14 @@ function AppNavigator() {
         }}
       />
       <Stack.Screen
+        name="CRMRedeem"
+        component={CRMRedeemScreen}
+        options={{
+          animation: 'slide_from_bottom',
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
         name="UploadPhotos"
         component={UploadPhotosScreen}
         options={{
@@ -579,6 +596,14 @@ const linking = {
           code: (code) => code,
         },
       },
+      // proofpix://connect?token=...&workspace=...
+      // Hit when SF web/PWA's /integrations/proofpix/authorize
+      // route mints a token and redirects. The CRMRedeem screen
+      // pulls the token from the URL and calls the adapter; on
+      // success it closes back to Settings. Same screen also
+      // handles the SF-mobile-native handoff (if it ever ships)
+      // with the same query-string shape.
+      CRMRedeem: 'connect',
     },
   },
 };
@@ -1020,15 +1045,18 @@ export default function App() {
                   routeNameRef.current = currentRouteName;
                 }}
               >
-                <AppNavigator />
-                <PersistentBottomNav
-                  currentRoute={currentRouteName}
-                  navigationRef={navigationRef}
-                />
+                <UiOverlayProvider>
+                  <AppNavigator />
+                  <PersistentBottomNav
+                    currentRoute={currentRouteName}
+                    navigationRef={navigationRef}
+                  />
+                </UiOverlayProvider>
               </NavigationContainer>
               {/* Global background components - stay mounted regardless of navigation */}
               <GlobalBackgroundLabelPreparation />
               <GlobalBackgroundCombinedPhotoCreator />
+              <GlobalBackgroundChromeBaker />
               {/* Global upload progress indicator - shows on ALL screens */}
               <GlobalUploadIndicator navigationRef={navigationRef} />
             </PhotoProvider>

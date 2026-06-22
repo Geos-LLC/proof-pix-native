@@ -18,8 +18,10 @@ import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { FONTS } from '../constants/fonts';
+import * as WebBrowser from 'expo-web-browser';
 import dropboxAuthService from '../services/dropboxAuthService';
 import iCloudService from '../services/iCloudService';
+import crmService from '../services/crm';
 
 // CloudSyncScreen — dedicated route for cloud storage connections.
 // Split out of the prior combined CloudTeamScreen so the team flow
@@ -43,6 +45,9 @@ export default function CloudSyncScreen({ navigation }) {
 
   const [dropboxConnected, setDropboxConnected] = useState(false);
   const [dropboxUserInfo, setDropboxUserInfo] = useState(null);
+  const [serviceFlowConnected, setServiceFlowConnected] = useState(false);
+  const [serviceFlowWorkspace, setServiceFlowWorkspace] = useState(null);
+  const [isWorkingServiceFlow, setIsWorkingServiceFlow] = useState(false);
   const [bgUploadEnabled, setBgUploadEnabled] = useState(true);
   const [isWorkingGoogle, setIsWorkingGoogle] = useState(false);
   const [isWorkingDropbox, setIsWorkingDropbox] = useState(false);
@@ -56,8 +61,31 @@ export default function CloudSyncScreen({ navigation }) {
         if (pref !== null) setBgUploadEnabled(pref === 'true');
       } catch {}
       await refreshDropbox();
+      await refreshServiceFlow();
     })();
   }, []);
+
+  // Read SF connection state from local Keychain (no network call —
+  // serviceFlowAdapter persists workspace metadata at connect time
+  // so the UI can render without round-tripping to the server).
+  const refreshServiceFlow = async () => {
+    try {
+      const adapter = await crmService.getActiveAdapter();
+      if (adapter && typeof adapter.getStoredWorkspace === 'function') {
+        const stored = await adapter.getStoredWorkspace();
+        if (stored?.workspaceId) {
+          setServiceFlowConnected(true);
+          setServiceFlowWorkspace(stored);
+          return;
+        }
+      }
+      setServiceFlowConnected(false);
+      setServiceFlowWorkspace(null);
+    } catch {
+      setServiceFlowConnected(false);
+      setServiceFlowWorkspace(null);
+    }
+  };
 
   const refreshDropbox = async () => {
     try {
@@ -195,6 +223,85 @@ export default function CloudSyncScreen({ navigation }) {
     );
   };
 
+  // Service Flow: connect via openAuthSessionAsync against the
+  // SF web/PWA /integrations/proofpix/authorize page. The auth
+  // session primitive intercepts the proofpix://connect redirect
+  // and hands back the URL — we extract the token client-side and
+  // pass it through the same adapter.connect() the deep-link
+  // handler uses, so both surfaces converge on one redemption path.
+  const SF_AUTHORIZE_URL = (process.env.EXPO_PUBLIC_SERVICEFLOW_AUTHORIZE_URL)
+    || 'https://staging.service-flow.pro/integrations/proofpix/authorize?return_to=proofpix://connect';
+  const handleServiceFlow = async () => {
+    if (isWorkingServiceFlow) return;
+    if (serviceFlowConnected) {
+      Alert.alert(
+        t('cloudSync.disconnectSFTitle', { defaultValue: 'Disconnect Service Flow?' }),
+        t('cloudSync.disconnectSFMessage', {
+          defaultValue:
+            "New photos in linked projects will stop syncing to Service Flow. Photos already uploaded stay on the job.",
+        }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          {
+            text: t('cloudSync.disconnect', { defaultValue: 'Disconnect' }),
+            style: 'destructive',
+            onPress: async () => {
+              setIsWorkingServiceFlow(true);
+              try { await crmService.disconnect(); }
+              catch (e) { console.warn('[CloudSync] SF disconnect failed:', e?.message); }
+              finally {
+                await refreshServiceFlow();
+                setIsWorkingServiceFlow(false);
+              }
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    setIsWorkingServiceFlow(true);
+    try {
+      // openAuthSessionAsync opens the system in-app browser, watches
+      // for a redirect to the deep-link URL, returns the captured URL
+      // (or a dismissed/locked status). Cleaner than Linking +
+      // listener for OAuth-style flows.
+      const result = await WebBrowser.openAuthSessionAsync(SF_AUTHORIZE_URL, 'proofpix://connect');
+      if (result?.type !== 'success' || !result.url) {
+        // User dismissed, or no redirect captured. Silent — no
+        // toast, since they explicitly closed the browser.
+        return;
+      }
+      // Parse token from the redirect URL.
+      const u = new URL(result.url);
+      const token = u.searchParams.get('token');
+      if (!token) {
+        Alert.alert(
+          t('common.error', { defaultValue: 'Error' }),
+          t('cloudSync.sfNoToken', { defaultValue: 'Service Flow returned an unexpected response. Try again.' }),
+        );
+        return;
+      }
+      const redeem = await crmService.connect('serviceflow', { token });
+      if (!redeem?.success) {
+        Alert.alert(
+          t('common.error', { defaultValue: 'Error' }),
+          redeem?.error || t('cloudSync.sfFailed', { defaultValue: 'Could not finish connecting.' }),
+        );
+        return;
+      }
+      await refreshServiceFlow();
+    } catch (e) {
+      console.warn('[CloudSync] SF connect failed:', e?.message);
+      Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Connection failed.');
+    } finally {
+      setIsWorkingServiceFlow(false);
+    }
+  };
+  const sfLabel = serviceFlowConnected
+    ? (serviceFlowWorkspace?.workspaceName || t('cloudSync.connected', { defaultValue: 'Connected' }))
+    : t('cloudSync.notConnected', { defaultValue: 'Not connected' });
+
   const googleConnected = isAuthenticated && accountType === 'google';
   const googleAccountLabel = googleConnected
     ? (userInfo?.email || userInfo?.name || t('cloudSync.connected', { defaultValue: 'Connected' }))
@@ -282,6 +389,43 @@ export default function CloudSyncScreen({ navigation }) {
               ) : (
                 <Text style={[styles.actionPillText, dropboxConnected ? styles.actionPillTextGhost : styles.actionPillTextAccent]}>
                   {dropboxConnected
+                    ? t('cloudSync.disconnect', { defaultValue: 'Disconnect' })
+                    : t('cloudSync.connect', { defaultValue: 'Connect' })}
+                </Text>
+              )}
+            </View>
+          </TouchableOpacity>
+
+          {/* Service Flow — CRM integration. Connect via the SF web/PWA
+              /integrations/proofpix/authorize page (works on any
+              device — laptop opens it in a browser, phone deep-links
+              back into ProofPix when SF redirects to proofpix://). */}
+          <TouchableOpacity
+            style={styles.row}
+            onPress={handleServiceFlow}
+            disabled={isWorkingServiceFlow}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.rowIc, serviceFlowConnected && styles.rowIcConnected]}>
+              <Ionicons name="briefcase-outline" size={19} color={serviceFlowConnected ? '#7A5B00' : '#1E1E1E'} />
+            </View>
+            <View style={styles.rowMeta}>
+              <Text style={styles.rowTitle}>
+                {t('cloudSync.serviceFlow', { defaultValue: 'Service Flow' })}
+              </Text>
+              <Text
+                style={[styles.rowSub, serviceFlowConnected && styles.rowSubSuccess]}
+                numberOfLines={1}
+              >
+                {sfLabel}
+              </Text>
+            </View>
+            <View style={[styles.actionPill, serviceFlowConnected && styles.actionPillDestructive]}>
+              {isWorkingServiceFlow ? (
+                <ActivityIndicator size="small" color="#1E1E1E" />
+              ) : (
+                <Text style={[styles.actionPillText, serviceFlowConnected && styles.actionPillTextDestructive]}>
+                  {serviceFlowConnected
                     ? t('cloudSync.disconnect', { defaultValue: 'Disconnect' })
                     : t('cloudSync.connect', { defaultValue: 'Connect' })}
                 </Text>
