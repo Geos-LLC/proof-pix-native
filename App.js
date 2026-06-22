@@ -124,6 +124,7 @@ import JoinTeamScreen from './src/screens/JoinTeamScreen';
 import ReferralScreen from './src/screens/ReferralScreen';
 import AdminReferralScreen from './src/screens/AdminReferralScreen';
 import CRMRedeemScreen from './src/screens/CRMRedeemScreen';
+import ServiceFlowSyncTrigger from './src/components/ServiceFlowSyncTrigger';
 import GoogleSignUpScreen from './src/screens/GoogleSignUpScreen';
 import LabelLanguageSetupScreen from './src/screens/LabelLanguageSetupScreen';
 import SectionLanguageSetupScreen from './src/screens/SectionLanguageSetupScreen';
@@ -952,6 +953,9 @@ export default function App() {
           <SettingsProvider>
             <AdminProvider>
               <PhotoProvider>
+              {/* Pulls SF jobs into the local project list on app
+                  open + foreground. No-op when no CRM is connected. */}
+              <ServiceFlowSyncTrigger />
               <NavigationContainer
                 ref={navigationRef}
                 linking={linking}

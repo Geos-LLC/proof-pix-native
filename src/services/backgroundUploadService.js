@@ -1,5 +1,73 @@
 import { uploadPhotoBatch, uploadPhotoAsTeamMember } from './uploadService';
 import { markPhotosAsUploaded } from './uploadTracker';
+import { loadProjects } from './storage';
+import crmService from './crm';
+
+/**
+ * Forward each successfully-uploaded photo to the connected CRM
+ * (Service Flow today) when its project is linked to a CRM job.
+ * Runs after the cloud upload completes so the CRM step never
+ * gates the primary Drive/Dropbox/iCloud sync.
+ *
+ * Strictly additive: CRM failures log but don't surface as batch
+ * failures. Idempotency is handled CRM-side (Service Flow dedupes
+ * by `proofpix_photo_id` for 24h), so retries on the next upload
+ * cycle are safe.
+ */
+async function attachSuccessfulPhotosToCrm(photos) {
+  if (!Array.isArray(photos) || photos.length === 0) return;
+
+  // Build a projectId → crmJobId index once per batch. Photos
+  // store `projectId` but the CRM linkage lives on the project
+  // record. Loading projects once is cheaper than per-photo lookup.
+  let projectJobMap = null;
+  try {
+    const projects = await loadProjects();
+    projectJobMap = new Map();
+    for (const proj of (projects || [])) {
+      if (proj?.id && proj?.crmJobId) {
+        projectJobMap.set(proj.id, String(proj.crmJobId));
+      }
+    }
+  } catch (e) {
+    console.warn('[BG_UPLOAD] CRM attach skipped — could not load projects:', e?.message);
+    return;
+  }
+  if (!projectJobMap || projectJobMap.size === 0) return;
+
+  const photosWithJob = photos
+    .map(p => {
+      if (!p?.projectId) return null;
+      const crmJobId = projectJobMap.get(p.projectId);
+      return crmJobId ? { ...p, crmJobId } : null;
+    })
+    .filter(Boolean);
+  if (photosWithJob.length === 0) return;
+
+  for (const photo of photosWithJob) {
+    try {
+      await crmService.attachPhoto(String(photo.crmJobId), {
+        id: photo.id,
+        projectId: photo.projectId,
+        localUri: photo.uri,
+        filename: photo.filename || (photo.uri ? photo.uri.split('/').pop() : `${photo.id}.jpg`),
+        mimeType: photo.mimeType || 'image/jpeg',
+        mode: photo.mode,
+        room: photo.room,
+        timestamp: photo.timestamp || (photo.createdAt ? new Date(photo.createdAt).getTime() : Date.now()),
+        gps: (typeof photo.lat === 'number' && typeof photo.lng === 'number')
+          ? { lat: photo.lat, lng: photo.lng }
+          : null,
+        capturedBy: photo.capturedBy || null,
+        notes: photo.notes || '',
+      });
+    } catch (e) {
+      // Per-photo failure — log and continue. Idempotency means the
+      // retry on the next batch will pick it up correctly.
+      console.warn('[BG_UPLOAD] CRM attach failed for photo', photo.id, e?.message);
+    }
+  }
+}
 
 // Check if the device has network connectivity
 async function checkNetworkConnectivity() {
@@ -168,8 +236,19 @@ class BackgroundUploadService {
       if (result.successful && result.successful.length > 0) {
         const successfulPhotos = result.successful.map(item => item.photo);
         await markPhotosAsUploaded(successfulPhotos, upload.albumName);
+
+        // CRM attach — best-effort, after the cloud upload succeeds.
+        // Photo carries `crmJobId` when its project is linked to an
+        // external job (Service Flow today; other CRMs later). Failure
+        // here doesn't fail the batch — CRM is an additive sync layer,
+        // not the primary upload path.
+        try {
+          await attachSuccessfulPhotosToCrm(successfulPhotos);
+        } catch (e) {
+          console.warn('[BG_UPLOAD] CRM attach step threw:', e?.message);
+        }
       }
-      
+
       // Mark as completed
       upload.status = 'completed';
       upload.endTime = Date.now();
