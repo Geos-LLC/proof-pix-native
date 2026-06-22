@@ -25,9 +25,18 @@
  *   }
  *
  *   PhotoPayload = {
+ *     id: string,              // ProofPix-side stable photo id —
+ *                              // used as the CRM idempotency key
+ *                              // (Service Flow dedupes by this for
+ *                              // ≥24h, so retries don't double-upload)
+ *     projectId: string,       // ProofPix-side project id; CRMs
+ *                              // that want to display "from project X"
+ *                              // get it for free in the metadata
  *     localUri: string,        // file:// path the proofpix app holds
  *     filename: string,
- *     mimeType: string,        // 'image/jpeg' typically
+ *     mimeType: string,        // 'image/jpeg' or 'image/png' for SF;
+ *                              // HEIC needs to be transcoded by the
+ *                              // caller before reaching this layer
  *     mode: 'before'|'after'|'progress'|'combined',
  *     room: string,            // ProofPix folder id
  *     timestamp: number,       // capture ms epoch
@@ -50,7 +59,15 @@
  *   AttachResult = {
  *     success: boolean,
  *     crmPhotoId?: string,     // CRM-side id we can store on the photo record
+ *     photoUrl?: string,       // CRM-hosted public URL (when available)
+ *     alreadyExisted?: boolean,// true when the CRM dedup hit fired
+ *                              // (Service Flow returns 409 with the
+ *                              // existing crmPhotoId + photoUrl —
+ *                              // adapter normalises that to success
+ *                              // since the photo IS on the job)
  *     error?: string,
+ *     retryable?: boolean,     // true for transient (rate limit /
+ *                              // 5xx); caller can re-queue
  *   }
  */
 

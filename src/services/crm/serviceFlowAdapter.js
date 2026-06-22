@@ -240,9 +240,105 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
     return { jobs, nextCursor: body.next_cursor || null };
   }
 
+  /**
+   * Attach a single photo to a Service Flow job. Called from
+   * backgroundUploadService after the local save completes.
+   *
+   * Service Flow dedupes by `proofpix_photo_id` for ≥24h, so this
+   * is safe to retry indefinitely. The adapter normalises the
+   * 409 "already attached" response into a `success: true` result
+   * with `alreadyExisted: true` — the photo IS on the job either
+   * way, the caller just gets a flag to skip any follow-up
+   * "uploaded for the first time" work.
+   *
+   * @param {string} jobId
+   * @param {PhotoPayload} photo
+   * @returns {Promise<AttachResult>}
+   */
   async attachPhoto(jobId, photo) {
-    // Pending PR 3 (POST /jobs/:jobId/photos) on the SF backend.
-    throw new Error('ServiceFlowAdapter.attachPhoto — pending PR 3');
+    if (!jobId) return { success: false, error: 'INVALID_PAYLOAD' };
+    if (!photo?.id) return { success: false, error: 'INVALID_PAYLOAD' };
+    if (!photo?.localUri) return { success: false, error: 'INVALID_PAYLOAD' };
+
+    const mimeType = photo.mimeType || 'image/jpeg';
+    if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
+      // Service Flow only accepts jpeg/png. HEIC has to be
+      // transcoded by the caller before reaching this layer —
+      // failing here gives a clear signal instead of letting the
+      // server return a generic 400.
+      return {
+        success: false,
+        error: 'UNSUPPORTED_MIME',
+        retryable: false,
+      };
+    }
+
+    const token = await this._getAccessToken();
+    if (!token) return { success: false, error: 'NOT_CONNECTED' };
+
+    const formData = new FormData();
+    // React Native multipart file shape — { uri, name, type }. The
+    // RN fetch polyfill streams the file from disk so we never
+    // materialise it in JS heap.
+    formData.append('file', {
+      uri: photo.localUri,
+      name: photo.filename || `${photo.id}.jpg`,
+      type: mimeType,
+    });
+    formData.append(
+      'metadata',
+      JSON.stringify({
+        filename: photo.filename || `${photo.id}.jpg`,
+        mode: photo.mode,
+        room: photo.room,
+        timestamp: photo.timestamp,
+        gps: photo.gps || null,
+        captured_by: photo.capturedBy || null,
+        notes: photo.notes || '',
+        proofpix_photo_id: photo.id,
+        proofpix_project_id: photo.projectId,
+      }),
+    );
+
+    let response;
+    try {
+      response = await fetch(apiUrl(`/jobs/${encodeURIComponent(jobId)}/photos`), {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+    } catch (e) {
+      // Network failure — treat as retryable so the upload queue
+      // re-tries on the next cycle.
+      return {
+        success: false,
+        error: e?.message || 'NETWORK_ERROR',
+        retryable: true,
+      };
+    }
+
+    // Both 200 and 409 carry the same { success, crm_photo_id,
+    // photo_url } shape; 409 means dedup hit and the photo is
+    // already on the job — same end state, just no new write.
+    if (response.ok || response.status === 409) {
+      const body = await response.json();
+      return {
+        success: true,
+        crmPhotoId: body.crm_photo_id,
+        photoUrl: body.photo_url,
+        alreadyExisted: response.status === 409,
+      };
+    }
+
+    // 413 (oversize), 400 (bad mime / missing metadata), 401
+    // (revoked), 404 (job deleted), 429 (rate limited) — surface
+    // with the SF error envelope so the caller can decide.
+    const err = await parseErrorEnvelope(response);
+    return {
+      success: false,
+      error: err.code || err.message,
+      retryable: err.retryable || response.status === 429 || response.status >= 500,
+    };
   }
 }
 

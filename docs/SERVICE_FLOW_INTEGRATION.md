@@ -5,7 +5,7 @@
 **PR status:**
 - **PR 1 (handshake + connection lifecycle)** — ✅ live on staging (`service-flow-backend-staging-303f.up.railway.app`). Five endpoints in §3 verified end-to-end. Adapter wired in [src/services/crm/serviceFlowAdapter.js](../src/services/crm/serviceFlowAdapter.js).
 - **PR 2 (`GET /jobs`)** — ✅ live on staging. Pagination, filters, search, error envelope all verified. `listJobs()` wired in the adapter.
-- **PR 3 (`POST /jobs/:jobId/photos` + idempotency)** — pending. Will unblock background uploads to SF.
+- **PR 3 (`POST /jobs/:jobId/photos` + idempotency)** — ✅ live on staging. Happy path + idempotent retry + bad mime + oversize + photo_count bump all verified by the SF side. `attachPhoto()` wired in the adapter.
 - **PR 4 (batch endpoint, webhook for job delete/complete)** — optional, after PR 3.
 
 ---
@@ -168,35 +168,75 @@ Some SF tenants have denormalised job rows where `service_address_street` alread
 
 ---
 
-## 5. Endpoints (PR 3 — pending)
+## 5. Endpoints (PR 3 — live on staging)
 
 ### `POST /jobs/:jobId/photos`
 
-Attaches a single photo to a job. Multipart upload + JSON metadata sidecar. SF stores it in the existing `customer_files` table (with a `source = 'proofpix'` column added in PR 3), so the photo automatically appears in the existing Files tab on `/customer/:id`.
+Attaches a single photo to a job. Multipart upload + JSON metadata sidecar. SF stores it in the existing `customer_files` table with `source = 'proofpix'`, so the photo automatically appears in the existing Files tab on `/customer/:id` (when the job has a customer) and in the job's own attachments view.
+
+**Auth:** `Authorization: Bearer <access token>`
+**Content-Type:** `multipart/form-data`
+
+**Body:**
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | binary | `image/jpeg` or `image/png`. Strict — 400 on anything else (e.g. `image/heic`). Up to 20 MB. |
+| `metadata` | JSON string | Shape below. |
+
+```jsonc
+{
+  "filename":            "section1_before_1782131766.jpg",
+  "mode":                "before",         // 'before' | 'after' | 'progress' | 'combined'
+  "room":                "front_roof",     // ProofPix folder id
+  "timestamp":           1782131766000,    // capture ms epoch
+  "gps":                 { "lat": 42.5803, "lng": -83.2424 },  // or null
+  "captured_by":         { "name": "Crew #1", "email": null }, // or null
+  "notes":               "",
+  "proofpix_photo_id":   "pp-section1-...",  // idempotency key (≥24h dedup window)
+  "proofpix_project_id": "proj-..."
+}
+```
+
+**Responses:**
+- `200 { success: true, crm_photo_id, photo_url }` — first time this `proofpix_photo_id` was seen on this job.
+- `409 { success: true, crm_photo_id, photo_url }` — dedup hit. **Body shape is identical to 200; only the HTTP status differs.** The photo is already on the job. The adapter treats both as success with `alreadyExisted: true` on 409.
+- `400 INVALID_PAYLOAD` — bad mime, missing metadata fields, malformed JSON.
+- `401 INVALID_TOKEN` — connection revoked or token expired.
+- `404 JOB_NOT_FOUND` — job id doesn't exist for this workspace.
+- `413 PAYLOAD_TOO_LARGE` — file > 20 MB.
+- `429 RATE_LIMITED` — burst guard; respect `retry_after_seconds`.
+
+**Idempotency:** SF dedupes by `proofpix_photo_id` for at least 24 hours. Mobile retries (network blip, app suspend mid-upload, etc.) are safe — the dedup hit returns the same `crm_photo_id` and `photo_url` the original upload produced, so the photo record on the ProofPix side stays consistent.
+
+### 5.1 Storage layout
+
+SF writes the file to a public Supabase bucket named `proofpix-photos` (created on backend boot via `ensureBuckets()`). The `photo_url` returned is:
 
 ```
-POST /jobs/:jobId/photos
-Headers:
-  Authorization: Bearer <access token>
-  Content-Type: multipart/form-data
-Body:
-  file:        <binary>   (image/jpeg or image/png; up to 20 MB)
-  metadata:    JSON string with shape:
-    {
-      filename, mode, room, timestamp, gps,
-      captured_by: { name?, email? } | null,
-      notes, proofpix_photo_id, proofpix_project_id
-    }
-→ 200 { success: true, crm_photo_id: "...", photo_url: "..." }
-→ 409 if proofpix_photo_id already attached (returns the existing crm_photo_id)
-→ 413 if file > 20 MB
+https://<supabase-project>.supabase.co/storage/v1/object/public/proofpix-photos/user-<userId>/job-<jobId>/<proofpix_photo_id>.<ext>
 ```
 
-**Idempotency:** dedup by `proofpix_photo_id` for ≥ 24 hours so retries don't double-upload.
+URLs are public but unguessable because `proofpix_photo_id` is a 32+ bit random id minted by the ProofPix app. No auth required to GET — the proofpix-native app stores the `photo_url` and reuses it directly for thumbnails, share sheets, etc.
+
+### 5.2 customer_files schema (relevant fields)
+
+PR 3 added three columns to `customer_files` and made `customer_id` nullable:
+
+| Column | Type | Notes |
+|---|---|---|
+| `source` | `text` | `'proofpix'` for these rows; future integrations may add others. SF UI may filter on this to render a "via ProofPix" badge. |
+| `proofpix_photo_id` | `text` | The idempotency key. Unique partial index per (`user_id`, `job_id`, `proofpix_photo_id`). |
+| `proofpix_metadata` | `jsonb` | The full metadata sidecar — `mode`, `room`, `timestamp`, `gps`, `captured_by`, `notes`, `proofpix_project_id`. Available for SF-side reporting. |
+| `customer_id` | `bigint NULL` | Was `NOT NULL`; relaxed in migration 068 because jobs without a linked customer can still have ProofPix uploads. Such photos won't appear in any customer's Files tab — only reachable via the job's attachments view. |
+
+### 5.3 HEIC note
+
+iOS Camera defaults to HEIC; the ProofPix capture pipeline already converts to JPEG before save (label compositor / image processor outputs JPEG). The adapter's mime guard exists as a belt-and-suspenders against future capture paths that might surface HEIC — it returns `UNSUPPORTED_MIME` locally so a clear error is surfaced to the user instead of round-tripping a server 400.
 
 ### `POST /jobs/:jobId/photos/batch` (optional, PR 4)
 
-Multi-photo upload in one request. Falls back to per-photo `attachPhoto` calls in `BaseCRMAdapter.attachPhotoBatch` if the endpoint doesn't exist, so PR 3 can ship without it.
+Multi-photo upload in one request. Falls back to per-photo `attachPhoto` calls in `BaseCRMAdapter.attachPhotoBatch` if the endpoint doesn't exist, so PR 3 doesn't require it.
 
 ---
 
@@ -301,8 +341,25 @@ curl -s "$BASE/api/integrations/proofpix/connection/status" \
 
 ---
 
-## 10. Open questions for PR 2 / PR 3
+## 10. Open / deferred items
 
-1. **Photo storage:** SF will reuse `customer_files` with a new `source = 'proofpix'` column. Confirmed in PR 3 prep.
-2. **Geofencing:** does SF want to reject photos whose GPS coords are >X miles from the job's service address? Default: nothing in v1; revisit if false attribution becomes a problem.
-3. **Soft-delete propagation:** if a job is completed or deleted in SF, should ProofPix clear the project's `crmJobId` link? Probably via a webhook in PR 4.
+1. **Photo storage:** ✅ shipped — `customer_files` reused with `source = 'proofpix'`, `proofpix_photo_id`, `proofpix_metadata` columns + nullable `customer_id` (migration 068).
+2. **Geofencing:** still deferred. SF returns GPS in metadata; if false attribution becomes a problem we can either gate at upload or just flag in the UI.
+3. **Soft-delete propagation:** still deferred to PR 4 (webhook surface on job complete/delete).
+4. **Batch endpoint:** still deferred; adapter falls back to per-photo loops.
+5. **Burst rate limit:** only the 120/min steady-state limit landed in PR 3. Adapter respects `retry_after_seconds` if the burst guard ships later — no client changes needed.
+6. **Admin UI for "Active ProofPix devices":** backend already has the data (`SELECT * FROM proofpix_connections WHERE user_id = ? AND revoked_at IS NULL`). No mobile-side surface needed; this is a Service Flow web UI concern.
+7. **Address dedup:** kept as the client-side guard in `serviceFlowAdapter.dedupAddress`. Server-side can ship later without a coordinated mobile change.
+
+## 11. Production rollout
+
+When the proofpix-native PR 3 adapter ships to production (TestFlight build that includes commit chain through `e931ff5 → dd312cd → <PR 3 commit>`):
+
+```bash
+# 1. Merge staging → main on service-flow-backend
+# 2. Apply migrations 066, 067, 068 to prod (same Supabase project, no-op there since same DB)
+# 3. Flip the flag on prod Railway
+railway variables --service service-flow-backend --environment prod --set PROOFPIX_INTEGRATION_ENABLED=true
+```
+
+Staging keeps the flag on indefinitely for iteration.
