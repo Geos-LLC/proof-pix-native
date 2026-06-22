@@ -4,6 +4,11 @@ import googleAuthService from '../services/googleAuthService';
 import appleAuthService from '../services/appleAuthService';
 import proxyService from '../services/proxyService';
 import googleDriveService from '../services/googleDriveService';
+import {
+  readSecureJSON,
+  writeSecureJSON,
+  deleteSecure,
+} from '../services/secureStorageService';
 import { useSettings } from './SettingsContext';
 import { hasFeature, FEATURES } from '../constants/featurePermissions';
 import {
@@ -54,9 +59,16 @@ export function AdminProvider({ children }) {
   const persistConnectedAccounts = async (accounts) => {
     try {
       if (!accounts || accounts.length === 0) {
-        await AsyncStorage.removeItem(STORAGE_KEYS.CONNECTED_ACCOUNTS);
+        // Wipe BOTH stores so a follow-up read doesn't resurrect
+        // the old AsyncStorage value via secureStorageService's
+        // fallback. deleteSecure clears Keychain + AsyncStorage in
+        // one call.
+        await deleteSecure(STORAGE_KEYS.CONNECTED_ACCOUNTS);
       } else {
-        await AsyncStorage.setItem(STORAGE_KEYS.CONNECTED_ACCOUNTS, JSON.stringify(accounts));
+        // writeSecureJSON writes to Keychain (authoritative across
+        // reinstall on iOS) and mirrors to AsyncStorage for fast
+        // same-install reads.
+        await writeSecureJSON(STORAGE_KEYS.CONNECTED_ACCOUNTS, accounts);
       }
     } catch (error) {
       console.warn('[ADMIN] Failed to persist connected accounts:', error?.message || error);
@@ -155,13 +167,16 @@ export function AdminProvider({ children }) {
           await AsyncStorage.removeItem(STORAGE_KEYS.TEAM_NAME);
         }
 
+        // TEAM_MEMBER_INFO carries the team-session id + admin
+        // identity that the team-member side of the app uses to
+        // upload through the proxy. Migrating to secureStorage so
+        // technician reinstalls (and iOS device transfers) keep the
+        // team session intact instead of forcing a fresh invite-code
+        // round-trip.
         if (account.teamInfo) {
-          await AsyncStorage.setItem(
-            STORAGE_KEYS.TEAM_MEMBER_INFO,
-            JSON.stringify(account.teamInfo)
-          );
+          await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, account.teamInfo);
         } else {
-          await AsyncStorage.removeItem(STORAGE_KEYS.TEAM_MEMBER_INFO);
+          await deleteSecure(STORAGE_KEYS.TEAM_MEMBER_INFO);
         }
       } else {
         await AsyncStorage.multiRemove([
@@ -431,10 +446,15 @@ export function AdminProvider({ children }) {
 
       let storedAccounts = [];
       try {
-        const accountsRaw = await AsyncStorage.getItem(STORAGE_KEYS.CONNECTED_ACCOUNTS);
-        storedAccounts = accountsRaw ? JSON.parse(accountsRaw) || [] : [];
+        // readSecureJSON returns the Keychain value when present,
+        // falls back to AsyncStorage otherwise. Existing installs
+        // get migrated implicitly on the next persistConnectedAccounts
+        // call — no migration script needed because writeSecureJSON
+        // populates both stores.
+        const accountsValue = await readSecureJSON(STORAGE_KEYS.CONNECTED_ACCOUNTS);
+        storedAccounts = Array.isArray(accountsValue) ? accountsValue : [];
       } catch (error) {
-        console.warn('[ADMIN] Failed to parse stored connected accounts:', error?.message || error);
+        console.warn('[ADMIN] Failed to load stored connected accounts:', error?.message || error);
       }
 
       if (storedAccounts.length > 0) {
@@ -563,14 +583,18 @@ export function AdminProvider({ children }) {
         setPlanLimit(planLimitValue);
         setTeamName(teamNameValue);
       } else if (storedMode === 'team_member') {
-        const storedTeamInfoRaw = await AsyncStorage.getItem(STORAGE_KEYS.TEAM_MEMBER_INFO);
-        if (storedTeamInfoRaw) {
-          try {
-            storedTeamInfo = JSON.parse(storedTeamInfoRaw);
+        // readSecureJSON resolves Keychain first, AsyncStorage
+        // second — so technicians who installed before the Keychain
+        // migration still see their session, and post-migration
+        // installs survive iOS reinstall + device transfer.
+        try {
+          const parsed = await readSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO);
+          if (parsed && typeof parsed === 'object') {
+            storedTeamInfo = parsed;
             setTeamInfo(storedTeamInfo);
-          } catch (error) {
-            console.warn('[ADMIN] Failed to parse stored team info:', error?.message || error);
           }
+        } catch (error) {
+          console.warn('[ADMIN] Failed to load stored team info:', error?.message || error);
         }
       }
 
@@ -793,8 +817,8 @@ export function AdminProvider({ children }) {
       }
 
       const newTeamInfo = { token, sessionId, useProxy: true };
-      
-      await AsyncStorage.setItem(STORAGE_KEYS.TEAM_MEMBER_INFO, JSON.stringify(newTeamInfo));
+
+      await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, newTeamInfo);
       await AsyncStorage.setItem(STORAGE_KEYS.ADMIN_USER_MODE, 'team_member');
       setTeamInfo(newTeamInfo);
       setUserMode('team_member');
@@ -838,8 +862,10 @@ export function AdminProvider({ children }) {
       const individualMode = storedMode[1] || 'individual';
       const individualName = storedName[1] || '';
 
-      // Clear team member info
-      await AsyncStorage.removeItem(STORAGE_KEYS.TEAM_MEMBER_INFO);
+      // Clear team member info from BOTH stores so the
+      // secureStorageService fallback can't resurrect the old
+      // session on the next launch.
+      await deleteSecure(STORAGE_KEYS.TEAM_MEMBER_INFO);
       setTeamInfo(null);
 
       // Restore individual mode and plan
@@ -980,20 +1006,25 @@ export function AdminProvider({ children }) {
       console.warn('[ADMIN] Error while disconnecting Google accounts:', authError.message);
     }
 
-    // Remove all admin-related AsyncStorage keys
+    // Remove all admin-related keys from BOTH AsyncStorage AND
+    // Keychain. TEAM_MEMBER_INFO + CONNECTED_ACCOUNTS live in
+    // Keychain post-migration; without an explicit secure delete
+    // they'd resurrect from there on the next read.
     try {
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.ADMIN_FOLDER_ID,
         STORAGE_KEYS.ADMIN_INVITE_TOKENS,
         STORAGE_KEYS.ADMIN_PLAN_LIMIT,
         STORAGE_KEYS.ADMIN_USER_MODE,
-        STORAGE_KEYS.TEAM_MEMBER_INFO,
         STORAGE_KEYS.PROXY_SESSION_ID,
         STORAGE_KEYS.TEAM_NAME,
         STORAGE_KEYS.STORED_INDIVIDUAL_PLAN,
         STORAGE_KEYS.STORED_INDIVIDUAL_MODE,
       ]);
       await AsyncStorage.removeItem('@stored_individual_name');
+      // Keychain-backed keys — clear from both stores in one call.
+      await deleteSecure(STORAGE_KEYS.TEAM_MEMBER_INFO);
+      await deleteSecure(STORAGE_KEYS.CONNECTED_ACCOUNTS);
     } catch (storageError) {
       console.warn('[ADMIN] Error clearing stored admin data:', storageError.message);
     }
@@ -1077,9 +1108,10 @@ export function AdminProvider({ children }) {
         STORAGE_KEYS.ADMIN_FOLDER_ID,
         STORAGE_KEYS.ADMIN_INVITE_TOKENS,
         STORAGE_KEYS.ADMIN_PLAN_LIMIT,
-        STORAGE_KEYS.TEAM_MEMBER_INFO,
         STORAGE_KEYS.PROXY_SESSION_ID,
       ]);
+      // Keychain-backed — must clear from both stores.
+      await deleteSecure(STORAGE_KEYS.TEAM_MEMBER_INFO);
       setProxySessionId(null);
       await updateActiveAccount({
         folderId: null,
