@@ -41,6 +41,23 @@ let _accessTokenCache = { token: null, expiresAt: 0 };
 
 const apiUrl = (path) => `${SF_BASE}/api/integrations/proofpix${path}`;
 
+// Dedupe comma-separated address segments case-insensitively, in
+// order. Workaround for SF tenants with denormalised job rows
+// (service_address_street already contains the full address while
+// state/zip are also populated, producing "…, MI 48301, USA, MI 48301").
+// Safe no-op when address is null/empty.
+const dedupAddress = (raw) => {
+  if (!raw || typeof raw !== 'string') return raw || null;
+  const parts = raw.split(/,\s*/).map(p => p.trim()).filter(Boolean);
+  const seen = new Set();
+  const unique = [];
+  for (const p of parts) {
+    const key = p.toLowerCase();
+    if (!seen.has(key)) { seen.add(key); unique.push(p); }
+  }
+  return unique.join(', ');
+};
+
 const parseErrorEnvelope = async (response) => {
   try {
     const body = await response.json();
@@ -167,9 +184,60 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
     return readSecureJSON(SECURE_KEYS.workspace);
   }
 
-  async listJobs(filter) {
-    // Pending PR 2 (GET /jobs) on the SF backend.
-    throw new Error('ServiceFlowAdapter.listJobs — pending PR 2');
+  /**
+   * List jobs the admin can attach photos to. Used by the
+   * project-create job picker.
+   *
+   * @param {{ status?: 'active'|'all'|'completed'|'cancelled'|'scheduled',
+   *           search?: string,
+   *           limit?: number,
+   *           cursor?: string }} [filter]
+   * @returns {Promise<{ jobs: Job[], nextCursor: string|null }>}
+   *
+   * Returns an empty list (not an error) when not connected or when
+   * the server returns no rows, so the picker can render an empty
+   * state without special-casing.
+   */
+  async listJobs(filter = {}) {
+    const token = await this._getAccessToken();
+    if (!token) return { jobs: [], nextCursor: null };
+
+    const params = new URLSearchParams();
+    if (filter.status) params.set('status', filter.status);
+    if (filter.search) params.set('search', filter.search);
+    if (filter.limit) params.set('limit', String(filter.limit));
+    if (filter.cursor) params.set('cursor', filter.cursor);
+    const query = params.toString();
+    const url = apiUrl(`/jobs${query ? `?${query}` : ''}`);
+
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const err = await parseErrorEnvelope(response);
+      // Surface as a thrown error for the caller to catch — the
+      // facade in crm/index.js will swallow into an empty list for
+      // most callers, but UI surfaces that want to show "couldn't
+      // load jobs, retry" can adapter-call directly.
+      throw err;
+    }
+    const body = await response.json();
+    const jobs = (body.jobs || []).map((row) => ({
+      id: row.id,
+      title: row.title || '',
+      customerName: row.customer_name || null,
+      // Light defensive cleanup for the addresses SF returns —
+      // some tenants have denormalised rows that produce duplicate
+      // segments ("…, MI 48301, USA, MI 48301"). Drop consecutive
+      // and far-apart duplicates while preserving order. Cheap, and
+      // means the picker doesn't look weird until SF normalises
+      // server-side.
+      address: dedupAddress(row.address),
+      status: row.status || null,
+      scheduledAt: typeof row.scheduled_at === 'number' ? row.scheduled_at : null,
+      photoCount: typeof row.photo_count === 'number' ? row.photo_count : 0,
+    }));
+    return { jobs, nextCursor: body.next_cursor || null };
   }
 
   async attachPhoto(jobId, photo) {

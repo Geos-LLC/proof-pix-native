@@ -20,6 +20,8 @@
  *     address?: string,        // optional, for project naming
  *     status?: string,         // 'active' / 'completed' / etc.
  *     scheduledAt?: number,    // ms epoch; used to sort
+ *     photoCount?: number,     // existing photo count on the job;
+ *                              // picker can show "0 photos" badge
  *   }
  *
  *   PhotoPayload = {

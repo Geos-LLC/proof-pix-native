@@ -4,7 +4,7 @@
 
 **PR status:**
 - **PR 1 (handshake + connection lifecycle)** — ✅ live on staging (`service-flow-backend-staging-303f.up.railway.app`). Five endpoints in §3 verified end-to-end. Adapter wired in [src/services/crm/serviceFlowAdapter.js](../src/services/crm/serviceFlowAdapter.js).
-- **PR 2 (`GET /jobs`)** — pending. Will unblock the project-create job picker.
+- **PR 2 (`GET /jobs`)** — ✅ live on staging. Pagination, filters, search, error envelope all verified. `listJobs()` wired in the adapter.
 - **PR 3 (`POST /jobs/:jobId/photos` + idempotency)** — pending. Will unblock background uploads to SF.
 - **PR 4 (batch endpoint, webhook for job delete/complete)** — optional, after PR 3.
 
@@ -112,32 +112,59 @@ Revokes the calling connection (soft-delete, idempotent).
 
 ---
 
-## 4. Endpoints (PR 2 — pending)
+## 4. Endpoints (PR 2 — live on staging)
 
 ### `GET /jobs`
 
-Will list jobs the admin can attach photos to. Spec from the original task doc:
+Lists jobs the admin can attach photos to. Used by the project-create job picker.
 
-```
-GET /jobs?status=active&search=&limit=50&cursor=
-Headers: Authorization: Bearer <access token>
-→ 200 {
-    "jobs": [
-      {
-        "id": "string",                 // SF-side stable job id
-        "title": "string",              // displayed in picker
-        "customer_name": "string|null",
-        "address": "string|null",
-        "status": "active|completed|scheduled|cancelled",
-        "scheduled_at": "number|null",  // ms epoch
-        "photo_count": "number"
-      }
-    ],
-    "next_cursor": "string|null"
-  }
+**Auth:** `Authorization: Bearer <access token>`
+
+**Query parameters:**
+| Param | Default | Notes |
+|---|---|---|
+| `status` | `active` | One of `active` / `all` / `completed` / `cancelled` / `scheduled`. See §4.1 for the SF-status → bucket mapping. |
+| `search` | — | Free-text. Matches service name OR customer first/last name. Numeric query (e.g. `42` or `#42`) hits the job id directly. |
+| `limit` | `50` | Capped at `100`. |
+| `cursor` | — | Opaque base64. Encodes the `(scheduled_date, id)` tuple of the last item of the prior page. |
+
+**Response:**
+```json
+{
+  "jobs": [
+    {
+      "id":            "142183",
+      "title":         "test  service",
+      "customer_name": "Georgiy Sayapin",
+      "address":       "5332 Raven Ct, Bloomfield Township, MI 48301, USA",
+      "status":        "active",
+      "scheduled_at":  1778922000000,
+      "photo_count":   0
+    }
+  ],
+  "next_cursor": null
+}
 ```
 
-Default `status=active`, cap `limit` at 100. Sort `scheduled_at DESC, created_at DESC`.
+Sort is `scheduled_at DESC, id DESC`. Cursor is set on the response when there are more rows past `limit`; null on the last page.
+
+### 4.1 Status bucket mapping
+
+Service Flow has 12 internal statuses; the response collapses them to 4 buckets. The `status` filter accepts the bucket name and the server expands it to the matching SF statuses.
+
+| API bucket | SF internal statuses |
+|---|---|
+| `active` (default) | `pending`, `confirmed`, `in-progress`, `en-route`, `started`, `late`, `rescheduled` |
+| `completed` | `completed`, `complete`, `paid` |
+| `cancelled` | `cancelled` |
+| `scheduled` | `scheduled` |
+| `all` | every status above (no filter) |
+
+If a job sits in an SF status that's not in any bucket (future workflow additions, etc.), it's returned only under `status=all`. Safe default for the picker.
+
+### 4.2 Address-quality note
+
+Some SF tenants have denormalised job rows where `service_address_street` already contains the full address while state/zip are also populated, producing strings like `"5332 Raven Ct, Bloomfield Township, MI 48301, USA, MI 48301"`. The adapter applies a light client-side dedup that splits on commas, drops consecutive duplicates case-insensitively, and rejoins — so the picker shows a clean address even when the server returns a duplicated one. SF backend may add server-side dedup in a follow-up; this client guard is forward-compatible.
 
 ---
 
