@@ -23,6 +23,7 @@ import { FONTS } from '../constants/fonts';
 import { PHOTO_MODES } from '../constants/rooms';
 import { computeSetIds } from '../utils/photoSets';
 import PhotoLabels from '../components/PhotoLabels';
+import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -600,6 +601,84 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
     );
   }
 
+  // PhotoSetPreviewScreen now mirrors the HomeScreen's per-set pool
+  // model: the viewer's `photos` array is only the photos in the
+  // CURRENT set, not the whole day. Jumping to next/prev set swaps
+  // the pool entirely (via currentPhotoId → activeSetId → activeSet
+  // recompute) so swipes inside the viewer stay scoped to one set
+  // and set-jumps cleanly land on the next set's first photo.
+  const setOrderList = useMemo(() => {
+    const seen = new Set();
+    const order = [];
+    for (const p of dayPhotos) {
+      const sid = setIdOf.get(p.id);
+      if (sid && !seen.has(sid)) { seen.add(sid); order.push(sid); }
+    }
+    return order;
+  }, [dayPhotos, setIdOf]);
+  const firstIdxOfSet = (sid) => sid ? dayPhotos.findIndex((p) => setIdOf.get(p.id) === sid) : -1;
+
+  // The set the active photo belongs to, plus its position in the
+  // set-order list. Drives the constant `Set N` label that the
+  // viewer's chips render.
+  const activeSetId = current ? setIdOf.get(current.id) : null;
+  const activeSetIdx = activeSetId ? setOrderList.indexOf(activeSetId) : -1;
+  const prevSetId = activeSetIdx > 0 ? setOrderList[activeSetIdx - 1] : null;
+  const nextSetId = activeSetIdx >= 0 && activeSetIdx < setOrderList.length - 1
+    ? setOrderList[activeSetIdx + 1]
+    : null;
+
+  // Photos in the active set only — this is the pool we hand the
+  // viewer. Re-derived on every render so it tracks any edits.
+  const currentSetMembers = useMemo(() => {
+    if (!activeSetId) return current ? [current] : [];
+    return dayPhotos.filter((p) => setIdOf.get(p.id) === activeSetId);
+  }, [dayPhotos, setIdOf, activeSetId, current]);
+
+  // Local overlays toggle so the Overlays switch in the viewer
+  // actually does something — matches the HomeScreen wiring.
+  const [pspShowOverlays, setPspShowOverlays] = useState(false);
+
+  const goToPrevSet = () => {
+    if (!prevSetId) return;
+    const idx = firstIdxOfSet(prevSetId);
+    if (idx >= 0) setCurrentPhotoId(dayPhotos[idx].id);
+  };
+  const goToNextSet = () => {
+    if (!nextSetId) return;
+    const idx = firstIdxOfSet(nextSetId);
+    if (idx >= 0) setCurrentPhotoId(dayPhotos[idx].id);
+  };
+
+  return (
+    // Mirror the HomeScreen wiring exactly so both flows share one
+    // source of truth: the EnlargedPhotoViewer is the screen, nothing
+    // else around it. Pool = current set only (matches HomeScreen).
+    <EnlargedPhotoViewer
+      photos={currentSetMembers}
+      initialPhotoId={currentPhotoId || current?.id}
+      onClose={() => navigation.goBack()}
+      setLabel={() => activeSetIdx >= 0 ? `Set ${activeSetIdx + 1}` : ''}
+      prevSetLabel={() => prevSetId ? `Set ${activeSetIdx}` : null}
+      nextSetLabel={() => nextSetId ? `Set ${activeSetIdx + 2}` : null}
+      onPrevSet={goToPrevSet}
+      onNextSet={goToNextSet}
+      showOverlays
+      overlaysOn={pspShowOverlays}
+      onOverlaysChange={setPspShowOverlays}
+      showDelete
+      onDelete={(p) => { if (p) { setCurrentPhotoId(p.id); handleDeletePhoto(); } }}
+      showEdit
+      onEdit={(p) => navigation.navigate('StudioDetail', { photoId: p.id })}
+      shareLabel="Share photo"
+      onShare={(p) => { if (p) { setCurrentPhotoId(p.id); handleShareCurrent(); } }}
+    />
+  );
+
+  // Legacy inline render — superseded by EnlargedPhotoViewer above.
+  // Wrapped in {false && ...} so it never renders but stays around
+  // for quick rollback if the migration introduces regressions.
+  // eslint-disable-next-line no-unreachable
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       <View style={styles.headerRow}>

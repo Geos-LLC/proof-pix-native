@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] v7 — chrome-bake diagnostics + on-screen rasterization + service timeout + startup marker. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] v56 — capture flow viewer pool = current set only (matches timeline flow). Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
