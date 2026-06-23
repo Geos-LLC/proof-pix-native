@@ -640,15 +640,26 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
   const [pspShowOverlays, setPspShowOverlays] = useState(false);
 
   const goToPrevSet = () => {
+    console.warn('[v57][PhotoSetPreview] goToPrevSet pressed', { prevSetId, activeSetIdx });
     if (!prevSetId) return;
     const idx = firstIdxOfSet(prevSetId);
     if (idx >= 0) setCurrentPhotoId(dayPhotos[idx].id);
   };
   const goToNextSet = () => {
+    console.warn('[v57][PhotoSetPreview] goToNextSet pressed', { nextSetId, activeSetIdx });
     if (!nextSetId) return;
     const idx = firstIdxOfSet(nextSetId);
     if (idx >= 0) setCurrentPhotoId(dayPhotos[idx].id);
   };
+
+  if (typeof console !== 'undefined') {
+    console.warn('[v57][PhotoSetPreview] render', {
+      poolLen: currentSetMembers.length,
+      activeSetIdx,
+      dayPhotosLen: dayPhotos.length,
+      currentPhotoId,
+    });
+  }
 
   return (
     // Mirror the HomeScreen wiring exactly so both flows share one
