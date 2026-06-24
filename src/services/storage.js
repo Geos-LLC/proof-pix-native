@@ -36,7 +36,10 @@ const UPLOAD_COUNTERS_KEY = 'upload-counters';
 export const loadPhotosMetadata = async () => {
   try {
     const saved = await readSecureJSON(PHOTOS_METADATA_KEY);
-    return saved || [];
+    const list = saved || [];
+    const withOvr = list.filter(p => p && p.overrides && typeof p.overrides === 'object' && Object.keys(p.overrides).length);
+    console.warn('[OVR] loadPhotosMetadata total=', list.length, 'withOverrides=', withOvr.length, 'sample=', withOvr.slice(0, 3).map(p => ({ id: p.id, keys: Object.keys(p.overrides) })));
+    return list;
   } catch (error) {
     return [];
   }
@@ -91,8 +94,50 @@ export const savePhotosMetadata = async (photos) => {
       audioUri: p.audioUri || null,
       audioDurationMs: typeof p.audioDurationMs === 'number' ? p.audioDurationMs : null,
       audioTranscription: p.audioTranscription || null,
-      projectId: p.projectId || null
+      projectId: p.projectId || null,
+      // Studio per-photo customizations. The whitelist dropped these
+      // silently — a user could drag the label, change a color, or
+      // bake markup onto a single photo and watch it revert to global
+      // settings on the next app launch. Persist them so per-photo
+      // edits survive reloads (and propagate into the report engine,
+      // which now merges photo.overrides over the global bundle).
+      overrides: (p.overrides && typeof p.overrides === 'object') ? p.overrides : null,
+      // Drawings / arrows / text annotations on a photo. Two on-disk
+      // shapes are valid: a raw array of shape descriptors (legacy
+      // StudioScreen path) or `{ bounds, shapes }` (MarkupEditorScreen
+      // — wraps the shapes with the canvas size so other screens can
+      // re-render at any frame size). Accept both, drop everything else.
+      markup: Array.isArray(p.markup)
+        ? p.markup
+        : (p.markup && typeof p.markup === 'object' && Array.isArray(p.markup.shapes))
+          ? p.markup
+          : null,
+      // Combined-photo layout + Studio source-swap overrides. STACK /
+      // SIDE for stacked vs side-by-side, and the explicit picks the
+      // user made in the Layout panel if they swapped Before/After.
+      combinedLayout: p.combinedLayout || null,
+      beforeOverrideId: p.beforeOverrideId || null,
+      afterOverrideId: p.afterOverrideId || null,
+      // Free-text location label per photo (typed by the user — not
+      // the same as the captured GPS pair above). Drives the meta
+      // overlay's address line in reports.
+      location: (typeof p.location === 'string' && p.location) || null,
+      // GPS pair (alternate names some flows use). Pixel dimensions
+      // some templates set in addition to originalWidth/Height.
+      width: typeof p.width === 'number' ? p.width : null,
+      height: typeof p.height === 'number' ? p.height : null,
+      // Pair format chip the user picked in Studio (square / portrait /
+      // landscape etc.). Was being dropped silently — "format doesn't
+      // persist" was this whitelist not knowing about it.
+      pairTemplate: p.pairTemplate || null,
+      // Whether this photo is included in generated reports. Toggled
+      // from PhotoSetPreviewScreen; was being dropped silently too.
+      includeInReport: typeof p.includeInReport === 'boolean' ? p.includeInReport : null,
     }));
+
+    const withOvrIn = photos.filter(p => p && p.overrides && typeof p.overrides === 'object' && Object.keys(p.overrides).length);
+    const withOvrOut = metadata.filter(p => p && p.overrides && typeof p.overrides === 'object' && Object.keys(p.overrides).length);
+    console.warn('[OVR] savePhotosMetadata in=', photos.length, 'inWithOvr=', withOvrIn.length, 'outWithOvr=', withOvrOut.length, 'sampleIn=', withOvrIn.slice(0, 3).map(p => ({ id: p.id, keys: Object.keys(p.overrides) })));
 
     await writeSecureJSON(PHOTOS_METADATA_KEY, metadata);
 
@@ -991,6 +1036,7 @@ export const loadProjects = async () => {
  */
 export const saveProjects = async (projects) => {
   try {
+    console.warn('[Storage] saveProjects', { count: projects?.length || 0, ids: (projects || []).map(p => p?.id).slice(0, 10) });
     await writeSecureJSON(PROJECTS_KEY, projects);
   } catch (e) {
     throw e;

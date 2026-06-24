@@ -49,6 +49,7 @@ export const PhotoProvider = ({ children }) => {
     (async () => {
       await loadPhotos();
       const projectsList = await loadProjects();
+      console.warn('[PhotoContext] cold-start loadProjects', { count: projectsList?.length || 0, ids: (projectsList || []).map(p => p?.id).slice(0, 10) });
       const savedActive = await loadActiveProjectId();
       if (savedActive) {
         const projectExists = projectsList.some(p => p.id === savedActive);
@@ -531,6 +532,7 @@ export const PhotoProvider = ({ children }) => {
       next[key] = value;
     }
     const nextOverrides = Object.keys(next).length ? next : null;
+    console.warn('[OVR] setPhotoOverride photoId=', photoId, 'key=', key, 'valueType=', typeof value, 'resultKeys=', nextOverrides ? Object.keys(nextOverrides).join(',') : 'null');
     await updatePhoto(photoId, { overrides: nextOverrides });
   };
 
@@ -637,16 +639,18 @@ export const PhotoProvider = ({ children }) => {
   };
 
   // ===== Project operations =====
-  const createProject = async (name) => {
+  const createProject = async (name, opts = {}) => {
     try {
       const newProject = {
         id: `proj_${Date.now()}`,
         name: name,
         createdAt: new Date().toISOString(),
+        industry: opts.industry || null,
       };
       const updatedProjects = [newProject, ...projects];
+      console.warn('[PhotoContext] createProject', { new_id: newProject.id, prior_count: projects?.length || 0, after_count: updatedProjects.length });
       setProjects(updatedProjects);
-      
+
       // Save projects to persistent storage
       await saveProjects(updatedProjects);
       

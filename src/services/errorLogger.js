@@ -250,6 +250,8 @@ const CAPTURE_TAG_PATTERNS = [
   /^\[ChromeBake\b/,
   /^\[ChromeBaker\b/,
   /^\[LabelPos\b/,
+  /^\[CRM\b/,
+  /^\[ServiceFlow\b/,
 ];
 
 const stringifyArg = (arg) => {

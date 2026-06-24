@@ -43,14 +43,23 @@ const _ensureFreshInstallCheck = async () => {
   _freshInstallChecked = true;
   let marker = null;
   try { marker = await AsyncStorage.getItem(FRESH_INSTALL_SENTINEL_KEY); } catch {}
-  if (marker) return;
+  if (marker) {
+    console.warn('[CRM] fresh-install sentinel: marker present, skipping wipe', { marker_ts: marker });
+    return;
+  }
+  console.warn('[CRM] fresh-install sentinel: marker MISSING, will wipe each adapter', { adapter_count: ADAPTERS.length });
   // Fresh install — wipe every adapter's credentials. Each adapter's
   // disconnect() is best-effort and idempotent, so calling on an
   // adapter that has no Keychain entries is safe.
   for (const adapter of ADAPTERS) {
-    try { await adapter.disconnect(); } catch {}
+    const adapterId = adapter?.constructor?.id || 'unknown';
+    console.warn('[CRM] sentinel: calling disconnect on adapter', { adapter: adapterId });
+    try { await adapter.disconnect(); } catch (e) {
+      console.warn('[CRM] sentinel: adapter.disconnect threw', { adapter: adapterId, msg: e?.message });
+    }
   }
   try { await AsyncStorage.setItem(FRESH_INSTALL_SENTINEL_KEY, String(Date.now())); } catch {}
+  console.warn('[CRM] sentinel: done');
 };
 
 const getActiveProviderId = async () => {
@@ -90,6 +99,7 @@ const connect = async (providerId, options) => {
 };
 
 const disconnect = async () => {
+  console.warn('[CRM] disconnect(): walking every adapter', { adapter_count: ADAPTERS.length });
   // Walk every adapter, not just the "active" one. AsyncStorage
   // tracks the active provider, but Keychain may hold tokens for
   // adapters that the AsyncStorage pointer has lost track of (e.g.
@@ -97,9 +107,14 @@ const disconnect = async () => {
   // pointer but failed mid-way through Keychain cleanup). Looping
   // guarantees every adapter's secure storage is wiped.
   for (const adapter of ADAPTERS) {
-    try { await adapter.disconnect(); } catch {}
+    const adapterId = adapter?.constructor?.id || 'unknown';
+    try { await adapter.disconnect(); }
+    catch (e) {
+      console.warn('[CRM] disconnect(): adapter.disconnect threw', { adapter: adapterId, msg: e?.message });
+    }
   }
   await setActiveProviderId(null);
+  console.warn('[CRM] disconnect(): done');
 };
 
 const validateConnection = async () => {
