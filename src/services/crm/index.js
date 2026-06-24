@@ -19,6 +19,14 @@ import serviceFlowAdapter from './serviceFlowAdapter';
 // require a per-project override in the future.
 const ACTIVE_CRM_KEY = '@active_crm_provider';
 
+// Sentinel that survives only within a single install. iOS Keychain
+// (where adapters persist refresh tokens) survives reinstall, but
+// AsyncStorage doesn't — when this key is missing on boot, the app
+// is freshly installed and any CRM credentials still in Keychain are
+// orphans from a previous install. We wipe them so the user sees a
+// clean "Not connected" state instead of a phantom connected one.
+const FRESH_INSTALL_SENTINEL_KEY = '@crm_install_marker';
+
 // Registry — append here when adding a new adapter. Order matters
 // only for the Settings UI render order.
 export const ADAPTERS = [
@@ -27,7 +35,26 @@ export const ADAPTERS = [
 
 const byId = new Map(ADAPTERS.map(a => [a.constructor.id, a]));
 
+// One-shot guard so the fresh-install check only runs once per
+// process. Held in module scope; reset on app cold start.
+let _freshInstallChecked = false;
+const _ensureFreshInstallCheck = async () => {
+  if (_freshInstallChecked) return;
+  _freshInstallChecked = true;
+  let marker = null;
+  try { marker = await AsyncStorage.getItem(FRESH_INSTALL_SENTINEL_KEY); } catch {}
+  if (marker) return;
+  // Fresh install — wipe every adapter's credentials. Each adapter's
+  // disconnect() is best-effort and idempotent, so calling on an
+  // adapter that has no Keychain entries is safe.
+  for (const adapter of ADAPTERS) {
+    try { await adapter.disconnect(); } catch {}
+  }
+  try { await AsyncStorage.setItem(FRESH_INSTALL_SENTINEL_KEY, String(Date.now())); } catch {}
+};
+
 const getActiveProviderId = async () => {
+  await _ensureFreshInstallCheck();
   try { return await AsyncStorage.getItem(ACTIVE_CRM_KEY); }
   catch { return null; }
 };
@@ -63,9 +90,15 @@ const connect = async (providerId, options) => {
 };
 
 const disconnect = async () => {
-  const adapter = await getActiveAdapter();
-  if (!adapter) return;
-  try { await adapter.disconnect(); } catch {}
+  // Walk every adapter, not just the "active" one. AsyncStorage
+  // tracks the active provider, but Keychain may hold tokens for
+  // adapters that the AsyncStorage pointer has lost track of (e.g.
+  // after a reinstall, or if a previous disconnect cleared the
+  // pointer but failed mid-way through Keychain cleanup). Looping
+  // guarantees every adapter's secure storage is wiped.
+  for (const adapter of ADAPTERS) {
+    try { await adapter.disconnect(); } catch {}
+  }
   await setActiveProviderId(null);
 };
 
