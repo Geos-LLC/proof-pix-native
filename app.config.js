@@ -1,4 +1,10 @@
 import 'dotenv/config';
+// dotenv/config only auto-loads `.env`. `.env.local` is the file we
+// keep out of git for secrets like MAP_API_KEY, so load it
+// explicitly here (override:true so values in .env.local win over
+// any earlier .env value).
+import { config as loadDotenv } from 'dotenv';
+loadDotenv({ path: '.env.local', override: true });
 
 export default {
   expo: {
@@ -29,7 +35,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "77",
+      buildNumber: "78",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -198,6 +204,13 @@ export default {
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || "366423185-oboi1er7n69rgrbqtkf5il8j6tsm4don.apps.googleusercontent.com",
       // Dropbox OAuth App Key - available at runtime via Constants.expoConfig.extra
       EXPO_PUBLIC_DROPBOX_APP_KEY: process.env.EXPO_PUBLIC_DROPBOX_APP_KEY || "78ht1k015widero",
+      // Google Static Maps API key — used by the includeLocation
+      // option in report layouts. Plumbed via `extra` (not
+      // EXPO_PUBLIC_*) so the value is read at bundle time from
+      // .env.local and isn't tracked in git. No fallback by design —
+      // if the env var is missing the location map block silently
+      // omits itself (locationMapHtml returns '' when apiKey is null).
+      mapsApiKey: process.env.MAP_API_KEY || null,
     }
   }
 };
