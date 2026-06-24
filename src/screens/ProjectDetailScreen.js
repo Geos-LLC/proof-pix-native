@@ -28,6 +28,7 @@ import * as Sharing from 'expo-sharing';
 // linked (TestFlight build 76 and earlier). Reports are HTML-only
 // here; PDF generation will land alongside the next native build.
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readSecure, writeSecure, deleteSecure } from '../services/secureStorageService';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Share as RNShareDialog } from 'react-native';
 import Constants from 'expo-constants';
@@ -41,6 +42,8 @@ import googleDriveService from '../services/googleDriveService';
 import dropboxService from '../services/dropboxService';
 import iCloudService from '../services/iCloudService';
 import { ensureLabelForPhoto } from '../services/uploadService';
+import crmService from '../services/crm';
+import chromeBakeService from '../services/chromeBakeService';
 import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 
 // react-native-share for multi-file sharing (not available in Expo Go)
@@ -56,7 +59,6 @@ if (!__isExpoGo) {
 }
 
 const __ensureFileUri = (uri) => uri.startsWith('file://') ? uri : `file://${uri}`;
-import { ensureLabelsForPhotoBatch } from '../services/labelService';
 import {
   generateReport,
   getLayout,
@@ -66,6 +68,25 @@ import {
 } from '../reports';
 import { consumePendingLayoutSelection } from '../reports/pickerBridge';
 import ReportPreviewView from '../components/ReportPreview';
+
+// Group keys for the report editor sheet. Section "Report" carries
+// the knobs that change WHAT lands in the report (branding, location
+// map, notes, progress photos). Section "Layout" carries layout-
+// specific presentation knobs (grid columns, the overlays master
+// toggle, docu-specific switches). Anything in supportedOptions that
+// isn't in either list falls into "Layout" as a safety net.
+const REPORT_OPTION_GROUPS = [
+  {
+    id: 'report',
+    title: 'REPORT',
+    keys: ['includeBranding', 'includeLocation', 'includeNotes', 'includeProgressPhotos'],
+  },
+  {
+    id: 'layout',
+    title: 'LAYOUT',
+    keys: ['showOverlays', 'galleryColumns', 'timelineColumns', 'docShowGps', 'docShowCaptureTime', 'docShowDeviceMetadata'],
+  },
+];
 
 // Storage key for the report's selected photo ids — legacy, retained
 // so the Default-settings reset can still wipe it cleanly when an
@@ -96,7 +117,7 @@ import { computeSetIds } from '../utils/photoSets';
 
 const TABS = [
   { key: 'timeline', label: 'Timeline' },
-  { key: 'location', label: 'Location' },
+  { key: 'location', label: 'Locations' },
   { key: 'report', label: 'Report' },
   { key: 'share', label: 'Share' },
 ];
@@ -113,6 +134,70 @@ const tsOfPhoto = (photo) =>
   typeof photo?.timestamp === 'number'
     ? photo.timestamp
     : (photo?.createdAt ? new Date(photo.createdAt).getTime() : 0);
+
+// One row per capture set, used by the Pick photos selection screen.
+// Each row holds Before / Progress* / After / Combined in that order so
+// the user can scan a set's thumbnails left-to-right and (optionally)
+// tap the combined hero at the end. Combined photos are linked to
+// their source set via the `combined_<beforeId>` id prefix, with
+// `beforePhotoId` as a fallback. Sets are sorted chronologically by
+// the earliest photo they contain so the list reads top-down in
+// capture order.
+const buildSetList = (photos) => {
+  const setMap = new Map(); // setId → { id, room, before, progress[], after, combined, ts }
+  const ensureSet = (setId, room) => {
+    if (!setMap.has(setId)) {
+      setMap.set(setId, {
+        id: setId,
+        room: room || 'Unsorted',
+        before: null,
+        after: null,
+        progress: [],
+        combined: null,
+        ts: 0,
+      });
+    }
+    return setMap.get(setId);
+  };
+
+  // Pass 1: Before / After / Progress
+  for (const p of photos) {
+    if (!p) continue;
+    if (p.mode === 'mix' || p.mode === 'combined') continue;
+    // Hide contamination-pattern URIs (same guard as buildTimeline).
+    if (p.uri && /_COMBINED_(?:BASE|EDIT)_(?:SIDE|STACK)_/i.test(p.uri)) continue;
+    const setId = p.mode === 'before'
+      ? String(p.id)
+      : (p.beforePhotoId ? String(p.beforePhotoId) : String(p.id));
+    const s = ensureSet(setId, p.room);
+    const t = tsOfPhoto(p);
+    if (t > s.ts) s.ts = t;
+    if (p.mode === 'before') s.before = p;
+    else if (p.mode === 'after') s.after = p;
+    else if (p.mode === 'progress') s.progress.push(p);
+  }
+
+  // Pass 2: Combined photos — link to source set by id prefix.
+  for (const p of photos) {
+    if (!p) continue;
+    if (p.mode !== 'mix' && p.mode !== 'combined') continue;
+    const idStr = String(p.id || '');
+    const setId = idStr.startsWith('combined_')
+      ? idStr.slice('combined_'.length)
+      : (p.beforePhotoId ? String(p.beforePhotoId) : idStr);
+    const s = ensureSet(setId, p.room);
+    const t = tsOfPhoto(p);
+    if (t > s.ts) s.ts = t;
+    s.combined = p;
+  }
+
+  const sets = Array.from(setMap.values());
+  for (const s of sets) {
+    s.progress.sort((a, b) => tsOfPhoto(a) - tsOfPhoto(b));
+  }
+  sets.sort((a, b) => a.ts - b.ts);
+  return sets;
+};
 
 const buildTimeline = (photos) => {
   const byDate = new Map();
@@ -210,7 +295,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos } = usePhotos();
+  const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos, clearPhotoOverrides } = usePhotos();
   const { isAuthenticated, connectedAccounts } = useAdmin();
   const { effectivePlan } = useFeaturePermissions();
   const {
@@ -238,7 +323,122 @@ export default function ProjectDetailScreen({ route, navigation }) {
     afterLabelOffset,
     singleLabelPosition,
     singleLabelOffset,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
+    beforeLabelOffsetLandscape,
+    afterLabelOffsetLandscape,
+    singleLabelPositionLandscape,
+    singleLabelOffsetLandscape,
+    // Watermark fields — full set so the report can honor the user's
+    // configured position, color, opacity, and font.
+    watermarkColor,
+    watermarkOpacity,
+    watermarkPosition,
+    watermarkOffset,
+    watermarkFontFamily,
+    // Metadata overlay fields — date / time / address / GPS string
+    // positioned per the user's preference. Mirrors what
+    // StudioOverlays.MetadataOverlay renders in-app.
+    showPreviewMetadata,
+    metaShowDate,
+    metaShowTime,
+    metaShowAddress,
+    metaShowGps,
+    metaPosition,
+    metaColor,
+    metaOpacity,
+    metaFontSize,
+    metaFontFamily,
+    metaOffset,
+    // Photo brand logo — independent of the report header logo
+    // (reportBrandLogoUri). This one gets overlaid on every photo per
+    // the user's PositionGrid + size in Logo Customization.
+    showBrandLogo,
+    brandLogoPosition,
+    brandLogoOffset,
+    brandLogoSize,
   } = useSettings();
+
+  // Label settings — passed via `branding.labelSettings`. Includes
+  // margin so the chip's inset distance honors the user's setting.
+  const reportLabelSettings = useMemo(() => ({
+    showLabels,
+    labelBackgroundColor,
+    labelTextColor,
+    labelMarginHorizontal,
+    labelMarginVertical,
+    beforeLabelPosition,
+    afterLabelPosition,
+    singleLabelPosition,
+    beforeLabelOffset,
+    afterLabelOffset,
+    singleLabelOffset,
+    beforeLabelPositionLandscape,
+    afterLabelPositionLandscape,
+    singleLabelPositionLandscape,
+    beforeLabelOffsetLandscape,
+    afterLabelOffsetLandscape,
+    singleLabelOffsetLandscape,
+  }), [
+    showLabels, labelBackgroundColor, labelTextColor,
+    labelMarginHorizontal, labelMarginVertical,
+    beforeLabelPosition, afterLabelPosition, singleLabelPosition,
+    beforeLabelOffset, afterLabelOffset, singleLabelOffset,
+    beforeLabelPositionLandscape, afterLabelPositionLandscape, singleLabelPositionLandscape,
+    beforeLabelOffsetLandscape, afterLabelOffsetLandscape, singleLabelOffsetLandscape,
+  ]);
+
+  // Watermark settings — passed via `branding.watermarkSettings`.
+  // Layouts gate on options.includeWatermark AND watermarkSettings.showWatermark.
+  const reportWatermarkSettings = useMemo(() => ({
+    showWatermark,
+    customWatermarkEnabled,
+    watermarkText,
+    watermarkColor,
+    watermarkOpacity,
+    watermarkPosition,
+    watermarkOffset,
+    watermarkFontFamily,
+  }), [
+    showWatermark, customWatermarkEnabled, watermarkText,
+    watermarkColor, watermarkOpacity, watermarkPosition,
+    watermarkOffset, watermarkFontFamily,
+  ]);
+
+  // Photo brand logo settings — passed via
+  // `branding.brandLogoSettings`. The logo URI itself is read from
+  // brandLogoUri (separate from reportBrandLogoUri — that one is the
+  // report HEADER logo). Layouts encode the logo to a data URI once
+  // and reuse across photos.
+  const reportBrandLogoSettings = useMemo(() => ({
+    showBrandLogo,
+    brandLogoUri,
+    brandLogoPosition,
+    brandLogoOffset,
+    brandLogoSize,
+  }), [
+    showBrandLogo, brandLogoUri, brandLogoPosition, brandLogoOffset, brandLogoSize,
+  ]);
+
+  // Metadata overlay settings — passed via `branding.metaSettings`.
+  // Layouts gate on options.includeMetadata AND metaSettings.showPreviewMetadata.
+  const reportMetaSettings = useMemo(() => ({
+    showPreviewMetadata,
+    metaShowDate,
+    metaShowTime,
+    metaShowAddress,
+    metaShowGps,
+    metaPosition,
+    metaColor,
+    metaOpacity,
+    metaFontSize,
+    metaFontFamily,
+    metaOffset,
+  }), [
+    showPreviewMetadata, metaShowDate, metaShowTime, metaShowAddress, metaShowGps,
+    metaPosition, metaColor, metaOpacity, metaFontSize, metaFontFamily, metaOffset,
+  ]);
+
   const roomDataMap = useMemo(() => {
     const map = new Map();
     for (const room of (getRooms() || [])) {
@@ -256,6 +456,11 @@ export default function ProjectDetailScreen({ route, navigation }) {
   );
 
   const [activeTab, setActiveTab] = useState('timeline');
+  // Locations tab: 'project' shows only THIS project's locations,
+  // 'all' aggregates every project the user has. Default is 'project'
+  // so the tab still answers "where were this project's photos taken"
+  // without surprise; user flips to 'all' for a portfolio-wide view.
+  const [locationsScope, setLocationsScope] = useState('project');
   const [actionsVisible, setActionsVisible] = useState(false);
 
   // Share-tab state. Mirrors ProjectsScreen's share modal — kept here
@@ -270,6 +475,23 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // Timeline selection flow with selectionPurpose='share'. Picks
   // Files / ZIP / PDF / Link, optional Drive/Dropbox provider, fires.
   const [shareFormatModalVisible, setShareFormatModalVisible] = useState(false);
+  // Filter at the top of the Share Photos sheet — 'all' includes
+  // every project photo; 'combined' narrows to the merged before/after
+  // (mode === 'mix') shots only. Changing it auto-updates the
+  // pendingSharePhotoIds set so the count + share output stay in sync
+  // unless the user has manually refined via "Pick photos".
+  const [sharePhotosFilter, setSharePhotosFilter] = useState('all');
+  // Flag set when the user opens PhotoDetail from the share sheet
+  // via "Preview" — when ProjectDetail comes back into focus we
+  // re-open the share sheet so the user lands where they left off.
+  const [reopenShareModalOnFocus, setReopenShareModalOnFocus] = useState(false);
+  // When ON, the share flow routes every selected photo through
+  // chromeBakeService.bakeChrome to flatten the studio overlays
+  // (label / watermark / brand logo / metadata / markup) into the
+  // shared file. When OFF, the original camera files are shared.
+  // Defaults ON so the shared photos look identical to what the
+  // user just previewed.
+  const [shareWithOverlays, setShareWithOverlays] = useState(true);
   const [pendingSharePhotoIds, setPendingSharePhotoIds] = useState([]);
   const [sharing, setSharing] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
@@ -328,14 +550,35 @@ export default function ProjectDetailScreen({ route, navigation }) {
           <meta charset="utf-8" />
           <style>
             * { box-sizing: border-box; }
-            body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 32px; color: #1C274C; }
-            .header { border-bottom: 2px solid #F2C31B; padding-bottom: 16px; margin-bottom: 24px; }
+            body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #1C274C; }
+            /* Header is its own page so each photo block below can
+               occupy a full viewport-height page and vertically
+               center its image. Without page-break-after here the
+               first photo would sit beneath the header and lose
+               its vertical centering. */
+            .header { border-bottom: 2px solid #F2C31B; padding: 32px; margin: 0; page-break-after: always; }
             .title { font-size: 24px; font-weight: 700; margin: 0 0 4px 0; }
             .meta { font-size: 12px; color: #666; margin: 0; }
-            .photo { page-break-inside: avoid; margin-bottom: 24px; text-align: center; }
-            .photo img { max-width: 100%; max-height: 720px; border-radius: 8px; }
-            .caption { font-size: 12px; color: #444; margin-top: 6px; font-weight: 600; }
-            .footer { text-align: center; font-size: 10px; color: #999; margin-top: 32px; }
+            /* Full-page centered photo block: 100vh container with
+               flex centering puts the image dead-center vertically
+               on its own page. page-break-after on every block
+               except the last keeps each photo on its own sheet. */
+            .photo {
+              page-break-inside: avoid;
+              page-break-after: always;
+              height: 100vh;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              align-items: center;
+              text-align: center;
+              padding: 32px;
+              margin: 0;
+            }
+            .photo:last-of-type { page-break-after: auto; }
+            .photo img { max-width: 100%; max-height: 80vh; border-radius: 8px; }
+            .caption { font-size: 12px; color: #444; margin-top: 12px; font-weight: 600; }
+            .footer { text-align: center; font-size: 10px; color: #999; padding: 32px; }
           </style>
         </head>
         <body>
@@ -460,15 +703,158 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // Switches to Timeline with selectionPurpose='share'. The user
   // picks photos via the existing gallery selection UI; when they
   // tap the bottom "Share Selected" bar, we open the format modal.
+  // Build the photo-id list that matches the active filter. 'all'
+  // is every project photo; 'combined' narrows to merged before/after
+  // shots (PHOTO_MODES.COMBINED === 'mix'). Used on flow entry and
+  // every time the user flips the filter pill in the share sheet.
+  const photoIdsForShareFilter = (filter) => {
+    const pool = projectPhotos || [];
+    const filtered = filter === 'combined'
+      ? pool.filter((p) => p.mode === PHOTO_MODES.COMBINED)
+      : pool;
+    return filtered.map((p) => p.id);
+  };
+
   const handleStartSharePhotosFlow = () => {
     if ((projectPhotos?.length || 0) === 0) {
       Alert.alert('No photos', 'This project has no photos yet.');
       return;
     }
+    // Open the share format sheet directly with all photos
+    // pre-selected. The sheet now carries the filter pill (All /
+    // Combined) and a "Pick photos →" link that drops into the same
+    // timeline selection flow Reports uses — so the user can either
+    // share the whole filtered set in one tap, or narrow it manually.
+    setSharePhotosFilter('all');
+    setPendingSharePhotoIds(photoIdsForShareFilter('all'));
+    setActiveTab('share');
+    setShareFormatModalVisible(true);
+  };
+
+  // CRM bulk upload: explicit, user-triggered. Sends every photo in
+  // the current project to the linked CRM job. Bypasses any cloud
+  // upload chain — straight from photo metadata to crmService.
+  // Sequential to avoid hammering the server; SF backend dedups on
+  // proofpix_photo_id within 24h so re-runs are safe no-ops.
+  const [crmBulkUploading, setCrmBulkUploading] = useState(false);
+  const handleUploadProjectToCrm = async () => {
+    if (crmBulkUploading) return;
+    if (!project?.crmJobId || !project?.crmProvider) {
+      Alert.alert('Not linked', 'This project is not linked to a CRM job.');
+      return;
+    }
+    if ((projectPhotos?.length || 0) === 0) {
+      Alert.alert('No photos', 'This project has no photos yet.');
+      return;
+    }
+    setCrmBulkUploading(true);
+    let ok = 0, dedup = 0, failed = 0;
+    const failures = [];
+    try {
+      for (const p of projectPhotos) {
+        const localUri = p?.cachedLocalUri || p?.uri;
+        if (!localUri) { failed += 1; failures.push(`${p?.name || p?.id || 'unknown'}: no uri`); continue; }
+        try {
+          const result = await crmService.attachPhoto(String(project.crmJobId), {
+            id: p.id,
+            localUri,
+            filename: p.name || `${p.id}.jpg`,
+            mimeType: 'image/jpeg',
+            mode: p.mode,
+            room: p.room,
+            timestamp: p.timestamp,
+            gps: p.gps,
+            capturedBy: p.capturedBy,
+            notes: p.notes,
+            projectId: p.projectId,
+          });
+          if (result?.success) {
+            if (result.alreadyExisted) dedup += 1; else ok += 1;
+          } else {
+            failed += 1;
+            failures.push(`${p?.name || p?.id}: ${result?.error || 'unknown'}`);
+          }
+        } catch (e) {
+          failed += 1;
+          failures.push(`${p?.name || p?.id}: ${e?.message || 'threw'}`);
+        }
+      }
+      const summary = `New: ${ok}\nAlready on job: ${dedup}\nFailed: ${failed}`;
+      const detail = failed > 0 ? `\n\nFailures:\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? `\n…+${failures.length - 5} more` : ''}` : '';
+      Alert.alert(`Uploaded to Service Flow`, summary + detail);
+    } finally {
+      setCrmBulkUploading(false);
+    }
+  };
+
+  // Filter pill handler in the share sheet. Applies the filter and
+  // resets pendingSharePhotoIds to match — overrides any prior
+  // manual "Pick photos" selection, which the user can redo from the
+  // same sheet via the Pick photos link if needed.
+  const applySharePhotosFilter = (filter) => {
+    setSharePhotosFilter(filter);
+    setPendingSharePhotoIds(photoIdsForShareFilter(filter));
+  };
+
+  // "Pick photos →" link in the share sheet. Closes the sheet, drops
+  // the user into the same timeline selection flow Reports uses, with
+  // the currently pending share ids pre-selected so they can refine
+  // by toggling individual photos. handleConfirmShareSelection then
+  // re-opens the share sheet with the refined ids.
+  const handlePickPhotosForShare = () => {
+    setShareFormatModalVisible(false);
     setSelectionPurpose('share');
-    setSelectionDraft(new Set());
+    setSelectionDraft(new Set(pendingSharePhotoIds));
     setSelectionMode(true);
     setActiveTab('timeline');
+  };
+
+  // "Preview →" link in the share sheet. Opens SharePreview (the
+  // dedicated dark-backdrop viewer modeled on Home's enlarged photo
+  // viewer) with the current pending set as the swipe pool. The
+  // top-bar controls let the user X-close, edit the current photo in
+  // Studio, deselect it from the share, and flip the Show overlays
+  // toggle in-place. The bottom Share button triggers the share via
+  // a callback so the existing pipeline runs. On close we reopen the
+  // share sheet so the user lands where they left off.
+  const handlePreviewShareSelection = () => {
+    if (pendingSharePhotoIds.length === 0) return;
+    const ids = new Set(pendingSharePhotoIds);
+    const pool = (projectPhotos || []).filter((p) => ids.has(p.id));
+    if (pool.length === 0) return;
+    setShareFormatModalVisible(false);
+    navigation.navigate('SharePreview', {
+      photos: pool,
+      initialPhotoId: pool[0]?.id,
+      initialOverlaysOn: shareWithOverlays,
+      initialSelectedIds: new Set(pendingSharePhotoIds),
+      onOverlaysChange: (next) => setShareWithOverlays(next),
+      // Toggle behavior — tap the circular checkbox to add or remove
+      // this photo from the pending share set. The photo stays in
+      // the swipe pool either way; the share modal's count reflects
+      // the live selectedIds when the user returns.
+      onToggleSelected: (id, selected) => {
+        setPendingSharePhotoIds((prev) => {
+          const set = new Set(prev);
+          if (selected) set.add(id);
+          else set.delete(id);
+          return Array.from(set);
+        });
+      },
+      onShareNow: (singlePhotoId) => {
+        // Share kicked off from the preview — don't re-open the
+        // share modal when ProjectDetail comes back into focus,
+        // the share pipeline is already running.
+        setReopenShareModalOnFocus(false);
+        // SharePreview ships one photo at a time. Pass the id
+        // directly via the override arg so we don't depend on a
+        // setState reaching the closure before the share runs.
+        startShareTabSharing(singlePhotoId ? [singlePhotoId] : null);
+      },
+    });
+    // Re-open the share sheet next time this screen comes into focus
+    // so the user lands back on it instead of the share tab card.
+    setReopenShareModalOnFocus(true);
   };
 
   // Entrypoint #2 — "Share Project Report" card. Routes into the
@@ -478,11 +864,60 @@ export default function ProjectDetailScreen({ route, navigation }) {
     setActiveTab('report');
     if (reports && reports.length > 0) {
       setActiveReportId(reports[0].id);
+      setReportPreviewStale(false);
       setReportViewMode('preview');
     } else {
       setReportViewMode('editor');
     }
   };
+
+  // Pencil-on-photo handler in the report preview. Opens an app-
+  // styled bottom sheet (see the photoEditMenuPhoto modal at the
+  // bottom of this screen). The sheet has Open in editor, Reset to
+  // global, Remove from report, and Cancel.
+  const handlePhotoEditFromReport = useCallback((photo) => {
+    if (!photo?.id) return;
+    setPhotoEditMenuPhoto(photo);
+  }, []);
+
+  // Drop a photo from the current report — patches activeReport's
+  // photoIds list, marks the preview stale, and bounces the share
+  // button out for a Regenerate. Confirmed via a native Alert because
+  // it's destructive and per-platform OS convention reads better here
+  // than another in-app modal stacked on top of the action sheet.
+  const handleRemovePhotoFromReport = useCallback((photo) => {
+    if (!photo?.id || !activeReport?.id) return;
+    Alert.alert(
+      'Remove photo?',
+      `Remove "${photo.name || 'this photo'}" from "${activeReport.title || 'this report'}"? The photo stays in the project; only the report drops it.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const currentIds = Array.isArray(activeReport.photoIds) ? activeReport.photoIds : [];
+              const nextIds = currentIds.filter((id) => String(id) !== String(photo.id));
+              const nextReports = reports.map((r) =>
+                r.id === activeReport.id
+                  ? { ...r, photoIds: nextIds, photoCount: Math.max(1, Math.min(r.photoCount || nextIds.length, nextIds.length || 1)), updatedAt: Date.now() }
+                  : r,
+              );
+              await persistReportsToStorageOnly(nextReports);
+              setReports(nextReports);
+              setReportPreviewStale(true);
+              setPhotoEditMenuPhoto(null);
+            } catch (e) {
+              console.warn('[ProjectDetail] remove photo from report failed:', e?.message);
+              Alert.alert('Could not remove', e?.message || 'Unknown error');
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  }, [activeReport, reports]);
 
   // Called from the bottom selection bar when selectionPurpose==='share'.
   // Stashes the picked ids, exits selection mode, opens the format modal.
@@ -499,14 +934,17 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // Runs after the user picks a format in the modal. Pulls the
   // pending photo ids from state, gathers their full photo objects,
   // and dispatches to the format-specific helpers.
-  const startShareTabSharing = async () => {
+  const startShareTabSharing = async (overrideIds = null) => {
     if (!project) return;
     setShareFormatModalVisible(false);
     const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
     if (!allowed) return;
     try {
       setSharing(true);
-      const ids = new Set(pendingSharePhotoIds);
+      // SharePreview ships one photo at a time and passes the id
+      // explicitly via this override. Without the override we use the
+      // pending set the modal accumulated (the normal share flow).
+      const ids = new Set(Array.isArray(overrideIds) && overrideIds.length > 0 ? overrideIds : pendingSharePhotoIds);
       const source = getPhotosByProject(project.id) || [];
       const sharePhotos = source
         .filter(p => ids.has(p.id) && p.uri)
@@ -517,7 +955,27 @@ export default function ProjectDetailScreen({ route, navigation }) {
         return;
       }
       setShareStatus('Preparing photos...');
-      if (showLabels) {
+      // Two overlay paths. shareWithOverlays = ON routes each photo
+      // through chromeBakeService, which mounts the full studio
+      // overlay set (label + watermark + brand logo + metadata +
+      // markup) and captureRef's the composite — the shared file is
+      // pixel-equivalent to what the user just previewed in
+      // PhotoDetail. shareWithOverlays = OFF falls back to the legacy
+      // ensureLabelForPhoto path (labels only) so users who want raw
+      // captures aren't forced into the heavier bake.
+      if (shareWithOverlays) {
+        for (let i = 0; i < sharePhotos.length; i++) {
+          try {
+            const photo = sharePhotos[i];
+            const fullPhoto = source.find((p) => p.id === photo.id) || photo;
+            setShareStatus(`Applying overlays (${i + 1}/${sharePhotos.length})...`);
+            const bakedUri = await chromeBakeService.bakeChrome(fullPhoto, reportLabelSettings);
+            if (bakedUri && bakedUri !== photo.uri) sharePhotos[i] = { ...photo, uri: bakedUri };
+          } catch (e) {
+            console.warn('[ProjectDetail] Chrome bake failed for share photo:', e?.message);
+          }
+        }
+      } else if (showLabels) {
         for (let i = 0; i < sharePhotos.length; i++) {
           try {
             const photo = sharePhotos[i];
@@ -631,6 +1089,14 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // creating a brand-new draft).
   const [reportViewMode, setReportViewMode] = useState('list');
   const [activeReportId, setActiveReportId] = useState(null);
+  // Tracks per-photo edits made via the pencil affordance in the
+  // preview. While true the Share button is replaced with Regenerate
+  // and a banner warns that the rendered report is out of date.
+  // Cleared on regenerate or when entering a fresh preview.
+  const [reportPreviewStale, setReportPreviewStale] = useState(false);
+  // The photo whose pencil was tapped — drives the per-photo action
+  // sheet (Edit / Reset / Remove / Cancel). null = sheet closed.
+  const [photoEditMenuPhoto, setPhotoEditMenuPhoto] = useState(null);
   // Per-edit-session photo selection — separate from the persisted
   // report's photoIds so the user can change the pool in the
   // editor without mutating the record until they hit Generate.
@@ -646,7 +1112,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
     if (!project?.id) return;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(reportsKey(project.id));
+        const raw = await readSecure(reportsKey(project.id));
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) setReports(parsed);
@@ -666,7 +1132,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const persistReports = async (next) => {
     setReports(next);
     if (project?.id) {
-      try { await AsyncStorage.setItem(reportsKey(project.id), JSON.stringify(next)); } catch (_) {}
+      try { await writeSecure(reportsKey(project.id), JSON.stringify(next)); } catch (_) {}
     }
   };
   // Storage-only variant: writes to AsyncStorage without touching
@@ -677,7 +1143,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // resolved activeReport to null).
   const persistReportsToStorageOnly = async (next) => {
     if (project?.id) {
-      try { await AsyncStorage.setItem(reportsKey(project.id), JSON.stringify(next)); } catch (_) {}
+      try { await writeSecure(reportsKey(project.id), JSON.stringify(next)); } catch (_) {}
     }
   };
 
@@ -706,61 +1172,14 @@ export default function ProjectDetailScreen({ route, navigation }) {
     [project, getPhotosByProject]
   );
 
-  // Map of photo.id → labeled URI. Flat photos (before/after/progress)
-  // go through ensureLabelsForPhotoBatch → native addLabelToImage,
-  // which writes the chip into the JPEG and caches the result. Combined
-  // ('mix') photos are NOT re-baked here — they're already labeled +
-  // watermarked at capture time by PATH 1, so the stored URI is the
-  // final asset.
-  const [bakedUriMap, setBakedUriMap] = useState({});
-  const [bakingProgress, setBakingProgress] = useState({ total: 0, completed: 0 });
-  useEffect(() => {
-    if (activeTab !== 'report') return;
-    if (!projectPhotos || projectPhotos.length === 0) {
-      setBakedUriMap({});
-      setBakingProgress({ total: 0, completed: 0 });
-      return;
-    }
-    let cancelled = false;
-    const flatPhotos = projectPhotos.filter(
-      (p) => p.mode !== 'mix' && p.mode !== 'combined',
-    );
-    if (flatPhotos.length === 0) {
-      setBakingProgress({ total: 0, completed: 0 });
-      return;
-    }
-    const total = flatPhotos.length;
-    setBakingProgress({ total, completed: 0 });
-    console.warn(`[Report] bake start n=${total} (flats only; combined photos use stored URI)`);
-    const collected = {};
-    let completed = 0;
-    const handleResult = (photo, labeledUri) => {
-      if (cancelled) return;
-      completed += 1;
-      setBakingProgress({ total, completed });
-      if (labeledUri && labeledUri !== photo.uri) {
-        collected[photo.id] = labeledUri;
-        setBakedUriMap({ ...collected });
-      }
-    };
-    ensureLabelsForPhotoBatch(flatPhotos, { onPhotoComplete: handleResult })
-      .catch((e) => {
-        console.warn('[Report] Failed to bake photos for preview:', e?.message);
-      });
-    return () => { cancelled = true; };
-  }, [activeTab, projectPhotos]);
-
-  // Derived: are we still baking? Cache HITs resolve near-instantly
-  // so this flips fast on second-open; first-open waits on native
-  // compositor for any missing flats.
-  const isBakingReportPhotos = bakingProgress.total > 0
-    && bakingProgress.completed < bakingProgress.total;
-
-  // Swap each photo's uri to its baked version when one exists.
-  // Cheap: leaves the photo objects identical (===) when no bake
-  // landed, so memo'd consumers don't re-render needlessly.
-  const withBakedUri = (photos) =>
-    photos.map((p) => (bakedUriMap[p.id] ? { ...p, uri: bakedUriMap[p.id] } : p));
+  // No more URI baking. The report renders the original photo file
+  // with the BEFORE/AFTER chip overlaid as an HTML/CSS `<div>` —
+  // same model as the studio's PhotoLabels component, just rendered
+  // by expo-print's WebKit instead of React Native. No captureRef,
+  // no native compositor, no cache invalidation churn. The label
+  // settings flow through `branding.labelSettings` into the layout
+  // engine's `labelChipsHtml` helper.
+  const isBakingReportPhotos = false;
 
   // When entering the editor — either with an existing report or
   // a fresh draft — seed the form inputs + the editorPhotoIds draft
@@ -825,10 +1244,20 @@ export default function ProjectDetailScreen({ route, navigation }) {
       const picked = consumePendingLayoutSelection();
       console.warn('[Report] editor focus, pending=', picked);
       if (picked) applyPickedLayoutType(picked);
+      // After previewing the share selection in PhotoDetail, this
+      // flag is set so when the user returns to ProjectDetail we
+      // bring the share sheet back up where they left off.
+      if (reopenShareModalOnFocus) {
+        setReopenShareModalOnFocus(false);
+        setShareFormatModalVisible(true);
+      }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
+    }, [reopenShareModalOnFocus]),
   );
   const timelineGroups = useMemo(() => buildTimeline(projectPhotos), [projectPhotos]);
+  // Set-by-set layout used by the Pick photos selection mode. Each
+  // entry is { id, room, before, progress[], after, combined, ts }.
+  const setList = useMemo(() => buildSetList(projectPhotos), [projectPhotos]);
 
   const handleRoomTap = (dateKey, roomName) => {
     navigation.navigate('PhotoSetPreview', {
@@ -1111,14 +1540,41 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // (silent — the JS try/catch never fires). Capping at 3 reads at a
   // time keeps the working set bounded without slowing single-photo
   // layouts perceptibly.
-  const fileToDataUri = async (uri, mime = 'image/jpeg') => {
+  // Detect the right image MIME from the URI's extension. Browsers
+  // (including expo-print's WebKit) are usually permissive about
+  // data: URI mime mismatches, but PNG with transparency can render
+  // as a solid block when wrapped in image/jpeg, so be precise when
+  // we can.
+  const inferImageMime = (uri) => {
+    const m = String(uri || '').toLowerCase().match(/\.(png|jpe?g|webp|gif|heic|heif)(?:[?#]|$)/);
+    if (!m) return 'image/jpeg';
+    const ext = m[1];
+    if (ext === 'png') return 'image/png';
+    if (ext === 'webp') return 'image/webp';
+    if (ext === 'gif') return 'image/gif';
+    if (ext === 'heic' || ext === 'heif') return 'image/heic';
+    return 'image/jpeg';
+  };
+  const fileToDataUri = async (uri, mime) => {
     if (!uri) return null;
     await fileReadSlot();
+    // Diagnostic just for the brand logo path — photos are too noisy.
+    // We can't tell from outside whether the read succeeded; log the
+    // mime + b64 length on success, or the error on failure.
+    const isLogo = typeof uri === 'string'
+      && (uri.includes('brand_logo') || uri.includes('ImagePicker') || uri.includes('Logo'));
     try {
+      const finalMime = mime || inferImageMime(uri);
       const path = uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
       const b64 = await FileSystem.readAsStringAsync(path, { encoding: 'base64' });
-      return `data:${mime};base64,${b64}`;
-    } catch (_) {
+      if (isLogo) {
+        console.warn(`[Report] logo READ ok mime=${finalMime} b64Len=${b64.length} pathTail=${path.slice(-60)}`);
+      }
+      return `data:${finalMime};base64,${b64}`;
+    } catch (e) {
+      if (isLogo) {
+        console.warn(`[Report] logo READ FAILED: ${e?.message || String(e)}`);
+      }
       return null;
     } finally {
       fileReadRelease();
@@ -1132,40 +1588,18 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // suitable for sharing or feeding to expo-print for PDF.
   const buildReportHtml = async ({ title, photos, layoutType, options, logoUri }) => {
     const effectiveLogoUri = logoUri || null;
-    // Flat photos run through the native compositor's
-    // ensureLabelsForPhotoBatch (cache-first, fast). Combined ('mix')
-    // photos are already labeled + watermarked at capture time by
-    // PATH 1, so their stored URI is the final asset — we skip them
-    // here.
-    let preparedPhotos = photos;
-    try {
-      const flatPhotos = photos.filter(
-        (p) => p.mode !== 'mix' && p.mode !== 'combined',
-      );
-      const flatResults = flatPhotos.length > 0
-        ? await ensureLabelsForPhotoBatch(flatPhotos)
-        : [];
-      const swap = new Map();
-      for (const { photo, labeledUri } of flatResults) {
-        if (labeledUri && labeledUri !== photo.uri) swap.set(photo.id, labeledUri);
-      }
-      preparedPhotos = photos.map((p) =>
-        swap.has(p.id) ? { ...p, uri: swap.get(p.id) } : p
-      );
-      const unswapped = preparedPhotos.filter(
-        (p) => !swap.has(p.id) && p.mode !== 'mix' && p.mode !== 'combined',
-      ).length;
-      console.warn(`[Report] build n=${preparedPhotos.length} swapped=${swap.size} unswapped=${unswapped}`);
-    } catch (e) {
-      console.warn('[Report] Bake failed; falling back to raw photo URIs:', e?.message);
-    }
+    // Photos are used as-is — original camera files. The layout
+    // engine paints the BEFORE/AFTER chip as an HTML/CSS overlay via
+    // labelChipsHtml inside photoImgHtml, driven by the
+    // labelSettings we pass through `branding` below. No file
+    // mutation, no bake queue.
     return generateReport({
       project: {
         title,
         location: location || '',
         generatedAt: Date.now(),
       },
-      photos: preparedPhotos,
+      photos,
       layoutType: layoutType || DEFAULT_LAYOUT_ID,
       options: options || {},
       branding: {
@@ -1177,6 +1611,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
         // includeWatermark option so the report editor can toggle it
         // per report.
         watermarkText: (showWatermark && watermarkText) ? watermarkText : '',
+        labelSettings: reportLabelSettings,
+        watermarkSettings: reportWatermarkSettings,
+        metaSettings: reportMetaSettings,
+        brandLogoSettings: reportBrandLogoSettings,
+        // Maps Static API key — surfaced via app.config.js `extra`
+        // from MAP_API_KEY in .env.local so the value isn't tracked
+        // in git. When the env var is missing, mapsApiKey is null and
+        // locationMapHtml emits '' (the report just skips the map).
+        mapsApiKey: Constants?.expoConfig?.extra?.mapsApiKey || null,
       },
       helpers: {
         fileToDataUri,
@@ -1228,13 +1671,29 @@ export default function ProjectDetailScreen({ route, navigation }) {
     // not passing the URI saves an unnecessary file read on the
     // branding-off path.
     const resolved = resolveOptions(report.layoutType || DEFAULT_LAYOUT_ID, report.options);
+    const chosenLogoUri = resolved.includeBranding === false ? null : (reportBrandLogoUri || brandLogoUri);
+    // Diagnostic — these are the three things that have to all be
+    // true for the logo to appear: include is on, a URI is stored,
+    // and the file at that URI exists. The third we check live so
+    // a stale cache URI (deleted by the OS) doesn't silently no-op.
+    let logoFileSize = null;
+    if (chosenLogoUri) {
+      try {
+        const info = await FileSystem.getInfoAsync(chosenLogoUri, { size: true });
+        logoFileSize = info?.exists ? (info.size ?? -1) : 0;
+      } catch (_) { logoFileSize = -1; }
+    }
+    console.warn(`[Report] logo includeBranding=${resolved.includeBranding !== false} report=${reportBrandLogoUri ? 'set' : 'null'} photo=${brandLogoUri ? 'set' : 'null'} chosen=${chosenLogoUri ? String(chosenLogoUri).slice(-50) : 'null'} fileSize=${logoFileSize}`);
     const html = await buildReportHtml({
       title: report.title?.trim() || project.name,
       photos: chosen,
       layoutType: report.layoutType || DEFAULT_LAYOUT_ID,
       options: report.options || {},
-      logoUri: resolved.includeBranding === false ? null : (reportBrandLogoUri || brandLogoUri),
+      logoUri: chosenLogoUri,
     });
+    // Confirm the logo img tag actually made it into the final HTML.
+    const hasLogoTag = typeof html === 'string' && html.includes('<img class="logo"');
+    console.warn(`[Report] html hasLogoTag=${hasLogoTag} htmlLen=${html?.length || 0}`);
     // Persistent reports/ directory inside documentDirectory.
     try {
       const dir = reportsDir();
@@ -1321,7 +1780,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
       const isPdf = target.endsWith('.pdf');
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
-        await Sharing.shareAsync(target, {
+        await Sharing.shareAsync(__ensureFileUri(target), {
           mimeType: isPdf ? 'application/pdf' : 'text/html',
           UTI: isPdf ? 'com.adobe.pdf' : 'public.html',
           dialogTitle: 'Share report',
@@ -1379,7 +1838,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
       if (reportShareFormat === 'files') {
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
-          await Sharing.shareAsync(htmlTarget, {
+          await Sharing.shareAsync(__ensureFileUri(htmlTarget), {
             mimeType: 'text/html', UTI: 'public.html',
             dialogTitle: `Share ${safeName}`,
           });
@@ -1401,7 +1860,11 @@ export default function ProjectDetailScreen({ route, navigation }) {
           try { await FileSystem.deleteAsync(pdfDest, { idempotent: true }); } catch (_) {}
           try { await FileSystem.moveAsync({ from: printed.uri, to: pdfDest }); } catch (_) {}
           const finalPdf = (await FileSystem.getInfoAsync(pdfDest)).exists ? pdfDest : printed.uri;
-          await Sharing.shareAsync(finalPdf, {
+          // expo-sharing on iOS needs a `file://` URI; without it the
+          // share extension hands the recipient a path string instead
+          // of a file descriptor and downstream apps can't detect the
+          // MIME type even though we set it here.
+          await Sharing.shareAsync(__ensureFileUri(finalPdf), {
             mimeType: 'application/pdf', UTI: 'com.adobe.pdf',
             dialogTitle: `Share ${safeName}`,
           });
@@ -1415,16 +1878,28 @@ export default function ProjectDetailScreen({ route, navigation }) {
       }
 
       if (reportShareFormat === 'zip') {
-        const htmlContent = await FileSystem.readAsStringAsync(htmlTarget);
-        const zip = new JSZip();
-        zip.file(`${safeName}.html`, htmlContent);
-        const zipB64 = await zip.generateAsync({ type: 'base64' });
-        const zipPath = `${reportsDir()}${safeName}-${r.id}.zip`;
-        await FileSystem.writeAsStringAsync(zipPath, zipB64, { encoding: FileSystem.EncodingType.Base64 });
-        await Sharing.shareAsync(zipPath, {
-          mimeType: 'application/zip', UTI: 'public.zip-archive',
-          dialogTitle: `Share ${safeName}.zip`,
+        // Mirror the working project-photos ZIP path exactly: read the
+        // HTML as base64 and add to JSZip with { base64: true }. The
+        // previous code read the HTML as a UTF-8 string and added it
+        // untyped, which produced an archive some unzippers (Finder,
+        // some Windows tools) refused to open — same payload bytes,
+        // but JSZip's CRC/size headers came out differently. Use the
+        // cacheDirectory + Date.now() filename pattern too, also
+        // matching the photo path that works in production.
+        const htmlBase64 = await FileSystem.readAsStringAsync(htmlTarget, {
+          encoding: FileSystem.EncodingType.Base64,
         });
+        const zip = new JSZip();
+        zip.file(`${safeName}.html`, htmlBase64, { base64: true });
+        const zipB64 = await zip.generateAsync({ type: 'base64' });
+        const zipFileName = `${safeName}_${Date.now()}.zip`;
+        const zipPath = `${FileSystem.cacheDirectory}${zipFileName}`;
+        await FileSystem.writeAsStringAsync(zipPath, zipB64, { encoding: FileSystem.EncodingType.Base64 });
+        await Sharing.shareAsync(__ensureFileUri(zipPath), {
+          mimeType: 'application/zip',
+          dialogTitle: zipFileName,
+        });
+        try { await FileSystem.deleteAsync(zipPath, { idempotent: true }); } catch {}
         return;
       }
 
@@ -1525,6 +2000,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
       }
       setReports(finalizedReports);
       setActiveReportId(targetReportId);
+      setReportPreviewStale(false);
       setReportViewMode('preview');
     } catch (e) {
       Alert.alert('Could not build report', e?.message || 'Unknown error');
@@ -1605,12 +2081,13 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 // behind in documentDirectory/reports/.
                 if (project?.id) {
                   try { await AsyncStorage.removeItem(reportSelectionKey(project.id)); } catch (_) {}
+                  try { await deleteSecure(reportSelectionKey(project.id)); } catch (_) {}
                   for (const r of reports) {
                     if (r?.generatedFilePath) {
                       try { await FileSystem.deleteAsync(r.generatedFilePath, { idempotent: true }); } catch (_) {}
                     }
                   }
-                  try { await AsyncStorage.removeItem(reportsKey(project.id)); } catch (_) {}
+                  try { await deleteSecure(reportsKey(project.id)); } catch (_) {}
                   setReports([]);
                   setActiveReportId(null);
                 }
@@ -1745,7 +2222,103 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   </View>
                 );
               })()}
-              {timelineGroups.map((group) => {
+              {/* Selection mode shows one row per capture set with the
+                  combined photo (if any) at the end of the row.
+                  Combined photos are intentionally hidden from the
+                  read-only timeline view but included here so the
+                  user can pick them when sharing. Non-selection mode
+                  keeps the existing date → room → tiles layout. */}
+              {selectionMode ? (
+                setList.length === 0 ? null : setList.map((set) => {
+                  const setMembers = [set.before, ...set.progress, set.after, set.combined].filter(Boolean);
+                  if (setMembers.length === 0) return null;
+                  const memberIds = setMembers.map((p) => p.id);
+                  const setAllSelected = memberIds.every((id) => selectionDraft.has(id));
+                  const toggleSet = () => {
+                    if (setAllSelected) memberIds.forEach((id) => { if (selectionDraft.has(id)) togglePhotoSelected(id); });
+                    else memberIds.forEach((id) => { if (!selectionDraft.has(id)) togglePhotoSelected(id); });
+                  };
+                  const labelFor = (p) => {
+                    if (!p) return '';
+                    if (p.mode === 'before') return 'Before';
+                    if (p.mode === 'after') return 'After';
+                    if (p.mode === 'progress') return 'Progress';
+                    if (p.mode === 'mix' || p.mode === 'combined') return 'Combined';
+                    return '';
+                  };
+                  return (
+                    <View key={set.id} style={styles.dateSection}>
+                      <View style={styles.dateHeader}>
+                        <Text style={[styles.dateLabel, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {displayRoomName(set.room) || 'Unsorted'}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={toggleSet}
+                          style={styles.dateSelectBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <View style={[
+                            styles.dateSelectCheck,
+                            {
+                              backgroundColor: setAllSelected ? theme.accent : 'transparent',
+                              borderColor: setAllSelected ? theme.accent : theme.borderStrong,
+                            },
+                          ]}>
+                            {setAllSelected && (
+                              <Ionicons name="checkmark" size={10} color={theme.accentText} />
+                            )}
+                          </View>
+                          <Text style={[styles.dateSelectBtnText, { color: theme.textSecondary }]}>Set</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.timelineGrid}>
+                        {setMembers.map((p) => {
+                          const isSelected = selectionDraft.has(p.id);
+                          return (
+                            <TouchableOpacity
+                              key={`${set.id}-${p.id}`}
+                              style={styles.timelineGridTile}
+                              onPress={() => togglePhotoSelected(p.id)}
+                              onLongPress={() => { if (p.uri) setEnlargedPreviewUri(p.uri); }}
+                              onPressOut={() => { if (enlargedPreviewUri) setEnlargedPreviewUri(null); }}
+                              delayLongPress={250}
+                              activeOpacity={0.7}
+                            >
+                              <View style={styles.timelineGridThumbWrap}>
+                                {p.uri ? (
+                                  <Image source={{ uri: p.uri }} style={styles.timelineGridThumb} />
+                                ) : (
+                                  <View style={[styles.timelineGridThumb, styles.roomTilePlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                                    <Ionicons name="image-outline" size={28} color={theme.textMuted} />
+                                  </View>
+                                )}
+                                <View style={[
+                                  styles.timelineSelectCheck,
+                                  {
+                                    backgroundColor: isSelected ? theme.accent : 'rgba(0,0,0,0.45)',
+                                    borderColor: isSelected ? theme.accent : '#FFFFFF',
+                                  },
+                                ]}>
+                                  {isSelected && (
+                                    <Ionicons name="checkmark" size={14} color={theme.accentText} />
+                                  )}
+                                </View>
+                                {!isSelected && (
+                                  <View pointerEvents="none" style={styles.timelineDeselectScrim} />
+                                )}
+                              </View>
+                              <Text style={[styles.roomTileName, { color: theme.textPrimary }]} numberOfLines={1}>
+                                {labelFor(p)}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })
+              ) : (
+              timelineGroups.map((group) => {
                 const datePhotoIds = group.rooms.flatMap((r) => r.photoTiles.map((t) => t.id));
                 const dateAllSelected = selectionMode && datePhotoIds.length > 0 && datePhotoIds.every((id) => selectionDraft.has(id));
                 return (
@@ -1856,37 +2429,90 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 ))}
               </View>
               );
-              })}
+              })
+              )}
             </>
           )
         )}
         {activeTab === 'location' && (() => {
-          // Two passes over project photos:
-          //   1. Collect distinct location STRINGS (text-only — what
-          //      we surfaced before).
-          //   2. Collect photos with GPS coordinates so a MapView
-          //      can drop a marker per coordinate.
-          // Coordinates start populating once new captures store
-          // lat/lng on the photo record (camera flow integration
-          // ships alongside this UI).
-          const seen = new Map();
+          // Source pool depends on the scope toggle: 'project' uses
+          // only the current project's photos, 'all' aggregates across
+          // every project the user has. Cards are PER-PROJECT — each
+          // card represents one project and lists every distinct
+          // location string captured in that project's photos.
+          const sourcePhotos = locationsScope === 'all' ? (allPhotos || []) : projectPhotos;
+          const projectNameById = new Map((projects || []).map((p) => [p.id, p.name]));
+          // Per project: aggregate locations (set), ts (newest), and a
+          // representative lat/lng for the "open in maps" action. The
+          // map at the top still renders one marker per GPS-tagged
+          // photo so the overview stays accurate.
+          const byProject = new Map();
           const gpsPoints = [];
-          for (const p of projectPhotos) {
+          // Sentinel projectId for photos with no projectId — keeps
+          // them visible in the list rather than silently dropping
+          // them on the floor (the map already shows their pin).
+          const UNASSIGNED_PID = '__unassigned__';
+          for (const p of sourcePhotos) {
             const where = (p?.location || '').toString().trim();
             const ts = typeof p?.timestamp === 'number'
               ? p.timestamp
               : (p?.createdAt ? new Date(p.createdAt).getTime() : 0);
-            if (where) {
-              const existing = seen.get(where);
-              if (!existing || ts > existing) seen.set(where, ts);
-            }
             const lat = typeof p?.lat === 'number' ? p.lat : (typeof p?.latitude === 'number' ? p.latitude : null);
             const lng = typeof p?.lng === 'number' ? p.lng : (typeof p?.longitude === 'number' ? p.longitude : null);
+            const pid = p?.projectId || UNASSIGNED_PID;
+            if (where || (lat != null && lng != null)) {
+              let bucket = byProject.get(pid);
+              if (!bucket) {
+                bucket = { projectId: pid, locations: new Map(), ts: 0, lat: null, lng: null };
+                byProject.set(pid, bucket);
+              }
+              if (where) {
+                const loc = bucket.locations.get(where);
+                if (!loc) {
+                  bucket.locations.set(where, { ts, lat, lng });
+                } else {
+                  if (ts > loc.ts) loc.ts = ts;
+                  if (lat != null && loc.lat == null) { loc.lat = lat; loc.lng = lng; }
+                }
+              }
+              if (ts > bucket.ts) bucket.ts = ts;
+              if (lat != null && lng != null && bucket.lat == null) {
+                bucket.lat = lat;
+                bucket.lng = lng;
+              }
+            }
             if (lat != null && lng != null) {
               gpsPoints.push({ id: p.id, lat, lng, uri: p.uri, ts, where: where || null });
             }
           }
-          const entries = Array.from(seen.entries()).sort((a, b) => b[1] - a[1]);
+          // In "All projects" mode, seed a bucket for every project
+          // even if its photos carry no location text / GPS — many
+          // users put the address in the project NAME rather than on
+          // each photo, and they still expect to see one card per
+          // project. Tap → opens Maps with the project name as the
+          // search query (best-effort but useful for address-named
+          // projects). In "This project" mode we stay strict.
+          if (locationsScope === 'all') {
+            for (const proj of (projects || [])) {
+              if (!byProject.has(proj.id)) {
+                const projTs = proj.createdAt ? new Date(proj.createdAt).getTime() : 0;
+                byProject.set(proj.id, {
+                  projectId: proj.id,
+                  locations: new Map(),
+                  ts: projTs,
+                  lat: null,
+                  lng: null,
+                });
+              }
+            }
+          }
+          const projectCards = Array.from(byProject.values())
+            .filter((b) =>
+              b.locations.size > 0
+              || (b.lat != null && b.lng != null)
+              || locationsScope === 'all'
+            )
+            .sort((a, b) => b.ts - a.ts);
           const hasMap = gpsPoints.length > 0;
           const mapRegion = hasMap
             ? (() => {
@@ -1906,19 +2532,81 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 };
               })()
             : null;
-          if (entries.length === 0 && !hasMap) {
+          // Build the URL that the OS Maps app expects. Prefer
+          // lat,lng when we have it (precise pin); fall back to a
+          // text query so a city-only entry still opens something
+          // useful. iOS: maps:// → Apple Maps. Android: geo: →
+          // user's default maps app (typically Google).
+          const openInMaps = (label, lat, lng) => {
+            try {
+              if (Platform.OS === 'ios') {
+                const url = (lat != null && lng != null)
+                  ? `maps://?ll=${lat},${lng}&q=${encodeURIComponent(label || `${lat},${lng}`)}`
+                  : `maps://?q=${encodeURIComponent(label || '')}`;
+                Linking.openURL(url).catch(() => {
+                  Linking.openURL(`https://maps.apple.com/?q=${encodeURIComponent(label || `${lat},${lng}`)}`);
+                });
+              } else {
+                const url = (lat != null && lng != null)
+                  ? `geo:${lat},${lng}?q=${lat},${lng}(${encodeURIComponent(label || '')})`
+                  : `geo:0,0?q=${encodeURIComponent(label || '')}`;
+                Linking.openURL(url).catch(() => {
+                  Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(label || '')}`);
+                });
+              }
+            } catch (_) {}
+          };
+
+          // Scope toggle — always rendered so the user can flip even
+          // when one scope is empty.
+          const ScopeToggle = (
+            <View style={[styles.locationsScopeRow, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}>
+              {[
+                { key: 'project', label: 'This project' },
+                { key: 'all', label: 'All projects' },
+              ].map((opt) => {
+                const active = locationsScope === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[
+                      styles.locationsScopeBtn,
+                      active && { backgroundColor: theme.accent },
+                    ]}
+                    onPress={() => setLocationsScope(opt.key)}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.locationsScopeText,
+                        { color: active ? theme.accentText : theme.textSecondary },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+
+          if (projectCards.length === 0 && !hasMap) {
             return (
-              <View style={styles.stubState}>
-                <Ionicons name="location-outline" size={40} color={theme.textMuted} />
-                <Text style={[styles.stubTitle, { color: theme.textPrimary }]}>No locations yet</Text>
-                <Text style={[styles.stubSubtitle, { color: theme.textSecondary }]}>
-                  Locations + GPS pins captured with your photos will appear here.
-                </Text>
+              <View style={styles.locationList}>
+                {ScopeToggle}
+                <View style={styles.stubState}>
+                  <Ionicons name="location-outline" size={40} color={theme.textMuted} />
+                  <Text style={[styles.stubTitle, { color: theme.textPrimary }]}>No locations yet</Text>
+                  <Text style={[styles.stubSubtitle, { color: theme.textSecondary }]}>
+                    Locations + GPS pins captured with your photos will appear here.
+                  </Text>
+                </View>
               </View>
             );
           }
           return (
             <View style={styles.locationList}>
+              {ScopeToggle}
               {hasMap && mapRegion && (
                 <MapView
                   provider={PROVIDER_DEFAULT}
@@ -1935,29 +2623,72 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   ))}
                 </MapView>
               )}
-              {entries.map(([where, ts]) => (
-                <View
-                  key={where}
-                  style={[styles.locationCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                >
-                  <View style={[styles.locationCardIcon, { backgroundColor: theme.surfaceElevated }]}>
-                    <Ionicons name="location" size={18} color={theme.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={[styles.locationCardTitle, { color: theme.textPrimary }]}
-                      numberOfLines={2}
-                    >
-                      {where}
-                    </Text>
-                    {ts > 0 && (
-                      <Text style={[styles.locationCardMeta, { color: theme.textSecondary }]}>
-                        Most recent: {new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {projectCards.map((bucket) => {
+                const projectName = bucket.projectId === '__unassigned__'
+                  ? 'Unassigned photos'
+                  : (projectNameById.get(bucket.projectId) || 'Untitled project');
+                const locs = Array.from(bucket.locations.entries())
+                  .sort((a, b) => b[1].ts - a[1].ts);
+                const primary = locs[0];
+                return (
+                  <TouchableOpacity
+                    key={bucket.projectId}
+                    style={[styles.locationCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    onPress={() => openInMaps(primary?.[0] || projectName, primary?.[1]?.lat ?? bucket.lat, primary?.[1]?.lng ?? bucket.lng)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.locationCardIcon, { backgroundColor: theme.surfaceElevated }]}>
+                      <Ionicons name="location" size={18} color={theme.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.locationCardTitle, { color: theme.textPrimary }]}
+                        numberOfLines={1}
+                      >
+                        {projectName}
                       </Text>
-                    )}
-                  </View>
-                </View>
-              ))}
+                      {locs.length > 0 ? (
+                        locs.map(([where, info]) => (
+                          <TouchableOpacity
+                            key={where}
+                            onPress={() => openInMaps(where, info.lat, info.lng)}
+                            activeOpacity={0.7}
+                            style={styles.locationCardLocationRow}
+                          >
+                            <Ionicons name="pin-outline" size={12} color={theme.textSecondary} />
+                            <Text
+                              style={[styles.locationCardLocationText, { color: theme.textSecondary }]}
+                              numberOfLines={2}
+                            >
+                              {where}
+                            </Text>
+                          </TouchableOpacity>
+                        ))
+                      ) : (bucket.lat != null && bucket.lng != null) ? (
+                        <TouchableOpacity
+                          onPress={() => openInMaps(projectName, bucket.lat, bucket.lng)}
+                          activeOpacity={0.7}
+                          style={styles.locationCardLocationRow}
+                        >
+                          <Ionicons name="pin-outline" size={12} color={theme.textSecondary} />
+                          <Text
+                            style={[styles.locationCardLocationText, { color: theme.textSecondary }]}
+                            numberOfLines={1}
+                          >
+                            {bucket.lat.toFixed(5)}, {bucket.lng.toFixed(5)}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                      {bucket.ts > 0 && (
+                        <Text style={[styles.locationCardMeta, { color: theme.textMuted }]}>
+                          Most recent: {new Date(bucket.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </Text>
+                      )}
+                    </View>
+                    <Ionicons name="open-outline" size={18} color={theme.textMuted} />
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           );
         })()}
@@ -2246,23 +2977,65 @@ export default function ProjectDetailScreen({ route, navigation }) {
                     </TouchableOpacity>
 
                     {/* Layout-specific options — rendered from the
-                        layout's supportedOptions + OPTION_META. Hidden
-                        keys (i.e. options the active layout doesn't
+                        layout's supportedOptions + OPTION_META, split
+                        into two sections by REPORT_OPTION_GROUPS so
+                        the user has a clear separation between report
+                        content knobs and layout presentation knobs.
+                        Hidden keys (options the active layout doesn't
                         declare) are kept in `reportOptions` only until
                         the user changes the layout, at which point the
                         useEffect above prunes them. */}
-                    {currentLayout.supportedOptions.length > 0 && (
-                      <Text style={[styles.reportSectionLabel, { color: theme.textSecondary, marginTop: 6 }]}>OPTIONS</Text>
-                    )}
-                    {currentLayout.supportedOptions.map((key) => {
-                      const meta = OPTION_META[key];
-                      if (!meta) return null;
-                      const resolved = resolveOptions(currentLayout.id, reportOptions);
-                      const value = resolved[key];
-                      const update = (next) => {
-                        setReportOptions((prev) => ({ ...prev, [key]: next }));
-                      };
-                      if (meta.control === 'segmented') {
+                    {(() => {
+                      const renderOptionRow = (key) => {
+                        const meta = OPTION_META[key];
+                        if (!meta) return null;
+                        const resolved = resolveOptions(currentLayout.id, reportOptions);
+                        const value = resolved[key];
+                        const update = (next) => {
+                          setReportOptions((prev) => ({ ...prev, [key]: next }));
+                        };
+                        if (meta.control === 'segmented') {
+                          return (
+                            <View
+                              key={key}
+                              style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                            >
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>{meta.label}</Text>
+                                {meta.description ? (
+                                  <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
+                                ) : null}
+                              </View>
+                              <View style={{ flexDirection: 'row', gap: 6 }}>
+                                {meta.choices.map((choice) => {
+                                  const active = value === choice.value;
+                                  return (
+                                    <TouchableOpacity
+                                      key={String(choice.value)}
+                                      onPress={() => update(choice.value)}
+                                      style={{
+                                        paddingHorizontal: 12,
+                                        paddingVertical: 6,
+                                        borderRadius: 6,
+                                        borderWidth: 1,
+                                        borderColor: active ? theme.accent : theme.border,
+                                        backgroundColor: active ? theme.accent : 'transparent',
+                                      }}
+                                      activeOpacity={0.7}
+                                    >
+                                      <Text style={{
+                                        color: active ? theme.accentText : theme.textPrimary,
+                                        fontWeight: '600',
+                                        fontSize: 12,
+                                      }}>{choice.label}</Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </View>
+                            </View>
+                          );
+                        }
+                        const isOverlaysToggle = key === 'showOverlays';
                         return (
                           <View
                             key={key}
@@ -2273,71 +3046,50 @@ export default function ProjectDetailScreen({ route, navigation }) {
                               {meta.description ? (
                                 <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
                               ) : null}
+                              {isOverlaysToggle && (
+                                <TouchableOpacity
+                                  onPress={() => navigation.navigate('LabelsLanguage')}
+                                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                  style={{ marginTop: 4 }}
+                                >
+                                  <Text style={[styles.reportSectionLink, { color: theme.accent }]}>Customize →</Text>
+                                </TouchableOpacity>
+                              )}
                             </View>
-                            <View style={{ flexDirection: 'row', gap: 6 }}>
-                              {meta.choices.map((choice) => {
-                                const active = value === choice.value;
-                                return (
-                                  <TouchableOpacity
-                                    key={String(choice.value)}
-                                    onPress={() => update(choice.value)}
-                                    style={{
-                                      paddingHorizontal: 12,
-                                      paddingVertical: 6,
-                                      borderRadius: 6,
-                                      borderWidth: 1,
-                                      borderColor: active ? theme.accent : theme.border,
-                                      backgroundColor: active ? theme.accent : 'transparent',
-                                    }}
-                                    activeOpacity={0.7}
-                                  >
-                                    <Text style={{
-                                      color: active ? theme.accentText : theme.textPrimary,
-                                      fontWeight: '600',
-                                      fontSize: 12,
-                                    }}>{choice.label}</Text>
-                                  </TouchableOpacity>
-                                );
-                              })}
-                            </View>
+                            <Switch
+                              value={!!value}
+                              onValueChange={update}
+                              trackColor={{ false: '#E0E0E0', true: theme.accent }}
+                              thumbColor="#FFFFFF"
+                            />
                           </View>
                         );
-                      }
-                      // default: switch. The Labels switch gets an
-                      // extra "Customize →" link that jumps to the
-                      // Labels & Languages settings screen so the user
-                      // can change colors, font, language, and position
-                      // without leaving the report editor flow.
-                      const isLabelsToggle = key === 'showLabels';
+                      };
+
+                      const supportedSet = new Set(currentLayout.supportedOptions);
+                      const knownKeys = new Set(REPORT_OPTION_GROUPS.flatMap((g) => g.keys));
+                      const orphanKeys = currentLayout.supportedOptions.filter((k) => !knownKeys.has(k));
                       return (
-                        <View
-                          key={key}
-                          style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>{meta.label}</Text>
-                            {meta.description ? (
-                              <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
-                            ) : null}
-                            {isLabelsToggle && (
-                              <TouchableOpacity
-                                onPress={() => navigation.navigate('LabelsLanguage')}
-                                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                                style={{ marginTop: 4 }}
-                              >
-                                <Text style={[styles.reportSectionLink, { color: theme.accent }]}>Customize →</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                          <Switch
-                            value={!!value}
-                            onValueChange={update}
-                            trackColor={{ false: '#E0E0E0', true: theme.accent }}
-                            thumbColor="#FFFFFF"
-                          />
-                        </View>
+                        <>
+                          {REPORT_OPTION_GROUPS.map((group) => {
+                            const groupKeys = group.keys.filter((k) => supportedSet.has(k));
+                            // Tack any orphan keys (declared by a layout
+                            // but not categorized in REPORT_OPTION_GROUPS)
+                            // onto the Layout section as a safety net.
+                            const keys = group.id === 'layout' ? [...groupKeys, ...orphanKeys] : groupKeys;
+                            if (keys.length === 0) return null;
+                            return (
+                              <React.Fragment key={group.id}>
+                                <Text style={[styles.reportSectionLabel, { color: theme.textSecondary, marginTop: 6 }]}>
+                                  {group.title}
+                                </Text>
+                                {keys.map(renderOptionRow)}
+                              </React.Fragment>
+                            );
+                          })}
+                        </>
                       );
-                    })}
+                    })()}
                   </>
                 );
               })()}
@@ -2423,13 +3175,36 @@ export default function ProjectDetailScreen({ route, navigation }) {
           const cappedPreview = previewPool.slice(0, Math.min(activeReport.photoCount || previewPool.length, previewPool.length));
           return (
             <View style={styles.reportPanel}>
-              {/* Preview header — back link + Edit shortcut. */}
+              {/* Preview header — back link + Edit shortcut. When
+                  per-photo edits are pending (reportPreviewStale) any
+                  attempt to leave the preview is intercepted with a
+                  Save / Discard / Cancel confirm so the user can't
+                  accidentally walk away from an out-of-date share. */}
               <View style={styles.reportEditorHeader}>
                 <TouchableOpacity
                   style={styles.reportEditorBackBtn}
                   onPress={() => {
-                    setReportViewMode('list');
-                    setActiveReportId(null);
+                    const leave = () => { setReportViewMode('list'); setActiveReportId(null); };
+                    if (!reportPreviewStale) { leave(); return; }
+                    Alert.alert(
+                      'Save changes?',
+                      'You edited a photo since the report was generated. Save (regenerate) before leaving, or discard and the report stays as it was.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Discard', style: 'destructive', onPress: () => { setReportPreviewStale(false); leave(); } },
+                        { text: 'Save', onPress: () => {
+                          if (activeReport) {
+                            setEditorPhotoIds(activeReport.photoIds || []);
+                            setReportTitle(activeReport.title || '');
+                            setReportLayoutType(activeReport.layoutType || DEFAULT_LAYOUT_ID);
+                            setReportOptions(activeReport.options || {});
+                            setReportPhotoCount(activeReport.photoCount || (activeReport.photoIds || []).length);
+                          }
+                          handleGenerateReport().then(() => leave());
+                        } },
+                      ],
+                      { cancelable: true },
+                    );
                   }}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 >
@@ -2484,63 +3259,93 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   doesn't pinch-zoom inside a ScrollView so this is a
                   no-op there, but the preview still scrolls via the
                   outer panel ScrollView on both platforms. */}
-              {isBakingReportPhotos ? (
-                // Gate the preview behind a progress block until every
-                // photo's bake has resolved. Without this gate the user
-                // sees a half-baked report (some labels in, some not)
-                // and reasonably reads it as a bug. The progress count
-                // gives them a sense of how long until it's ready.
-                <View style={[styles.reportPreparingWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <ActivityIndicator size="large" color={theme.accent} />
-                  <Text style={[styles.reportPreparingTitle, { color: theme.textPrimary }]}>
-                    Preparing report…
-                  </Text>
-                  <Text style={[styles.reportPreparingSub, { color: theme.textSecondary }]}>
-                    Baking labels into {bakingProgress.total} {bakingProgress.total === 1 ? 'photo' : 'photos'} ({bakingProgress.completed}/{bakingProgress.total}). This runs once per project; subsequent opens are instant.
+              <ScrollView
+                maximumZoomScale={4}
+                minimumZoomScale={1}
+                bouncesZoom
+                pinchGestureEnabled
+                showsHorizontalScrollIndicator={false}
+                showsVerticalScrollIndicator={false}
+              >
+                <ReportPreviewView
+                  photos={cappedPreview}
+                  layoutId={activeReport.layoutType || 'room-by-room'}
+                  options={activeReport.options || {}}
+                  displayRoomName={displayRoomName}
+                  theme={theme}
+                  branding={{
+                    brandColor: reportBrandColor,
+                    watermarkText: (showWatermark && watermarkText) ? watermarkText : '',
+                    labelSettings: reportLabelSettings,
+                    watermarkSettings: reportWatermarkSettings,
+                    metaSettings: reportMetaSettings,
+                    brandLogoSettings: reportBrandLogoSettings,
+                  }}
+                  onPhotoEdit={handlePhotoEditFromReport}
+                />
+              </ScrollView>
+
+              {/* Stale banner — shows whenever the user has edited a
+                  photo via the pencil affordance since the last
+                  generate. Disables Share until they Regenerate so
+                  the shared PDF can't drift from the in-app preview. */}
+              {reportPreviewStale && (
+                <View style={styles.staleBanner}>
+                  <Ionicons name="alert-circle-outline" size={18} color="#92400E" />
+                  <Text style={styles.staleBannerText}>
+                    Photo edits made — regenerate to update the report before sharing.
                   </Text>
                 </View>
-              ) : (
-                <ScrollView
-                  maximumZoomScale={4}
-                  minimumZoomScale={1}
-                  bouncesZoom
-                  pinchGestureEnabled
-                  showsHorizontalScrollIndicator={false}
-                  showsVerticalScrollIndicator={false}
-                >
-                  <ReportPreviewView
-                    photos={withBakedUri(cappedPreview)}
-                    layoutId={activeReport.layoutType || 'room-by-room'}
-                    options={activeReport.options || {}}
-                    displayRoomName={displayRoomName}
-                    theme={theme}
-                    branding={{
-                      brandColor: reportBrandColor,
-                      watermarkText: (showWatermark && watermarkText) ? watermarkText : '',
-                    }}
-                  />
-                </ScrollView>
               )}
-
-              {/* Share action — disabled during bake so the user
-                  doesn't trigger another bakeChrome pass that just
-                  waits on the same queue and leaves the button
-                  visually frozen. */}
-              <TouchableOpacity
-                style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent, opacity: (isBuildingReport || isBakingReportPhotos) ? 0.7 : 1 }]}
-                onPress={() => openReportShareModal(activeReport.id)}
-                disabled={isBuildingReport || isBakingReportPhotos}
-                activeOpacity={0.85}
-              >
-                {(isBuildingReport || isBakingReportPhotos) ? (
-                  <ActivityIndicator color={theme.accentText} />
-                ) : (
-                  <>
-                    <Ionicons name="share-outline" size={18} color={theme.accentText} />
-                    <Text style={[styles.reportPrimaryBtnText, { color: theme.accentText }]}>Share report</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+              {/* Share/Regenerate action — when stale, the Share
+                  button is replaced with Regenerate (calls the same
+                  generate path that the editor uses, which clears
+                  the stale flag on success). */}
+              {reportPreviewStale ? (
+                <TouchableOpacity
+                  style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent, opacity: isBuildingReport ? 0.7 : 1 }]}
+                  onPress={() => {
+                    // Hydrate the editor state from the live report
+                    // so handleGenerateReport sees the right photoIds
+                    // / options / layout — then call it.
+                    if (activeReport) {
+                      setEditorPhotoIds(activeReport.photoIds || []);
+                      setReportTitle(activeReport.title || '');
+                      setReportLayoutType(activeReport.layoutType || DEFAULT_LAYOUT_ID);
+                      setReportOptions(activeReport.options || {});
+                      setReportPhotoCount(activeReport.photoCount || (activeReport.photoIds || []).length);
+                    }
+                    handleGenerateReport();
+                  }}
+                  disabled={isBuildingReport || projectPhotos.length === 0}
+                  activeOpacity={0.85}
+                >
+                  {isBuildingReport ? (
+                    <ActivityIndicator color={theme.accentText} />
+                  ) : (
+                    <>
+                      <Ionicons name="refresh-outline" size={18} color={theme.accentText} />
+                      <Text style={[styles.reportPrimaryBtnText, { color: theme.accentText }]}>Regenerate report</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent, opacity: isBuildingReport ? 0.7 : 1 }]}
+                  onPress={() => openReportShareModal(activeReport.id)}
+                  disabled={isBuildingReport}
+                  activeOpacity={0.85}
+                >
+                  {isBuildingReport ? (
+                    <ActivityIndicator color={theme.accentText} />
+                  ) : (
+                    <>
+                      <Ionicons name="share-outline" size={18} color={theme.accentText} />
+                      <Text style={[styles.reportPrimaryBtnText, { color: theme.accentText }]}>Share report</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
               <Text style={[styles.reportFooterNote, { color: theme.textSecondary }]}>
                 Tap "Edit" above and "Regenerate" if photos, title, or style have changed since this was generated.
               </Text>
@@ -2595,6 +3400,28 @@ export default function ProjectDetailScreen({ route, navigation }) {
               </View>
               <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
             </TouchableOpacity>
+
+            {project?.crmJobId && project?.crmProvider && (
+              <TouchableOpacity
+                style={[shareTabStyles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: crmBulkUploading ? 0.6 : 1 }]}
+                onPress={handleUploadProjectToCrm}
+                disabled={crmBulkUploading}
+                activeOpacity={0.85}
+              >
+                <View style={[shareTabStyles.actionIconWrap, { backgroundColor: COLORS.PRIMARY }]}>
+                  <Ionicons name="cloud-upload-outline" size={26} color="#000" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[shareTabStyles.actionTitle, { color: theme.textPrimary }]}>
+                    {crmBulkUploading ? 'Uploading to Service Flow…' : `Upload to Service Flow (job ${project.crmJobId})`}
+                  </Text>
+                  <Text style={[shareTabStyles.actionSubtitle, { color: theme.textSecondary }]}>
+                    Send every photo in this project to the linked SF job. Idempotent — re-runs only upload new photos.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -2629,7 +3456,13 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary }]}>Share as</Text>
                   <View style={shareTabStyles.pillRow}>
                     {[
-                      { key: 'files', label: 'Files' },
+                      // Report-share dispatcher. The "files" key still
+                      // routes through handleReportShareConfirm's HTML
+                      // branch — only the user-facing label changes,
+                      // since what gets shared is the raw .html report
+                      // file. Renaming "Files" → "HTML" so users know
+                      // what the recipient will actually receive.
+                      { key: 'files', label: 'HTML' },
                       { key: 'zip', label: 'ZIP' },
                       { key: 'pdf', label: 'PDF' },
                       { key: 'link', label: 'Link' },
@@ -2741,10 +3574,86 @@ export default function ProjectDetailScreen({ route, navigation }) {
                     </Text>
                   </View>
 
-                  <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary }]}>Share as</Text>
+                  {/* Photo set filter — All vs Combined-only. Mirrors
+                      the segmented control style used in the report
+                      editor so the two share flows feel consistent. */}
+                  <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary }]}>Photos</Text>
                   <View style={shareTabStyles.pillRow}>
                     {[
-                      { key: 'files', label: 'Files' },
+                      { key: 'all', label: 'All photos' },
+                      { key: 'combined', label: 'Only combined' },
+                    ].map(({ key, label }) => (
+                      <TouchableOpacity
+                        key={key}
+                        style={[
+                          shareTabStyles.pill,
+                          { borderColor: theme.border },
+                          sharePhotosFilter === key && { backgroundColor: COLORS.PRIMARY, borderColor: COLORS.PRIMARY },
+                        ]}
+                        onPress={() => applySharePhotosFilter(key)}
+                      >
+                        <Text style={[shareTabStyles.pillText, { color: theme.textPrimary }]}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {/* Pick photos + Preview links. Pick photos drops
+                      into the same timeline selection flow Reports
+                      uses (pre-selects the current pending ids).
+                      Preview opens PhotoDetail in swipe mode with the
+                      current pending set as the pool — user can swipe
+                      through, tap the pencil to edit a photo (jumps
+                      to StudioDetail), then come back here to share. */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, marginTop: 6, marginBottom: 4 }}>
+                    <TouchableOpacity
+                      onPress={handlePickPhotosForShare}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={[shareTabStyles.pillText, { color: theme.accent, fontWeight: '600' }]}>
+                        Pick photos →
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={handlePreviewShareSelection}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      disabled={pendingSharePhotoIds.length === 0}
+                      style={{ opacity: pendingSharePhotoIds.length === 0 ? 0.4 : 1 }}
+                    >
+                      <Text style={[shareTabStyles.pillText, { color: theme.accent, fontWeight: '600' }]}>
+                        Preview →
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Show overlays toggle — when ON, the share flow
+                      bakes each photo with the full studio overlay
+                      stack (label + watermark + brand logo + meta +
+                      markup) before sharing. OFF shares the raw camera
+                      files. Defaults to ON so what you preview is
+                      what you ship. */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingVertical: 6 }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 0 }]}>Show overlays</Text>
+                      <Text style={[shareTabStyles.pillText, { color: theme.textSecondary, fontSize: 11 }]}>
+                        Bake labels, watermark, metadata, brand logo, and markup into each photo.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={shareWithOverlays}
+                      onValueChange={setShareWithOverlays}
+                      trackColor={{ false: '#E0E0E0', true: theme.accent }}
+                      thumbColor="#FFFFFF"
+                    />
+                  </View>
+
+                  <Text style={[shareTabStyles.sectionLabel, { color: theme.textPrimary, marginTop: 14 }]}>Share as</Text>
+                  <View style={shareTabStyles.pillRow}>
+                    {[
+                      // Project-photos dispatcher. The "files" key
+                      // shares the individual JPEG(s) directly through
+                      // the system share sheet, so "Pictures" reads
+                      // truer to what the recipient receives than the
+                      // generic "Files".
+                      { key: 'files', label: 'Pictures' },
                       { key: 'zip', label: 'ZIP' },
                       { key: 'pdf', label: 'PDF' },
                       { key: 'link', label: 'Link' },
@@ -2807,9 +3716,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   )}
 
                   <TouchableOpacity
-                    style={[shareTabStyles.shareNowButton, sharing && { opacity: 0.6 }]}
+                    style={[shareTabStyles.shareNowButton, (sharing || pendingSharePhotoIds.length === 0) && { opacity: 0.6 }]}
                     onPress={startShareTabSharing}
-                    disabled={sharing}
+                    disabled={sharing || pendingSharePhotoIds.length === 0}
                   >
                     {sharing ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -2817,7 +3726,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
                         <Text style={shareTabStyles.shareNowButtonText}>{shareStatus || 'Sharing...'}</Text>
                       </View>
                     ) : (
-                      <Text style={shareTabStyles.shareNowButtonText}>Share Now</Text>
+                      <Text style={shareTabStyles.shareNowButtonText}>
+                        {pendingSharePhotoIds.length === 0 ? 'No photos selected' : 'Share Now'}
+                      </Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -2990,6 +3901,81 @@ export default function ProjectDetailScreen({ route, navigation }) {
           <TouchableOpacity
             style={[styles.sheetCancel, { backgroundColor: theme.surfaceElevated }]}
             onPress={() => setActionsVisible(false)}
+          >
+            <Text style={[styles.sheetCancelText, { color: theme.textPrimary }]}>
+              {t('common.cancel', { defaultValue: 'Cancel' })}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Per-photo action sheet — opened from the pencil affordance in
+          the report preview. Same bottom-sheet shell as the project
+          actions sheet above so the styling is consistent. */}
+      <Modal
+        visible={!!photoEditMenuPhoto}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPhotoEditMenuPhoto(null)}
+      >
+        <TouchableWithoutFeedback onPress={() => setPhotoEditMenuPhoto(null)}>
+          <View style={styles.sheetBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={[styles.sheetContainer, { backgroundColor: theme.surface, paddingBottom: 12 + insets.bottom }]}>
+          <View style={[styles.sheetHandle, { backgroundColor: theme.borderStrong }]} />
+          <Text style={[styles.sheetTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+            {photoEditMenuPhoto?.name || 'Edit photo'}
+          </Text>
+          <TouchableOpacity
+            style={styles.sheetAction}
+            onPress={() => {
+              const p = photoEditMenuPhoto;
+              setPhotoEditMenuPhoto(null);
+              if (p) {
+                setReportPreviewStale(true);
+                navigation.navigate('StudioDetail', { photoId: p.id });
+              }
+            }}
+          >
+            <Ionicons name="brush-outline" size={20} color={theme.textPrimary} />
+            <Text style={[styles.sheetActionText, { color: theme.textPrimary }]}>
+              Open in editor
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.sheetAction}
+            onPress={async () => {
+              const p = photoEditMenuPhoto;
+              setPhotoEditMenuPhoto(null);
+              if (!p) return;
+              try {
+                await clearPhotoOverrides(p.id);
+                setReportPreviewStale(true);
+              } catch (e) {
+                console.warn('[ProjectDetail] reset overrides failed:', e?.message);
+              }
+            }}
+          >
+            <Ionicons name="refresh-outline" size={20} color={theme.textPrimary} />
+            <Text style={[styles.sheetActionText, { color: theme.textPrimary }]}>
+              Reset to global
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.sheetAction}
+            onPress={() => {
+              const p = photoEditMenuPhoto;
+              if (p) handleRemovePhotoFromReport(p);
+            }}
+          >
+            <Ionicons name="trash-outline" size={20} color={theme.danger} />
+            <Text style={[styles.sheetActionText, { color: theme.danger }]}>
+              Remove from report
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sheetCancel, { backgroundColor: theme.surfaceElevated }]}
+            onPress={() => setPhotoEditMenuPhoto(null)}
           >
             <Text style={[styles.sheetCancelText, { color: theme.textPrimary }]}>
               {t('common.cancel', { defaultValue: 'Cancel' })}
@@ -3545,6 +4531,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
+  // Warning banner above Share when per-photo edits have happened
+  // since the last generate. Amber so it reads as "attention needed"
+  // without being alarming.
+  staleBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    marginTop: 8,
+    borderRadius: 8,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  staleBannerText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    lineHeight: 16,
+    color: '#92400E',
+    flex: 1,
+  },
   reportPreparingWrap: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -3572,6 +4579,24 @@ const styles = StyleSheet.create({
   locationList: {
     gap: 10,
     paddingTop: 4,
+  },
+  locationsScopeRow: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  locationsScopeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationsScopeText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '600',
   },
   // Inline MapView at the top of the Location tab. Tall enough to
   // give the user a real overview but bounded so the location card
@@ -3607,6 +4632,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     marginTop: 2,
+  },
+  locationCardLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    marginTop: 4,
+  },
+  locationCardLocationText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
+    lineHeight: 16,
   },
   stubState: {
     alignItems: 'center',
