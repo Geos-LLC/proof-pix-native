@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch, repairCorruptedPhotoUris } from '../services/storage';
 import { readSecureJSON, writeSecureJSON } from '../services/secureStorageService';
 import { INDUSTRIES } from '../constants/industries';
+import crmService from '../services/crm';
 
 // One-shot marker for the project-recovery pass. Lives in AsyncStorage
 // (NOT Keychain) so it resets on reinstall — if a future reinstall
@@ -612,8 +613,51 @@ export const PhotoProvider = ({ children }) => {
         }
       }
       const currentPhotos = photosRef.current;
-      const newPhotos = [...currentPhotos, { ...photo, projectId: photo.projectId ?? activeProjectId ?? null }];
+      const stamped = { ...photo, projectId: photo.projectId ?? activeProjectId ?? null };
+      const newPhotos = [...currentPhotos, stamped];
       await savePhotos(newPhotos);
+
+      // CRM auto-attach. When a photo is captured in a project that's
+      // linked to a CRM job (e.g. SF), forward it straight to the CRM
+      // without waiting on any cloud-destination upload. SF connection
+      // IS the upload destination for these projects — gating attach on
+      // Drive/Dropbox/iCloud would mean users without those configured
+      // never see their photos on the CRM side.
+      //
+      // Fire-and-forget. SF backend dedups on proofpix_photo_id within
+      // 24h, so if backgroundUploadService later also fires attach
+      // (when a cloud destination IS configured), the second call is a
+      // no-op {alreadyExisted: true}.
+      try {
+        if (stamped.projectId) {
+          const project = (projectsRef.current || []).find(p => p?.id === stamped.projectId);
+          if (project?.crmJobId && project?.crmProvider) {
+            console.warn('[CRM] auto-attach on capture', { provider: project.crmProvider, jobId: project.crmJobId, photoId: stamped.id });
+            crmService
+              .attachPhoto(String(project.crmJobId), {
+                id: stamped.id,
+                localUri: stamped.uri,
+                filename: stamped.name || `${stamped.id}.jpg`,
+                mimeType: 'image/jpeg',
+                mode: stamped.mode,
+                room: stamped.room,
+                timestamp: stamped.timestamp,
+                gps: stamped.gps,
+                capturedBy: stamped.capturedBy,
+                notes: stamped.notes,
+                projectId: stamped.projectId,
+              })
+              .then((result) => {
+                console.warn('[CRM] auto-attach result', { photoId: stamped.id, ok: !!result?.success, code: result?.error || null, dedup: !!result?.alreadyExisted });
+              })
+              .catch((e) => {
+                console.warn('[CRM] auto-attach threw', { photoId: stamped.id, msg: e?.message });
+              });
+          }
+        }
+      } catch (crmErr) {
+        console.warn('[CRM] auto-attach setup failed:', crmErr?.message);
+      }
     } catch (error) {
       throw error; // Re-throw so caller knows it failed
     }
