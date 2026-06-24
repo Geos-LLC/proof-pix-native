@@ -49,6 +49,14 @@ export const PhotoProvider = ({ children }) => {
   const [currentRoom, setCurrentRoom] = useState('kitchen');
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
+  // Synchronous mirror of the latest projects array. Mutators
+  // (createProject/patchProject/renameProject) update this BEFORE
+  // calling setProjects so a follow-up mutator within the same
+  // microtask (e.g. ServiceFlowSync's create-then-patch loop) reads
+  // the latest list instead of a stale closure that wipes everything
+  // back to [].
+  const projectsRef = useRef(projects);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
   const [activeProjectId, setActiveProjectId] = useState(null);
 
   // Load photos on mount
@@ -180,6 +188,7 @@ export const PhotoProvider = ({ children }) => {
           await saveActiveProjectId(null);
         }
       }
+      projectsRef.current = projectsList;
       setProjects(projectsList);
     })();
   }, []);
@@ -544,6 +553,7 @@ export const PhotoProvider = ({ children }) => {
   const loadProjectsList = async () => {
     try {
       const list = await loadProjects();
+      projectsRef.current = list;
       setProjects(list);
     } catch (e) {
     }
@@ -767,8 +777,12 @@ export const PhotoProvider = ({ children }) => {
         createdAt: new Date().toISOString(),
         industry: opts.industry || null,
       };
-      const updatedProjects = [newProject, ...projects];
-      console.warn('[PhotoContext] createProject', { new_id: newProject.id, prior_count: projects?.length || 0, after_count: updatedProjects.length });
+      // Read the latest committed list via ref — protects against
+      // a follow-up mutator in the same microtask seeing stale state.
+      const baseList = projectsRef.current || [];
+      const updatedProjects = [newProject, ...baseList];
+      projectsRef.current = updatedProjects;
+      console.warn('[PhotoContext] createProject', { new_id: newProject.id, prior_count: baseList.length, after_count: updatedProjects.length });
       setProjects(updatedProjects);
 
       // Save projects to persistent storage
@@ -805,9 +819,11 @@ export const PhotoProvider = ({ children }) => {
       const trimmed = (newName || '').trim();
       if (!trimmed) return;
 
-      const updated = projects.map(p =>
+      const baseList = projectsRef.current || [];
+      const updated = baseList.map(p =>
         p.id === projectId ? { ...p, name: trimmed } : p
       );
+      projectsRef.current = updated;
       setProjects(updated);
       await saveProjects(updated);
     } catch (error) {
@@ -820,9 +836,16 @@ export const PhotoProvider = ({ children }) => {
   // per project without bloating PhotoContext with one setter per field.
   const patchProject = async (projectId, patch) => {
     if (!projectId || !patch || typeof patch !== 'object') return;
-    const updated = projects.map(p =>
+    // projectsRef, not closure `projects` — the latter is captured per
+    // render and stays stale across multiple mutators in the same
+    // microtask. Concrete repro: ServiceFlowSync calls createProject +
+    // patchProject in a loop without yielding; closure-based patch
+    // wipes each create back to [] before the next iteration.
+    const baseList = projectsRef.current || [];
+    const updated = baseList.map(p =>
       p.id === projectId ? { ...p, ...patch } : p
     );
+    projectsRef.current = updated;
     setProjects(updated);
     try {
       await saveProjects(updated);
