@@ -17,6 +17,7 @@
  */
 
 import crmService from './index';
+import { loadProjects } from '../storage';
 
 const formatProjectName = (job) => {
   // Prefer customer-name + first segment of the street address.
@@ -33,12 +34,20 @@ const formatProjectName = (job) => {
  * Sync SF jobs into the ProofPix project list.
  *
  * @param {object} ctx — destructured PhotoContext methods we need
- * @param {Array} ctx.projects — current local project list
+ * @param {Array} [ctx.projects] — IGNORED. Kept in the signature for
+ *   back-compat with existing callers, but the dedup map is now built
+ *   from a fresh storage read instead because the React-state
+ *   `projects` is racy on cold start: PhotoProvider's setLoading(false)
+ *   fires inside loadPhotos BEFORE setProjects(projectsList) fires
+ *   later in the cold-start effect, so ServiceFlowSyncTrigger saw an
+ *   empty array even when the user had 12 SF-linked projects in
+ *   Keychain. Every cold start then created 12 duplicates because
+ *   dedup matched nothing.
  * @param {Function} ctx.createProject — async (name) => project
  * @param {Function} ctx.patchProject — async (id, patch) => void
  * @returns {Promise<{ created: number, matched: number, error?: string }>}
  */
-export async function syncServiceFlowJobs({ projects, createProject, patchProject }) {
+export async function syncServiceFlowJobs({ createProject, patchProject }) {
   // Cheap exit if no CRM connected — adapter returns [] from listJobs
   // and we'd loop over nothing, but skip the call entirely to avoid
   // a needless network round-trip when SF isn't wired up.
@@ -60,12 +69,17 @@ export async function syncServiceFlowJobs({ projects, createProject, patchProjec
 
   if (jobs.length === 0) return { created: 0, matched: 0 };
 
+  // Read the latest persisted project list directly from Keychain
+  // for the dedup map. See JSDoc above for the race we're avoiding.
+  let currentProjects = [];
+  try { currentProjects = await loadProjects() || []; } catch (_) {}
+
   // Index existing projects by crmJobId for O(1) dedup lookup.
   // Multiple projects could in theory carry the same crmJobId (data
   // corruption, mid-migration, etc.) — using `has`/`get` keeps us
   // tolerant: we treat any existing match as "already synced".
   const existingByJobId = new Map();
-  for (const p of (projects || [])) {
+  for (const p of currentProjects) {
     if (p?.crmJobId) existingByJobId.set(String(p.crmJobId), p);
   }
 
