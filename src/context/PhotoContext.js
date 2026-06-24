@@ -2,11 +2,25 @@ import React, { createContext, useState, useContext, useEffect, useCallback, use
 import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch, repairCorruptedPhotoUris } from '../services/storage';
+import { readSecureJSON, writeSecureJSON } from '../services/secureStorageService';
+import { INDUSTRIES } from '../constants/industries';
 
 // One-shot marker for the project-recovery pass. Lives in AsyncStorage
 // (NOT Keychain) so it resets on reinstall — if a future reinstall
 // leaves Keychain projects empty again, recovery re-fires.
 const PROJECT_RECOVERY_MARKER_KEY = '@project_recovery_done_v1';
+const ROOMS_RECOVERY_MARKER_KEY = '@rooms_recovery_done_v1';
+const CUSTOM_ROOMS_KEY = 'custom-rooms';
+
+// Turn a room id slug (e.g. "master-bathroom") into a readable name
+// ("Master bathroom"). Used by the rooms-recovery pass when we don't
+// have any other name source — the user can rename via Industry &
+// Folders settings afterwards.
+const humanizeRoomId = (id) => {
+  const cleaned = String(id || '').replace(/[-_]+/g, ' ').trim();
+  if (!cleaned) return 'Recovered room';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+};
 import { deleteImagesFromGalleryNative, deleteImagesByProjectIdNative } from '../utils/mediaStoreSaver';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
@@ -57,15 +71,63 @@ export const PhotoProvider = ({ children }) => {
       let projectsList = await loadProjects();
       console.warn('[PhotoContext] cold-start loadProjects', { count: projectsList?.length || 0, ids: (projectsList || []).map(p => p?.id).slice(0, 10) });
 
-      // Recovery: if Keychain tracked-projects came back empty but
-      // photos.metadata carries projectId references, the projects
-      // list was wiped while the photo metadata + asset map survived
-      // (e.g. mid-session crash, OTA race, manual user data clear).
-      // Synthesize one project entry per unique referenced id so the
-      // Projects screen re-populates and photos automatically re-link.
-      // One-shot, gated by an AsyncStorage marker so it doesn't repeat
-      // — if the user deletes all projects intentionally later, we
-      // honour the empty state.
+      // Recovery — rooms. Photo `room` IDs reference custom-rooms
+      // entries; if custom-rooms got wiped alongside tracked-projects,
+      // the photos' room IDs no longer match anything in the room list,
+      // and screens that filter by current-room (Capture, Sections)
+      // render empty. Timeline still works because it groups
+      // `photo.room || 'Unsorted'` so orphan rooms just become an
+      // 'Unsorted' bucket.
+      // Walk photos, collect every room ID not present in default
+      // ROOMS / current customRooms / any INDUSTRIES folder ID, and
+      // synthesize entries appended to customRooms. One-shot, gated.
+      try {
+        const roomsRecoveryDone = await AsyncStorage.getItem(ROOMS_RECOVERY_MARKER_KEY);
+        if (!roomsRecoveryDone) {
+          const photoMeta = await loadPhotosMetadata();
+          const photoRoomIds = new Set();
+          for (const p of photoMeta || []) {
+            if (p?.room) photoRoomIds.add(String(p.room));
+          }
+          if (photoRoomIds.size > 0) {
+            const currentCustom = (await readSecureJSON(CUSTOM_ROOMS_KEY)) || [];
+            const knownIds = new Set();
+            for (const r of ROOMS) if (r?.id) knownIds.add(String(r.id));
+            for (const r of currentCustom) if (r?.id) knownIds.add(String(r.id));
+            for (const ind of (INDUSTRIES || [])) {
+              for (const f of (ind?.folders || [])) {
+                if (f?.id) knownIds.add(String(f.id));
+              }
+            }
+            const missing = Array.from(photoRoomIds).filter(id => !knownIds.has(id));
+            if (missing.length > 0) {
+              const synthesizedRooms = missing.map(id => ({
+                id,
+                name: humanizeRoomId(id),
+                recoveredAt: Date.now(),
+              }));
+              const combined = [...currentCustom, ...synthesizedRooms];
+              console.warn('[PhotoContext] room recovery: synthesized', { count: synthesizedRooms.length, photo_count: (photoMeta || []).length, ids: missing.slice(0, 20) });
+              await writeSecureJSON(CUSTOM_ROOMS_KEY, combined);
+            } else {
+              console.warn('[PhotoContext] room recovery: skipped — all photo room IDs already known', { photo_room_count: photoRoomIds.size });
+            }
+          }
+          await AsyncStorage.setItem(ROOMS_RECOVERY_MARKER_KEY, String(Date.now()));
+        }
+      } catch (e) {
+        console.warn('[PhotoContext] room recovery failed:', e?.message);
+      }
+
+      // Recovery — projects. If Keychain tracked-projects came back
+      // empty but photos.metadata carries projectId references, the
+      // projects list was wiped while the photo metadata + asset map
+      // survived (e.g. mid-session crash, OTA race, manual user data
+      // clear). Synthesize one project entry per unique referenced id
+      // so the Projects screen re-populates and photos automatically
+      // re-link. One-shot, gated by an AsyncStorage marker so it
+      // doesn't repeat — if the user deletes all projects intentionally
+      // later, we honour the empty state.
       if ((projectsList?.length || 0) === 0) {
         try {
           const recoveryDone = await AsyncStorage.getItem(PROJECT_RECOVERY_MARKER_KEY);
