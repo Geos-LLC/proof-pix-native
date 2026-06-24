@@ -1,6 +1,12 @@
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadPhotosMetadata, savePhotosMetadata, deletePhotoFromDevice, loadProjects, saveProjects, createProject as storageCreateProject, deleteProjectEntry, loadActiveProjectId, saveActiveProjectId, deleteAssetsByFilenames, deleteAssetsByPrefixes, deleteProjectAssets, getAssetIdMap, deleteAssetsBatch, repairCorruptedPhotoUris } from '../services/storage';
+
+// One-shot marker for the project-recovery pass. Lives in AsyncStorage
+// (NOT Keychain) so it resets on reinstall — if a future reinstall
+// leaves Keychain projects empty again, recovery re-fires.
+const PROJECT_RECOVERY_MARKER_KEY = '@project_recovery_done_v1';
 import { deleteImagesFromGalleryNative, deleteImagesByProjectIdNative } from '../utils/mediaStoreSaver';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
@@ -48,8 +54,60 @@ export const PhotoProvider = ({ children }) => {
   useEffect(() => {
     (async () => {
       await loadPhotos();
-      const projectsList = await loadProjects();
+      let projectsList = await loadProjects();
       console.warn('[PhotoContext] cold-start loadProjects', { count: projectsList?.length || 0, ids: (projectsList || []).map(p => p?.id).slice(0, 10) });
+
+      // Recovery: if Keychain tracked-projects came back empty but
+      // photos.metadata carries projectId references, the projects
+      // list was wiped while the photo metadata + asset map survived
+      // (e.g. mid-session crash, OTA race, manual user data clear).
+      // Synthesize one project entry per unique referenced id so the
+      // Projects screen re-populates and photos automatically re-link.
+      // One-shot, gated by an AsyncStorage marker so it doesn't repeat
+      // — if the user deletes all projects intentionally later, we
+      // honour the empty state.
+      if ((projectsList?.length || 0) === 0) {
+        try {
+          const recoveryDone = await AsyncStorage.getItem(PROJECT_RECOVERY_MARKER_KEY);
+          if (!recoveryDone) {
+            const photoMeta = await loadPhotosMetadata();
+            const byProjectId = new Map();
+            for (const photo of photoMeta || []) {
+              if (!photo?.projectId) continue;
+              const list = byProjectId.get(photo.projectId) || [];
+              list.push(photo);
+              byProjectId.set(photo.projectId, list);
+            }
+            if (byProjectId.size > 0) {
+              const orderedIds = Array.from(byProjectId.keys()).sort((a, b) => {
+                const aOldest = Math.min(...byProjectId.get(a).map(p => Number(p.timestamp) || Number.POSITIVE_INFINITY));
+                const bOldest = Math.min(...byProjectId.get(b).map(p => Number(p.timestamp) || Number.POSITIVE_INFINITY));
+                return aOldest - bOldest;
+              });
+              const synthesized = orderedIds.map((pid, idx) => {
+                const oldestTs = Math.min(...byProjectId.get(pid).map(p => Number(p.timestamp) || Date.now()));
+                return {
+                  id: pid,
+                  name: `Recovered project ${idx + 1}`,
+                  createdAt: new Date(oldestTs).toISOString(),
+                  recoveredAt: Date.now(),
+                };
+              });
+              console.warn('[PhotoContext] project recovery: synthesized', { count: synthesized.length, photo_count: (photoMeta || []).length, ids: synthesized.map(p => p.id) });
+              await saveProjects(synthesized);
+              projectsList = synthesized;
+            } else {
+              console.warn('[PhotoContext] project recovery: skipped — no photos carry projectId', { photo_count: (photoMeta || []).length });
+            }
+            await AsyncStorage.setItem(PROJECT_RECOVERY_MARKER_KEY, String(Date.now()));
+          } else {
+            console.warn('[PhotoContext] project recovery: marker present, skipping');
+          }
+        } catch (e) {
+          console.warn('[PhotoContext] project recovery failed:', e?.message);
+        }
+      }
+
       const savedActive = await loadActiveProjectId();
       if (savedActive) {
         const projectExists = projectsList.some(p => p.id === savedActive);
