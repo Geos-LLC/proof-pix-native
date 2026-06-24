@@ -22,6 +22,8 @@ import * as WebBrowser from 'expo-web-browser';
 import dropboxAuthService from '../services/dropboxAuthService';
 import iCloudService from '../services/iCloudService';
 import crmService from '../services/crm';
+import { syncServiceFlowJobs } from '../services/crm/serviceFlowSync';
+import { usePhotos } from '../context/PhotoContext';
 
 // CloudSyncScreen — dedicated route for cloud storage connections.
 // Split out of the prior combined CloudTeamScreen so the team flow
@@ -41,6 +43,7 @@ export default function CloudSyncScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { isAuthenticated, userInfo, accountType, individualSignIn, adminSignIn, signOut } = useAdmin();
+  const { projects, createProject: ctxCreateProject, patchProject } = usePhotos();
   const { userPlan } = useSettings();
 
   const [dropboxConnected, setDropboxConnected] = useState(false);
@@ -291,6 +294,17 @@ export default function CloudSyncScreen({ navigation }) {
         return;
       }
       await refreshServiceFlow();
+      // Fire an immediate sync so the user sees their SF jobs appear in
+      // the Projects list right after connect, without waiting for the
+      // next background→foreground transition (which is what otherwise
+      // triggers ServiceFlowSyncTrigger). Best-effort — sync errors are
+      // surfaced via console and don't break the UI connected state.
+      try {
+        const result = await syncServiceFlowJobs({ projects, createProject: ctxCreateProject, patchProject });
+        console.warn('[ServiceFlow] post-connect sync', result);
+      } catch (syncErr) {
+        console.warn('[ServiceFlow] post-connect sync threw:', syncErr?.message);
+      }
     } catch (e) {
       console.warn('[CloudSync] SF connect failed:', e?.message);
       Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Connection failed.');
