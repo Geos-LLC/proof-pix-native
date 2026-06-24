@@ -632,11 +632,25 @@ export const PhotoProvider = ({ children }) => {
         if (stamped.projectId) {
           const project = (projectsRef.current || []).find(p => p?.id === stamped.projectId);
           if (project?.crmJobId && project?.crmProvider) {
-            console.warn('[CRM] auto-attach on capture', { provider: project.crmProvider, jobId: project.crmJobId, photoId: stamped.id });
+            const uriSample = stamped.uri ? String(stamped.uri).slice(0, 80) : null;
+            console.warn('[CRM] auto-attach on capture', {
+              provider: project.crmProvider,
+              jobId: project.crmJobId,
+              photoId: stamped.id,
+              has_uri: !!stamped.uri,
+              uri_kind: stamped.uri ? (stamped.uri.startsWith('file://') ? 'file' : stamped.uri.startsWith('ph://') ? 'ph' : stamped.uri.startsWith('assets-library://') ? 'assets-library' : 'other') : 'none',
+              uri_sample: uriSample,
+              has_cachedLocalUri: !!stamped.cachedLocalUri,
+              mode: stamped.mode,
+            });
             crmService
               .attachPhoto(String(project.crmJobId), {
                 id: stamped.id,
-                localUri: stamped.uri,
+                // Prefer cachedLocalUri when present (it's the resolved
+                // file:// path PhotoContext maintains after asset
+                // resolution); fall back to the raw uri which may still
+                // be a ph:// / assets-library:// reference on iOS.
+                localUri: stamped.cachedLocalUri || stamped.uri,
                 filename: stamped.name || `${stamped.id}.jpg`,
                 mimeType: 'image/jpeg',
                 mode: stamped.mode,
