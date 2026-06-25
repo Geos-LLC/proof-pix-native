@@ -750,10 +750,38 @@ export default function ProjectDetailScreen({ route, navigation }) {
     setCrmBulkUploading(true);
     let ok = 0, dedup = 0, failed = 0;
     const failures = [];
+    const uriKind = (u) => {
+      if (!u) return 'none';
+      if (typeof u !== 'string') return `non-string(${typeof u})`;
+      if (u.startsWith('file://')) return 'file';
+      if (u.startsWith('ph://')) return 'ph';
+      if (u.startsWith('assets-library://')) return 'assets-library';
+      if (u.startsWith('http')) return 'http';
+      return `other(${u.slice(0, 12)}...)`;
+    };
     try {
       for (const p of projectPhotos) {
         const localUri = p?.cachedLocalUri || p?.uri;
-        if (!localUri) { failed += 1; failures.push(`${p?.name || p?.id || 'unknown'}: no uri`); continue; }
+        const idMissing = p?.id == null;
+        const kind = uriKind(localUri);
+        // Per-photo diagnostic — printed to [CRM] tag, ends up in
+        // local error log export so we can see exactly which field
+        // is empty when the adapter returns INVALID_PAYLOAD.
+        console.warn('[CRM] bulk attempt', {
+          name: p?.name,
+          photoId: p?.id,
+          id_missing: idMissing,
+          uri_kind: kind,
+          has_cached: !!p?.cachedLocalUri,
+          has_uri: !!p?.uri,
+          uri_sample: typeof localUri === 'string' ? localUri.slice(0, 60) : null,
+          jobId: String(project.crmJobId),
+        });
+        if (!localUri || idMissing) {
+          failed += 1;
+          failures.push(`${p?.name || p?.id || 'unknown'}: ${idMissing ? 'no id' : 'no uri'} (kind=${kind})`);
+          continue;
+        }
         try {
           const result = await crmService.attachPhoto(String(project.crmJobId), {
             id: p.id,
@@ -768,15 +796,17 @@ export default function ProjectDetailScreen({ route, navigation }) {
             notes: p.notes,
             projectId: p.projectId,
           });
+          console.warn('[CRM] bulk result', { photoId: p.id, ok: !!result?.success, code: result?.error || null, dedup: !!result?.alreadyExisted });
           if (result?.success) {
             if (result.alreadyExisted) dedup += 1; else ok += 1;
           } else {
             failed += 1;
-            failures.push(`${p?.name || p?.id}: ${result?.error || 'unknown'}`);
+            failures.push(`${p?.name || p?.id}: ${result?.error || 'unknown'} (kind=${kind})`);
           }
         } catch (e) {
+          console.warn('[CRM] bulk threw', { photoId: p.id, msg: e?.message });
           failed += 1;
-          failures.push(`${p?.name || p?.id}: ${e?.message || 'threw'}`);
+          failures.push(`${p?.name || p?.id}: ${e?.message || 'threw'} (kind=${kind})`);
         }
       }
       const summary = `New: ${ok}\nAlready on job: ${dedup}\nFailed: ${failed}`;
