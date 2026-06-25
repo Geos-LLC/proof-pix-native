@@ -90,6 +90,11 @@ export default function ProjectsScreen({ navigation, route }) {
   const theme = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [actionSheetProject, setActionSheetProject] = useState(null);
+  // Multi-select mode for bulk delete / share. Long-press a card to
+  // enter; tap-toggle, then act via the toolbar that replaces the
+  // search row.
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedProjects, setSelectedProjects] = useState(new Set());
   const {
     projects,
     getPhotosByProject,
@@ -121,6 +126,49 @@ export default function ProjectsScreen({ navigation, route }) {
     }
     return map;
   }, [getRooms]);
+  // Fallback industry id used when a project has no `industry` stored.
+  // Computed per-project from the room IDs of that project's photos
+  // (same overlap logic as HomeScreen's qualification auto-restore),
+  // so cards reflect the industry the project was ACTUALLY done under
+  // — not the user's most recent global qualification pick. Falls
+  // back to the onboarding qualification when a project has no rooms
+  // we can match.
+  const [defaultIndustryId, setDefaultIndustryId] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await getStoredUserType();
+        if (!cancelled) setDefaultIndustryId(stored || null);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const inferredIndustryByProject = useMemo(() => {
+    const map = new Map();
+    const roomsByProject = new Map();
+    for (const p of photos || []) {
+      if (!p?.projectId || !p?.room) continue;
+      let set = roomsByProject.get(p.projectId);
+      if (!set) { set = new Set(); roomsByProject.set(p.projectId, set); }
+      set.add(p.room);
+    }
+    const industryFolderIds = INDUSTRIES.map((ind) => ({
+      id: ind.id,
+      folderIds: new Set((ind.folders || []).map((f) => f.id)),
+    }));
+    for (const [pid, rooms] of roomsByProject) {
+      let bestId = null;
+      let bestOverlap = 0;
+      for (const { id, folderIds } of industryFolderIds) {
+        let overlap = 0;
+        for (const rid of rooms) if (folderIds.has(rid)) overlap++;
+        if (overlap > bestOverlap) { bestOverlap = overlap; bestId = id; }
+      }
+      if (bestId) map.set(pid, bestId);
+    }
+    return map;
+  }, [photos]);
   const { userMode, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType, connectedAccounts } = useAdmin();
   const { exceedsLimit, canUse, effectivePlan } = useFeaturePermissions();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
@@ -287,7 +335,10 @@ export default function ProjectsScreen({ navigation, route }) {
           }
         }
       } catch {}
-      const project = await createProject(finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_'));
+      const project = await createProject(
+        finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_'),
+        { industry: newProjectIndustry || null },
+      );
       logProjectCreated();
       setNewProjectNamePart('');
       setNewProjectVisible(false);
@@ -398,6 +449,63 @@ export default function ProjectsScreen({ navigation, route }) {
   const handleDeleteProject = (project) => {
     setProjectToDelete(project);
     setShowDeleteConfirm(true);
+  };
+
+  // Multi-select handlers (mirror HomeScreen pattern).
+  const handleProjectLongPress = (projectId) => {
+    setIsMultiSelectMode(true);
+    setSelectedProjects(new Set([projectId]));
+  };
+  const handleProjectPressInSelectMode = (projectId) => {
+    setSelectedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  };
+  const exitMultiSelect = () => {
+    setIsMultiSelectMode(false);
+    setSelectedProjects(new Set());
+  };
+  const handleDeleteSelected = () => {
+    const ids = Array.from(selectedProjects);
+    if (ids.length === 0) return;
+    Alert.alert(
+      t('projects.deleteSelectedTitle', { defaultValue: `Delete ${ids.length} project${ids.length === 1 ? '' : 's'}?` }),
+      t('projects.deleteSelectedBody', { defaultValue: 'Photos stay in your iOS Photos library. Project records + linked photo metadata in the app will be removed.' }),
+      [
+        { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        {
+          text: t('common.delete', { defaultValue: 'Delete' }),
+          style: 'destructive',
+          onPress: async () => {
+            for (const id of ids) {
+              try { await deleteProject(id, { deleteFromStorage: false }); }
+              catch (e) { console.warn('[ProjectsScreen] bulk delete failed for', id, e?.message); }
+            }
+            exitMultiSelect();
+          },
+        },
+      ],
+    );
+  };
+  const handleShareSelected = () => {
+    const ids = Array.from(selectedProjects);
+    if (ids.length === 0) return;
+    if (ids.length === 1) {
+      const p = projects.find((proj) => proj.id === ids[0]);
+      if (p) {
+        exitMultiSelect();
+        handleShareProject(p);
+      }
+      return;
+    }
+    Alert.alert(
+      t('projects.shareSelectedTitle', { defaultValue: 'Multi-project share' }),
+      t('projects.shareSelectedBody', { defaultValue: 'Sharing multiple projects in one bundle is coming soon. For now, select a single project to share, or use the per-project Share tab.' }),
+      [{ text: t('common.ok', { defaultValue: 'OK' }) }],
+    );
   };
 
   const handleDeleteConfirmed = async (deleteFromStorage) => {
@@ -513,14 +621,32 @@ export default function ProjectsScreen({ navigation, route }) {
           <meta charset="utf-8" />
           <style>
             * { box-sizing: border-box; }
-            body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 32px; color: #1C274C; }
-            .header { border-bottom: 2px solid #F2C31B; padding-bottom: 16px; margin-bottom: 24px; }
+            body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #1C274C; }
+            /* Header is its own page so each photo block below can
+               occupy a full viewport-height page and vertically
+               center its image. */
+            .header { border-bottom: 2px solid #F2C31B; padding: 32px; margin: 0; page-break-after: always; }
             .title { font-size: 24px; font-weight: 700; margin: 0 0 4px 0; }
             .meta { font-size: 12px; color: #666; margin: 0; }
-            .photo { page-break-inside: avoid; margin-bottom: 24px; text-align: center; }
-            .photo img { max-width: 100%; max-height: 720px; border-radius: 8px; }
-            .caption { font-size: 12px; color: #444; margin-top: 6px; font-weight: 600; }
-            .footer { text-align: center; font-size: 10px; color: #999; margin-top: 32px; }
+            /* Full-page centered photo block: 100vh container with
+               flex centering puts the image dead-center vertically
+               on its own page. */
+            .photo {
+              page-break-inside: avoid;
+              page-break-after: always;
+              height: 100vh;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              align-items: center;
+              text-align: center;
+              padding: 32px;
+              margin: 0;
+            }
+            .photo:last-of-type { page-break-after: auto; }
+            .photo img { max-width: 100%; max-height: 80vh; border-radius: 8px; }
+            .caption { font-size: 12px; color: #444; margin-top: 12px; font-weight: 600; }
+            .footer { text-align: center; font-size: 10px; color: #999; padding: 32px; }
           </style>
         </head>
         <body>
@@ -1048,29 +1174,55 @@ export default function ProjectsScreen({ navigation, route }) {
         </Text>
       </View>
 
-      <View style={styles.searchRow}>
-        <View style={[styles.searchBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Ionicons name="search" size={16} color={theme.textMuted} />
-          <TextInput
-            placeholder={t('projects.search', { defaultValue: 'Search projects' })}
-            placeholderTextColor={theme.textMuted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            style={[styles.searchInput, { color: theme.textPrimary }]}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-              <Ionicons name="close-circle" size={16} color={theme.textMuted} />
-            </TouchableOpacity>
-          )}
+      {isMultiSelectMode ? (
+        <View style={[styles.searchRow, { alignItems: 'center' }]}>
+          <TouchableOpacity onPress={exitMultiSelect} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close" size={22} color={theme.textPrimary} />
+          </TouchableOpacity>
+          <Text style={{ flex: 1, marginLeft: 14, color: theme.textPrimary, fontSize: 16, fontWeight: '600' }}>
+            {selectedProjects.size} {selectedProjects.size === 1 ? 'selected' : 'selected'}
+          </Text>
+          <TouchableOpacity
+            onPress={handleShareSelected}
+            disabled={selectedProjects.size === 0}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{ marginRight: 18 }}
+          >
+            <Ionicons name="share-outline" size={22} color={selectedProjects.size === 0 ? theme.textMuted : theme.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleDeleteSelected}
+            disabled={selectedProjects.size === 0}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="trash-outline" size={22} color={selectedProjects.size === 0 ? theme.textMuted : '#E53935'} />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={[styles.filterBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="options-outline" size={18} color={theme.textPrimary} />
-        </TouchableOpacity>
-      </View>
+      ) : (
+        <View style={styles.searchRow}>
+          <View style={[styles.searchBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="search" size={16} color={theme.textMuted} />
+            <TextInput
+              placeholder={t('projects.search', { defaultValue: 'Search projects' })}
+              placeholderTextColor={theme.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              style={[styles.searchInput, { color: theme.textPrimary }]}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[styles.filterBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="options-outline" size={18} color={theme.textPrimary} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ScrollView
         style={styles.scrollView}
@@ -1095,6 +1247,7 @@ export default function ProjectsScreen({ navigation, route }) {
             const isActive = activeProjectId === project.id;
             const updatedTs = stats.latestTs || (project.createdAt ? new Date(project.createdAt).getTime() : 0);
 
+            const isSelected = selectedProjects.has(project.id);
             return (
               <TouchableOpacity
                 key={project.id}
@@ -1102,12 +1255,30 @@ export default function ProjectsScreen({ navigation, route }) {
                   styles.cardNew,
                   {
                     backgroundColor: theme.surface,
-                    borderColor: isActive ? theme.cardSelectedBorder : 'transparent',
+                    borderColor: isMultiSelectMode && isSelected
+                      ? theme.accent
+                      : isActive
+                        ? theme.cardSelectedBorder
+                        : 'transparent',
                   },
                 ]}
-                onPress={() => handleSelectProject(project)}
+                onPress={() => {
+                  if (isMultiSelectMode) handleProjectPressInSelectMode(project.id);
+                  else handleSelectProject(project);
+                }}
+                onLongPress={() => { if (!isMultiSelectMode) handleProjectLongPress(project.id); }}
+                delayLongPress={300}
                 activeOpacity={0.7}
               >
+                {isMultiSelectMode && (
+                  <View style={{ position: 'absolute', top: 10, left: 10, zIndex: 2 }}>
+                    <Ionicons
+                      name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={24}
+                      color={isSelected ? theme.accent : theme.textMuted}
+                    />
+                  </View>
+                )}
                 <View style={styles.cardRow}>
                   {stats.thumbUri ? (
                     <Image source={{ uri: stats.thumbUri }} style={styles.cardThumb} />
@@ -1119,6 +1290,21 @@ export default function ProjectsScreen({ navigation, route }) {
 
                   <View style={styles.cardBody}>
                     <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>{project.name}</Text>
+                    {(() => {
+                      const indId = project.industry
+                        || inferredIndustryByProject.get(project.id)
+                        || defaultIndustryId;
+                      const ind = indId ? getIndustryById(indId) : null;
+                      if (!ind) return null;
+                      return (
+                        <View style={[styles.industryChip, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}>
+                          <Ionicons name={ind.icon} size={11} color={theme.textSecondary} />
+                          <Text style={[styles.industryChipText, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {t(ind.labelKey, { defaultValue: ind.defaultLabel })}
+                          </Text>
+                        </View>
+                      );
+                    })()}
                     <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
                       {stats.count} {stats.count === 1 ? 'photo' : 'photos'} · {stats.sets} {stats.sets === 1 ? 'set' : 'sets'} · Updated {formatRelative(updatedTs)}
                     </Text>
@@ -1666,11 +1852,15 @@ export default function ProjectsScreen({ navigation, route }) {
                   {/* Divider */}
                   <View style={styles.shareDivider} />
 
-                  {/* Format Selector — Files / ZIP / PDF / Link */}
+                  {/* Format Selector — Pictures / ZIP / PDF / Link */}
                   <Text style={styles.shareSectionLabel}>Share as</Text>
                   <View style={styles.shareFormatButtons}>
                     {[
-                      { key: 'files', label: 'Files' },
+                      // Project-photos dispatcher (Projects list quick
+                      // share). The "files" key shares JPEG(s) through
+                      // the system share sheet, so "Pictures" reads
+                      // truer to what the recipient receives.
+                      { key: 'files', label: 'Pictures' },
                       { key: 'zip', label: 'ZIP' },
                       { key: 'pdf', label: 'PDF' },
                       { key: 'link', label: 'Link' },
@@ -1969,6 +2159,23 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 13,
     marginBottom: 8,
+  },
+  industryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 6,
+  },
+  industryChipText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '500',
+    maxWidth: 180,
   },
   countersRow: {
     flexDirection: 'row',
