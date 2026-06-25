@@ -1180,8 +1180,22 @@ export default function ProjectsScreen({ navigation, route }) {
             <Ionicons name="close" size={22} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={{ flex: 1, marginLeft: 14, color: theme.textPrimary, fontSize: 16, fontWeight: '600' }}>
-            {selectedProjects.size} {selectedProjects.size === 1 ? 'selected' : 'selected'}
+            {selectedProjects.size} selected
           </Text>
+          <TouchableOpacity
+            onPress={() => {
+              const allSelected = filteredProjects.length > 0 && selectedProjects.size === filteredProjects.length;
+              setSelectedProjects(allSelected ? new Set() : new Set(filteredProjects.map((p) => p.id)));
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{ marginRight: 18 }}
+          >
+            <Ionicons
+              name={filteredProjects.length > 0 && selectedProjects.size === filteredProjects.length ? 'checkbox' : 'square-outline'}
+              size={22}
+              color={theme.textPrimary}
+            />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={handleShareSelected}
             disabled={selectedProjects.size === 0}

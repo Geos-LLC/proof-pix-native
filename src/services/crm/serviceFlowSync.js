@@ -69,6 +69,29 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
 
   if (jobs.length === 0) return { created: 0, matched: 0 };
 
+  // Narrow to a today-forward window so the Projects list reflects
+  // "what I'm working on right now" instead of every active-status
+  // job ever opened. Default window: from start-of-today through
+  // SYNC_LOOKAHEAD_DAYS in the future. Jobs scheduled before today
+  // (forgotten "pending" rows that never closed out) are filtered
+  // out — they still exist on SF, they just don't clutter ProofPix.
+  // Jobs without scheduledAt fall through (we can't date-filter them,
+  // so we err on the side of including).
+  const SYNC_LOOKAHEAD_DAYS = 7;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const windowEnd = todayStart + SYNC_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000;
+  const before = jobs.length;
+  jobs = jobs.filter((j) => {
+    if (typeof j?.scheduledAt !== 'number') return true;
+    return j.scheduledAt >= todayStart && j.scheduledAt < windowEnd;
+  });
+  if (jobs.length !== before) {
+    console.warn('[ServiceFlow] sync window filter', { before, after: jobs.length, windowDays: SYNC_LOOKAHEAD_DAYS });
+  }
+
+  if (jobs.length === 0) return { created: 0, matched: 0 };
+
   // Read the latest persisted project list directly from Keychain
   // for the dedup map. See JSDoc above for the race we're avoiding.
   let currentProjects = [];
