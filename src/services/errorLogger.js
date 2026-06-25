@@ -1,43 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 
 const ERROR_LOG_KEY = 'app-error-logs';
 const MAX_LOGS = 500; // Keep last 500 entries (errors + analytics mirror)
 
-// LogHub (Grafana) — stream errors to the central log aggregator so they
-// can be viewed from a browser on any machine. Fail silently — local
-// AsyncStorage logging is still the source of truth for export.
-const LOGHUB_URL = process.env.EXPO_PUBLIC_LOGHUB_URL || 'https://geosloghub-production.up.railway.app';
-const LOGHUB_KEY = process.env.EXPO_PUBLIC_LOGHUB_KEY || 'RAILWAY_INGEST_KEY_123';
-const APP_VERSION = Constants?.expoConfig?.version || 'unknown';
-
-const sendToLogHub = async (level, message, extra = {}) => {
-  try {
-    // Keep network work off the hot path
-    fetch(`${LOGHUB_URL}/ingest`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-ingest-key': LOGHUB_KEY,
-      },
-      body: JSON.stringify({
-        service: 'proofpix-native',
-        app: 'proofpix',
-        env: __DEV__ ? 'dev' : 'prod',
-        level,
-        message,
-        platform: Platform.OS,
-        app_version: APP_VERSION,
-        timestamp: new Date().toISOString(),
-        ...extra,
-      }),
-    }).catch(() => {});
-  } catch (_) {
-    // swallow — logging must never crash the app
-  }
-};
+// Streaming to Loki is handled by @fixprompt/react-native (installed in App.js).
+// This module keeps the local AsyncStorage log — source of truth for in-app
+// export and offline diagnostics.
 
 /**
  * Error Logger Service
@@ -71,14 +40,6 @@ export const logError = async (error, context = {}) => {
 
     // Save to AsyncStorage
     await AsyncStorage.setItem(ERROR_LOG_KEY, JSON.stringify(updatedLogs));
-
-    // Stream to LogHub / Grafana (fire-and-forget)
-    sendToLogHub('error', errorLog.message, {
-      stack: errorLog.stack,
-      screen: errorLog.context.screen,
-      action: errorLog.context.action,
-      is_fatal: !!errorLog.context.isFatal,
-    });
 
     if (__DEV__) {
       console.error('[errorLogger]', errorLog.message, errorLog.context);

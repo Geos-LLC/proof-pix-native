@@ -88,7 +88,6 @@ import GalleryScreen from './src/screens/GalleryScreen';
 import PhotoDetailScreen from './src/screens/PhotoDetailScreen';
 import SectionDetailScreen from './src/screens/SectionDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import ContactUsScreen from './src/screens/ContactUsScreen';
 import CloudTeamScreen from './src/screens/CloudTeamScreen';
 import CloudSyncScreen from './src/screens/CloudSyncScreen';
 import TeamMembersScreen from './src/screens/TeamMembersScreen';
@@ -391,13 +390,6 @@ function AppNavigator() {
         }}
       />
       <Stack.Screen
-        name="ContactUs"
-        component={ContactUsScreen}
-        options={{
-          animation: 'slide_from_right'
-        }}
-      />
-      <Stack.Screen
         name="CloudTeam"
         component={CloudTeamScreen}
         options={{ animation: 'slide_from_right' }}
@@ -638,9 +630,36 @@ function GlobalUploadIndicator({ navigationRef }) {
 // Global function to trigger trial notification check (for use after plan selection)
 let globalCheckTrialNotifications = null;
 
-// Install the global JS error + unhandled-rejection handler as early as
-// possible — before any app code runs. Captures everything to AsyncStorage
-// for in-app export and streams to LogHub/Grafana.
+// Stream errors / rejections / tagged console.error to FixPrompt → Loki.
+// Skipped if no key — no-op in dev / on profiles without the secret set.
+try {
+  const fixpromptKey = process.env.EXPO_PUBLIC_FIXPROMPT_KEY;
+  if (fixpromptKey) {
+    const { initFixPrompt } = require('@fixprompt/react-native');
+    initFixPrompt({
+      projectKey: fixpromptKey,
+      source: process.env.EXPO_PUBLIC_FIXPROMPT_SOURCE || 'proofpix-prod',
+      service: 'proofpix-native',
+      app: 'proofpix-native',
+      env: __DEV__ ? 'dev' : 'prod',
+      release: Constants?.expoConfig?.version,
+      captureTags: [
+        /^\[IAP\b/, /^\[Analytics\b/i, /^\[Firebase\b/i, /^\[ADMIN\b/,
+        /^\[PROXY\b/, /^\[SETTINGS\b/, /^\[PhotoContext\b/, /^\[BackgroundUpload\b/i,
+        /^\[errorLogger\b/, /^\[CAMDIAG\b/, /^\[Storage\b/, /^\[PHOTODEL\b/,
+        /^\[BUNDLE\b/, /^\[Report\b/, /^\[ChromeBake\b/, /^\[ChromeBaker\b/,
+        /^\[LabelPos\b/, /^\[CRM\b/, /^\[ServiceFlow\b/,
+      ],
+    });
+  } else if (!__DEV__) {
+    console.warn('[App] EXPO_PUBLIC_FIXPROMPT_KEY not set — Loki streaming disabled');
+  }
+} catch (e) {
+  console.warn('[App] Failed to init FixPrompt:', e?.message);
+}
+
+// Local AsyncStorage capture for in-app log export. Chains under the SDK's
+// global handlers so both Loki streaming and offline export keep working.
 try {
   const { setupGlobalErrorHandler } = require('./src/services/errorLogger');
   setupGlobalErrorHandler();
@@ -987,7 +1006,6 @@ export default function App() {
                       Projects: 'projects',
                       PhotoDetail: 'photo_detail',
                       Settings: 'settings',
-                      ContactUs: 'contact_us',
                       LabelCustomization: 'label_customization',
                       WatermarkCustomization: 'watermark_customization',
                       Invite: 'invite',
