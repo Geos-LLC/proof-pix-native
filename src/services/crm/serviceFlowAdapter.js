@@ -313,9 +313,20 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
     // most fields — `undefined` values are dropped by JSON.stringify
     // and SF then rejects with INVALID_PAYLOAD. Coerce to safe
     // defaults so the field is always present in the serialised JSON.
+    //
+    // mode normalisation: ProofPix uses 'mix' internally for combined
+    // before/after composites; SF's contract names that mode
+    // 'combined' (see docs/SERVICE_FLOW_INTEGRATION.md §5 — the
+    // accepted set is 'before' | 'after' | 'progress' | 'combined').
+    // Translate at the boundary; everything else passes through.
+    const normaliseMode = (m) => {
+      if (m === 'mix' || m === 'combined') return 'combined';
+      if (m === 'before' || m === 'after' || m === 'progress') return m;
+      return 'before'; // safe default — SF rejects unknown values
+    };
     const metadata = {
       filename: photo.filename || `${photo.id}.jpg`,
-      mode: photo.mode || 'before',
+      mode: normaliseMode(photo.mode),
       room: photo.room || 'unsorted',
       timestamp: typeof photo.timestamp === 'number' ? photo.timestamp : Date.now(),
       gps: photo.gps || null,
@@ -357,6 +368,13 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
     // already on the job — same end state, just no new write.
     if (response.ok || response.status === 409) {
       const body = await response.json();
+      console.warn('[CRM-Adapter] attach OK', {
+        status: response.status,
+        dedup: response.status === 409,
+        crm_photo_id: body?.crm_photo_id || null,
+        photo_url: body?.photo_url || null,
+        proofpix_photo_id: metadata.proofpix_photo_id,
+      });
       return {
         success: true,
         crmPhotoId: body.crm_photo_id,
