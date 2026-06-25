@@ -638,7 +638,7 @@ try {
     const { initFixPrompt } = require('@fixprompt/react-native');
     initFixPrompt({
       projectKey: fixpromptKey,
-      source: process.env.EXPO_PUBLIC_FIXPROMPT_SOURCE || 'proofpix-prod',
+      source: process.env.EXPO_PUBLIC_FIXPROMPT_SOURCE || 'proofpix-native-prod',
       service: 'proofpix-native',
       app: 'proofpix-native',
       env: __DEV__ ? 'dev' : 'prod',
