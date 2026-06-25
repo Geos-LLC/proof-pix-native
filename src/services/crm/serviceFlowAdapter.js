@@ -59,16 +59,31 @@ const dedupAddress = (raw) => {
 };
 
 const parseErrorEnvelope = async (response) => {
+  let rawText = '';
   try {
-    const body = await response.json();
+    rawText = await response.text();
+    const body = rawText ? JSON.parse(rawText) : null;
     if (body?.error) {
       const err = new Error(body.error.message || 'Service Flow error');
       err.code = body.error.code;
       err.retryable = !!body.error.retryable;
       err.retryAfterSeconds = body.error.retry_after_seconds || null;
+      // Surface the full server message + any structured details to the
+      // tagged log so we can see WHY SF rejected when the code alone
+      // (e.g. INVALID_PAYLOAD) doesn't say which field was wrong.
+      console.warn('[CRM-Adapter] error envelope', {
+        status: response.status,
+        code: err.code || null,
+        message: body.error.message || null,
+        details: body.error.details || null,
+        retryable: err.retryable,
+      });
       return err;
     }
-  } catch {}
+    console.warn('[CRM-Adapter] error w/o envelope', { status: response.status, body_sample: rawText.slice(0, 300) });
+  } catch (e) {
+    console.warn('[CRM-Adapter] error body parse failed', { status: response.status, msg: e?.message, raw: rawText.slice(0, 300) });
+  }
   return new Error(`Service Flow ${response.status}`);
 };
 
@@ -294,20 +309,31 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
       name: photo.filename || `${photo.id}.jpg`,
       type: mimeType,
     });
-    formData.append(
-      'metadata',
-      JSON.stringify({
-        filename: photo.filename || `${photo.id}.jpg`,
-        mode: photo.mode,
-        room: photo.room,
-        timestamp: photo.timestamp,
-        gps: photo.gps || null,
-        captured_by: photo.capturedBy || null,
-        notes: photo.notes || '',
-        proofpix_photo_id: photo.id,
-        proofpix_project_id: photo.projectId,
-      }),
-    );
+    // Build the metadata sidecar. SF requires non-null values for
+    // most fields — `undefined` values are dropped by JSON.stringify
+    // and SF then rejects with INVALID_PAYLOAD. Coerce to safe
+    // defaults so the field is always present in the serialised JSON.
+    const metadata = {
+      filename: photo.filename || `${photo.id}.jpg`,
+      mode: photo.mode || 'before',
+      room: photo.room || 'unsorted',
+      timestamp: typeof photo.timestamp === 'number' ? photo.timestamp : Date.now(),
+      gps: photo.gps || null,
+      captured_by: photo.capturedBy || null,
+      notes: typeof photo.notes === 'string' ? photo.notes : '',
+      proofpix_photo_id: String(photo.id),
+      proofpix_project_id: photo.projectId ? String(photo.projectId) : null,
+    };
+    console.warn('[CRM-Adapter] attach payload', {
+      jobId,
+      meta_keys: Object.keys(metadata),
+      mode: metadata.mode,
+      room: metadata.room,
+      has_timestamp: typeof metadata.timestamp === 'number',
+      proofpix_photo_id: metadata.proofpix_photo_id,
+      file_uri_kind: typeof photo.localUri === 'string' && photo.localUri.startsWith('file://') ? 'file' : 'other',
+    });
+    formData.append('metadata', JSON.stringify(metadata));
 
     let response;
     try {
