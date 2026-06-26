@@ -16,6 +16,7 @@
 //   0 on HTTP failure; our parser catches it.
 
 const { spawnSync, execSync } = require('node:child_process');
+const https = require('node:https');
 
 const branch = process.env.npm_config_branch;
 const message = process.env.npm_config_message;
@@ -95,55 +96,75 @@ if (!fixpromptKey) {
   );
 }
 
-// PRE-FLIGHT: probe the broker with the key we're about to bundle.
-// If auth is broken right now, abort before publishing a useless bundle.
-console.log(`\n• Pre-flight: probing broker auth for source=${LOGHUB_SOURCE}…`);
-try {
-  const probe = execSync(
-    `curl -s -o /dev/null -w "%{http_code}" -X POST ${LOGHUB_URL}/ingest/log ` +
-    `-H "Content-Type: application/json" ` +
-    `-H "x-loghub-source: ${LOGHUB_SOURCE}" ` +
-    `-H "x-loghub-key: ${fixpromptKey}" ` +
-    `-d "{\\"level\\":\\"info\\",\\"service\\":\\"proofpix-native\\",\\"message\\":\\"release:ota pre-flight\\"}"`,
-    { encoding: 'utf8', shell: true, timeout: 15_000 },
-  ).trim();
-  if (probe !== '200') {
-    fail(`broker pre-flight returned HTTP ${probe} — aborting before OTA.\n` +
+const probeBroker = () => new Promise((resolve) => {
+  const url = new URL(`${LOGHUB_URL}/ingest/log`);
+  const req = https.request(
+    {
+      method: 'POST',
+      hostname: url.hostname,
+      path: url.pathname,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-loghub-source': LOGHUB_SOURCE,
+        'x-loghub-key': fixpromptKey,
+      },
+      timeout: 10_000,
+    },
+    (res) => { res.resume(); resolve(res.statusCode); },
+  );
+  req.on('error', (err) => resolve(`error: ${err.message}`));
+  req.on('timeout', () => { req.destroy(); resolve('timeout'); });
+  req.write(JSON.stringify({
+    level: 'info',
+    service: 'proofpix-native',
+    message: 'release:ota pre-flight',
+    attrs: { kind: 'release.preflight' },
+  }));
+  req.end();
+});
+
+(async () => {
+  // PRE-FLIGHT: probe the broker with the key we're about to bundle.
+  // If auth is broken right now, abort before publishing a useless bundle.
+  // Uses Node's https module to avoid cross-platform shell-quoting issues
+  // with curl on Windows cmd.exe vs Git Bash.
+  console.log(`\n• Pre-flight: probing broker auth for source=${LOGHUB_SOURCE}…`);
+  const probeStatus = await probeBroker();
+  if (probeStatus !== 200) {
+    fail(`broker pre-flight returned ${probeStatus} — aborting before OTA.\n` +
          `   This means the bundle would 401 against the broker for every event.\n` +
          `   Likely cause: the key in EAS doesn't match the broker's current api_keys row.\n` +
          `   Fix: rotate from dashboard, then \`eas env:update ${environment} EXPO_PUBLIC_FIXPROMPT_KEY <new>\`.`);
   }
   console.log(`  ✓ broker accepts the resolved key (200)\n`);
-} catch (e) {
-  fail(`broker pre-flight failed: ${e.message}`);
-}
 
-const updateMessage = message || `OTA release on ${branch}`;
+  const updateMessage = message || `OTA release on ${branch}`;
 
-// STEP 1 — eas update (inherits stdio so the user sees progress)
-run('npx', [
-  'eas', 'update',
-  '--branch', branch,
-  '--environment', environment,
-  '--message', updateMessage,
-  '--non-interactive',
-]);
+  // STEP 1 — eas update (inherits stdio so the user sees progress)
+  run('npx', [
+    'eas', 'update',
+    '--branch', branch,
+    '--environment', environment,
+    '--message', updateMessage,
+    '--non-interactive',
+  ]);
 
-// STEP 2 — deploy marker (captures output, parses for silent failures)
-const marker = runCapture(
-  'npx',
-  ['--yes', '@fixprompt/cli', 'deploy-start', '--status', 'success', '--branch', branch],
-  { env: { ...process.env, LOGHUB_SOURCE, LOGHUB_KEY: fixpromptKey } },
-);
-const failureSignals = /\b(401|403|4\d\d|5\d\d|Unauthorized|Forbidden|Invalid key|error|✗)\b/i;
-if (marker.status !== 0 || failureSignals.test(marker.out)) {
-  fail(
-    `deploy-start reported failure (exit=${marker.status}).\n` +
-    `   The OTA published, but the FixPrompt deploy marker did not.\n` +
-    `   Dashboard's "Latest deploy" pill will still point at the previous release.\n` +
-    `   Investigate, then re-fire manually:\n` +
-    `     LOGHUB_SOURCE=${LOGHUB_SOURCE} LOGHUB_KEY=... npx --yes @fixprompt/cli deploy-start --status success --branch ${branch}`,
+  // STEP 2 — deploy marker (captures output, parses for silent failures)
+  const marker = runCapture(
+    'npx',
+    ['--yes', '@fixprompt/cli', 'deploy-start', '--status', 'success', '--branch', branch],
+    { env: { ...process.env, LOGHUB_SOURCE, LOGHUB_KEY: fixpromptKey } },
   );
-}
+  const failureSignals = /\b(401|403|4\d\d|5\d\d|Unauthorized|Forbidden|Invalid key|✗)\b/i;
+  if (marker.status !== 0 || failureSignals.test(marker.out)) {
+    fail(
+      `deploy-start reported failure (exit=${marker.status}).\n` +
+      `   The OTA published, but the FixPrompt deploy marker did not.\n` +
+      `   Dashboard's "Latest deploy" pill will still point at the previous release.\n` +
+      `   Investigate, then re-fire manually:\n` +
+      `     LOGHUB_SOURCE=${LOGHUB_SOURCE} LOGHUB_KEY=... npx --yes @fixprompt/cli deploy-start --status success --branch ${branch}`,
+    );
+  }
 
-console.log(`\n✓ Released to ${branch} (env=${environment}) and marked deploy in FixPrompt.`);
+  console.log(`\n✓ Released to ${branch} (env=${environment}) and marked deploy in FixPrompt.`);
+})();
