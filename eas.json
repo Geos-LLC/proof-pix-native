@@ -97,7 +97,9 @@
         "EXPO_PUBLIC_EMAILJS_PUBLIC_KEY": "RrCIuTQfiMgOC8e9N",
         "EXPO_PUBLIC_IOS_APP_STORE_URL": "https://apps.apple.com/app/6754261444",
         "EXPO_PUBLIC_ANDROID_PLAY_STORE_URL": "https://play.google.com/store/apps/details?id=com.proofpix.app",
-        "EXPO_PUBLIC_FIXPROMPT_SOURCE": "proofpix-native-prod"
+        "EXPO_PUBLIC_FIXPROMPT_SOURCE": "proofpix-native-prod",
+        "EXPO_PUBLIC_SERVICEFLOW_URL": "https://service-flow-backend-production-4568.up.railway.app",
+        "EXPO_PUBLIC_SERVICEFLOW_AUTHORIZE_URL": "https://service-flow.pro/integrations/proofpix/authorize?return_to=proofpix://connect"
       }
     },
     "production": {
@@ -121,7 +123,9 @@
         "EXPO_PUBLIC_EMAILJS_PUBLIC_KEY": "RrCIuTQfiMgOC8e9N",
         "EXPO_PUBLIC_IOS_APP_STORE_URL": "https://apps.apple.com/app/6754261444",
         "EXPO_PUBLIC_ANDROID_PLAY_STORE_URL": "https://play.google.com/store/apps/details?id=com.proofpix.app",
-        "EXPO_PUBLIC_FIXPROMPT_SOURCE": "proofpix-native-prod"
+        "EXPO_PUBLIC_FIXPROMPT_SOURCE": "proofpix-native-prod",
+        "EXPO_PUBLIC_SERVICEFLOW_URL": "https://service-flow-backend-production-4568.up.railway.app",
+        "EXPO_PUBLIC_SERVICEFLOW_AUTHORIZE_URL": "https://service-flow.pro/integrations/proofpix/authorize?return_to=proofpix://connect"
       }
     }
   },
