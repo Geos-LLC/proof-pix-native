@@ -643,6 +643,12 @@ try {
       app: 'proofpix-native',
       env: __DEV__ ? 'dev' : 'prod',
       release: Constants?.expoConfig?.version,
+      // Capture tagged console.warn too. Default is error-only — that
+      // missed all the [CRM]/[CRM-Adapter]/[ServiceFlow] diagnostics
+      // (verified: 0 CRM lines in Loki across a full bulk-upload run).
+      // captureTags below already gates which warns flow, so this just
+      // adds warn-level events that already match a captured prefix.
+      patchConsoleWarn: true,
       captureTags: [
         /^\[IAP\b/, /^\[Analytics\b/i, /^\[Firebase\b/i, /^\[ADMIN\b/,
         /^\[PROXY\b/, /^\[SETTINGS\b/, /^\[PhotoContext\b/, /^\[BackgroundUpload\b/i,
