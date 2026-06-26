@@ -655,6 +655,7 @@ try {
         /^\[errorLogger\b/, /^\[CAMDIAG\b/, /^\[Storage\b/, /^\[PHOTODEL\b/,
         /^\[BUNDLE\b/, /^\[Report\b/, /^\[ChromeBake\b/, /^\[ChromeBaker\b/,
         /^\[LabelPos\b/, /^\[CRM\b/, /^\[ServiceFlow\b/,
+        /^\[EnterpriseContact\b/, /^\[HelpSupport\b/,
       ],
     });
   } else if (!__DEV__) {
