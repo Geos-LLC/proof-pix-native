@@ -20,7 +20,8 @@
     "update": "eas update --branch production --message \"Update app\"",
     "update:preview": "eas update --branch preview --message \"Preview update\"",
     "update:production": "eas update --branch production --message \"Production update\"",
-    "publish": "eas update --branch production --message \"Publish update\""
+    "publish": "eas update --branch production --message \"Publish update\"",
+    "release:ota": "node ./scripts/release-ota.js"
   },
   "dependencies": {
     "@emailjs/react-native": "^5.1.0",
