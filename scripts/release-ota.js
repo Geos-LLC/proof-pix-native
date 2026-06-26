@@ -23,9 +23,16 @@ if (!branch) {
 const ENV_BY_BRANCH = { production: 'production', preview: 'preview', development: 'preview' };
 const environment = ENV_BY_BRANCH[branch] ?? branch;
 
+// On Windows we need shell:true to resolve npx.cmd; the shell then re-splits
+// args on whitespace, so wrap each arg in double-quotes (escape any internal
+// quotes) to keep multi-word args intact.
+const quoteForShell = (a) => `"${String(a).replace(/"/g, '\\"')}"`;
+
 const run = (cmd, args, opts = {}) => {
   console.log(`\n$ ${cmd} ${args.join(' ')}\n`);
-  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32', ...opts });
+  const useShell = process.platform === 'win32';
+  const finalArgs = useShell ? args.map(quoteForShell) : args;
+  const r = spawnSync(cmd, finalArgs, { stdio: 'inherit', shell: useShell, ...opts });
   if (r.status !== 0) process.exit(r.status ?? 1);
 };
 
