@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -51,6 +51,15 @@ export default function HelpSupportScreen({ navigation }) {
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Refs let the "Email us" row jump the user into the in-app composer
+  // instead of launching the system mail client — keeps the send path
+  // routed through enterpriseContactService (EmailJS) and matches the
+  // engine-only contract we restored after deleting the legacy
+  // ContactUs screen.
+  const scrollRef = useRef(null);
+  const bodyRef = useRef(null);
+  const composerY = useRef(0);
+
   // Owner email was captured during UserInfoSetup and persisted to
   // a standalone AsyncStorage key (since the typed settings context
   // doesn't carry it yet). Read it on mount so the EmailJS service
@@ -59,6 +68,12 @@ export default function HelpSupportScreen({ navigation }) {
   const [ownerEmail, setOwnerEmail] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [showEmailField, setShowEmailField] = useState(false);
+
+  // Optional phone — carried over from the legacy ContactUs form so
+  // support/sales can follow up by call when the message warrants it
+  // (e.g. iCloud-doesn't-support-teams "Send Feedback" path). Persisted
+  // alongside the owner email so the next send is one-tap.
+  const [phone, setPhone] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -69,6 +84,8 @@ export default function HelpSupportScreen({ navigation }) {
         } else {
           setShowEmailField(true);
         }
+        const storedPhone = await AsyncStorage.getItem('@proofpix_owner_phone');
+        if (storedPhone && storedPhone.trim()) setPhone(storedPhone.trim());
       } catch {
         setShowEmailField(true);
       }
@@ -76,7 +93,20 @@ export default function HelpSupportScreen({ navigation }) {
   }, []);
 
   const handleEmailUs = () => {
-    Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {});
+    // Scroll the composer into view and focus the textarea so the user
+    // writes their message in-app and we send it through the engine.
+    // No more `mailto:` — that bypasses the engine and dumps the user
+    // into a third-party mail app with no guarantee the message ever
+    // reaches support.
+    try {
+      scrollRef.current?.scrollTo({ y: Math.max(0, composerY.current - 12), animated: true });
+    } catch {}
+    // Defer focus so the scroll animation can settle; on iOS focusing
+    // first sometimes overrides the scroll position with the keyboard's
+    // own auto-scroll, landing the textarea below the keyboard.
+    setTimeout(() => {
+      try { bodyRef.current?.focus(); } catch {}
+    }, 250);
   };
 
   const handleHelpCenter = () => {
@@ -119,73 +149,57 @@ export default function HelpSupportScreen({ navigation }) {
       `${trimmed}\n\n` +
       `— Sent from ProofPix v${appVersion} on ${platform}.`;
 
-    // Two-step send: try EmailJS first, fall back to opening the mail
-    // client with everything pre-filled if the in-app path fails (env
-    // not configured, network, etc.) so the user always lands at a
-    // composed message ready to send.
-    let sentViaService = false;
+    // Single-path send through the internal EmailJS engine. The legacy
+    // ContactUs screen used the same enterpriseContactService and treated
+    // a failure as a hard error — no silent mailto detour. Preserve that
+    // contract: if the engine throws, surface the failure code with the
+    // same messaging the user would have seen on the legacy form so the
+    // root cause (missing env vars, network, etc.) is visible instead of
+    // masked by the mail client opening.
     try {
       await enterpriseContactService.sendRequest({
         name: (userName && userName.trim()) || 'ProofPix user',
         email: effectiveEmail,
-        phone: '',
+        phone: phone.trim(),
         description: `${subject}\n\n${description}`,
       });
-      sentViaService = true;
-    } catch (e) {
-      sentViaService = false;
-    }
 
-    if (sentViaService) {
-      // Persist the email the user just typed so the next send is one-tap.
+      // Persist the email + phone the user just typed so the next send
+      // is one-tap. Phone is optional — only persist if non-empty.
       if (showEmailField) {
         try { await AsyncStorage.setItem('@proofpix_owner_email', effectiveEmail); } catch {}
         setOwnerEmail(effectiveEmail);
         setShowEmailField(false);
       }
+      if (phone.trim()) {
+        try { await AsyncStorage.setItem('@proofpix_owner_phone', phone.trim()); } catch {}
+      }
       setBody('');
-      setSending(false);
       Alert.alert(
         t('helpSupport.sentTitle', { defaultValue: 'Thanks!' }),
         t('helpSupport.sentBody', {
           defaultValue: "We got your message and we'll get back to you shortly.",
         }),
       );
-      return;
-    }
-
-    // Fallback: open the mail client with everything pre-filled.
-    const mailto =
-      `mailto:${SUPPORT_EMAIL}` +
-      `?subject=${encodeURIComponent(subject)}` +
-      `&body=${encodeURIComponent(`${description}\n\nReply-to: ${effectiveEmail}`)}`;
-    try {
-      const ok = await Linking.canOpenURL(mailto);
-      if (ok) {
-        await Linking.openURL(mailto);
-        // Persist email + clear the textarea — the user is now composing
-        // outside the app and we want a clean slate when they come back.
-        if (showEmailField) {
-          try { await AsyncStorage.setItem('@proofpix_owner_email', effectiveEmail); } catch {}
-          setOwnerEmail(effectiveEmail);
-          setShowEmailField(false);
-        }
-        setBody('');
-      } else {
-        Alert.alert(
-          t('common.error', { defaultValue: 'Error' }),
-          t('helpSupport.noMailClient', {
-            defaultValue: `No email app is set up on this device. Email us at ${SUPPORT_EMAIL} when you can.`,
-          }),
-        );
+    } catch (error) {
+      // Error code → user-facing message, mirroring the legacy ContactUs
+      // mapping in screens/ContactUsScreen.js (now deleted). Anything
+      // unrecognized falls back to the generic "try again" message.
+      let errorMessage = t('helpSupport.sendGenericError', {
+        defaultValue: 'Failed to send your message. Please try again.',
+      });
+      if (error?.message === 'NAME_REQUIRED') {
+        errorMessage = t('helpSupport.nameRequired', { defaultValue: 'Please enter your name' });
+      } else if (error?.message === 'EMAIL_REQUIRED') {
+        errorMessage = t('helpSupport.emailRequired', { defaultValue: 'Please enter your email address' });
+      } else if (error?.message === 'INVALID_EMAIL') {
+        errorMessage = t('helpSupport.invalidEmail', { defaultValue: 'Please enter a valid email address' });
+      } else if (error?.message === 'EMAIL_NOT_CONFIGURED') {
+        errorMessage = t('helpSupport.emailNotConfigured', {
+          defaultValue: `Email service is not configured. Please contact support directly at ${SUPPORT_EMAIL}`,
+        });
       }
-    } catch (e) {
-      Alert.alert(
-        t('common.error', { defaultValue: 'Error' }),
-        t('helpSupport.sendFailed', {
-          defaultValue: `We couldn't send the message. Email us at ${SUPPORT_EMAIL} and we'll handle it.`,
-        }),
-      );
+      Alert.alert(t('common.error', { defaultValue: 'Error' }), errorMessage);
     } finally {
       setSending(false);
     }
@@ -220,6 +234,7 @@ export default function HelpSupportScreen({ navigation }) {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -254,7 +269,10 @@ export default function HelpSupportScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.eyebrow}>
+          <Text
+            style={styles.eyebrow}
+            onLayout={(e) => { composerY.current = e.nativeEvent.layout.y; }}
+          >
             {t('helpSupport.sendAMessage', { defaultValue: 'Send a message' })}
           </Text>
 
@@ -281,7 +299,10 @@ export default function HelpSupportScreen({ navigation }) {
 
           {/* Reply-to email input — shown when we don't have a stored
               owner email or after a validation failure. Persisted to
-              @proofpix_owner_email after a successful send. */}
+              @proofpix_owner_email after a successful send. The optional
+              phone input piggy-backs on this card; if email is already
+              stored, the phone input lives in its own compact card below
+              so support/sales can still get a callback number. */}
           {showEmailField ? (
             <View style={styles.emailCard}>
               <Text style={styles.emailLabel}>
@@ -297,12 +318,41 @@ export default function HelpSupportScreen({ navigation }) {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              <View style={styles.cardDivider} />
+              <Text style={styles.emailLabel}>
+                {t('helpSupport.yourPhoneOptional', { defaultValue: 'Phone (optional)' })}
+              </Text>
+              <TextInput
+                style={styles.emailInput}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="+1 (555) 123-4567"
+                placeholderTextColor="#9A9A9A"
+                keyboardType="phone-pad"
+                autoCorrect={false}
+              />
             </View>
-          ) : null}
+          ) : (
+            <View style={styles.emailCard}>
+              <Text style={styles.emailLabel}>
+                {t('helpSupport.yourPhoneOptional', { defaultValue: 'Phone (optional)' })}
+              </Text>
+              <TextInput
+                style={styles.emailInput}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="+1 (555) 123-4567"
+                placeholderTextColor="#9A9A9A"
+                keyboardType="phone-pad"
+                autoCorrect={false}
+              />
+            </View>
+          )}
 
           {/* Textarea card */}
           <View style={styles.textAreaCard}>
             <TextInput
+              ref={bodyRef}
               style={styles.textArea}
               value={body}
               onChangeText={setBody}
@@ -492,6 +542,11 @@ const styles = StyleSheet.create({
     color: '#1E1E1E',
     letterSpacing: -0.1,
     paddingVertical: 4,
+  },
+  cardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#ECECEC',
+    marginVertical: 10,
   },
   textAreaCard: {
     marginHorizontal: 18,
