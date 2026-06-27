@@ -3044,11 +3044,16 @@ export default function SettingsScreen({ navigation, route }) {
               : plan === 'enterprise' ? styles.userTierPillTextBusiness
               : styles.userTierPillTextFree;
             return (
-              <View style={[styles.userTierPill, tierStyle]}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
+                style={[styles.userTierPill, tierStyle]}
+              >
                 <Text style={[styles.userTierPillText, tierTextStyle]}>
                   {plan.toUpperCase()}
                 </Text>
-              </View>
+              </TouchableOpacity>
             );
           })()}
         </TouchableOpacity>
@@ -3108,49 +3113,49 @@ export default function SettingsScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        {/* Manage Subscription row — navigates to the in-app paywall
-            (PlanSelection in upgrade mode) so the user can upgrade or
-            downgrade their tier directly without leaving the app. The
-            paywall's own checkout path hands off to Apple's StoreKit
-            sheet when they hit Subscribe; raw billing changes / hard
-            cancel still flow through Apple, which the user can reach
-            via iOS Settings → Subscriptions or the small "Manage in
-            App Store" link below. */}
-        {hasActiveSub ? (
-          <>
-            <TouchableOpacity
-              style={styles.manageSubscriptionRow}
-              onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
-              activeOpacity={0.85}
-            >
-              <View style={styles.manageSubscriptionIc}>
-                <Ionicons name="card-outline" size={19} color="#1E1E1E" />
-              </View>
-              <View style={styles.manageSubscriptionMeta}>
-                <Text style={styles.manageSubscriptionTitle}>
-                  {t('settings.manageSubscription', { defaultValue: 'Change plan' })}
-                </Text>
-                <Text style={styles.manageSubscriptionSub} numberOfLines={1}>
-                  {t('settings.changePlanSub', {
-                    defaultValue: 'See all tiers and upgrade or downgrade',
-                  })}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.manageInAppStoreLink}
-              onPress={() => { try { openManageSubscriptions(); } catch {} }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.manageInAppStoreLinkText}>
-                {t('settings.manageInAppStore', {
-                  defaultValue: 'Cancel or update billing in the App Store',
+        {/* Subscription & billing — always visible. Tap navigates to
+            the in-app paywall (PlanSelection upgrade mode) for tier
+            changes; the in-store link below routes to Apple/Google's
+            subscription page where users can cancel, update payment
+            method, and see receipts/invoices that mobile SDKs don't
+            expose in-app. */}
+        <TouchableOpacity
+          style={styles.manageSubscriptionRow}
+          onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
+          activeOpacity={0.85}
+        >
+          <View style={styles.manageSubscriptionIc}>
+            <Ionicons name="card-outline" size={19} color="#1E1E1E" />
+          </View>
+          <View style={styles.manageSubscriptionMeta}>
+            <Text style={styles.manageSubscriptionTitle}>
+              {hasActiveSub
+                ? t('settings.manageSubscription', { defaultValue: 'Change plan' })
+                : t('settings.subscriptionAndBilling', { defaultValue: 'Subscription & billing' })}
+            </Text>
+            <Text style={styles.manageSubscriptionSub} numberOfLines={1}>
+              {t('settings.changePlanSub', {
+                defaultValue: 'See all tiers and upgrade or downgrade',
+              })}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.manageInAppStoreLink}
+          onPress={() => { try { openManageSubscriptions(); } catch {} }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.manageInAppStoreLinkText}>
+            {Platform.OS === 'ios'
+              ? t('settings.manageInAppStore', {
+                  defaultValue: 'Cancel, update billing & view receipts in the App Store',
+                })
+              : t('settings.manageInPlayStore', {
+                  defaultValue: 'Cancel, update billing & view receipts in Play Store',
                 })}
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : null}
+          </Text>
+        </TouchableOpacity>
 
         {/* ====================================================== */}
         {/* Design 34 / pp-settings.jsx — WORKSPACE + CLOUD & TEAM */}
