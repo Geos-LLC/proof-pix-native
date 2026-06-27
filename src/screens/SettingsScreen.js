@@ -4586,11 +4586,11 @@ export default function SettingsScreen({ navigation, route }) {
                           await TrialTestUtils.testDay7_10();
                           Alert.alert(
                             'Test Set',
-                            'Trial set to Day 7-10. Restart app to see the engagement message.'
+                            'Trial set to Day 2 of 7. Restart app to see the engagement message.'
                           );
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 7-10</Text>
+                        <Text style={styles.testButtonText}>Day 2 (Engagement)</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
@@ -4598,11 +4598,11 @@ export default function SettingsScreen({ navigation, route }) {
                           await TrialTestUtils.testDay15();
                           Alert.alert(
                             'Test Set',
-                            'Trial set to Day 15. Restart app to see the mid-trial check-in message.'
+                            'Trial set to Day 3 of 7. Restart app to see the mid-trial check-in message.'
                           );
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 15</Text>
+                        <Text style={styles.testButtonText}>Day 3 (Mid-trial)</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
@@ -4610,11 +4610,11 @@ export default function SettingsScreen({ navigation, route }) {
                           await TrialTestUtils.testDay22_24();
                           Alert.alert(
                             'Test Set',
-                            'Trial set to Day 22-24. Restart app to see the early reminder message.'
+                            'Trial set to Day 5 of 7. Restart app to see the reminder + expiring-trial referral nudge.'
                           );
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 22-24</Text>
+                        <Text style={styles.testButtonText}>Day 5 (Reminder)</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
@@ -4622,11 +4622,11 @@ export default function SettingsScreen({ navigation, route }) {
                           await TrialTestUtils.testDay27_28();
                           Alert.alert(
                             'Test Set',
-                            'Trial set to Day 27-28. Restart app to see the last chance message.'
+                            'Trial set to Day 6 of 7. Restart app to see the last chance message.'
                           );
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 27-28</Text>
+                        <Text style={styles.testButtonText}>Day 6 (Last chance)</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
@@ -4634,11 +4634,11 @@ export default function SettingsScreen({ navigation, route }) {
                           await TrialTestUtils.testDay30();
                           Alert.alert(
                             'Test Set',
-                            'Trial set to Day 30 (expired). Restart app to see the expiration message.'
+                            'Trial set to expired. Restart app to see the expiration message.'
                           );
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 30 (Expired)</Text>
+                        <Text style={styles.testButtonText}>Expired</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.testButton, { backgroundColor: '#FF0000' }]}
@@ -4646,11 +4646,11 @@ export default function SettingsScreen({ navigation, route }) {
                           await TrialTestUtils.testDay30();
                           Alert.alert(
                             'Test Set',
-                            'Trial set to Day 30 (expired). Restart app to see the full expiration flow.'
+                            'Trial set to expired. Restart app to see the full expiration flow.'
                           );
                         }}
                       >
-                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Test Day 30</Text>
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Test Expired Flow</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.testButton, { backgroundColor: '#FF9800' }]}

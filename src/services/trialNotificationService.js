@@ -162,8 +162,20 @@ export const getNotificationToShow = async (skipDay0 = false) => {
     };
   }
 
-  // Day 7-10 (Engagement Nudge)
-  if (daysRemaining >= 20 && daysRemaining <= 23 && !shown.day7_10) {
+  // Notification cadence calibrated for a 7-day base trial. Keys are
+  // preserved (day7_10, day15, day22_24, day27_28) so existing
+  // shown-flag persistence keeps working; the windows are remapped.
+  //
+  // 7-day timeline:
+  //   Day 0 (days=7)   → Welcome (handled above)
+  //   Day 2 (days=5)   → Engagement nudge
+  //   Day 3 (days=4)   → Mid-trial check-in
+  //   Day 5 (days=2)   → Reminder + expiring-trial referral nudge
+  //   Day 6 (days=1)   → Last chance — upgrade or refer
+  //   Day 7 (days≤0)   → Expired (handled above)
+
+  // Engagement Nudge — Day 2 (days remaining = 5)
+  if (daysRemaining === 5 && !shown.day7_10) {
     await markNotificationShown('day7_10');
     return {
       key: 'day7_10',
@@ -176,8 +188,8 @@ export const getNotificationToShow = async (skipDay0 = false) => {
     };
   }
 
-  // Day 15 (Mid-Trial Check-in)
-  if (daysRemaining >= 14 && daysRemaining <= 16 && !shown.day15) {
+  // Mid-Trial Check-in — Day 3 (days remaining = 4)
+  if (daysRemaining === 4 && !shown.day15) {
     await markNotificationShown('day15');
     return {
       key: 'day15',
@@ -190,8 +202,8 @@ export const getNotificationToShow = async (skipDay0 = false) => {
     };
   }
 
-  // Day 22-24 (Early End-of-Trial Reminder)
-  if (daysRemaining >= 6 && daysRemaining <= 8 && !shown.day22_24) {
+  // Reminder — Day 5 (days remaining = 2)
+  if (daysRemaining === 2 && !shown.day22_24) {
     await markNotificationShown('day22_24');
     return {
       key: 'day22_24',
@@ -199,21 +211,21 @@ export const getNotificationToShow = async (skipDay0 = false) => {
       title: 'Free up space Easily',
       message: 'Free up space on your device and in the app by deleting entire projects at once.',
       cta: '👉 Go to Settings to delete projects and free up storage.',
-      ctaDescription: 'In the delete confirmation, look for the checkbox “Delete from phone storage” and check it to remove photos from your device as well: ☐ Delete from phone storage',
+      ctaDescription: 'In the delete confirmation, look for the checkbox "Delete from phone storage" and check it to remove photos from your device as well: ☐ Delete from phone storage',
       showUpgrade: false,
       urgent: false,
     };
   }
 
-  // Day 27-28 (Last Chance Reminder)
-  if (daysRemaining >= 2 && daysRemaining <= 3 && !shown.day27_28) {
+  // Last Chance — Day 6 (days remaining = 1)
+  if (daysRemaining === 1 && !shown.day27_28) {
     await markNotificationShown('day27_28');
     return {
       key: 'day27_28',
       type: 'urgent',
-      title: 'Trial Ending Soon!',
-      message: `Only ${daysRemaining} days left to enjoy full features. Upgrade now to continue.`,
-      referralIncentive: '🎁 Invite friends and earn extra months:\n\n1 friend → +1 month\n2 friends → +2 months\n3+ friends → +3 months\n\nYour friend must set up the app to count.',
+      title: 'Trial Ends Tomorrow!',
+      message: `Only ${daysRemaining} day left to enjoy full features. Upgrade now to continue.`,
+      referralIncentive: '🎁 Invite friends and earn extra trial days:\n\n1 friend → +15 days\n2 friends → +30 days\n3 friends → +45 days\n\nYour friend must set up the app to count.',
       cta: '👉 Upgrade / Refer Now',
       showUpgrade: true,
       urgent: true,

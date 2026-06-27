@@ -46,14 +46,14 @@ export const setTrialDaysRemaining = async (daysRemaining, plan = 'business') =>
 };
 
 /**
- * Set trial to Day 0 (Welcome message) — fresh 7-day trial.
+ * Day 0 / Welcome — fresh 7-day trial. Welcome notification queued
+ * via @pending_trial_notification, shows on next app cold start.
  * @param {string} plan - Plan tier
  */
 export const testDay0 = async (plan = 'business') => {
   try {
-    // 6 days remaining → just started a 7-day trial (above Day 0
-    // welcomeThreshold which is duration - 2 = 5).
-    await setTrialDaysRemaining(6, plan);
+    // 7 days remaining → trial just started.
+    await setTrialDaysRemaining(7, plan);
 
     // Prepare Day 0 notification so it shows on next app start like real flow
     const notification = await getNotificationToShow(false); // don't skip Day 0
@@ -71,40 +71,43 @@ export const testDay0 = async (plan = 'business') => {
 };
 
 /**
- * Mid-trial engagement nudge — 4 days remaining of 7.
+ * Day 2 / Engagement nudge — 5 days remaining of a 7-day trial.
+ * Triggers "Customize Your Watermark".
  * @param {string} plan - Plan tier
  */
 export const testDay7_10 = async (plan = 'business') => {
-  await setTrialDaysRemaining(4, plan);
-  console.log('[TrialTest] Set mid-trial - Engagement message should show');
+  await setTrialDaysRemaining(5, plan);
+  console.log('[TrialTest] Day 2 - Engagement message should show');
 };
 
 /**
- * Mid-trial check-in — 3 days remaining of 7.
+ * Day 3 / Mid-trial check-in — 4 days remaining.
+ * Triggers "Connect Cloud Storage".
  * @param {string} plan - Plan tier
  */
 export const testDay15 = async (plan = 'business') => {
-  await setTrialDaysRemaining(3, plan);
-  console.log('[TrialTest] Set mid-trial check-in - Mid-trial message should show');
+  await setTrialDaysRemaining(4, plan);
+  console.log('[TrialTest] Day 3 - Mid-trial check-in should show');
 };
 
 /**
- * Trial ends soon — 2 days remaining of 7 (early reminder window).
+ * Day 5 / Reminder — 2 days remaining. Triggers "Free up space"
+ * milestone AND the expiring-trial referral nudge (gated <=2 days).
  * @param {string} plan - Plan tier
  */
 export const testDay22_24 = async (plan = 'business') => {
   await setTrialDaysRemaining(2, plan);
-  console.log('[TrialTest] Set ending-soon - Early reminder should show');
+  console.log('[TrialTest] Day 5 - Reminder + expiring-trial referral should show');
 };
 
 /**
- * Last chance — 1 day remaining of 7. Also triggers the expiring-trial
- * referral nudge (gated to <=2 days remaining).
+ * Day 6 / Last chance — 1 day remaining. Triggers "Trial Ends Tomorrow"
+ * with referral incentive.
  * @param {string} plan - Plan tier
  */
 export const testDay27_28 = async (plan = 'business') => {
   await setTrialDaysRemaining(1, plan);
-  console.log('[TrialTest] Set last-chance - Expiring trial reminder should show');
+  console.log('[TrialTest] Day 6 - Last chance reminder should show');
 };
 
 /**
