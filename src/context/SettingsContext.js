@@ -180,6 +180,10 @@ export const SettingsProvider = ({ children }) => {
   const [userPlan, setUserPlan] = useState('starter'); // Add userPlan state
   const [cleaningServiceEnabled, setCleaningServiceEnabled] = useState(true);
   const [shutterSoundEnabled, setShutterSoundEnabled] = useState(Platform.OS !== 'android');
+  // Sort order for the Capture-screen photo grid. 'desc' = newest first
+  // (default), 'asc' = oldest first. Set N labels stay bound to the
+  // original chronological order so flipping this only reverses display.
+  const [captureSortOrder, setCaptureSortOrder] = useState('desc');
   // Persistent "use current location for new projects" toggle. When
   // true, the New Project modal auto-fills the name with the current
   // address as soon as it opens. The checkbox in the modal flips
@@ -420,6 +424,7 @@ export const SettingsProvider = ({ children }) => {
             ? settings.shutterSoundEnabled
             : Platform.OS !== 'android'
         );
+        setCaptureSortOrder(settings.captureSortOrder === 'asc' ? 'asc' : 'desc');
         setAutoUseCurrentLocationForProjects(
           typeof settings.autoUseCurrentLocationForProjects === 'boolean'
             ? settings.autoUseCurrentLocationForProjects
@@ -539,6 +544,7 @@ export const SettingsProvider = ({ children }) => {
         userPlan,
         cleaningServiceEnabled,
         shutterSoundEnabled,
+        captureSortOrder,
         themeMode,
         autoUseCurrentLocationForProjects,
       };
@@ -1001,6 +1007,16 @@ export const SettingsProvider = ({ children }) => {
     await saveSettings({ shutterSoundEnabled: newValue });
   };
 
+  const updateCaptureSortOrder = async (value) => {
+    const next = value === 'asc' ? 'asc' : 'desc';
+    setCaptureSortOrder(next);
+    await saveSettings({ captureSortOrder: next });
+  };
+
+  const toggleCaptureSortOrder = async () => {
+    await updateCaptureSortOrder(captureSortOrder === 'desc' ? 'asc' : 'desc');
+  };
+
   const updateAutoUseCurrentLocationForProjects = async (value) => {
     const next = !!value;
     setAutoUseCurrentLocationForProjects(next);
@@ -1320,6 +1336,9 @@ export const SettingsProvider = ({ children }) => {
     toggleCleaningServiceEnabled,
     shutterSoundEnabled,
     toggleShutterSoundEnabled,
+    captureSortOrder,
+    updateCaptureSortOrder,
+    toggleCaptureSortOrder,
     autoUseCurrentLocationForProjects,
     updateAutoUseCurrentLocationForProjects,
     themeMode,

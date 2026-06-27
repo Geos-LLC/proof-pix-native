@@ -327,6 +327,8 @@ export default function HomeScreen({ navigation, route }) {
     labelMarginHorizontal,
     labelMarginVertical,
     updateUserInfo,
+    captureSortOrder,
+    toggleCaptureSortOrder,
   } = useSettings();
   const { userMode } = useAdmin();
   const fullScreenTopInset = Math.max(insets.top, 25);
@@ -1672,11 +1674,26 @@ export default function HomeScreen({ navigation, route }) {
 
   const renderPhotoGrid = () => {
     const gridItems = [];
+    const gridSetNumbers = [];
     const combinedPhotos = getCombinedPhotos(currentRoom);
     // Fetched once per render — progress photos for the current room, used
     // to overlay a "N progress" badge on each card's main thumbnail.
     const progressPhotosForRoom = getProgressPhotos ? getProgressPhotos(currentRoom) : [];
     const hasPhotos = beforePhotos.length > 0;
+    // Canonical "Set N" numbering tied to chronological capture order
+    // (oldest = 1). Computed BEFORE applying the user's sort preference
+    // so the label travelling with a set stays stable across order flips.
+    const setNumberById = new Map();
+    [...beforePhotos]
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+      .forEach((photo, idx) => {
+        setNumberById.set(photo.id, idx + 1);
+      });
+    const orderedBeforePhotos = [...beforePhotos].sort((a, b) => {
+      const ta = a.timestamp || 0;
+      const tb = b.timestamp || 0;
+      return captureSortOrder === 'asc' ? ta - tb : tb - ta;
+    });
 
     if (!hasPhotos || !activeProjectId) {
       return (
@@ -1724,7 +1741,9 @@ export default function HomeScreen({ navigation, route }) {
       );
     }
 
-    beforePhotos.forEach((beforePhoto, index) => {
+    orderedBeforePhotos.forEach((beforePhoto, index) => {
+      const setNumber = setNumberById.get(beforePhoto.id) ?? index + 1;
+      gridSetNumbers.push(setNumber);
       const afterPhoto = afterPhotos.find(
         (p) => p.beforePhotoId === beforePhoto.id
       );
@@ -2035,18 +2054,18 @@ export default function HomeScreen({ navigation, route }) {
       }
     });
 
-    // Wrap each tile with a "Set N" label beneath it. The numbering
-    // follows the same order as beforePhotos (oldest → newest), so it
-    // matches the chronological capture order. Done at the very end so
-    // the three different gridItems.push paths above don't each need
-    // to know about the label.
+    // Wrap each tile with a "Set N" label beneath it. The number is
+    // bound to chronological capture order (oldest = 1), so flipping
+    // the user's sort preference reorders the tiles without renaming
+    // any set. Done at the very end so the three different
+    // gridItems.push paths above don't each need to know about it.
     return (
       <View style={styles.photoGrid}>
         {gridItems.map((item, i) => (
           <View key={item.key || `set-wrap-${i}`} style={styles.setTileWrapper}>
             {item}
             <Text style={styles.setTileLabel} numberOfLines={1}>
-              {`Set ${i + 1}`}
+              {`Set ${gridSetNumbers[i] ?? i + 1}`}
             </Text>
           </View>
         ))}
@@ -2173,6 +2192,26 @@ export default function HomeScreen({ navigation, route }) {
       {renderRoomTabs()}
 
       <View style={styles.content} {...panResponder.panHandlers}>
+        {beforePhotos.length > 0 && activeProjectId ? (
+          <View style={styles.sortBar}>
+            <TouchableOpacity
+              style={styles.sortPill}
+              onPress={() => toggleCaptureSortOrder && toggleCaptureSortOrder()}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons
+                name={captureSortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
+                size={14}
+                color="#1E1E1E"
+                style={{ marginRight: 4 }}
+              />
+              <Text style={styles.sortPillText}>
+                {captureSortOrder === 'asc' ? 'Oldest first' : 'Newest first'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         <Animated.View style={{ flex: 1, transform: [{ translateX: contentSlideX }] }}>
           <ScrollView
             contentContainerStyle={{ paddingBottom: 20 + insets.bottom + 50 + 80 }}
@@ -3601,6 +3640,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between'
+  },
+  sortBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingBottom: 6,
+  },
+  sortPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+  },
+  sortPillText: {
+    fontFamily: FONTS.SEMIBOLD,
+    fontSize: 11,
+    color: '#1E1E1E',
   },
   photoItem: {
     width: PHOTO_SIZE,
