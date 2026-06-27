@@ -14,6 +14,77 @@ export default function TrialNotificationModal({ visible, notification, onClose,
   if (!notification) return null;
   const { t } = useTranslation();
 
+  // 7-day lifecycle schema — notification supplies primaryCTA/secondaryCTA
+  // labels + primaryAction/secondaryAction routing keys. Older schema
+  // (showUpgrade + cta + referralIncentive) is still honored below for
+  // any unmigrated entry.
+  const hasNewSchema = !!(notification.primaryCTA || notification.secondaryCTA);
+  if (hasNewSchema) {
+    return (
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <View style={styles.header}>
+              <Text style={styles.title}>{notification.title}</Text>
+            </View>
+
+            <View style={styles.content}>
+              <Text style={styles.message}>
+                {notification.message}
+                {notification.endDate && (
+                  <Text>
+                    {' '}
+                    {t('trial.endsOnPrefix', { defaultValue: 'Your trial ends on ' })}
+                    <Text style={styles.endDate}>{notification.endDate}</Text>.
+                  </Text>
+                )}
+              </Text>
+              {notification.secondaryText && (
+                <Text style={styles.secondaryText}>{notification.secondaryText}</Text>
+              )}
+            </View>
+
+            <View style={styles.actions}>
+              {!!notification.primaryCTA && (
+                <TouchableOpacity
+                  style={[styles.button, notification.urgent ? styles.urgentButton : styles.upgradeButton]}
+                  onPress={() => (onCTA ? onCTA({ ...notification, action: notification.primaryAction }) : onClose())}
+                >
+                  <Text style={[styles.buttonText, notification.urgent ? styles.urgentButtonText : styles.upgradeButtonText]}>
+                    {notification.primaryCTA}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {!!notification.secondaryCTA && (
+                <TouchableOpacity
+                  style={[styles.button, styles.referButton]}
+                  onPress={() => (onCTA ? onCTA({ ...notification, action: notification.secondaryAction }) : onClose())}
+                >
+                  <Text style={[styles.buttonText, styles.referButtonText]}>
+                    {notification.secondaryCTA}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.button, styles.secondaryButton]}
+                onPress={onClose}
+              >
+                <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+                  {t('trial.maybeButton', { defaultValue: 'Maybe Later' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
   const getTranslationKeys = () => {
     switch (notification.key) {
       case 'day0':
@@ -332,6 +403,14 @@ const styles = StyleSheet.create({
     color: COLORS.TEXT,
     lineHeight: 24,
     textAlign: 'center',
+  },
+  secondaryText: {
+    fontSize: 13,
+    color: '#666666',
+    lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
   },
   endDate: {
     color: '#4CAF50',

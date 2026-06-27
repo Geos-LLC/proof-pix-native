@@ -4572,61 +4572,65 @@ export default function SettingsScreen({ navigation, route }) {
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay0();
-                          Alert.alert(
-                            'Test Set',
-                            'Trial set to Day 0. Restart app or bring it to foreground to see the welcome message.'
-                          );
+                          Alert.alert('Test Set', 'Day 0 set. Restart app to see "Welcome to ProofPix".');
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 0 (Welcome)</Text>
+                        <Text style={styles.testButtonText}>Day 0 — Welcome</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={async () => {
+                          await TrialTestUtils.testDay1();
+                          Alert.alert('Test Set', 'Day 1 set. Restart app to see "Document Every Stage".');
+                        }}
+                      >
+                        <Text style={styles.testButtonText}>Day 1 — Capture</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay7_10();
-                          Alert.alert(
-                            'Test Set',
-                            'Trial set to Day 2 of 7. Restart app to see the engagement message.'
-                          );
+                          Alert.alert('Test Set', 'Day 2 set. Restart app to see "Create Your First Client Report".');
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 2 (Engagement)</Text>
+                        <Text style={styles.testButtonText}>Day 2 — Reports</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay15();
-                          Alert.alert(
-                            'Test Set',
-                            'Trial set to Day 3 of 7. Restart app to see the mid-trial check-in message.'
-                          );
+                          Alert.alert('Test Set', 'Day 3 set. Restart app to see "Promote Your Brand".');
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 3 (Mid-trial)</Text>
+                        <Text style={styles.testButtonText}>Day 3 — Branding</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay22_24();
-                          Alert.alert(
-                            'Test Set',
-                            'Trial set to Day 5 of 7. Restart app to see the reminder + expiring-trial referral nudge.'
-                          );
+                          Alert.alert('Test Set', 'Day 4 set. Restart app to see "Never Lose Job Photos Again".');
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 5 (Reminder)</Text>
+                        <Text style={styles.testButtonText}>Day 4 — Cloud</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay27_28();
-                          Alert.alert(
-                            'Test Set',
-                            'Trial set to Day 6 of 7. Restart app to see the last chance message.'
-                          );
+                          Alert.alert('Test Set', 'Day 5 set. Restart app to see "Need More Trial Time?".');
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 6 (Last chance)</Text>
+                        <Text style={styles.testButtonText}>Day 5 — Referral</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={async () => {
+                          const TrialTestUtils2 = await import('../utils/trialTestUtils');
+                          await TrialTestUtils2.setTrialDaysRemaining(1, 'business');
+                          Alert.alert('Test Set', 'Day 6 set. Restart app to see "Your Trial Ends Tomorrow".');
+                        }}
+                      >
+                        <Text style={styles.testButtonText}>Day 6 — Last Chance</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}

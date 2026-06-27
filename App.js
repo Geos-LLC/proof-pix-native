@@ -1004,22 +1004,65 @@ export default function App() {
     }
   };
 
-  const handleTrialCTA = (notification) => {
+  const handleTrialCTA = async (notification) => {
     setShowTrialModal(false);
-    // Determine which section to scroll to based on notification key
-    let scrollParam = {};
-    if (notification?.key === 'day7_10') {
-      scrollParam = { scrollToWatermark: true };
-    } else if (notification?.key === 'day15') {
-      scrollParam = { scrollToCloudSync: true };
-    } else if (notification?.key === 'day22_24') {
-      scrollParam = { scrollToAccountData: true };
-    }
-    // Navigate to Settings screen with scroll target
-    if (navigationRef.current) {
-      navigationRef.current.navigate('Settings', scrollParam);
-    }
     setTrialNotification(null);
+    const nav = navigationRef.current;
+    if (!nav) return;
+
+    // New schema — notification carries a specific action key. Route to the
+    // matching destination. Fall back to legacy key-based scroll for any
+    // pre-migration entries that don't carry an `action`.
+    const action = notification?.action;
+
+    switch (action) {
+      case 'create_project':
+        // Day 0 — Welcome → land on Projects so user can tap "+ New Project".
+        nav.navigate('Projects', { openCreate: true });
+        return;
+      case 'camera':
+        // Day 1 — Capture
+        nav.navigate('Camera');
+        return;
+      case 'create_report':
+        // Day 2 — First Report → Projects (user picks a project to add a report to)
+        nav.navigate('Projects', { openCreateReport: true });
+        return;
+      case 'branding':
+        // Day 3 — Branding → Settings, scroll to watermark/brand section
+        nav.navigate('Settings', { scrollToWatermark: true });
+        return;
+      case 'cloud':
+        // Day 4 — Cloud Storage → Settings, scroll to cloud sync section
+        nav.navigate('Settings', { scrollToCloudSync: true });
+        return;
+      case 'referral':
+        // Day 5 / Day 6 — referral
+        nav.navigate('Referral');
+        return;
+      case 'paywall':
+        // Day 5 / Day 6 / Day 7+ — upgrade
+        nav.navigate('PlanSelection', { mode: 'upgrade', trigger: 'trial_notification' });
+        return;
+      case 'restore':
+        // Day 7+ — Restore Purchase. Routes to PlanSelection so the user
+        // can tap the existing Restore Purchases button there.
+        nav.navigate('PlanSelection', { mode: 'upgrade', trigger: 'restore_purchase' });
+        return;
+      default:
+        // Legacy fallback for any unmigrated notifications.
+        // eslint-disable-next-line no-case-declarations
+        const scrollParam = {};
+        if (notification?.key === 'day7_10') {
+          scrollParam.scrollToWatermark = true;
+        } else if (notification?.key === 'day15') {
+          scrollParam.scrollToCloudSync = true;
+        } else if (notification?.key === 'day22_24') {
+          scrollParam.scrollToAccountData = true;
+        }
+        nav.navigate('Settings', scrollParam);
+        return;
+    }
   };
 
   // Keep the native splash screen visible until AuthLoadingScreen signals it's

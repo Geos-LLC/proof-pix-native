@@ -71,13 +71,23 @@ export const testDay0 = async (plan = 'business') => {
 };
 
 /**
- * Day 2 / Engagement nudge — 5 days remaining of a 7-day trial.
- * Triggers "Customize Your Watermark".
+ * Day 1 / Capture Workflow — 6 days remaining.
+ * Triggers "Document Every Stage of the Job".
+ * @param {string} plan - Plan tier
+ */
+export const testDay1 = async (plan = 'business') => {
+  await setTrialDaysRemaining(6, plan);
+  console.log('[TrialTest] Day 1 - Capture workflow message should show');
+};
+
+/**
+ * Day 2 / First Report — 5 days remaining.
+ * Triggers "Create Your First Client Report".
  * @param {string} plan - Plan tier
  */
 export const testDay7_10 = async (plan = 'business') => {
   await setTrialDaysRemaining(5, plan);
-  console.log('[TrialTest] Day 2 - Engagement message should show');
+  console.log('[TrialTest] Day 2 - First report message should show');
 };
 
 /**

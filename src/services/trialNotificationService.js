@@ -1,48 +1,52 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getTrialDaysRemaining, isTrialActive, getTrialPlan, getTrialInfo } from './trialService';
+import { readSecureJSON } from './secureStorageService';
 
 const TRIAL_NOTIFICATIONS_KEY = '@trial_notifications_shown';
 
-/**
- * Trial Notification Service
- * Manages showing trial-related messages at specific days
- */
+// Trial Notification Service — 7-day trial lifecycle.
+//
+// Timeline:
+//   Day 0  (days=7) → Welcome + First Success      "Welcome to ProofPix"
+//   Day 1  (days=6) → Capture Workflow             "Document Every Stage…"
+//   Day 2  (days=5) → Core Value (first report)    "Create Your First Client Report"
+//   Day 3  (days=4) → Professional Branding        "Promote Your Brand…"
+//   Day 4  (days=3) → Cloud Backup                 "Never Lose Job Photos…"
+//   Day 5  (days=2) → Referral + Upgrade           "Need More Trial Time?"
+//   Day 6  (days=1) → Urgency                      "Your Trial Ends Tomorrow"
+//   Day 7+ (days=0) → Expiration                   "Your Trial Has Ended"
+//
+// Each notification carries a `cta` action key consumed by App.handleTrialCTA
+// to route to the right screen (Projects, Camera, ProjectDetail, Settings
+// sections, PlanSelection, Referral, restore-purchase flow).
+
+const DEFAULT_SHOWN = {
+  day0: false,
+  day1: false,
+  day7_10: false,   // legacy key — now used for Day 2 (reports)
+  day15: false,     // legacy key — now used for Day 3 (branding)
+  day22_24: false,  // legacy key — now used for Day 4 (cloud)
+  day27_28: false,  // legacy key — now used for Day 5 (referral + upgrade) and Day 6 (urgency)
+  day6: false,      // new key for Day 6 distinct from Day 5
+  day30: false,
+};
 
 /**
  * Get which notifications have been shown
- * @returns {Promise<Object>} Object with notification flags
  */
 export const getShownNotifications = async () => {
   try {
     const stored = await AsyncStorage.getItem(TRIAL_NOTIFICATIONS_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    return {
-      day0: false,
-      day7_10: false,
-      day15: false,
-      day22_24: false,
-      day27_28: false,
-      day30: false,
-    };
+    if (stored) return { ...DEFAULT_SHOWN, ...JSON.parse(stored) };
+    return { ...DEFAULT_SHOWN };
   } catch (error) {
     console.error('[TrialNotification] Error getting shown notifications:', error);
-    return {
-      day0: false,
-      day7_10: false,
-      day15: false,
-      day22_24: false,
-      day27_28: false,
-      day30: false,
-    };
+    return { ...DEFAULT_SHOWN };
   }
 };
 
 /**
  * Mark a notification as shown
- * @param {string} notificationKey - Key of the notification (day0, day7_10, etc.)
- * @returns {Promise<void>}
  */
 export const markNotificationShown = async (notificationKey) => {
   try {
@@ -54,36 +58,101 @@ export const markNotificationShown = async (notificationKey) => {
   }
 };
 
+// --- Suppression context ---------------------------------------------------
+// Reads user state to suppress banners whose action the user has already
+// completed (e.g. don't push "Connect Cloud Storage" if Drive is connected).
+// Every check is best-effort: on read error we default to "show the banner"
+// rather than over-suppress.
+
+const ADMIN_CONNECTED_ACCOUNTS_KEY = '@admin_connected_accounts';
+const SETTINGS_STORAGE_KEY = 'app-settings';
+const PROJECTS_STORAGE_KEY = 'tracked-projects';
+
+const checkSuppressionContext = async () => {
+  const ctx = {
+    isSubscribed: false,
+    hasCloudConnected: false,
+    hasBrandConfigured: false,
+    hasGeneratedReport: false,
+    referralRewardsMaxed: false,
+  };
+
+  // userPlan + brand state live in app-settings (secure storage)
+  try {
+    const settings = await readSecureJSON(SETTINGS_STORAGE_KEY);
+    const plan = settings?.userPlan || 'starter';
+    ctx.isSubscribed = plan !== 'starter';
+    // "Brand configured" = either a logo image is set OR watermark text is non-empty
+    ctx.hasBrandConfigured = !!(settings?.brandLogoUri || settings?.brandLogo || (settings?.watermarkText && String(settings.watermarkText).trim()));
+  } catch (e) {
+    // non-critical
+  }
+
+  // Connected cloud accounts
+  try {
+    const stored = await AsyncStorage.getItem(ADMIN_CONNECTED_ACCOUNTS_KEY);
+    if (stored) {
+      const accs = JSON.parse(stored);
+      ctx.hasCloudConnected = Array.isArray(accs) && accs.some(a => a?.isActive);
+    }
+  } catch (e) {
+    // non-critical
+  }
+
+  // Any tracked project with at least one report
+  try {
+    const projects = await readSecureJSON(PROJECTS_STORAGE_KEY);
+    if (Array.isArray(projects)) {
+      ctx.hasGeneratedReport = projects.some(p => Array.isArray(p?.reports) && p.reports.length > 0);
+    }
+  } catch (e) {
+    // non-critical
+  }
+
+  // Referral rewards — server is source of truth
+  try {
+    const { getReferralStatsFromServer, getUserId } = await import('./referralService');
+    const userId = await getUserId();
+    const stats = await getReferralStatsFromServer(userId);
+    if (stats?.completedInvites >= 3) ctx.referralRewardsMaxed = true;
+  } catch (e) {
+    // non-critical
+  }
+
+  return ctx;
+};
+
+// --- Notification builder --------------------------------------------------
+
 /**
  * Check if a notification should be shown based on days remaining
  * @param {boolean} skipDay0 - Skip Day 0 welcome message (for app startup checks)
- * @returns {Promise<Object|null>} Notification object to show, or null
+ * @returns {Promise<Object|null>}
  */
 export const getNotificationToShow = async (skipDay0 = false) => {
   const shown = await getShownNotifications();
-  
-  // Check Day 30 FIRST (before checking if trial is active, since expired trials are inactive)
+  const ctx = await checkSuppressionContext();
+
+  // --- Expired (Day 7+) — fires regardless of trial.active flag ---
   if (!shown.day30) {
-    const { getTrialInfo } = await import('./trialService');
     const trialInfo = await getTrialInfo();
-    
     if (trialInfo && trialInfo.plan) {
-      // Check if trial has expired
       const now = new Date().getTime();
-      const endDate = new Date(trialInfo.endDate).getTime();
-      const daysRemaining = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
-      
+      const endMs = new Date(trialInfo.endDate).getTime();
+      const daysRemaining = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
       if (daysRemaining <= 0 || !trialInfo.active) {
-        console.log('[TrialNotification] Day 30 notification triggered, daysRemaining:', daysRemaining, 'active:', trialInfo.active);
+        // Suppress entirely if user already subscribed during trial
+        if (ctx.isSubscribed) return null;
         await markNotificationShown('day30');
         return {
           key: 'day30',
           type: 'expiration',
-          title: 'Your Trial Ended – Upgrade to Unlock Everything',
-          message: 'You\'re back! To continue using:',
-          featuresList: '• Bulk before & after photo creation\n• Custom watermark & cloud storage\n• Team management & photo cleanup',
-          referralIncentive: 'Refer a friend and get 1-3 months free',
-          cta: '👉 Upgrade Now',
+          title: 'Your Trial Has Ended',
+          message: 'Upgrade to continue documenting jobs, generating reports, and protecting your business.',
+          primaryCTA: 'Upgrade to Pro',
+          primaryAction: 'paywall',
+          secondaryCTA: 'Restore Purchase',
+          secondaryAction: 'restore',
           showUpgrade: true,
           urgent: true,
         };
@@ -91,145 +160,162 @@ export const getNotificationToShow = async (skipDay0 = false) => {
     }
   }
 
-  // If trial is not active and we've already shown day30, return null
+  // From here on we need an active trial
   const trialActive = await isTrialActive();
-  if (!trialActive) {
-    return null;
-  }
+  if (!trialActive) return null;
 
   const daysRemaining = await getTrialDaysRemaining();
   const trialPlan = await getTrialPlan();
-
-  // Get trial info to determine actual trial duration.
-  // Prefer `durationDays` when present (set by startTrial), but fall back
-  // to computing from start/end dates so the welcome banner stays in sync
-  // with Settings' daysRemaining for legacy/test-utility trials that
-  // didn't persist `durationDays`. Without this fallback, a 30-day
-  // referral-bonused trial shows "15-day" in the welcome banner while
-  // Settings displays "29 days remaining" — confusing for the user.
   const trialInfo = await getTrialInfo();
+
+  // Compute trial duration from durationDays, falling back to dates so
+  // the welcome banner always reports the real length.
   const computeDurationFromDates = () => {
     try {
       if (!trialInfo?.startDate || !trialInfo?.endDate) return null;
-      const startMs = new Date(trialInfo.startDate).getTime();
-      const endMs = new Date(trialInfo.endDate).getTime();
-      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
-      return Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)));
-    } catch {
-      return null;
-    }
+      const s = new Date(trialInfo.startDate).getTime();
+      const e = new Date(trialInfo.endDate).getTime();
+      if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null;
+      return Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)));
+    } catch { return null; }
   };
-  // 7 = base trial duration (matches TRIAL_DURATION_DAYS in trialService).
   const trialDuration = trialInfo?.durationDays || computeDurationFromDates() || 7;
 
-  // Day 0 (Welcome) - Show immediately when trial starts (only if not skipped)
-  // For 30-day trial: show when >= 28 days remaining
-  // For 45-day trial: show when >= 43 days remaining
-  const welcomeThreshold = trialDuration - 2;
+  // --- Day 0 — Welcome + First Success ---
+  // Fires while we're still near the start (>= duration - 1). For a fresh
+  // 7-day trial that means days=6 or 7.
+  const welcomeThreshold = trialDuration - 1;
   if (!skipDay0 && daysRemaining >= welcomeThreshold && !shown.day0) {
     await markNotificationShown('day0');
-
-    // Get trial end date (already have trialInfo from above)
-    let endDateText = '';
     let formattedDate = '';
     try {
-      if (trialInfo && trialInfo.endDate) {
-        const endDate = new Date(trialInfo.endDate);
-        formattedDate = endDate.toLocaleDateString('en-US', {
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric'
+      if (trialInfo?.endDate) {
+        formattedDate = new Date(trialInfo.endDate).toLocaleDateString('en-US', {
+          month: 'long', day: 'numeric', year: 'numeric',
         });
-        endDateText = ` Your trial ends on ${formattedDate}.`;
       }
-    } catch (error) {
-      console.error('[TrialNotification] Error getting trial end date:', error);
-    }
-
+    } catch {}
     const planDisplayName = trialPlan ? trialPlan.charAt(0).toUpperCase() + trialPlan.slice(1) : 'Premium';
-
     return {
       key: 'day0',
       type: 'welcome',
-      title: 'Welcome to Your Free Trial! 🎉',
-      message: `You're now on a ${trialDuration}-day free trial of ${planDisplayName} features. Get started with bulk photo capture, custom watermarks, and automation tools.`,
-      endDate: formattedDate, // Store end date separately for styling
+      title: 'Welcome to ProofPix',
+      message: 'Create your first project and generate a professional report in minutes.',
+      secondaryText: 'The fastest way to experience ProofPix is to document your first job from start to finish.',
+      primaryCTA: 'Create First Project',
+      primaryAction: 'create_project',
+      endDate: formattedDate,
       showUpgrade: false,
       urgent: false,
-      // Extra fields for translations
       days: trialDuration,
       planName: planDisplayName,
     };
   }
 
-  // Notification cadence calibrated for a 7-day base trial. Keys are
-  // preserved (day7_10, day15, day22_24, day27_28) so existing
-  // shown-flag persistence keeps working; the windows are remapped.
-  //
-  // 7-day timeline:
-  //   Day 0 (days=7)   → Welcome (handled above)
-  //   Day 2 (days=5)   → Engagement nudge
-  //   Day 3 (days=4)   → Mid-trial check-in
-  //   Day 5 (days=2)   → Reminder + expiring-trial referral nudge
-  //   Day 6 (days=1)   → Last chance — upgrade or refer
-  //   Day 7 (days≤0)   → Expired (handled above)
+  // --- Day 1 — Capture Workflow (days=6) ---
+  if (daysRemaining === 6 && !shown.day1) {
+    await markNotificationShown('day1');
+    return {
+      key: 'day1',
+      type: 'engagement',
+      title: 'Document Every Stage of the Job',
+      message: 'Capture before, progress, and after photos to create complete job documentation.',
+      secondaryText: 'Professional documentation protects your business and impresses clients.',
+      primaryCTA: 'Take Photos',
+      primaryAction: 'camera',
+      showUpgrade: false,
+      urgent: false,
+    };
+  }
 
-  // Engagement Nudge — Day 2 (days remaining = 5)
-  if (daysRemaining === 5 && !shown.day7_10) {
+  // --- Day 2 — Core Value: First Report (days=5) ---
+  // Suppress if user has already generated at least one report.
+  if (daysRemaining === 5 && !shown.day7_10 && !ctx.hasGeneratedReport) {
     await markNotificationShown('day7_10');
     return {
       key: 'day7_10',
       type: 'engagement',
-      title: 'Customize Your Watermark',
-      message: 'Make your before & after photos stand out with your own watermark.',
-      cta: '👉 Go to Settings to update now.',
+      title: 'Create Your First Client Report',
+      message: 'Turn your job photos into a professional branded report your clients will love.',
+      secondaryText: 'Most professionals experience the real value of ProofPix after generating their first report.',
+      primaryCTA: 'Create Report',
+      primaryAction: 'create_report',
       showUpgrade: false,
       urgent: false,
     };
   }
 
-  // Mid-Trial Check-in — Day 3 (days remaining = 4)
-  if (daysRemaining === 4 && !shown.day15) {
+  // --- Day 3 — Professional Branding (days=4) ---
+  // Suppress if branding (logo or watermark) is already configured.
+  if (daysRemaining === 4 && !shown.day15 && !ctx.hasBrandConfigured) {
     await markNotificationShown('day15');
     return {
       key: 'day15',
-      type: 'checkin',
-      title: 'Connect Cloud Storage',
-      message: 'Keep your photos safe and organized. Connect Google Drive or Dropbox in Settings.',
-      cta: '👉 Go to Settings to connect.',
+      type: 'engagement',
+      title: 'Promote Your Brand on Every Job',
+      message: 'Add your company logo, watermarks, labels, and metadata to every photo and report.',
+      primaryCTA: 'Customize Branding',
+      primaryAction: 'branding',
       showUpgrade: false,
       urgent: false,
     };
   }
 
-  // Reminder — Day 5 (days remaining = 2)
-  if (daysRemaining === 2 && !shown.day22_24) {
+  // --- Day 4 — Cloud Backup (days=3) ---
+  // Suppress if cloud already connected.
+  if (daysRemaining === 3 && !shown.day22_24 && !ctx.hasCloudConnected) {
     await markNotificationShown('day22_24');
     return {
       key: 'day22_24',
-      type: 'reminder',
-      title: 'Free up space Easily',
-      message: 'Free up space on your device and in the app by deleting entire projects at once.',
-      cta: '👉 Go to Settings to delete projects and free up storage.',
-      ctaDescription: 'In the delete confirmation, look for the checkbox "Delete from phone storage" and check it to remove photos from your device as well: ☐ Delete from phone storage',
+      type: 'engagement',
+      title: 'Never Lose Job Photos Again',
+      message: 'Connect Google Drive, Dropbox, or iCloud and automatically back up every project.',
+      primaryCTA: 'Connect Cloud Storage',
+      primaryAction: 'cloud',
       showUpgrade: false,
       urgent: false,
     };
   }
 
-  // Last Chance — Day 6 (days remaining = 1)
-  if (daysRemaining === 1 && !shown.day27_28) {
+  // --- Day 5 — Referral + Upgrade (days=2) ---
+  // Suppress entirely if user already paying; downgrade to upgrade-only
+  // if they've already maxed referral rewards.
+  if (daysRemaining === 2 && !shown.day27_28 && !ctx.isSubscribed) {
     await markNotificationShown('day27_28');
     return {
       key: 'day27_28',
+      type: 'referral_upgrade',
+      title: 'Need More Trial Time?',
+      message: 'Invite another professional and both of you will receive 15 extra trial days.',
+      secondaryText: ctx.referralRewardsMaxed
+        ? 'Or upgrade now to keep unlimited access.'
+        : 'You can earn up to 45 additional free days.',
+      // If rewards maxed, swap primary/secondary so Upgrade leads.
+      primaryCTA: ctx.referralRewardsMaxed ? 'Upgrade Now' : 'Invite Friends',
+      primaryAction: ctx.referralRewardsMaxed ? 'paywall' : 'referral',
+      secondaryCTA: ctx.referralRewardsMaxed ? null : 'Upgrade Now',
+      secondaryAction: ctx.referralRewardsMaxed ? null : 'paywall',
+      showUpgrade: true,
+      urgent: false,
+      days: daysRemaining,
+    };
+  }
+
+  // --- Day 6 — Urgency (days=1) ---
+  // Suppress entirely if subscribed. If referrals maxed, drop the secondary.
+  if (daysRemaining === 1 && !shown.day6 && !ctx.isSubscribed) {
+    await markNotificationShown('day6');
+    return {
+      key: 'day6',
       type: 'urgent',
-      title: 'Trial Ends Tomorrow!',
-      message: `Only ${daysRemaining} day left to enjoy full features. Upgrade now to continue.`,
-      referralIncentive: '🎁 Invite friends and earn extra trial days:\n\n1 friend → +15 days\n2 friends → +30 days\n3 friends → +45 days\n\nYour friend must set up the app to count.',
-      cta: '👉 Upgrade / Refer Now',
+      title: 'Your Trial Ends Tomorrow',
+      message: 'Keep unlimited projects, professional reports, cloud sync, and branded documentation.',
+      primaryCTA: 'Upgrade Now',
+      primaryAction: 'paywall',
+      secondaryCTA: ctx.referralRewardsMaxed ? null : 'Invite Friends',
+      secondaryAction: ctx.referralRewardsMaxed ? null : 'referral',
       showUpgrade: true,
       urgent: true,
-      // Extra field for translations
       days: daysRemaining,
     };
   }
@@ -239,7 +325,6 @@ export const getNotificationToShow = async (skipDay0 = false) => {
 
 /**
  * Reset all notifications (useful for testing or new trial)
- * @returns {Promise<void>}
  */
 export const resetNotifications = async () => {
   try {
@@ -248,4 +333,3 @@ export const resetNotifications = async () => {
     console.error('[TrialNotification] Error resetting notifications:', error);
   }
 };
-
