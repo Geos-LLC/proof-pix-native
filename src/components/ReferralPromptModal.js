@@ -36,8 +36,8 @@ export default function ReferralPromptModal({
     ? 'Your ProofPix trial ends soon.'
     : "You've created your first professional report.";
   const secondary = isExpiring
-    ? 'Invite a colleague and earn 15 extra free trial days.'
-    : 'Share ProofPix with another professional and both of you will receive 15 extra trial days.';
+    ? 'Invite a colleague and earn 7 extra free trial days.'
+    : 'Share ProofPix with another professional. You get 7 extra trial days, and they get a 15-day trial.';
   const primaryLabel = 'Invite Friends';
   const secondaryLabel = isExpiring ? 'Upgrade Now' : 'Maybe Later';
 

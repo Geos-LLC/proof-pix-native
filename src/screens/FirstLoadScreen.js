@@ -120,7 +120,7 @@ export default function FirstLoadScreen({ navigation, route }) {
           Alert.alert(
             t('referral.codeAppliedTitle', { defaultValue: '🎉 Referral Code Applied!' }),
             t('referral.codeAppliedMessage', {
-              defaultValue: `Great! You get ${30} days free trial and your friend gets 15 days free!`
+              defaultValue: 'Great! You get a 15-day free trial and your friend earns 7 extra days when you sign up.'
             }),
             [{ text: t('common.ok') }]
           );
@@ -222,7 +222,7 @@ export default function FirstLoadScreen({ navigation, route }) {
         Alert.alert(
           t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
           t('referral.appliedMessage', {
-            defaultValue: "Your friend's referral code has been applied. Enjoy 15 extra days free!",
+            defaultValue: "Your friend's referral code has been applied. Enjoy a 15-day free trial!",
           }),
         );
         return;
@@ -521,7 +521,7 @@ export default function FirstLoadScreen({ navigation, route }) {
               <View style={styles.referralOnboardingBody}>
                 <Text style={styles.referralOnboardingSubtitle}>
                   {t('referral.enterCodeSubtitle', {
-                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim 15 extra trial days.',
+                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim a 15-day free trial.',
                   })}
                 </Text>
 

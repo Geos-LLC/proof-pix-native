@@ -82,8 +82,10 @@ const checkSuppressionContext = async () => {
     const settings = await readSecureJSON(SETTINGS_STORAGE_KEY);
     const plan = settings?.userPlan || 'starter';
     ctx.isSubscribed = plan !== 'starter';
-    // "Brand configured" = either a logo image is set OR watermark text is non-empty
-    ctx.hasBrandConfigured = !!(settings?.brandLogoUri || settings?.brandLogo || (settings?.watermarkText && String(settings.watermarkText).trim()));
+    // "Brand configured" = user uploaded a logo. The watermark text defaults
+    // to "Created with ProofPix.app" for every user, so checking that field
+    // would always suppress the Day 3 banner.
+    ctx.hasBrandConfigured = !!(settings?.brandLogoUri || settings?.brandLogo);
   } catch (e) {
     // non-critical
   }
@@ -286,10 +288,10 @@ export const getNotificationToShow = async (skipDay0 = false) => {
       key: 'day27_28',
       type: 'referral_upgrade',
       title: 'Need More Trial Time?',
-      message: 'Invite another professional and both of you will receive 15 extra trial days.',
+      message: 'Invite another professional and earn 7 extra trial days. Your friend gets a 15-day free trial.',
       secondaryText: ctx.referralRewardsMaxed
         ? 'Or upgrade now to keep unlimited access.'
-        : 'You can earn up to 45 additional free days.',
+        : 'You can earn up to 21 additional free days.',
       // If rewards maxed, swap primary/secondary so Upgrade leads.
       primaryCTA: ctx.referralRewardsMaxed ? 'Upgrade Now' : 'Invite Friends',
       primaryAction: ctx.referralRewardsMaxed ? 'paywall' : 'referral',

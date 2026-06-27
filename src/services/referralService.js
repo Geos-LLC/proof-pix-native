@@ -214,7 +214,7 @@ export const getShareMessage = (referralCode) => {
   const referralLink = getReferralLink(referralCode);
   const iosLink = 'https://apps.apple.com/us/app/proofpix-before-after/id6754261444';
   const androidLink = 'https://play.google.com/store/apps/details?id=com.proofpix.app';
-  return `Try ProofPix to manage your cleaning jobs effortlessly!\n\nTap here to get started:\n${referralLink}\n\nDownload ProofPix:\niOS: ${iosLink}\nAndroid: ${androidLink}\n\nUse my referral code: ${referralCode}\nYou'll get 15 extra days free!`;
+  return `Try ProofPix to manage your cleaning jobs effortlessly!\n\nTap here to get started:\n${referralLink}\n\nDownload ProofPix:\niOS: ${iosLink}\nAndroid: ${androidLink}\n\nUse my referral code: ${referralCode}\nYou'll get a 15-day free trial!`;
 };
 
 /**
@@ -476,10 +476,10 @@ export const checkAndApplyReferralRewards = async () => {
       console.log(`[ReferralService] Found ${pendingRewards} pending reward(s). Applying...`);
 
       // Import trial service dynamically to avoid circular dependencies
-      const { extendTrial } = await import('./trialService');
+      const { extendTrial, REFERRER_REWARD_DAYS } = await import('./trialService');
 
-      // Apply each pending reward (15 days per reward)
-      const daysToAdd = pendingRewards * 15;
+      // Referrer reward is +7 days per friend who completes setup.
+      const daysToAdd = pendingRewards * (REFERRER_REWARD_DAYS || 7);
       const result = await extendTrial(daysToAdd);
 
       if (result) {

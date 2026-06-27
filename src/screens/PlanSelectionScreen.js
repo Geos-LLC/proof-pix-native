@@ -78,7 +78,9 @@ export default function PlanSelectionScreen({ navigation, route }) {
   // takes precedence below; this only shows during the brief window
   // before store metadata loads.
   const FALLBACK_TRIAL_DAYS = 7;
-  const referralBonus = 15;
+  // When the user has applied a referral code, they qualify for the
+  // 15-day "friend trial" — flat, not additive to base.
+  const REFERRAL_FRIEND_TRIAL_DAYS = 15;
   const [trialDays, setTrialDays] = useState(FALLBACK_TRIAL_DAYS);
   const isMounted = useRef(true);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
@@ -136,7 +138,8 @@ export default function PlanSelectionScreen({ navigation, route }) {
           const referralData = await AsyncStorage.default.getItem('@referral_accepted');
           if (isMounted.current) {
             const base = trialInfo?.pro?.trialDays || FALLBACK_TRIAL_DAYS;
-            setTrialDays(referralData !== null ? base + referralBonus : base);
+            // Friend (referral on file) gets 15-day flat trial, NOT base + 15.
+            setTrialDays(referralData !== null ? REFERRAL_FRIEND_TRIAL_DAYS : base);
           }
         } catch (error) {
           if (isMounted.current) {
@@ -169,7 +172,8 @@ export default function PlanSelectionScreen({ navigation, route }) {
         const AsyncStorage = await import('@react-native-async-storage/async-storage');
         const referralData = await AsyncStorage.default.getItem('@referral_accepted');
         if (isMounted.current) {
-          setTrialDays(referralData !== null ? storeDays + referralBonus : storeDays);
+          // Friend (referral on file) gets 15-day flat trial.
+          setTrialDays(referralData !== null ? REFERRAL_FRIEND_TRIAL_DAYS : storeDays);
         }
       } catch {
         if (isMounted.current) setTrialDays(storeDays);
@@ -764,10 +768,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
             <View style={styles.referralInfoCopy}>
               <Text style={styles.referralInfoTitle}>Need More Trial Time?</Text>
               <Text style={styles.referralInfoBody}>
-                Invite other professionals and earn 15 extra trial days for each successful referral.
+                Invite other professionals and earn 7 extra trial days for each successful referral.
               </Text>
               <Text style={styles.referralInfoFootnote}>
-                Invite up to 3 colleagues and unlock up to 45 additional free days.
+                Invite up to 3 colleagues and unlock up to 21 additional free days.
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="#9A9A9A" />

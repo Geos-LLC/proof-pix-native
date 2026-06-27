@@ -3319,7 +3319,7 @@ export default function SettingsScreen({ navigation, route }) {
                 {t('settings.referEarn', { defaultValue: 'Refer Friends' })}
               </Text>
               <Text style={styles.ppRowSub} numberOfLines={1}>
-                {t('settings.referEarnSub', { defaultValue: 'Earn 15 extra trial days per friend' })}
+                {t('settings.referEarnSub', { defaultValue: 'Earn 7 extra trial days per friend' })}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />

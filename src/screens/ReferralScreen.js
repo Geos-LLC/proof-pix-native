@@ -79,7 +79,7 @@ export default function ReferralScreen({ navigation, route }) {
           if (result?.success) {
             Alert.alert(
               t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
-              t('referral.appliedMessage', { defaultValue: 'Your friend\'s referral code has been applied. Enjoy 15 extra days free!' })
+              t('referral.appliedMessage', { defaultValue: 'Your friend\'s referral code has been applied. Enjoy a 15-day free trial!' })
             );
           } else if (result?.error?.includes('already used')) {
             Alert.alert(
@@ -176,7 +176,7 @@ export default function ReferralScreen({ navigation, route }) {
         Alert.alert(
           t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
           t('referral.appliedMessage', {
-            defaultValue: "Your friend's referral code has been applied. Enjoy 15 extra days free!",
+            defaultValue: "Your friend's referral code has been applied. Enjoy a 15-day free trial!",
           }),
         );
         return;
@@ -281,7 +281,7 @@ export default function ReferralScreen({ navigation, route }) {
           iosLink: iosAppStoreLink,
           androidLink: androidPlayStoreLink,
           deepLink: deepLink,
-          defaultValue: `Join ProofPix and get organized!\n\nAlready have the app? Tap here:\n${deepLink}\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\n🎁 Use my referral code: ${referralCode}\nYou'll get 15 extra days free!`
+          defaultValue: `Join ProofPix and get organized!\n\nAlready have the app? Tap here:\n${deepLink}\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\n🎁 Use my referral code: ${referralCode}\nYou'll get a 15-day free trial!`
         }),
         title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
       });
@@ -383,18 +383,18 @@ export default function ReferralScreen({ navigation, route }) {
             </Text>
             <Text style={styles.earnFreeSubtitle}>
               {t('referral.earnFreeSubtitle', {
-                defaultValue: 'Receive 15 extra trial days for every professional who joins ProofPix using your referral link.',
+                defaultValue: 'Receive 7 extra trial days for every professional who joins ProofPix using your referral link. Your friend gets a 15-day free trial.',
               })}
             </Text>
             <View style={styles.rewardsList}>
               <Text style={styles.rewardText}>
-                {t('referral.tier1', { defaultValue: '1 Friend = 15 Days Free' })}
+                {t('referral.tier1', { defaultValue: '1 Friend = 7 Days Free' })}
               </Text>
               <Text style={styles.rewardText}>
-                {t('referral.tier2', { defaultValue: '2 Friends = 30 Days Free' })}
+                {t('referral.tier2', { defaultValue: '2 Friends = 14 Days Free' })}
               </Text>
               <Text style={styles.rewardText}>
-                {t('referral.tier3', { defaultValue: '3 Friends = 45 Days Free' })}
+                {t('referral.tier3', { defaultValue: '3 Friends = 21 Days Free' })}
               </Text>
             </View>
           </View>
@@ -481,7 +481,7 @@ export default function ReferralScreen({ navigation, route }) {
           <View style={styles.progressCard}>
             <Ionicons name="trophy" size={24} color={COLORS.TEXT} />
             <Text style={styles.progressCardValue}>
-              {monthsEarned * 15} {monthsEarned * 15 === 1 ? 'Day' : 'Days'}
+              {monthsEarned * 7} {monthsEarned * 7 === 1 ? 'Day' : 'Days'}
             </Text>
             <Text style={styles.progressCardLabel}>
               {t('referral.statDaysEarned', { defaultValue: 'Days earned' })}
@@ -504,7 +504,7 @@ export default function ReferralScreen({ navigation, route }) {
           </Text>
           {completedCount < 3 && (
             <Text style={styles.remainingRewardsText}>
-              {`${(3 - completedCount) * 15} bonus days still available — invite ${3 - completedCount} more ${3 - completedCount === 1 ? 'professional' : 'professionals'}.`}
+              {`${(3 - completedCount) * 7} bonus days still available — invite ${3 - completedCount} more ${3 - completedCount === 1 ? 'professional' : 'professionals'}.`}
             </Text>
           )}
         </View>
@@ -544,7 +544,7 @@ export default function ReferralScreen({ navigation, route }) {
               <View style={styles.enterCodeBody}>
                 <Text style={styles.enterCodeSubtitle}>
                   {t('referral.enterCodeSubtitle', {
-                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim 15 extra trial days.',
+                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim a 15-day free trial.',
                   })}
                 </Text>
 
@@ -612,7 +612,7 @@ export default function ReferralScreen({ navigation, route }) {
             {/* Content */}
             <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
               <Text style={styles.modalText}>
-                Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 15 extra days of free access per friend (up to 3 friends, 45 days max).
+                Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 7 extra days of free access per friend (up to 3 friends, 21 days max). Your friend gets a 15-day free trial instead of the standard 7.
               </Text>
               
               <View style={styles.modalNote}>
