@@ -69,6 +69,9 @@ export default function FirstLoadScreen({ navigation, route }) {
   const { updateUserInfo, updateUserPlan, userPlan, updateLabelLanguage, updateSectionLanguage } = useSettings();
   const [userName, setUserName] = useState('');
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
+  const [referralCodeModalVisible, setReferralCodeModalVisible] = useState(false);
+  const [referralCodeInput, setReferralCodeInput] = useState('');
+  const [applyingReferralCode, setApplyingReferralCode] = useState(false);
   const scrollViewRef = useRef(null);
   const nameInputRef = useRef(null);
   const inputContainerRef = useRef(null);
@@ -202,6 +205,83 @@ export default function FirstLoadScreen({ navigation, route }) {
     navigation.replace('Home');
   };
 
+  // Receiving-side referral entry — quiet, opt-in. A new user who
+  // arrived with a code in hand (texted by a colleague, not via a
+  // deep link) needs somewhere to type it. Auto-promotion still
+  // intentionally absent.
+  const handleApplyReferralCodeFromOnboarding = async () => {
+    const code = referralCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setApplyingReferralCode(true);
+    try {
+      const { trackReferralInstallation, getUserId } = await import('../services/referralService');
+      const result = await trackReferralInstallation(code);
+      if (result?.success) {
+        setReferralCodeModalVisible(false);
+        setReferralCodeInput('');
+        Alert.alert(
+          t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+          t('referral.appliedMessage', {
+            defaultValue: "Your friend's referral code has been applied. Enjoy 15 extra days free!",
+          }),
+        );
+        return;
+      }
+
+      // Fall back to admin-marketing referrals so flyer/QR codes resolve too
+      const { redeemAdminReferralCode, hasRedeemedAdminReferral, markAdminReferralRedeemed } =
+        await import('../services/adminReferralService');
+      const alreadyAdmin = await hasRedeemedAdminReferral();
+      if (!alreadyAdmin) {
+        const userId = await getUserId();
+        const adminResult = await redeemAdminReferralCode(code, userId);
+        if (adminResult?.success && adminResult?.grantedDays > 0) {
+          const { extendTrial } = await import('../services/trialService');
+          await extendTrial(adminResult.grantedDays);
+          await markAdminReferralRedeemed();
+          setReferralCodeModalVisible(false);
+          setReferralCodeInput('');
+          Alert.alert(
+            t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+            t('referral.appliedMessage', {
+              defaultValue: `You've received ${adminResult.grantedDays} extra days free!`,
+            }),
+          );
+          return;
+        }
+      }
+
+      let errorMessage = t('referral.invalidCodeMessage', {
+        defaultValue: 'Invalid referral code. Please check and try again.',
+      });
+      if (result?.error?.includes('already used a referral code')) {
+        errorMessage = t('referral.alreadyUsedMessage', {
+          defaultValue: 'A referral code has already been applied to this device.',
+        });
+      } else if (result?.error?.includes('Invalid referral code')) {
+        errorMessage = t('referral.codeDoesNotExistMessage', {
+          defaultValue: "This referral code doesn't exist. Double-check with your friend.",
+        });
+      } else if (result?.error) {
+        errorMessage = result.error;
+      }
+      Alert.alert(
+        t('referral.unableToApplyTitle', { defaultValue: 'Unable to Apply Code' }),
+        errorMessage,
+      );
+    } catch (error) {
+      console.error('[FirstLoad] Error applying referral code:', error);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('referral.applyErrorMessage', {
+          defaultValue: 'Could not apply the code. Check your connection and try again.',
+        }),
+      );
+    } finally {
+      setApplyingReferralCode(false);
+    }
+  };
+
   const handleFormContainerLayout = (event) => {
     const { y } = event.nativeEvent.layout;
     setFormYPosition(y);
@@ -325,6 +405,20 @@ export default function FirstLoadScreen({ navigation, route }) {
             </Text>
           </TouchableOpacity>
 
+          {/* Receiving-side referral entry — quiet ghost link, no growth
+              copy. Lets a new user who arrived with a code from a
+              colleague apply it before reaching Home. */}
+          <TouchableOpacity
+            style={styles.haveReferralLink}
+            onPress={() => setReferralCodeModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="ticket-outline" size={14} color="#7A5B00" />
+            <Text style={styles.haveReferralLinkText}>
+              {t('firstLoad.haveReferralCode', { defaultValue: 'I have a referral code' })}
+            </Text>
+          </TouchableOpacity>
+
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -386,6 +480,82 @@ export default function FirstLoadScreen({ navigation, route }) {
             </ScrollView>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Referral Code Entry Modal — receiving-side only. Opens on
+          explicit user tap of the "I have a referral code" ghost link.
+          No auto-trigger, no growth copy. */}
+      <Modal
+        visible={referralCodeModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReferralCodeModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setReferralCodeModalVisible(false)}
+          >
+            <View
+              style={styles.referralOnboardingSheet}
+              onStartShouldSetResponder={() => true}
+            >
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeaderBottomSheet}>
+                <TouchableOpacity
+                  style={styles.modalCloseButtonTop}
+                  onPress={() => setReferralCodeModalVisible(false)}
+                >
+                  <Ionicons name="close" size={24} color={COLORS.TEXT} />
+                </TouchableOpacity>
+                <Text style={styles.modalTitleBottomSheet}>
+                  {t('referral.enterCodeTitle', { defaultValue: 'Enter Referral Code' })}
+                </Text>
+                <View style={styles.modalCloseButtonTop} />
+              </View>
+
+              <View style={styles.referralOnboardingBody}>
+                <Text style={styles.referralOnboardingSubtitle}>
+                  {t('referral.enterCodeSubtitle', {
+                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim 15 extra trial days.',
+                  })}
+                </Text>
+
+                <TextInput
+                  style={styles.referralOnboardingInput}
+                  value={referralCodeInput}
+                  onChangeText={(text) => setReferralCodeInput(text.toUpperCase().replace(/\s/g, ''))}
+                  placeholder={t('referral.codePlaceholder', { defaultValue: 'ENTER CODE' })}
+                  placeholderTextColor="#999"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={16}
+                  editable={!applyingReferralCode}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.referralOnboardingApplyButton,
+                  (!referralCodeInput.trim() || applyingReferralCode) && styles.referralOnboardingApplyButtonDisabled,
+                ]}
+                onPress={handleApplyReferralCodeFromOnboarding}
+                disabled={!referralCodeInput.trim() || applyingReferralCode}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.referralOnboardingApplyButtonText}>
+                  {applyingReferralCode
+                    ? t('referral.applying', { defaultValue: 'Applying…' })
+                    : t('referral.applyCode', { defaultValue: 'Apply Code' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
     </SafeAreaView>
@@ -574,6 +744,73 @@ const styles = StyleSheet.create({
     color: '#000000',
     textDecorationLine: 'underline',
     letterSpacing: 0.3,
+  },
+  haveReferralLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    marginTop: 4,
+    gap: 6,
+  },
+  haveReferralLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: 'Alexandria_400Regular',
+    color: '#7A5B00',
+    letterSpacing: -0.1,
+  },
+  referralOnboardingSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 24,
+    width: '100%',
+  },
+  referralOnboardingBody: {
+    paddingHorizontal: 24,
+    paddingTop: 4,
+    paddingBottom: 20,
+  },
+  referralOnboardingSubtitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  referralOnboardingInput: {
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1.5,
+    borderColor: '#F2C31B',
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    textAlign: 'center',
+    letterSpacing: 3,
+  },
+  referralOnboardingApplyButton: {
+    marginHorizontal: 24,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#1E1E1E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  referralOnboardingApplyButtonDisabled: {
+    backgroundColor: '#CCCCCC',
+  },
+  referralOnboardingApplyButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.1,
   },
   modalOverlay: {
     flex: 1,
