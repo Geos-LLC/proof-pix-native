@@ -100,9 +100,26 @@ export const getNotificationToShow = async (skipDay0 = false) => {
   const daysRemaining = await getTrialDaysRemaining();
   const trialPlan = await getTrialPlan();
 
-  // Get trial info to determine actual trial duration
+  // Get trial info to determine actual trial duration.
+  // Prefer `durationDays` when present (set by startTrial), but fall back
+  // to computing from start/end dates so the welcome banner stays in sync
+  // with Settings' daysRemaining for legacy/test-utility trials that
+  // didn't persist `durationDays`. Without this fallback, a 30-day
+  // referral-bonused trial shows "15-day" in the welcome banner while
+  // Settings displays "29 days remaining" — confusing for the user.
   const trialInfo = await getTrialInfo();
-  const trialDuration = trialInfo?.durationDays || 15;
+  const computeDurationFromDates = () => {
+    try {
+      if (!trialInfo?.startDate || !trialInfo?.endDate) return null;
+      const startMs = new Date(trialInfo.startDate).getTime();
+      const endMs = new Date(trialInfo.endDate).getTime();
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+      return Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)));
+    } catch {
+      return null;
+    }
+  };
+  const trialDuration = trialInfo?.durationDays || computeDurationFromDates() || 15;
 
   // Day 0 (Welcome) - Show immediately when trial starts (only if not skipped)
   // For 30-day trial: show when >= 28 days remaining

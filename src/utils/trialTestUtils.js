@@ -16,6 +16,10 @@ const TRIAL_STORAGE_KEY = '@user_trial_info';
  */
 export const setTrialDaysRemaining = async (daysRemaining, plan = 'business') => {
   try {
+    // The test utility models a 30-day trial (15 base + 15 referral bonus).
+    // Persist `durationDays` so the Day 0 welcome banner matches what
+    // Settings shows; otherwise the banner falls back to 15.
+    const TOTAL_TRIAL_DAYS = 30;
     const now = new Date();
     const endDate = new Date(now);
     endDate.setDate(endDate.getDate() + daysRemaining);
@@ -23,14 +27,15 @@ export const setTrialDaysRemaining = async (daysRemaining, plan = 'business') =>
     const trialInfo = {
       active: true,
       used: true,
-      startDate: new Date(now.getTime() - (30 - daysRemaining) * 24 * 60 * 60 * 1000).toISOString(),
+      startDate: new Date(now.getTime() - (TOTAL_TRIAL_DAYS - daysRemaining) * 24 * 60 * 60 * 1000).toISOString(),
       endDate: endDate.toISOString(),
       plan: plan,
+      durationDays: TOTAL_TRIAL_DAYS,
     };
 
     await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(trialInfo));
-    console.log(`[TrialTest] Set trial to ${daysRemaining} days remaining`);
-    
+    console.log(`[TrialTest] Set trial to ${daysRemaining} days remaining (duration ${TOTAL_TRIAL_DAYS})`);
+
     // Reset notifications so you can test them again
     await resetNotifications();
     console.log('[TrialTest] Reset notification flags');
@@ -114,6 +119,7 @@ export const testDay30 = async (plan = 'business') => {
       startDate: new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: endDate.toISOString(),
       plan: plan,
+      durationDays: 30,
     };
 
     await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(trialInfo));
@@ -154,6 +160,7 @@ export const expireTrialForReferralTest = async () => {
       startDate: new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: endDate.toISOString(),
       plan: 'business',
+      durationDays: 30,
     };
 
     await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(trialInfo));
