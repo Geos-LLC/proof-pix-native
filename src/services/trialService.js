@@ -7,21 +7,17 @@ import {
 } from './secureStorageService';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
-// Trial business rules (2026-06-27 spec):
-//   - Base trial: 7 days (no referral)
-//   - Friend signing up WITH a referral code: 15 days trial flat
-//     (inclusive of base — NOT 7 + 15)
-//   - Referrer reward: +7 days per friend who completes setup
-//   - Max referrals: 3 → +21 days bonus → max effective trial 28 days
-//     for the referrer
+// Trial + referral business rules (2026-06-27 final spec):
+//   - Base trial: 7 days
+//   - Receiver (friend who applies a referral code): 7 + 7 = 14 days
+//   - Sender (referrer) reward per friend who completes setup: +7 days
+//   - Max rewarded referrals: 3
+//   - Max bonus days: 3 * 7 = 21
+//   - Max possible trial length: 7 + 21 = 28 days
 export const TRIAL_DURATION_DAYS = 7;
-export const REFERRAL_FRIEND_TRIAL_DAYS = 15;
-export const REFERRER_REWARD_DAYS = 7;
+export const REFERRAL_BONUS_DAYS = 7;
 export const MAX_REFERRALS = 3;
-// Legacy alias retained for back-compat with any importer that still
-// references REFERRAL_BONUS_DAYS — meaning is now "friend trial length",
-// the per-friend referrer reward is REFERRER_REWARD_DAYS.
-const REFERRAL_BONUS_DAYS = REFERRAL_FRIEND_TRIAL_DAYS;
+export const MAX_BONUS_DAYS = MAX_REFERRALS * REFERRAL_BONUS_DAYS; // 21
 
 /**
  * Trial Service
@@ -117,10 +113,12 @@ export const startTrial = async (plan, durationDays = null) => {
     let hasReferral = false;
 
     if (trialDays === null) {
-      // Check if user has a referral code. Friend who applied a code gets
-      // a 15-day trial total (inclusive of base), NOT 7 + 15.
+      // Friend who applied a referral code gets base + referral bonus
+      // (7 + 7 = 14 days). Without a code, just the 7-day base.
       hasReferral = await hasAcceptedReferral();
-      trialDays = hasReferral ? REFERRAL_FRIEND_TRIAL_DAYS : TRIAL_DURATION_DAYS;
+      trialDays = hasReferral
+        ? TRIAL_DURATION_DAYS + REFERRAL_BONUS_DAYS
+        : TRIAL_DURATION_DAYS;
     }
 
     endDate.setDate(endDate.getDate() + trialDays);

@@ -287,8 +287,8 @@ export const getNotificationToShow = async (skipDay0 = false) => {
     return {
       key: 'day27_28',
       type: 'referral_upgrade',
-      title: 'Need More Trial Time?',
-      message: 'Invite another professional and earn 7 extra trial days. Your friend gets a 15-day free trial.',
+      title: 'Need More Time?',
+      message: 'Invite another professional and both of you will receive 7 extra free days.',
       secondaryText: ctx.referralRewardsMaxed
         ? 'Or upgrade now to keep unlimited access.'
         : 'You can earn up to 21 additional free days.',

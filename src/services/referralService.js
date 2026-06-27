@@ -137,7 +137,17 @@ export const acceptReferral = async (referralCode) => {
     };
     await AsyncStorage.setItem(REFERRAL_ACCEPTED_KEY, JSON.stringify(referralData));
     console.log('[ReferralService] Referral accepted:', referralCode);
-    logReferralEvent('accepted', { code: referralCode, link_type: 'user' });
+    const { TRIAL_DURATION_DAYS, REFERRAL_BONUS_DAYS } = await import('./trialService');
+    const trialLength = (TRIAL_DURATION_DAYS || 7) + (REFERRAL_BONUS_DAYS || 7);
+    const conversionPayload = {
+      code: referralCode,
+      link_type: 'user',
+      referred_signup: true,
+      trial_length_days: trialLength,
+      bonus_days_awarded: REFERRAL_BONUS_DAYS || 7,
+    };
+    logReferralEvent('accepted', conversionPayload);
+    logReferralEvent('conversion', conversionPayload);
     await saveAttributionContext({ referral_code: referralCode, link_type: 'user' });
   } catch (error) {
     console.error('[ReferralService] Error accepting referral:', error);
@@ -214,7 +224,7 @@ export const getShareMessage = (referralCode) => {
   const referralLink = getReferralLink(referralCode);
   const iosLink = 'https://apps.apple.com/us/app/proofpix-before-after/id6754261444';
   const androidLink = 'https://play.google.com/store/apps/details?id=com.proofpix.app';
-  return `Try ProofPix to manage your cleaning jobs effortlessly!\n\nTap here to get started:\n${referralLink}\n\nDownload ProofPix:\niOS: ${iosLink}\nAndroid: ${androidLink}\n\nUse my referral code: ${referralCode}\nYou'll get a 15-day free trial!`;
+  return `Try ProofPix to manage your cleaning jobs effortlessly!\n\nTap here to get started:\n${referralLink}\n\nDownload ProofPix:\niOS: ${iosLink}\nAndroid: ${androidLink}\n\nUse my referral code: ${referralCode}\nYou'll get a 14-day free trial!`;
 };
 
 /**
@@ -449,44 +459,52 @@ export const initializeReferralCode = async () => {
 };
 
 /**
- * Check and apply any pending referral rewards for this user
- * This extends the user's trial by 15 days for each completed referral
- * @returns {Promise<number>} Number of rewards applied
+ * Check and apply any pending referral rewards for this user.
+ * Extends the user's trial by REFERRAL_BONUS_DAYS per completed referral,
+ * capped at MAX_REFERRALS rewarded conversions (so total bonus never
+ * exceeds MAX_REFERRALS * REFERRAL_BONUS_DAYS).
+ * @returns {Promise<number>} Number of rewards applied this pass
  */
 export const checkAndApplyReferralRewards = async () => {
   try {
     const userId = await getUserId();
-    if (!userId) {
-      return 0;
-    }
+    if (!userId) return 0;
 
-    // Get stats from server to see how many completed referrals we have
     const stats = await getReferralStatsFromServer(userId);
-    if (!stats || !stats.monthsEarned || stats.monthsEarned === 0) {
-      return 0;
-    }
+    if (!stats || !stats.monthsEarned || stats.monthsEarned === 0) return 0;
 
-    // Check how many rewards we've already applied locally
     const appliedRewards = await AsyncStorage.getItem('@referral_rewards_applied');
     const alreadyApplied = appliedRewards ? parseInt(appliedRewards, 10) : 0;
 
-    const pendingRewards = stats.monthsEarned - alreadyApplied;
+    const { extendTrial, REFERRAL_BONUS_DAYS, MAX_REFERRALS } = await import('./trialService');
+    const maxRewards = MAX_REFERRALS || 3;
+    const bonusPerReward = REFERRAL_BONUS_DAYS || 7;
+
+    // Cap server-reported rewards at MAX_REFERRALS so even if the server
+    // accidentally reports more, we never grant beyond the documented max.
+    const cappedEarned = Math.min(stats.monthsEarned, maxRewards);
+    const pendingRewards = Math.max(0, cappedEarned - alreadyApplied);
 
     if (pendingRewards > 0) {
       console.log(`[ReferralService] Found ${pendingRewards} pending reward(s). Applying...`);
-
-      // Import trial service dynamically to avoid circular dependencies
-      const { extendTrial, REFERRER_REWARD_DAYS } = await import('./trialService');
-
-      // Referrer reward is +7 days per friend who completes setup.
-      const daysToAdd = pendingRewards * (REFERRER_REWARD_DAYS || 7);
+      const daysToAdd = pendingRewards * bonusPerReward;
       const result = await extendTrial(daysToAdd);
 
       if (result) {
-        // Mark these rewards as applied
-        await AsyncStorage.setItem('@referral_rewards_applied', stats.monthsEarned.toString());
+        await AsyncStorage.setItem('@referral_rewards_applied', cappedEarned.toString());
         console.log(`[ReferralService] ✅ Applied ${pendingRewards} reward(s) - added ${daysToAdd} days to trial`);
-        logReferralEvent('reward_applied', { code: stats.code || null, rewards: pendingRewards, days_added: daysToAdd });
+        const remainingRewards = Math.max(0, maxRewards - cappedEarned);
+        // Fire both the legacy `reward_applied` (existing dashboards) and
+        // the canonical `bonus_awarded` (per spec). Same payload.
+        const payload = {
+          code: stats.code || null,
+          rewards: pendingRewards,
+          days_added: daysToAdd,
+          bonus_days_awarded: daysToAdd,
+          remaining_referral_rewards: remainingRewards,
+        };
+        logReferralEvent('reward_applied', payload);
+        logReferralEvent('bonus_awarded', payload);
         return pendingRewards;
       }
     }

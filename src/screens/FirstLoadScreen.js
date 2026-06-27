@@ -118,9 +118,9 @@ export default function FirstLoadScreen({ navigation, route }) {
         if (result && result.success) {
           console.log('[FirstLoad] Referral tracked on server:', result.data.referralId);
           Alert.alert(
-            t('referral.codeAppliedTitle', { defaultValue: '🎉 Referral Code Applied!' }),
+            t('referral.codeAppliedTitle', { defaultValue: '14-Day Trial Activated' }),
             t('referral.codeAppliedMessage', {
-              defaultValue: 'Great! You get a 15-day free trial and your friend earns 7 extra days when you sign up.'
+              defaultValue: 'You joined ProofPix through a referral and received 7 additional free trial days.'
             }),
             [{ text: t('common.ok') }]
           );
@@ -220,9 +220,9 @@ export default function FirstLoadScreen({ navigation, route }) {
         setReferralCodeModalVisible(false);
         setReferralCodeInput('');
         Alert.alert(
-          t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+          t('referral.appliedTitle', { defaultValue: '14-Day Trial Activated' }),
           t('referral.appliedMessage', {
-            defaultValue: "Your friend's referral code has been applied. Enjoy a 15-day free trial!",
+            defaultValue: 'You joined ProofPix through a referral and received 7 additional free trial days.',
           }),
         );
         return;
@@ -521,7 +521,7 @@ export default function FirstLoadScreen({ navigation, route }) {
               <View style={styles.referralOnboardingBody}>
                 <Text style={styles.referralOnboardingSubtitle}>
                   {t('referral.enterCodeSubtitle', {
-                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim a 15-day free trial.',
+                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim a 14-day free trial.',
                   })}
                 </Text>
 

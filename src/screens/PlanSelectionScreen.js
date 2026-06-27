@@ -78,9 +78,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
   // takes precedence below; this only shows during the brief window
   // before store metadata loads.
   const FALLBACK_TRIAL_DAYS = 7;
-  // When the user has applied a referral code, they qualify for the
-  // 15-day "friend trial" — flat, not additive to base.
-  const REFERRAL_FRIEND_TRIAL_DAYS = 15;
+  // When the user has applied a referral code, both they and the
+  // referrer get +7 days, so the receiver's trial is base + 7 = 14
+  // days when base is 7.
+  const REFERRAL_BONUS_DAYS = 7;
   const [trialDays, setTrialDays] = useState(FALLBACK_TRIAL_DAYS);
   const isMounted = useRef(true);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
@@ -138,8 +139,8 @@ export default function PlanSelectionScreen({ navigation, route }) {
           const referralData = await AsyncStorage.default.getItem('@referral_accepted');
           if (isMounted.current) {
             const base = trialInfo?.pro?.trialDays || FALLBACK_TRIAL_DAYS;
-            // Friend (referral on file) gets 15-day flat trial, NOT base + 15.
-            setTrialDays(referralData !== null ? REFERRAL_FRIEND_TRIAL_DAYS : base);
+            // Friend (referral on file) gets base + 7 = 14 days (additive).
+            setTrialDays(referralData !== null ? base + REFERRAL_BONUS_DAYS : base);
           }
         } catch (error) {
           if (isMounted.current) {
@@ -172,8 +173,8 @@ export default function PlanSelectionScreen({ navigation, route }) {
         const AsyncStorage = await import('@react-native-async-storage/async-storage');
         const referralData = await AsyncStorage.default.getItem('@referral_accepted');
         if (isMounted.current) {
-          // Friend (referral on file) gets 15-day flat trial.
-          setTrialDays(referralData !== null ? REFERRAL_FRIEND_TRIAL_DAYS : storeDays);
+          // Friend (referral on file) gets storeDays + 7 (additive).
+          setTrialDays(referralData !== null ? storeDays + REFERRAL_BONUS_DAYS : storeDays);
         }
       } catch {
         if (isMounted.current) setTrialDays(storeDays);

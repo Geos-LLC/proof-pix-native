@@ -61,12 +61,36 @@ export default function ReferralScreen({ navigation, route }) {
     // Mark + log that the user reached the permanent referral entry;
     // suppresses the value-moment nudge from re-firing later.
     markReferralScreenOpened().catch(() => {});
-    try {
-      logReferralEvent('screen_opened');
-    } catch (e) {
-      // non-critical
-    }
   }, []);
+
+  // Fire `screen_opened` once stats are loaded so we can attach the
+  // new spec-required properties (bonus_days_awarded, remaining_rewards,
+  // trial_length_days).
+  useEffect(() => {
+    if (loading) return;
+    (async () => {
+      try {
+        const { TRIAL_DURATION_DAYS, REFERRAL_BONUS_DAYS, MAX_REFERRALS } = await import('../services/trialService');
+        const completed = serverStats?.completedInvites || 0;
+        const remaining = Math.max(0, (MAX_REFERRALS || 3) - completed);
+        const bonusDays = completed * (REFERRAL_BONUS_DAYS || 7);
+        const referralData = await AsyncStorage.getItem('@referral_accepted');
+        const referredSignup = referralData !== null;
+        const trialLength = referredSignup
+          ? (TRIAL_DURATION_DAYS || 7) + (REFERRAL_BONUS_DAYS || 7)
+          : (TRIAL_DURATION_DAYS || 7);
+        logReferralEvent('screen_opened', {
+          code: referralCode || null,
+          bonus_days_awarded: bonusDays,
+          remaining_referral_rewards: remaining,
+          trial_length_days: trialLength,
+          referred_signup: referredSignup,
+        });
+      } catch (e) {
+        // non-critical
+      }
+    })();
+  }, [loading]);
 
   // Handle referral code from deep link (proofpix://referral/CODE)
   useEffect(() => {
@@ -78,8 +102,8 @@ export default function ReferralScreen({ navigation, route }) {
           const result = await trackReferralInstallation(incomingCode);
           if (result?.success) {
             Alert.alert(
-              t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
-              t('referral.appliedMessage', { defaultValue: 'Your friend\'s referral code has been applied. Enjoy a 15-day free trial!' })
+              t('referral.appliedTitle', { defaultValue: '14-Day Trial Activated' }),
+              t('referral.appliedMessage', { defaultValue: 'You joined ProofPix through a referral and received 7 additional free trial days.' })
             );
           } else if (result?.error?.includes('already used')) {
             Alert.alert(
@@ -106,7 +130,7 @@ export default function ReferralScreen({ navigation, route }) {
               logReferralEvent('admin_link_redeemed', { code: incomingCode, link_type: 'admin', channel: adminResult.channel, source: adminResult.source, campaign: adminResult.campaign, days_added: adminResult.grantedDays });
               logAdminReferralConversion({ code: incomingCode, link_type: 'admin', channel: adminResult.channel, source: adminResult.source, campaign: adminResult.campaign, placement: adminResult.placement, label: adminResult.label, days_added: adminResult.grantedDays });
               Alert.alert(
-                t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+                t('referral.appliedTitle', { defaultValue: '14-Day Trial Activated' }),
                 t('referral.appliedMessage', { defaultValue: `You've received ${adminResult.grantedDays} extra days free!` })
               );
             }
@@ -174,9 +198,9 @@ export default function ReferralScreen({ navigation, route }) {
         setEnteredCode('');
         setHasAcceptedReferral(true);
         Alert.alert(
-          t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+          t('referral.appliedTitle', { defaultValue: '14-Day Trial Activated' }),
           t('referral.appliedMessage', {
-            defaultValue: "Your friend's referral code has been applied. Enjoy a 15-day free trial!",
+            defaultValue: 'You joined ProofPix through a referral and received 7 additional free trial days.',
           }),
         );
         return;
@@ -215,7 +239,7 @@ export default function ReferralScreen({ navigation, route }) {
           setEnteredCode('');
           setHasAcceptedReferral(true);
           Alert.alert(
-            t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+            t('referral.appliedTitle', { defaultValue: '14-Day Trial Activated' }),
             t('referral.appliedMessage', {
               defaultValue: `You've received ${adminResult.grantedDays} extra days free!`,
             }),
@@ -281,7 +305,7 @@ export default function ReferralScreen({ navigation, route }) {
           iosLink: iosAppStoreLink,
           androidLink: androidPlayStoreLink,
           deepLink: deepLink,
-          defaultValue: `Join ProofPix and get organized!\n\nAlready have the app? Tap here:\n${deepLink}\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\n🎁 Use my referral code: ${referralCode}\nYou'll get a 15-day free trial!`
+          defaultValue: `Join ProofPix and get organized!\n\nAlready have the app? Tap here:\n${deepLink}\n\n📱 Download ProofPix:\niOS: ${iosAppStoreLink}\nAndroid: ${androidPlayStoreLink}\n\n🎁 Use my referral code: ${referralCode}\nYou'll get a 14-day free trial!`
         }),
         title: t('referral.shareIntroTitle', { defaultValue: 'ProofPix Referral' })
       });
@@ -379,11 +403,11 @@ export default function ReferralScreen({ navigation, route }) {
         <View style={styles.earnFreeSection}>
           <View style={styles.earnFreeContent}>
             <Text style={styles.earnFreeTitle}>
-              {t('referral.earnFreeTitle', { defaultValue: 'Invite Professionals.\nEarn Free Trial Time.' })}
+              {t('referral.earnFreeTitle', { defaultValue: 'Invite Professionals.\nEarn More Time.' })}
             </Text>
             <Text style={styles.earnFreeSubtitle}>
               {t('referral.earnFreeSubtitle', {
-                defaultValue: 'Receive 7 extra trial days for every professional who joins ProofPix using your referral link. Your friend gets a 15-day free trial.',
+                defaultValue: 'Invite a colleague and both of you will receive 7 extra free trial days. Earn up to 21 bonus days.',
               })}
             </Text>
             <View style={styles.rewardsList}>
@@ -544,7 +568,7 @@ export default function ReferralScreen({ navigation, route }) {
               <View style={styles.enterCodeBody}>
                 <Text style={styles.enterCodeSubtitle}>
                   {t('referral.enterCodeSubtitle', {
-                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim a 15-day free trial.',
+                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim a 14-day free trial.',
                   })}
                 </Text>
 
@@ -612,7 +636,7 @@ export default function ReferralScreen({ navigation, route }) {
             {/* Content */}
             <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
               <Text style={styles.modalText}>
-                Share the app with friends and get rewarded! When your friend installs and sets up the app, you'll earn 7 extra days of free access per friend (up to 3 friends, 21 days max). Your friend gets a 15-day free trial instead of the standard 7.
+                Share the app with friends and get rewarded! When your friend installs and sets up the app, both of you earn 7 extra trial days. Invite up to 3 friends to earn up to 21 bonus days.
               </Text>
               
               <View style={styles.modalNote}>

@@ -143,6 +143,20 @@ export default function AuthLoadingScreen({ navigation }) {
         const rewardsApplied = await checkAndApplyReferralRewards();
         if (rewardsApplied > 0) {
           console.log(`[AuthLoading] Applied ${rewardsApplied} referral reward(s)`);
+          // Spec: surface the sender confirmation modal — "Referral Reward
+          // Earned" / "You earned X extra trial days." Queue it as an
+          // Alert via setTimeout so it shows after navigation settles.
+          const { REFERRAL_BONUS_DAYS } = await import('../services/trialService');
+          const daysAdded = rewardsApplied * (REFERRAL_BONUS_DAYS || 7);
+          setTimeout(() => {
+            try {
+              const { Alert } = require('react-native');
+              Alert.alert(
+                'Referral Reward Earned',
+                `You earned ${daysAdded} extra trial day${daysAdded === 1 ? '' : 's'}.`,
+              );
+            } catch {}
+          }, 2500);
         }
 
         // Check for pending admin referral code redemption
