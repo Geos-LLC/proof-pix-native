@@ -45,6 +45,7 @@ import { ensureLabelForPhoto } from '../services/uploadService';
 import crmService from '../services/crm';
 import chromeBakeService from '../services/chromeBakeService';
 import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
+import { maybeShowFirstReportReferralPrompt } from '../services/referralPromptService';
 
 // react-native-share for multi-file sharing (not available in Expo Go)
 let __RNShare = { open: async () => {} };
@@ -1815,6 +1816,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
           UTI: isPdf ? 'com.adobe.pdf' : 'public.html',
           dialogTitle: 'Share report',
         });
+        // Value-moment nudge — service handles all eligibility (only
+        // fires once, never if user already saw the Referral screen).
+        setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
       } else {
         Alert.alert('Saved', `Report saved to ${target}`);
       }
@@ -1872,6 +1876,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
             mimeType: 'text/html', UTI: 'public.html',
             dialogTitle: `Share ${safeName}`,
           });
+          setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
         } else {
           Alert.alert('Saved', `Report saved to ${htmlTarget}`);
         }
@@ -1898,6 +1903,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
             mimeType: 'application/pdf', UTI: 'com.adobe.pdf',
             dialogTitle: `Share ${safeName}`,
           });
+          setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
         } catch (_) {
           Alert.alert(
             'PDF not supported in this build',
@@ -1930,6 +1936,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
           dialogTitle: zipFileName,
         });
         try { await FileSystem.deleteAsync(zipPath, { idempotent: true }); } catch {}
+        setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
         return;
       }
 
@@ -1937,6 +1944,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
         // Reuse sharePhotosAsLink with the HTML file as the single
         // upload target. Provider picked via shareLinkProvider state.
         await sharePhotosAsLink([htmlTarget]);
+        setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
         return;
       }
     } catch (e) {

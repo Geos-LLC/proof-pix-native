@@ -17,6 +17,16 @@ import { PhotoProvider } from './src/context/PhotoContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import { AdminProvider } from './src/context/AdminContext';
 import TrialNotificationModal from './src/components/TrialNotificationModal';
+import ReferralPromptModal from './src/components/ReferralPromptModal';
+import {
+  registerReferralPromptTrigger,
+  unregisterReferralPromptTrigger,
+  maybeShowExpiringTrialReferralPrompt,
+  markFirstReportPromptDismissed,
+  markFirstReportPromptOpened,
+  markExpiringTrialInviteClicked,
+  markExpiringTrialUpgradeClicked,
+} from './src/services/referralPromptService';
 import { useFonts } from 'expo-font';
 import { Montserrat_700Bold } from '@expo-google-fonts/montserrat';
 import { PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display';
@@ -682,6 +692,8 @@ export default function App() {
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
   const [trialNotification, setTrialNotification] = useState(null);
   const [showTrialModal, setShowTrialModal] = useState(false);
+  const [referralPrompt, setReferralPrompt] = useState(null);
+  const [showReferralPrompt, setShowReferralPrompt] = useState(false);
 
   console.log('[App] Loading fonts...');
   const [fontsLoaded] = useFonts({
@@ -823,6 +835,10 @@ export default function App() {
         checkTrialExpiration();
         // Skip Day 0 on foreground check too (only show after plan selection)
         checkTrialNotifications(true);
+        // Quietly probe whether the user should see the expiring-trial
+        // referral nudge today. Service handles all gating (daily cap,
+        // not subscribed, rewards available, days_remaining <= 2).
+        maybeShowExpiringTrialReferralPrompt().catch(() => {});
       }
     });
 
@@ -848,6 +864,8 @@ export default function App() {
         // Skip Day 0 welcome message on startup
         if (active) {
           checkTrialNotifications(true); // Skip Day 0 on startup
+          // Trial-ending referral nudge (gated by service; once/day max)
+          maybeShowExpiringTrialReferralPrompt().catch(() => {});
         }
       } catch (error) {
         // Silent fail - trial status check is not critical for app functionality
@@ -911,6 +929,57 @@ export default function App() {
       globalCheckTrialNotifications = null;
     };
   }, []);
+
+  // Mount the referral prompt trigger so referralPromptService can fire
+  // the modal from anywhere (report-share success path, foreground check,
+  // etc.) without prop-drilling.
+  useEffect(() => {
+    registerReferralPromptTrigger((payload) => {
+      setReferralPrompt(payload);
+      setShowReferralPrompt(true);
+    });
+    return () => {
+      unregisterReferralPromptTrigger();
+    };
+  }, []);
+
+  const handleReferralPromptClose = async () => {
+    setShowReferralPrompt(false);
+    const variant = referralPrompt?.variant;
+    if (variant === 'first_report') {
+      await markFirstReportPromptDismissed();
+    }
+    setReferralPrompt(null);
+  };
+
+  const handleReferralPromptPrimary = async () => {
+    const current = referralPrompt;
+    setShowReferralPrompt(false);
+    setReferralPrompt(null);
+    if (current?.variant === 'first_report') {
+      await markFirstReportPromptOpened();
+    } else if (current?.variant === 'expiring_trial') {
+      markExpiringTrialInviteClicked(current?.daysRemaining);
+    }
+    if (navigationRef.current) {
+      navigationRef.current.navigate('Referral');
+    }
+  };
+
+  const handleReferralPromptSecondary = async () => {
+    const current = referralPrompt;
+    setShowReferralPrompt(false);
+    setReferralPrompt(null);
+    if (current?.variant === 'expiring_trial') {
+      markExpiringTrialUpgradeClicked(current?.daysRemaining);
+      if (navigationRef.current) {
+        navigationRef.current.navigate('PlanSelection', { mode: 'upgrade', trigger: 'expiring_trial' });
+      }
+    } else {
+      // first_report — "Maybe Later" just dismisses
+      await markFirstReportPromptDismissed();
+    }
+  };
 
   const handleTrialModalClose = () => {
     setShowTrialModal(false);
@@ -1100,6 +1169,15 @@ export default function App() {
             onUpgrade={handleTrialUpgrade}
             onRefer={handleTrialRefer}
             onCTA={handleTrialCTA}
+          />
+
+          {/* Referral Prompt Modal — fires on value-moment + trial-ending */}
+          <ReferralPromptModal
+            visible={showReferralPrompt}
+            prompt={referralPrompt}
+            onClose={handleReferralPromptClose}
+            onPrimary={handleReferralPromptPrimary}
+            onSecondary={handleReferralPromptSecondary}
           />
         </SafeAreaProvider>
       </View>

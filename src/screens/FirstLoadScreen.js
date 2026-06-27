@@ -23,7 +23,6 @@ import { useSettings } from '../context/SettingsContext';
 import { COLORS } from '../constants/rooms';
 import { logLanguageChange, logOnboardingCompleted, logOnboardingStepCompleted } from '../utils/analytics';
 import { FONTS } from '../constants/fonts';
-import { canStartTrial } from '../services/trialService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Updates from 'expo-updates';
 import { isRTLLanguage } from '../hooks/useRTL';
@@ -70,9 +69,6 @@ export default function FirstLoadScreen({ navigation, route }) {
   const { updateUserInfo, updateUserPlan, userPlan, updateLabelLanguage, updateSectionLanguage } = useSettings();
   const [userName, setUserName] = useState('');
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
-  const [referralModalVisible, setReferralModalVisible] = useState(false);
-  const [referralCodeInput, setReferralCodeInput] = useState('');
-  const [successModalVisible, setSuccessModalVisible] = useState(false);
   const scrollViewRef = useRef(null);
   const nameInputRef = useRef(null);
   const inputContainerRef = useRef(null);
@@ -199,63 +195,10 @@ export default function FirstLoadScreen({ navigation, route }) {
     updateLabelLanguage(currentLang);
     updateSectionLanguage(currentLang);
 
-    const hasPaidSubscription = userPlan && userPlan !== 'starter';
-    const canTrial = await canStartTrial();
-
-    if (!canTrial && !hasPaidSubscription) {
-      setReferralModalVisible(true);
-    } else {
-      logOnboardingCompleted();
-      navigation.replace('Home');
-    }
-  };
-
-  const handleContinueWithoutReferral = () => {
-    setReferralModalVisible(false);
+    // Growth mechanics intentionally absent from onboarding — referral
+    // attribution from a deep link still flows via `route.params.code`
+    // handled above; the share/invite UX surfaces post value-moment.
     logOnboardingCompleted();
-    navigation.replace('Home');
-  };
-
-  const handleReferralSubmitAndContinue = async () => {
-    if (referralCodeInput.trim()) {
-      const { trackReferralInstallation } = await import('../services/referralService');
-      const result = await trackReferralInstallation(referralCodeInput.trim().toUpperCase());
-
-      if (result && result.success) {
-        console.log('[FirstLoad] Referral tracked on server:', result.data.referralId);
-        setReferralModalVisible(false);
-        setReferralCodeInput('');
-        setSuccessModalVisible(true);
-        return;
-      } else {
-        let errorMessage = t('referral.invalidCodeMessage', {
-          defaultValue: 'Invalid referral code. Please check and try again.'
-        });
-
-        if (result && result.error) {
-          if (result.error.includes('already used a referral code')) {
-            errorMessage = t('referral.alreadyUsedMessage', {
-              defaultValue: 'This device has already used a referral code. Each device can only use one referral code.'
-            });
-          } else if (result.error.includes('Invalid referral code')) {
-            errorMessage = t('referral.codeDoesNotExistMessage', {
-              defaultValue: 'This referral code does not exist. Please check with your friend and try again.'
-            });
-          } else {
-            errorMessage = result.error;
-          }
-        }
-
-        Alert.alert(
-          t('referral.unableToApplyTitle', { defaultValue: 'Unable to Apply Code' }),
-          errorMessage
-        );
-        return;
-      }
-    }
-
-    setReferralModalVisible(false);
-    setReferralCodeInput('');
     navigation.replace('Home');
   };
 
@@ -443,128 +386,6 @@ export default function FirstLoadScreen({ navigation, route }) {
             </ScrollView>
           </View>
         </TouchableOpacity>
-      </Modal>
-
-      {/* Referral Code Modal - Bottom Sheet Style */}
-      <Modal
-        visible={referralModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setReferralModalVisible(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setReferralModalVisible(false)}
-        >
-          <Pressable 
-            style={styles.referralModalContent}
-            onPress={(e) => e.stopPropagation()}
-          >
-            {/* Handle Bar */}
-            <View style={styles.modalHandle} />
-            
-            {/* Header */}
-            <View style={styles.modalHeaderBottomSheet}>
-              <TouchableOpacity
-                style={styles.modalCloseButtonTop}
-                onPress={() => setReferralModalVisible(false)}
-              >
-                <Ionicons name="close" size={24} color={COLORS.TEXT} />
-              </TouchableOpacity>
-              <Text style={styles.modalTitleBottomSheet}>
-                {t('referral.enterCodeTitle', { defaultValue: 'Have a Referral Code?' })}
-              </Text>
-              <View style={styles.modalCloseButtonTop} />
-            </View>
-
-            {/* Content */}
-            <ScrollView 
-              style={styles.referralScrollView}
-              contentContainerStyle={styles.referralContent}
-              keyboardShouldPersistTaps="handled"
-            >
-              <Text style={styles.modalSubtitle}>
-                {t('referral.enterCodeSubtitle', { 
-                  defaultValue: `Enter a referral code from a friend to get ${30} days free trial!`
-                })}
-              </Text>
-              
-              <View style={styles.referralInputContainer}>
-                <TextInput
-                  style={styles.referralInput}
-                  value={referralCodeInput}
-                  onChangeText={(text) => setReferralCodeInput(text.toUpperCase())}
-                  placeholder={t('referral.codePlaceholder', { defaultValue: 'ENTER CODE' })}
-                  placeholderTextColor="#999"
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                />
-              </View>
-            </ScrollView>
-
-            {/* Buttons - Fixed at bottom */}
-            <View style={styles.referralButtonsContainer}>
-              <TouchableOpacity
-                style={styles.referralSubmitButton}
-                onPress={handleReferralSubmitAndContinue}
-              >
-                <Text style={styles.referralSubmitButtonText}>
-                  {t('referral.applyAndContinue', { defaultValue: 'Apply & Continue' })}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.skipButton}
-                onPress={handleContinueWithoutReferral}
-              >
-                <Text style={styles.skipButtonText}>
-                  {t('referral.skipForNow', { defaultValue: 'Skip for now' })}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Success Modal */}
-      <Modal
-        visible={successModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => {
-          setSuccessModalVisible(false);
-          navigation.replace('Home');
-        }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.successModalContent}>
-            <Text style={styles.successIcon}>🎉</Text>
-            <Text style={styles.successTitle}>
-              {t('referral.successTitle', { defaultValue: 'Code Applied!' })}
-            </Text>
-            <Text style={styles.successMessage}>
-              {t('referral.successMessage', { defaultValue: 'You now have' })}
-              {' '}
-              <Text style={styles.highlightText}>
-                {t('referral.successDays', { defaultValue: `${30} days free trial!` })}
-              </Text>
-            </Text>
-            <Text style={styles.successSubtext}>
-              {t('referral.successSubtext', { defaultValue: 'Your friend will also receive 15 extra days when you subscribe.' })}
-            </Text>
-            <TouchableOpacity
-              style={styles.successButton}
-              onPress={() => {
-                setSuccessModalVisible(false);
-                navigation.replace('Home');
-              }}
-            >
-              <Text style={styles.successButtonText}>
-                {t('referral.continue', { defaultValue: 'Continue' })}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
       </Modal>
 
     </SafeAreaView>

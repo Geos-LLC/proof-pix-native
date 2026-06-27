@@ -744,6 +744,32 @@ export default function PlanSelectionScreen({ navigation, route }) {
             ) : null}
           </>
         )}
+        {/* Need more trial time? — lightweight informational block. Routes
+            to the Referral screen where the actual share flow lives.
+            Hidden once the user has converted (paying tier), since the
+            referral mechanic only rewards extra trial days. */}
+        {currentTier === 'starter' && (
+          <TouchableOpacity
+            style={styles.referralInfoBlock}
+            onPress={() => navigation.navigate('Referral')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.referralInfoIcon}>
+              <Ionicons name="gift-outline" size={18} color="#7A5B00" />
+            </View>
+            <View style={styles.referralInfoCopy}>
+              <Text style={styles.referralInfoTitle}>Need More Trial Time?</Text>
+              <Text style={styles.referralInfoBody}>
+                Invite other professionals and earn 15 extra trial days for each successful referral.
+              </Text>
+              <Text style={styles.referralInfoFootnote}>
+                Invite up to 3 colleagues and unlock up to 45 additional free days.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#9A9A9A" />
+          </TouchableOpacity>
+        )}
+
         {/* Restore Purchases */}
         <TouchableOpacity
           style={styles.restorePurchasesButton}
@@ -1651,5 +1677,60 @@ const styles = StyleSheet.create({
   },
   designSecondaryCTADisabled: {
     backgroundColor: '#E7E7E7',
+  },
+
+  // Lightweight referral nudge near the bottom of the paywall. Soft
+  // accent fill so it reads as secondary to the subscription CTAs but
+  // is still discoverable; mirrors the code-box accent on ReferralScreen.
+  referralInfoBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 18,
+    marginTop: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1,
+    borderColor: '#F2C31B',
+    gap: 12,
+  },
+  referralInfoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFF4C2',
+    borderWidth: 1,
+    borderColor: '#F2C31B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  referralInfoCopy: {
+    flex: 1,
+  },
+  referralInfoTitle: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+    marginBottom: 2,
+  },
+  referralInfoBody: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+    lineHeight: 17,
+  },
+  referralInfoFootnote: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#7A5B00',
+    letterSpacing: -0.1,
+    lineHeight: 15,
+    marginTop: 4,
   },
 });

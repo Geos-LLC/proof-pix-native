@@ -10,6 +10,9 @@ import {
   SafeAreaView,
   Modal,
   Pressable,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +30,7 @@ import {
   getUserId,
   trackReferralInstallation,
 } from '../services/referralService';
+import { markReferralScreenOpened } from '../services/referralPromptService';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
@@ -47,9 +51,21 @@ export default function ReferralScreen({ navigation, route }) {
   });
   const [loading, setLoading] = useState(true);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showEnterCodeModal, setShowEnterCodeModal] = useState(false);
+  const [enteredCode, setEnteredCode] = useState('');
+  const [applyingCode, setApplyingCode] = useState(false);
+  const [hasAcceptedReferral, setHasAcceptedReferral] = useState(false);
 
   useEffect(() => {
     loadReferralData();
+    // Mark + log that the user reached the permanent referral entry;
+    // suppresses the value-moment nudge from re-firing later.
+    markReferralScreenOpened().catch(() => {});
+    try {
+      logReferralEvent('screen_opened');
+    } catch (e) {
+      // non-critical
+    }
   }, []);
 
   // Handle referral code from deep link (proofpix://referral/CODE)
@@ -126,10 +142,117 @@ export default function ReferralScreen({ navigation, route }) {
       // Still load local info for backward compatibility
       const info = await getReferralInfo();
       setReferralInfo(info);
+
+      // Hide the "Have a referral code?" entry once a code is on file —
+      // device can only redeem one referral code per the proxy rules.
+      const accepted = await AsyncStorage.getItem('@referral_accepted');
+      setHasAcceptedReferral(accepted !== null);
     } catch (error) {
       console.error('[ReferralScreen] Error loading referral data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApplyEnteredCode = async () => {
+    const code = enteredCode.trim().toUpperCase();
+    if (!code) return;
+    if (code === referralCode) {
+      Alert.alert(
+        t('referral.ownCodeTitle', { defaultValue: 'That\'s your own code' }),
+        t('referral.ownCodeMessage', {
+          defaultValue: 'You can\'t apply your own referral code. Share it with a colleague instead.',
+        }),
+      );
+      return;
+    }
+    setApplyingCode(true);
+    try {
+      const result = await trackReferralInstallation(code);
+      if (result?.success) {
+        setShowEnterCodeModal(false);
+        setEnteredCode('');
+        setHasAcceptedReferral(true);
+        Alert.alert(
+          t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+          t('referral.appliedMessage', {
+            defaultValue: "Your friend's referral code has been applied. Enjoy 15 extra days free!",
+          }),
+        );
+        return;
+      }
+
+      // Fall back to admin-marketing referrals so flyer/QR codes resolve too
+      const { redeemAdminReferralCode, hasRedeemedAdminReferral, markAdminReferralRedeemed } =
+        await import('../services/adminReferralService');
+      const alreadyAdmin = await hasRedeemedAdminReferral();
+      if (!alreadyAdmin) {
+        const userId = await getUserId();
+        const adminResult = await redeemAdminReferralCode(code, userId);
+        if (adminResult?.success && adminResult?.grantedDays > 0) {
+          const { extendTrial } = await import('../services/trialService');
+          await extendTrial(adminResult.grantedDays);
+          await markAdminReferralRedeemed();
+          logReferralEvent('admin_link_redeemed', {
+            code,
+            link_type: 'admin',
+            channel: adminResult.channel,
+            source: adminResult.source,
+            campaign: adminResult.campaign,
+            days_added: adminResult.grantedDays,
+          });
+          logAdminReferralConversion({
+            code,
+            link_type: 'admin',
+            channel: adminResult.channel,
+            source: adminResult.source,
+            campaign: adminResult.campaign,
+            placement: adminResult.placement,
+            label: adminResult.label,
+            days_added: adminResult.grantedDays,
+          });
+          setShowEnterCodeModal(false);
+          setEnteredCode('');
+          setHasAcceptedReferral(true);
+          Alert.alert(
+            t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
+            t('referral.appliedMessage', {
+              defaultValue: `You've received ${adminResult.grantedDays} extra days free!`,
+            }),
+          );
+          return;
+        }
+      }
+
+      // Both lookups failed — surface the most useful error message
+      let errorMessage = t('referral.invalidCodeMessage', {
+        defaultValue: 'Invalid referral code. Please check and try again.',
+      });
+      if (result?.error?.includes('already used a referral code')) {
+        errorMessage = t('referral.alreadyUsedMessage', {
+          defaultValue: 'A referral code has already been applied to this device.',
+        });
+      } else if (result?.error?.includes('Invalid referral code')) {
+        errorMessage = t('referral.codeDoesNotExistMessage', {
+          defaultValue: "This referral code doesn't exist. Double-check with your friend.",
+        });
+      } else if (result?.error) {
+        errorMessage = result.error;
+      }
+      Alert.alert(
+        t('referral.unableToApplyTitle', { defaultValue: 'Unable to Apply Code' }),
+        errorMessage,
+      );
+    } catch (error) {
+      console.error('[ReferralScreen] Error applying entered code:', error);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('referral.applyErrorMessage', {
+          defaultValue: 'Could not apply the code. Check your connection and try again.',
+        }),
+      );
+    } finally {
+      setApplyingCode(false);
     }
   };
 
@@ -142,6 +265,7 @@ export default function ReferralScreen({ navigation, route }) {
 
       // Analytics: referral invite sent
       try {
+        logReferralEvent('share_clicked', { code: referralCode, method });
         logReferralEvent('sent', {
           code: referralCode,
         });
@@ -176,6 +300,11 @@ export default function ReferralScreen({ navigation, route }) {
     try {
       // Copy just the referral code, not the full link
       await Clipboard.setString(referralCode);
+      try {
+        logReferralEvent('link_copied', { code: referralCode, method: 'copy_link_button' });
+      } catch (e) {
+        // non-critical
+      }
       Alert.alert(
         t('referral.copiedTitle', { defaultValue: 'Copied!' }),
         t('referral.copiedMessage', {
@@ -244,15 +373,22 @@ export default function ReferralScreen({ navigation, route }) {
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* Earn Free Months Section */}
+        {/* Hero — spec-aligned wording: position the screen as a way
+            to earn extra trial time rather than as a generic "free days"
+            growth tile. */}
         <View style={styles.earnFreeSection}>
           <View style={styles.earnFreeContent}>
             <Text style={styles.earnFreeTitle}>
-              {t('referral.earnFreeTitle', { defaultValue: 'Earn Free Days!' })}
+              {t('referral.earnFreeTitle', { defaultValue: 'Invite Professionals.\nEarn Free Trial Time.' })}
+            </Text>
+            <Text style={styles.earnFreeSubtitle}>
+              {t('referral.earnFreeSubtitle', {
+                defaultValue: 'Receive 15 extra trial days for every professional who joins ProofPix using your referral link.',
+              })}
             </Text>
             <View style={styles.rewardsList}>
               <Text style={styles.rewardText}>
-                {t('referral.tier1', { defaultValue: '1 Friend = 15 Days Free!' })}
+                {t('referral.tier1', { defaultValue: '1 Friend = 15 Days Free' })}
               </Text>
               <Text style={styles.rewardText}>
                 {t('referral.tier2', { defaultValue: '2 Friends = 30 Days Free' })}
@@ -279,6 +415,11 @@ export default function ReferralScreen({ navigation, route }) {
               style={styles.copyIconButton}
               onPress={async () => {
                 await Clipboard.setString(referralCode);
+                try {
+                  logReferralEvent('link_copied', { code: referralCode, method: 'inline_copy_chip' });
+                } catch (e) {
+                  // non-critical
+                }
                 Alert.alert('Copied!', 'Referral code copied to clipboard.');
               }}
             >
@@ -306,6 +447,24 @@ export default function ReferralScreen({ navigation, route }) {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Receiving-side entry — a colleague gave you a code. Hidden
+              once a code is on file (one redemption per device, server-
+              enforced). Deep-link redemption still auto-applies without
+              this entry. */}
+          {!hasAcceptedReferral && (
+            <TouchableOpacity
+              style={styles.haveCodeRow}
+              onPress={() => setShowEnterCodeModal(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="ticket-outline" size={16} color="#7A5B00" />
+              <Text style={styles.haveCodeText}>
+                {t('referral.haveCodeCTA', { defaultValue: 'Have a referral code from a colleague?' })}
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color="#9A9A9A" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Progress Cards */}
@@ -343,9 +502,81 @@ export default function ReferralScreen({ navigation, route }) {
           <Text style={styles.progressText}>
             {completedCount} of 3 friends invited
           </Text>
+          {completedCount < 3 && (
+            <Text style={styles.remainingRewardsText}>
+              {`${(3 - completedCount) * 15} bonus days still available — invite ${3 - completedCount} more ${3 - completedCount === 1 ? 'professional' : 'professionals'}.`}
+            </Text>
+          )}
         </View>
 
       </ScrollView>
+
+      {/* Enter-referral-code Modal — receiving-side entry */}
+      <Modal
+        visible={showEnterCodeModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowEnterCodeModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => setShowEnterCodeModal(false)}>
+            <Pressable style={styles.enterCodeSheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.dragHandle} />
+              <View style={styles.modalHeader}>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setShowEnterCodeModal(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <View style={styles.closeButtonCircle}>
+                    <Ionicons name="close" size={20} color="#666666" />
+                  </View>
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>
+                  {t('referral.enterCodeTitle', { defaultValue: 'Enter Referral Code' })}
+                </Text>
+                <View style={styles.headerSpacer} />
+              </View>
+
+              <View style={styles.enterCodeBody}>
+                <Text style={styles.enterCodeSubtitle}>
+                  {t('referral.enterCodeSubtitle', {
+                    defaultValue: 'Got an 8-character code from a colleague? Enter it here to claim 15 extra trial days.',
+                  })}
+                </Text>
+
+                <TextInput
+                  style={styles.enterCodeInput}
+                  value={enteredCode}
+                  onChangeText={(text) => setEnteredCode(text.toUpperCase().replace(/\s/g, ''))}
+                  placeholder={t('referral.codePlaceholder', { defaultValue: 'ENTER CODE' })}
+                  placeholderTextColor="#999"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={16}
+                  editable={!applyingCode}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.applyCodeButton, (!enteredCode.trim() || applyingCode) && styles.applyCodeButtonDisabled]}
+                onPress={handleApplyEnteredCode}
+                disabled={!enteredCode.trim() || applyingCode}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.applyCodeButtonText}>
+                  {applyingCode
+                    ? t('referral.applying', { defaultValue: 'Applying…' })
+                    : t('referral.applyCode', { defaultValue: 'Apply Code' })}
+                </Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Info Modal */}
       <Modal
@@ -489,11 +720,18 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   earnFreeTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     color: '#000000',
-    marginBottom: 16,
-    letterSpacing: -0.5,
+    marginBottom: 8,
+    letterSpacing: -0.4,
+    lineHeight: 28,
+  },
+  earnFreeSubtitle: {
+    fontSize: 13,
+    color: '#5A5A5A',
+    marginBottom: 14,
+    lineHeight: 18,
   },
   rewardsList: {
     gap: 8,
@@ -602,6 +840,78 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.1,
   },
+  haveCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginTop: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1,
+    borderColor: '#F2C31B',
+  },
+  haveCodeText: {
+    flex: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    letterSpacing: -0.1,
+  },
+  enterCodeSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 24,
+    width: '100%',
+  },
+  enterCodeBody: {
+    paddingHorizontal: 24,
+    paddingTop: 4,
+    paddingBottom: 20,
+  },
+  enterCodeSubtitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  enterCodeInput: {
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1.5,
+    borderColor: '#F2C31B',
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    textAlign: 'center',
+    letterSpacing: 3,
+  },
+  applyCodeButton: {
+    marginHorizontal: 24,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#1E1E1E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyCodeButtonDisabled: {
+    backgroundColor: '#CCCCCC',
+  },
+  applyCodeButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.1,
+  },
   progressCards: {
     flexDirection: 'row',
     gap: 12,
@@ -654,6 +964,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
     textAlign: 'center',
+  },
+  remainingRewardsText: {
+    fontSize: 12,
+    color: '#7A5B00',
+    textAlign: 'center',
+    marginTop: 6,
+    fontWeight: '600',
   },
   // Refresh: primary CTA per design — 52px height, radius 16, warm pop-shadow.
   ctaButton: {
