@@ -72,31 +72,44 @@ const runCapture = (cmd, args, opts = {}) => {
 //   B) Runtime-key mode (legacy): $LOGHUB_KEY / $EXPO_PUBLIC_FIXPROMPT_KEY.
 //      Requires the key in shell env because EAS type=secret won't reveal it
 //      to `eas env:list`. Kept for backward compat with old release flows.
-const deployToken = process.env.FIXPROMPT_DEPLOY_TOKEN || null;
+let deployToken = process.env.FIXPROMPT_DEPLOY_TOKEN || null;
 let fixpromptKey = deployToken ? null : (process.env.LOGHUB_KEY || process.env.EXPO_PUBLIC_FIXPROMPT_KEY || null);
 
+// Auto-pull from EAS env list if nothing's in shell. `fixprompt connect`
+// writes FIXPROMPT_DEPLOY_TOKEN as type=string visibility=plaintext, so
+// eas env:list returns the actual value (unlike EXPO_PUBLIC_FIXPROMPT_KEY
+// which is type=secret and masks to `*****`).
 if (!deployToken && !fixpromptKey) {
-  // Try EAS as last resort for the legacy path. Won't reveal type=secret values.
   try {
     const out = execSync(
       `npx eas env:list ${environment} --include-sensitive --format short`,
       { encoding: 'utf8', shell: true },
     );
-    const line = out.split('\n').find((l) => l.startsWith('EXPO_PUBLIC_FIXPROMPT_KEY='));
-    const raw = line?.slice('EXPO_PUBLIC_FIXPROMPT_KEY='.length).trim();
-    if (raw && !raw.startsWith('*****') && !raw.startsWith('(')) fixpromptKey = raw;
+    const lines = out.split('\n');
+    // Prefer the deploy token if EAS has it.
+    const dtLine = lines.find((l) => l.startsWith('FIXPROMPT_DEPLOY_TOKEN='));
+    const dtRaw = dtLine?.slice('FIXPROMPT_DEPLOY_TOKEN='.length).trim();
+    if (dtRaw && !dtRaw.startsWith('*****') && !dtRaw.startsWith('(')) {
+      deployToken = dtRaw;
+    } else {
+      // Legacy: try EXPO_PUBLIC_FIXPROMPT_KEY (will be masked if type=secret).
+      const keyLine = lines.find((l) => l.startsWith('EXPO_PUBLIC_FIXPROMPT_KEY='));
+      const keyRaw = keyLine?.slice('EXPO_PUBLIC_FIXPROMPT_KEY='.length).trim();
+      if (keyRaw && !keyRaw.startsWith('*****') && !keyRaw.startsWith('(')) fixpromptKey = keyRaw;
+    }
   } catch (e) { /* fall through to error */ }
 }
 
 if (!deployToken && !fixpromptKey) {
   fail(
     `Could not resolve auth for FixPrompt.\n` +
-    `   Recommended (works without copy-pasting the runtime key):\n` +
-    `     1. Mint a deploy token: https://fixprompt-dashboard.vercel.app → Integrations → Deploy tokens\n` +
-    `     2. Store it: export FIXPROMPT_DEPLOY_TOKEN=fpd_...\n` +
-    `        (or 'eas env:create' as plain — fpd_ tokens are deploy-only, safe to expose to CI)\n` +
-    `   Legacy fallback:\n` +
-    `     export LOGHUB_KEY=k_...  (the runtime SDK key — EAS type=secret hides this)`,
+    `   Recommended (zero shell paste, one-time setup):\n` +
+    `     FIXPROMPT_ADMIN_TOKEN=fpa_... npx @fixprompt/cli@latest connect \\\n` +
+    `       --project-slug <slug> --provider eas --eas-env ${environment} --force\n` +
+    `   That writes FIXPROMPT_DEPLOY_TOKEN to EAS as plaintext — this script\n` +
+    `   then auto-reads it from \`eas env:list\` on every subsequent run.\n` +
+    `   Manual fallback:\n` +
+    `     export FIXPROMPT_DEPLOY_TOKEN=fpd_...   # or LOGHUB_KEY=k_... (legacy)`,
   );
 }
 
