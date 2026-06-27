@@ -64,13 +64,19 @@ const runCapture = (cmd, args, opts = {}) => {
   return { status: r.status ?? 1, out };
 };
 
-// Resolve key in this order:
-//   1. process.env.LOGHUB_KEY (explicit shell override)
-//   2. process.env.EXPO_PUBLIC_FIXPROMPT_KEY (same, alt name)
-//   3. EAS env:list (only works if the var is type=sensitive; type=secret
-//      values come back masked from the CLI)
-let fixpromptKey = process.env.LOGHUB_KEY || process.env.EXPO_PUBLIC_FIXPROMPT_KEY || null;
-if (!fixpromptKey) {
+// Two auth paths:
+//   A) Deploy-token mode (preferred): $FIXPROMPT_DEPLOY_TOKEN (fpd_…). Pre-flight
+//      uses key-less GET /ingest/probe. Deploy marker uses CLI --deploy-token.
+//      The runtime k_… SDK key NEVER needs to leave EAS — it's only used by
+//      devices at runtime, not by the deploy script.
+//   B) Runtime-key mode (legacy): $LOGHUB_KEY / $EXPO_PUBLIC_FIXPROMPT_KEY.
+//      Requires the key in shell env because EAS type=secret won't reveal it
+//      to `eas env:list`. Kept for backward compat with old release flows.
+const deployToken = process.env.FIXPROMPT_DEPLOY_TOKEN || null;
+let fixpromptKey = deployToken ? null : (process.env.LOGHUB_KEY || process.env.EXPO_PUBLIC_FIXPROMPT_KEY || null);
+
+if (!deployToken && !fixpromptKey) {
+  // Try EAS as last resort for the legacy path. Won't reveal type=secret values.
   try {
     const out = execSync(
       `npx eas env:list ${environment} --include-sensitive --format short`,
@@ -78,25 +84,40 @@ if (!fixpromptKey) {
     );
     const line = out.split('\n').find((l) => l.startsWith('EXPO_PUBLIC_FIXPROMPT_KEY='));
     const raw = line?.slice('EXPO_PUBLIC_FIXPROMPT_KEY='.length).trim();
-    // EAS returns "*****" or "(This is a secret env variable...)" when the
-    // value is type=secret — reject those, force the user to provide it.
     if (raw && !raw.startsWith('*****') && !raw.startsWith('(')) fixpromptKey = raw;
-  } catch (e) {
-    // Don't fail yet — let the explicit missing-key check below print a
-    // more useful error.
-  }
+  } catch (e) { /* fall through to error */ }
 }
-if (!fixpromptKey) {
+
+if (!deployToken && !fixpromptKey) {
   fail(
-    `Could not resolve FIXPROMPT_KEY.\n` +
-    `   The EAS env ${environment} probably stores it as type=secret (CLI can't read).\n` +
-    `   Export it once in your shell:\n` +
-    `     export LOGHUB_KEY=k_...\n` +
-    `   Or rotate from the FixPrompt dashboard and capture the new value.`,
+    `Could not resolve auth for FixPrompt.\n` +
+    `   Recommended (works without copy-pasting the runtime key):\n` +
+    `     1. Mint a deploy token: https://fixprompt-dashboard.vercel.app → Integrations → Deploy tokens\n` +
+    `     2. Store it: export FIXPROMPT_DEPLOY_TOKEN=fpd_...\n` +
+    `        (or 'eas env:create' as plain — fpd_ tokens are deploy-only, safe to expose to CI)\n` +
+    `   Legacy fallback:\n` +
+    `     export LOGHUB_KEY=k_...  (the runtime SDK key — EAS type=secret hides this)`,
   );
 }
 
-const probeBroker = () => new Promise((resolve) => {
+// PRE-FLIGHT: deploy-token mode uses GET /ingest/probe (no auth, just confirms
+// the source slug is registered). Runtime-key mode POSTs a real event to
+// /ingest/log to validate auth end-to-end. Both abort the release if the
+// broker doesn't accept the request.
+const probeBrokerDeployToken = () => new Promise((resolve) => {
+  const url = new URL(`${LOGHUB_URL}/ingest/probe?source=${encodeURIComponent(LOGHUB_SOURCE)}`);
+  const req = https.request({
+    method: 'GET',
+    hostname: url.hostname,
+    path: `${url.pathname}${url.search}`,
+    timeout: 10_000,
+  }, (res) => { res.resume(); resolve(res.statusCode); });
+  req.on('error', (err) => resolve(`error: ${err.message}`));
+  req.on('timeout', () => { req.destroy(); resolve('timeout'); });
+  req.end();
+});
+
+const probeBrokerKey = () => new Promise((resolve) => {
   const url = new URL(`${LOGHUB_URL}/ingest/log`);
   const req = https.request(
     {
@@ -123,20 +144,28 @@ const probeBroker = () => new Promise((resolve) => {
   req.end();
 });
 
+const probeBroker = () => deployToken ? probeBrokerDeployToken() : probeBrokerKey();
+
 (async () => {
   // PRE-FLIGHT: probe the broker with the key we're about to bundle.
   // If auth is broken right now, abort before publishing a useless bundle.
   // Uses Node's https module to avoid cross-platform shell-quoting issues
   // with curl on Windows cmd.exe vs Git Bash.
-  console.log(`\n• Pre-flight: probing broker auth for source=${LOGHUB_SOURCE}…`);
+  const mode = deployToken ? 'deploy-token' : 'runtime-key';
+  console.log(`\n• Pre-flight (${mode}): probing broker for source=${LOGHUB_SOURCE}…`);
   const probeStatus = await probeBroker();
   if (probeStatus !== 200) {
+    const cause = deployToken
+      ? `Likely cause: source slug '${LOGHUB_SOURCE}' isn't registered on the broker, or broker is unreachable.`
+      : `Likely cause: the key in EAS doesn't match the broker's current api_keys row.`;
+    const fix = deployToken
+      ? `Fix: confirm LOGHUB_SOURCE matches a slug shown in https://fixprompt-dashboard.vercel.app, or check broker status.`
+      : `Fix: rotate from dashboard, then \`eas env:update ${environment} EXPO_PUBLIC_FIXPROMPT_KEY <new>\`.`;
     fail(`broker pre-flight returned ${probeStatus} — aborting before OTA.\n` +
-         `   This means the bundle would 401 against the broker for every event.\n` +
-         `   Likely cause: the key in EAS doesn't match the broker's current api_keys row.\n` +
-         `   Fix: rotate from dashboard, then \`eas env:update ${environment} EXPO_PUBLIC_FIXPROMPT_KEY <new>\`.`);
+         `   ${cause}\n` +
+         `   ${fix}`);
   }
-  console.log(`  ✓ broker accepts the resolved key (200)\n`);
+  console.log(`  ✓ broker accepts the request (200)\n`);
 
   const updateMessage = message || `OTA release on ${branch}`;
 
@@ -150,19 +179,25 @@ const probeBroker = () => new Promise((resolve) => {
   ]);
 
   // STEP 2 — deploy marker (captures output, parses for silent failures)
+  const cliEnv = deployToken
+    ? { ...process.env, LOGHUB_SOURCE, FIXPROMPT_DEPLOY_TOKEN: deployToken }
+    : { ...process.env, LOGHUB_SOURCE, LOGHUB_KEY: fixpromptKey };
   const marker = runCapture(
     'npx',
     ['--yes', '@fixprompt/cli', 'deploy-start', '--status', 'success', '--branch', branch],
-    { env: { ...process.env, LOGHUB_SOURCE, LOGHUB_KEY: fixpromptKey } },
+    { env: cliEnv },
   );
-  const failureSignals = /\b(401|403|4\d\d|5\d\d|Unauthorized|Forbidden|Invalid key|✗)\b/i;
+  const failureSignals = /\b(401|403|4\d\d|5\d\d|Unauthorized|Forbidden|Invalid key|Invalid deploy token|✗)\b/i;
   if (marker.status !== 0 || failureSignals.test(marker.out)) {
+    const rerunCmd = deployToken
+      ? `LOGHUB_SOURCE=${LOGHUB_SOURCE} FIXPROMPT_DEPLOY_TOKEN=fpd_... npx --yes @fixprompt/cli deploy-start --status success --branch ${branch}`
+      : `LOGHUB_SOURCE=${LOGHUB_SOURCE} LOGHUB_KEY=... npx --yes @fixprompt/cli deploy-start --status success --branch ${branch}`;
     fail(
       `deploy-start reported failure (exit=${marker.status}).\n` +
       `   The OTA published, but the FixPrompt deploy marker did not.\n` +
       `   Dashboard's "Latest deploy" pill will still point at the previous release.\n` +
       `   Investigate, then re-fire manually:\n` +
-      `     LOGHUB_SOURCE=${LOGHUB_SOURCE} LOGHUB_KEY=... npx --yes @fixprompt/cli deploy-start --status success --branch ${branch}`,
+      `     ${rerunCmd}`,
     );
   }
 
