@@ -65,7 +65,7 @@ export default function LabelsLanguageScreen({ navigation }) {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}
+        contentContainerStyle={{ paddingBottom: 24 + insets.bottom + 50 + 24 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Defaults note — these settings apply to NEW photos by
