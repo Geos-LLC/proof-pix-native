@@ -29,6 +29,7 @@ import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
+import { useTheme } from '../hooks/useTheme';
 import { COLORS, getLabelPositions } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { RoomIcon } from '../utils/roomIcons';
@@ -334,6 +335,7 @@ export default function SettingsScreen({ navigation, route }) {
   const { canUse, exceedsLimit, getLimit, effectivePlan } = useFeaturePermissions();
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
 
   // Memoize translated options
   const FONT_OPTIONS = useMemo(() => getFontOptions(t), [t]);
@@ -3489,7 +3491,7 @@ export default function SettingsScreen({ navigation, route }) {
               </View>
               <Ionicons name="share-outline" size={20} color={COLORS.GRAY} />
             </TouchableOpacity>
-            <Text style={{ fontSize: 11, color: '#888', marginTop: 8, paddingHorizontal: 4 }}>
+            <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 8, paddingHorizontal: 4 }}>
               OTA: {Updates.updateId ? `${String(Updates.updateId).slice(0, 8)} (embedded=${String(Updates.isEmbeddedLaunch)})` : 'embedded / none'} · ch={Updates.channel || '—'} · rv={Updates.runtimeVersion || '—'}
             </Text>
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
@@ -3500,7 +3502,7 @@ export default function SettingsScreen({ navigation, route }) {
                 what userPlan is currently cached at. If this says
                 `detected=business` but the user card still shows PRO,
                 state hasn't re-rendered yet; tap the row below. */}
-            <Text style={{ fontSize: 11, color: '#888', marginTop: 6, paddingHorizontal: 4 }} selectable>
+            <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 6, paddingHorizontal: 4 }} selectable>
               IAP: {iapDiag || '(no diag yet)'}
             </Text>
             <TouchableOpacity
@@ -3613,7 +3615,7 @@ export default function SettingsScreen({ navigation, route }) {
                 }
               }}
             >
-              <Text style={{ color: '#1E1E1E', fontSize: 12, fontWeight: '800' }}>
+              <Text style={{ color: theme.textPrimary, fontSize: 12, fontWeight: '800' }}>
                 Show all IAP fields
               </Text>
             </TouchableOpacity>
@@ -4572,28 +4574,28 @@ export default function SettingsScreen({ navigation, route }) {
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay0();
-                          Alert.alert('Test Set', 'Day 0 set. Restart app to see "Welcome to ProofPix".');
+                          Alert.alert('Test Set', 'Day 0 set. Restart app to see "Document Your First Job".');
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 0 — Welcome</Text>
+                        <Text style={styles.testButtonText}>Day 0 — First Job</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay1();
-                          Alert.alert('Test Set', 'Day 1 set. Restart app to see "Document Every Stage".');
+                          Alert.alert('Test Set', 'Day 1 set. Restart app to see "Complete Your First Before & After".');
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 1 — Capture</Text>
+                        <Text style={styles.testButtonText}>Day 1 — Before & After</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
                         onPress={async () => {
                           await TrialTestUtils.testDay7_10();
-                          Alert.alert('Test Set', 'Day 2 set. Restart app to see "Create Your First Client Report".');
+                          Alert.alert('Test Set', 'Day 2 set. Restart app to see "Create Your First Professional Report".');
                         }}
                       >
-                        <Text style={styles.testButtonText}>Day 2 — Reports</Text>
+                        <Text style={styles.testButtonText}>Day 2 — Report</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.testButton}
@@ -5608,6 +5610,9 @@ const sliderStyles = StyleSheet.create({
     position: 'absolute',
     top: -2,
     borderWidth: 2,
+    // sliderStyles lives at module level so `theme` isn't in scope here.
+    // The slider thumb stays a plain white knob in both modes — matches
+    // the iOS/Android-native slider thumb convention.
     backgroundColor: '#FFFFFF',
     elevation: 2,
   },
@@ -5619,13 +5624,13 @@ const sliderStyles = StyleSheet.create({
     // canvas instead of competing for contrast with a grey backplate.
     container: {
       flex: 1,
-      backgroundColor: '#FFFFFF'
+      backgroundColor: theme.background
     },
     header: {
       paddingHorizontal: 18,
       paddingTop: 8,
       paddingBottom: 12,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
@@ -5637,7 +5642,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 32,
       fontWeight: '800',
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       letterSpacing: -0.6,
     },
     titleTouchable: {
@@ -5646,9 +5651,9 @@ const sliderStyles = StyleSheet.create({
     headerLanguageSelector: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
-      borderColor: '#ECECEC',
+      borderColor: theme.border,
       borderRadius: 62,
       paddingHorizontal: 1,
       paddingVertical: 1,
@@ -5674,14 +5679,14 @@ const sliderStyles = StyleSheet.create({
     // the softer shadow-card recipe (was 8% black drop shadow). Tighter
     // top spacing so the eyebrow above + card below read as one group.
     section: {
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       marginTop: 10,
       marginHorizontal: 18,
       borderRadius: 16,
       paddingVertical: 16,
       paddingHorizontal: 16,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: '#ECECEC',
+      borderColor: theme.border,
       shadowColor: '#141420',
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.04,
@@ -5696,7 +5701,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 18,
       fontWeight: '700',
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       marginBottom: 2,
       letterSpacing: -0.3,
     },
@@ -5708,7 +5713,7 @@ const sliderStyles = StyleSheet.create({
       fontSize: 11,
       fontWeight: '700',
       letterSpacing: 1.1,
-      color: '#9A9A9A',
+      color: theme.textMuted,
       textTransform: 'uppercase',
       marginTop: 18,
       marginBottom: 4,
@@ -5775,7 +5780,7 @@ const sliderStyles = StyleSheet.create({
       borderBottomColor: COLORS.BORDER,
     },
     locationOptionSelected: {
-      backgroundColor: '#f7f7f7'
+      backgroundColor: theme.surface
     },
     locationOptionText: {
       color: COLORS.TEXT
@@ -5800,7 +5805,7 @@ const sliderStyles = StyleSheet.create({
     // Hairline border + softer shadow-card recipe; tappable to open
     // the existing rename modal.
     userAccountCard: {
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 16,
       padding: 14,
       marginTop: 14,
@@ -5810,7 +5815,7 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
       gap: 13,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: '#ECECEC',
+      borderColor: theme.border,
       shadowColor: '#141420',
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.06,
@@ -5831,7 +5836,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 20,
       fontWeight: '800',
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       letterSpacing: 0.3,
     },
     userInfo: {
@@ -5842,7 +5847,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 16,
       fontWeight: '700',
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       marginBottom: 2,
       letterSpacing: -0.2,
     },
@@ -5850,7 +5855,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 12.5,
       fontWeight: '500',
-      color: '#9A9A9A',
+      color: theme.textMuted,
       letterSpacing: -0.1,
     },
     // Tier pill — proofpix.css: height 30, padding 0 11, radius 999,
@@ -5871,17 +5876,17 @@ const sliderStyles = StyleSheet.create({
     },
     // .pp-tier--free: surface bg + secondary text.
     userTierPillFree: {
-      backgroundColor: '#F4F4F4',
+      backgroundColor: theme.surface,
     },
     userTierPillTextFree: {
-      color: '#666666',
+      color: theme.textSecondary,
     },
     // .pp-tier--pro: accent bg + dark text.
     userTierPillPro: {
       backgroundColor: '#F2C31B',
     },
     userTierPillTextPro: {
-      color: '#1E1E1E',
+      color: theme.textPrimary,
     },
     // .pp-tier--business: dark bg + accent text.
     userTierPillBusiness: {
@@ -5985,7 +5990,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 14.5,
       fontWeight: '800',
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       letterSpacing: -0.2,
       marginBottom: 2,
     },
@@ -5998,7 +6003,7 @@ const sliderStyles = StyleSheet.create({
     },
     // Old style kept around in case any other site still references it.
     upgradeButtonText: {
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       fontSize: 16,
       fontWeight: '700',
     },
@@ -6027,10 +6032,10 @@ const sliderStyles = StyleSheet.create({
       gap: 13,
       paddingVertical: 13,
       paddingHorizontal: 14,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 16,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: '#ECECEC',
+      borderColor: theme.border,
       marginHorizontal: 18,
       marginTop: 12,
       shadowColor: '#141420',
@@ -6043,7 +6048,7 @@ const sliderStyles = StyleSheet.create({
       width: 42,
       height: 42,
       borderRadius: 12,
-      backgroundColor: '#F4F4F4',
+      backgroundColor: theme.surface,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -6055,14 +6060,14 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 14.5,
       fontWeight: '700',
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       letterSpacing: -0.1,
     },
     manageSubscriptionSub: {
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 12,
       fontWeight: '500',
-      color: '#9A9A9A',
+      color: theme.textMuted,
       letterSpacing: -0.1,
       marginTop: 1,
     },
@@ -6078,7 +6083,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 12.5,
       fontWeight: '600',
-      color: '#9A9A9A',
+      color: theme.textMuted,
       letterSpacing: -0.1,
       textDecorationLine: 'underline',
     },
@@ -6102,10 +6107,10 @@ const sliderStyles = StyleSheet.create({
       gap: 13,
       paddingVertical: 13,
       paddingHorizontal: 14,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 16,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: '#ECECEC',
+      borderColor: theme.border,
       shadowColor: '#141420',
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.04,
@@ -6116,7 +6121,7 @@ const sliderStyles = StyleSheet.create({
       width: 42,
       height: 42,
       borderRadius: 12,
-      backgroundColor: '#F4F4F4',
+      backgroundColor: theme.surface,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -6128,7 +6133,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 14.5,
       fontWeight: '700',
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       letterSpacing: -0.1,
     },
     ppRowTitleRow: {
@@ -6141,7 +6146,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 12,
       fontWeight: '500',
-      color: '#9A9A9A',
+      color: theme.textMuted,
       letterSpacing: -0.1,
       marginTop: 1,
     },
@@ -6149,7 +6154,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 13,
       fontWeight: '600',
-      color: '#9A9A9A',
+      color: theme.textMuted,
       letterSpacing: -0.1,
     },
     // Gate badge — small uppercase pill (.pp-pro-badge) tagged on rows
@@ -6177,7 +6182,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
       fontSize: 9.5,
       fontWeight: '800',
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       letterSpacing: 0.5,
     },
     // Refresh: ghost outline ('.pp-btn--ghost') — 1.5px borderStrong,
@@ -6189,10 +6194,10 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
       marginTop: 8,
       borderWidth: 1.5,
-      borderColor: '#D0D0D0',
+      borderColor: theme.borderStrong,
     },
     manageSubscriptionText: {
-      color: '#1E1E1E',
+      color: theme.textPrimary,
       fontSize: 14,
       fontWeight: '700',
       letterSpacing: -0.1,
@@ -6259,7 +6264,7 @@ const sliderStyles = StyleSheet.create({
       borderWidth: 1,
       borderColor: COLORS.BORDER,
       borderRadius: 12,
-      backgroundColor: '#f9f9f9',
+      backgroundColor: theme.surface,
     },
     watermarkField: {
       marginBottom: 12,
@@ -6456,7 +6461,7 @@ const sliderStyles = StyleSheet.create({
     },
     buttonDisabled: {
       // Inactive buttons: white background with yellow border (default for Set Up Team)
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 2,
       borderColor: COLORS.PRIMARY, // Yellow border
       opacity: 1
@@ -6467,7 +6472,7 @@ const sliderStyles = StyleSheet.create({
     },
     googleButtonDisabled: {
       // Inactive Google button: white background with black border
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 2,
       borderColor: '#000000', // Black border
       opacity: 1
@@ -6478,7 +6483,7 @@ const sliderStyles = StyleSheet.create({
     },
     dropboxButtonDisabled: {
       // Inactive Dropbox button: white background with blue border
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 2,
       borderColor: '#0061FF', // Blue border (Dropbox blue)
       opacity: 1
@@ -6489,7 +6494,7 @@ const sliderStyles = StyleSheet.create({
     },
     multipleProfilesButtonDisabled: {
       // Inactive Multiple Profiles button: white background with green border
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 2,
       borderColor: '#28a745', // Green border
       opacity: 1
@@ -6499,7 +6504,7 @@ const sliderStyles = StyleSheet.create({
       color: '#28a745'
     },
     currentPlanBox: {
-      backgroundColor: '#f0f0f0',
+      backgroundColor: theme.surface,
       borderRadius: 8,
       paddingVertical: 12,
       paddingHorizontal: 20,
@@ -6697,12 +6702,12 @@ const sliderStyles = StyleSheet.create({
     planBadgeStrikethrough: {
       fontSize: 12,
       fontWeight: '600',
-      color: '#999999',
+      color: theme.textMuted,
       textDecorationLine: 'line-through',
     },
     planCardDescription: {
       fontSize: 14,
-      color: '#666666',
+      color: theme.textSecondary,
       lineHeight: 22,
       marginBottom: 16,
       letterSpacing: -0.2,
@@ -6710,7 +6715,7 @@ const sliderStyles = StyleSheet.create({
     trialSubtext: {
       fontSize: 11,
       fontWeight: '500',
-      color: '#666666',
+      color: theme.textSecondary,
       marginBottom: 4,
     },
     currentPlanButton: {
@@ -6733,7 +6738,7 @@ const sliderStyles = StyleSheet.create({
       letterSpacing: 0.2,
     },
     recommendedBadge: {
-      backgroundColor: '#F5F5F5',
+      backgroundColor: theme.surface,
       borderRadius: 20,
       paddingHorizontal: 14,
       paddingVertical: 8,
@@ -6780,7 +6785,7 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 20
     },
     planButton: {
-      backgroundColor: '#FFFFFF', // White background for inactive buttons
+      backgroundColor: theme.surfaceElevated, // White background for inactive buttons
       borderRadius: 12,
       padding: 20,
       borderWidth: 2,
@@ -6807,7 +6812,7 @@ const sliderStyles = StyleSheet.create({
     },
     planSubtext: {
       fontSize: 14,
-      color: '#666',
+      color: theme.textSecondary,
       textAlign: 'center',
       marginTop: 8,
       paddingHorizontal: 10
@@ -6945,7 +6950,7 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 8,
     },
     connectedAccountRow: {
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: '#E0E6F5',
@@ -7220,12 +7225,12 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       minHeight: 56,
     },
     cloudServiceButtonDisabled: {
       opacity: 0.5,
-      backgroundColor: '#F5F5F5',
+      backgroundColor: theme.surface,
     },
     cloudButtonContent: {
       flexDirection: 'row',
@@ -7263,7 +7268,7 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.TEXT,
     },
     cloudButtonTextDisabled: {
-      color: '#999999',
+      color: theme.textMuted,
     },
     teamManagementRow: {
       flexDirection: 'row',
@@ -7279,14 +7284,14 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       flexDirection: 'row',
       gap: 8,
       minHeight: 56,
     },
     teamButtonDisabled: {
       opacity: 0.5,
-      backgroundColor: '#F5F5F5',
+      backgroundColor: theme.surface,
     },
     teamButtonConnected: {
       backgroundColor: '#4CAF50',
@@ -7301,19 +7306,19 @@ const sliderStyles = StyleSheet.create({
       color: '#FFFFFF',
     },
     teamButtonTextDisabled: {
-      color: '#999999',
+      color: theme.textMuted,
     },
     switchAccountModalBody: {
       padding: 20,
     },
     switchAccountMessage: {
       fontSize: 15,
-      color: '#666',
+      color: theme.textSecondary,
       marginBottom: 16,
       lineHeight: 22,
     },
     switchAccountCurrent: {
-      backgroundColor: '#F5F5F5',
+      backgroundColor: theme.surface,
       borderRadius: 12,
       padding: 16,
       marginBottom: 20,
@@ -7328,7 +7333,7 @@ const sliderStyles = StyleSheet.create({
     },
     switchAccountCurrentType: {
       fontSize: 13,
-      color: '#999',
+      color: theme.textMuted,
       marginLeft: 12,
     },
     switchAccountButtons: {
@@ -7361,7 +7366,7 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
     },
     switchAccountCancelText: {
-      color: '#999',
+      color: theme.textMuted,
       fontSize: 16,
     },
     connectedStatus: {
@@ -7466,7 +7471,7 @@ const sliderStyles = StyleSheet.create({
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
-      backgroundColor: '#f7f7f7',
+      backgroundColor: theme.surface,
       borderRadius: 24,
       paddingHorizontal: 16,
       paddingVertical: 8,
@@ -7531,7 +7536,7 @@ const sliderStyles = StyleSheet.create({
       alignSelf: 'stretch',
     },
     labelPreview: {
-      backgroundColor: '#f0f0f0',
+      backgroundColor: theme.surface,
       paddingHorizontal: 6,
       paddingVertical: 9,
       borderRadius: 8,
@@ -7574,7 +7579,7 @@ const sliderStyles = StyleSheet.create({
       paddingVertical: 10,
       borderWidth: 1,
       borderColor: COLORS.BORDER,
-      backgroundColor: '#F5F5F5',
+      backgroundColor: theme.surface,
       minWidth: 100,
       alignItems: 'center',
     },
@@ -7631,7 +7636,7 @@ const sliderStyles = StyleSheet.create({
       borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#f0f0f0',
+      backgroundColor: theme.surface,
     },
     customModalCloseText: {
       fontSize: 16,
@@ -7954,7 +7959,7 @@ const sliderStyles = StyleSheet.create({
       paddingHorizontal: 8,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: '#F5F5F5',
+      backgroundColor: theme.surface,
       borderRadius: 6,
       borderWidth: 1,
       borderColor: COLORS.BORDER,
@@ -7976,7 +7981,7 @@ const sliderStyles = StyleSheet.create({
     positionPreviewBox: {
       width: '100%',
       aspectRatio: 1,
-      backgroundColor: '#F5F5F5',
+      backgroundColor: theme.surface,
       flexDirection: 'row',
       overflow: 'hidden',
     },
@@ -8110,7 +8115,7 @@ const sliderStyles = StyleSheet.create({
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: '#F5F5F5',
+      backgroundColor: theme.surface,
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 16,
@@ -8139,7 +8144,7 @@ const sliderStyles = StyleSheet.create({
       color: COLORS.TEXT,
     },
     settingButton: {
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 10,
       paddingVertical: 10,
       paddingHorizontal: 14,
@@ -8215,7 +8220,7 @@ const sliderStyles = StyleSheet.create({
     roomListItemText: {
       fontSize: 12,
       fontWeight: '500',
-      color: '#666666',
+      color: theme.textSecondary,
       textAlign: 'center',
     },
     roomListItemTextActive: {
@@ -8292,7 +8297,7 @@ const sliderStyles = StyleSheet.create({
       borderRadius: 10,
       borderWidth: 1,
       flexDirection: 'row',
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       padding: 3,
       justifyContent: 'center',
       alignItems: 'center',
@@ -8330,7 +8335,7 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
       gap: 8,
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       borderRadius: 28,
       padding: 2,
     },
@@ -8372,12 +8377,12 @@ const sliderStyles = StyleSheet.create({
       marginBottom: 12,
     },
     accountItem: {
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 12,
       padding: 20,
       marginBottom: 12,
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.05,
@@ -8428,7 +8433,7 @@ const sliderStyles = StyleSheet.create({
       borderColor: '#4CAF50',
     },
     checkboxInactive: {
-      backgroundColor: '#fff',
+      backgroundColor: theme.surfaceElevated,
       borderColor: '#F44336',
     },
     accountCheckmark: {
@@ -8541,9 +8546,9 @@ const sliderStyles = StyleSheet.create({
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
@@ -8557,9 +8562,9 @@ const sliderStyles = StyleSheet.create({
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
@@ -8582,9 +8587,9 @@ const sliderStyles = StyleSheet.create({
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
@@ -8600,15 +8605,15 @@ const sliderStyles = StyleSheet.create({
     },
     googleAccountStatus: {
       fontSize: 14,
-      color: '#666666',
+      color: theme.textSecondary,
     },
     dropboxIntegrationButton: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       borderRadius: 12,
       paddingVertical: 14,
       paddingHorizontal: 16,
@@ -8622,9 +8627,9 @@ const sliderStyles = StyleSheet.create({
     },
     setupTeamButtonNew: {
       flex: 1,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
-      borderColor: '#E0E0E0',
+      borderColor: theme.border,
       borderRadius: 12,
       paddingVertical: 14,
       paddingHorizontal: 16,
@@ -8650,7 +8655,7 @@ const sliderStyles = StyleSheet.create({
     },
     disconnectButtonNew: {
       flex: 1,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
       borderColor: '#CC0000',
       borderRadius: 12,
@@ -8679,7 +8684,7 @@ const sliderStyles = StyleSheet.create({
       justifyContent: 'center',
     },
     accountActionButtonRemove: {
-      backgroundColor: '#f5f5f5',
+      backgroundColor: theme.surface,
       borderWidth: 1,
       borderColor: '#e0e0e0',
     },
@@ -8701,7 +8706,7 @@ const sliderStyles = StyleSheet.create({
       color: '#FFFFFF',
     },
     accountActionButtonTextRemove: {
-      color: '#666',
+      color: theme.textSecondary,
     },
     accountActionButtonTextYellow: {
       color: '#000',
@@ -8776,10 +8781,10 @@ const sliderStyles = StyleSheet.create({
       paddingVertical: 10,
       fontSize: 16,
       color: COLORS.TEXT,
-      backgroundColor: '#fff',
+      backgroundColor: theme.surfaceElevated,
     },
     inviteItemSimple: {
-      backgroundColor: '#f5f5f5',
+      backgroundColor: theme.surface,
       padding: 12,
       borderRadius: 8,
       marginBottom: 8,
@@ -8790,7 +8795,7 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
     },
     teamMemberItemSimple: {
-      backgroundColor: '#f5f5f5',
+      backgroundColor: theme.surface,
       padding: 12,
       borderRadius: 8,
       marginBottom: 8,
@@ -8825,7 +8830,7 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
     },
     teamManagementButtonCancel: {
-      backgroundColor: '#f5f5f5',
+      backgroundColor: theme.surface,
       borderWidth: 1,
       borderColor: COLORS.BORDER,
     },
@@ -8847,20 +8852,20 @@ const sliderStyles = StyleSheet.create({
       paddingVertical: 12,
       paddingHorizontal: 10,
       marginBottom: 10,
-      backgroundColor: '#fff',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 8,
       borderWidth: 1,
-      borderColor: '#ddd',
+      borderColor: theme.border,
     },
     memberItemFull: {
       flexDirection: 'row',
       paddingVertical: 12,
       paddingHorizontal: 10,
       marginBottom: 10,
-      backgroundColor: '#fff',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 8,
       borderWidth: 1,
-      borderColor: '#ddd',
+      borderColor: theme.border,
       alignItems: 'center',
       justifyContent: 'space-between',
     },
@@ -8868,10 +8873,10 @@ const sliderStyles = StyleSheet.create({
       paddingVertical: 12,
       paddingHorizontal: 12,
       marginBottom: 10,
-      backgroundColor: '#fff',
+      backgroundColor: theme.surfaceElevated,
       borderRadius: 8,
       borderWidth: 1,
-      borderColor: '#ddd',
+      borderColor: theme.border,
     },
     memberCardRow: {
       flexDirection: 'row',
@@ -8885,7 +8890,7 @@ const sliderStyles = StyleSheet.create({
     },
     tokenLabelSmall: {
       fontSize: 12,
-      color: '#666',
+      color: theme.textSecondary,
     },
     tokenValueSmall: {
       fontSize: 12,
@@ -8911,7 +8916,7 @@ const sliderStyles = StyleSheet.create({
     tokenLabel: {
       fontSize: 13,
       fontWeight: '600',
-      color: '#666',
+      color: theme.textSecondary,
       marginRight: 8,
     },
     inviteToken: {
@@ -8931,7 +8936,7 @@ const sliderStyles = StyleSheet.create({
       paddingVertical: 8,
       paddingHorizontal: 12,
       borderRadius: 6,
-      backgroundColor: '#f0f0f0',
+      backgroundColor: theme.surface,
       alignItems: 'center',
     },
     copyButton: {
@@ -8955,7 +8960,7 @@ const sliderStyles = StyleSheet.create({
       fontWeight: '600',
     },
     revokeButtonContainer: {
-      backgroundColor: '#fff',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
       borderColor: '#dc3545',
     },
@@ -8965,7 +8970,7 @@ const sliderStyles = StyleSheet.create({
       fontWeight: 'bold',
     },
     deleteButtonContainer: {
-      backgroundColor: '#fff',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 1,
       borderColor: '#dc3545',
       paddingHorizontal: 8,
@@ -8984,9 +8989,9 @@ const sliderStyles = StyleSheet.create({
       fontWeight: 'bold',
     },
     addMemberButton: {
-      backgroundColor: '#fff',
+      backgroundColor: theme.surfaceElevated,
       borderWidth: 2,
-      borderColor: '#ddd',
+      borderColor: theme.border,
       borderRadius: 12,
       paddingVertical: 16,
       paddingHorizontal: 32,
@@ -9041,7 +9046,7 @@ const sliderStyles = StyleSheet.create({
     },
     addMemberModalSubtitle: {
       fontSize: 14,
-      color: '#666',
+      color: theme.textSecondary,
       marginBottom: 24,
       textAlign: 'center',
       lineHeight: 20,
@@ -9078,7 +9083,7 @@ const sliderStyles = StyleSheet.create({
       fontWeight: 'bold',
     },
     counterButtonTextDisabled: {
-      color: '#888',
+      color: theme.textMuted,
     },
     memberCountValue: {
       fontSize: 32,
@@ -9088,7 +9093,7 @@ const sliderStyles = StyleSheet.create({
       textAlign: 'center',
     },
     priceBreakdown: {
-      backgroundColor: '#f8f9fa',
+      backgroundColor: theme.surface,
       borderRadius: 12,
       padding: 16,
       marginBottom: 24,
@@ -9100,7 +9105,7 @@ const sliderStyles = StyleSheet.create({
     },
     priceLabel: {
       fontSize: 15,
-      color: '#666',
+      color: theme.textSecondary,
     },
     priceValue: {
       fontSize: 15,
@@ -9135,12 +9140,12 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
     },
     cancelButton: {
-      backgroundColor: '#f8f9fa',
+      backgroundColor: theme.surface,
       borderWidth: 1,
-      borderColor: '#ddd',
+      borderColor: theme.border,
     },
     cancelButtonText: {
-      color: '#666',
+      color: theme.textSecondary,
       fontSize: 16,
       fontWeight: '600',
     },
@@ -9163,7 +9168,7 @@ const sliderStyles = StyleSheet.create({
     },
     inviteCountText: {
       fontSize: 14,
-      color: '#666',
+      color: theme.textSecondary,
       fontWeight: '600',
     },
     testModalOverlay: {
@@ -9204,7 +9209,7 @@ const sliderStyles = StyleSheet.create({
     },
     testModalSubtitle: {
       fontSize: 14,
-      color: '#666',
+      color: theme.textSecondary,
       marginBottom: 16,
     },
     testNameInput: {
@@ -9215,7 +9220,7 @@ const sliderStyles = StyleSheet.create({
       paddingVertical: 10,
       fontSize: 16,
       marginBottom: 20,
-      backgroundColor: '#f9f9f9',
+      backgroundColor: theme.surface,
     },
     testModalButtons: {
       flexDirection: 'row',
@@ -9230,13 +9235,13 @@ const sliderStyles = StyleSheet.create({
       alignItems: 'center',
     },
     testModalButtonCancel: {
-      backgroundColor: '#f0f0f0',
+      backgroundColor: theme.surface,
     },
     testModalButtonJoin: {
       backgroundColor: COLORS.PRIMARY,
     },
     testModalButtonTextCancel: {
-      color: '#666',
+      color: theme.textSecondary,
       fontSize: 16,
       fontWeight: '600',
     },
@@ -9246,7 +9251,7 @@ const sliderStyles = StyleSheet.create({
       fontWeight: '600',
     },
     testModalButtonTextDisabled: {
-      color: '#999',
+      color: theme.textMuted,
     },
     restorePurchasesButton: {
       marginTop: 20,
@@ -9258,7 +9263,7 @@ const sliderStyles = StyleSheet.create({
     },
     restorePurchasesText: {
       fontSize: 14,
-      color: '#666',
+      color: theme.textSecondary,
       textAlign: 'center',
       textDecorationLine: 'underline',
       fontFamily: FONTS.ALEXANDRIA,
@@ -9278,14 +9283,14 @@ const sliderStyles = StyleSheet.create({
     },
     legalLinkText: {
       fontSize: 12,
-      color: '#666',
+      color: theme.textSecondary,
       textAlign: 'center',
       textDecorationLine: 'underline',
       fontFamily: FONTS.ALEXANDRIA,
     },
     legalLinkSeparator: {
       fontSize: 12,
-      color: '#666',
+      color: theme.textSecondary,
       marginHorizontal: 8,
       fontFamily: FONTS.ALEXANDRIA,
     },
@@ -9317,7 +9322,7 @@ const sliderStyles = StyleSheet.create({
     },
     versionText: {
       fontSize: 12,
-      color: '#999',
+      color: theme.textMuted,
       fontFamily: FONTS.ALEXANDRIA,
     },
     bottomNavPill: {
@@ -9357,7 +9362,7 @@ const sliderStyles = StyleSheet.create({
       navItemText: {
       fontSize: 11,
       fontWeight: '500',
-      color: '#666666',
+      color: theme.textSecondary,
       marginTop: 4
       },
     navItemTextActive: {

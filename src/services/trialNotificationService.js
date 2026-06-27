@@ -201,9 +201,9 @@ export const getNotificationToShow = async (skipDay0 = false) => {
     return {
       key: 'day0',
       type: 'welcome',
-      title: 'Welcome to ProofPix',
-      message: 'Create your first project and generate a professional report in minutes.',
-      secondaryText: 'The fastest way to experience ProofPix is to document your first job from start to finish.',
+      title: 'Document Your First Job',
+      message: 'Create a project and capture your first before photos to start documenting your work professionally.',
+      secondaryText: 'Most professionals complete their first documented job in less than 5 minutes.',
       primaryCTA: 'Create First Project',
       primaryAction: 'create_project',
       endDate: formattedDate,
@@ -214,33 +214,34 @@ export const getNotificationToShow = async (skipDay0 = false) => {
     };
   }
 
-  // --- Day 1 — Capture Workflow (days=6) ---
+  // --- Day 1 — Core Magic Moment (days=6) ---
+  // Completing the before → after pair is the real "aha" — Day 1 nudges
+  // the user to close the loop on a job they started yesterday.
   if (daysRemaining === 6 && !shown.day1) {
     await markNotificationShown('day1');
     return {
       key: 'day1',
       type: 'engagement',
-      title: 'Document Every Stage of the Job',
-      message: 'Capture before, progress, and after photos to create complete job documentation.',
-      secondaryText: 'Professional documentation protects your business and impresses clients.',
-      primaryCTA: 'Take Photos',
+      title: 'Complete Your First Before & After',
+      message: 'Capture after photos to instantly compare results and showcase your work.',
+      secondaryText: 'Before & after comparisons are one of the most powerful ways to impress clients and protect your business.',
+      primaryCTA: 'Add After Photos',
       primaryAction: 'camera',
       showUpgrade: false,
       urgent: false,
     };
   }
 
-  // --- Day 2 — Core Value: First Report (days=5) ---
+  // --- Day 2 — Second Magic Moment: Report (days=5) ---
   // Suppress if user has already generated at least one report.
   if (daysRemaining === 5 && !shown.day7_10 && !ctx.hasGeneratedReport) {
     await markNotificationShown('day7_10');
     return {
       key: 'day7_10',
       type: 'engagement',
-      title: 'Create Your First Client Report',
-      message: 'Turn your job photos into a professional branded report your clients will love.',
-      secondaryText: 'Most professionals experience the real value of ProofPix after generating their first report.',
-      primaryCTA: 'Create Report',
+      title: 'Create Your First Professional Report',
+      message: 'Turn your job photos into a branded report ready to send to clients.',
+      primaryCTA: 'Generate Report',
       primaryAction: 'create_report',
       showUpgrade: false,
       urgent: false,
