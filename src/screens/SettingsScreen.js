@@ -8259,16 +8259,17 @@ const sliderStyles = StyleSheet.create({
       fontFamily: FONTS.ALEXANDRIA,
     },
     testButtons: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
+      flexDirection: 'column',
       gap: 8,
     },
     testButton: {
       backgroundColor: COLORS.PRIMARY,
-      paddingVertical: 16,
+      paddingVertical: 14,
       paddingHorizontal: 20,
       borderRadius: 8,
-      marginBottom: 12,
+      marginBottom: 4,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     clearButton: {
       backgroundColor: '#DC3545',
