@@ -73,7 +73,11 @@ export default function PlanSelectionScreen({ navigation, route }) {
   // Fallback when store metadata hasn't loaded yet. Actual duration is read
   // from the store's intro offer below (iOS: 14 days / 2 weeks, Android: 15)
   // so paywall copy always matches what the store's sheet will show.
-  const FALLBACK_TRIAL_DAYS = Platform.OS === 'android' ? 15 : 14;
+  // Matches TRIAL_DURATION_DAYS in trialService — base trial is 7 days.
+  // The live `trialInfo?.pro?.trialDays` from the store (App Store / Play)
+  // takes precedence below; this only shows during the brief window
+  // before store metadata loads.
+  const FALLBACK_TRIAL_DAYS = 7;
   const referralBonus = 15;
   const [trialDays, setTrialDays] = useState(FALLBACK_TRIAL_DAYS);
   const isMounted = useRef(true);

@@ -119,7 +119,8 @@ export const getNotificationToShow = async (skipDay0 = false) => {
       return null;
     }
   };
-  const trialDuration = trialInfo?.durationDays || computeDurationFromDates() || 15;
+  // 7 = base trial duration (matches TRIAL_DURATION_DAYS in trialService).
+  const trialDuration = trialInfo?.durationDays || computeDurationFromDates() || 7;
 
   // Day 0 (Welcome) - Show immediately when trial starts (only if not skipped)
   // For 30-day trial: show when >= 28 days remaining

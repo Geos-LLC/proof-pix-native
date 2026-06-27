@@ -7,7 +7,10 @@ import {
 } from './secureStorageService';
 
 const TRIAL_STORAGE_KEY = '@user_trial_info';
-const TRIAL_DURATION_DAYS = 15;
+// Base trial duration per product spec. Referral bonus stays at 15 days
+// per friend with a hard cap of 3 friends → up to 45 bonus days, so
+// the maximum effective trial is 7 + 45 = 52 days.
+const TRIAL_DURATION_DAYS = 7;
 const REFERRAL_BONUS_DAYS = 15;
 
 /**
@@ -91,7 +94,7 @@ const hasAcceptedReferral = async () => {
 /**
  * Start a new trial for a specific plan tier
  * @param {string} plan - Plan tier (starter, pro, business, enterprise)
- * @param {number} durationDays - Optional duration in days (default: 30 or 45 with referral)
+ * @param {number} durationDays - Optional duration in days (default: 7, or 7 + 15*N with N referrals up to 3)
  * @returns {Promise<Object>} Trial info object
  */
 export const startTrial = async (plan, durationDays = null) => {
@@ -295,7 +298,7 @@ export const extendTrial = async (additionalDays) => {
     const updatedTrialInfo = {
       ...trialInfo,
       endDate: newEndDate.toISOString(),
-      durationDays: (trialInfo.durationDays || 15) + additionalDays,
+      durationDays: (trialInfo.durationDays || TRIAL_DURATION_DAYS) + additionalDays,
     };
 
     await writeSecureJSON(TRIAL_STORAGE_KEY, updatedTrialInfo);

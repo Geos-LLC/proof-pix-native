@@ -16,10 +16,11 @@ const TRIAL_STORAGE_KEY = '@user_trial_info';
  */
 export const setTrialDaysRemaining = async (daysRemaining, plan = 'business') => {
   try {
-    // The test utility models a 30-day trial (15 base + 15 referral bonus).
-    // Persist `durationDays` so the Day 0 welcome banner matches what
-    // Settings shows; otherwise the banner falls back to 15.
-    const TOTAL_TRIAL_DAYS = 30;
+    // Base trial is 7 days per product spec. If the caller asks for more
+    // days remaining than the base, expand TOTAL to accommodate (caller
+    // is simulating a trial extended by referrals: 7 + 15*N).
+    const BASE_TRIAL_DAYS = 7;
+    const TOTAL_TRIAL_DAYS = Math.max(BASE_TRIAL_DAYS, daysRemaining);
     const now = new Date();
     const endDate = new Date(now);
     endDate.setDate(endDate.getDate() + daysRemaining);
@@ -45,12 +46,14 @@ export const setTrialDaysRemaining = async (daysRemaining, plan = 'business') =>
 };
 
 /**
- * Set trial to Day 0 (Welcome message)
+ * Set trial to Day 0 (Welcome message) — fresh 7-day trial.
  * @param {string} plan - Plan tier
  */
 export const testDay0 = async (plan = 'business') => {
   try {
-    await setTrialDaysRemaining(29, plan);
+    // 6 days remaining → just started a 7-day trial (above Day 0
+    // welcomeThreshold which is duration - 2 = 5).
+    await setTrialDaysRemaining(6, plan);
 
     // Prepare Day 0 notification so it shows on next app start like real flow
     const notification = await getNotificationToShow(false); // don't skip Day 0
@@ -68,63 +71,64 @@ export const testDay0 = async (plan = 'business') => {
 };
 
 /**
- * Set trial to Day 7-10 (Engagement nudge)
+ * Mid-trial engagement nudge — 4 days remaining of 7.
  * @param {string} plan - Plan tier
  */
 export const testDay7_10 = async (plan = 'business') => {
-  await setTrialDaysRemaining(22, plan);
-  console.log('[TrialTest] Set to Day 7-10 - Engagement message should show');
+  await setTrialDaysRemaining(4, plan);
+  console.log('[TrialTest] Set mid-trial - Engagement message should show');
 };
 
 /**
- * Set trial to Day 15 (Mid-trial check-in)
+ * Mid-trial check-in — 3 days remaining of 7.
  * @param {string} plan - Plan tier
  */
 export const testDay15 = async (plan = 'business') => {
-  await setTrialDaysRemaining(15, plan);
-  console.log('[TrialTest] Set to Day 15 - Mid-trial check-in should show');
+  await setTrialDaysRemaining(3, plan);
+  console.log('[TrialTest] Set mid-trial check-in - Mid-trial message should show');
 };
 
 /**
- * Set trial to Day 22-24 (Early reminder)
+ * Trial ends soon — 2 days remaining of 7 (early reminder window).
  * @param {string} plan - Plan tier
  */
 export const testDay22_24 = async (plan = 'business') => {
-  await setTrialDaysRemaining(7, plan);
-  console.log('[TrialTest] Set to Day 22-24 - Early reminder should show');
+  await setTrialDaysRemaining(2, plan);
+  console.log('[TrialTest] Set ending-soon - Early reminder should show');
 };
 
 /**
- * Set trial to Day 27-28 (Last chance)
+ * Last chance — 1 day remaining of 7. Also triggers the expiring-trial
+ * referral nudge (gated to <=2 days remaining).
  * @param {string} plan - Plan tier
  */
 export const testDay27_28 = async (plan = 'business') => {
-  await setTrialDaysRemaining(2, plan);
-  console.log('[TrialTest] Set to Day 27-28 - Last chance reminder should show');
+  await setTrialDaysRemaining(1, plan);
+  console.log('[TrialTest] Set last-chance - Expiring trial reminder should show');
 };
 
 /**
- * Set trial to Day 30 (Expired)
+ * Set trial to expired (was a 7-day trial that ended 1 day ago).
  * @param {string} plan - Plan tier
  */
 export const testDay30 = async (plan = 'business') => {
   try {
     const now = new Date();
     const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() - 1); // 1 day ago (expired)
+    endDate.setDate(endDate.getDate() - 1); // ended 1 day ago
 
     const trialInfo = {
       active: true, // Still marked active so expiration message shows
       used: true,
-      startDate: new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+      startDate: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: endDate.toISOString(),
       plan: plan,
-      durationDays: 30,
+      durationDays: 7,
     };
 
     await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(trialInfo));
     await resetNotifications();
-    console.log('[TrialTest] Set to Day 30 - Expiration message should show');
+    console.log('[TrialTest] Set to expired - Expiration message should show');
   } catch (error) {
     console.error('[TrialTest] Error setting expired trial:', error);
   }
@@ -157,10 +161,10 @@ export const expireTrialForReferralTest = async () => {
     const trialInfo = {
       active: false, // Trial is no longer active
       used: true,    // Trial has been used
-      startDate: new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000).toISOString(),
+      startDate: new Date(now.getTime() - 12 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: endDate.toISOString(),
       plan: 'business',
-      durationDays: 30,
+      durationDays: 7,
     };
 
     await AsyncStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify(trialInfo));
