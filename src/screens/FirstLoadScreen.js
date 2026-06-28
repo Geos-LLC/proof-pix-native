@@ -179,7 +179,7 @@ export default function FirstLoadScreen({ navigation, route }) {
 
   const validateName = () => {
     if (!userName.trim()) {
-      Alert.alert('Name Required', 'Please enter your name to continue.');
+      Alert.alert(t('firstLoad.nameRequired'), t('firstLoad.nameRequiredMessage'));
       return false;
     }
     return true;
@@ -368,7 +368,7 @@ export default function FirstLoadScreen({ navigation, route }) {
                 style={styles.textInput}
                 value={userName}
                 onChangeText={setUserName}
-                placeholder={'Alex Bond'}
+                placeholder={t('firstLoad.namePlaceholder')}
                 placeholderTextColor="#999"
                 autoCapitalize="words"
                 autoCorrect={false}
@@ -391,7 +391,7 @@ export default function FirstLoadScreen({ navigation, route }) {
           {/* OR Separator */}
           <View style={styles.orContainer}>
             <View style={styles.orLine} />
-            <Text style={styles.orText}>OR</Text>
+            <Text style={styles.orText}>{t('common.or')}</Text>
             <View style={styles.orLine} />
           </View>
 

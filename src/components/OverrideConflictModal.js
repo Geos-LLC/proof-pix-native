@@ -19,18 +19,22 @@ import {
   View, Text, Modal, TouchableOpacity, Image, ScrollView, StyleSheet, Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../hooks/useTheme';
 
 export default function OverrideConflictModal({
   visible,
   photos = [],
-  title = 'Some photos have custom positions',
-  description = 'These photos kept a position you set just for them. Apply the new default to the checked ones, or uncheck to leave a photo on its custom value.',
+  title,
+  description,
   onApply,
   onCancel,
   onSkipAll,
 }) {
   const theme = useTheme();
+  const { t } = useTranslation();
+  const titleText = title || t('overrideConflict.title');
+  const descriptionText = description || t('overrideConflict.description');
   // Map of photo.id → boolean; true = will be overwritten on Apply.
   const [checked, setChecked] = useState({});
 
@@ -65,17 +69,17 @@ export default function OverrideConflictModal({
           onPress={(e) => e.stopPropagation?.()}
         >
           <View style={styles.header}>
-            <Text style={[styles.title, { color: theme.textPrimary }]}>{title}</Text>
+            <Text style={[styles.title, { color: theme.textPrimary }]}>{titleText}</Text>
             <TouchableOpacity onPress={onCancel} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
               <Ionicons name="close" size={22} color={theme.textSecondary} />
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.desc, { color: theme.textSecondary }]}>{description}</Text>
+          <Text style={[styles.desc, { color: theme.textSecondary }]}>{descriptionText}</Text>
 
           <View style={styles.selectionRow}>
             <Text style={[styles.selectionText, { color: theme.textSecondary }]}>
-              {selectedCount} of {total} selected
+              {t('overrideConflict.selectionCount', { count: selectedCount, total })}
             </Text>
             <View style={styles.bulkRow}>
               <TouchableOpacity
@@ -85,11 +89,11 @@ export default function OverrideConflictModal({
                   setChecked(next);
                 }}
               >
-                <Text style={[styles.bulkLink, { color: theme.accent }]}>All</Text>
+                <Text style={[styles.bulkLink, { color: theme.accent }]}>{t('common.all')}</Text>
               </TouchableOpacity>
               <Text style={[styles.bulkSep, { color: theme.textMuted }]}>·</Text>
               <TouchableOpacity onPress={() => setChecked({})}>
-                <Text style={[styles.bulkLink, { color: theme.accent }]}>None</Text>
+                <Text style={[styles.bulkLink, { color: theme.accent }]}>{t('overrideConflict.none')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -123,7 +127,7 @@ export default function OverrideConflictModal({
                   )}
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.photoName, { color: theme.textPrimary }]} numberOfLines={1}>
-                      {p.name || `Photo ${String(p.id).slice(0, 6)}`}
+                      {p.name || t('overrideConflict.photoFallbackName', { id: String(p.id).slice(0, 6) })}
                     </Text>
                     {subtitle ? (
                       <Text style={[styles.photoSub, { color: theme.textSecondary }]} numberOfLines={1}>
@@ -141,20 +145,22 @@ export default function OverrideConflictModal({
               style={[styles.btn, { borderColor: theme.border }]}
               onPress={onCancel}
             >
-              <Text style={[styles.btnText, { color: theme.textPrimary }]}>Cancel</Text>
+              <Text style={[styles.btnText, { color: theme.textPrimary }]}>{t('common.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.btn, { borderColor: theme.border }]}
               onPress={onSkipAll}
             >
-              <Text style={[styles.btnText, { color: theme.textPrimary }]}>Keep all custom</Text>
+              <Text style={[styles.btnText, { color: theme.textPrimary }]}>{t('overrideConflict.keepAllCustom')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.btn, styles.btnPrimary, { backgroundColor: theme.accent }]}
               onPress={handleApply}
             >
               <Text style={[styles.btnText, { color: theme.accentText, fontWeight: '700' }]}>
-                Apply{selectedCount > 0 ? ` (${selectedCount})` : ''}
+                {selectedCount > 0
+                  ? t('overrideConflict.applyButtonWithCount', { count: selectedCount })
+                  : t('overrideConflict.applyButton')}
               </Text>
             </TouchableOpacity>
           </View>

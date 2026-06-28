@@ -3,7 +3,7 @@
  * Reusable modal for enterprise plan requests across the app
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,9 +22,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import enterpriseContactService from '../services/enterpriseContactService';
+import { useTheme } from '../hooks/useTheme';
 
 export default function EnterpriseContactModal({ visible, onClose, title, subtitle }) {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -98,7 +101,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
             >
               <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Contact us</Text>
+            <Text style={styles.headerTitle}>{t('contact.title')}</Text>
             <View style={{ width: 40 }} />
           </View>
 
@@ -115,20 +118,20 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
             </View>
 
             {/* Heading */}
-            <Text style={styles.heading}>Tell us what you think</Text>
+            <Text style={styles.heading}>{t('contact.heading')}</Text>
 
             {/* Description */}
             <Text style={styles.description}>
-              We'd love to hear your feedback, suggestions or answer any questions you may have.
+              {t('contact.description')}
             </Text>
 
             {/* Form Fields */}
             <View style={styles.formContainer}>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Your Name</Text>
+                <Text style={styles.label}>{t('contact.nameLabel')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Your Name"
+                  placeholder={t('enterprise.namePlaceholder')}
                   placeholderTextColor="#999"
                   value={formData.name}
                   onChangeText={(text) => setFormData({ ...formData, name: text })}
@@ -137,10 +140,10 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email Address</Text>
+                <Text style={styles.label}>{t('contact.emailLabel')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Email Address"
+                  placeholder={t('enterprise.emailPlaceholder')}
                   placeholderTextColor="#999"
                   value={formData.email}
                   onChangeText={(text) => setFormData({ ...formData, email: text })}
@@ -150,10 +153,10 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Phone number (Optional)</Text>
+                <Text style={styles.label}>{t('contact.phoneLabel')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Phone number (Optional)"
+                  placeholder={t('enterprise.phonePlaceholder')}
                   placeholderTextColor="#999"
                   value={formData.phone}
                   onChangeText={(text) => setFormData({ ...formData, phone: text })}
@@ -162,10 +165,10 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Tell us about your needs</Text>
+                <Text style={styles.label}>{t('contact.descriptionLabel')}</Text>
                 <TextInput
                   style={[styles.input, styles.textArea]}
-                  placeholder="Tell us about your needs"
+                  placeholder={t('enterprise.descriptionPlaceholder')}
                   placeholderTextColor="#999"
                   value={formData.description}
                   onChangeText={(text) => setFormData({ ...formData, description: text })}
@@ -184,7 +187,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
             disabled={isSubmitting}
           >
             <Text style={styles.sendButtonText}>
-              {isSubmitting ? 'Sending...' : 'Send Request'}
+              {isSubmitting ? t('contact.sending') : t('contact.submit')}
             </Text>
           </TouchableOpacity>
         </KeyboardAvoidingView>
@@ -193,10 +196,10 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   keyboardView: {
     flex: 1,
@@ -207,7 +210,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5E5',
   },
@@ -221,7 +224,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.textPrimary,
     letterSpacing: -0.3,
   },
   scrollView: {
@@ -251,7 +254,7 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 12,
     paddingHorizontal: 20,
@@ -259,7 +262,7 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 14,
-    color: '#666666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 32,
@@ -275,19 +278,19 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000000',
+    color: theme.textPrimary,
     marginBottom: 8,
     letterSpacing: -0.2,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    backgroundColor: '#FFFFFF',
-    color: '#000000',
+    backgroundColor: theme.surfaceElevated,
+    color: theme.textPrimary,
     fontFamily: FONTS.ALEXANDRIA,
   },
   textArea: {

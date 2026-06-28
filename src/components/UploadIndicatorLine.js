@@ -7,9 +7,11 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { COLORS } from '../constants/rooms';
 
 const UploadIndicatorLine = ({ uploadStatus, onPress }) => {
+  const { t } = useTranslation();
   const { activeUploads, queueLength } = uploadStatus;
   const hasActiveUploads = activeUploads.length > 0;
   const hasQueuedUploads = queueLength > 0;
@@ -66,12 +68,12 @@ const UploadIndicatorLine = ({ uploadStatus, onPress }) => {
       const upload = activeUploads[0];
       if (isLabeling) {
         const { current, total } = upload.labelProgress;
-        return `Preparing  ${current} / ${total}`;
+        return t('upload.preparingProgress', { current, total });
       }
       const { current, total } = upload.progress;
-      return `Uploading  ${current} / ${total}`;
+      return t('upload.uploadingProgress', { current, total });
     }
-    if (hasQueuedUploads) return `${queueLength} queued`;
+    if (hasQueuedUploads) return t('upload.queuedShort', { count: queueLength });
     return '';
   };
 

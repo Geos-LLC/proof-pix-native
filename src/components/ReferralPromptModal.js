@@ -8,6 +8,7 @@ import {
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 
 // Single-purpose modal used by the value-moment ("first report") nudge
@@ -24,6 +25,7 @@ export default function ReferralPromptModal({
   onPrimary,
   onSecondary,
 }) {
+  const { t } = useTranslation();
   if (!prompt) return null;
 
   const variant = prompt.variant;
@@ -31,15 +33,15 @@ export default function ReferralPromptModal({
   const isFirstReport = variant === 'first_report';
 
   const iconName = isExpiring ? 'time-outline' : 'sparkles-outline';
-  const title = isExpiring ? 'Need More Time?' : 'Great Work!';
+  const title = isExpiring ? t('referral.expiringPromptTitle') : t('referral.firstReportPromptTitle');
   const body = isExpiring
-    ? 'Your ProofPix trial ends soon.'
-    : "You've created your first professional report.";
+    ? t('referral.expiringPromptBody')
+    : t('referral.firstReportPromptBody');
   const secondary = isExpiring
-    ? 'Invite a colleague and both of you will receive 7 extra free trial days.'
-    : 'Share ProofPix with another professional and both of you will receive 7 extra free trial days.';
-  const primaryLabel = 'Invite Friends';
-  const secondaryLabel = isExpiring ? 'Upgrade Now' : 'Maybe Later';
+    ? t('referral.expiringPromptSecondary')
+    : t('referral.firstReportPromptSecondary');
+  const primaryLabel = t('referral.settingsInviteButton');
+  const secondaryLabel = isExpiring ? t('trial.upgradeNowButton') : t('trial.maybeButton');
 
   return (
     <Modal

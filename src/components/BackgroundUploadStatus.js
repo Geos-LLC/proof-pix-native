@@ -9,9 +9,11 @@ import {
   ActivityIndicator,
   Animated
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { COLORS } from '../constants/rooms';
 
 const BackgroundUploadStatus = ({ uploadStatus, onCancelUpload, onCancelAll, onShowDetails }) => {
+  const { t } = useTranslation();
   const { activeUploads, queueLength, isProcessing } = uploadStatus;
   const hasActiveUploads = activeUploads.length > 0;
   const hasQueuedUploads = queueLength > 0;
@@ -23,9 +25,9 @@ const BackgroundUploadStatus = ({ uploadStatus, onCancelUpload, onCancelAll, onS
     if (hasActiveUploads) {
       const upload = activeUploads[0];
       const { current, total } = upload.progress;
-      return `Uploading ${current}/${total} photos...`;
+      return t('upload.uploadingPhotosCount', { current, total });
     } else if (hasQueuedUploads) {
-      return `${queueLength} upload(s) queued`;
+      return t('upload.queueLength', { count: queueLength });
     }
     return '';
   };
@@ -73,6 +75,7 @@ const BackgroundUploadStatus = ({ uploadStatus, onCancelUpload, onCancelAll, onS
 };
 
 const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, onMinimize, isPreparing }) => {
+  const { t } = useTranslation();
   const { activeUploads, queueLength } = uploadStatus;
   const hasSeenUploads = useRef(false);
 
@@ -101,7 +104,7 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Upload Status</Text>
+            <Text style={styles.modalTitle}>{t('upload.uploadStatusTitle')}</Text>
           </View>
 
           <ScrollView style={styles.modalBody}>
@@ -110,7 +113,7 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
               <View style={styles.uploadItem}>
                 <View style={styles.preparingContainer}>
                   <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginRight: 10 }} />
-                  <Text style={styles.preparingText}>Preparing upload...</Text>
+                  <Text style={styles.preparingText}>{t('upload.preparingUpload')}</Text>
                 </View>
               </View>
             )}
@@ -136,7 +139,7 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
                       <View style={[styles.progressFill, { width: `${labelPct}%`, backgroundColor: '#FF9800' }]} />
                     </View>
                     <Text style={styles.progressText}>
-                      Applying labels... {upload.labelProgress.current} / {upload.labelProgress.total}
+                      {t('upload.applyingLabelsProgress', { current: upload.labelProgress.current, total: upload.labelProgress.total })}
                     </Text>
                   </View>
                 )}
@@ -154,7 +157,7 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
                     />
                   </View>
                   <Text style={styles.progressText}>
-                    {isUploading ? `${upload.progress.current} / ${upload.progress.total}` : (isLabeling ? 'Waiting for labels...' : 'Processing labels...')}
+                    {isUploading ? `${upload.progress.current} / ${upload.progress.total}` : (isLabeling ? t('upload.waitingForLabels') : t('upload.processingLabels'))}
                   </Text>
                 </View>
 
@@ -164,13 +167,13 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
                     onPress={() => onCancelUpload(upload.id)}
                     style={styles.cancelButton}
                   >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                    <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={onMinimize}
                     style={styles.minimizeButtonBottom}
                   >
-                    <Text style={styles.minimizeButtonText}>Minimize</Text>
+                    <Text style={styles.minimizeButtonText}>{t('common.minimize')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -180,7 +183,7 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
             {queueLength > 0 && (
               <View style={styles.queueItem}>
                 <Text style={styles.queueText}>
-                  {queueLength} upload(s) waiting in queue
+                  {t('upload.queueWaiting', { count: queueLength })}
                 </Text>
                 <View style={styles.actionButtonsContainer}>
                   <TouchableOpacity
@@ -192,13 +195,13 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
                     }}
                     style={styles.cancelButton}
                   >
-                    <Text style={styles.cancelButtonText}>Cancel All</Text>
+                    <Text style={styles.cancelButtonText}>{t('upload.cancelAll')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={onMinimize}
                     style={styles.minimizeButtonBottom}
                   >
-                    <Text style={styles.minimizeButtonText}>Minimize</Text>
+                    <Text style={styles.minimizeButtonText}>{t('common.minimize')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>

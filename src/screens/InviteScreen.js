@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
 import { FONTS } from '../constants/fonts';
 
 export default function InviteScreen({ route, navigation }) {
   const { token, sessionId } = route.params || {};
   const { joinTeam } = useAdmin();
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -14,7 +16,7 @@ export default function InviteScreen({ route, navigation }) {
     const processInvite = async () => {
       // Validate required parameters
       if (!token || !sessionId) {
-        setError('This invite link is invalid or incomplete. Please request a new link from your administrator.');
+        setError(t('invite.invalidLinkMessage'));
         setIsLoading(false);
         return;
       }
@@ -28,23 +30,23 @@ export default function InviteScreen({ route, navigation }) {
             routes: [{ name: 'Home' }],
           });
         } else {
-          setError(result.error || 'An unknown error occurred while trying to join the team.');
+          setError(result.error || t('invite.unknownError'));
           setIsLoading(false);
         }
       } catch (e) {
-        setError('An unexpected error occurred. Please try again.');
+        setError(t('invite.unexpectedError'));
         setIsLoading(false);
       }
     };
 
     processInvite();
-  }, [token, sessionId, joinTeam, navigation]);
+  }, [token, sessionId, joinTeam, navigation, t]);
 
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <ActivityIndicator size="large" color="#007bff" />
-        <Text style={styles.loadingText}>Joining team...</Text>
+        <Text style={styles.loadingText}>{t('invite.joiningTeam')}</Text>
       </SafeAreaView>
     );
   }

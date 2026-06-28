@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/rooms';
+import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from 'react-i18next';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearCompleted, onDeleteProject }) => {
   const { t } = useTranslation();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   
   if (!completedUploads || completedUploads.length === 0) return null;
 
@@ -63,7 +66,7 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
   const getCompletionMessage = () => {
     if (isEffectiveError) {
       if (isNetworkIssue) {
-        return "Couldn't complete upload due to network error. Please check your internet connection and try again.";
+        return t('gallery.uploadNetworkErrorMessage');
       }
       const err = latestUpload.error;
       const errMsg = (typeof err === 'string' ? err : err?.message);
@@ -79,7 +82,7 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
       return t('gallery.uploadCompleteMessage', { count: successful.length, albumName });
     } else {
       if (isNetworkIssue) {
-        return "Couldn't complete upload due to network error. " + successful.length + " of " + (successful.length + failed.length) + " photos uploaded.";
+        return t('gallery.uploadNetworkPartialMessage', { successCount: successful.length, totalCount: successful.length + failed.length });
       }
       return t('gallery.uploadPartialMessage', { successCount: successful.length, failedCount: failed.length });
     }
@@ -196,14 +199,14 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: theme.scrim,
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '90%',
@@ -213,7 +216,7 @@ const styles = StyleSheet.create({
   dragHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#E5E5E5',
+    backgroundColor: theme.borderStrong,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 8,
@@ -237,14 +240,14 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     flex: 1,
   },
@@ -308,7 +311,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.PRIMARY,
   },
   buttonText: {
-    color: '#000000', // Black text for yellow background
+    color: theme.textPrimary, // Black text for yellow background
     fontSize: 16,
     fontWeight: '600',
   },

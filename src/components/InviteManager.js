@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Share, Clipboard, ActivityIndicator, TextInput, Modal } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
@@ -14,6 +15,7 @@ import { generateInviteLink, generateShareContent, generateInviteCode } from '..
  * A component for admins to manage their team invites.
  */
 export default function InviteManager({ navigation }) {
+  const { t } = useTranslation();
   const {
     proxySessionId,
     inviteTokens,
@@ -83,12 +85,12 @@ export default function InviteManager({ navigation }) {
 
   const handleGenerateInvite = async () => {
     if (!canAddMoreInvites()) {
-      Alert.alert('Cannot add more invites', 'You have reached your plan limit.');
+      Alert.alert(t('inviteManager.limitReachedTitle'), t('inviteManager.limitReachedMessage'));
       return;
     }
 
     if (!proxySessionId) {
-      Alert.alert('Error', 'Proxy session not initialized. Please connect your team first.');
+      Alert.alert(t('common.error'), t('inviteManager.sessionNotInitializedMessage'));
       return;
     }
 
@@ -109,18 +111,18 @@ export default function InviteManager({ navigation }) {
       await fetchTeamMembers();
 
       Alert.alert(
-        'Invite Generated',
-        `A new invite has been created. You can now share it with your team member.`
+        t('inviteManager.generatedTitle'),
+        t('inviteManager.generatedMessage')
       );
     } catch (error) {
       console.error('[INVITE] Failed to generate invite token:', error);
-      Alert.alert('Error', `Failed to generate invite token: ${error.message}`);
+      Alert.alert(t('common.error'), t('inviteManager.generateErrorMessage', { error: error.message }));
     }
   };
 
   const handleTestInvite = async (token) => {
     if (!proxySessionId) {
-      Alert.alert('Error', 'Proxy session not initialized.');
+      Alert.alert(t('common.error'), t('inviteManager.sessionNotInitializedMessage'));
       return;
     }
 
@@ -131,12 +133,12 @@ export default function InviteManager({ navigation }) {
 
   const handleTestJoinWithName = async () => {
     if (!testMemberName.trim()) {
-      Alert.alert('Name Required', 'Please enter a name to test the team member setup.');
+      Alert.alert(t('inviteManager.nameRequiredTitle'), t('inviteManager.nameRequiredMessage'));
       return;
     }
 
     if (!currentTestToken || !proxySessionId) {
-      Alert.alert('Error', 'Missing invite token or session ID.');
+      Alert.alert(t('common.error'), t('inviteManager.missingTokenMessage'));
       setShowNameInput(false);
       return;
     }
@@ -170,11 +172,11 @@ export default function InviteManager({ navigation }) {
         // console.log('[INVITE] Updated SettingsContext with team member name:', testMemberName.trim());
         
         Alert.alert(
-          'Team Mode Activated',
-          `You have successfully joined the team as "${testMemberName.trim()}". You can switch back to admin mode from Settings to see the connected team member.`,
+          t('inviteManager.teamModeActivatedTitle'),
+          t('inviteManager.teamModeActivatedMessage', { name: testMemberName.trim() }),
           [
             {
-              text: 'OK',
+              text: t('common.ok'),
               onPress: () => {
                 // Refresh team members list if possible, then navigate to Home
                 fetchTeamMembers().then(() => {
@@ -198,11 +200,11 @@ export default function InviteManager({ navigation }) {
         if (originalName) {
           await updateUserInfo(originalName);
         }
-        Alert.alert('Error', result.error || 'Failed to join team.');
+        Alert.alert(t('common.error'), result.error || t('inviteManager.joinFailedMessage'));
       }
     } catch (error) {
       console.error('[INVITE] Failed to test invite:', error);
-      Alert.alert('Error', 'Failed to join team. Please try again.');
+      Alert.alert(t('common.error'), t('inviteManager.joinErrorMessage'));
     }
   };
 
@@ -210,14 +212,14 @@ export default function InviteManager({ navigation }) {
     // Generate the smart invite link
     const inviteLink = generateInviteLink(token, proxySessionId);
     Clipboard.setString(inviteLink);
-    Alert.alert('Link Copied!', 'Invite link copied to clipboard. Share this link with your team member - it will guide them to download and join automatically.');
+    Alert.alert(t('inviteManager.linkCopiedTitle'), t('inviteManager.linkCopiedMessage'));
   };
 
   const handleCopyCode = (token) => {
     // Copy just the invite code for manual entry
     const inviteCode = generateInviteCode(token, proxySessionId);
     Clipboard.setString(inviteCode);
-    Alert.alert('Code Copied!', 'Invite code copied to clipboard. Team member can paste this in "Join Team" screen.');
+    Alert.alert(t('inviteManager.codeCopiedTitle'), t('inviteManager.codeCopiedMessage'));
   };
 
   const handleShareInvite = async (token) => {
@@ -232,19 +234,19 @@ export default function InviteManager({ navigation }) {
       });
     } catch (error) {
       if (error.message !== 'User did not share') {
-        Alert.alert('Error', 'Could not share the invite.');
+        Alert.alert(t('common.error'), t('inviteManager.shareErrorMessage'));
       }
     }
   };
 
   const handleDeleteInvite = (token) => {
     Alert.alert(
-      'Delete Invite',
-      'This will permanently delete this unused invite code. Are you sure?',
+      t('inviteManager.deleteInviteTitle'),
+      t('inviteManager.deleteInviteMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -254,10 +256,10 @@ export default function InviteManager({ navigation }) {
               }
               await removeInviteToken(token);
               await fetchTeamMembers();
-              Alert.alert('Deleted', 'The invite code has been deleted successfully.');
+              Alert.alert(t('inviteManager.deletedTitle'), t('inviteManager.deletedMessage'));
             } catch (error) {
               console.error('[INVITE] Failed to delete invite token:', error);
-              Alert.alert('Error', 'Failed to delete invite code. Please try again.');
+              Alert.alert(t('common.error'), t('inviteManager.deleteErrorMessage'));
             }
           }
         }
@@ -268,15 +270,15 @@ export default function InviteManager({ navigation }) {
   const renderInviteItem = ({ item }) => (
     <View style={styles.inviteItem}>
       <View style={styles.tokenContainer}>
-        <Text style={styles.tokenLabel}>Invite Token:</Text>
+        <Text style={styles.tokenLabel}>{t('inviteManager.inviteTokenLabel')}</Text>
         <Text style={styles.inviteToken} selectable>{item}</Text>
       </View>
       <View style={styles.buttonGroup}>
         <TouchableOpacity onPress={() => handleCopyLink(item)} style={styles.actionButton}>
-          <Text style={styles.copyButton}>Copy Link</Text>
+          <Text style={styles.copyButton}>{t('inviteManager.copyLinkButton')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => handleShareInvite(item)} style={styles.actionButton}>
-          <Text style={styles.shareButton}>Share</Text>
+          <Text style={styles.shareButton}>{t('inviteManager.shareButton')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => handleDeleteInvite(item)}
@@ -287,10 +289,10 @@ export default function InviteManager({ navigation }) {
       </View>
       <View style={styles.secondaryButtonGroup}>
         <TouchableOpacity onPress={() => handleCopyCode(item)} style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>Copy Code Only</Text>
+          <Text style={styles.secondaryButtonText}>{t('inviteManager.copyCodeOnlyButton')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => handleTestInvite(item)} style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>Test</Text>
+          <Text style={styles.secondaryButtonText}>{t('inviteManager.testButton')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -312,13 +314,13 @@ export default function InviteManager({ navigation }) {
   const getStatusText = (status) => {
     switch (status) {
       case 'joined':
-        return 'Joined';
+        return t('inviteManager.statusJoined');
       case 'pending':
-        return 'Pending';
+        return t('inviteManager.statusPending');
       case 'declined':
-        return 'Declined';
+        return t('inviteManager.statusDeclined');
       default:
-        return 'Unknown';
+        return t('inviteManager.statusUnknown');
     }
   };
 
@@ -337,7 +339,7 @@ export default function InviteManager({ navigation }) {
     return (
       <View style={styles.memberItem}>
         <View style={styles.memberInfo}>
-          <Text style={styles.memberName}>{item.name || 'Unknown'}</Text>
+          <Text style={styles.memberName}>{item.name || t('inviteManager.unknownMember')}</Text>
           <View style={styles.memberMeta}>
             <View style={[styles.statusBadge, { backgroundColor: statusColor + '20', borderColor: statusColor }]}>
               <Text style={[styles.statusText, { color: statusColor }]}>
@@ -346,14 +348,14 @@ export default function InviteManager({ navigation }) {
             </View>
             {item.lastUploadAt && (
               <Text style={styles.memberDate}>
-                Last upload: {new Date(item.lastUploadAt).toLocaleDateString()}
+                {t('inviteManager.lastUpload', { date: new Date(item.lastUploadAt).toLocaleDateString() })}
               </Text>
             )}
           </View>
           {/* Show invite token if available */}
           {memberToken && (
             <View style={styles.tokenContainer}>
-              <Text style={styles.tokenLabel}>Invite Code:</Text>
+              <Text style={styles.tokenLabel}>{t('inviteManager.inviteCodeLabel')}</Text>
               <Text style={styles.inviteToken} selectable>{memberToken}</Text>
             </View>
           )}
@@ -364,12 +366,12 @@ export default function InviteManager({ navigation }) {
             <TouchableOpacity 
               onPress={async () => {
                 Alert.alert(
-                  'Revoke Invite',
-                  'This will revoke the invite token for this team member. They will no longer be able to upload using this code.',
+                  t('inviteManager.revokeInviteTitle'),
+                  t('inviteManager.revokeInviteMessage'),
                   [
-                    { text: 'Cancel', style: 'cancel' },
+                    { text: t('common.cancel'), style: 'cancel' },
                     {
-                      text: 'Revoke',
+                      text: t('inviteManager.revokeButton'),
                       style: 'destructive',
                       onPress: async () => {
                         try {
@@ -379,24 +381,24 @@ export default function InviteManager({ navigation }) {
                           }
                           await removeInviteToken(memberToken);
                           await fetchTeamMembers();
-                          Alert.alert('Invite Revoked', 'The invite has been revoked successfully.');
+                          Alert.alert(t('inviteManager.revokedTitle'), t('inviteManager.revokedMessage'));
                         } catch (error) {
                           console.error('[INVITE] Failed to revoke invite token:', error);
-                          Alert.alert('Error', 'Failed to revoke invite token. Please try again.');
+                          Alert.alert(t('common.error'), t('inviteManager.revokeErrorMessage'));
                         }
                       }
                     }
                   ]
                 );
-              }} 
+              }}
               style={[styles.actionButton, styles.revokeButtonContainer]}
             >
-              <Text style={styles.revokeButton}>Revoke</Text>
+              <Text style={styles.revokeButton}>{t('inviteManager.revokeButton')}</Text>
             </TouchableOpacity>
           </View>
         )}
         {!hasActiveInvite && memberToken && (
-          <Text style={styles.memberNote}>Invite revoked</Text>
+          <Text style={styles.memberNote}>{t('inviteManager.inviteRevoked')}</Text>
         )}
       </View>
     );
@@ -404,7 +406,7 @@ export default function InviteManager({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Team Invites</Text>
+      <Text style={styles.title}>{t('inviteManager.title')}</Text>
       {(() => {
         const unusedInvites = (inviteTokens || []).filter(token => {
           // Filter out tokens that are already used by team members
@@ -413,7 +415,7 @@ export default function InviteManager({ navigation }) {
         });
         return (
           <Text style={styles.subtitle}>
-            You have {unusedInvites.length} unused invite{unusedInvites.length !== 1 ? 's' : ''} remaining.
+            {t('inviteManager.unusedInvitesMessage', { count: unusedInvites.length, plural: unusedInvites.length !== 1 ? 's' : '' })}
           </Text>
         );
       })()}
@@ -427,19 +429,19 @@ export default function InviteManager({ navigation }) {
         })}
         renderItem={renderInviteItem}
         keyExtractor={(item) => item}
-        ListEmptyComponent={<Text>No active invites.</Text>}
+        ListEmptyComponent={<Text>{t('inviteManager.noActiveInvites')}</Text>}
         scrollEnabled={false}
       />
 
       {canAddMoreInvites() && (
         <TouchableOpacity style={styles.generateButton} onPress={handleGenerateInvite}>
-          <Text style={styles.generateButtonText}>Generate New Invite</Text>
+          <Text style={styles.generateButtonText}>{t('inviteManager.generateNewInviteButton')}</Text>
         </TouchableOpacity>
       )}
 
       {/* Team Members Section */}
       <View style={styles.teamMembersSection}>
-        <Text style={styles.teamMembersTitle}>Team Members</Text>
+        <Text style={styles.teamMembersTitle}>{t('inviteManager.teamMembersTitle')}</Text>
         {loadingMembers ? (
           <ActivityIndicator size="small" color={COLORS.PRIMARY} style={{ marginVertical: 10 }} />
         ) : teamMembers.length > 0 ? (
@@ -447,11 +449,11 @@ export default function InviteManager({ navigation }) {
             data={teamMembers}
             renderItem={renderTeamMemberItem}
             keyExtractor={(item) => item.token}
-            ListEmptyComponent={<Text style={styles.emptyText}>No team members yet.</Text>}
+            ListEmptyComponent={<Text style={styles.emptyText}>{t('inviteManager.noTeamMembers')}</Text>}
             scrollEnabled={false}
           />
         ) : (
-          <Text style={styles.emptyText}>No team members yet. Share an invite to get started.</Text>
+          <Text style={styles.emptyText}>{t('inviteManager.noTeamMembersShareInvite')}</Text>
         )}
       </View>
 
@@ -468,13 +470,13 @@ export default function InviteManager({ navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Test Team Member Setup</Text>
+            <Text style={styles.modalTitle}>{t('inviteManager.testTeamMemberTitle')}</Text>
             <Text style={styles.modalSubtitle}>
-              Enter a name to simulate the complete team member setup process.
+              {t('inviteManager.testTeamMemberSubtitle')}
             </Text>
             <TextInput
               style={styles.nameInput}
-              placeholder="Enter team member name"
+              placeholder={t('inviteManager.memberNamePlaceholder')}
               placeholderTextColor={COLORS.GRAY}
               value={testMemberName}
               onChangeText={setTestMemberName}
@@ -490,7 +492,7 @@ export default function InviteManager({ navigation }) {
                   setCurrentTestToken(null);
                 }}
               >
-                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                <Text style={styles.modalButtonTextCancel}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonJoin]}
@@ -498,7 +500,7 @@ export default function InviteManager({ navigation }) {
                 disabled={!testMemberName.trim()}
               >
                 <Text style={[styles.modalButtonTextJoin, !testMemberName.trim() && styles.modalButtonTextDisabled]}>
-                  Join
+                  {t('inviteManager.joinButton')}
                 </Text>
               </TouchableOpacity>
             </View>

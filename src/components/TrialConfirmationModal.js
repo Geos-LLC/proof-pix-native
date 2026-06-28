@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,17 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { useTheme } from '../hooks/useTheme';
+import { useTranslation } from 'react-i18next';
 
 const BASE_TRIAL_DAYS = 15;
 const REFERRAL_BONUS_DAYS = 15;
 
 export default function TrialConfirmationModal({ visible, planName, onUseTrial, onCancel, price, platformCancelText }) {
+  const { t } = useTranslation();
   const [trialDays, setTrialDays] = useState(BASE_TRIAL_DAYS);
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   useEffect(() => {
     const checkReferral = async () => {
@@ -51,16 +56,16 @@ export default function TrialConfirmationModal({ visible, planName, onUseTrial, 
           </TouchableOpacity>
 
           <View style={styles.header}>
-            <Text style={styles.title}>START FREE TRIAL</Text>
+            <Text style={styles.title}>{t('trial.startTrialButton')}</Text>
           </View>
 
           <View style={styles.content}>
             <Text style={styles.message}>
-              Start your {trialDays}-day free trial of {planName.toLowerCase()} features.
+              {t('trial.confirmationMessage', { days: trialDays, planName: planName.toLowerCase() })}
             </Text>
             <Text style={styles.disclosure}>
-              {price ? `After your trial ends, you'll be charged ${price}/month. ` : ''}
-              Auto-renews unless canceled. {platformCancelText || (Platform.OS === 'android' ? 'Cancel anytime in Google Play > Subscriptions' : 'Cancel anytime in Settings > Subscriptions')}.
+              {price ? t('trial.priceDisclosure', { price }) : ''}
+              {t('trial.autoRenewDisclosure')}{platformCancelText || (Platform.OS === 'android' ? t('trial.cancelInGooglePlay') : t('trial.cancelInIosSettings'))}.
             </Text>
           </View>
 
@@ -70,7 +75,7 @@ export default function TrialConfirmationModal({ visible, planName, onUseTrial, 
               onPress={onCancel}
             >
               <Text style={[styles.buttonText, styles.skipButtonText]}>
-                No Thanks
+                {t('trial.noThanksButton')}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -78,7 +83,7 @@ export default function TrialConfirmationModal({ visible, planName, onUseTrial, 
               onPress={onUseTrial}
             >
               <Text style={[styles.buttonText, styles.startButtonText]}>
-                Start Free Trial
+                {t('trial.startTrialButton')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -88,16 +93,16 @@ export default function TrialConfirmationModal({ visible, planName, onUseTrial, 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: theme.scrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   modal: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 20,
     width: '100%',
     maxWidth: 340,
@@ -133,14 +138,14 @@ const styles = StyleSheet.create({
   },
   message: {
     fontSize: 15,
-    color: '#666666',
+    color: theme.textSecondary,
     lineHeight: 22,
     textAlign: 'center',
     fontFamily: FONTS.ALEXANDRIA,
   },
   disclosure: {
     fontSize: 11,
-    color: '#999999',
+    color: theme.textMuted,
     lineHeight: 16,
     textAlign: 'center',
     fontFamily: FONTS.ALEXANDRIA,
@@ -161,9 +166,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   skipButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1.5,
-    borderColor: '#E0E0E0',
+    borderColor: theme.border,
   },
   startButton: {
     backgroundColor: '#000000',

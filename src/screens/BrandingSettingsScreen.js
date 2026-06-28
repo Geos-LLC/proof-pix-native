@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../hooks/useTheme';
 
@@ -28,17 +29,19 @@ const PRESET_COLORS = [
 
 // Each entry: ionicon name, label, optional URL helper note that gets
 // shown as the placeholder. Order here is the order the inputs appear
-// in the UI.
+// in the UI. The placeholder is a translation key suffix resolved via
+// t('branding.socialPlaceholder<Key>') inside the component.
 const SOCIAL_PLATFORMS = [
-  { key: 'instagram', label: 'Instagram', icon: 'logo-instagram', placeholder: '@username or profile URL' },
-  { key: 'facebook',  label: 'Facebook',  icon: 'logo-facebook',  placeholder: 'Page name or URL' },
-  { key: 'linkedin',  label: 'LinkedIn',  icon: 'logo-linkedin',  placeholder: 'Profile or company URL' },
-  { key: 'youtube',   label: 'YouTube',   icon: 'logo-youtube',   placeholder: 'Channel URL' },
-  { key: 'twitter',   label: 'X (Twitter)', icon: 'logo-twitter', placeholder: '@username or profile URL' },
+  { key: 'instagram', label: 'Instagram',   icon: 'logo-instagram', placeholderKey: 'socialPlaceholderInstagram' },
+  { key: 'facebook',  label: 'Facebook',    icon: 'logo-facebook',  placeholderKey: 'socialPlaceholderFacebook' },
+  { key: 'linkedin',  label: 'LinkedIn',    icon: 'logo-linkedin',  placeholderKey: 'socialPlaceholderLinkedIn' },
+  { key: 'youtube',   label: 'YouTube',     icon: 'logo-youtube',   placeholderKey: 'socialPlaceholderYouTube' },
+  { key: 'twitter',   label: 'X (Twitter)', icon: 'logo-twitter',   placeholderKey: 'socialPlaceholderX' },
 ];
 
 export default function BrandingSettingsScreen({ navigation }) {
   const theme = useTheme();
+  const { t } = useTranslation();
   const {
     reportBrandLogoUri,
     updateReportBrandLogoUri,
@@ -66,7 +69,7 @@ export default function BrandingSettingsScreen({ navigation }) {
       const ImagePicker = require('expo-image-picker');
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'Photo library access is required to upload a logo.');
+        Alert.alert(t('branding.permissionNeededTitle'), t('branding.permissionNeededMessage'));
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -77,14 +80,14 @@ export default function BrandingSettingsScreen({ navigation }) {
       const uri = result?.assets?.[0]?.uri;
       if (uri && !result.canceled) await updateReportBrandLogoUri(uri);
     } catch (e) {
-      Alert.alert("Couldn't open library", e?.message || 'Unknown error');
+      Alert.alert(t('branding.libraryErrorTitle'), e?.message || t('common.unknownError'));
     }
   };
 
   const removeLogo = () => {
-    Alert.alert('Remove logo', 'Remove the report branding logo?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => updateReportBrandLogoUri(null) },
+    Alert.alert(t('branding.removeLogoTitle'), t('branding.removeLogoMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('branding.remove'), style: 'destructive', onPress: () => updateReportBrandLogoUri(null) },
     ]);
   };
 
@@ -96,7 +99,7 @@ export default function BrandingSettingsScreen({ navigation }) {
       setEditingCustomColor(false);
       setCustomColorInput('');
     } else {
-      Alert.alert('Invalid color', 'Enter a 6-digit hex color, e.g. #1A73E8');
+      Alert.alert(t('branding.invalidColorTitle'), t('branding.invalidColorMessage'));
     }
   };
 
@@ -106,26 +109,26 @@ export default function BrandingSettingsScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Report Branding</Text>
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>{t('branding.title')}</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <Text style={[styles.sectionNote, { color: theme.textSecondary }]}>
-          Report branding appears in the header of generated reports (logo, company name, accent color). This is separate from the photo-editor logo overlay.
+          {t('branding.sectionNote')}
         </Text>
 
         {/* Logo */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>REPORT LOGO</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionLogo')}</Text>
         {reportBrandLogoUri ? (
           <View style={[styles.logoRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Image source={{ uri: reportBrandLogoUri }} style={styles.logoThumb} resizeMode="contain" />
             <View style={styles.logoActions}>
               <TouchableOpacity onPress={pickLogo} style={[styles.logoBtn, { borderColor: theme.accent }]}>
-                <Text style={[styles.logoBtnText, { color: theme.accent }]}>Change</Text>
+                <Text style={[styles.logoBtnText, { color: theme.accent }]}>{t('branding.change')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={removeLogo} style={[styles.logoBtn, { borderColor: '#E53935' }]}>
-                <Text style={[styles.logoBtnText, { color: '#E53935' }]}>Remove</Text>
+                <Text style={[styles.logoBtnText, { color: '#E53935' }]}>{t('branding.remove')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -136,22 +139,22 @@ export default function BrandingSettingsScreen({ navigation }) {
             activeOpacity={0.7}
           >
             <Ionicons name="image-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.uploadBtnText, { color: theme.textSecondary }]}>Upload Report Logo</Text>
+            <Text style={[styles.uploadBtnText, { color: theme.textSecondary }]}>{t('branding.uploadLogo')}</Text>
           </TouchableOpacity>
         )}
 
         {/* Company name */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>COMPANY / TEAM NAME</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionCompany')}</Text>
         <TextInput
           value={reportCompanyName}
           onChangeText={updateReportCompanyName}
-          placeholder="e.g. Acme Inspections"
+          placeholder={t('branding.companyPlaceholder')}
           placeholderTextColor={theme.textMuted}
           style={[styles.textInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
 
         {/* Brand color */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>ACCENT COLOR</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionColor')}</Text>
         <View style={styles.colorGrid}>
           {PRESET_COLORS.map((c) => (
             <TouchableOpacity
@@ -175,7 +178,7 @@ export default function BrandingSettingsScreen({ navigation }) {
           <View style={[styles.currentColorSwatch, { backgroundColor: reportBrandColor }]} />
           <Text style={[styles.currentColorHex, { color: theme.textPrimary }]}>{reportBrandColor}</Text>
           <TouchableOpacity onPress={() => setEditingCustomColor(!editingCustomColor)} style={styles.customColorBtn}>
-            <Text style={[styles.customColorBtnText, { color: theme.accent }]}>Custom</Text>
+            <Text style={[styles.customColorBtnText, { color: theme.accent }]}>{t('branding.customColor')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -191,7 +194,7 @@ export default function BrandingSettingsScreen({ navigation }) {
               style={[styles.hexInput, { color: theme.textPrimary }]}
             />
             <TouchableOpacity onPress={applyCustomColor} style={[styles.applyBtn, { backgroundColor: theme.accent }]}>
-              <Text style={[styles.applyBtnText, { color: theme.accentText || '#FFFFFF' }]}>Apply</Text>
+              <Text style={[styles.applyBtnText, { color: theme.accentText || '#FFFFFF' }]}>{t('common.apply')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -199,7 +202,7 @@ export default function BrandingSettingsScreen({ navigation }) {
         {/* Contact details — address, phone, email, website. All are
             optional; whatever the user fills in surfaces in the report
             header/footer. */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CONTACT</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionContact')}</Text>
 
         {/* Address: single-line is intentional. iOS's QuickType
             autofill bar only appears on single-line TextInputs — make
@@ -211,7 +214,7 @@ export default function BrandingSettingsScreen({ navigation }) {
           <TextInput
             value={reportAddress}
             onChangeText={updateReportAddress}
-            placeholder="Street, City, State ZIP"
+            placeholder={t('branding.addressPlaceholder')}
             placeholderTextColor={theme.textMuted}
             style={[styles.iconInputField, { color: theme.textPrimary }]}
             textContentType="fullStreetAddress"
@@ -227,7 +230,7 @@ export default function BrandingSettingsScreen({ navigation }) {
           <TextInput
             value={reportPhone}
             onChangeText={updateReportPhone}
-            placeholder="(555) 123-4567"
+            placeholder={t('branding.phonePlaceholder')}
             placeholderTextColor={theme.textMuted}
             keyboardType="phone-pad"
             style={[styles.iconInputField, { color: theme.textPrimary }]}
@@ -243,7 +246,7 @@ export default function BrandingSettingsScreen({ navigation }) {
           <TextInput
             value={reportEmail}
             onChangeText={updateReportEmail}
-            placeholder="you@company.com"
+            placeholder={t('branding.emailPlaceholder')}
             placeholderTextColor={theme.textMuted}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -259,7 +262,7 @@ export default function BrandingSettingsScreen({ navigation }) {
           <TextInput
             value={reportWebsite}
             onChangeText={updateReportWebsite}
-            placeholder="www.company.com"
+            placeholder={t('branding.websitePlaceholder')}
             placeholderTextColor={theme.textMuted}
             keyboardType="url"
             autoCapitalize="none"
@@ -273,13 +276,13 @@ export default function BrandingSettingsScreen({ navigation }) {
         {/* Social media — leave any platform blank to hide it from
             reports. Reports iterate Object.entries() on whatever's
             stored. */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>SOCIAL MEDIA</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionSocial')}</Text>
 
         {/* Social handles: no iOS textContentType. "username" there
             would trigger the Passwords AutoFill prompt, which is wrong
             for a social handle. Android still gets a hint via
             autoComplete. */}
-        {SOCIAL_PLATFORMS.map(({ key, label, icon, placeholder }) => (
+        {SOCIAL_PLATFORMS.map(({ key, label, icon, placeholderKey }) => (
           <View
             key={key}
             style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
@@ -288,7 +291,7 @@ export default function BrandingSettingsScreen({ navigation }) {
             <TextInput
               value={(reportSocialLinks && reportSocialLinks[key]) || ''}
               onChangeText={(v) => updateReportSocialLink(key, v)}
-              placeholder={placeholder}
+              placeholder={t(`branding.${placeholderKey}`)}
               placeholderTextColor={theme.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -299,7 +302,7 @@ export default function BrandingSettingsScreen({ navigation }) {
         ))}
 
         <View style={[styles.previewBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.previewLabel, { color: theme.textSecondary }]}>PREVIEW</Text>
+          <Text style={[styles.previewLabel, { color: theme.textSecondary }]}>{t('branding.sectionPreview')}</Text>
           <View style={[styles.reportHeaderPreview, { borderLeftColor: reportBrandColor }]}>
             {reportBrandLogoUri ? (
               <Image source={{ uri: reportBrandLogoUri }} style={styles.previewLogo} resizeMode="contain" />
@@ -312,8 +315,8 @@ export default function BrandingSettingsScreen({ navigation }) {
               {reportCompanyName ? (
                 <Text style={[styles.previewCompany, { color: theme.textSecondary }]}>{reportCompanyName.toUpperCase()}</Text>
               ) : null}
-              <Text style={[styles.previewTitle, { color: theme.textPrimary }]}>Report Title</Text>
-              <Text style={[styles.previewSub, { color: theme.textSecondary }]}>Generated today</Text>
+              <Text style={[styles.previewTitle, { color: theme.textPrimary }]}>{t('branding.previewTitle')}</Text>
+              <Text style={[styles.previewSub, { color: theme.textSecondary }]}>{t('branding.previewSubtitle')}</Text>
             </View>
           </View>
         </View>

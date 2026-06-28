@@ -253,7 +253,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
                 >
                   <View style={styles.planButtonRow}>
                     <Text style={[styles.planButtonText, userPlan === 'starter' && styles.planButtonTextSelected]}>{t('firstLoad.starter')}</Text>
-                    <Text style={styles.planPrice}>Free</Text>
+                    <Text style={styles.planPrice}>{t('planSelection.starterPrice')}</Text>
                   </View>
                 </TouchableOpacity>
                 <Text style={styles.planSubtext}>{t('firstLoad.starterDesc')}</Text>

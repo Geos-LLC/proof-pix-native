@@ -3,8 +3,10 @@ import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CommonActions } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { useTheme } from '../hooks/useTheme';
+import { useUiOverlayVisible } from './uiOverlayState';
 
 // Routes where the bottom nav stays invisible — only the auth /
 // onboarding flow, where there's no app shell yet to navigate
@@ -33,6 +35,15 @@ const HIDDEN_ON = new Set([
   // tools. Hidden here. Users navigate out via the back chevron + Save
   // button in the StudioScreen top header.
   'StudioDetail',
+  // Fullscreen photo viewer routes — they render EnlargedPhotoViewer
+  // edge-to-edge with their OWN bottom action row (Overlays toggle +
+  // Share + Edit pencil). The persistent nav was floating right on top
+  // of that row, hiding the Edit button entirely and making the
+  // photo's bottom area unreadable. Users navigate out via the X close
+  // button in the viewer header.
+  'PhotoSetPreview',
+  'PhotoDetail',
+  'Gallery',
 ]);
 
 // Sub-routes that conceptually belong to the Projects tab (so the active
@@ -58,6 +69,15 @@ const resolveActiveTab = (routeName) => {
 export default function PersistentBottomNav({ currentRoute, navigationRef }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const { t } = useTranslation();
+  // Screens with their own inline fullscreen overlays (HomeScreen's
+  // tapped/fullScreen photo viewer, etc.) report visibility through
+  // uiOverlayState. The route is still 'Home' while the overlay is up,
+  // so route-based HIDDEN_ON alone can't catch it — this context flag
+  // does. Reference-counted in the provider so two simultaneous
+  // overlays both have to close before the nav reappears.
+  const overlayVisible = useUiOverlayVisible();
+  if (overlayVisible) return null;
   if (!currentRoute || HIDDEN_ON.has(currentRoute)) return null;
   const activeTab = resolveActiveTab(currentRoute);
   const isDark = theme.mode === 'dark';
@@ -106,7 +126,7 @@ export default function PersistentBottomNav({ currentRoute, navigationRef }) {
         active={activeTab === 'Home'}
         onPress={() => go('Home')}
         iconSource={require('../../assets/icons/home.png')}
-        label="Capture"
+        label={t('nav.capture')}
         inactiveTint={inactiveTint}
         activeTint={activeTint}
         activeBg={theme.navActive}
@@ -116,7 +136,7 @@ export default function PersistentBottomNav({ currentRoute, navigationRef }) {
         active={activeTab === 'Projects'}
         onPress={() => go('Projects')}
         iconSource={require('../../assets/icons/projects.png')}
-        label="Projects"
+        label={t('nav.projects')}
         inactiveTint={inactiveTint}
         activeTint={activeTint}
         activeBg={theme.navActive}
@@ -126,7 +146,7 @@ export default function PersistentBottomNav({ currentRoute, navigationRef }) {
         active={activeTab === 'Studio'}
         onPress={() => go('Studio')}
         ionicon="brush-outline"
-        label="Edit"
+        label={t('nav.edit')}
         inactiveTint={inactiveTint}
         activeTint={activeTint}
         activeBg={theme.navActive}
@@ -136,7 +156,7 @@ export default function PersistentBottomNav({ currentRoute, navigationRef }) {
         active={activeTab === 'Settings'}
         onPress={() => go('Settings')}
         iconSource={require('../../assets/icons/settings.png')}
-        label="Settings"
+        label={t('nav.settings')}
         inactiveTint={inactiveTint}
         activeTint={activeTint}
         activeBg={theme.navActive}

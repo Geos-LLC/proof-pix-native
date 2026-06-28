@@ -24,6 +24,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Dimensions, Switch, ScrollView, PanResponder, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../hooks/useTheme';
 import { FONTS } from '../constants/fonts';
@@ -47,6 +48,7 @@ const FORMAT_ASPECTS = {
 // a "Photo unavailable" placeholder so the user isn't staring at a
 // silent white frame.
 const PhotoFrame = ({ photo, overlayMode, frameW, frameH, theme }) => {
+  const { t } = useTranslation();
   const [loadFailed, setLoadFailed] = React.useState(false);
   const [loaded, setLoaded] = React.useState(false);
   // Reset transient render state if the photo id swaps (re-mount
@@ -76,7 +78,7 @@ const PhotoFrame = ({ photo, overlayMode, frameW, frameH, theme }) => {
         <View style={[styles.missing, { backgroundColor: theme.surfaceElevated || (theme.mode === 'dark' ? '#222' : '#F0F0F0') }]}>
           <Ionicons name="image-outline" size={36} color={theme.textMuted || '#888'} />
           <Text style={{ marginTop: 8, color: theme.textMuted || '#888', fontFamily: FONTS.ALEXANDRIA, fontSize: 12 }}>
-            Photo unavailable
+            {t('gallery.photoUnavailable')}
           </Text>
         </View>
       )}
@@ -132,6 +134,7 @@ export default function EnlargedPhotoViewer({
     right: rawInsets.right,
   }), [rawInsets.top, rawInsets.bottom, rawInsets.left, rawInsets.right]);
   const theme = useTheme();
+  const { t } = useTranslation();
   const screenW = Dimensions.get('window').width;
   const screenH = Dimensions.get('window').height;
 
@@ -360,9 +363,32 @@ export default function EnlargedPhotoViewer({
     return { frameW, frameH: Math.max(frameH, 200) };
   }, [availW, availH]);
 
+  // Captures the user's swipe velocity at release. Paging ScrollView
+  // snaps back to the current page when there's nothing past the
+  // edge, so onMomentumScrollEnd alone can't tell intent. Recording
+  // the drag velocity here lets us detect "user swiped past the last
+  // page" → fire onNextSet (parent swaps the pool); same for first.
+  const dragVxRef = useRef(0);
+  const handleScrollEndDrag = (e) => {
+    dragVxRef.current = e?.nativeEvent?.velocity?.x || 0;
+  };
   const handleMomentumEnd = (e) => {
     const x = e?.nativeEvent?.contentOffset?.x || 0;
     const next = Math.round(x / screenW);
+    const vx = dragVxRef.current;
+    dragVxRef.current = 0;
+    // Edge-overscroll → set jump. Negative vx == swipe right-to-left
+    // (forward / next). Threshold low enough that a deliberate swipe
+    // triggers it but a casual touch doesn't.
+    const SWIPE_INTENT = 0.2;
+    if (next >= pool.length - 1 && vx < -SWIPE_INTENT && typeof onNextSet === 'function') {
+      onNextSet(current);
+      return;
+    }
+    if (next <= 0 && vx > SWIPE_INTENT && typeof onPrevSet === 'function') {
+      onPrevSet(current);
+      return;
+    }
     if (next !== safeIdx) setIdx(next);
   };
 
@@ -378,6 +404,41 @@ export default function EnlargedPhotoViewer({
     setIdx(next);
     scrollRef.current?.scrollTo({ x: next * screenW, animated: true });
   };
+
+  // Edge-overscroll PanResponder. Sits between the backdrop and the
+  // paging ScrollView so horizontal swipes at a set boundary (or any
+  // horizontal swipe when the set has only one photo and the
+  // ScrollView has nowhere to move) get claimed BEFORE they reach the
+  // photo's TouchableWithoutFeedback (which would otherwise interpret
+  // the swipe as a tap and open the zoom layer).
+  //
+  // Returns true from onMoveShouldSetPanResponder only for clearly-
+  // horizontal motion AT THE RELEVANT EDGE — multi-photo non-edge
+  // swipes fall through to ScrollView as usual.
+  const edgeSwipeResponder = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => {
+        if (zoomOpenRef.current) return false;
+        if (Math.abs(g.dx) < 20) return false;
+        if (Math.abs(g.dx) < Math.abs(g.dy) * 1.5) return false;
+        const atStart = safeIdx <= 0;
+        const atEnd = safeIdx >= pool.length - 1;
+        if (g.dx < 0 && atEnd && typeof onNextSet === 'function') return true;
+        if (g.dx > 0 && atStart && typeof onPrevSet === 'function') return true;
+        return false;
+      },
+      onPanResponderRelease: (_, g) => {
+        const dist = Math.abs(g.dx);
+        const vel = Math.abs(g.vx);
+        const intent = dist > 50 || vel > 0.25;
+        if (!intent) return;
+        if (g.dx < 0 && typeof onNextSet === 'function') onNextSet(current);
+        else if (g.dx > 0 && typeof onPrevSet === 'function') onPrevSet(current);
+      },
+      onPanResponderTerminationRequest: () => false,
+    });
+  }, [safeIdx, pool.length, onPrevSet, onNextSet, current]);
 
   const currentIsSelected = useMemo(() => {
     if (!showSelect || !current) return false;
@@ -479,21 +540,26 @@ export default function EnlargedPhotoViewer({
           vertically across the whole backdrop, which on tall photos
           (9:16) pushed the photo edge up into the X close row. Each
           page is exactly screenW so paging snaps cleanly. */}
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={handleMomentumEnd}
-        scrollEventThrottle={16}
-        bounces={false}
-        directionalLockEnabled
+      <View
+        {...edgeSwipeResponder.panHandlers}
         style={{
           position: 'absolute',
           left: 0, right: 0,
           top: insets.top + HEADER_H,
           bottom: insets.bottom + FOOTER_H,
         }}
+      >
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollEnd={handleMomentumEnd}
+        scrollEventThrottle={16}
+        bounces={false}
+        directionalLockEnabled
+        style={{ flex: 1 }}
         contentContainerStyle={{ alignItems: 'center' }}
       >
         {pool.map((rawP) => {
@@ -515,6 +581,7 @@ export default function EnlargedPhotoViewer({
           );
         })}
       </ScrollView>
+      </View>
 
       {/* Prev / next chevrons. The pills sit on top of the photo, so
           we use a fixed dark backdrop + white icon regardless of theme
@@ -560,7 +627,7 @@ export default function EnlargedPhotoViewer({
         <View style={[styles.bottomRow, { paddingBottom: insets.bottom + 8 }]}>
           {showOverlays ? (
             <View style={[styles.bottomSwitch, { backgroundColor: controlBg }]}>
-              <Text style={[styles.headerSwitchLabel, { color: controlIcon }]}>Overlays</Text>
+              <Text style={[styles.headerSwitchLabel, { color: controlIcon }]}>{t('enlargedViewer.overlays')}</Text>
               <Switch
                 value={overlaysOn}
                 onValueChange={(v) => typeof onOverlaysChange === 'function' && onOverlaysChange(v)}

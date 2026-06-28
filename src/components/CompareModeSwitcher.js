@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Pill-style mode picker for CompareViewer. Three modes:
@@ -11,15 +12,16 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
  * carries across screens.
  */
 const MODES = [
-  { key: 'overlay', label: 'Overlay' },
-  { key: 'split', label: 'Split' },
-  { key: 'side-by-side', label: 'Side by Side' },
+  { key: 'overlay', labelKey: 'compare.modeOverlay' },
+  { key: 'split', labelKey: 'compare.modeSplit' },
+  { key: 'side-by-side', labelKey: 'compare.modeSideBySide' },
 ];
 
 export default function CompareModeSwitcher({ mode, onChange, style }) {
+  const { t } = useTranslation();
   return (
     <View style={[styles.row, style]}>
-      {MODES.map(({ key, label }) => {
+      {MODES.map(({ key, labelKey }) => {
         const active = mode === key;
         return (
           <TouchableOpacity
@@ -29,7 +31,7 @@ export default function CompareModeSwitcher({ mode, onChange, style }) {
             activeOpacity={0.85}
           >
             <Text style={[styles.pillText, active && styles.pillTextActive]}>
-              {label}
+              {t(labelKey)}
             </Text>
           </TouchableOpacity>
         );

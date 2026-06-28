@@ -1,8 +1,11 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { getLabelPositions } from '../constants/rooms';
 
+// Code-level fallback only; the rendered watermark resolves text via i18n
+// (`watermark.defaultText`) so localized builds show the translated string.
 const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
 const DEFAULT_LABEL_BACKGROUND = '#FFD700';
 const DEFAULT_WATERMARK_OPACITY = 0.5;
@@ -34,6 +37,7 @@ const FONT_FAMILY_MAP = {
  * Uses same styling as PhotoLabel with configurable opacity
  */
 export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, photo = null }) {
+  const { t } = useTranslation();
   const {
     customWatermarkEnabled,
     watermarkText,
@@ -66,7 +70,9 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, ph
       return { displayText: composed, targetUrl: null };
     }
 
-    const rawText = customWatermarkEnabled ? watermarkText : DEFAULT_WATERMARK_TEXT;
+    const rawText = customWatermarkEnabled
+      ? watermarkText
+      : t('watermark.defaultText', { defaultValue: DEFAULT_WATERMARK_TEXT });
     const resolvedText = rawText?.trim() || '';
     const rawUrl = customWatermarkEnabled ? watermarkLink : fallbackUrl;
     const trimmedUrl = rawUrl?.trim() || '';
@@ -77,7 +83,7 @@ export default function PhotoWatermark({ style = {}, textStyle = {}, onPress, ph
       displayText: resolvedText,
       targetUrl: normalizedUrl,
     };
-  }, [watermarkShowMetadata, photo, location, customWatermarkEnabled, watermarkLink, watermarkText, fallbackUrl]);
+  }, [watermarkShowMetadata, photo, location, customWatermarkEnabled, watermarkLink, watermarkText, fallbackUrl, t]);
 
   console.log('[PhotoWatermark] Rendering watermark:', { 
     displayText, 
