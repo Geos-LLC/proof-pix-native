@@ -28,7 +28,7 @@ import { FONTS } from '../constants/fonts';
 import { PHOTO_MODES } from '../constants/rooms';
 import { usePhotos } from '../context/PhotoContext';
 import { compositeImages } from '../utils/imageCompositor';
-import { useScopedSettings, usePromoteOverridesToProject, useApplyPhotoOverridesToRoom, useResetPhotoOverrides } from '../hooks/useScopedSettings';
+import { useScopedSettings, usePromoteOverridesToGlobal, useResetPhotoOverrides } from '../hooks/useScopedSettings';
 import { useTheme } from '../hooks/useTheme';
 import PhotoLabels from '../components/PhotoLabels';
 import DraggableLabelOverlay from '../components/DraggableLabelOverlay';
@@ -528,8 +528,7 @@ export default function StudioScreen({ route, navigation }) {
   // the three apply-to scopes inline so the bottom of the screen stays
   // clean.
   const [saveMenuVisible, setSaveMenuVisible] = useState(false);
-  const promoteOverridesToProject = usePromoteOverridesToProject();
-  const applyPhotoOverridesToRoom = useApplyPhotoOverridesToRoom();
+  const promoteOverridesToGlobal = usePromoteOverridesToGlobal();
   const resetPhotoOverrides = useResetPhotoOverrides();
   const [viewMode, setViewMode] = useState('side');
   // Initial pairTemplate is a neutral placeholder. The auto-default
@@ -1501,20 +1500,12 @@ export default function StudioScreen({ route, navigation }) {
                 setScope(s.key);
                 setSaveMenuVisible(false);
                 // 'photo' — overrides are already on the photo from
-                // each tile tap; just close.
-                // 'project' — promote this photo's overrides up to the
-                //   project's overrides layer (so every other photo in
-                //   the project inherits them via the cascade unless
-                //   it has its own per-photo override for the same
-                //   key), then clear the photo's overrides so it
-                //   follows the new project defaults too.
-                // 'room' — copy this photo's overrides onto every
-                //   sibling photo in the same folder (same room +
-                //   same project). Photo's own overrides are kept.
+                // each tile tap; just close. 'project' — promote this
+                // photo's overrides up to global Settings + drop them.
+                // 'room' — TODO: apply to other photos in the room
+                // (for now behaves like 'photo').
                 if (s.key === 'project' && photo?.id) {
-                  try { await promoteOverridesToProject(photo.id); } catch (_) {}
-                } else if (s.key === 'room' && photo?.id) {
-                  try { await applyPhotoOverridesToRoom(photo.id); } catch (_) {}
+                  try { await promoteOverridesToGlobal(photo.id); } catch (_) {}
                 }
                 navigation.goBack();
               }}

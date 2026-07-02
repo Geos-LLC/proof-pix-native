@@ -731,31 +731,6 @@ export const PhotoProvider = ({ children }) => {
     await updatePhoto(photoId, { overrides: null });
   };
 
-  // Project-level overrides mirror the photo-level shape. A project can
-  // carry a sparse `overrides` object; useScopedSettings cascades
-  // photo.overrides → project.overrides → global so any photo in the
-  // project picks up the project defaults unless it has its own
-  // per-photo override for the same key.
-  const setProjectOverride = async (projectId, key, value) => {
-    if (!projectId || !key) return;
-    const target = projectsRef.current.find((p) => p.id === projectId);
-    if (!target) return;
-    const next = { ...(target.overrides || {}) };
-    if (value === null || value === undefined) {
-      delete next[key];
-    } else {
-      next[key] = value;
-    }
-    const nextOverrides = Object.keys(next).length ? next : null;
-    console.warn('[OVR] setProjectOverride projectId=', projectId, 'key=', key, 'resultKeys=', nextOverrides ? Object.keys(nextOverrides).join(',') : 'null');
-    await patchProject(projectId, { overrides: nextOverrides });
-  };
-
-  const clearProjectOverrides = async (projectId) => {
-    if (!projectId) return;
-    await patchProject(projectId, { overrides: null });
-  };
-
   const deletePhoto = async (photoId, options = {}) => {
     if (!photosLoadedRef.current) {
       console.warn('[PhotoContext] deletePhoto called before loadPhotos completed — skipping to avoid wiping storage', photoId);
@@ -1086,8 +1061,6 @@ export const PhotoProvider = ({ children }) => {
     updatePhoto,
     setPhotoOverride,
     clearPhotoOverrides,
-    setProjectOverride,
-    clearProjectOverrides,
     deletePhoto,
     deletePhotoSet,
     deleteAllPhotos,

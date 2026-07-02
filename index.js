@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] labels-v16 — PhotoLabels combined-mode now resolves source before/after photos (matches Studio/pairResolved) so capture-preview + PhotoSetPreview reflect per-photo position edits. GalleryScreen native-bake share honors source overrides. Try/catch safety net on the new resolve path falls through to legacy inline render on any error. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] build85-embedded — v1.7.7 build 85 embedded bundle. Content = bde1342 (paywall v4) + my label fix (PhotoLabels combined-mode source resolution + GalleryScreen native-bake share fix). e13ece9 project-scope cascade layer NOT included in this build. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
