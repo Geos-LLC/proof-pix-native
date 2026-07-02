@@ -17,6 +17,8 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useScopedSettings } from '../hooks/useScopedSettings';
+import { usePhotos } from '../context/PhotoContext';
+import { PHOTO_MODES } from '../constants/rooms';
 import PhotoLabel from './PhotoLabel';
 import {
   pickBeforeLabelPosition,
@@ -24,6 +26,41 @@ import {
   pickBeforeLabelOffset,
   pickAfterLabelOffset,
 } from '../utils/labelPosition';
+
+// Mirror of StudioScreen's `pairResolved` and LabelCustomizationScreen's
+// `combinedSourceIds`: for a combined photo, look up the source single
+// before/after photos so overrides read here land on the same records
+// the Customize Labels picker + DraggableLabelOverlay drag persist to.
+const resolveCombinedSources = (photo, photos) => {
+  if (!photo) return { before: null, after: null };
+  const idStr = String(photo.id || '');
+  let beforePhoto = null;
+  if (idStr.startsWith('combined_')) {
+    const beforeIdStr = idStr.slice('combined_'.length);
+    beforePhoto = photos.find((p) => String(p.id) === beforeIdStr) || null;
+  }
+  if (!beforePhoto && photo.name && photo.room) {
+    beforePhoto = photos.find(
+      (p) => p.name === photo.name
+        && p.room === photo.room
+        && p.mode === PHOTO_MODES.BEFORE
+    ) || null;
+  }
+  let afterPhoto = beforePhoto
+    ? photos.find(
+        (p) => p.beforePhotoId === beforePhoto.id && p.mode === PHOTO_MODES.AFTER
+      ) || null
+    : null;
+  if (photo.beforeOverrideId) {
+    const ov = photos.find((p) => String(p.id) === String(photo.beforeOverrideId));
+    if (ov) beforePhoto = ov;
+  }
+  if (photo.afterOverrideId) {
+    const ov = photos.find((p) => String(p.id) === String(photo.afterOverrideId));
+    if (ov) afterPhoto = ov;
+  }
+  return { before: beforePhoto, after: afterPhoto };
+};
 
 const halves = StyleSheet.create({
   left: { position: 'absolute', top: 0, bottom: 0, left: 0, width: '50%' },
@@ -87,6 +124,7 @@ export default function PhotoLabels({
   // Scoped — when `photo.overrides` is present, those win over global
   // Settings for this photo only.
   const settings = useScopedSettings(photo?.id);
+  const { photos } = usePhotos();
   const enabled = typeof showLabelsOverride === 'boolean'
     ? showLabelsOverride
     : settings.showLabels;
@@ -119,6 +157,59 @@ export default function PhotoLabels({
 
   if (mode === 'combined' || mode === 'mix') {
     const isStack = combinedLayout === 'stack';
+    // Resolve source before/after photos so per-half rendering reads
+    // from the same records the Customize Labels picker /
+    // DraggableLabelOverlay drag write to. Without this, the combined
+    // preview would read from combined_photo.overrides (empty — writes
+    // go to the source singles) and never reflect position changes.
+    // Falls back to the combined photo itself when a source can't be
+    // resolved (missing after, orphaned combined, etc.) — same
+    // rendering as before, so nothing regresses.
+    // When positionOverrides is passed (Customize Labels drag preview),
+    // still honor it: forward through to the role branch so the drag
+    // preview renders even before the value has been committed.
+    // Safety net: if the source-resolve lookup throws for any reason
+    // (unexpected photo shape, photos array not iterable), fall through
+    // to the legacy inline render below so a single bad photo can't
+    // brick every combined preview in the app. Ref: 2026-07-01 crash
+    // (feedback_phase1_ota_crash_2026_07_01.md).
+    let srcBefore = null;
+    let srcAfter = null;
+    try {
+      const resolved = resolveCombinedSources(photo, photos);
+      srcBefore = resolved.before;
+      srcAfter = resolved.after;
+    } catch (e) {
+      srcBefore = null;
+      srcAfter = null;
+    }
+    if (srcBefore || srcAfter) {
+      const beforeSide = srcBefore || photo;
+      const afterSide = srcAfter || photo;
+      return (
+        <>
+          <View pointerEvents="none" style={isStack ? halves.top : halves.left}>
+            <PhotoLabels
+              photo={beforeSide}
+              role="before"
+              showLabelsOverride={enabled}
+              positionOverrides={positionOverrides}
+            />
+          </View>
+          <View pointerEvents="none" style={isStack ? halves.bottom : halves.right}>
+            <PhotoLabels
+              photo={afterSide}
+              role="after"
+              showLabelsOverride={enabled}
+              positionOverrides={positionOverrides}
+            />
+          </View>
+        </>
+      );
+    }
+    // Fallback: legacy inline render using the combined photo's own
+    // scoped settings — the pre-fix behavior. Preserves rendering when
+    // source lookup fails or returns nothing.
     return (
       <>
         <View pointerEvents="none" style={isStack ? halves.top : halves.left}>

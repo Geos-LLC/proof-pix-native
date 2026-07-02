@@ -1158,12 +1158,29 @@ export default function HomeScreen({ navigation, route }) {
                 padding: 16,
               };
 
+              // Combined-photo label edits persist on the SOURCE
+              // before/after photos' overrides (see LabelCustomizationScreen
+              // updateActiveBeforePos / updateActiveAfterPos). Prefer those
+              // over the global setting so bake-time labels match what the
+              // user sees in Studio. LabelCustomization writes portrait +
+              // landscape to the same value, so either override key wins.
+              const beforeOv = beforePhoto?.overrides || {};
+              const afterOv = afterPhoto?.overrides || {};
+              const beforePosSetting = beforeOv.beforeLabelPosition
+                || beforeOv.beforeLabelPositionLandscape
+                || beforeLabelPosition
+                || 'top-left';
+              const afterPosSetting = afterOv.afterLabelPosition
+                || afterOv.afterLabelPositionLandscape
+                || afterLabelPosition
+                || 'top-right';
+
               // Add Before label
-              const beforePos = convertPos(beforeLabelPosition || 'top-left');
+              const beforePos = convertPos(beforePosSetting);
               const withBeforeLabel = await addLabelToImage(freshUri, t('common.before') || 'BEFORE', { ...baseLabelConfig, position: beforePos });
 
               // Add After label with offset
-              const afterPos = convertPos(afterLabelPosition || 'top-right');
+              const afterPos = convertPos(afterPosSetting);
               const halfW = Math.round(squareSize / 2);
               const halfH = Math.round(squareSize / 2);
               const { offsetX, offsetY } = calculateAfterLabelOffsets(afterPos, isStack, halfW, halfH, squareSize, squareSize);
@@ -2869,8 +2886,14 @@ export default function HomeScreen({ navigation, route }) {
             // Reserve room for the header (top) + carousel dots (bottom)
             // around the framed photo. Width keeps the same 12 px outer
             // padding the original viewer used.
-            const HEADER_H = 56;
+            // Header stack: optional set-nav row (36) + always-on close/N-of-M row (56).
+            // Reserve for both when more than one set exists in this room.
+            const SETNAV_ROW_H = 36;
+            const BASE_HEADER_H = 56;
             const DOTS_H = 36;
+            const roomBeforesForHeader = getBeforePhotos(currentRoom) || [];
+            const setNavShown = roomBeforesForHeader.length > 1;
+            const HEADER_H = BASE_HEADER_H + (setNavShown ? SETNAV_ROW_H : 0);
             const availW = screenW - 24;
             const availH = screenH - (insets.top + HEADER_H) - (insets.bottom + DOTS_H);
             const aspect = aspectForPhoto(tappedFullPhoto) || (availW / availH);
@@ -2913,26 +2936,85 @@ export default function HomeScreen({ navigation, route }) {
             const nextBefore = activeSetIdxForJump < roomBeforesForJump.length - 1
               ? roomBeforesForJump[activeSetIdxForJump + 1]
               : null;
-            const jumpToNextSet = () => {
-              if (!nextBefore) return;
-              const members = [nextBefore];
+            const prevBefore = activeSetIdxForJump > 0
+              ? roomBeforesForJump[activeSetIdxForJump - 1]
+              : null;
+            const jumpToSet = (before) => {
+              if (!before) return;
+              const members = [before];
               const progresses = (getProgressPhotos?.(currentRoom) || [])
-                .filter((p) => p.beforePhotoId === nextBefore.id)
+                .filter((p) => p.beforePhotoId === before.id)
                 .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
               members.push(...progresses);
-              const after = afterByBeforeIdJump.get(nextBefore.id);
+              const after = afterByBeforeIdJump.get(before.id);
               if (after) members.push(after);
-              const combined = findCombinedForBefore(nextBefore, currentRoom);
+              const combined = findCombinedForBefore(before, currentRoom);
               if (combined) members.push(combined);
               setSetMembers(members);
               setSetMemberIndex(0);
-              setFullScreenPhotoSet({ before: nextBefore, after: after || null });
+              setFullScreenPhotoSet({ before, after: after || null });
               setTappedFullPhoto(members[0]);
             };
+            const jumpToNextSet = () => jumpToSet(nextBefore);
+            const jumpToPrevSet = () => jumpToSet(prevBefore);
             return (
               <>
-                {/* Top header: X / N-of-M / Set N+1 › */}
-                <View style={[styles.tappedFullHeaderRow, { top: insets.top + 8 }]}>
+                {/* Set-nav row: ‹ Set N-1 | Set N | Set N+1 › — only shown
+                    when the current room has more than one set. Sits ABOVE
+                    the close / counter row so the user can jump between
+                    sets without losing the close X. */}
+                {setNavShown && (
+                  <View style={[styles.tappedFullSetNavRow, { top: insets.top + 8 }]}>
+                    <TouchableOpacity
+                      onPress={jumpToPrevSet}
+                      disabled={!prevBefore}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      style={styles.tappedFullHeaderSetJumpLeft}
+                    >
+                      {prevBefore && (
+                        <Ionicons name="chevron-back" size={16} color="#FFFFFF" />
+                      )}
+                      <Text
+                        style={[
+                          styles.tappedFullHeaderSetJumpText,
+                          { color: prevBefore ? '#FFFFFF' : 'rgba(255,255,255,0.4)' },
+                        ]}
+                      >
+                        Set {prevBefore ? activeSetIdxForJump : activeSetIdxForJump + 1}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={styles.tappedFullHeaderCenter}>
+                      <Text style={styles.tappedFullHeaderSetLabel} numberOfLines={1}>
+                        Set {activeSetIdxForJump + 1}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={jumpToNextSet}
+                      disabled={!nextBefore}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      style={styles.tappedFullHeaderSetJump}
+                    >
+                      <Text
+                        style={[
+                          styles.tappedFullHeaderSetJumpText,
+                          { color: nextBefore ? '#FFFFFF' : 'rgba(255,255,255,0.4)' },
+                        ]}
+                      >
+                        Set {nextBefore ? activeSetIdxForJump + 2 : activeSetIdxForJump + 1}
+                      </Text>
+                      {nextBefore && (
+                        <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Close / N-of-M row — anchored below the set-nav row when
+                    it is visible, otherwise sits at the top by itself. */}
+                <View style={[
+                  styles.tappedFullHeaderRow,
+                  { top: insets.top + 8 + (setNavShown ? SETNAV_ROW_H : 0) },
+                ]}>
                   <TouchableOpacity
                     onPress={() => setTappedFullPhoto(null)}
                     hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -2945,24 +3027,7 @@ export default function HomeScreen({ navigation, route }) {
                       {safeIdx + 1} / {total}
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={jumpToNextSet}
-                    disabled={!nextBefore}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    style={styles.tappedFullHeaderSetJump}
-                  >
-                    <Text
-                      style={[
-                        styles.tappedFullHeaderSetJumpText,
-                        { color: nextBefore ? '#FFFFFF' : 'rgba(255,255,255,0.4)' },
-                      ]}
-                    >
-                      Set {nextBefore ? activeSetIdxForJump + 2 : activeSetIdxForJump + 1}
-                    </Text>
-                    {nextBefore && (
-                      <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
-                    )}
-                  </TouchableOpacity>
+                  <View style={styles.tappedFullHeaderSetJump} />
                 </View>
 
                 <View
@@ -4416,6 +4481,32 @@ const styles = StyleSheet.create({
     paddingLeft: 6,
     minWidth: 64,
     justifyContent: 'flex-end',
+  },
+  tappedFullHeaderSetJumpLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 6,
+    paddingRight: 6,
+    minWidth: 64,
+    justifyContent: 'flex-start',
+  },
+  tappedFullSetNavRow: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    height: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 9,
+  },
+  tappedFullHeaderSetLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
   tappedFullHeaderSetJumpText: {
     fontFamily: FONTS.ALEXANDRIA,
