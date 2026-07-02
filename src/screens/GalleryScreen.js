@@ -39,7 +39,6 @@ import { uploadPhotoBatchToDropbox } from '../services/dropboxUploadService';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
-import { isLandscapePhoto } from '../utils/labelPosition';
 import { ensureLabelForPhoto } from '../services/labelService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
@@ -720,24 +719,8 @@ export default function GalleryScreen({ navigation, route }) {
               const map = { 'top-left': 'left-top', 'top-right': 'right-top', 'bottom-left': 'left-bottom', 'bottom-right': 'right-bottom' };
               return map[pos] || pos || 'left-top';
             };
-            // Combined-photo label edits persist on the SOURCE before/after
-            // photos' overrides (see LabelCustomizationScreen.js:551-565).
-            // Prefer those over the global setting so bake-time labels
-            // match what the user sees in Studio. LabelCustomization writes
-            // both the portrait + landscape keys, so either wins; the
-            // fallback chain covers legacy photos that carry only one.
-            const beforeOv = beforePhoto?.overrides || {};
-            const afterOv = afterPhoto?.overrides || {};
-            const beforePosSetting = beforeOv.beforeLabelPosition
-              || beforeOv.beforeLabelPositionLandscape
-              || (isLandscapePhoto(beforePhoto) ? beforeLabelPositionLandscape : beforeLabelPosition)
-              || 'top-left';
-            const afterPosSetting = afterOv.afterLabelPosition
-              || afterOv.afterLabelPositionLandscape
-              || (isLandscapePhoto(afterPhoto) ? afterLabelPositionLandscape : afterLabelPosition)
-              || 'top-right';
-            const beforePos = convertPos(beforePosSetting);
-            const afterPos = convertPos(afterPosSetting);
+            const beforePos = convertPos(beforeLabelPosition || 'top-left');
+            const afterPos = convertPos(afterLabelPosition || 'top-right');
             const baseLabelConfig = {
               backgroundColor: labelBackgroundColor || '#FFD700',
               textColor: labelTextColor || '#000000',
