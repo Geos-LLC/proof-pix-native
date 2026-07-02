@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] v57 — inline render+jump logs in PhotoSetPreview so we can see pool size on device. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] phase2 — project-scope override layer: photo.overrides → project.overrides → global cascade in useScopedSettings; Studio Save→Project promotes to project (not global); Save→Room copies overrides to sibling photos. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
