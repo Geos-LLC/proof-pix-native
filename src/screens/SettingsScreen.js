@@ -336,6 +336,10 @@ export default function SettingsScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  // Rebuilt on theme change. The definition lives at module scope
+  // (`makeStyles`) so mounting overhead is a single call. See the
+  // module-scope comment above the factory for the historical bug.
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   // Memoize translated options
   const FONT_OPTIONS = useMemo(() => getFontOptions(t), [t]);
@@ -5674,7 +5678,13 @@ const sliderStyles = StyleSheet.create({
   },
 });
 
-  const styles = StyleSheet.create({
+// Module-scope `theme` was undefined here — the 2-space indent was
+// misleading; SettingsScreen closes at ~line 5591 and this const sits
+// at file scope. `theme.X` refs added in 40e28f8 threw ReferenceError
+// at module load → RCTFatal → expo-updates ErrorRecovery → crash. Wrap
+// in a factory called from a useMemo inside SettingsScreen so theme is
+// in scope.
+const makeStyles = (theme) => StyleSheet.create({
     // Refresh: page bg flipped from tinted #F8F8F8 to plain white per the
     // design's --bg token, so the section cards below sit on a clean
     // canvas instead of competing for contrast with a grey backplate.
