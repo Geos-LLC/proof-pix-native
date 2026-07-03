@@ -924,6 +924,14 @@ export default function SettingsScreen({ navigation, route }) {
   // Helps debug tier-mismatch cases (e.g. user has a Business sub but the
   // app's userPlan was stuck on 'pro').
   const [iapDiag, setIapDiag] = useState('');
+  // OTA diagnostic state — populated by the two buttons in the dev-tools
+  // section below. `otaCheckResult` holds the response from
+  // Updates.checkForUpdateAsync(); `otaFetchResult` holds the response
+  // from Updates.fetchUpdateAsync(). Purpose: expose the exact reason
+  // expo-updates rejects an OTA on this binary, since server-side is
+  // verified correct and no visible error surface exists in Loki.
+  const [otaCheckResult, setOtaCheckResult] = useState('');
+  const [otaFetchResult, setOtaFetchResult] = useState('');
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -3497,6 +3505,54 @@ export default function SettingsScreen({ navigation, route }) {
             <Text style={{ fontSize: 11, color: '#E91E63', marginTop: 2, paddingHorizontal: 4, fontWeight: '600' }}>
               Build tag: OTA-2026-06-03-AK · PhotoLabel now uses freeform offset (preview matches Customize Labels position)
             </Text>
+            {/* OTA diagnostic — build 88 addition. Tap "Check for OTA"
+                to run Updates.checkForUpdateAsync() and see whether the
+                server reports an available update + its ID. Tap
+                "Fetch OTA" to run Updates.fetchUpdateAsync() and see
+                whether the client can actually download + stage it.
+                Errors show below in red so we can see the exact reason
+                expo-updates rejects the update (silent rejection is
+                what has been blocking us). */}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, marginHorizontal: 4 }}>
+              <TouchableOpacity
+                style={{ flex: 1, paddingVertical: 9, borderRadius: 8, backgroundColor: '#1976D2', alignItems: 'center' }}
+                onPress={async () => {
+                  setOtaCheckResult('checking...');
+                  try {
+                    const r = await Updates.checkForUpdateAsync();
+                    setOtaCheckResult(`isAvailable=${r.isAvailable} manifest.id=${r.manifest?.id?.slice(0,8) || '—'} reason=${r.reason || '—'}`);
+                  } catch (e) {
+                    setOtaCheckResult(`ERR: ${e?.message || String(e)}`);
+                  }
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '600', fontSize: 12 }}>Check for OTA</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, paddingVertical: 9, borderRadius: 8, backgroundColor: '#388E3C', alignItems: 'center' }}
+                onPress={async () => {
+                  setOtaFetchResult('fetching...');
+                  try {
+                    const r = await Updates.fetchUpdateAsync();
+                    setOtaFetchResult(`isNew=${r.isNew} manifest.id=${r.manifest?.id?.slice(0,8) || '—'}`);
+                  } catch (e) {
+                    setOtaFetchResult(`ERR: ${e?.message || String(e)}`);
+                  }
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '600', fontSize: 12 }}>Fetch OTA</Text>
+              </TouchableOpacity>
+            </View>
+            {otaCheckResult ? (
+              <Text style={{ fontSize: 10, color: otaCheckResult.startsWith('ERR') ? '#D32F2F' : theme.textMuted, marginTop: 6, paddingHorizontal: 4 }} selectable>
+                check: {otaCheckResult}
+              </Text>
+            ) : null}
+            {otaFetchResult ? (
+              <Text style={{ fontSize: 10, color: otaFetchResult.startsWith('ERR') ? '#D32F2F' : theme.textMuted, marginTop: 2, paddingHorizontal: 4 }} selectable>
+                fetch: {otaFetchResult}
+              </Text>
+            ) : null}
             {/* IAP diagnostic — shows what getAvailablePurchases returned
                 + the highest-tier plan computeEntitlements detected +
                 what userPlan is currently cached at. If this says
