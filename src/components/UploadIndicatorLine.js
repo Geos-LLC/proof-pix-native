@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { COLORS } from '../constants/rooms';
+import { useTheme } from '../hooks/useTheme';
 
 const UploadIndicatorLine = ({ uploadStatus, onPress }) => {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { activeUploads, queueLength } = uploadStatus;
   const hasActiveUploads = activeUploads.length > 0;
   const hasQueuedUploads = queueLength > 0;
@@ -99,12 +102,12 @@ const UploadIndicatorLine = ({ uploadStatus, onPress }) => {
         </Animated.View>
 
         {/* Status text */}
-        <Text style={[styles.statusText, { color: '#555' }]}>
+        <Text style={[styles.statusText, { color: theme.textSecondary }]}>
           {getStatusText()}
         </Text>
 
         {/* Tap hint */}
-        <Ionicons name="chevron-forward" size={12} color="#BBB" />
+        <Ionicons name="chevron-forward" size={12} color={theme.textMuted} />
       </View>
 
       {/* Progress bar track */}
@@ -125,11 +128,11 @@ const UploadIndicatorLine = ({ uploadStatus, onPress }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
-    backgroundColor: '#FAFAFA',
+    backgroundColor: theme.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: theme.border,
     paddingTop: 6,
     paddingBottom: 4,
   },
@@ -151,7 +154,7 @@ const styles = StyleSheet.create({
   },
   track: {
     height: 3,
-    backgroundColor: '#EBEBEB',
+    backgroundColor: theme.border,
     borderRadius: 1.5,
     overflow: 'hidden',
   },

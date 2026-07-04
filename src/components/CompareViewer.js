@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Three-mode before/after compare viewer.
@@ -64,6 +65,8 @@ export default function CompareViewer({
   // modes — overlay/side-by-side use their own layouts).
   templateLayout = 'sidebyside',
 }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const beforeUri = beforePhoto?.uri;
   const afterUri = afterPhoto?.uri;
 
@@ -518,7 +521,7 @@ export default function CompareViewer({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     width: '100%',
     maxWidth: 400,

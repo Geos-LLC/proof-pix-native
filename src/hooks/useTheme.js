@@ -1,7 +1,15 @@
-import { useSettings } from '../context/SettingsContext';
-import { getTheme } from '../constants/theme';
+import { useContext } from 'react';
+import { SettingsContext } from '../context/SettingsContext';
+import { getTheme, lightTheme } from '../constants/theme';
 
+// Reads the current theme palette from SettingsContext. Falls back to the
+// light palette when called outside a SettingsProvider (e.g. TrialNotificationModal
+// and ReferralPromptModal render at App.js root, ABOVE SettingsProvider). Bypass
+// `useSettings()` because it throws when context is null — that throw would
+// propagate up and hang the app on splash. See memory
+// `feedback_usetheme_outside_provider.md`.
 export const useTheme = () => {
-  const { themeMode } = useSettings();
-  return getTheme(themeMode);
+  const context = useContext(SettingsContext);
+  if (!context) return lightTheme;
+  return getTheme(context.themeMode);
 };

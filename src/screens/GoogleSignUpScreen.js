@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Modal, ScrollView, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -12,6 +12,7 @@ import dropboxService from '../services/dropboxService';
 import iCloudService from '../services/iCloudService';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
+import { useTheme } from '../hooks/useTheme';
 
 export default function GoogleSignUpScreen({ navigation, route }) {
   const { t } = useTranslation();
@@ -19,6 +20,8 @@ export default function GoogleSignUpScreen({ navigation, route }) {
   const { userPlan, updateUserPlan } = useSettings();
   const { plan } = route.params || {};
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { prices } = useSubscriptionPrices();
   const [isSigningInGoogle, setIsSigningInGoogle] = useState(false);
   const [isSigningInDropbox, setIsSigningInDropbox] = useState(false);
@@ -253,7 +256,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
                 >
                   <View style={styles.planButtonRow}>
                     <Text style={[styles.planButtonText, userPlan === 'starter' && styles.planButtonTextSelected]}>{t('firstLoad.starter')}</Text>
-                    <Text style={styles.planPrice}>{t('planSelection.starterPrice')}</Text>
+                    <Text style={styles.planPrice}>Free</Text>
                   </View>
                 </TouchableOpacity>
                 <Text style={styles.planSubtext}>{t('firstLoad.starterDesc')}</Text>
@@ -324,7 +327,7 @@ export default function GoogleSignUpScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.PRIMARY, // Yellow background
@@ -345,7 +348,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#333',
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 40,
     lineHeight: 24,
@@ -372,12 +375,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0061FF', // Dropbox blue
   },
   skipButton: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.surface,
   },
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: theme.textPrimary,
     textAlign: 'center',
     flexShrink: 1,
   },
@@ -405,7 +408,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '100%',
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '80%',
@@ -442,11 +445,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   planButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 12,
     padding: 20,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: theme.border,
     marginBottom: 8,
   },
   planButtonSelected: {
@@ -465,7 +468,7 @@ const styles = StyleSheet.create({
   },
   planSubtext: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     textAlign: 'center',
     paddingHorizontal: 10,
   },

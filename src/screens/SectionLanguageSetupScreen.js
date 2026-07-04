@@ -16,6 +16,7 @@ import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
 import RoomEditor from '../components/RoomEditor';
+import { useTheme } from '../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
 
@@ -51,6 +52,8 @@ export default function SectionLanguageSetupScreen({ navigation, route }) {
   const sectionLanguageScrollViewRef = useRef(null);
   const sectionLanguageLayouts = useRef({});
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   // Get rooms and manage current room for carousel
   const [rooms, setRooms] = useState(() => getRooms());
@@ -353,10 +356,10 @@ export default function SectionLanguageSetupScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   backButton: {
     position: 'absolute',
@@ -390,7 +393,7 @@ const styles = StyleSheet.create({
   },
   carouselTitle: {
     fontSize: 12,
-    color: '#666',
+    color: theme.textSecondary,
     textAlign: 'center',
     marginBottom: 12,
     fontStyle: 'italic',
@@ -410,7 +413,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginHorizontal: 3,
     borderRadius: 12,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     minWidth: 55,
     minHeight: 55,
     borderWidth: 1,
@@ -444,7 +447,7 @@ const styles = StyleSheet.create({
   },
   languageSelectorButton: {
     borderRadius: 12,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     padding: 16,
   },
   languageSelector: {
@@ -531,13 +534,13 @@ const styles = StyleSheet.create({
   continueButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontFamily: FONTS.ALEXANDRIA,
     letterSpacing: -0.1,
   },
   languageScrollView: {
     maxHeight: 300,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     borderRadius: 12,
     padding: 8,
   },
@@ -548,7 +551,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
     marginBottom: 4,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   languageOptionActive: {
     backgroundColor: COLORS.PRIMARY,
@@ -575,7 +578,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     padding: 24,
     width: '85%',
@@ -595,7 +598,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     alignItems: 'center',
   },
   closeModalButtonText: {

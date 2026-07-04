@@ -93,6 +93,7 @@ const Thumbnail = ({ id, color, accent }) => {
 
 export default function ReportStyleScreen({ route, navigation }) {
   const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const initial = route?.params?.current || LAYOUTS[0].id;
   const [selectedId, setSelectedId] = useState(initial);
 
@@ -122,7 +123,7 @@ export default function ReportStyleScreen({ route, navigation }) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.headerRow}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -130,7 +131,7 @@ export default function ReportStyleScreen({ route, navigation }) {
         >
           <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Report Style</Text>
+        <Text style={styles.headerTitle}>Report Style</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -148,13 +149,12 @@ export default function ReportStyleScreen({ route, navigation }) {
               style={[
                 styles.card,
                 {
-                  backgroundColor: theme.surface,
                   borderColor: active ? theme.accent : theme.border,
                   borderWidth: active ? 2 : 1,
                 },
               ]}
             >
-              <View style={[styles.thumb, { backgroundColor: theme.background }]}>
+              <View style={styles.thumb}>
                 <Thumbnail
                   id={it.id}
                   color={theme.textMuted || '#C4C4C4'}
@@ -163,12 +163,12 @@ export default function ReportStyleScreen({ route, navigation }) {
               </View>
               <View style={styles.body}>
                 <View style={styles.titleRow}>
-                  <Text style={[styles.name, { color: theme.textPrimary }]}>{it.name}</Text>
+                  <Text style={styles.name}>{it.name}</Text>
                   {active && (
                     <Ionicons name="checkmark-circle" size={20} color={theme.accent} />
                   )}
                 </View>
-                <Text style={[styles.description, { color: theme.textSecondary }]}>
+                <Text style={styles.description}>
                   {it.description}
                 </Text>
               </View>
@@ -180,8 +180,8 @@ export default function ReportStyleScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  headerTitle: { fontSize: 18, fontWeight: '600' },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: theme.textPrimary },
   list: { padding: 16, paddingBottom: 32 },
   card: {
     flexDirection: 'row',
@@ -198,11 +198,13 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 12,
     marginBottom: 12,
+    backgroundColor: theme.surface,
   },
   thumb: {
     width: 76, height: 56,
     borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
+    backgroundColor: theme.background,
   },
   body: { flex: 1 },
   titleRow: {
@@ -210,6 +212,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  name: { fontSize: 16, fontWeight: '600' },
-  description: { fontSize: 12, marginTop: 4 },
+  name: { fontSize: 16, fontWeight: '600', color: theme.textPrimary },
+  description: { fontSize: 12, marginTop: 4, color: theme.textSecondary },
 });

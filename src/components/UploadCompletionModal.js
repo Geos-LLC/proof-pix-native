@@ -66,7 +66,7 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
   const getCompletionMessage = () => {
     if (isEffectiveError) {
       if (isNetworkIssue) {
-        return t('gallery.uploadNetworkErrorMessage');
+        return "Couldn't complete upload due to network error. Please check your internet connection and try again.";
       }
       const err = latestUpload.error;
       const errMsg = (typeof err === 'string' ? err : err?.message);
@@ -82,7 +82,7 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
       return t('gallery.uploadCompleteMessage', { count: successful.length, albumName });
     } else {
       if (isNetworkIssue) {
-        return t('gallery.uploadNetworkPartialMessage', { successCount: successful.length, totalCount: successful.length + failed.length });
+        return "Couldn't complete upload due to network error. " + successful.length + " of " + (successful.length + failed.length) + " photos uploaded.";
       }
       return t('gallery.uploadPartialMessage', { successCount: successful.length, failedCount: failed.length });
     }

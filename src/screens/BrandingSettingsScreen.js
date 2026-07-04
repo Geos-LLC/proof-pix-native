@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -42,6 +42,7 @@ const SOCIAL_PLATFORMS = [
 export default function BrandingSettingsScreen({ navigation }) {
   const theme = useTheme();
   const { t } = useTranslation();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     reportBrandLogoUri,
     updateReportBrandLogoUri,
@@ -104,24 +105,24 @@ export default function BrandingSettingsScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>{t('branding.title')}</Text>
+        <Text style={styles.headerTitle}>{t('branding.title')}</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <Text style={[styles.sectionNote, { color: theme.textSecondary }]}>
+        <Text style={styles.sectionNote}>
           {t('branding.sectionNote')}
         </Text>
 
         {/* Logo */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionLogo')}</Text>
+        <Text style={styles.sectionLabel}>{t('branding.sectionLogo')}</Text>
         {reportBrandLogoUri ? (
-          <View style={[styles.logoRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.logoRow}>
             <Image source={{ uri: reportBrandLogoUri }} style={styles.logoThumb} resizeMode="contain" />
             <View style={styles.logoActions}>
               <TouchableOpacity onPress={pickLogo} style={[styles.logoBtn, { borderColor: theme.accent }]}>
@@ -134,27 +135,27 @@ export default function BrandingSettingsScreen({ navigation }) {
           </View>
         ) : (
           <TouchableOpacity
-            style={[styles.uploadBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            style={styles.uploadBtn}
             onPress={pickLogo}
             activeOpacity={0.7}
           >
             <Ionicons name="image-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.uploadBtnText, { color: theme.textSecondary }]}>{t('branding.uploadLogo')}</Text>
+            <Text style={styles.uploadBtnText}>{t('branding.uploadLogo')}</Text>
           </TouchableOpacity>
         )}
 
         {/* Company name */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionCompany')}</Text>
+        <Text style={styles.sectionLabel}>{t('branding.sectionCompany')}</Text>
         <TextInput
           value={reportCompanyName}
           onChangeText={updateReportCompanyName}
           placeholder={t('branding.companyPlaceholder')}
           placeholderTextColor={theme.textMuted}
-          style={[styles.textInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+          style={styles.textInput}
         />
 
         {/* Brand color */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionColor')}</Text>
+        <Text style={styles.sectionLabel}>{t('branding.sectionColor')}</Text>
         <View style={styles.colorGrid}>
           {PRESET_COLORS.map((c) => (
             <TouchableOpacity
@@ -174,16 +175,16 @@ export default function BrandingSettingsScreen({ navigation }) {
           ))}
         </View>
 
-        <View style={[styles.currentColorRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.currentColorRow}>
           <View style={[styles.currentColorSwatch, { backgroundColor: reportBrandColor }]} />
-          <Text style={[styles.currentColorHex, { color: theme.textPrimary }]}>{reportBrandColor}</Text>
+          <Text style={styles.currentColorHex}>{reportBrandColor}</Text>
           <TouchableOpacity onPress={() => setEditingCustomColor(!editingCustomColor)} style={styles.customColorBtn}>
             <Text style={[styles.customColorBtnText, { color: theme.accent }]}>{t('branding.customColor')}</Text>
           </TouchableOpacity>
         </View>
 
         {editingCustomColor && (
-          <View style={[styles.customColorInput, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.customColorInput}>
             <TextInput
               value={customColorInput}
               onChangeText={setCustomColorInput}
@@ -191,7 +192,7 @@ export default function BrandingSettingsScreen({ navigation }) {
               placeholderTextColor={theme.textMuted}
               autoCapitalize="characters"
               maxLength={7}
-              style={[styles.hexInput, { color: theme.textPrimary }]}
+              style={styles.hexInput}
             />
             <TouchableOpacity onPress={applyCustomColor} style={[styles.applyBtn, { backgroundColor: theme.accent }]}>
               <Text style={[styles.applyBtnText, { color: theme.accentText || '#FFFFFF' }]}>{t('common.apply')}</Text>
@@ -202,21 +203,21 @@ export default function BrandingSettingsScreen({ navigation }) {
         {/* Contact details — address, phone, email, website. All are
             optional; whatever the user fills in surfaces in the report
             header/footer. */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionContact')}</Text>
+        <Text style={styles.sectionLabel}>{t('branding.sectionContact')}</Text>
 
         {/* Address: single-line is intentional. iOS's QuickType
             autofill bar only appears on single-line TextInputs — make
             it multiline and the suggestions silently vanish. Source
             for saved addresses on iOS is the "Me" card in Contacts
             (Settings → Contacts → My Info). */}
-        <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.iconInputRow}>
           <Ionicons name="location-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
           <TextInput
             value={reportAddress}
             onChangeText={updateReportAddress}
             placeholder={t('branding.addressPlaceholder')}
             placeholderTextColor={theme.textMuted}
-            style={[styles.iconInputField, { color: theme.textPrimary }]}
+            style={styles.iconInputField}
             textContentType="fullStreetAddress"
             autoComplete={Platform.OS === 'android' ? 'postal-address' : 'street-address'}
             autoCorrect={false}
@@ -225,7 +226,7 @@ export default function BrandingSettingsScreen({ navigation }) {
           />
         </View>
 
-        <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.iconInputRow}>
           <Ionicons name="call-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
           <TextInput
             value={reportPhone}
@@ -233,7 +234,7 @@ export default function BrandingSettingsScreen({ navigation }) {
             placeholder={t('branding.phonePlaceholder')}
             placeholderTextColor={theme.textMuted}
             keyboardType="phone-pad"
-            style={[styles.iconInputField, { color: theme.textPrimary }]}
+            style={styles.iconInputField}
             textContentType="telephoneNumber"
             autoComplete="tel"
             autoCorrect={false}
@@ -241,7 +242,7 @@ export default function BrandingSettingsScreen({ navigation }) {
           />
         </View>
 
-        <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.iconInputRow}>
           <Ionicons name="mail-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
           <TextInput
             value={reportEmail}
@@ -251,13 +252,13 @@ export default function BrandingSettingsScreen({ navigation }) {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
-            style={[styles.iconInputField, { color: theme.textPrimary }]}
+            style={styles.iconInputField}
             textContentType="emailAddress"
             autoComplete="email"
           />
         </View>
 
-        <View style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.iconInputRow}>
           <Ionicons name="globe-outline" size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
           <TextInput
             value={reportWebsite}
@@ -267,7 +268,7 @@ export default function BrandingSettingsScreen({ navigation }) {
             keyboardType="url"
             autoCapitalize="none"
             autoCorrect={false}
-            style={[styles.iconInputField, { color: theme.textPrimary }]}
+            style={styles.iconInputField}
             textContentType="URL"
             autoComplete="url"
           />
@@ -276,7 +277,7 @@ export default function BrandingSettingsScreen({ navigation }) {
         {/* Social media — leave any platform blank to hide it from
             reports. Reports iterate Object.entries() on whatever's
             stored. */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('branding.sectionSocial')}</Text>
+        <Text style={styles.sectionLabel}>{t('branding.sectionSocial')}</Text>
 
         {/* Social handles: no iOS textContentType. "username" there
             would trigger the Passwords AutoFill prompt, which is wrong
@@ -285,7 +286,7 @@ export default function BrandingSettingsScreen({ navigation }) {
         {SOCIAL_PLATFORMS.map(({ key, label, icon, placeholderKey }) => (
           <View
             key={key}
-            style={[styles.iconInputRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            style={styles.iconInputRow}
           >
             <Ionicons name={icon} size={18} color={theme.textSecondary} style={styles.iconInputIcon} />
             <TextInput
@@ -295,14 +296,14 @@ export default function BrandingSettingsScreen({ navigation }) {
               placeholderTextColor={theme.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
-              style={[styles.iconInputField, { color: theme.textPrimary }]}
+              style={styles.iconInputField}
               autoComplete="username"
             />
           </View>
         ))}
 
-        <View style={[styles.previewBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.previewLabel, { color: theme.textSecondary }]}>{t('branding.sectionPreview')}</Text>
+        <View style={styles.previewBox}>
+          <Text style={styles.previewLabel}>{t('branding.sectionPreview')}</Text>
           <View style={[styles.reportHeaderPreview, { borderLeftColor: reportBrandColor }]}>
             {reportBrandLogoUri ? (
               <Image source={{ uri: reportBrandLogoUri }} style={styles.previewLogo} resizeMode="contain" />
@@ -313,10 +314,10 @@ export default function BrandingSettingsScreen({ navigation }) {
             )}
             <View style={styles.previewText}>
               {reportCompanyName ? (
-                <Text style={[styles.previewCompany, { color: theme.textSecondary }]}>{reportCompanyName.toUpperCase()}</Text>
+                <Text style={styles.previewCompany}>{reportCompanyName.toUpperCase()}</Text>
               ) : null}
-              <Text style={[styles.previewTitle, { color: theme.textPrimary }]}>{t('branding.previewTitle')}</Text>
-              <Text style={[styles.previewSub, { color: theme.textSecondary }]}>{t('branding.previewSubtitle')}</Text>
+              <Text style={styles.previewTitle}>{t('branding.previewTitle')}</Text>
+              <Text style={styles.previewSub}>{t('branding.previewSubtitle')}</Text>
             </View>
           </View>
         </View>
@@ -325,8 +326,8 @@ export default function BrandingSettingsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -334,12 +335,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.border,
   },
-  headerTitle: { fontSize: 18, fontWeight: '600' },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: theme.textPrimary },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 40 },
-  sectionNote: { fontSize: 13, lineHeight: 18, marginBottom: 20 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8, marginTop: 20 },
+  sectionNote: { fontSize: 13, lineHeight: 18, marginBottom: 20, color: theme.textSecondary },
+  sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8, marginTop: 20, color: theme.textSecondary },
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -347,6 +349,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
     marginBottom: 4,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
   logoThumb: { width: 72, height: 48, borderRadius: 4 },
   logoActions: { flexDirection: 'row', gap: 10, marginLeft: 12 },
@@ -367,8 +371,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderStyle: 'dashed',
     marginBottom: 4,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
-  uploadBtnText: { fontSize: 14 },
+  uploadBtnText: { fontSize: 14, color: theme.textSecondary },
   textInput: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 10,
@@ -376,6 +382,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     marginBottom: 4,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    color: theme.textPrimary,
   },
   iconInputRow: {
     flexDirection: 'row',
@@ -384,12 +393,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     marginBottom: 8,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
   iconInputIcon: { marginRight: 8 },
   iconInputField: {
     flex: 1,
     paddingVertical: 10,
     fontSize: 14,
+    color: theme.textPrimary,
   },
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
   colorSwatch: {
@@ -415,9 +427,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
     marginBottom: 8,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
   currentColorSwatch: { width: 24, height: 24, borderRadius: 12, marginRight: 10 },
-  currentColorHex: { flex: 1, fontSize: 14, fontFamily: 'monospace' },
+  currentColorHex: { flex: 1, fontSize: 14, fontFamily: 'monospace', color: theme.textPrimary },
   customColorBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   customColorBtnText: { fontSize: 13, fontWeight: '600' },
   customColorInput: {
@@ -428,8 +442,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     marginBottom: 10,
     gap: 10,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
-  hexInput: { flex: 1, fontSize: 15, fontFamily: 'monospace' },
+  hexInput: { flex: 1, fontSize: 15, fontFamily: 'monospace', color: theme.textPrimary },
   applyBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   applyBtnText: { fontSize: 13, fontWeight: '600' },
   previewBox: {
@@ -437,8 +453,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
     marginTop: 16,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
-  previewLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginBottom: 10 },
+  previewLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginBottom: 10, color: theme.textSecondary },
   reportHeaderPreview: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -449,7 +467,7 @@ const styles = StyleSheet.create({
   previewLogo: { width: 56, height: 40, borderRadius: 4 },
   previewLogoPlaceholder: { width: 56, height: 40, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
   previewText: { flex: 1 },
-  previewCompany: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, marginBottom: 2 },
-  previewTitle: { fontSize: 16, fontWeight: '700' },
-  previewSub: { fontSize: 11, marginTop: 2 },
+  previewCompany: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, marginBottom: 2, color: theme.textSecondary },
+  previewTitle: { fontSize: 16, fontWeight: '700', color: theme.textPrimary },
+  previewSub: { fontSize: 11, marginTop: 2, color: theme.textSecondary },
 });

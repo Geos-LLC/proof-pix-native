@@ -19,9 +19,10 @@
 //                  land independently inside their respective photo
 //                  halves.
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../hooks/useTheme';
 
 export const POSITION_GRID_KEYS = [
   ['left-top',    'center-top',    'right-top'],
@@ -76,43 +77,6 @@ const DEFAULT_THEME = {
   textSecondary: '#666666',
 };
 
-function Cell({ active, onPress, theme }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      style={[
-        styles.cell,
-        {
-          backgroundColor: active ? theme.accent : theme.surfaceElevated,
-          borderColor: active ? theme.accent : theme.border,
-        },
-      ]}
-    >
-      {active ? <Ionicons name="checkmark" size={14} color={theme.accentText} /> : null}
-    </TouchableOpacity>
-  );
-}
-
-function Grid({ value, onChange, theme }) {
-  return (
-    <View style={styles.grid}>
-      {POSITION_GRID_KEYS.map((row, ri) => (
-        <View key={ri} style={styles.row}>
-          {row.map((pos) => (
-            <Cell
-              key={pos}
-              active={value === pos}
-              onPress={() => onChange?.(pos)}
-              theme={theme}
-            />
-          ))}
-        </View>
-      ))}
-    </View>
-  );
-}
-
 // Native single-photo label bake only supports the 4 corners (the
 // underlying iOS / Android `addLabelToImage` API is corner-only). When
 // the user picks any of the 5 non-corner cells in the Single grid, the
@@ -155,7 +119,42 @@ export default function PositionGrid({
   // explaining that single-photo bakes snap to the nearest corner.
   showCornerSnapWarning = false,
 }) {
+  const appTheme = useTheme();
   const theme = themeProp ? { ...DEFAULT_THEME, ...themeProp } : DEFAULT_THEME;
+  const styles = useMemo(() => makeStyles(appTheme), [appTheme]);
+
+  const Cell = ({ active, onPress }) => (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={[
+        styles.cell,
+        {
+          backgroundColor: active ? theme.accent : theme.surfaceElevated,
+          borderColor: active ? theme.accent : theme.border,
+        },
+      ]}
+    >
+      {active ? <Ionicons name="checkmark" size={14} color={theme.accentText} /> : null}
+    </TouchableOpacity>
+  );
+
+  const Grid = ({ value: gridValue, onChange: gridOnChange }) => (
+    <View style={styles.grid}>
+      {POSITION_GRID_KEYS.map((row, ri) => (
+        <View key={ri} style={styles.row}>
+          {row.map((pos) => (
+            <Cell
+              key={pos}
+              active={gridValue === pos}
+              onPress={() => gridOnChange?.(pos)}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+
   const isManualSingle = mode !== 'dual' && value == null;
   const isManualDual = mode === 'dual' && beforeValue == null && afterValue == null;
   const showManualHint = (isManualSingle || isManualDual);
@@ -169,11 +168,11 @@ export default function PositionGrid({
           isSide ? styles.halfSideLeft : styles.halfStackTop,
         ]}>
           <Text style={[styles.halfLabel, { color: theme.textSecondary }]}>{beforeLabel}</Text>
-          <Grid value={beforeValue} onChange={onBeforeChange} theme={theme} />
+          <Grid value={beforeValue} onChange={onBeforeChange} />
         </View>
         <View style={isSide ? styles.halfSideRight : styles.halfStackBottom}>
           <Text style={[styles.halfLabel, { color: theme.textSecondary }]}>{afterLabel}</Text>
-          <Grid value={afterValue} onChange={onAfterChange} theme={theme} />
+          <Grid value={afterValue} onChange={onAfterChange} />
         </View>
       </View>
     );
@@ -194,7 +193,7 @@ export default function PositionGrid({
   return (
     <View>
       <View style={styles.singleWrap}>
-        <Grid value={value} onChange={onChange} theme={theme} />
+        <Grid value={value} onChange={onChange} />
         {layout === 'side' && (
           <View pointerEvents="none" style={[styles.hintVertical, { borderColor: theme.accent }]} />
         )}
@@ -218,7 +217,7 @@ export default function PositionGrid({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   singleWrap: {
     // Single matches the width of one half of the dual grid (49.5%
     // each, with a 1% visual gutter between halves) so toggling
@@ -277,7 +276,7 @@ const styles = StyleSheet.create({
   halfSideLeft: {
     width: '49.5%',
     borderRightWidth: 1,
-    borderRightColor: '#E5E5E5',
+    borderRightColor: theme.border,
     paddingRight: 6,
   },
   halfSideRight: {
@@ -287,7 +286,7 @@ const styles = StyleSheet.create({
   halfStackTop: {
     width: '100%',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: theme.border,
     paddingBottom: 12,
     marginBottom: 12,
   },

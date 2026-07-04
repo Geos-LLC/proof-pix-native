@@ -22,6 +22,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
+import { useTheme } from '../hooks/useTheme';
 import { PHOTO_MODES, ROOMS, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constants/rooms';
 import { RoomIcon } from '../utils/roomIcons';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
@@ -122,7 +123,9 @@ const isPortraitAspectRatio = (aspectRatio) => {
 // position so the user sees there's more content on the other side. Tap an
 // arrow OR swipe — both work. Stored as its own component so each row has
 // independent scroll state.
-function GallerySetRow({ cards, set, renderPhotoCard, isSelectionMode, selectedPhotos }) {
+// `styles` passed as a prop because it lives in GalleryScreen's closure
+// (useMemo(makeStyles)), not at module scope.
+function GallerySetRow({ styles, cards, set, renderPhotoCard, isSelectionMode, selectedPhotos }) {
   const scrollRef = React.useRef(null);
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
@@ -212,6 +215,8 @@ const isStackedLayout = (templateType, aspectRatio) => {
 
 export default function GalleryScreen({ navigation, route }) {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     photos,
     getBeforePhotos,
@@ -1784,6 +1789,7 @@ export default function GalleryScreen({ navigation, route }) {
     // left/right arrow visibility. Tapping an arrow scrolls one step.
     return (
       <GallerySetRow
+        styles={styles}
         key={`${roomId}-${setKey}`}
         cards={cards}
         set={set}
@@ -2827,10 +2833,9 @@ export default function GalleryScreen({ navigation, route }) {
 </SafeAreaView>
 );
 }
-const styles = StyleSheet.create({
-container: {
+const makeStyles = (theme) => StyleSheet.create({container: {
 flex: 1,
-backgroundColor: COLORS.BACKGROUND,
+backgroundColor: theme.background,
 paddingTop: 25
 },
 fullScreenPhotoContainer: {
@@ -2902,7 +2907,7 @@ fullScreenReturnCircle: {
 width: 35,
 height: 35,
 borderRadius: 17,
-backgroundColor: '#FFFFFF',
+backgroundColor: theme.surfaceElevated,
 borderWidth: 1,
 borderColor: 'grey',
 alignItems: 'center',
@@ -2966,7 +2971,7 @@ marginTop: 12,
 textAlign: 'center'
 },
 fullScreenErrorUri: {
-color: '#888',
+color: theme.textMuted,
 fontSize: 10,
 marginTop: 8,
 textAlign: 'center'
@@ -3038,7 +3043,7 @@ borderRadius: 4,
 backgroundColor: 'rgba(255, 255, 255, 0.35)'
 },
 fullScreenDotActive: {
-backgroundColor: '#FFFFFF'
+backgroundColor: theme.surfaceElevated
 },
 fullScreenBottomBar: {
 flexDirection: 'row',
@@ -3114,7 +3119,7 @@ fontWeight: '500',
 filterContainer: {
 flexDirection: 'row',
 alignItems: 'center',
-backgroundColor: '#FFFFFF',
+backgroundColor: theme.surfaceElevated,
 paddingVertical: 12,
 paddingHorizontal: 18,
 gap: 10,
@@ -3137,11 +3142,11 @@ borderopacity: 0.5,
 filterButtonText: {
 fontSize: 14,
 fontWeight: '500',
-color: '#000000',
+color: theme.textPrimary,
 textTransform: 'capitalize',
 },
 filterButtonTextActive: {
-color: '#000000',
+color: theme.textPrimary,
 fontWeight: '500',
 },
 projectNameSection: {
@@ -3204,7 +3209,7 @@ floatingActionButton: {
   elevation: 5
 },
 floatingActionButtonTrash: {
-  backgroundColor: '#FFFFFF',
+  backgroundColor: theme.surfaceElevated,
   borderWidth: 1,
   borderColor: 'rgba(0, 0, 0, 0.3)',
   opacity: 0.9,
@@ -3256,7 +3261,7 @@ bottomNavPill: {
   flexDirection: 'row',
   alignItems: 'center',
   justifyContent: 'center',
-  backgroundColor: '#f4f4f4',
+  backgroundColor: theme.surface,
   borderRadius: 296,
   height: 60,
   shadowColor: '#000',
@@ -3278,18 +3283,18 @@ navItemImage:{
   height: 22,
 },
 navItemActive: {
-  backgroundColor: '#E0E0E0',
+  backgroundColor: theme.surface,
   borderRadius: 100,
   marginHorizontal: -7,
 },
 navItemText: {
 fontSize: 11,
 fontWeight: '500',
-color: '#666666',
+color: theme.textSecondary,
 marginTop: 4
 },
 navItemTextActive: {
-color: '#000000',
+color: theme.textPrimary,
 fontWeight: '600'
 },
 floatingAddButton: {
@@ -3310,12 +3315,12 @@ zIndex: 95
 },
 scrollView: {
 flex: 1,
-backgroundColor: '#FFFFFF',
+backgroundColor: theme.surfaceElevated,
 },
 content: {
 padding: 18,
 paddingTop: 10,
-backgroundColor: '#FFFFFF',
+backgroundColor: theme.surfaceElevated,
 },
 roomSection: {
 marginBottom: 24,
@@ -3435,7 +3440,7 @@ borderLeftWidth: 1,
   borderBottomColor: '#F2C31B',
 },
 modeLabelText: {
-color: '#000000',
+color: theme.textPrimary,
 fontSize: 11,
 fontWeight: '700',
 letterSpacing: 0.3,
@@ -3459,7 +3464,7 @@ shadowRadius: 2,
 elevation: 2,
 },
 progressBadgeText: {
-color: '#000000',
+color: theme.textPrimary,
 fontSize: 12,
 fontWeight: '800',
 },
@@ -3491,7 +3496,7 @@ borderRadius: 8,
 borderWidth: 2,
 borderColor: COLORS.BORDER,
 borderStyle: 'dashed',
-backgroundColor: '#f5f5f5',
+backgroundColor: theme.surface,
 justifyContent: 'center',
 alignItems: 'center'
 },
@@ -3524,7 +3529,7 @@ backgroundColor: 'rgba(0, 0, 0, 0.34)',
 justifyContent: 'flex-end',
 },
 shareModalContent: {
-  backgroundColor: '#FFFFFF',
+  backgroundColor: theme.surfaceElevated,
   borderTopLeftRadius: 38,
   borderTopRightRadius: 38,
   maxHeight: '85%',
@@ -3562,7 +3567,7 @@ shareModalTitle: {
   flex: 1,
   fontSize: 18,
   fontWeight: '600',
-  color: '#333333',
+  color: theme.textPrimary,
   textAlign: 'center',
   marginRight: 44,
   letterSpacing: -0.43,
@@ -3698,7 +3703,7 @@ uploadDestRow: {
   paddingVertical: 14,
   paddingHorizontal: 16,
   borderRadius: 12,
-  backgroundColor: '#F5F5F5',
+  backgroundColor: theme.surface,
   marginBottom: 8,
   gap: 12,
 },
@@ -3710,7 +3715,7 @@ uploadDestRowActive: {
 uploadDestText: {
   fontSize: 16,
   fontWeight: '500',
-  color: '#999',
+  color: theme.textMuted,
 },
 uploadDestTextActive: {
   color: '#000',
@@ -3797,7 +3802,7 @@ processingOverlay: {
   zIndex: 999,
 },
 processingBox: {
-  backgroundColor: '#FFFFFF',
+  backgroundColor: theme.surfaceElevated,
   borderRadius: 16,
   padding: 30,
   alignItems: 'center',
@@ -3811,6 +3816,6 @@ processingBox: {
 processingText: {
   fontFamily: 'Alexandria_400Regular',
   fontSize: 15,
-  color: '#333',
+  color: theme.textPrimary,
 },
 });

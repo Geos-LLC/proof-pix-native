@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,7 @@ import {
   trackReferralInstallation,
 } from '../services/referralService';
 import { markReferralScreenOpened } from '../services/referralPromptService';
+import { useTheme } from '../hooks/useTheme';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
@@ -38,6 +39,8 @@ import { Linking } from 'react-native';
 export default function ReferralScreen({ navigation, route }) {
   const { t } = useTranslation();
   const [referralCode, setReferralCode] = useState('');
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [referralInfo, setReferralInfo] = useState({
     invitesSent: [],
     rewardsEarned: 0,
@@ -674,10 +677,10 @@ export default function ReferralScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   header: {
     flexDirection: 'row',
@@ -687,7 +690,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5E5',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   backButton: {
     width: 40,
@@ -717,12 +720,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   contentContainer: {
     padding: 20,
     paddingBottom: 40,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   loadingContainer: {
     flex: 1,
@@ -823,7 +826,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   actionButtons: {
@@ -836,7 +839,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: '#D0D0D0',
+    borderColor: theme.borderStrong,
     borderRadius: 13,
     height: 42,
     paddingHorizontal: 16,
@@ -844,7 +847,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   copyLinkButtonText: {
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: -0.1,
@@ -881,11 +884,11 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 13,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   enterCodeSheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingBottom: 24,
@@ -899,13 +902,13 @@ const styles = StyleSheet.create({
   enterCodeSubtitle: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 18,
   },
   enterCodeInput: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     borderWidth: 1.5,
     borderColor: '#F2C31B',
     borderRadius: 14,
@@ -914,7 +917,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 20,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     textAlign: 'center',
     letterSpacing: 3,
   },
@@ -945,10 +948,10 @@ const styles = StyleSheet.create({
   // shadow + hairline border + radius 18.
   progressCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     padding: 16,
     alignItems: 'center',
     gap: 8,
@@ -966,7 +969,7 @@ const styles = StyleSheet.create({
   },
   progressCardLabel: {
     fontSize: 12,
-    color: '#666666',
+    color: theme.textSecondary,
     textAlign: 'center',
   },
   progressBarSection: {
@@ -986,7 +989,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 14,
-    color: '#666666',
+    color: theme.textSecondary,
     textAlign: 'center',
   },
   remainingRewardsText: {
@@ -1012,7 +1015,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   ctaButtonText: {
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontSize: 16,
     fontWeight: '700',
     fontFamily: FONTS.ALEXANDRIA,
@@ -1024,7 +1027,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '90%',
@@ -1058,7 +1061,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },

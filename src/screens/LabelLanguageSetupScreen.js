@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
+import { useTheme } from '../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
 
@@ -39,6 +40,8 @@ const LANGUAGES = [
 export default function LabelLanguageSetupScreen({ navigation, route }) {
   const { t } = useTranslation();
   const { labelLanguage, updateLabelLanguage, showLabels, toggleLabels, shouldShowWatermark } = useSettings();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [selectedLanguage, setSelectedLanguage] = useState(labelLanguage);
   const [labelLanguageModalVisible, setLabelLanguageModalVisible] = useState(false);
   const labelLanguageScrollViewRef = useRef(null);
@@ -250,10 +253,10 @@ export default function LabelLanguageSetupScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   backButton: {
     position: 'absolute',
@@ -332,7 +335,7 @@ const styles = StyleSheet.create({
   },
   photoDescription: {
     fontSize: 12,
-    color: '#666',
+    color: theme.textSecondary,
     textAlign: 'center',
     fontStyle: 'italic',
     marginTop: 8,
@@ -368,7 +371,7 @@ const styles = StyleSheet.create({
   },
   languageSelectorButton: {
     borderRadius: 12,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     padding: 16,
   },
   languageSelector: {
@@ -390,7 +393,7 @@ const styles = StyleSheet.create({
   },
   languageScrollView: {
     maxHeight: 300,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     borderRadius: 12,
     padding: 8,
   },
@@ -401,7 +404,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
     marginBottom: 4,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   languageOptionActive: {
     backgroundColor: COLORS.PRIMARY,
@@ -458,7 +461,7 @@ const styles = StyleSheet.create({
   continueButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontFamily: FONTS.ALEXANDRIA,
     letterSpacing: -0.1,
   },
@@ -469,7 +472,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     padding: 24,
     width: '85%',
@@ -489,7 +492,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     alignItems: 'center',
   },
   closeModalButtonText: {

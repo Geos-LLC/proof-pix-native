@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,12 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { COLORS } from '../constants/rooms';
+import { useTheme } from '../hooks/useTheme';
 
 const BackgroundUploadStatus = ({ uploadStatus, onCancelUpload, onCancelAll, onShowDetails }) => {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { activeUploads, queueLength, isProcessing } = uploadStatus;
   const hasActiveUploads = activeUploads.length > 0;
   const hasQueuedUploads = queueLength > 0;
@@ -76,6 +79,8 @@ const BackgroundUploadStatus = ({ uploadStatus, onCancelUpload, onCancelAll, onS
 
 const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, onMinimize, isPreparing }) => {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { activeUploads, queueLength } = uploadStatus;
   const hasSeenUploads = useRef(false);
 
@@ -213,7 +218,7 @@ const UploadDetailsModal = ({ visible, uploadStatus, onClose, onCancelUpload, on
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     position: 'absolute',
     top: 0,
@@ -254,7 +259,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 12,
     width: '90%',
     maxHeight: '80%',
@@ -263,12 +268,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: theme.border,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   modalHeaderButtons: {
     flexDirection: 'row',
@@ -280,14 +285,14 @@ const styles = StyleSheet.create({
   },
   minimizeText: {
     fontSize: 18,
-    color: COLORS.GRAY,
+    color: theme.textMuted,
   },
   closeButton: {
     padding: 4,
   },
   closeText: {
     fontSize: 18,
-    color: COLORS.GRAY,
+    color: theme.textMuted,
   },
   modalBody: {
     padding: 16,
@@ -295,7 +300,7 @@ const styles = StyleSheet.create({
   uploadItem: {
     marginBottom: 16,
     padding: 12,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     borderRadius: 8,
   },
   uploadHeader: {
@@ -304,7 +309,7 @@ const styles = StyleSheet.create({
   uploadTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   actionButtonsContainer: {
     flexDirection: 'row',
@@ -345,7 +350,7 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 8,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: theme.border,
     borderRadius: 4,
     marginRight: 8,
   },
@@ -356,7 +361,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
-    color: COLORS.GRAY,
+    color: theme.textMuted,
     minWidth: 60,
     textAlign: 'right',
   },
@@ -368,7 +373,7 @@ const styles = StyleSheet.create({
   },
   preparingText: {
     fontSize: 15,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '500',
   },
   queueItem: {

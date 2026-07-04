@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import crmService from '../services/crm';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * CRMRedeemScreen — landing for the `proofpix://connect?token=...&workspace=...`
@@ -30,6 +31,8 @@ import crmService from '../services/crm';
 export default function CRMRedeemScreen({ route, navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const params = route?.params || {};
   // Deep-link query params land here (token, workspace, …). Provider
   // defaults to serviceflow since that's the only CRM today, but the
@@ -152,15 +155,15 @@ export default function CRMRedeemScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.surfaceElevated },
   headerSpacer: { height: 24 },
   card: {
     marginHorizontal: 22,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     padding: 24,
     alignItems: 'center',
     shadowColor: '#141420',
@@ -173,7 +176,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 16,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 18,
@@ -184,7 +187,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 19,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.3,
     textAlign: 'center',
     marginBottom: 6,
@@ -202,7 +205,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '500',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textAlign: 'center',
     lineHeight: 17,
     marginBottom: 14,
@@ -217,7 +220,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
 });

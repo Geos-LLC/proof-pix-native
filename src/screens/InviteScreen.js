@@ -1,14 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
 import { FONTS } from '../constants/fonts';
+import { useTheme } from '../hooks/useTheme';
 
 export default function InviteScreen({ route, navigation }) {
   const { token, sessionId } = route.params || {};
   const { joinTeam } = useAdmin();
-  const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -16,7 +17,7 @@ export default function InviteScreen({ route, navigation }) {
     const processInvite = async () => {
       // Validate required parameters
       if (!token || !sessionId) {
-        setError(t('invite.invalidLinkMessage'));
+        setError('This invite link is invalid or incomplete. Please request a new link from your administrator.');
         setIsLoading(false);
         return;
       }
@@ -30,23 +31,23 @@ export default function InviteScreen({ route, navigation }) {
             routes: [{ name: 'Home' }],
           });
         } else {
-          setError(result.error || t('invite.unknownError'));
+          setError(result.error || 'An unknown error occurred while trying to join the team.');
           setIsLoading(false);
         }
       } catch (e) {
-        setError(t('invite.unexpectedError'));
+        setError('An unexpected error occurred. Please try again.');
         setIsLoading(false);
       }
     };
 
     processInvite();
-  }, [token, sessionId, joinTeam, navigation, t]);
+  }, [token, sessionId, joinTeam, navigation]);
 
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <ActivityIndicator size="large" color="#007bff" />
-        <Text style={styles.loadingText}>{t('invite.joiningTeam')}</Text>
+        <Text style={styles.loadingText}>Joining team...</Text>
       </SafeAreaView>
     );
   }
@@ -62,19 +63,19 @@ export default function InviteScreen({ route, navigation }) {
   return null; // Should not be reached
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: theme.surfaceElevated,
   },
   loadingText: {
     fontFamily: FONTS.ALEXANDRIA,
     marginTop: 10,
     fontSize: 16,
-    color: '#333',
+    color: theme.textPrimary,
   },
   errorText: {
     fontFamily: FONTS.ALEXANDRIA,

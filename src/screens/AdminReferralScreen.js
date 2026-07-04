@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { FONTS } from '../constants/fonts';
 import * as Clipboard from 'expo-clipboard';
 import Modal from 'react-native-modal';
 import { logReferralEvent } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 import {
   fetchAdminReferralLinks,
   createAdminReferralLink,
@@ -43,6 +44,8 @@ const EMPTY_FORM = {
 
 export default function AdminReferralScreen({ navigation }) {
   const [links, setLinks] = useState([]);
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -392,7 +395,7 @@ export default function AdminReferralScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
@@ -431,7 +434,7 @@ const styles = StyleSheet.create({
 
   // Create Form
   createForm: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
@@ -453,7 +456,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#666',
+    color: theme.textSecondary,
     marginBottom: 4,
     fontFamily: FONTS.ALEXANDRIA,
   },
@@ -502,7 +505,7 @@ const styles = StyleSheet.create({
 
   // Link Cards
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
@@ -559,7 +562,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: '#888',
+    color: theme.textMuted,
     marginBottom: 2,
     fontFamily: FONTS.ALEXANDRIA,
   },
@@ -601,7 +604,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#999',
+    color: theme.textMuted,
     marginTop: 12,
     fontFamily: FONTS.ALEXANDRIA,
   },
@@ -618,7 +621,7 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
 import { logOnboardingStarted, logOnboardingStepCompleted } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
 
@@ -38,6 +39,8 @@ const { width } = Dimensions.get('window');
 export default function WelcomeSetupScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
 
@@ -139,10 +142,10 @@ export default function WelcomeSetupScreen({ navigation }) {
 
 const HERO_HEIGHT = Math.round(Dimensions.get('window').height * 0.48);
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   content: {
     flex: 1,
@@ -157,7 +160,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: 'hidden',
     flexDirection: 'row',
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
   },
   heroHalf: {
     flex: 1,
@@ -194,7 +197,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 10.5,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: 0.6,
   },
   chipAfter: {
@@ -236,14 +239,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 19,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.3,
   },
   headline: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 28,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.5,
     lineHeight: 34,
     marginBottom: 10,
@@ -251,7 +254,7 @@ const styles = StyleSheet.create({
   subhead: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14.5,
-    color: '#666666',
+    color: theme.textSecondary,
     lineHeight: 21,
     letterSpacing: -0.1,
   },
@@ -277,7 +280,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   ghostLink: {
@@ -289,7 +292,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
     fontWeight: '600',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
 });

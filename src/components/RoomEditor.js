@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/rooms';
 import { ROOMS } from '../constants/rooms';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from 'react-i18next';
 
 const ROOM_ICONS = [
@@ -323,6 +324,8 @@ const ROOM_ICONS = [
 
 export default function RoomEditor({ visible, onClose, onSave, initialRooms = null, mode = 'customize', editRoom = null }) {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { sectionLanguage, cleaningServiceEnabled } = useSettings();
   const [rooms, setRooms] = useState([]);
   const [editingRoom, setEditingRoom] = useState(null);
@@ -749,7 +752,7 @@ export default function RoomEditor({ visible, onClose, onSave, initialRooms = nu
                 value={roomName}
                 onChangeText={setRoomName}
                 placeholder={t('roomEditor.enterFolderName')}
-                placeholderTextColor={COLORS.GRAY}
+                placeholderTextColor={theme.textMuted}
                 maxLength={20}
                 autoFocus={true}
                 onFocus={() => {
@@ -776,10 +779,10 @@ export default function RoomEditor({ visible, onClose, onSave, initialRooms = nu
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.BACKGROUND
+    backgroundColor: theme.background
   },
   keyboardAvoidingView: {
     flex: 1
@@ -790,9 +793,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 10,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER
+    borderBottomColor: theme.border
   },
   backButton: {
     width: 60
@@ -806,7 +809,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     flex: 1,
     textAlign: 'center',
   },
@@ -830,13 +833,13 @@ const styles = StyleSheet.create({
     flex: 1
   },
   section: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     marginTop: 20,
     paddingVertical: 20,
     paddingHorizontal: 20,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: COLORS.BORDER
+    borderColor: theme.border
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -847,7 +850,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.TEXT
+    color: theme.textPrimary
   },
   addButton: {
     backgroundColor: COLORS.PRIMARY,
@@ -856,11 +859,11 @@ const styles = StyleSheet.create({
     borderRadius: 8
   },
   addButtonDisabled: {
-    backgroundColor: COLORS.BORDER,
+    backgroundColor: theme.border,
     opacity: 0.6
   },
   addButtonText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '600',
     fontSize: 14
   },
@@ -870,7 +873,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER
+    borderBottomColor: theme.border
   },
   roomInfo: {
     flexDirection: 'row',
@@ -883,7 +886,7 @@ const styles = StyleSheet.create({
   },
   roomName: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '500'
   },
   roomActions: {
@@ -898,7 +901,7 @@ const styles = StyleSheet.create({
     minWidth: 60
   },
   editButtonText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
@@ -924,7 +927,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     zIndex: 1000
   },
   editorHeader: {
@@ -932,18 +935,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER
+    borderBottomColor: theme.border
   },
   headerCancelButton: {
-    backgroundColor: COLORS.BORDER,
+    backgroundColor: theme.border,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8
   },
   headerCancelButtonText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontSize: 16,
     fontWeight: '600'
   },
@@ -966,18 +969,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: 20,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderTopWidth: 1,
-    borderTopColor: COLORS.BORDER
+    borderTopColor: theme.border
   },
   editorContainer: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     marginTop: 20,
     paddingVertical: 20,
     paddingHorizontal: 20,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: COLORS.BORDER
+    borderColor: theme.border
   },
   iconGridContainer: {
     marginTop: 20
@@ -985,7 +988,7 @@ const styles = StyleSheet.create({
   editorTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginBottom: 16
   },
   inputGroup: {
@@ -994,46 +997,46 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginBottom: 8
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     padding: 12,
     borderRadius: 8,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontSize: 16
   },
   roomNameButton: {
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderRadius: 8,
     padding: 16,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
   },
   roomNameButtonText: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '500'
   },
   editHintText: {
     fontSize: 12,
-    color: COLORS.GRAY,
+    color: theme.textMuted,
     fontStyle: 'italic'
   },
   roomNameInput: {
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderRadius: 8,
     padding: 16,
     fontSize: 16,
-    color: COLORS.TEXT,
-    backgroundColor: 'white'
+    color: theme.textPrimary,
+    backgroundColor: theme.surfaceElevated
   },
   currentIconContainer: {
     alignItems: 'center',
@@ -1045,12 +1048,12 @@ const styles = StyleSheet.create({
   },
   currentIconLabel: {
     fontSize: 12,
-    color: COLORS.GRAY
+    color: theme.textMuted
   },
   iconGrid: {
     height: 315, // 5 rows * (55px button + 8px margin) + 8px padding
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderRadius: 8
   },
   iconRow: {
@@ -1065,7 +1068,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     margin: 4,
     borderRadius: 12,
-    backgroundColor: '#f8f9fa'
+    backgroundColor: theme.surface
   },
   iconButtonSelected: {
     backgroundColor: COLORS.PRIMARY
@@ -1075,7 +1078,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: COLORS.BORDER,
+    backgroundColor: theme.border,
     paddingVertical: 12,
     borderRadius: 8,
     marginRight: 8
@@ -1094,7 +1097,7 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   cancelButtonText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '600',
     textAlign: 'center'
   },
@@ -1105,7 +1108,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   nameModal: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 12,
     padding: 20,
     width: '80%',
@@ -1114,18 +1117,18 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 16
   },
   modalInput: {
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: COLORS.TEXT,
-    backgroundColor: 'white',
+    color: theme.textPrimary,
+    backgroundColor: theme.surfaceElevated,
     marginBottom: 16
   },
   modalButtons: {
@@ -1166,7 +1169,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   saveButtonText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '600'
   },
   checkboxContainer: {
@@ -1197,11 +1200,11 @@ const styles = StyleSheet.create({
   },
   checkboxLabel: {
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '500',
   },
   checkboxDescription: {
-    color: COLORS.TEXT_SECONDARY,
+    color: theme.textSecondary,
     fontSize: 12,
     marginTop: 8,
     marginLeft: 4,
@@ -1225,7 +1228,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   deleteButtonTextDisabled: {
-    color: COLORS.GRAY,
+    color: theme.textMuted,
   },
   resetButton: {
     backgroundColor: '#FFE6E6',

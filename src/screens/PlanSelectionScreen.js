@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -47,6 +47,7 @@ import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarte
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import { getSoftTrialState, ensureDeviceId } from '../services/softTrialService';
 import { PAYWALL_TRIGGERS } from '../constants/softTrial';
+import { useTheme } from '../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
 
@@ -55,6 +56,8 @@ export default function PlanSelectionScreen({ navigation, route }) {
   const { userPlan, updateUserPlan } = useSettings();
   const { updatePlanLimit } = useAdmin();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const forceUpgradeMode = route?.params?.mode === 'upgrade';
   const trigger = route?.params?.trigger || null;
@@ -845,7 +848,7 @@ function Bullet({ text, tint }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   // Refresh pass 10 (cosmetic) — design screenshot 38 puts the paywall
   // on a white canvas instead of the brand-yellow flood. The yellow
   // moves to the Pro card's soft-accent fill (#FFF4C2) where it does
@@ -854,7 +857,7 @@ const styles = StyleSheet.create({
   // are all left as the user has them; only surfaces and borders change.
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   // Design 38: title left, X close right. No back arrow, no subhead.
   header: {
@@ -869,7 +872,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -881,7 +884,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -889,7 +892,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     fontFamily: 'Alexandria_400Regular',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.4,
     flex: 1,
     textAlign: 'left',
@@ -973,7 +976,7 @@ const styles = StyleSheet.create({
     elevation: 3,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
   },
   planCardWrapperPrimary: {
     borderWidth: 2,
@@ -1064,7 +1067,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     fontFamily: 'Alexandria_400Regular',
-    color: '#666666',
+    color: theme.textSecondary,
     marginTop: 2,
   },
   // Refresh pass 10 (cosmetic) — design 38: "Most popular" reads as a
@@ -1088,7 +1091,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     fontFamily: 'Alexandria_400Regular',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     lineHeight: 14,
     letterSpacing: 0.2,
     textTransform: 'uppercase',
@@ -1126,7 +1129,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     fontFamily: 'Alexandria_400Regular',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     textAlign: 'center',
     letterSpacing: -0.1,
   },
@@ -1134,7 +1137,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     textAlign: 'center',
     opacity: 0.7,
     marginTop: 2,
@@ -1207,7 +1210,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '400',
     fontFamily: 'Alexandria_400Regular',
-    color: '#666666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 15,
     marginBottom: 20,
@@ -1220,7 +1223,7 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
   planCardSecondary: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 20,
     paddingHorizontal: 18,
     paddingTop: 10,
@@ -1265,7 +1268,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: '#666666',
+    color: theme.textSecondary,
     lineHeight: 16,
     letterSpacing: -0.1,
   },
@@ -1283,7 +1286,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     fontFamily: 'Alexandria_400Regular',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     lineHeight: 14,
   },
   legalLinkDot: {
@@ -1302,7 +1305,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   trialModalContainer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 38,
     borderTopRightRadius: 38,
     paddingBottom: 40,
@@ -1368,7 +1371,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '400',
     fontFamily: 'Alexandria_400Regular',
-    color: '#666666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
     marginTop: 10,
@@ -1384,7 +1387,7 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     borderWidth: 1,
     borderColor: '#000000',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1430,7 +1433,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '400',
     fontFamily: 'Alexandria_400Regular',
-    color: '#666666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 14,
     paddingHorizontal: 4,
@@ -1447,7 +1450,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     padding: 4,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
   },
   billingChip: {
     flex: 1,
@@ -1457,7 +1460,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   billingChipActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     shadowColor: '#141420',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -1468,11 +1471,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 13,
     fontWeight: '600',
-    color: '#666666',
+    color: theme.textSecondary,
     letterSpacing: -0.1,
   },
   billingChipTextActive: {
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontWeight: '700',
   },
 
@@ -1480,10 +1483,10 @@ const styles = StyleSheet.create({
   designCard: {
     marginHorizontal: 18,
     marginBottom: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 16,
@@ -1562,7 +1565,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 11,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: 0.2,
     textTransform: 'lowercase',
   },
@@ -1578,7 +1581,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 22,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.4,
   },
   designPriceCluster: {
@@ -1589,14 +1592,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 24,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.4,
   },
   designCardPriceUnit: {
     fontFamily: 'Alexandria_400Regular',
     fontSize: 13,
     fontWeight: '600',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
     marginLeft: 2,
   },
@@ -1604,14 +1607,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 22,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.4,
   },
   designCardPriceContact: {
     fontFamily: 'Alexandria_400Regular',
     fontSize: 14,
     fontWeight: '700',
-    color: '#666666',
+    color: theme.textSecondary,
     letterSpacing: -0.1,
   },
 
@@ -1637,7 +1640,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 13.5,
     fontWeight: '600',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
     lineHeight: 19,
   },
@@ -1660,7 +1663,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 15,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   proInCardCTADisabled: {
@@ -1721,7 +1724,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 14,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
     marginBottom: 2,
   },
@@ -1729,7 +1732,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 12.5,
     fontWeight: '500',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
     lineHeight: 17,
   },

@@ -15,6 +15,7 @@ import { COLORS, ROOMS } from '../constants/rooms';
 import CompareViewer from '../components/CompareViewer';
 import CompareModeSwitcher from '../components/CompareModeSwitcher';
 import PhotoLabels from '../components/PhotoLabels';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Section / folder detail screen — Compare-only.
@@ -37,6 +38,8 @@ export default function SectionDetailScreen({ route, navigation }) {
   } = usePhotos();
   const settings = useSettings();
   const { sectionLanguage, getRooms } = settings;
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const [compareMode, setCompareMode] = useState('split');
 
@@ -103,8 +106,8 @@ export default function SectionDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.surfaceElevated },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -135,7 +138,7 @@ const styles = StyleSheet.create({
   },
   emptySubtitle: {
     fontSize: 13,
-    color: '#666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
   },

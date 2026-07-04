@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,13 @@ import {
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../hooks/useTheme';
 
 export default function TrialNotificationModal({ visible, notification, onClose, onUpgrade, onCTA, onRefer }) {
-  if (!notification) return null;
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+  if (!notification) return null;
 
   // 7-day lifecycle schema — notification supplies primaryCTA/secondaryCTA
   // labels + primaryAction/secondaryAction routing keys. Older schema
@@ -368,7 +371,7 @@ export default function TrialNotificationModal({ visible, notification, onClose,
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -377,7 +380,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modal: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     width: '100%',
     maxWidth: 400,
@@ -390,7 +393,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontFamily: FONTS.ALEXANDRIA,
     textAlign: 'center',
   },
@@ -400,13 +403,13 @@ const styles = StyleSheet.create({
   },
   message: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     lineHeight: 24,
     textAlign: 'center',
   },
   secondaryText: {
     fontSize: 13,
-    color: '#666666',
+    color: theme.textSecondary,
     lineHeight: 19,
     textAlign: 'center',
     marginTop: 10,
@@ -421,7 +424,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     alignSelf: 'center',
   },
   cta: {
@@ -432,7 +435,7 @@ const styles = StyleSheet.create({
   },
   ctaDescription: {
     fontSize: 14,
-    color: COLORS.GRAY,
+    color: theme.textMuted,
     marginTop: 8,
     textAlign: 'center',
     fontStyle: 'italic',
@@ -442,14 +445,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: theme.border,
     alignItems: 'center',
   },
   checkboxPreviewTitle: {
     fontSize: 18,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginBottom: 8,
     textAlign: 'center',
     fontWeight: '700',
@@ -466,32 +469,32 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.PRIMARY,
     marginRight: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   checkboxPreviewBoxChecked: {
     backgroundColor: COLORS.PRIMARY,
   },
   checkboxPreviewLabel: {
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '500',
   },
   checkboxCheck: {
-    color: '#FFFFFF',
+    color: '#1E1E1E',
     fontSize: 12,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   deletePreviewMessage: {
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginTop: 8,
     marginBottom: 12,
     textAlign: 'center',
   },
   deletePreviewHint: {
     fontSize: 13,
-    color: '#777777',
+    color: theme.textMuted,
     marginBottom: 10,
     textAlign: 'center',
   },
@@ -499,7 +502,7 @@ const styles = StyleSheet.create({
     width: '90%',
     maxWidth: 260,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     paddingVertical: 12,
     paddingHorizontal: 12,
     shadowColor: '#000',
@@ -521,13 +524,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deletePreviewCancel: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
   },
   deletePreviewDelete: {
     backgroundColor: '#FFCDD2',
   },
   deletePreviewCancelText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '600',
   },
   deletePreviewDeleteText: {
@@ -536,7 +539,7 @@ const styles = StyleSheet.create({
   },
   referralIncentive: {
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginTop: 12,
     textAlign: 'center',
     fontWeight: '500',
@@ -552,7 +555,7 @@ const styles = StyleSheet.create({
   },
   featuresList: {
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginTop: 12,
     textAlign: 'left',
     lineHeight: 22,
@@ -590,7 +593,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF4444',
   },
   secondaryButton: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
   },
   buttonText: {
     fontSize: 16,
@@ -604,7 +607,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   secondaryButtonText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   twoButtonRow: {
     flexDirection: 'column',

@@ -12,13 +12,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { useTheme } from '../hooks/useTheme';
-import { useTranslation } from 'react-i18next';
 
 const BASE_TRIAL_DAYS = 15;
 const REFERRAL_BONUS_DAYS = 15;
 
 export default function TrialConfirmationModal({ visible, planName, onUseTrial, onCancel, price, platformCancelText }) {
-  const { t } = useTranslation();
   const [trialDays, setTrialDays] = useState(BASE_TRIAL_DAYS);
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -56,16 +54,16 @@ export default function TrialConfirmationModal({ visible, planName, onUseTrial, 
           </TouchableOpacity>
 
           <View style={styles.header}>
-            <Text style={styles.title}>{t('trial.startTrialButton')}</Text>
+            <Text style={styles.title}>START FREE TRIAL</Text>
           </View>
 
           <View style={styles.content}>
             <Text style={styles.message}>
-              {t('trial.confirmationMessage', { days: trialDays, planName: planName.toLowerCase() })}
+              Start your {trialDays}-day free trial of {planName.toLowerCase()} features.
             </Text>
             <Text style={styles.disclosure}>
-              {price ? t('trial.priceDisclosure', { price }) : ''}
-              {t('trial.autoRenewDisclosure')}{platformCancelText || (Platform.OS === 'android' ? t('trial.cancelInGooglePlay') : t('trial.cancelInIosSettings'))}.
+              {price ? `After your trial ends, you'll be charged ${price}/month. ` : ''}
+              Auto-renews unless canceled. {platformCancelText || (Platform.OS === 'android' ? 'Cancel anytime in Google Play > Subscriptions' : 'Cancel anytime in Settings > Subscriptions')}.
             </Text>
           </View>
 
@@ -75,7 +73,7 @@ export default function TrialConfirmationModal({ visible, planName, onUseTrial, 
               onPress={onCancel}
             >
               <Text style={[styles.buttonText, styles.skipButtonText]}>
-                {t('trial.noThanksButton')}
+                No Thanks
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -83,7 +81,7 @@ export default function TrialConfirmationModal({ visible, planName, onUseTrial, 
               onPress={onUseTrial}
             >
               <Text style={[styles.buttonText, styles.startButtonText]}>
-                {t('trial.startTrialButton')}
+                Start Free Trial
               </Text>
             </TouchableOpacity>
           </View>

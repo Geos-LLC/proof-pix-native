@@ -49,11 +49,13 @@ const _markTransactionLogged = async (key, payload = {}) => {
 };
 
 // Platform-specific product IDs
-// iOS: product IDs include .monthly suffix (configured in App Store Connect)
-// Android: product IDs without .monthly suffix, base plan "monthly" is separate (configured in Google Play Console)
+// iOS: product IDs include .monthly / .annual suffix (configured in App Store Connect)
+// Android: monthly product IDs are the plan name; annual uses .annual suffix
 const IOS_PRODUCTS = {
   PRO_MONTHLY: 'com.goscha01.proofpix.pro.monthly',
+  PRO_ANNUAL: 'com.goscha01.proofpix.pro.annual',
   BUSINESS_MONTHLY: 'com.goscha01.proofpix.business.monthly',
+  BUSINESS_ANNUAL: 'com.goscha01.proofpix.business.annual',
   ENTERPRISE_MONTHLY: 'com.goscha01.proofpix.enterprise.monthly',
   BUSINESS_SEAT: 'com.goscha01.proofpix.business.seat',
   ENTERPRISE_SEAT: 'com.goscha01.proofpix.enterprise.seat',
@@ -61,7 +63,9 @@ const IOS_PRODUCTS = {
 
 const ANDROID_PRODUCTS = {
   PRO_MONTHLY: 'com.goscha01.proofpix.pro',
+  PRO_ANNUAL: 'com.goscha01.proofpix.pro.annual',
   BUSINESS_MONTHLY: 'com.goscha01.proofpix.business',
+  BUSINESS_ANNUAL: 'com.goscha01.proofpix.business.annual',
   ENTERPRISE_MONTHLY: 'com.goscha01.proofpix.enterprise',
   BUSINESS_SEAT: 'com.goscha01.proofpix.business.seat',
   ENTERPRISE_SEAT: 'com.goscha01.proofpix.enterprise.seat',
@@ -181,10 +185,14 @@ const _extractHasTrial = (product) => {
 // silently misclassifying as paid.
 const _EXPECTED_TRIAL_PRODUCT_IDS = new Set([
   IOS_PRODUCTS.PRO_MONTHLY,
+  IOS_PRODUCTS.PRO_ANNUAL,
   IOS_PRODUCTS.BUSINESS_MONTHLY,
+  IOS_PRODUCTS.BUSINESS_ANNUAL,
   IOS_PRODUCTS.ENTERPRISE_MONTHLY,
   ANDROID_PRODUCTS.PRO_MONTHLY,
+  ANDROID_PRODUCTS.PRO_ANNUAL,
   ANDROID_PRODUCTS.BUSINESS_MONTHLY,
+  ANDROID_PRODUCTS.BUSINESS_ANNUAL,
   ANDROID_PRODUCTS.ENTERPRISE_MONTHLY,
 ]);
 
@@ -201,11 +209,13 @@ const _extractPriceAndCurrency = (product) => {
       if (!isFinite(price)) return null;
       return { price, currency };
     }
-    // Android: read the recurring monthly phase price (in micros).
+    // Android: read the recurring phase price (in micros). Works for both
+    // monthly (P1M) and annual (P1Y) plans — recurrenceMode === 1 is the
+    // canonical "this is the price we charge" phase per Play Billing docs.
     const offers = product.subscriptionOfferDetailsAndroid || [];
     for (const offer of offers) {
       const phases = offer.pricingPhases?.pricingPhaseList || [];
-      const recurring = phases.find(p => p.billingPeriod === 'P1M' && p.recurrenceMode === 1);
+      const recurring = phases.find(p => p.recurrenceMode === 1);
       const phase = recurring || phases[phases.length - 1];
       if (phase?.priceAmountMicros != null) {
         const micros = typeof phase.priceAmountMicros === 'string'
@@ -576,23 +586,22 @@ const getAndroidOfferToken = async (productId) => {
     throw new Error('NO_OFFER_DETAILS');
   }
 
-  // Select the monthly base plan offer
-  // Look for an offer whose pricingPhases include a recurring monthly phase (P1M)
+  // Select the base plan offer. For monthly SKUs Play returns a P1M recurring
+  // phase; for annual SKUs it's P1Y. Match on recurrenceMode === 1 instead of
+  // the billing period so a single code path covers both cadences.
   let selectedOffer = null;
   for (const offer of offers) {
     const phases = offer.pricingPhases?.pricingPhaseList || [];
-    const hasMonthlyRecurring = phases.some(
-      phase => phase.billingPeriod === 'P1M' && phase.recurrenceMode === 1
-    );
-    if (hasMonthlyRecurring) {
+    const hasRecurring = phases.some(phase => phase.recurrenceMode === 1);
+    if (hasRecurring) {
       selectedOffer = offer;
       break;
     }
   }
 
-  // Fallback: use first offer if no monthly recurring found
+  // Fallback: use first offer if no recurring found
   if (!selectedOffer) {
-    console.warn('[IAP] No monthly recurring offer found, using first offer');
+    console.warn('[IAP] No recurring offer found, using first offer');
     selectedOffer = offers[0];
   }
 
@@ -882,7 +891,9 @@ const _purchaseOrUpgradeInner = async (targetProductId, entryPoint = 'paywall') 
     const currentPurchases = await getAvailablePurchases();
     const mainPlanIds = [
       ANDROID_PRODUCTS.PRO_MONTHLY,
+      ANDROID_PRODUCTS.PRO_ANNUAL,
       ANDROID_PRODUCTS.BUSINESS_MONTHLY,
+      ANDROID_PRODUCTS.BUSINESS_ANNUAL,
       ANDROID_PRODUCTS.ENTERPRISE_MONTHLY,
     ];
 
@@ -1220,13 +1231,22 @@ export const computeEntitlements = (purchases) => {
 
   const activeProductIds = (purchases || []).map(p => p.productId).filter(Boolean);
 
-  // Determine main plan (highest tier wins)
+  // Determine main plan (highest tier wins). Annual and monthly SKUs of the
+  // same tier grant the same entitlement — a user on the annual Pro SKU still
+  // maps to `plan: 'pro'`. Billing cadence lives on the product ID, not the
+  // plan enum.
   let plan = 'free';
   if (activeProductIds.includes(allProductIds.ENTERPRISE_MONTHLY)) {
     plan = 'enterprise';
-  } else if (activeProductIds.includes(allProductIds.BUSINESS_MONTHLY)) {
+  } else if (
+    activeProductIds.includes(allProductIds.BUSINESS_MONTHLY) ||
+    activeProductIds.includes(allProductIds.BUSINESS_ANNUAL)
+  ) {
     plan = 'business';
-  } else if (activeProductIds.includes(allProductIds.PRO_MONTHLY)) {
+  } else if (
+    activeProductIds.includes(allProductIds.PRO_MONTHLY) ||
+    activeProductIds.includes(allProductIds.PRO_ANNUAL)
+  ) {
     plan = 'pro';
   }
 
@@ -1259,6 +1279,18 @@ export const productIdToPlan = (productId) => {
   if (productId.includes('pro')) return 'pro';
 
   return 'starter';
+};
+
+/**
+ * Map a product ID to a billing period: 'annual' | 'monthly' | 'seat' | 'unknown'.
+ * Annual SKUs carry the `.annual` suffix by convention. Seat add-ons are ranked
+ * separately so analytics doesn't get miscoded as monthly.
+ */
+export const productIdToBillingPeriod = (productId) => {
+  if (!productId) return 'unknown';
+  if (productId.includes('.seat')) return 'seat';
+  if (productId.includes('.annual')) return 'annual';
+  return 'monthly';
 };
 
 /**
@@ -1463,11 +1495,13 @@ export const getSubscriptionPrices = async () => {
 
     for (const product of products || []) {
       if (Platform.OS === 'android') {
-        // Android: extract price and trial info from subscriptionOfferDetailsAndroid
+        // Android: extract price and trial info from subscriptionOfferDetailsAndroid.
+        // Match on recurrenceMode === 1 so monthly (P1M) and annual (P1Y) SKUs
+        // resolve through the same code path.
         const offers = product.subscriptionOfferDetailsAndroid || [];
         for (const offer of offers) {
           const phases = offer.pricingPhases?.pricingPhaseList || [];
-          const recurringPhase = phases.find(p => p.billingPeriod === 'P1M' && p.recurrenceMode === 1);
+          const recurringPhase = phases.find(p => p.recurrenceMode === 1);
           if (recurringPhase) {
             prices[product.id] = recurringPhase.formattedPrice;
 

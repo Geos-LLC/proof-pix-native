@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 
 // AppearanceScreen — dedicated route.
 //
@@ -24,6 +25,8 @@ export default function AppearanceScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { themeMode, setThemeMode } = useSettings();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const choose = (mode) => {
     if (mode === 'system') {
@@ -68,7 +71,7 @@ export default function AppearanceScreen({ navigation }) {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="chevron-back" size={20} color="#1E1E1E" />
+          <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {t('appearance.title', { defaultValue: 'Appearance' })}
@@ -96,7 +99,7 @@ export default function AppearanceScreen({ navigation }) {
                 <Ionicons
                   name={opt.icon}
                   size={19}
-                  color={opt.active ? '#7A5B00' : '#1E1E1E'}
+                  color={opt.active ? theme.accentInk : theme.textPrimary}
                 />
               </View>
               <View style={styles.rowMeta}>
@@ -105,7 +108,7 @@ export default function AppearanceScreen({ navigation }) {
               </View>
               {opt.active ? (
                 <View style={styles.checkCircle}>
-                  <Ionicons name="checkmark" size={14} color="#1E1E1E" />
+                  <Ionicons name="checkmark" size={14} color={theme.accentText} />
                 </View>
               ) : (
                 <View style={styles.checkRing} />
@@ -118,8 +121,8 @@ export default function AppearanceScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -132,7 +135,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -141,7 +144,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 17,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.2,
   },
 
@@ -150,7 +153,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.1,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
     marginTop: 14,
     marginBottom: 8,
@@ -164,45 +167,41 @@ const styles = StyleSheet.create({
     gap: 13,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
-    shadowColor: '#141420',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 1,
+    borderColor: theme.border,
+    ...theme.shadowCard,
   },
   rowActive: {
-    borderColor: '#F2C31B',
+    borderColor: theme.accent,
     borderWidth: 2,
-    backgroundColor: '#FFFCEC',
+    backgroundColor: theme.surfaceAccent,
   },
   rowIc: {
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rowIcActive: {
-    backgroundColor: '#FFF4C2',
+    backgroundColor: theme.accentSoft,
   },
   rowMeta: { flex: 1, minWidth: 0 },
   rowTitle: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   rowSub: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '500',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
     marginTop: 1,
   },
@@ -211,7 +210,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#F2C31B',
+    backgroundColor: theme.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -220,6 +219,6 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 1.5,
-    borderColor: '#D0D0D0',
+    borderColor: theme.borderStrong,
   },
 });

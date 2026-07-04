@@ -73,6 +73,7 @@ const toNumericFontSize = (v) => (typeof v === 'number' ? v : (LEGACY_FONT_SIZE[
 
 export default function MetadataCustomizationScreen({ navigation, route }) {
   const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     metaShowDate,
     metaShowTime,
@@ -145,12 +146,12 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="close" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Metadata</Text>
+        <Text style={styles.headerTitle}>Metadata</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -163,7 +164,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
             behind it IS the preview. */}
 
         {/* ─── Fields ─── */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>FIELDS</Text>
+        <Text style={styles.sectionLabel}>FIELDS</Text>
         <View style={styles.fieldPillRow}>
           {FIELD_DEFS.map((f) => {
             const active = !!fieldValue(f.key);
@@ -200,19 +201,19 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
         </View>
 
         {/* ─── Controls ─── */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CONTROLS</Text>
+        <Text style={styles.sectionLabel}>CONTROLS</Text>
         <View style={styles.controlsRow}>
-          <ControlButton theme={theme} icon="text" label="Style" onPress={() => setFontModalVisible(true)} />
-          <ControlButton theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-          <ControlButton theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="text" label="Style" onPress={() => setFontModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
         </View>
         <View style={[styles.controlsRow, { marginTop: 12 }]}>
-          <ControlButton theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
-          <ControlButton theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
         </View>
 
         {/* ─── Color ─── */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>COLOR</Text>
+        <Text style={styles.sectionLabel}>COLOR</Text>
         <View style={styles.swatchRow}>
           {COLORS.map((c) => {
             const isActive = metaColor === c;
@@ -235,7 +236,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </ScrollView>
 
       {/* Font Modal */}
-      <BottomModal visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title="Text Style" theme={theme}>
+      <BottomModal styles={styles} visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title="Text Style" theme={theme}>
         <View style={{ paddingVertical: 4 }}>
           {FONT_OPTIONS.map((font) => {
             const isSelected = metaFontFamily === font.key;
@@ -271,11 +272,11 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Size Modal */}
-      <BottomModal visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title="Text Size" theme={theme}>
+      <BottomModal styles={styles} visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title="Text Size" theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Font size</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{numericSize}px</Text>
+            <Text style={styles.modalLabel}>Font size</Text>
+            <Text style={styles.modalLabelValue}>{numericSize}px</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -293,7 +294,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Position Modal */}
-      <BottomModal visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title="Position" theme={theme}>
+      <BottomModal styles={styles} visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title="Position" theme={theme}>
         <View style={{ padding: 16 }}>
           <PositionGrid
             layout={combinedGridLayout(previewPhoto)}
@@ -309,11 +310,11 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Margin Modal */}
-      <BottomModal visible={marginModalVisible} onClose={() => setMarginModalVisible(false)} title="Margin" theme={theme}>
+      <BottomModal styles={styles} visible={marginModalVisible} onClose={() => setMarginModalVisible(false)} title="Margin" theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Vertical (Top/Bottom)</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{labelMarginVertical}px</Text>
+            <Text style={styles.modalLabel}>Vertical (Top/Bottom)</Text>
+            <Text style={styles.modalLabelValue}>{labelMarginVertical}px</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -329,8 +330,8 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
         </View>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Horizontal (Left/Right)</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{labelMarginHorizontal}px</Text>
+            <Text style={styles.modalLabel}>Horizontal (Left/Right)</Text>
+            <Text style={styles.modalLabelValue}>{labelMarginHorizontal}px</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -347,11 +348,11 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Opacity Modal */}
-      <BottomModal visible={opacityModalVisible} onClose={() => setOpacityModalVisible(false)} title="Opacity" theme={theme}>
+      <BottomModal styles={styles} visible={opacityModalVisible} onClose={() => setOpacityModalVisible(false)} title="Opacity" theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Opacity</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{Math.round((metaOpacity ?? 0.85) * 100)}%</Text>
+            <Text style={styles.modalLabel}>Opacity</Text>
+            <Text style={styles.modalLabelValue}>{Math.round((metaOpacity ?? 0.85) * 100)}%</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -370,35 +371,35 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
   );
 }
 
-function ControlButton({ theme, icon, label, onPress }) {
+function ControlButton({ styles, theme, icon, label, onPress }) {
   return (
     <TouchableOpacity style={styles.controlButton} onPress={onPress} activeOpacity={0.7}>
-      <View style={[styles.controlSquare, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      <View style={styles.controlSquare}>
         <Ionicons name={icon} size={22} color={theme.textPrimary} />
       </View>
-      <Text style={[styles.controlLabel, { color: theme.textSecondary }]}>{label}</Text>
+      <Text style={styles.controlLabel}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-function BottomModal({ visible, onClose, title, theme, children }) {
+function BottomModal({ styles, visible, onClose, title, theme, children }) {
   if (!visible) return null;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
-        style={[styles.modalOverlay, { backgroundColor: theme.scrim || 'rgba(0,0,0,0.5)' }]}
+        style={styles.modalOverlay}
         onPress={onClose}
       >
         <View
-          style={[styles.modalContent, { backgroundColor: theme.surface }]}
+          style={styles.modalContent}
           onStartShouldSetResponder={() => true}
         >
-          <View style={[styles.modalHandle, { backgroundColor: theme.border }]} />
+          <View style={styles.modalHandle} />
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={onClose} style={styles.modalClose}>
               <Ionicons name="close" size={22} color={theme.textPrimary} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>{title}</Text>
+            <Text style={styles.modalTitle}>{title}</Text>
             <View style={{ width: 22 }} />
           </View>
           <View style={styles.modalBody}>{children}</View>
@@ -408,8 +409,8 @@ function BottomModal({ visible, onClose, title, theme, children }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -418,7 +419,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 12,
   },
-  headerTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700' },
+  headerTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700', color: theme.textPrimary },
   body: { paddingHorizontal: 16, paddingBottom: 32 },
   sectionLabel: {
     fontFamily: FONTS.ALEXANDRIA,
@@ -427,6 +428,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginTop: 16,
     marginBottom: 8,
+    color: theme.textSecondary,
   },
   previewSquare: {
     width: '100%',
@@ -436,6 +438,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     marginTop: 8,
+    borderColor: theme.border,
   },
   previewPlaceholder: {
     ...StyleSheet.absoluteFillObject,
@@ -472,13 +475,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
-  controlLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, textAlign: 'center' },
+  controlLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, textAlign: 'center', color: theme.textSecondary },
   positionGrid: {
     padding: 8,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 8,
+    borderColor: theme.border,
   },
   positionRow: { flexDirection: 'row', gap: 8 },
   positionCell: {
@@ -488,18 +494,20 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
+    borderColor: theme.border,
   },
   swatchRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   swatch: { width: 32, height: 32, borderRadius: 16 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: theme.scrim || 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 24,
+    backgroundColor: theme.surface,
   },
   modalHandle: {
     width: 40,
@@ -508,6 +516,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 8,
     marginBottom: 12,
+    backgroundColor: theme.border,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -517,7 +526,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   modalClose: { padding: 4 },
-  modalTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700' },
+  modalTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700', color: theme.textPrimary },
   modalBody: { paddingHorizontal: 20 },
   modalSection: { marginBottom: 16 },
   sliderHeader: {
@@ -526,8 +535,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  modalLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600' },
-  modalLabelValue: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '700' },
+  modalLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600', color: theme.textPrimary },
+  modalLabelValue: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '700', color: theme.textPrimary },
   slider: { width: '100%', height: 40 },
   fontListItem: {
     paddingVertical: 14,

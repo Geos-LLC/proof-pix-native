@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { View, StyleSheet, Platform, Text, Image, Dimensions, StatusBar, Linking, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -6,6 +6,7 @@ import * as NavigationBarModule from 'expo-navigation-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
+import { useTheme } from '../hooks/useTheme';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { logAdminReferralConversion, extractAndSaveUTMParams, logSubscriptionActive } from '../utils/analytics';
@@ -16,6 +17,8 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 export default function AuthLoadingScreen({ navigation }) {
   const { userName, userPlan, updateUserPlan, loading: settingsLoading } = useSettings();
   const { isLoading: adminLoading } = useAdmin();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [iapChecked, setIapChecked] = useState(false);
 
   // Hide Android navigation bar during splash
@@ -281,15 +284,16 @@ export default function AuthLoadingScreen({ navigation }) {
       <Text style={styles.appTitle}>ProofPix</Text>
       <Text style={styles.tagline}>Before &amp; after, proven.</Text>
 
-      <LoadingDots />
+      <LoadingDots styles={styles} />
     </View>
   );
 }
 
-// 3 dots that cycle the active color. Pure JS animation — no native
-// driver needed since we're animating backgroundColor, which doesn't
-// run on the native thread.
-function LoadingDots() {
+// 3 dots that cycle the active color. `styles` is passed in as a prop
+// because it lives in AuthLoadingScreen's closure (useMemo(makeStyles)),
+// not at module scope — the stash version had a ReferenceError at render
+// that hung the app on splash.
+function LoadingDots({ styles }) {
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -327,12 +331,12 @@ function LoadingDots() {
 
 const CIRCLE_SIZE = SCREEN_W * 0.65;
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.background,
   },
   logoTile: {
     width: 88,
@@ -352,7 +356,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800',
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     textAlign: 'center',
     letterSpacing: -0.5,
     marginBottom: 6,
@@ -360,7 +364,7 @@ const styles = StyleSheet.create({
   tagline: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#666666',
+    color: theme.textSecondary,
     letterSpacing: -0.1,
     marginBottom: 28,
   },

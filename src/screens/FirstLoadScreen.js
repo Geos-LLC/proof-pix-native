@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import { FONTS } from '../constants/fonts';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Updates from 'expo-updates';
 import { isRTLLanguage } from '../hooks/useRTL';
+import { useTheme } from '../hooks/useTheme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -65,6 +66,8 @@ const LANGUAGES = [
 export default function FirstLoadScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { individualSignIn } = useAdmin();
   const { updateUserInfo, updateUserPlan, userPlan, updateLabelLanguage, updateSectionLanguage } = useSettings();
   const [userName, setUserName] = useState('');
@@ -179,7 +182,7 @@ export default function FirstLoadScreen({ navigation, route }) {
 
   const validateName = () => {
     if (!userName.trim()) {
-      Alert.alert(t('firstLoad.nameRequired'), t('firstLoad.nameRequiredMessage'));
+      Alert.alert('Name Required', 'Please enter your name to continue.');
       return false;
     }
     return true;
@@ -368,7 +371,7 @@ export default function FirstLoadScreen({ navigation, route }) {
                 style={styles.textInput}
                 value={userName}
                 onChangeText={setUserName}
-                placeholder={t('firstLoad.namePlaceholder')}
+                placeholder={'Alex Bond'}
                 placeholderTextColor="#999"
                 autoCapitalize="words"
                 autoCorrect={false}
@@ -391,7 +394,7 @@ export default function FirstLoadScreen({ navigation, route }) {
           {/* OR Separator */}
           <View style={styles.orContainer}>
             <View style={styles.orLine} />
-            <Text style={styles.orText}>{t('common.or')}</Text>
+            <Text style={styles.orText}>OR</Text>
             <View style={styles.orLine} />
           </View>
 
@@ -562,10 +565,10 @@ export default function FirstLoadScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   header: {
     flexDirection: 'row',
@@ -600,9 +603,9 @@ const styles = StyleSheet.create({
   languageSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     borderRadius: 62,
     paddingHorizontal: 1,
     paddingVertical: 1,
@@ -675,7 +678,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   inputBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
     borderColor: '#D5D5D5',
     borderRadius: 11,
@@ -761,7 +764,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
   referralOnboardingSheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingBottom: 24,
@@ -775,13 +778,13 @@ const styles = StyleSheet.create({
   referralOnboardingSubtitle: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 18,
   },
   referralOnboardingInput: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     borderWidth: 1.5,
     borderColor: '#F2C31B',
     borderRadius: 14,
@@ -790,7 +793,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 20,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     textAlign: 'center',
     letterSpacing: 3,
   },
@@ -818,7 +821,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContentBottomSheet: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     minHeight: '80%',
@@ -827,7 +830,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   referralModalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '55%',
@@ -835,7 +838,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   languageInfoModalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '50%',
@@ -906,7 +909,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -940,11 +943,11 @@ const styles = StyleSheet.create({
   closeModalButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: theme.textPrimary,
   },
   modalSubtitle: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     marginBottom: 20,
     textAlign: 'center',
     lineHeight: 20,
@@ -953,7 +956,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   referralInput: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 12,
@@ -961,9 +964,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     letterSpacing: 2,
-    color: '#333',
+    color: theme.textPrimary,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: theme.border,
   },
   referralButtonsContainer: {
     paddingHorizontal: 20,
@@ -990,11 +993,11 @@ const styles = StyleSheet.create({
   },
   skipButtonText: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     textDecorationLine: 'underline',
   },
   successModalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 20,
     padding: 32,
     width: width * 0.85,
@@ -1015,7 +1018,7 @@ const styles = StyleSheet.create({
   },
   successMessage: {
     fontSize: 18,
-    color: '#333',
+    color: theme.textPrimary,
     marginBottom: 8,
     textAlign: 'center',
     lineHeight: 26,
@@ -1026,7 +1029,7 @@ const styles = StyleSheet.create({
   },
   successSubtext: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     marginTop: 12,
     marginBottom: 24,
     textAlign: 'center',
@@ -1048,7 +1051,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1094,7 +1097,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '400',
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#666',
+    color: theme.textSecondary,
     textAlign: 'center',
     marginBottom: 8,
     width: '100%',

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FONTS } from '../constants/fonts';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 import enterpriseContactService from '../services/enterpriseContactService';
 import Constants from 'expo-constants';
 
@@ -46,6 +47,8 @@ export default function HelpSupportScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { userName } = useSettings();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const [activeTab, setActiveTab] = useState('question');
   const [body, setBody] = useState('');
@@ -65,9 +68,10 @@ export default function HelpSupportScreen({ navigation }) {
   // doesn't carry it yet). Read it on mount so the EmailJS service
   // has a real reply-to address — without it the service throws
   // EMAIL_REQUIRED before the message is sent.
-  const [ownerEmail, setOwnerEmail] = useState('');
+  // Email field is always visible. If a stored owner email exists, we
+  // pre-fill the input from it so the user sees what reply-to address
+  // will be used — and can override it for this one message.
   const [emailInput, setEmailInput] = useState('');
-  const [showEmailField, setShowEmailField] = useState(false);
 
   // Optional phone — carried over from the legacy ContactUs form so
   // support/sales can follow up by call when the message warrants it
@@ -79,34 +83,31 @@ export default function HelpSupportScreen({ navigation }) {
     (async () => {
       try {
         const stored = await AsyncStorage.getItem('@proofpix_owner_email');
-        if (stored && stored.trim()) {
-          setOwnerEmail(stored.trim());
-        } else {
-          setShowEmailField(true);
-        }
+        if (stored && stored.trim()) setEmailInput(stored.trim());
         const storedPhone = await AsyncStorage.getItem('@proofpix_owner_phone');
         if (storedPhone && storedPhone.trim()) setPhone(storedPhone.trim());
-      } catch {
-        setShowEmailField(true);
-      }
+      } catch {}
     })();
   }, []);
 
   const handleEmailUs = () => {
-    // Scroll the composer into view and focus the textarea so the user
-    // writes their message in-app and we send it through the engine.
-    // No more `mailto:` — that bypasses the engine and dumps the user
-    // into a third-party mail app with no guarantee the message ever
-    // reaches support.
-    try {
-      scrollRef.current?.scrollTo({ y: Math.max(0, composerY.current - 12), animated: true });
-    } catch {}
-    // Defer focus so the scroll animation can settle; on iOS focusing
-    // first sometimes overrides the scroll position with the keyboard's
-    // own auto-scroll, landing the textarea below the keyboard.
-    setTimeout(() => {
-      try { bodyRef.current?.focus(); } catch {}
-    }, 250);
+    // Open the system mail composer with subject pre-filled. This is the
+    // explicit "email me directly, outside the app" path — distinct from
+    // the in-app Send Message button below which routes through the
+    // EmailJS engine. Some users prefer their own mail client (attaches,
+    // signatures, etc.); we honor that here without forcing them into
+    // the in-app composer.
+    const appVersion = Constants?.expoConfig?.version || '—';
+    const subject = `ProofPix support — v${appVersion}`;
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('helpSupport.noMailClient', {
+          defaultValue: `No email app is set up on this device. Email us at ${SUPPORT_EMAIL} when you can.`,
+        }),
+      );
+    });
   };
 
   const handleHelpCenter = () => {
@@ -114,7 +115,7 @@ export default function HelpSupportScreen({ navigation }) {
   };
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const effectiveEmail = (showEmailField ? emailInput : ownerEmail).trim();
+  const effectiveEmail = emailInput.trim();
   const hasValidEmail = emailRegex.test(effectiveEmail);
 
   const handleSend = async () => {
@@ -122,9 +123,9 @@ export default function HelpSupportScreen({ navigation }) {
     if (!trimmed || sending) return;
 
     if (!hasValidEmail) {
-      // Service requires a real reply-to address. Surface the email
-      // field if we don't have one captured yet.
-      setShowEmailField(true);
+      // Service requires a real reply-to address. The email field is
+      // always visible now, so just surface the alert and let the user
+      // fix the value in place.
       Alert.alert(
         t('helpSupport.needEmailTitle', { defaultValue: 'Add your email' }),
         t('helpSupport.needEmailBody', {
@@ -164,13 +165,11 @@ export default function HelpSupportScreen({ navigation }) {
         description: `${subject}\n\n${description}`,
       });
 
-      // Persist the email + phone the user just typed so the next send
-      // is one-tap. Phone is optional — only persist if non-empty.
-      if (showEmailField) {
-        try { await AsyncStorage.setItem('@proofpix_owner_email', effectiveEmail); } catch {}
-        setOwnerEmail(effectiveEmail);
-        setShowEmailField(false);
-      }
+      // Persist email + phone unconditionally so the next send is
+      // one-tap. setItem is idempotent — writing the same stored value
+      // back is a no-op cost-wise. Phone only persists if non-empty so
+      // we don't overwrite a previously stored number with blank.
+      try { await AsyncStorage.setItem('@proofpix_owner_email', effectiveEmail); } catch {}
       if (phone.trim()) {
         try { await AsyncStorage.setItem('@proofpix_owner_phone', phone.trim()); } catch {}
       }
@@ -297,57 +296,39 @@ export default function HelpSupportScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Reply-to email input — shown when we don't have a stored
-              owner email or after a validation failure. Persisted to
-              @proofpix_owner_email after a successful send. The optional
-              phone input piggy-backs on this card; if email is already
-              stored, the phone input lives in its own compact card below
-              so support/sales can still get a callback number. */}
-          {showEmailField ? (
-            <View style={styles.emailCard}>
-              <Text style={styles.emailLabel}>
-                {t('helpSupport.yourEmail', { defaultValue: 'Your email' })}
-              </Text>
-              <TextInput
-                style={styles.emailInput}
-                value={emailInput}
-                onChangeText={setEmailInput}
-                placeholder="you@company.com"
-                placeholderTextColor="#9A9A9A"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <View style={styles.cardDivider} />
-              <Text style={styles.emailLabel}>
-                {t('helpSupport.yourPhoneOptional', { defaultValue: 'Phone (optional)' })}
-              </Text>
-              <TextInput
-                style={styles.emailInput}
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="+1 (555) 123-4567"
-                placeholderTextColor="#9A9A9A"
-                keyboardType="phone-pad"
-                autoCorrect={false}
-              />
-            </View>
-          ) : (
-            <View style={styles.emailCard}>
-              <Text style={styles.emailLabel}>
-                {t('helpSupport.yourPhoneOptional', { defaultValue: 'Phone (optional)' })}
-              </Text>
-              <TextInput
-                style={styles.emailInput}
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="+1 (555) 123-4567"
-                placeholderTextColor="#9A9A9A"
-                keyboardType="phone-pad"
-                autoCorrect={false}
-              />
-            </View>
-          )}
+          {/* Reply-to email + optional phone — always visible. Email
+              pre-fills from @proofpix_owner_email on mount and is
+              persisted back on every successful send so the next visit
+              is one-tap. Phone is optional and only persists when
+              non-empty so we don't overwrite a stored number with blank. */}
+          <View style={styles.emailCard}>
+            <Text style={styles.emailLabel}>
+              {t('helpSupport.yourEmail', { defaultValue: 'Your email' })}
+            </Text>
+            <TextInput
+              style={styles.emailInput}
+              value={emailInput}
+              onChangeText={setEmailInput}
+              placeholder="you@company.com"
+              placeholderTextColor="#9A9A9A"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.cardDivider} />
+            <Text style={styles.emailLabel}>
+              {t('helpSupport.yourPhoneOptional', { defaultValue: 'Phone (optional)' })}
+            </Text>
+            <TextInput
+              style={styles.emailInput}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="+1 (555) 123-4567"
+              placeholderTextColor="#9A9A9A"
+              keyboardType="phone-pad"
+              autoCorrect={false}
+            />
+          </View>
 
           {/* Textarea card */}
           <View style={styles.textAreaCard}>
@@ -385,7 +366,7 @@ export default function HelpSupportScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',

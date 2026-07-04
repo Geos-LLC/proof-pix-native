@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 import { SOFT_TRIAL_EXPORT_LIMIT, SOFT_TRIAL_LOW_RES_MAX_DIM, PAYWALL_TRIGGERS } from '../constants/softTrial';
 
 /**
@@ -17,6 +18,8 @@ import { SOFT_TRIAL_EXPORT_LIMIT, SOFT_TRIAL_LOW_RES_MAX_DIM, PAYWALL_TRIGGERS }
 export default function SoftTrialBadge({ navigation, variant = 'compact', style }) {
   const { softTrialActive, softTrialRemaining, userPlan } = useSettings();
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   if (userPlan !== 'starter') return null;
   if (!softTrialActive) return null;
@@ -57,7 +60,7 @@ export default function SoftTrialBadge({ navigation, variant = 'compact', style 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',

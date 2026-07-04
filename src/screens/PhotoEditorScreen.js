@@ -19,6 +19,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 import { savePhotoToDevice } from '../services/storage';
 import { COLORS, TEMPLATE_TYPES, TEMPLATE_CONFIGS, LABEL_POSITIONS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
@@ -39,6 +40,8 @@ import { ensureShareAllowed, recordShare } from '../utils/shareRateLimit';
 
 export default function PhotoEditorScreen({ route, navigation }) {
   const { beforePhoto, afterPhoto, isSelectionMode = false, selectedPhotos = [], onSelectionChange, allPhotoSets: providedPhotoSets } = route.params;
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   // Set default template based on PHONE ORIENTATION or CAMERA VIEW MODE
   // Landscape phone position OR landscape camera view → stacked (horizontal split)
@@ -982,10 +985,10 @@ export default function PhotoEditorScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white'
+    backgroundColor: theme.background
   },
   swipeIndicator: {
     position: 'absolute',
@@ -1058,7 +1061,7 @@ const styles = StyleSheet.create({
   swipeHint: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
-    color: '#999',
+    color: theme.textMuted,
     marginBottom: 8
   },
   dotsContainer: {
@@ -1151,16 +1154,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     alignItems: 'center',
     minWidth: 110
   },
   templateButtonActive: {
     borderColor: COLORS.PRIMARY,
     borderWidth: 2,
-    backgroundColor: '#FFF4C2',
+    backgroundColor: theme.accentSoft,
   },
   templateButtonText: {
     fontFamily: FONTS.ALEXANDRIA,

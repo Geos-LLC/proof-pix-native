@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox, Platform, Image } from 'react-native';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox, Platform, Image, StatusBar } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as SplashScreen from 'expo-splash-screen';
 
@@ -9,8 +9,9 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 // Log app startup
 console.log('[App] ====== APP STARTING ======');
 console.log('[App] Platform detected, beginning imports...');
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme as NavDefaultTheme, DarkTheme as NavDarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useTheme } from './src/hooks/useTheme';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { PhotoProvider } from './src/context/PhotoContext';
@@ -151,6 +152,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 console.log('[App] All imports completed successfully');
 
+// Startup marker — proves which JS bundle is loaded on device. The string
+// changes per OTA push so Loki logs immediately tell us if a device is
+// running the embedded bundle vs a downloaded OTA. Bump the version+date
+// every OTA push that needs to be diagnosable.
+console.warn('[BUNDLE] v62-theme-sync-fxp App.js marker — Built ' + new Date().toISOString());
+
 const Stack = createNativeStackNavigator();
 const isExpoGo = Constants?.appOwnership === 'expo';
 
@@ -222,13 +229,56 @@ const AppWithErrorBoundary = ({ children }) => (
   <ErrorBoundary>{children}</ErrorBoundary>
 );
 
+// Wraps React Navigation's NavigationContainer with theme + StatusBar that
+// react to `themeMode` from SettingsContext. Must render inside
+// SettingsProvider. Takes `navigationRef` as a prop instead of via
+// React.forwardRef so the call site stays a plain functional element.
+function ThemedNavigationContainer({ navigationRef, children, ...rest }) {
+  const theme = useTheme();
+  const isDark = theme.mode === 'dark';
+  // navTheme MUST be memoized — NavigationContainer compares it by reference
+  // and remounts its entire screen tree when the prop changes. A fresh
+  // object on every render would tear down/rebuild Stack on each parent
+  // re-render, which is what produced the "splash flickers, projects vanish"
+  // symptom reported on device.
+  const navTheme = useMemo(() => {
+    const base = isDark ? NavDarkTheme : NavDefaultTheme;
+    return {
+      ...base,
+      dark: isDark,
+      colors: {
+        ...base.colors,
+        background: theme.background,
+        card: theme.surface,
+        text: theme.textPrimary,
+        border: theme.border,
+        primary: theme.accent,
+        notification: theme.accent,
+      },
+    };
+  }, [isDark, theme.background, theme.surface, theme.textPrimary, theme.border, theme.accent]);
+  return (
+    <>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+        translucent={Platform.OS === 'android'}
+      />
+      <NavigationContainer ref={navigationRef} theme={navTheme} {...rest}>
+        {children}
+      </NavigationContainer>
+    </>
+  );
+}
+
 // Navigator component that uses settings
 function AppNavigator() {
+  const theme = useTheme();
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#F2C31B' }
+        contentStyle: { backgroundColor: theme.background }
       }}
       initialRouteName="AuthLoading"
     >
@@ -642,6 +692,13 @@ let globalCheckTrialNotifications = null;
 
 // Stream errors / rejections / tagged console.error to FixPrompt → Loki.
 // Skipped if no key — no-op in dev / on profiles without the secret set.
+//
+// NOTE: must run synchronously at module load. FixPrompt patches console.warn
+// at require()-time so the breadcrumb buffer catches startup logs (the
+// `[BUNDLE] vNN` markers fire before this block runs but they get queued
+// once the patch is active and flushed on the next batch). Wrapping in
+// setTimeout was tried and lost the markers — they fired before the patch
+// got installed.
 try {
   const fixpromptKey = process.env.EXPO_PUBLIC_FIXPROMPT_KEY;
   if (fixpromptKey) {
@@ -1094,8 +1151,8 @@ export default function App() {
               {/* Pulls SF jobs into the local project list on app
                   open + foreground. No-op when no CRM is connected. */}
               <ServiceFlowSyncTrigger />
-              <NavigationContainer
-                ref={navigationRef}
+              <ThemedNavigationContainer
+                navigationRef={navigationRef}
                 linking={linking}
                 fallback={null}
                 onReady={() => {
@@ -1193,7 +1250,7 @@ export default function App() {
                     navigationRef={navigationRef}
                   />
                 </UiOverlayProvider>
-              </NavigationContainer>
+              </ThemedNavigationContainer>
               {/* Global background components - stay mounted regardless of navigation */}
               <GlobalBackgroundLabelPreparation />
               <GlobalBackgroundCombinedPhotoCreator />

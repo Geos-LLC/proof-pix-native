@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Share, Clipboard, ActivityIndicator, TextInput, Modal } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,6 +9,7 @@ import proxyService from '../services/proxyService';
 import { PROXY_SERVER_URL } from '../config/proxy';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { useTheme } from '../hooks/useTheme';
 import { generateInviteLink, generateShareContent, generateInviteCode } from '../utils/inviteLinkGenerator';
 
 /**
@@ -16,6 +17,8 @@ import { generateInviteLink, generateShareContent, generateInviteCode } from '..
  */
 export default function InviteManager({ navigation }) {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     proxySessionId,
     inviteTokens,
@@ -511,21 +514,22 @@ export default function InviteManager({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     marginTop: 20,
     padding: 15,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: theme.surface,
     borderRadius: 8,
   },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 5,
+    color: theme.textPrimary,
   },
   subtitle: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     marginBottom: 15,
   },
   inviteItem: {
@@ -533,10 +537,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 10,
     marginBottom: 10,
-    backgroundColor: '#fff',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
   },
   tokenContainer: {
     flexDirection: 'row',
@@ -546,7 +550,7 @@ const styles = StyleSheet.create({
   tokenLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#666',
+    color: theme.textSecondary,
     marginRight: 8,
   },
   inviteToken: {
@@ -568,14 +572,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: theme.border,
   },
   secondaryButton: {
     paddingVertical: 6,
     paddingHorizontal: 12,
   },
   secondaryButtonText: {
-    color: '#666',
+    color: theme.textSecondary,
     fontSize: 12,
     fontWeight: '500',
   },
@@ -584,7 +588,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 6,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.surface,
     alignItems: 'center',
   },
   copyButton: {
@@ -608,7 +612,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   revokeButtonContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
     borderColor: '#dc3545',
   },
@@ -618,7 +622,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   deleteButtonContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
     borderColor: '#dc3545',
     paddingHorizontal: 8,
@@ -640,21 +644,22 @@ const styles = StyleSheet.create({
     marginTop: 30,
     paddingTop: 20,
     borderTopWidth: 1,
-    borderTopColor: '#ddd',
+    borderTopColor: theme.border,
   },
   teamMembersTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
+    color: theme.textPrimary,
   },
   memberItem: {
     paddingVertical: 12,
     paddingHorizontal: 10,
     marginBottom: 10,
-    backgroundColor: '#fff',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
   },
   memberInfo: {
     flex: 1,
@@ -662,7 +667,7 @@ const styles = StyleSheet.create({
   memberName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: theme.textPrimary,
     marginBottom: 8,
   },
   memberMeta: {
@@ -683,7 +688,7 @@ const styles = StyleSheet.create({
   },
   memberDate: {
     fontSize: 12,
-    color: '#666',
+    color: theme.textSecondary,
   },
   memberNote: {
     fontSize: 12,
@@ -691,7 +696,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   emptyText: {
-    color: '#666',
+    color: theme.textSecondary,
     fontSize: 14,
     textAlign: 'center',
     paddingVertical: 10,
@@ -703,7 +708,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 12,
     padding: 20,
     width: '80%',
@@ -713,22 +718,23 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 8,
-    color: '#333',
+    color: theme.textPrimary,
   },
   modalSubtitle: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     marginBottom: 16,
   },
   nameInput: {
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
     marginBottom: 20,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: theme.surface,
+    color: theme.textPrimary,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -743,13 +749,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalButtonCancel: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.surface,
   },
   modalButtonJoin: {
     backgroundColor: COLORS.PRIMARY,
   },
   modalButtonTextCancel: {
-    color: '#666',
+    color: theme.textSecondary,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -759,6 +765,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   modalButtonTextDisabled: {
-    color: '#999',
+    color: theme.textMuted,
   },
 });

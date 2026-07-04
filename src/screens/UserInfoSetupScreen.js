@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { logOnboardingStepCompleted } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 
 // Refresh pass 7 — rebuilt to match design screenshot 04-name-company:
 //
@@ -46,6 +47,27 @@ export default function UserInfoSetupScreen({ navigation }) {
   const { t, i18n } = useTranslation();
   const { updateUserInfo, updateLabelLanguage, updateSectionLanguage } = useSettings();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+
+  // Inlined here so Field can close over the component-scoped `styles`
+  // factory (Field uses styles.field / styles.input / etc.).
+  function Field({ label, icon, ...inputProps }) {
+    return (
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <View style={styles.inputWrapper}>
+          <Ionicons name={icon} size={18} color="#9A9A9A" style={styles.fieldIcon} />
+          <TextInput
+            style={styles.input}
+            placeholderTextColor="#9A9A9A"
+            autoCorrect={false}
+            {...inputProps}
+          />
+        </View>
+      </View>
+    );
+  }
 
   const [name, setName] = useState('');
   const [company, setCompany] = useState('');
@@ -167,28 +189,12 @@ export default function UserInfoSetupScreen({ navigation }) {
 // Field — uppercase mini-label above a surface input with a leading
 // icon. The whole row sits in a hairline-bordered capsule so the icon
 // + text feel like one tap target.
-function Field({ label, icon, ...inputProps }) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={styles.inputWrapper}>
-        <Ionicons name={icon} size={18} color="#9A9A9A" style={styles.fieldIcon} />
-        <TextInput
-          style={styles.input}
-          placeholderTextColor="#9A9A9A"
-          autoCorrect={false}
-          {...inputProps}
-        />
-      </View>
-    </View>
-  );
-}
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   flex: { flex: 1 },
   root: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -208,7 +214,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.2,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
     marginBottom: 12,
   },
@@ -216,7 +222,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 24,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.5,
     lineHeight: 30,
     marginBottom: 8,
@@ -224,7 +230,7 @@ const styles = StyleSheet.create({
   subhead: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#666666',
+    color: theme.textSecondary,
     lineHeight: 20,
     letterSpacing: -0.1,
     marginBottom: 24,
@@ -242,7 +248,7 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '700',
     letterSpacing: 1.1,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
     marginBottom: 6,
     marginLeft: 4,
@@ -253,8 +259,8 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
-    backgroundColor: '#FFFFFF',
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceElevated,
     paddingHorizontal: 14,
     shadowColor: '#141420',
     shadowOffset: { width: 0, height: 4 },
@@ -269,7 +275,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 15,
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
     paddingVertical: 0,
   },
@@ -278,7 +284,7 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#F4F4F4',
   },
@@ -302,7 +308,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
 });

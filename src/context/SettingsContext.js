@@ -57,7 +57,7 @@ const normalizeColorHex = (value, fallback = null) => {
   return fallback ?? normalized;
 };
 
-const SettingsContext = createContext();
+export const SettingsContext = createContext();
 
 export const useSettings = () => {
   const context = useContext(SettingsContext);

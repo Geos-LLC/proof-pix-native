@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 
 // LabelsLanguageScreen — dedicated route.
 //
@@ -34,6 +35,8 @@ import { useSettings } from '../context/SettingsContext';
 export default function LabelsLanguageScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     showLabels,
     toggleLabels,
@@ -87,6 +90,7 @@ export default function LabelsLanguageScreen({ navigation }) {
 
         <View style={styles.rowGroup}>
           <BrandTile
+            styles={styles}
             icon="pricetag-outline"
             title={t('labelsLanguage.labels', { defaultValue: 'Labels' })}
             subtitle={t('labelsLanguage.labelsSub', { defaultValue: 'Before / After captions on every photo' })}
@@ -95,6 +99,7 @@ export default function LabelsLanguageScreen({ navigation }) {
             onPress={() => navigation.navigate('LabelCustomization')}
           />
           <BrandTile
+            styles={styles}
             icon="copy-outline"
             title={t('labelsLanguage.watermark', { defaultValue: 'Watermark' })}
             subtitle={t('labelsLanguage.watermarkSub', { defaultValue: 'Brand mark on shared photos' })}
@@ -103,6 +108,7 @@ export default function LabelsLanguageScreen({ navigation }) {
             onPress={() => navigation.navigate('WatermarkCustomization')}
           />
           <BrandTile
+            styles={styles}
             icon="image-outline"
             title={t('labelsLanguage.logo', { defaultValue: 'Logo' })}
             subtitle={brandLogoUri
@@ -114,6 +120,7 @@ export default function LabelsLanguageScreen({ navigation }) {
             onPress={() => navigation.navigate('LogoCustomization')}
           />
           <BrandTile
+            styles={styles}
             icon="information-circle-outline"
             title={t('labelsLanguage.metadata', { defaultValue: 'Metadata' })}
             subtitle={t('labelsLanguage.metadataSub', { defaultValue: 'Date · time · address overlays' })}
@@ -125,6 +132,7 @@ export default function LabelsLanguageScreen({ navigation }) {
               Lands on BrandingSettings which lets the user pick the
               report logo / company name / accent color. */}
           <BrandTile
+            styles={styles}
             icon="document-text-outline"
             title={t('labelsLanguage.reportBranding', { defaultValue: 'Report Branding' })}
             subtitle={t('labelsLanguage.reportBrandingSub', { defaultValue: 'Logo · company name · accent color' })}
@@ -175,7 +183,9 @@ function useLabelLanguageSubtitle() {
 // BrandTile — same shape as Labels/Watermark/Logo/Metadata tiles in
 // StudioScreen's BrandingPanel: leading icon, title + subtitle, Switch
 // on the right, tap navigates to the customize screen.
-function BrandTile({ icon, title, subtitle, switchValue, switchDisabled, onSwitch, onPress }) {
+// `styles` is passed as a prop because it lives in LabelsLanguageScreen's
+// closure (useMemo(makeStyles)), not at module scope.
+function BrandTile({ styles, icon, title, subtitle, switchValue, switchDisabled, onSwitch, onPress }) {
   // When no `onSwitch` is supplied the tile renders as a plain
   // navigation row with a chevron on the right (Report Branding uses
   // this — it doesn't have an on/off concept, only a destination).
@@ -219,8 +229,8 @@ function BrandTile({ icon, title, subtitle, switchValue, switchDisabled, onSwitc
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.surfaceElevated },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -233,7 +243,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -242,7 +252,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 17,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.2,
   },
 
@@ -251,7 +261,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.1,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
     marginTop: 14,
     marginBottom: 8,
@@ -292,10 +302,10 @@ const styles = StyleSheet.create({
     gap: 13,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     shadowColor: '#141420',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
@@ -312,7 +322,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -326,7 +336,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   // Visible "Customize ›" link below the subtitle on each BrandTile.
@@ -354,7 +364,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '500',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
     marginTop: 1,
   },

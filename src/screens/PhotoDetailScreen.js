@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../hooks/useTheme';
 import { COLORS, PHOTO_MODES, getLabelPositions, ROOMS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -35,6 +36,8 @@ const { width, height } = Dimensions.get('window');
 export default function PhotoDetailScreen({ route, navigation }) {
   const { photo, isSelectionMode = false, selectedPhotos = [], onSelectionChange, allPhotos: providedPhotos } = route.params;
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { deletePhoto, getBeforePhotos, getAfterPhotos, activeProjectId } = usePhotos();
   const settings = useSettings();
   const { effectivePlan } = useFeaturePermissions();
@@ -709,10 +712,10 @@ export default function PhotoDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white'
+    backgroundColor: theme.background
   },
   header: {
     flexDirection: 'row',
@@ -728,7 +731,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: 'black',
+    color: theme.textPrimary,
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 2
@@ -753,7 +756,7 @@ const styles = StyleSheet.create({
   },
   shareButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: -0.1

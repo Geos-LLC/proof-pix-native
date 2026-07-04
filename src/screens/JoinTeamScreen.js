@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { useTheme } from '../hooks/useTheme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -58,6 +59,8 @@ export default function JoinTeamScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
   const { updateUserInfo, updateLabelLanguage, updateSectionLanguage } = useSettings();
   const { isAuthenticated } = useAdmin();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const inviteFromParams = route?.params?.invite || '';
   const [inviteCode, setInviteCode] = useState(inviteFromParams);
@@ -369,10 +372,10 @@ export default function JoinTeamScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   header: {
     flexDirection: 'row',
@@ -442,9 +445,9 @@ const styles = StyleSheet.create({
   languageSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     borderRadius: 62,
     paddingHorizontal: 1,
     paddingVertical: 1,
@@ -561,7 +564,7 @@ const styles = StyleSheet.create({
     marginBottom: 11,
   },
   inputBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
     borderColor: '#D5D5D5',
     borderRadius: 11,
@@ -649,7 +652,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContentBottomSheet: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     minHeight: '80%',
@@ -703,7 +706,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import { LOCATIONS, getLocationName } from '../config/locations';
 import QualificationPromptModal, { getStoredUserType } from '../components/QualificationPromptModal';
 import RoomEditor from '../components/RoomEditor';
 import { logEvent } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 
 // IndustrySectionsScreen — dedicated route for the inline "Sections"
 // card that used to live in Settings. Same JSX, same behavior, just
@@ -32,6 +33,8 @@ import { logEvent } from '../utils/analytics';
 export default function IndustrySectionsScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     customRooms,
     saveCustomRooms,
@@ -419,8 +422,8 @@ export default function IndustrySectionsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.surfaceElevated },
 
   // Header row — back chevron + title + symmetric spacer on the right.
   header: {
@@ -435,7 +438,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -444,7 +447,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 17,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.2,
   },
 
@@ -453,14 +456,14 @@ const styles = StyleSheet.create({
   // SettingsScreen's design tokens change.
 
   section: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     marginTop: 10,
     marginHorizontal: 18,
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     shadowColor: '#141420',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
@@ -471,7 +474,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 18,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     marginBottom: 2,
     letterSpacing: -0.3,
   },
@@ -529,7 +532,7 @@ const styles = StyleSheet.create({
   locationOption: {
     padding: 12,
     paddingRight: 40,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     position: 'relative',
   },
   // "Use current location" row at the top of the dropdown — inline
@@ -540,7 +543,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.BORDER,
   },
-  locationOptionSelected: { backgroundColor: '#f7f7f7' },
+  locationOptionSelected: { backgroundColor: theme.surface },
   locationOptionText: { color: COLORS.TEXT },
   locationOptionTextSelected: { fontWeight: '700' },
   locationOptionCheck: {
@@ -558,7 +561,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 3,
     borderRadius: 10,
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.1)',
     minWidth: 65,
@@ -571,7 +574,7 @@ const styles = StyleSheet.create({
   roomListItemText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#666666',
+    color: theme.textSecondary,
     textAlign: 'center',
   },
   roomListItemTextActive: {

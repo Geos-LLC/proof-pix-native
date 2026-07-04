@@ -83,8 +83,8 @@ export const darkTheme = {
   surfaceAccent: '#3A2E0A',
 
   textPrimary: '#FFFFFF',
-  textSecondary: '#B3B3B3',
-  textMuted: '#7A7A7A',
+  textSecondary: '#C8C8C8',
+  textMuted: '#A0A0A0',
   textInverse: '#0A0A0A',
 
   border: '#2A2A2A',

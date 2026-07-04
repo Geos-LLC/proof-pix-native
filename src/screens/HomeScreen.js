@@ -47,6 +47,8 @@ import RoomEditor from '../components/RoomEditor';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
+import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
+import { useUiOverlayReporter } from '../components/uiOverlayState';
 import * as ExpoLocation from 'expo-location';
 // IAP handled by PlanSelectionScreen
 import Constants from 'expo-constants';
@@ -219,6 +221,17 @@ export default function HomeScreen({ navigation, route }) {
   // Photo opened via tap inside the preview pager — drives a simple
   // full-screen modal viewer (image only, tap or chevron to close).
   const [tappedFullPhoto, setTappedFullPhoto] = useState(null);
+  // Tell the PersistentBottomNav to hide itself while the fullscreen
+  // viewer is up so the user gets a clean edge-to-edge photo experience
+  // (no nav pill floating over the bottom of the image). The reporter
+  // is reference-counted in UiOverlayProvider, so open/close is safe
+  // to fire even during rapid interactions.
+  const reportOverlay = useUiOverlayReporter();
+  useEffect(() => {
+    const on = !!tappedFullPhoto;
+    reportOverlay(on);
+    return () => { if (on) reportOverlay(false); };
+  }, [tappedFullPhoto, reportOverlay]);
   // Read-only notes viewer opened by tapping the document glyph on a
   // preview card. `{ text, type }` while open, null when dismissed.
   const [viewingNotes, setViewingNotes] = useState(null);
@@ -303,6 +316,7 @@ export default function HomeScreen({ navigation, route }) {
   };
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     userName,
     location,
@@ -933,16 +947,18 @@ export default function HomeScreen({ navigation, route }) {
       setFullScreenIndex(photoIndex);
       setFullScreenLoading(false);
       setFullScreenError(null);
-      if (beforePhoto && afterPhoto) {
-        setFullScreenPhotoSet({ before: beforePhoto, after: afterPhoto });
-      } else {
-        setFullScreenPhoto(allPhotos[photoIndex]);
-      }
-      // Build the set members for the simple preview pager: every
+      // NOTE: fullScreenPhoto / fullScreenPhotoSet are intentionally
+      // NOT set here anymore. They used to trigger an older inline
+      // "enlarged preview" (project name + date + Edited toggle + share)
+      // that has been superseded by the shared EnlargedPhotoViewer
+      // (matching the timeline flow). The inline block still exists
+      // guarded by `fullScreenPhoto || fullScreenPhotoSet` but never
+      // renders because neither is set. `setTappedFullPhoto(...)` at
+      // the bottom of this function opens EnlargedPhotoViewer instead.
+      // Build the set members for the shared-viewer pager: every
       // individual photo that belongs to the same capture session,
       // ordered Before → Progress(es) → After → Combined. Lets the user
-      // swipe through originals + the merged result instead of being
-      // pinned to a single static view.
+      // swipe through originals + the merged result.
       const anchorBefore =
         beforePhoto
           || (photo?.type === 'before' ? photo : null)
@@ -976,6 +992,11 @@ export default function HomeScreen({ navigation, route }) {
       })();
       setSetMembers(members);
       setSetMemberIndex(startMemberIndex);
+      // Open the shared EnlargedPhotoViewer on the tapped photo. It
+      // renders full-chrome (set nav chips, close, delete, overlays
+      // toggle, edit) matching PhotoSetPreviewScreen exactly.
+      const startPhoto = members[startMemberIndex] || members[0] || photo || beforePhoto;
+      if (startPhoto) setTappedFullPhoto(startPhoto);
     }
   };
 
@@ -1649,7 +1670,7 @@ export default function HomeScreen({ navigation, route }) {
                   <RoomIcon
                     roomId={room.id}
                     size={30}
-                    color="#000"
+                    color={isActive ? '#000' : theme.textPrimary}
                   />
                 )}
                 <Text
@@ -1845,7 +1866,7 @@ export default function HomeScreen({ navigation, route }) {
                 // small, but a much larger surrounding zone responds.
                 hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
               >
-                <Ionicons name="eye-outline" size={16} color="#000" />
+                <Ionicons name="eye-outline" size={16} color={theme.textPrimary} />
               </TouchableOpacity>
               {/* Green completion check at TOP-RIGHT — only when the
                   set has its After AND there are no Progress photos.
@@ -1947,7 +1968,7 @@ export default function HomeScreen({ navigation, route }) {
                 // small, but a much larger surrounding zone responds.
                 hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
               >
-                <Ionicons name="eye-outline" size={16} color="#000" />
+                <Ionicons name="eye-outline" size={16} color={theme.textPrimary} />
               </TouchableOpacity>
               {/* Green completion check at TOP-RIGHT — only when the
                   set has its After AND no Progress photos. Once a 3rd
@@ -2024,7 +2045,7 @@ export default function HomeScreen({ navigation, route }) {
               activeOpacity={0.7}
               hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
             >
-              <Ionicons name="eye-outline" size={16} color="#000" />
+              <Ionicons name="eye-outline" size={16} color={theme.textPrimary} />
             </TouchableOpacity>
             <View style={styles.thumbnailButtonsOverlay}>
               <TouchableOpacity
@@ -2046,7 +2067,7 @@ export default function HomeScreen({ navigation, route }) {
             </View>
             <View style={styles.photoOverlayBadgeTopRight}>
               <View style={styles.clockBadge}>
-                <Ionicons name="timer-outline" size={20} color="#FFFFFF" fill="#FFFFFF" />
+                <Ionicons name="timer-outline" size={20} color={theme.textPrimary} fill={theme.textPrimary} />
               </View>
             </View>
           </TouchableOpacity>
@@ -2175,7 +2196,7 @@ export default function HomeScreen({ navigation, route }) {
                   <Text style={styles.projectNameText} numberOfLines={1}>
                     {displayName}
                   </Text>
-                  <Ionicons name="chevron-down" size={14} color="#999" style={{ marginLeft: 6 }} />
+                  <Ionicons name="chevron-down" size={14} color={theme.textMuted} style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
               );
             })()}
@@ -2184,7 +2205,7 @@ export default function HomeScreen({ navigation, route }) {
             style={styles.projectMenuButton}
             onPress={() => setOpenProjectVisible(true)}
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color="#333" />
+            <Ionicons name="ellipsis-horizontal" size={22} color={theme.textSecondary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -2203,7 +2224,7 @@ export default function HomeScreen({ navigation, route }) {
               <Ionicons
                 name={captureSortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
                 size={14}
-                color="#1E1E1E"
+                color={theme.textPrimary}
                 style={{ marginRight: 4 }}
               />
               <Text style={styles.sortPillText}>
@@ -2847,212 +2868,96 @@ export default function HomeScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* Tap-to-fullscreen overlay — opens when the user taps any photo
-          inside the preview pager. Uses a plain absolutely-positioned
-          View (NOT <Modal>) because React Native's Modal sometimes drops
-          PanResponder events from descendants on iOS, which made the
-          previous Modal-based attempt break drag + pinch + swipe at the
-          same time. GalleryScreen uses the same plain-View overlay
-          pattern for its fullscreen viewer and gestures work there. */}
-      {!!tappedFullPhoto && (
-        <View
-          style={styles.tappedFullPhotoBackdrop}
-          {...tappedFullPanResponder.panHandlers}
-        >
-          {liveTappedFullPhoto?.uri && (() => {
-            // Use the live, store-resolved snapshot so format / metadata
-            // edits saved in Studio while the modal is open (or before
-            // it opens) reflect here too.
-            const tappedFullPhoto = liveTappedFullPhoto;
-            const screenW = Dimensions.get('window').width;
-            const screenH = Dimensions.get('window').height;
-            // Reserve room for the header (top) + carousel dots (bottom)
-            // around the framed photo. Width keeps the same 12 px outer
-            // padding the original viewer used.
-            const HEADER_H = 56;
-            const DOTS_H = 36;
-            const availW = screenW - 24;
-            const availH = screenH - (insets.top + HEADER_H) - (insets.bottom + DOTS_H);
-            const aspect = aspectForPhoto(tappedFullPhoto) || (availW / availH);
-            let frameW = availW;
-            let frameH = availH;
-            if (aspect >= availW / availH) {
-              frameW = availW;
-              frameH = availW / aspect;
-            } else {
-              frameH = availH;
-              frameW = availH * aspect;
-            }
-            // Derive the active photo's set-member index + neighbours
-            // from the shared setMembers state. Walking through the set
-            // updates `tappedFullPhoto` so the modal stays the source of
-            // truth; the enlarged view's index is bumped too so it lands
-            // on the same photo when the modal closes.
-            const activeIdx = setMembers.findIndex((mm) => mm?.id === tappedFullPhoto.id);
-            const safeIdx = activeIdx >= 0 ? activeIdx : 0;
-            const total = Math.max(1, setMembers.length);
-            const prevMember = safeIdx > 0 ? setMembers[safeIdx - 1] : null;
-            const nextMember = safeIdx < setMembers.length - 1 ? setMembers[safeIdx + 1] : null;
-            const goToMember = (idx) => {
-              const m = setMembers[idx];
-              if (!m) return;
-              setSetMemberIndex(idx);
-              setTappedFullPhoto(m);
-            };
-            // "Set N+1 ›" — jump to the first member of the next set
-            // in the current room (mirrors the enlarged-view sets bar).
-            const roomBeforesForJump = getBeforePhotos(currentRoom) || [];
-            const aftersForJump = getAfterPhotos(currentRoom) || [];
-            const afterByBeforeIdJump = new Map();
-            for (const a of aftersForJump) {
-              if (a.beforePhotoId) afterByBeforeIdJump.set(a.beforePhotoId, a);
-            }
-            const activeBeforeId = setMembers.find((mm) => mm?.mode === 'before')?.id
-              || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
-            const activeSetIdxForJump = Math.max(0, roomBeforesForJump.findIndex((b) => b.id === activeBeforeId));
-            const nextBefore = activeSetIdxForJump < roomBeforesForJump.length - 1
-              ? roomBeforesForJump[activeSetIdxForJump + 1]
-              : null;
-            const jumpToNextSet = () => {
-              if (!nextBefore) return;
-              const members = [nextBefore];
-              const progresses = (getProgressPhotos?.(currentRoom) || [])
-                .filter((p) => p.beforePhotoId === nextBefore.id)
-                .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-              members.push(...progresses);
-              const after = afterByBeforeIdJump.get(nextBefore.id);
-              if (after) members.push(after);
-              const combined = findCombinedForBefore(nextBefore, currentRoom);
-              if (combined) members.push(combined);
-              setSetMembers(members);
-              setSetMemberIndex(0);
-              setFullScreenPhotoSet({ before: nextBefore, after: after || null });
-              setTappedFullPhoto(members[0]);
-            };
-            return (
-              <>
-                {/* Top header: X / N-of-M / Set N+1 › */}
-                <View style={[styles.tappedFullHeaderRow, { top: insets.top + 8 }]}>
-                  <TouchableOpacity
-                    onPress={() => setTappedFullPhoto(null)}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    style={styles.tappedFullHeaderClose}
-                  >
-                    <Ionicons name="close" size={20} color="#FFFFFF" />
-                  </TouchableOpacity>
-                  <View style={styles.tappedFullHeaderCenter}>
-                    <Text style={styles.tappedFullHeaderPosition} numberOfLines={1}>
-                      {safeIdx + 1} / {total}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={jumpToNextSet}
-                    disabled={!nextBefore}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    style={styles.tappedFullHeaderSetJump}
-                  >
-                    <Text
-                      style={[
-                        styles.tappedFullHeaderSetJumpText,
-                        { color: nextBefore ? '#FFFFFF' : 'rgba(255,255,255,0.4)' },
-                      ]}
-                    >
-                      Set {nextBefore ? activeSetIdxForJump + 2 : activeSetIdxForJump + 1}
-                    </Text>
-                    {nextBefore && (
-                      <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
-                    )}
-                  </TouchableOpacity>
-                </View>
+      {/* Tap-to-fullscreen viewer — now backed by the shared
+          enlarged-photo viewer component so the capture-screen
+          enlarged view matches PhotoSetPreviewScreen (bigger frame,
+          prev/next set chips, swipe navigation). setMembers is the
+          current set's pool; jumping between sets rebuilds it in place. */}
+      {!!tappedFullPhoto && (() => {
+        // Build the room's ordered before list once so we can derive
+        // the active-set index + neighbour sets for the top set-nav row.
+        const roomBeforesForNav = getBeforePhotos(currentRoom) || [];
+        const aftersForNav = getAfterPhotos(currentRoom) || [];
+        const afterByBeforeIdNav = new Map();
+        for (const a of aftersForNav) {
+          if (a.beforePhotoId) afterByBeforeIdNav.set(a.beforePhotoId, a);
+        }
+        const activeBeforeIdNav = setMembers.find((mm) => mm?.mode === 'before')?.id
+          || (setMembers[0]?.beforePhotoId ?? setMembers[0]?.id);
+        const activeSetIdxNav = Math.max(
+          0,
+          roomBeforesForNav.findIndex((b) => b.id === activeBeforeIdNav)
+        );
+        const prevBeforeNav = activeSetIdxNav > 0
+          ? roomBeforesForNav[activeSetIdxNav - 1]
+          : null;
+        const nextBeforeNav = activeSetIdxNav < roomBeforesForNav.length - 1
+          ? roomBeforesForNav[activeSetIdxNav + 1]
+          : null;
 
-                <View
-                  style={{
-                    width: frameW,
-                    height: frameH,
-                    overflow: 'visible',
-                    borderRadius: 8,
-                  }}
-                  // No onStartShouldSetResponder here. We previously
-                  // claimed the responder on touch start to block the
-                  // backdrop's tap-to-close, but doing so prevented
-                  // PannableImage from ever taking the touch — its
-                  // drag-pan and pinch-zoom both quietly died. The
-                  // backdrop is now a plain View (not a TouchableOpacity),
-                  // so there's nothing to block.
-                >
-                  {/* PannableImage handles pinch-zoom (0.5×-3×) + pan.
-                      panOnLongPress=true → single-finger drag only
-                      claims the gesture after a brief long-press, so
-                      quick horizontal swipes still reach the outer
-                      capture-phase responder (which uses them to walk
-                      through set members). Two-finger pinch is still
-                      claimed immediately. The reset chip lives at the
-                      photo's top-right corner. */}
-                  <View style={{ width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden' }}>
-                    <PannableImage
-                      source={{ uri: tappedFullPhoto.uri }}
-                      style={{ width: '100%', height: '100%' }}
-                      imageStyle={{ width: '100%', height: '100%' }}
-                      resizeMode="cover"
-                      panOnLongPress
-                    >
-                      {/* Edited toggle gates the full overlay stack
-                          (labels included). Settings → Show Labels still
-                          hides labels independently when Edited is on. */}
-                      {showStudioEdits && (
-                        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                          <StudioEditOverlays photo={tappedFullPhoto} theme={theme} />
-                        </View>
-                      )}
-                    </PannableImage>
-                  </View>
-                  {/* Left / right chevrons for in-set navigation.
-                      Disabled (and hidden) at the set boundaries. */}
-                  {prevMember && (
-                    <TouchableOpacity
-                      onPress={() => goToMember(safeIdx - 1)}
-                      hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
-                      style={[styles.tappedFullChev, styles.tappedFullChevLeft]}
-                    >
-                      <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  )}
-                  {nextMember && (
-                    <TouchableOpacity
-                      onPress={() => goToMember(safeIdx + 1)}
-                      hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
-                      style={[styles.tappedFullChev, styles.tappedFullChevRight]}
-                    >
-                      <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Carousel dots below the photo — one per set member,
-                    accent on the active one. Hidden when the set has
-                    only a single photo (no value in showing a single
-                    dot). */}
-                {setMembers.length > 1 && (
-                  <View style={styles.tappedFullDots}>
-                    {setMembers.map((mm, i) => (
-                      <View
-                        key={mm.id || i}
-                        style={[
-                          styles.tappedFullDot,
-                          {
-                            backgroundColor: i === safeIdx ? '#F2C31B' : 'rgba(255,255,255,0.45)',
-                            width: i === safeIdx ? 18 : 6,
-                          },
-                        ]}
-                      />
-                    ))}
-                  </View>
-                )}
-              </>
-            );
-          })()}
-        </View>
-      )}
+        // Build the members list for a given "before" (Before →
+        // Progresses → After → Combined). Shared by both jump handlers.
+        const buildMembersForBefore = (before) => {
+          if (!before) return { members: [], after: null };
+          const members = [before];
+          const progresses = (getProgressPhotos?.(currentRoom) || [])
+            .filter((p) => p.beforePhotoId === before.id)
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+          members.push(...progresses);
+          const after = afterByBeforeIdNav.get(before.id);
+          if (after) members.push(after);
+          const combined = findCombinedForBefore(before, currentRoom);
+          if (combined) members.push(combined);
+          return { members, after: after || null };
+        };
+        const jumpToSet = (before) => {
+          if (!before) return;
+          const built = buildMembersForBefore(before);
+          if (!built.members?.length) return;
+          setSetMembers(built.members);
+          setSetMemberIndex(0);
+          // DO NOT set fullScreenPhotoSet here — that would re-enable the
+          // deprecated inline enlarged view (project-name + date + Edited
+          // toggle chrome) and the fullscreen EnlargedPhotoViewer would
+          // collapse back to the smaller UI. Only tappedFullPhoto drives
+          // the shared viewer now.
+          setTappedFullPhoto(built.members[0]);
+        };
+        return (
+          <View style={StyleSheet.absoluteFill}>
+            {/* Capture-screen tapped-photo viewer — matches the timeline
+                (PhotoSetPreviewScreen) chrome exactly so users see the
+                same UI on both flows. Set nav chips, close, delete,
+                overlays toggle, share, and edit are all wired to the
+                same shared component. */}
+            <EnlargedPhotoViewer
+              photos={setMembers}
+              initialPhotoId={liveTappedFullPhoto?.id || tappedFullPhoto?.id}
+              onClose={() => setTappedFullPhoto(null)}
+              setLabel={() => roomBeforesForNav.length > 1 ? `Set ${activeSetIdxNav + 1}` : ''}
+              prevSetLabel={() => prevBeforeNav ? `Set ${activeSetIdxNav}` : null}
+              nextSetLabel={() => nextBeforeNav ? `Set ${activeSetIdxNav + 2}` : null}
+              onPrevSet={() => jumpToSet(prevBeforeNav)}
+              onNextSet={() => jumpToSet(nextBeforeNav)}
+              showOverlays
+              overlaysOn={showStudioEdits}
+              onOverlaysChange={setShowStudioEdits}
+              showDelete
+              onDelete={(p) => {
+                if (!p?.id) return;
+                setTappedFullPhoto(null);
+                deletePhoto?.(p.id);
+              }}
+              showEdit
+              onEdit={(p) => {
+                if (!p?.id) return;
+                setTappedFullPhoto(null);
+                navigation.navigate('StudioDetail', { photoId: p.id });
+              }}
+            />
+          </View>
+        );
+      })()}
 
       <Modal
         visible={openProjectVisible}
@@ -3347,10 +3252,10 @@ export default function HomeScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F6F8FA'
+    backgroundColor: theme.background
   },
   header: {
     flexDirection: 'row',
@@ -3358,7 +3263,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#F6F8FA',
+    backgroundColor: theme.background,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -3375,7 +3280,7 @@ const styles = StyleSheet.create({
     fontSize: 23,
     fontWeight: '700',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   headerRight: {
@@ -3392,14 +3297,14 @@ const styles = StyleSheet.create({
     height: 32,
   },
   starterButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     paddingHorizontal: 16,
     height: 32,
     justifyContent: 'center',
     alignItems: 'center',
   },
   starterButtonText: {
-    color: '#000000',
+    color: theme.textPrimary,
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: -0.11,
@@ -3421,7 +3326,7 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   upgradeButtonText: {
-    color: '#000000',
+    color: theme.textPrimary,
     fontSize: 13.7,
     fontWeight: '700',
   },
@@ -3448,10 +3353,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 17,
     marginTop: 8,
     marginBottom: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     shadowColor: 'grey',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -3478,14 +3383,14 @@ const styles = StyleSheet.create({
   },
   projectLabel: {
     fontSize: 12,
-    color: 'grey',
+    color: theme.textMuted,
     fontWeight: '500',
     marginBottom: 4,
     letterSpacing: -0.1,
   },
   projectNameText: {
     fontSize: 17,
-    color: '#000000',
+    color: theme.textPrimary,
     fontWeight: '700',
     letterSpacing: -0.1,
     lineHeight: 18,
@@ -3532,7 +3437,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f4f4f4',
+    backgroundColor: theme.surface,
     borderRadius: 296,
     height: 50,
     shadowColor: '#000',
@@ -3552,24 +3457,24 @@ const styles = StyleSheet.create({
     height: 50,
   },
   navItemActive: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: theme.borderStrong,
     borderRadius: 100,
     marginHorizontal: -7,
   },
   navItemText: {
     fontSize: 10,
     fontWeight: '510',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     marginTop: 1,
     textAlign: 'center',
   },
   navItemTextActive: {
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontWeight: '590',
     letterSpacing: -0.1,
   },
   roomTabsContainer: {
-    backgroundColor: '#F6F8FA',
+    backgroundColor: theme.background,
     paddingVertical: 12,
   },
   roomTabsScrollView: {
@@ -3588,11 +3493,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     minWidth: 69,
     height: 63,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
   },
   // Active room: yellow fill + dark border. Only the active card has a
   // visible border so the eye lands cleanly on the focused room.
@@ -3604,22 +3509,22 @@ const styles = StyleSheet.create({
   // Inactive room with photos — full opacity, no border. Cleaner row
   // since only the active room is outlined.
   roomTabFilled: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderColor: 'transparent',
     borderWidth: 0,
   },
   // "No photos in this room yet" — dimmed + dashed outline so the user
   // can tell at a glance which rooms they haven't shot in.
   roomTabEmpty: {
-    backgroundColor: '#F4F4F4',
-    borderColor: '#D9D9D9',
+    backgroundColor: theme.surface,
+    borderColor: theme.borderStrong,
     borderWidth: 1,
     borderStyle: 'dashed',
     opacity: 0.55,
   },
   roomTabText: {
     fontSize: 10,
-    color: '#000000',
+    color: theme.textPrimary,
     fontWeight: '400',
     marginTop: 5,
     textAlign: 'center',
@@ -3634,7 +3539,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 17,
     paddingTop: 8,
-    backgroundColor: '#F6F8FA',
+    backgroundColor: theme.background,
   },
   photoGrid: {
     flexDirection: 'row',
@@ -3652,23 +3557,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
   },
   sortPillText: {
     fontFamily: FONTS.SEMIBOLD,
     fontSize: 11,
-    color: '#1E1E1E',
+    color: theme.textPrimary,
   },
   photoItem: {
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
   },
   // Column wrapper for the photo card + its "Set N" label so the grid
   // still flex-wraps two-per-row but each cell now also includes the
@@ -3682,7 +3587,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontFamily: FONTS.SEMIBOLD,
     fontSize: 12,
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     textAlign: 'center',
   },
   photoCenterDivider: {
@@ -3740,9 +3645,15 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    color: '#FFFFFF',
+    backgroundColor: theme.textInverse,
+    color: theme.textPrimary,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
   },
   // Eye / preview icon sits at the top-LEFT of the photo card. Tapping opens
   // the full-screen preview viewer (same as a double-tap on the card body —
@@ -3754,7 +3665,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.textInverse,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -3851,9 +3762,9 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: theme.borderStrong,
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
@@ -3864,7 +3775,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   addPhotoTextCenter: {
-    color: '#666',
+    color: theme.textSecondary,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
@@ -4303,7 +4214,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 15,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
   },
   // Fullscreen modal swipe-down close gesture target. Fills the
   // screen behind the framed photo; the PanResponder lives on this
@@ -4850,7 +4761,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   optionsModalContent: {
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     padding: 20,
     width: '86%',
@@ -4860,7 +4771,7 @@ const styles = StyleSheet.create({
   optionsTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000',
+    color: theme.textPrimary,
     marginBottom: 16,
     textAlign: 'center'
   },
@@ -4871,7 +4782,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 14,
     borderRadius: 12,
-    backgroundColor: '#F7F7F7',
+    backgroundColor: theme.surface,
     marginBottom: 10
   },
   projectItemContent: {
@@ -4883,8 +4794,8 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#DDD',
-    backgroundColor: 'white',
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceElevated,
     marginRight: 12,
     justifyContent: 'center',
     alignItems: 'center'
@@ -4899,7 +4810,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold'
   },
   projectItemText: {
-    color: '#000',
+    color: theme.textPrimary,
     fontSize: 15,
     fontWeight: '500'
   },
@@ -4924,7 +4835,7 @@ const styles = StyleSheet.create({
   },
   contextMenu: {
     position: 'absolute',
-    backgroundColor: 'white',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 4,
@@ -4953,7 +4864,7 @@ const styles = StyleSheet.create({
   },
   contextMenuText: {
     fontSize: 16,
-    color: '#000',
+    color: theme.textPrimary,
     fontWeight: '500',
   },
   contextMenuTextDanger: {

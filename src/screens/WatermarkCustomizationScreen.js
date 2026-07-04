@@ -69,6 +69,7 @@ const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
 
 export default function WatermarkCustomizationScreen({ navigation, route }) {
   const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { canUse } = useFeaturePermissions();
   useEffect(() => {
     if (!canUse(FEATURES.CUSTOM_WATERMARKS)) navigation.goBack();
@@ -133,12 +134,12 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
   }, [customWatermarkEnabled, watermarkText]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="close" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Watermark</Text>
+        <Text style={styles.headerTitle}>Watermark</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -157,13 +158,13 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
               Studio, so the photo behind the sheet IS the preview. */}
 
           {/* Custom text toggle */}
-          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CUSTOM TEXT</Text>
-          <View style={[styles.toggleRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.toggleLabel, { color: theme.textPrimary }]}>Use custom watermark</Text>
+          <Text style={styles.sectionLabel}>CUSTOM TEXT</Text>
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>Use custom watermark</Text>
             <Switch
               value={!!customWatermarkEnabled}
               onValueChange={toggleWatermark}
-              trackColor={{ false: '#E0E0E0', true: theme.accent }}
+              trackColor={{ false: theme.border, true: theme.accent }}
               thumbColor="#FFFFFF"
             />
           </View>
@@ -171,14 +172,14 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
           {customWatermarkEnabled && (
             <>
               <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+                style={styles.input}
                 value={watermarkText}
                 onChangeText={updateWatermarkText}
                 placeholder="Watermark text"
                 placeholderTextColor={theme.textMuted}
               />
               <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+                style={styles.input}
                 value={watermarkLink}
                 onChangeText={updateWatermarkLink}
                 placeholder="Optional link (https://…)"
@@ -191,22 +192,22 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
           )}
 
           {/* Controls */}
-          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CONTROLS</Text>
+          <Text style={styles.sectionLabel}>CONTROLS</Text>
           <View style={styles.controlsRow}>
-            <ControlButton theme={theme} icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
-            <ControlButton theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-            <ControlButton theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+            <ControlButton styles={styles} theme={theme} icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
+            <ControlButton styles={styles} theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
+            <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
           </View>
           <View style={[styles.controlsRow, { marginTop: 12 }]}>
-            <ControlButton theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
-            <ControlButton theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
-            <ColorButton theme={theme} color={watermarkColor || '#FFD700'} onPress={() => setColorModalVisible(true)} />
+            <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
+            <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
+            <ColorButton styles={styles} theme={theme} color={watermarkColor || '#FFD700'} onPress={() => setColorModalVisible(true)} />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Font Modal */}
-      <BottomModal visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title="Watermark Font" theme={theme}>
+      <BottomModal styles={styles} visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title="Watermark Font" theme={theme}>
         <View style={{ paddingVertical: 4 }}>
           {FONT_OPTIONS.map((font) => {
             const isSelected = watermarkFontFamily === font.key;
@@ -237,11 +238,11 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Size Modal */}
-      <BottomModal visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title="Watermark Size" theme={theme}>
+      <BottomModal styles={styles} visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title="Watermark Size" theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Font size</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{numericSize}px</Text>
+            <Text style={styles.modalLabel}>Font size</Text>
+            <Text style={styles.modalLabelValue}>{numericSize}px</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -259,7 +260,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Position Modal */}
-      <BottomModal visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title="Position" theme={theme}>
+      <BottomModal styles={styles} visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title="Position" theme={theme}>
         <View style={{ padding: 16 }}>
           <PositionGrid
             layout={combinedGridLayout(previewPhoto)}
@@ -275,11 +276,11 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Margin Modal */}
-      <BottomModal visible={marginModalVisible} onClose={() => setMarginModalVisible(false)} title="Margin" theme={theme}>
+      <BottomModal styles={styles} visible={marginModalVisible} onClose={() => setMarginModalVisible(false)} title="Margin" theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Vertical (Top/Bottom)</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{labelMarginVertical}px</Text>
+            <Text style={styles.modalLabel}>Vertical (Top/Bottom)</Text>
+            <Text style={styles.modalLabelValue}>{labelMarginVertical}px</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -295,8 +296,8 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
         </View>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Horizontal (Left/Right)</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{labelMarginHorizontal}px</Text>
+            <Text style={styles.modalLabel}>Horizontal (Left/Right)</Text>
+            <Text style={styles.modalLabelValue}>{labelMarginHorizontal}px</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -313,11 +314,11 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Opacity Modal */}
-      <BottomModal visible={opacityModalVisible} onClose={() => setOpacityModalVisible(false)} title="Opacity" theme={theme}>
+      <BottomModal styles={styles} visible={opacityModalVisible} onClose={() => setOpacityModalVisible(false)} title="Opacity" theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={[styles.modalLabel, { color: theme.textPrimary }]}>Opacity</Text>
-            <Text style={[styles.modalLabelValue, { color: theme.textPrimary }]}>{Math.round((watermarkOpacity ?? 0.5) * 100)}%</Text>
+            <Text style={styles.modalLabel}>Opacity</Text>
+            <Text style={styles.modalLabelValue}>{Math.round((watermarkOpacity ?? 0.5) * 100)}%</Text>
           </View>
           <Slider
             style={styles.slider}
@@ -334,7 +335,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Color Modal */}
-      <BottomModal visible={colorModalVisible} onClose={() => setColorModalVisible(false)} title="Watermark Color" theme={theme}>
+      <BottomModal styles={styles} visible={colorModalVisible} onClose={() => setColorModalVisible(false)} title="Watermark Color" theme={theme}>
         <View style={styles.colorPalette}>
           {COLOR_SWATCHES.map((c) => {
             const isActive = (watermarkColor || '').toUpperCase() === c.toUpperCase();
@@ -358,46 +359,46 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
   );
 }
 
-function ControlButton({ theme, icon, label, onPress }) {
+function ControlButton({ styles, theme, icon, label, onPress }) {
   return (
     <TouchableOpacity style={styles.controlButton} onPress={onPress} activeOpacity={0.7}>
-      <View style={[styles.controlSquare, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      <View style={styles.controlSquare}>
         <Ionicons name={icon} size={22} color={theme.textPrimary} />
       </View>
-      <Text style={[styles.controlLabel, { color: theme.textSecondary }]}>{label}</Text>
+      <Text style={styles.controlLabel}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-function ColorButton({ theme, color, onPress }) {
+function ColorButton({ styles, theme, color, onPress }) {
   return (
     <TouchableOpacity style={styles.controlButton} onPress={onPress} activeOpacity={0.7}>
-      <View style={[styles.controlSquare, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <View style={[styles.colorSwatchInline, { backgroundColor: color, borderColor: theme.border }]} />
+      <View style={styles.controlSquare}>
+        <View style={[styles.colorSwatchInline, { backgroundColor: color }]} />
       </View>
-      <Text style={[styles.controlLabel, { color: theme.textSecondary }]}>Color</Text>
+      <Text style={styles.controlLabel}>Color</Text>
     </TouchableOpacity>
   );
 }
 
-function BottomModal({ visible, onClose, title, theme, children }) {
+function BottomModal({ styles, visible, onClose, title, theme, children }) {
   if (!visible) return null;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
-        style={[styles.modalOverlay, { backgroundColor: theme.scrim || 'rgba(0,0,0,0.5)' }]}
+        style={styles.modalOverlay}
         onPress={onClose}
       >
         <View
-          style={[styles.modalContent, { backgroundColor: theme.surface }]}
+          style={styles.modalContent}
           onStartShouldSetResponder={() => true}
         >
-          <View style={[styles.modalHandle, { backgroundColor: theme.border }]} />
+          <View style={styles.modalHandle} />
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={onClose} style={styles.modalClose}>
               <Ionicons name="close" size={22} color={theme.textPrimary} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>{title}</Text>
+            <Text style={styles.modalTitle}>{title}</Text>
             <View style={{ width: 22 }} />
           </View>
           <View style={styles.modalBody}>{children}</View>
@@ -407,8 +408,8 @@ function BottomModal({ visible, onClose, title, theme, children }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -417,7 +418,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 12,
   },
-  headerTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700' },
+  headerTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700', color: theme.textPrimary },
   body: { paddingHorizontal: 16, paddingBottom: 32 },
   sectionLabel: {
     fontFamily: FONTS.ALEXANDRIA,
@@ -426,6 +427,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginTop: 16,
     marginBottom: 8,
+    color: theme.textSecondary,
   },
   previewSquare: {
     width: '100%',
@@ -435,6 +437,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     marginTop: 8,
+    borderColor: theme.border,
   },
   previewPlaceholder: {
     ...StyleSheet.absoluteFillObject,
@@ -449,8 +452,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
-  toggleLabel: { flex: 1, fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600' },
+  toggleLabel: { flex: 1, fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600', color: theme.textPrimary },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
@@ -458,6 +463,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 14,
     marginTop: 8,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
+    color: theme.textPrimary,
   },
   controlsRow: { flexDirection: 'row', gap: 16 },
   controlButton: { alignItems: 'center', minWidth: 70 },
@@ -469,19 +477,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
+    backgroundColor: theme.surface,
+    borderColor: theme.border,
   },
-  controlLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, textAlign: 'center' },
+  controlLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, textAlign: 'center', color: theme.textSecondary },
   colorSwatchInline: {
     width: 28,
     height: 28,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
   },
   positionGrid: {
     padding: 8,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 8,
+    borderColor: theme.border,
   },
   positionRow: { flexDirection: 'row', gap: 8 },
   positionCell: {
@@ -491,16 +503,18 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
+    borderColor: theme.border,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: theme.scrim || 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 24,
+    backgroundColor: theme.surface,
   },
   modalHandle: {
     width: 40,
@@ -509,6 +523,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 8,
     marginBottom: 12,
+    backgroundColor: theme.border,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -518,7 +533,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   modalClose: { padding: 4 },
-  modalTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700' },
+  modalTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700', color: theme.textPrimary },
   modalBody: { paddingHorizontal: 20 },
   modalSection: { marginBottom: 16 },
   sliderHeader: {
@@ -527,8 +542,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  modalLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600' },
-  modalLabelValue: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '700' },
+  modalLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600', color: theme.textPrimary },
+  modalLabelValue: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '700', color: theme.textPrimary },
   slider: { width: '100%', height: 40 },
   fontListItem: {
     paddingVertical: 14,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import googleAuthService from '../services/googleAuthService';
 import { generateInviteToken } from '../utils/tokens';
 import { generateInviteLink, generateShareContent } from '../utils/inviteLinkGenerator';
 import { logTeamInvitesCreated } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 
 // TeamMembersScreen — dedicated route for team setup + member
 // management. Split from the prior combined CloudTeamScreen so the
@@ -38,6 +39,8 @@ import { logTeamInvitesCreated } from '../utils/analytics';
 export default function TeamMembersScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     isAuthenticated,
     accountType,
@@ -592,8 +595,8 @@ export default function TeamMembersScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.surfaceElevated },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -606,7 +609,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -615,7 +618,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 17,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.2,
   },
   eyebrowRow: {
@@ -631,7 +634,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.1,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
     marginHorizontal: 22,
     marginBottom: 8,
@@ -646,16 +649,16 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: 0.5,
   },
 
   // Hero card for gate / setup / invite states.
   heroCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     marginHorizontal: 18,
     paddingVertical: 18,
     paddingHorizontal: 16,
@@ -670,7 +673,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 16,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -679,7 +682,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.2,
     marginBottom: 6,
     textAlign: 'center',
@@ -688,7 +691,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 13,
     fontWeight: '500',
-    color: '#666666',
+    color: theme.textSecondary,
     letterSpacing: -0.1,
     lineHeight: 18,
     textAlign: 'center',
@@ -712,7 +715,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 15,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
 
@@ -725,10 +728,10 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     paddingVertical: 14,
     alignItems: 'center',
     shadowColor: '#141420',
@@ -741,14 +744,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 22,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.4,
   },
   statLabel: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '600',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
     marginTop: 2,
   },
@@ -761,16 +764,16 @@ const styles = StyleSheet.create({
     gap: 13,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
   },
   rowIc: {
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -779,14 +782,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   rowSub: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '500',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
     marginTop: 1,
   },
@@ -796,8 +799,8 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 11.5,
     fontWeight: '600',
-    color: '#1E1E1E',
-    backgroundColor: '#F4F4F4',
+    color: theme.textPrimary,
+    backgroundColor: theme.surface,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,

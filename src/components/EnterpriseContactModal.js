@@ -101,7 +101,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
             >
               <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>{t('contact.title')}</Text>
+            <Text style={styles.headerTitle}>Contact us</Text>
             <View style={{ width: 40 }} />
           </View>
 
@@ -118,20 +118,20 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
             </View>
 
             {/* Heading */}
-            <Text style={styles.heading}>{t('contact.heading')}</Text>
+            <Text style={styles.heading}>Tell us what you think</Text>
 
             {/* Description */}
             <Text style={styles.description}>
-              {t('contact.description')}
+              We'd love to hear your feedback, suggestions or answer any questions you may have.
             </Text>
 
             {/* Form Fields */}
             <View style={styles.formContainer}>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('contact.nameLabel')}</Text>
+                <Text style={styles.label}>Your Name</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder={t('enterprise.namePlaceholder')}
+                  placeholder="Your Name"
                   placeholderTextColor="#999"
                   value={formData.name}
                   onChangeText={(text) => setFormData({ ...formData, name: text })}
@@ -140,10 +140,10 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('contact.emailLabel')}</Text>
+                <Text style={styles.label}>Email Address</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder={t('enterprise.emailPlaceholder')}
+                  placeholder="Email Address"
                   placeholderTextColor="#999"
                   value={formData.email}
                   onChangeText={(text) => setFormData({ ...formData, email: text })}
@@ -153,10 +153,10 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('contact.phoneLabel')}</Text>
+                <Text style={styles.label}>Phone number (Optional)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder={t('enterprise.phonePlaceholder')}
+                  placeholder="Phone number (Optional)"
                   placeholderTextColor="#999"
                   value={formData.phone}
                   onChangeText={(text) => setFormData({ ...formData, phone: text })}
@@ -165,10 +165,10 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('contact.descriptionLabel')}</Text>
+                <Text style={styles.label}>Tell us about your needs</Text>
                 <TextInput
                   style={[styles.input, styles.textArea]}
-                  placeholder={t('enterprise.descriptionPlaceholder')}
+                  placeholder="Tell us about your needs"
                   placeholderTextColor="#999"
                   value={formData.description}
                   onChangeText={(text) => setFormData({ ...formData, description: text })}
@@ -187,7 +187,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
             disabled={isSubmitting}
           >
             <Text style={styles.sendButtonText}>
-              {isSubmitting ? t('contact.sending') : t('contact.submit')}
+              {isSubmitting ? 'Sending...' : 'Send Request'}
             </Text>
           </TouchableOpacity>
         </KeyboardAvoidingView>

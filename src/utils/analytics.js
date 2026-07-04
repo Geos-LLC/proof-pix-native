@@ -602,9 +602,20 @@ const _buildSubscriptionParams = async (payload = {}) => {
     payload.provider ||
     (platform === 'ios' ? 'apple' : platform === 'android' ? 'google' : 'unknown');
 
+  // billing_period: prefer the caller's explicit value, otherwise derive from
+  // the productId suffix (.annual / .seat). Powers the "annual selection rate"
+  // and "trial→annual conversion" metrics without a Play/ASC pricing refresh.
+  const productId = payload.product_id || null;
+  let billingPeriod = payload.billing_period || null;
+  if (!billingPeriod && productId) {
+    if (productId.includes('.seat')) billingPeriod = 'seat';
+    else if (productId.includes('.annual')) billingPeriod = 'annual';
+    else billingPeriod = 'monthly';
+  }
+
   return mergeAttributionContext({
     plan_id: planId,
-    product_id: payload.product_id || null,
+    product_id: productId,
     platform,
     provider,
     entry_point: payload.entry_point || 'paywall',
@@ -614,6 +625,7 @@ const _buildSubscriptionParams = async (payload = {}) => {
     is_seat: !!payload.is_seat,
     price: payload.price ?? null,
     currency: payload.currency || null,
+    billing_period: billingPeriod,
     // Provenance tag so GA4 can prove which path a subscription event came
     // from (purchase_success | free_plan | app_launch | restore | upgrade |
     // trial_expiration). Helps audit funnel inflation without grepping code.
@@ -751,6 +763,10 @@ export const logPaywallView = (extra = {}) => {
     trial_type: extra.trial_type || 'apple',
     exports_used: extra.exports_used ?? null,
     device_id: extra.device_id || null,
+    // Default billing cadence the paywall is showing on open. Null when the
+    // caller doesn't have a preselected cadence to report (kept for callers
+    // that never set it — GA4 keeps the param but it just reads as `(none)`).
+    billing_period: extra.billing_period || null,
     timestamp: Date.now(),
   });
 };
@@ -793,11 +809,13 @@ export const logFreeExportUsed = (payload = {}) => {
   });
 };
 
-export const logPlanSelected = (plan, useTrial = false) => {
+export const logPlanSelected = (plan, useTrial = false, billingPeriod = null) => {
   logEvent('plan_selected', {
     plan,
     plan_id: plan,
     is_trial: useTrial,
+    // 'monthly' | 'annual' | null. Powers the annual selection-rate metric.
+    billing_period: billingPeriod || null,
     timestamp: Date.now(),
   });
 };
@@ -830,10 +848,21 @@ export const logTrialStarted = async (planOrPayload, extra = {}) => {
     payload.provider ||
     (platform === 'ios' ? 'apple' : platform === 'android' ? 'google' : 'unknown');
 
+  // Same derivation as _buildSubscriptionParams — trial starts need the
+  // billing_period tag so GA4 can build "monthly trial → paid" vs
+  // "annual trial → paid" funnels.
+  const productId = payload.product_id || null;
+  let billingPeriod = payload.billing_period || null;
+  if (!billingPeriod && productId) {
+    if (productId.includes('.seat')) billingPeriod = 'seat';
+    else if (productId.includes('.annual')) billingPeriod = 'annual';
+    else billingPeriod = 'monthly';
+  }
+
   const params = await mergeAttributionContext({
     plan: planId,
     plan_id: planId,
-    product_id: payload.product_id || null,
+    product_id: productId,
     platform,
     provider,
     entry_point: payload.entry_point || 'paywall',
@@ -843,6 +872,7 @@ export const logTrialStarted = async (planOrPayload, extra = {}) => {
     days_remaining: payload.days_remaining ?? null,
     price: payload.price ?? null,
     currency: payload.currency || null,
+    billing_period: billingPeriod,
     analytics_source: payload.analytics_source || null,
     timestamp: Date.now(),
   });

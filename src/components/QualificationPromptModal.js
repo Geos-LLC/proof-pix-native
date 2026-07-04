@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { FONTS } from '../constants/fonts';
 import { INDUSTRIES, getIndustryById } from '../constants/industries';
 import { useSettings } from '../context/SettingsContext';
 import { logEvent, setUserProperties } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 
 const QUALIFICATION_KEY = '@user_qualification';
 
@@ -60,6 +61,8 @@ export const getStoredUserType = async () => {
 export default function QualificationPromptModal({ visible, onClose, mandatory = false }) {
   const { t } = useTranslation();
   const { saveCustomRooms } = useSettings();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -212,16 +215,16 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
 
 const CARD_GAP = 12;
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(20,20,22,0.55)',
+    backgroundColor: theme.scrim,
     justifyContent: 'flex-end',
   },
   // Refresh — design's industry sheet sits on white with a soft grabber +
   // close X, light typography, and the yellow Continue button at the bottom.
   sheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
@@ -234,7 +237,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#D0D0D0',
+    backgroundColor: theme.borderStrong,
     marginTop: 8,
     marginBottom: 14,
   },
@@ -245,7 +248,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
@@ -255,7 +258,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.2,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
     marginBottom: 8,
   },
@@ -263,14 +266,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 24,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.5,
     marginBottom: 8,
   },
   subhead: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#666666',
+    color: theme.textSecondary,
     lineHeight: 20,
     letterSpacing: -0.1,
     marginBottom: 18,
@@ -287,10 +290,10 @@ const styles = StyleSheet.create({
   },
   card: {
     width: `${(100 - 4) / 2}%`,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     padding: 14,
     minHeight: 92,
     shadowColor: '#141420',
@@ -308,7 +311,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
@@ -320,11 +323,11 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 13.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   cardLabelSelected: {
-    color: '#1E1E1E',
+    color: theme.textPrimary,
   },
   continueButton: {
     backgroundColor: '#F2C31B',
@@ -347,7 +350,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
 });

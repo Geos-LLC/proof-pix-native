@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Pill-style mode picker for CompareViewer. Three modes:
@@ -19,6 +20,8 @@ const MODES = [
 
 export default function CompareModeSwitcher({ mode, onChange, style }) {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   return (
     <View style={[styles.row, style]}>
       {MODES.map(({ key, labelKey }) => {
@@ -40,11 +43,11 @@ export default function CompareModeSwitcher({ mode, onChange, style }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
+    backgroundColor: theme.surface,
     borderRadius: 999,
     padding: 4,
     alignSelf: 'center',
@@ -60,7 +63,7 @@ const styles = StyleSheet.create({
   pillText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#555',
+    color: theme.textSecondary,
   },
   pillTextActive: {
     color: '#000',

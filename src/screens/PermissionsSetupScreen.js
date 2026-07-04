@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FONTS } from '../constants/fonts';
 import { useTranslation } from 'react-i18next';
 import { logOnboardingStepCompleted } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 
 // Refresh pass 7 — rebuilt to match design screenshot 03-permissions:
 //
@@ -57,6 +58,8 @@ import { logOnboardingStepCompleted } from '../utils/analytics';
 export default function PermissionsSetupScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const [cameraGranted, setCameraGranted] = useState(false);
   const [photoGranted, setPhotoGranted] = useState(false);
@@ -218,6 +221,7 @@ export default function PermissionsSetupScreen({ navigation }) {
 
         <View style={styles.rows}>
           <PermissionRow
+            styles={styles}
             icon="camera-outline"
             title={t('permissions.cameraTitle', { defaultValue: 'Camera' })}
             description={t('permissions.cameraDescription', {
@@ -227,6 +231,7 @@ export default function PermissionsSetupScreen({ navigation }) {
             onAllow={requestCamera}
           />
           <PermissionRow
+            styles={styles}
             icon="image-outline"
             title={t('permissions.photosTitle', { defaultValue: 'Photos' })}
             description={t('permissions.photosDescription', {
@@ -236,6 +241,7 @@ export default function PermissionsSetupScreen({ navigation }) {
             onAllow={requestPhoto}
           />
           <PermissionRow
+            styles={styles}
             icon="location-outline"
             title={t('permissions.locationTitle', { defaultValue: 'Location' })}
             description={t('permissions.locationDescription', {
@@ -245,6 +251,7 @@ export default function PermissionsSetupScreen({ navigation }) {
             onAllow={requestLocation}
           />
           <PermissionRow
+            styles={styles}
             icon="mic-outline"
             title={t('permissions.microphoneTitle', { defaultValue: 'Microphone' })}
             description={t('permissions.microphoneDescription', {
@@ -276,7 +283,10 @@ export default function PermissionsSetupScreen({ navigation }) {
   );
 }
 
-function PermissionRow({ icon, title, description, granted, onAllow }) {
+// `styles` is passed as a prop because it lives in PermissionsSetupScreen's
+// closure (useMemo(makeStyles)), not at module scope — otherwise this would
+// throw ReferenceError at render time and hang the app on splash.
+function PermissionRow({ styles, icon, title, description, granted, onAllow }) {
   return (
     <View style={styles.row}>
       <View style={styles.rowIcon}>
@@ -299,10 +309,10 @@ function PermissionRow({ icon, title, description, granted, onAllow }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   content: {
     flex: 1,
@@ -322,14 +332,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 24,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.5,
     marginBottom: 8,
   },
   subhead: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#666666',
+    color: theme.textSecondary,
     lineHeight: 20,
     letterSpacing: -0.1,
     marginBottom: 22,
@@ -341,10 +351,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     paddingHorizontal: 12,
     paddingVertical: 14,
     shadowColor: '#141420',
@@ -357,7 +367,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -369,14 +379,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 15,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
     marginBottom: 2,
   },
   rowDesc: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12.5,
-    color: '#666666',
+    color: theme.textSecondary,
     lineHeight: 17,
   },
   rowStatus: {
@@ -389,20 +399,20 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1.5,
-    borderColor: '#D0D0D0',
+    borderColor: theme.borderStrong,
   },
   allowButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 13,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
 
   footer: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
   primaryButton: {
     backgroundColor: '#F2C31B',
@@ -420,7 +430,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   ghostLink: {
@@ -432,7 +442,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
     fontWeight: '600',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
 });

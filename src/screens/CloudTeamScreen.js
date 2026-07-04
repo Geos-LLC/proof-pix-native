@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import proxyService from '../services/proxyService';
 import { generateInviteToken } from '../utils/tokens';
 import { generateInviteLink } from '../utils/inviteLinkGenerator';
 import { logTeamInvitesCreated } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 
 // CloudTeamScreen — design 35.
 //
@@ -48,6 +49,8 @@ const BG_UPLOAD_KEY = '@cloud_team_bg_upload_pref';
 export default function CloudTeamScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const {
     isAuthenticated,
     userInfo,
@@ -457,10 +460,10 @@ export default function CloudTeamScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
   },
 
   // Header
@@ -476,7 +479,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -485,7 +488,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 17,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.2,
   },
 
@@ -503,7 +506,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.1,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
   },
   proBadge: {
@@ -529,7 +532,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: 0.5,
   },
 
@@ -544,10 +547,10 @@ const styles = StyleSheet.create({
     gap: 13,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     shadowColor: '#141420',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
@@ -558,7 +561,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -573,14 +576,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   rowSub: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '500',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
     marginTop: 1,
   },
@@ -602,7 +605,7 @@ const styles = StyleSheet.create({
   actionPillGhost: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: '#D0D0D0',
+    borderColor: theme.borderStrong,
   },
   actionPillText: {
     fontFamily: FONTS.ALEXANDRIA,
@@ -611,18 +614,18 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
   actionPillTextAccent: {
-    color: '#1E1E1E',
+    color: theme.textPrimary,
   },
   actionPillTextGhost: {
-    color: '#1E1E1E',
+    color: theme.textPrimary,
   },
 
   // Team card
   teamCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     marginHorizontal: 18,
     paddingVertical: 18,
     paddingHorizontal: 16,
@@ -637,7 +640,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 14,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -646,7 +649,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 15,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
     marginBottom: 4,
     textAlign: 'center',
@@ -655,7 +658,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12.5,
     fontWeight: '500',
-    color: '#666666',
+    color: theme.textSecondary,
     letterSpacing: -0.1,
     lineHeight: 18,
     textAlign: 'center',

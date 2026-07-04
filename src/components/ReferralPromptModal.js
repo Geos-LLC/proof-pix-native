@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
+import { useTheme } from '../hooks/useTheme';
 
 // Single-purpose modal used by the value-moment ("first report") nudge
 // and the expiring-trial nudge. Parent supplies the variant + handlers
@@ -26,6 +27,8 @@ export default function ReferralPromptModal({
   onSecondary,
 }) {
   const { t } = useTranslation();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   if (!prompt) return null;
 
   const variant = prompt.variant;
@@ -55,7 +58,7 @@ export default function ReferralPromptModal({
           <View style={styles.dragHandle} />
 
           <TouchableOpacity style={styles.closeBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="close" size={20} color="#666666" />
+            <Ionicons name="close" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
 
           <View style={styles.iconCircle}>
@@ -87,14 +90,14 @@ export default function ReferralPromptModal({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 24,
@@ -105,7 +108,7 @@ const styles = StyleSheet.create({
   dragHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#E5E5E5',
+    backgroundColor: theme.border,
     borderRadius: 2,
     marginBottom: 12,
   },
@@ -116,7 +119,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -136,7 +139,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 22,
     fontWeight: '800',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     textAlign: 'center',
     letterSpacing: -0.3,
   },
@@ -144,14 +147,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 15,
     fontWeight: '600',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     textAlign: 'center',
     marginTop: 8,
   },
   secondary: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#666666',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginTop: 10,
@@ -187,7 +190,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
 });

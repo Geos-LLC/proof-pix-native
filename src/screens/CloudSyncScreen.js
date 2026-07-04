@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import iCloudService from '../services/iCloudService';
 import crmService from '../services/crm';
 import { syncServiceFlowJobs } from '../services/crm/serviceFlowSync';
 import { usePhotos } from '../context/PhotoContext';
+import { useTheme } from '../hooks/useTheme';
 
 // CloudSyncScreen — dedicated route for cloud storage connections.
 // Split out of the prior combined CloudTeamScreen so the team flow
@@ -45,6 +46,8 @@ export default function CloudSyncScreen({ navigation }) {
   const { isAuthenticated, userInfo, accountType, individualSignIn, adminSignIn, signOut } = useAdmin();
   const { projects, createProject: ctxCreateProject, patchProject } = usePhotos();
   const { userPlan } = useSettings();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const [dropboxConnected, setDropboxConnected] = useState(false);
   const [dropboxUserInfo, setDropboxUserInfo] = useState(null);
@@ -494,8 +497,8 @@ export default function CloudSyncScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const makeStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.surfaceElevated },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -508,7 +511,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -517,7 +520,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 17,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.2,
   },
   eyebrowRow: {
@@ -533,7 +536,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.1,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
   },
   proBadge: {
@@ -556,10 +559,10 @@ const styles = StyleSheet.create({
     gap: 13,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     shadowColor: '#141420',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
@@ -570,7 +573,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -580,14 +583,14 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   rowSub: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '500',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
     marginTop: 1,
   },
@@ -603,7 +606,7 @@ const styles = StyleSheet.create({
   actionPillGhost: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: '#D0D0D0',
+    borderColor: theme.borderStrong,
   },
   actionPillText: {
     fontFamily: FONTS.ALEXANDRIA,
@@ -611,6 +614,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.1,
   },
-  actionPillTextAccent: { color: '#1E1E1E' },
-  actionPillTextGhost: { color: '#1E1E1E' },
+  actionPillTextAccent: { color: theme.textPrimary },
+  actionPillTextGhost: { color: theme.textPrimary },
 });

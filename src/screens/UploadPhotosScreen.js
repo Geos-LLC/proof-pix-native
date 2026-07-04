@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { COLORS, PHOTO_MODES } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { savePhotoToDevice } from '../services/storage';
 import { logEvent } from '../utils/analytics';
+import { useTheme } from '../hooks/useTheme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -30,6 +31,8 @@ export default function UploadPhotosScreen({ route, navigation }) {
   const { t } = useTranslation();
   const { addPhoto, activeProjectId } = usePhotos();
   const room = route.params?.room || 'General';
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const [photo1, setPhoto1] = useState(null); // before
   const [photo2, setPhoto2] = useState(null); // after
@@ -366,7 +369,7 @@ export default function UploadPhotosScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
@@ -463,7 +466,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptySlotText: {
-    color: '#666',
+    color: theme.textSecondary,
     fontSize: 13,
     fontFamily: FONTS.MEDIUM,
   },
@@ -495,7 +498,7 @@ const styles = StyleSheet.create({
   pickBothText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontFamily: FONTS.BOLD,
     letterSpacing: -0.1,
   },
@@ -504,7 +507,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   hintText: {
-    color: '#888',
+    color: theme.textMuted,
     fontSize: 14,
     fontFamily: FONTS.REGULAR,
   },
@@ -532,7 +535,7 @@ const styles = StyleSheet.create({
   createButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontFamily: FONTS.BOLD,
     letterSpacing: -0.1,
   },
@@ -541,7 +544,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   resetText: {
-    color: '#888',
+    color: theme.textMuted,
     fontSize: 14,
     fontFamily: FONTS.MEDIUM,
   },
