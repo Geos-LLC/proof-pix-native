@@ -38,16 +38,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../context/SettingsContext';
 import { useAdmin } from '../context/AdminContext';
+import { useTheme } from '../hooks/useTheme';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import { canStartTrial, isTrialExpired } from '../services/trialService';
-import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan, productIdToBillingPeriod, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
 import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted, logSubscriptionRestored } from '../utils/analytics';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import { getSoftTrialState, ensureDeviceId } from '../services/softTrialService';
 import { PAYWALL_TRIGGERS } from '../constants/softTrial';
-import { useTheme } from '../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
 
@@ -67,12 +67,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
   // of "Free Trial" UI before canStartTrial() resolves. Eligible new users will
   // briefly see "Subscribe" before the trial UI appears — acceptable.
   const [trialAvailable, setTrialAvailable] = useState(false);
-  // Billing toggle is shown per the design (Annual / Monthly). Annual
-  // products aren't configured in App Store Connect / Play yet, so tapping
-  // Annual surfaces a friendly "coming soon" alert and the state stays
-  // on monthly. When annual is wired upstream, flip the alert to a real
-  // setBillingCycle('annual') call and price selection downstream.
-  const [billingCycle, setBillingCycle] = useState('monthly');
+  // Billing toggle — Annual is preselected by design since it's the primary
+  // recommendation (25% cheaper vs 12× monthly). Product IDs `pro.annual` /
+  // `business.annual` must be configured in App Store Connect + Google Play
+  // Console with matching intro trial; if the store doesn't return an annual
+  // price the UI transparently falls back to hiding the annual badge and per-
+  // month equivalent so we never show broken math.
+  const [billingCycle, setBillingCycle] = useState('annual');
   // Fallback when store metadata hasn't loaded yet. Actual duration is read
   // from the store's intro offer below (iOS: 14 days / 2 weeks, Android: 15)
   // so paywall copy always matches what the store's sheet will show.
@@ -91,7 +92,25 @@ export default function PlanSelectionScreen({ navigation, route }) {
   const isPurchasing = useRef(false);
 
   // Live store prices + trial info (ADDITION 2: must show before billing)
-  const { loading: pricesLoading, error: pricesError, prices, trialInfo, platformCancelText } = useSubscriptionPrices();
+  const { loading: pricesLoading, error: pricesError, prices, trialInfo, annualSummary, platformCancelText } = useSubscriptionPrices();
+
+  // Annual availability gate. The `.annual` SKUs must be configured in App
+  // Store Connect + Google Play Console before the annual toggle is safe to
+  // expose — without them a purchase attempt for `PRO_ANNUAL` returns
+  // "product not found", so we auto-fold the toggle back to monthly until
+  // the store returns real annual pricing. Cleared once ASC/Play + a
+  // resolvable annual SKU are live for either Pro or Business.
+  const annualAvailable = !!(prices.proAnnual || prices.businessAnnual);
+
+  // When the store finishes loading and annual isn't available, snap the
+  // toggle back to monthly. Runs once per pricesLoading resolution so the
+  // user can still manually flip if they want, but doesn't leave them on a
+  // broken selection.
+  useEffect(() => {
+    if (!pricesLoading && !annualAvailable && billingCycle === 'annual') {
+      setBillingCycle('monthly');
+    }
+  }, [pricesLoading, annualAvailable]);
 
   // ADDITION 1: Prevent hidden re-entry into paywall after dismiss
   const [paywallDismissed, setPaywallDismissed] = useState(false);
@@ -113,9 +132,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
           trial_type: 'apple',
           exports_used: s?.exports_used ?? null,
           device_id: deviceId || null,
+          billing_period: 'annual',
         });
       } catch {
-        logPaywallView({ trigger });
+        logPaywallView({ trigger, billing_period: 'annual' });
       }
     })();
 
@@ -141,20 +161,36 @@ export default function PlanSelectionScreen({ navigation, route }) {
           const AsyncStorage = await import('@react-native-async-storage/async-storage');
           const referralData = await AsyncStorage.default.getItem('@referral_accepted');
           if (isMounted.current) {
-            const base = trialInfo?.pro?.trialDays || FALLBACK_TRIAL_DAYS;
+            // Prefer the cadence-specific trial length from the store (annual
+            // and monthly can carry different intro-offer durations in ASC /
+            // Play Console). If annual metadata hasn't landed yet, fall through
+            // to the monthly value. Final fallback is the 7-day base per
+            // ProofPix's actual product config (NOT 15 — see session memory).
+            const storeDays =
+              (billingCycle === 'annual' && trialInfo?.proAnnual?.trialDays) ||
+              trialInfo?.pro?.trialDays ||
+              FALLBACK_TRIAL_DAYS;
             // Friend (referral on file) gets base + 7 = 14 days (additive).
-            setTrialDays(referralData !== null ? base + REFERRAL_BONUS_DAYS : base);
+            setTrialDays(referralData !== null ? storeDays + REFERRAL_BONUS_DAYS : storeDays);
           }
         } catch (error) {
           if (isMounted.current) {
-            setTrialDays(trialInfo?.pro?.trialDays || FALLBACK_TRIAL_DAYS);
+            const storeDays =
+              (billingCycle === 'annual' && trialInfo?.proAnnual?.trialDays) ||
+              trialInfo?.pro?.trialDays ||
+              FALLBACK_TRIAL_DAYS;
+            setTrialDays(storeDays);
           }
         }
       } catch (error) {
         console.error('[PlanSelection] Error checking trial availability:', error);
         if (isMounted.current) {
           setTrialAvailable(!forceUpgradeMode);
-          setTrialDays(trialInfo?.pro?.trialDays || FALLBACK_TRIAL_DAYS);
+          const storeDays =
+            (billingCycle === 'annual' && trialInfo?.proAnnual?.trialDays) ||
+            trialInfo?.pro?.trialDays ||
+            FALLBACK_TRIAL_DAYS;
+          setTrialDays(storeDays);
         }
       }
     };
@@ -167,9 +203,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
   }, []);
 
   // Re-sync trialDays once store metadata arrives (useSubscriptionPrices is
-  // async — may not be loaded when the mount effect runs).
+  // async — may not be loaded when the mount effect runs). Also re-runs when
+  // the user flips the billing toggle so the paywall's "N-day free trial"
+  // copy matches whichever SKU (monthly vs annual) they're about to buy.
   useEffect(() => {
-    const storeDays = trialInfo?.pro?.trialDays;
+    const storeDays =
+      (billingCycle === 'annual' && trialInfo?.proAnnual?.trialDays) ||
+      trialInfo?.pro?.trialDays;
     if (!storeDays || !isMounted.current) return;
     (async () => {
       try {
@@ -183,7 +223,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
         if (isMounted.current) setTrialDays(storeDays);
       }
     })();
-  }, [trialInfo?.pro?.trialDays]);
+  }, [trialInfo?.pro?.trialDays, trialInfo?.proAnnual?.trialDays, billingCycle]);
 
   const handleGoBack = () => {
     navigation.goBack();
@@ -194,16 +234,25 @@ export default function PlanSelectionScreen({ navigation, route }) {
     // never a trial; for paid plans the store-side intro offer flag is the
     // source of truth. Hardcoding `false` here was hiding most trial starts
     // from the GA4 funnel (`plan_selected → trial_started`).
+    // For paid tiers respect the current billingCycle toggle so we look up
+    // the correct annual vs monthly trial flag.
+    const trialInfoKey =
+      billingCycle === 'annual' && (plan === 'pro' || plan === 'business')
+        ? `${plan}Annual`
+        : plan;
     const productHasTrialFromCache =
-      plan !== 'starter' && !!trialInfo?.[plan]?.hasTrial;
+      plan !== 'starter' && !!trialInfo?.[trialInfoKey]?.hasTrial;
     const isTrial = productHasTrialFromCache;
+    const billingPeriod = plan === 'starter' ? null : billingCycle;
     console.log('[analytics-debug] plan_selected source data', {
       plan,
+      billingPeriod,
+      trialInfoKey,
       productHasTrialFromCache,
-      trialInfoForPlan: trialInfo?.[plan] || null,
+      trialInfoForPlan: trialInfo?.[trialInfoKey] || null,
       isTrial,
     });
-    logPlanSelected(plan, isTrial);
+    logPlanSelected(plan, isTrial, billingPeriod);
 
     if (plan === 'starter') {
       // If the user already has an active Apple/Google subscription, tapping
@@ -269,10 +318,37 @@ export default function PlanSelectionScreen({ navigation, route }) {
       // eligibility for the intro free trial. Reinstall users who already used
       // their trial will see the full subscription price in the native sheet.
       if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        // Pick the annual or monthly product ID off the current billing toggle.
+        // Enterprise has no annual SKU (contact-sales only); it always maps to
+        // the monthly product for the app-internal purchase path.
+        //
+        // Safety fallback: if the store hasn't returned annual pricing for
+        // this tier (ASC/Play annual SKU not yet configured), force the
+        // monthly SKU rather than attempting to buy a non-existent product.
+        // Belt-and-suspenders — the annualAvailable gate already prevents
+        // 'annual' from being selected in that state, but a stale cache or
+        // partial-price payload could still get us here.
         let productId = null;
-        if (plan === 'pro') productId = IAP_PRODUCTS.PRO_MONTHLY;
-        else if (plan === 'business') productId = IAP_PRODUCTS.BUSINESS_MONTHLY;
-        else if (plan === 'enterprise') productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
+        const wantAnnual = billingCycle === 'annual';
+        if (plan === 'pro') {
+          const proAnnualLive = !!prices.proAnnual;
+          productId = wantAnnual && proAnnualLive
+            ? IAP_PRODUCTS.PRO_ANNUAL
+            : IAP_PRODUCTS.PRO_MONTHLY;
+          if (wantAnnual && !proAnnualLive) {
+            console.warn('[PlanSelection] Pro annual not yet available in store — falling back to monthly SKU');
+          }
+        } else if (plan === 'business') {
+          const businessAnnualLive = !!prices.businessAnnual;
+          productId = wantAnnual && businessAnnualLive
+            ? IAP_PRODUCTS.BUSINESS_ANNUAL
+            : IAP_PRODUCTS.BUSINESS_MONTHLY;
+          if (wantAnnual && !businessAnnualLive) {
+            console.warn('[PlanSelection] Business annual not yet available in store — falling back to monthly SKU');
+          }
+        } else if (plan === 'enterprise') {
+          productId = IAP_PRODUCTS.ENTERPRISE_MONTHLY;
+        }
 
         console.log('[PlanSelection] Selected plan:', plan, 'Product ID:', productId);
 
@@ -443,17 +519,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
     }
   };
 
-  // Design 38 layout — "Choose your plan" + X close, Annual/Monthly
-  // toggle, then Starter / Pro (highlighted) / Business / Enterprise
-  // stacked vertically. Cards carry concise design bullets; Pro hosts
-  // the primary CTA inline. All existing IAP / restore / legal logic
-  // is preserved; only the JSX structure is reshaped.
-  const handlePickAnnual = () => {
-    Alert.alert(
-      'Annual coming soon',
-      'Annual billing will be available shortly. Monthly is active for now.',
-    );
-  };
+  // Annual is now the default recommendation. Both toggle chips are live
+  // and drive card price/CTA rendering + downstream productId resolution.
+  const handlePickAnnual = () => setBillingCycle('annual');
+  const handlePickMonthly = () => setBillingCycle('monthly');
 
   // Compute per-tier CTA labels based on the user's current tier so
   // every card tells them exactly what tapping it does. Pricing tiers
@@ -478,19 +547,69 @@ export default function PlanSelectionScreen({ navigation, route }) {
   const enterpriseCTAText =
     currentTier === 'enterprise' ? 'Current plan' : 'Contact sales';
 
+  // One feature bullet line — round check + text. `tint` lets the Pro
+  // card's bullets render in accent-ink for the soft-yellow surface,
+  // while everyone else stays neutral grey. Defined inside the component
+  // so it closes over the theme-aware `styles` from `useMemo` above.
+  const Bullet = ({ text, tint }) => (
+    <View style={styles.designBulletRow}>
+      <View style={[styles.designBulletCheck, tint ? { backgroundColor: '#F2C31B' } : null]}>
+        <Ionicons name="checkmark" size={11} color={tint ? '#1E1E1E' : '#34C759'} />
+      </View>
+      <Text style={[styles.designBulletText, tint ? { color: tint } : null]} numberOfLines={2}>
+        {text}
+      </Text>
+    </View>
+  );
+
+  // Per-tier price display strategy.
+  //
+  // Annual toggle: show total annual price + per-month equivalent + "Save X%"
+  //   pill (if we can parse the numbers from the store's formatted strings).
+  // Monthly toggle: show monthly price + "Flexible monthly billing" caption.
+  //
+  // Every value is derived from what the store actually returned via
+  // useSubscriptionPrices — no hardcoded USD amounts. Missing annual SKUs
+  // (Play/ASC not yet configured) collapse to null and the UI hides the
+  // annual-only chrome instead of rendering broken math.
+  const proMonthlyPrice = prices.pro || null;
+  const proAnnualPrice = prices.proAnnual || null;
+  const proAnnualPerMonth = annualSummary?.pro?.perMonthDisplay || null;
+  const proAnnualSavings = annualSummary?.pro?.savingsPct || null;
+  const businessMonthlyPrice = prices.business || null;
+  const businessAnnualPrice = prices.businessAnnual || null;
+  const businessAnnualPerMonth = annualSummary?.business?.perMonthDisplay || null;
+  const businessAnnualSavings = annualSummary?.business?.savingsPct || null;
+
+  const showAnnualForPro = billingCycle === 'annual' && !!proAnnualPrice;
+  const showAnnualForBusiness = billingCycle === 'annual' && !!businessAnnualPrice;
+
+  // Trust bullets shown under the plan cards (both cadences). Static content —
+  // reads the same regardless of trial availability, since even "paid up front"
+  // subscriptions can be cancelled anytime through the store.
+  const TRUST_BULLETS = [
+    'Cancel anytime',
+    Platform.OS === 'android'
+      ? 'Secure billing through Google Play'
+      : 'Secure billing through Apple',
+    'Keep all your projects',
+    'Professional support included',
+  ];
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {/* Header — design 38: "Choose your plan" left + X close right. */}
+      {/* Top bar — X close only; the value-prop hero lives inside the
+          scroll view so it scrolls away with content. */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Choose your plan</Text>
+        <View style={styles.headerSpacer} />
         <TouchableOpacity
           style={styles.headerClose}
           onPress={handleGoBack}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <Ionicons name="close" size={20} color="#1E1E1E" />
+          <Ionicons name="close" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -499,31 +618,71 @@ export default function PlanSelectionScreen({ navigation, route }) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Annual / Monthly segmented control */}
+        {/* Brand row — small ProofPix logo + wordmark above the hero, per
+            design source. Doubles as visual anchor for the paywall's
+            positioning. */}
+        <View style={styles.brandRow}>
+          <View style={styles.brandTile}>
+            <Ionicons name="camera" size={18} color="#1E1E1E" />
+          </View>
+          <Text style={styles.brandName}>ProofPix</Text>
+        </View>
+
+        {/* Hero — pro-positioning header + subtitle (sentence case per
+            design source). When a specific feature triggered the paywall,
+            the trigger banner below carries the per-trigger headline; this
+            hero stays as the platform positioning. */}
+        <Text style={styles.heroTitle}>Turn job photos into professional deliverables</Text>
+        <Text style={styles.heroSubtitle}>
+          Capture, organize, document & share every job with branded reports, cloud sync, and workflows built for service professionals.
+        </Text>
+
+        {/* Monthly / Annual segmented control — Monthly on left, Annual on
+            right per design source. Annual is preselected. "SAVE 25%" is
+            an inline accent inside the Annual chip (yellow), not a separate
+            label. If the store isn't returning annual pricing yet (ASC/Play
+            SKU not live), the annual chip disables itself and the useEffect
+            above folds billingCycle back to 'monthly'. */}
         <View style={styles.billingToggle}>
           <TouchableOpacity
-            style={[styles.billingChip, billingCycle === 'annual' && styles.billingChipActive]}
-            onPress={handlePickAnnual}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.billingChipText, billingCycle === 'annual' && styles.billingChipTextActive]}>
-              Annual · save 20%
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.billingChip, billingCycle === 'monthly' && styles.billingChipActive]}
-            onPress={() => setBillingCycle('monthly')}
+            onPress={handlePickMonthly}
             activeOpacity={0.85}
           >
             <Text style={[styles.billingChipText, billingCycle === 'monthly' && styles.billingChipTextActive]}>
               Monthly
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.billingChip,
+              billingCycle === 'annual' && styles.billingChipActive,
+              !annualAvailable && styles.billingChipDisabled,
+            ]}
+            onPress={annualAvailable ? handlePickAnnual : undefined}
+            disabled={!annualAvailable}
+            activeOpacity={0.85}
+          >
+            <View style={styles.billingChipInner}>
+              <Text style={[
+                styles.billingChipText,
+                billingCycle === 'annual' && styles.billingChipTextActive,
+                !annualAvailable && styles.billingChipTextDisabled,
+              ]}>
+                Annual
+              </Text>
+              <Text style={[
+                styles.billingChipAccent,
+                !annualAvailable && styles.billingChipTextDisabled,
+              ]}>
+                {annualAvailable ? 'SAVE 25%' : 'COMING SOON'}
+              </Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Contextual trigger banner — shown when paywall is opened from a
-            specific feature or limit. Tells the user exactly what they
-            unlock by upgrading. */}
+            specific feature or limit. Preserved from prior spec. */}
         {trigger ? (
           <View style={styles.triggerBanner}>
             <Text style={styles.triggerBannerTitle}>
@@ -543,258 +702,215 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        {/* ===== Starter ===== */}
-        <TouchableOpacity
-          style={[
-            styles.designCard,
-            currentTier === 'starter' && styles.designCardCurrent,
-          ]}
-          onPress={currentTier === 'starter' ? undefined : () => handleSelectPlan('starter')}
-          disabled={currentTier === 'starter'}
-          activeOpacity={0.85}
-        >
-          {currentTier === 'starter' ? (
-            <View style={styles.currentPlanPill}>
-              <Ionicons name="checkmark" size={11} color="#FFFFFF" />
-              <Text style={styles.currentPlanPillText}>Current plan</Text>
-            </View>
-          ) : null}
-          <View style={styles.designCardHeader}>
-            <Text style={styles.designCardTitle}>Starter</Text>
-            <Text style={styles.designCardPriceFree}>Free</Text>
-          </View>
-          <View style={styles.designBullets}>
-            <Bullet styles={styles} text="Single project · 100 photos" />
-            <Bullet styles={styles} text="All capture modes" />
-            <Bullet styles={styles} text="Text notes · single-photo share" />
-          </View>
-        </TouchableOpacity>
-
-        {/* ===== Pro (highlighted) ===== */}
+        {/* ===== Pro — emphasized expanded card. This is the recommended
+            plan on both cadences; the bottom-anchored CTA below drives its
+            purchase. Radio dot on the left indicates it's the selected
+            plan by default (Pro is always the emphasized row per design). */}
         <View
           style={[
-            styles.designCard,
-            styles.designCardPro,
-            currentTier === 'pro' && styles.designCardCurrent,
+            styles.proCard,
+            currentTier === 'pro' && styles.proCardCurrent,
           ]}
         >
-          {/* Most-popular pill stays for any non-Pro user; Pro users
-              see the Current-plan pill instead (in the same slot). */}
+          {/* MOST POPULAR pill — shown on annual cadence only, per spec.
+              Sits at the top-right corner of the Pro card. */}
           {currentTier === 'pro' ? (
             <View style={[styles.currentPlanPill, styles.currentPlanPillOnAccent]}>
               <Ionicons name="checkmark" size={11} color="#FFFFFF" />
               <Text style={styles.currentPlanPillText}>Current plan</Text>
             </View>
-          ) : (
-            <View style={styles.mostPopularPill}>
-              <Ionicons name="star" size={11} color="#1E1E1E" />
-              <Text style={styles.mostPopularPillText}>Most popular</Text>
+          ) : billingCycle === 'annual' ? (
+            <View style={styles.mostPopularPillDark}>
+              <Ionicons name="star" size={11} color="#F2C31B" />
+              <Text style={styles.mostPopularPillDarkText}>MOST POPULAR</Text>
             </View>
-          )}
+          ) : null}
 
-          <View style={styles.designCardHeader}>
-            <Text style={styles.designCardTitle}>Pro</Text>
-            <View style={styles.designPriceCluster}>
+          <View style={styles.proCardHeader}>
+            {/* Selected radio dot (Pro is always selected in this layout). */}
+            <View style={styles.radioDotSelected}>
+              <Ionicons name="checkmark" size={12} color="#1E1E1E" />
+            </View>
+
+            <View style={styles.proCardTitleBlock}>
+              <Text style={styles.proCardTitle}>Pro</Text>
+              <Text style={styles.proCardCadence}>
+                {billingCycle === 'annual' ? 'ANNUAL' : 'MONTHLY'}
+              </Text>
+            </View>
+
+            <View style={styles.proCardPriceBlock}>
               {pricesLoading ? (
                 <ActivityIndicator size="small" color="#1E1E1E" />
+              ) : showAnnualForPro ? (
+                <>
+                  <View style={styles.designPriceCluster}>
+                    <Text style={styles.proCardPrice}>{proAnnualPrice}</Text>
+                    <Text style={styles.proCardPriceUnit}>/year</Text>
+                  </View>
+                  {proAnnualPerMonth ? (
+                    <Text style={styles.proCardPriceCaption}>
+                      Just {proAnnualPerMonth}/month · billed annually
+                    </Text>
+                  ) : null}
+                </>
               ) : (
                 <>
-                  <Text style={styles.designCardPrice}>{prices.pro || '—'}</Text>
-                  <Text style={styles.designCardPriceUnit}>/mo</Text>
+                  <View style={styles.designPriceCluster}>
+                    <Text style={styles.proCardPrice}>{proMonthlyPrice || '—'}</Text>
+                    <Text style={styles.proCardPriceUnit}>/month</Text>
+                  </View>
+                  <Text style={styles.proCardPriceCaption}>Flexible monthly billing</Text>
                 </>
               )}
             </View>
           </View>
 
-          <View style={styles.designBullets}>
-            <Bullet styles={styles} text="Unlimited projects & photos" tint="#7A5B00" />
-            <Bullet styles={styles} text="Combined formats & view modes" tint="#7A5B00" />
-            <Bullet styles={styles} text="Watermark, voice notes, markup" tint="#7A5B00" />
-            <Bullet styles={styles} text="Reports & cloud sync" tint="#7A5B00" />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.proInCardCTA, currentTier === 'pro' && styles.proInCardCTADisabled]}
-            onPress={currentTier === 'pro' ? undefined : () => handleSelectPlan('pro')}
-            disabled={currentTier === 'pro'}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.proInCardCTAText}>{proCTAText}</Text>
-          </TouchableOpacity>
-
-          {Platform.OS === 'android' && (
-            <Text style={styles.androidCardDisclosure}>
-              {trialAvailable && prices.pro
-                ? `${trialDays}-day free trial, then ${prices.pro}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
-                : prices.pro
-                  ? `${prices.pro}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
-                  : ''}
-            </Text>
+          {/* Full 6-bullet stack per design source — value + features. */}
+          {showAnnualForPro ? (
+            <View style={styles.proBullets}>
+              <Bullet text={proAnnualSavings ? `Save ${proAnnualSavings}% vs monthly` : 'Save 25% vs monthly'} tint="#7A5B00" />
+              <Bullet text="Get 3 months free" tint="#7A5B00" />
+              <Bullet text="Lowest price — locked for 12 months" tint="#7A5B00" />
+              <Bullet text="Unlimited projects & photos" tint="#7A5B00" />
+              <Bullet text="Branded PDF reports & cloud sync" tint="#7A5B00" />
+              <Bullet text="Watermark, logo, voice notes & markup" tint="#7A5B00" />
+            </View>
+          ) : (
+            <View style={styles.proBullets}>
+              <Bullet text="Flexible monthly billing" tint="#7A5B00" />
+              <Bullet text="Cancel anytime" tint="#7A5B00" />
+              <Bullet text="Upgrade or downgrade anytime" tint="#7A5B00" />
+              <Bullet text="Unlimited projects & photos" tint="#7A5B00" />
+              <Bullet text="Branded PDF reports & cloud sync" tint="#7A5B00" />
+              <Bullet text="Watermark, logo, voice notes & markup" tint="#7A5B00" />
+            </View>
           )}
         </View>
 
-        {/* ===== Business ===== */}
+        {/* ===== Business — compact single-row selectable per design.
+            Empty radio circle + title/subtitle on the left, price on
+            the right. Tapping the row runs handleSelectPlan('business')
+            which enters the store purchase flow (Android inline; iOS via
+            the native purchase modal). */}
         <TouchableOpacity
           style={[
-            styles.designCard,
-            currentTier === 'business' && styles.designCardCurrent,
+            styles.compactRow,
+            currentTier === 'business' && styles.compactRowCurrent,
           ]}
           onPress={
-            currentTier === 'business' || Platform.OS === 'android'
+            currentTier === 'business'
               ? undefined
               : () => handleSelectPlan('business')
           }
-          disabled={currentTier === 'business' || Platform.OS === 'android'}
-          activeOpacity={(currentTier === 'business' || Platform.OS === 'android') ? 1 : 0.85}
+          disabled={currentTier === 'business'}
+          activeOpacity={currentTier === 'business' ? 1 : 0.85}
         >
-          {currentTier === 'business' ? (
-            <View style={styles.currentPlanPill}>
-              <Ionicons name="checkmark" size={11} color="#FFFFFF" />
-              <Text style={styles.currentPlanPillText}>Current plan</Text>
-            </View>
-          ) : null}
-          <View style={styles.designCardHeader}>
-            <Text style={styles.designCardTitle}>Business</Text>
-            <View style={styles.designPriceCluster}>
-              {pricesLoading ? (
-                <ActivityIndicator size="small" color="#1E1E1E" />
-              ) : (
-                <>
-                  <Text style={styles.designCardPrice}>{prices.business || '—'}</Text>
-                  <Text style={styles.designCardPriceUnit}>/mo</Text>
-                </>
-              )}
-            </View>
+          <View style={styles.radioDotEmpty} />
+          <View style={styles.compactRowBody}>
+            <Text style={styles.compactRowTitle}>Business</Text>
+            <Text style={styles.compactRowSubtitle}>
+              {showAnnualForBusiness
+                ? (businessAnnualPerMonth
+                    ? `Everything in Pro + teams · ${businessAnnualPerMonth}/mo`
+                    : 'Everything in Pro + teams')
+                : 'Everything in Pro + teams & logo overlays'}
+            </Text>
           </View>
-
-          <View style={styles.designBullets}>
-            <Bullet styles={styles} text="Everything in Pro" />
-            <Bullet styles={styles} text="Logo & timestamp overlays" />
-            <Bullet styles={styles} text="Team invites & shared projects" />
-            <Bullet styles={styles} text="Map-embedded reports" />
+          <View style={styles.compactRowPrice}>
+            {pricesLoading ? (
+              <ActivityIndicator size="small" color={theme.textPrimary} />
+            ) : showAnnualForBusiness ? (
+              <>
+                <Text style={styles.compactRowPriceMain}>{businessAnnualPrice}</Text>
+                <Text style={styles.compactRowPriceUnit}>/year</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.compactRowPriceMain}>{businessMonthlyPrice || '—'}</Text>
+                <Text style={styles.compactRowPriceUnit}>/month</Text>
+              </>
+            )}
           </View>
-
-          {Platform.OS === 'android' && (
-            <>
-              <TouchableOpacity
-                style={[
-                  styles.designSecondaryCTA,
-                  currentTier === 'business' && styles.designSecondaryCTADisabled,
-                ]}
-                onPress={currentTier === 'business' ? undefined : () => handleSelectPlan('business')}
-                disabled={currentTier === 'business'}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.designSecondaryCTAText}>{businessCTAText}</Text>
-              </TouchableOpacity>
-              <Text style={styles.androidCardDisclosure}>
-                {trialAvailable && prices.business
-                  ? `${trialDays}-day free trial, then ${prices.business}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
-                  : prices.business
-                    ? `${prices.business}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
-                    : ''}
-              </Text>
-            </>
-          )}
         </TouchableOpacity>
 
-        {/* ===== Enterprise ===== */}
+        {/* ===== Enterprise — compact row → Contact Sales modal. Never
+            enters a purchase flow (no in-app product). */}
         <TouchableOpacity
           style={[
-            styles.designCard,
-            currentTier === 'enterprise' && styles.designCardCurrent,
+            styles.compactRow,
+            currentTier === 'enterprise' && styles.compactRowCurrent,
           ]}
           onPress={currentTier === 'enterprise' ? undefined : () => setShowEnterpriseModal(true)}
           disabled={currentTier === 'enterprise'}
           activeOpacity={currentTier === 'enterprise' ? 1 : 0.85}
         >
-          {currentTier === 'enterprise' ? (
-            <View style={styles.currentPlanPill}>
-              <Ionicons name="checkmark" size={11} color="#FFFFFF" />
-              <Text style={styles.currentPlanPillText}>Current plan</Text>
-            </View>
-          ) : null}
-          <View style={styles.designCardHeader}>
-            <Text style={styles.designCardTitle}>Enterprise</Text>
-            <Text style={styles.designCardPriceContact}>Contact sales</Text>
-          </View>
-
-          <View style={styles.designBullets}>
-            <Bullet styles={styles} text="Everything in Business" />
-            <Bullet styles={styles} text="Unlimited team members" />
-            <Bullet styles={styles} text="Multiple cloud accounts & teams" />
-            <Bullet styles={styles} text="API access, webhooks, priority support" />
-          </View>
-
-          <TouchableOpacity
-            style={[
-              styles.designSecondaryCTA,
-              currentTier === 'enterprise' && styles.designSecondaryCTADisabled,
-            ]}
-            onPress={currentTier === 'enterprise' ? undefined : () => setShowEnterpriseModal(true)}
-            disabled={currentTier === 'enterprise'}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.designSecondaryCTAText}>{enterpriseCTAText}</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-
-        {/* Risk reversal + trust + urgency (iOS only — Android shows
-            per-card disclosures inline above to satisfy Play policy). */}
-        {Platform.OS !== 'android' && (
-          <>
-            <Text style={styles.riskReversalText}>
-              {trialAvailable
-                ? 'No charge today. Apple will remind you before billing.'
-                : `No charges today ${'•'} Cancel anytime`}
+          <View style={styles.radioDotEmpty} />
+          <View style={styles.compactRowBody}>
+            <Text style={styles.compactRowTitle}>Enterprise</Text>
+            <Text style={styles.compactRowSubtitle}>
+              Teams, API access & priority support
             </Text>
-            {trialAvailable && prices.pro ? (
-              <Text style={styles.legalDisclosureText}>
-                {trialDays}-day free trial, then {prices.pro}/month.{'\n'}
-                Auto-renews unless canceled.{'\n'}{platformCancelText}.
-              </Text>
-            ) : null}
-          </>
-        )}
-        {/* Need more trial time? — lightweight informational block. Routes
-            to the Referral screen where the actual share flow lives.
-            Hidden once the user has converted (paying tier), since the
-            referral mechanic only rewards extra trial days. */}
-        {currentTier === 'starter' && (
-          <TouchableOpacity
-            style={styles.referralInfoBlock}
-            onPress={() => navigation.navigate('Referral')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.referralInfoIcon}>
-              <Ionicons name="gift-outline" size={18} color="#7A5B00" />
-            </View>
-            <View style={styles.referralInfoCopy}>
-              <Text style={styles.referralInfoTitle}>Need More Trial Time?</Text>
-              <Text style={styles.referralInfoBody}>
-                Invite other professionals and earn 7 extra trial days for each successful referral.
-              </Text>
-              <Text style={styles.referralInfoFootnote}>
-                Invite up to 3 colleagues and unlock up to 21 additional free days.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#9A9A9A" />
-          </TouchableOpacity>
-        )}
-
-        {/* Restore Purchases */}
-        <TouchableOpacity
-          style={styles.restorePurchasesButton}
-          onPress={handleRestorePurchases}
-          disabled={isRestoringPurchases}
-        >
-          <Ionicons name="refresh-outline" size={24} color="#000000" style={styles.restoreIcon} />
-          <Text style={styles.restorePurchasesText}>
-            {isRestoringPurchases ? t('settings.restoring', { defaultValue: 'Restoring...' }) : t('settings.restorePurchases', { defaultValue: 'Restore Purchase' })}
-          </Text>
+          </View>
+          <View style={styles.compactRowPrice}>
+            <Text style={styles.compactRowContactSales}>Contact Sales</Text>
+          </View>
         </TouchableOpacity>
 
-        {/* Terms and Privacy Policy Links */}
+        {/* ===== Starter — compact row at the bottom of the plan list.
+            The free tier stays discoverable so users can opt in (or stay
+            on free) after seeing the paid options. Also serves as the
+            downgrade target for existing paid subscribers via the
+            "Cancel your subscription first" alert in handleSelectPlan. */}
+        <TouchableOpacity
+          style={[
+            styles.compactRow,
+            currentTier === 'starter' && styles.compactRowCurrent,
+          ]}
+          onPress={currentTier === 'starter' ? undefined : () => handleSelectPlan('starter')}
+          disabled={currentTier === 'starter'}
+          activeOpacity={currentTier === 'starter' ? 1 : 0.85}
+        >
+          <View style={styles.radioDotEmpty} />
+          <View style={styles.compactRowBody}>
+            <Text style={styles.compactRowTitle}>Starter</Text>
+            <Text style={styles.compactRowSubtitle}>
+              Single project · 100 photos · text notes
+            </Text>
+          </View>
+          <View style={styles.compactRowPrice}>
+            <Text style={styles.compactRowContactSales}>Free</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Trust section — 2×2 grid per design. Same on both cadences and
+            both platforms. */}
+        <View style={styles.trustGrid}>
+          {TRUST_BULLETS.map((t) => (
+            <View key={t} style={styles.trustGridCell}>
+              <Ionicons name="checkmark" size={14} color="#34C759" style={styles.trustCheck} />
+              <Text style={styles.trustBulletText}>{t}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Android-only legal disclosure. iOS shows fine print below the
+            bottom CTA instead (satisfies each store's policy). */}
+        {Platform.OS === 'android' && (
+          <Text style={styles.androidCardDisclosure}>
+            {showAnnualForPro
+              ? (trialAvailable
+                  ? `${trialDays}-day free trial, then ${proAnnualPrice}/year. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
+                  : `${proAnnualPrice}/year. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`)
+              : (trialAvailable && proMonthlyPrice
+                  ? `${trialDays}-day free trial, then ${proMonthlyPrice}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
+                  : proMonthlyPrice
+                    ? `${proMonthlyPrice}/month. Auto-renews until canceled. Cancel anytime in Google Play > Subscriptions.`
+                    : '')}
+          </Text>
+        )}
+        {/* Terms and Privacy Policy Links — kept in scroll content so
+            they don't compete with the bottom CTA for taps. */}
         <View style={styles.legalLinksContainer}>
           <TouchableOpacity
             onPress={() => Linking.openURL(
@@ -822,28 +938,45 @@ export default function PlanSelectionScreen({ navigation, route }) {
         </View>
       </ScrollView>
 
+      {/* Bottom-anchored CTA + fine print with inline Restore per design
+          source. Sticks to the bottom of the screen respecting safe-area
+          bottom inset. CTA copy is plan-specific (annual vs monthly trial
+          length) and mirrors the store's intro-offer metadata. */}
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <TouchableOpacity
+          style={[styles.ctaButton, currentTier === 'pro' && styles.ctaButtonDisabled]}
+          onPress={currentTier === 'pro' ? undefined : () => handleSelectPlan('pro')}
+          disabled={currentTier === 'pro'}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.ctaButtonText}>{proCTAText}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.finePrintRow}>
+          <Text style={styles.finePrintText}>No charge today</Text>
+          <Text style={styles.finePrintDot}>·</Text>
+          <Text style={styles.finePrintText}>Cancel anytime</Text>
+          <Text style={styles.finePrintDot}>·</Text>
+          <TouchableOpacity
+            onPress={handleRestorePurchases}
+            disabled={isRestoringPurchases}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.finePrintRestore}>
+              {isRestoringPurchases
+                ? t('settings.restoring', { defaultValue: 'Restoring…' })
+                : t('settings.restorePurchases', { defaultValue: 'Restore' })}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Enterprise Contact Form Modal */}
       <EnterpriseContactModal
         visible={showEnterpriseModal}
         onClose={() => setShowEnterpriseModal(false)}
       />
 
-    </View>
-  );
-}
-
-// One feature bullet line — round check + text. `tint` lets the Pro
-// card's bullets render in accent-ink for the soft-yellow surface,
-// while everyone else stays neutral grey.
-function Bullet({ styles, text, tint }) {
-  return (
-    <View style={styles.designBulletRow}>
-      <View style={[styles.designBulletCheck, tint ? { backgroundColor: '#F2C31B' } : null]}>
-        <Ionicons name="checkmark" size={11} color={tint ? '#1E1E1E' : '#34C759'} />
-      </View>
-      <Text style={[styles.designBulletText, tint ? { color: tint } : null]} numberOfLines={2}>
-        {text}
-      </Text>
     </View>
   );
 }
@@ -857,7 +990,7 @@ const makeStyles = (theme) => StyleSheet.create({
   // are all left as the user has them; only surfaces and borders change.
   container: {
     flex: 1,
-    backgroundColor: theme.surfaceElevated,
+    backgroundColor: theme.background,
   },
   // Design 38: title left, X close right. No back arrow, no subhead.
   header: {
@@ -913,14 +1046,14 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 15,
     fontWeight: 'normal',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     letterSpacing: -0.23,
   },
   subheaderText: {
     fontSize: 14,
     fontWeight: '500',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     paddingHorizontal: 20,
     paddingBottom: 8,
@@ -930,14 +1063,16 @@ const makeStyles = (theme) => StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
+    // Padding sides only — child content sets its own horizontal margins.
+    // Bottom padding accommodates the fixed bottomBar (CTA + fine print).
+    paddingHorizontal: 0,
+    paddingBottom: 24,
   },
   trialBannerWrapper: {
     marginBottom: 14,
     borderRadius: 20,
     borderWidth: 3,
-    borderColor: '#000000',
+    borderColor: theme.textPrimary,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.11,
@@ -953,7 +1088,7 @@ const makeStyles = (theme) => StyleSheet.create({
     minHeight: 50,
   },
   trialBannerText: {
-    color: '#000000',
+    color: theme.textPrimary,
     fontSize: 13,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -1003,7 +1138,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontWeight: '700',
     fontStyle: 'semibold',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     lineHeight: 20,
   },
   priceContainer: {
@@ -1046,7 +1181,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: '#999999',
+    color: theme.textMuted,
     lineHeight: 17,
     textDecorationLine: 'line-through',
     marginRight: 6,
@@ -1060,7 +1195,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     lineHeight: 18,
   },
   trialSubtext: {
@@ -1091,7 +1226,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     fontFamily: 'Alexandria_400Regular',
-    color: theme.textPrimary,
+    color: '#1E1E1E',
     lineHeight: 14,
     letterSpacing: 0.2,
     textTransform: 'uppercase',
@@ -1103,7 +1238,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     fontFamily: 'Alexandria_400Regular',
-    color: '#333333',
+    color: theme.textPrimary,
     lineHeight: 22,
     paddingLeft: 4,
   },
@@ -1129,7 +1264,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     fontFamily: 'Alexandria_400Regular',
-    color: theme.textPrimary,
+    color: '#1E1E1E',
     textAlign: 'center',
     letterSpacing: -0.1,
   },
@@ -1137,7 +1272,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: theme.textPrimary,
+    color: '#1E1E1E',
     textAlign: 'center',
     opacity: 0.7,
     marginTop: 2,
@@ -1183,7 +1318,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 6,
     opacity: 0.6,
@@ -1192,7 +1327,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '400',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 16,
     opacity: 0.5,
@@ -1201,7 +1336,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 12,
     opacity: 0.55,
@@ -1276,7 +1411,9 @@ const makeStyles = (theme) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 12,
+    marginBottom: 8,
+    paddingHorizontal: 18,
     gap: 8,
   },
   legalLinkButton: {
@@ -1293,7 +1430,7 @@ const makeStyles = (theme) => StyleSheet.create({
     width: 3,
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: '#9A9A9A',
+    backgroundColor: theme.textMuted,
   },
   // Trial Confirmation Modal Styles
   trialModalOverlay: {
@@ -1322,7 +1459,7 @@ const makeStyles = (theme) => StyleSheet.create({
   trialModalGrabber: {
     width: 36,
     height: 5,
-    backgroundColor: '#CCCCCC',
+    backgroundColor: theme.textMuted,
     borderRadius: 100,
   },
   trialModalHeader: {
@@ -1345,7 +1482,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     fontFamily: 'Alexandria_400Regular',
-    color: '#333333',
+    color: theme.textPrimary,
     textAlign: 'center',
     letterSpacing: -0.43,
     flex: 1,
@@ -1362,7 +1499,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 15,
     fontWeight: 'normal',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     lineHeight: 22,
     letterSpacing: -0.43,
@@ -1386,7 +1523,7 @@ const makeStyles = (theme) => StyleSheet.create({
     height: 54,
     borderRadius: 100,
     borderWidth: 1,
-    borderColor: '#000000',
+    borderColor: theme.textPrimary,
     backgroundColor: theme.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1395,7 +1532,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: 'normal',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
   },
   trialModalStartButton: {
@@ -1477,6 +1614,12 @@ const makeStyles = (theme) => StyleSheet.create({
   billingChipTextActive: {
     color: theme.textPrimary,
     fontWeight: '700',
+  },
+  billingChipDisabled: {
+    opacity: 0.55,
+  },
+  billingChipTextDisabled: {
+    color: theme.textMuted,
   },
 
   // Card
@@ -1565,7 +1708,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 11,
     fontWeight: '800',
-    color: theme.textPrimary,
+    color: '#1E1E1E',
     letterSpacing: 0.2,
     textTransform: 'lowercase',
   },
@@ -1584,6 +1727,11 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.textPrimary,
     letterSpacing: -0.4,
   },
+  // Pro card sits on a yellow (`#FFF4C2`) surface that stays light in
+  // dark mode — text must stay dark for contrast, don't use theme.textPrimary.
+  designCardTitleOnAccent: {
+    color: '#1E1E1E',
+  },
   designPriceCluster: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -1595,6 +1743,10 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.textPrimary,
     letterSpacing: -0.4,
   },
+  // Same reasoning as designCardTitleOnAccent — keep dark on yellow Pro card.
+  designCardPriceOnAccent: {
+    color: '#1E1E1E',
+  },
   designCardPriceUnit: {
     fontFamily: 'Alexandria_400Regular',
     fontSize: 13,
@@ -1602,6 +1754,9 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.textMuted,
     letterSpacing: -0.1,
     marginLeft: 2,
+  },
+  designCardPriceUnitOnAccent: {
+    color: '#7A5B00',
   },
   designCardPriceFree: {
     fontFamily: 'Alexandria_400Regular',
@@ -1663,11 +1818,11 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 15,
     fontWeight: '800',
-    color: theme.textPrimary,
+    color: '#1E1E1E',
     letterSpacing: -0.1,
   },
   proInCardCTADisabled: {
-    backgroundColor: '#E7E7E7',
+    backgroundColor: theme.borderStrong,
     shadowOpacity: 0,
   },
 
@@ -1688,7 +1843,7 @@ const makeStyles = (theme) => StyleSheet.create({
     letterSpacing: -0.1,
   },
   designSecondaryCTADisabled: {
-    backgroundColor: '#E7E7E7',
+    backgroundColor: theme.borderStrong,
   },
 
   // Lightweight referral nudge near the bottom of the paywall. Soft
@@ -1724,7 +1879,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 14,
     fontWeight: '800',
-    color: theme.textPrimary,
+    color: '#1E1E1E',
     letterSpacing: -0.1,
     marginBottom: 2,
   },
@@ -1732,7 +1887,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: 'Alexandria_400Regular',
     fontSize: 12.5,
     fontWeight: '500',
-    color: theme.textPrimary,
+    color: '#1E1E1E',
     letterSpacing: -0.1,
     lineHeight: 17,
   },
@@ -1744,5 +1899,406 @@ const makeStyles = (theme) => StyleSheet.create({
     letterSpacing: -0.1,
     lineHeight: 15,
     marginTop: 4,
+  },
+
+  // ============================================================
+  // Design-source paywall — brand row + hero + toggle + Pro card +
+  // compact rows + trust grid + bottom CTA. Matches the artboards in
+  // design-screens/ (Plan picker · Annual (default) + · Monthly).
+  // ============================================================
+
+  // Brand row above hero — small tile + wordmark.
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 14,
+    gap: 8,
+  },
+  brandTile: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#F2C31B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandName: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 15,
+    fontWeight: '800',
+    color: theme.textPrimary,
+    letterSpacing: -0.2,
+  },
+
+  // Monthly / Annual toggle inner layout — Annual chip contains both
+  // "Annual" label and a small "SAVE 25%" accent inline.
+  billingChipInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  billingChipAccent: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#B98600',
+    letterSpacing: 0.4,
+  },
+
+  // Pro card — big yellow-tinted emphasized card. Wraps everything the
+  // user needs to decide on the Pro plan.
+  proCard: {
+    marginHorizontal: 18,
+    marginBottom: 10,
+    backgroundColor: '#FFF4C2',
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: '#F2C31B',
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 18,
+    shadowColor: '#F2C31B',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  proCardCurrent: {
+    borderColor: '#34C759',
+  },
+  proCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  proCardTitleBlock: {
+    flex: 1,
+  },
+  proCardTitle: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.4,
+    lineHeight: 26,
+  },
+  proCardCadence: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#7A5B00',
+    letterSpacing: 0.6,
+    marginTop: 2,
+  },
+  proCardPriceBlock: {
+    alignItems: 'flex-end',
+  },
+  proCardPrice: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#1E1E1E',
+    letterSpacing: -0.6,
+  },
+  proCardPriceUnit: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#7A5B00',
+    letterSpacing: -0.1,
+    marginLeft: 2,
+  },
+  proCardPriceCaption: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#7A5B00',
+    letterSpacing: -0.1,
+    marginTop: 2,
+    textAlign: 'right',
+  },
+  proBullets: {
+    gap: 9,
+  },
+
+  // Radio dot — filled yellow for the selected/emphasized plan.
+  radioDotSelected: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#F2C31B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  // Empty circle for the compact rows (Business / Enterprise).
+  radioDotEmpty: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: theme.borderStrong,
+    marginRight: 12,
+  },
+
+  // Dark MOST POPULAR pill — sits on top-right of the Pro card. Matches
+  // the design source's darker treatment (was previously a yellow pill).
+  mostPopularPillDark: {
+    position: 'absolute',
+    top: -12,
+    right: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#1E1E1E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  mostPopularPillDarkText: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 10.5,
+    fontWeight: '900',
+    color: '#F2C31B',
+    letterSpacing: 0.6,
+  },
+
+  // Compact selectable rows — Business + Enterprise. Radio dot + body
+  // (title + subtitle) + price cluster on the right.
+  compactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 18,
+    marginBottom: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: theme.surfaceElevated,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+  },
+  compactRowCurrent: {
+    borderColor: '#34C759',
+    borderWidth: 2,
+  },
+  compactRowBody: {
+    flex: 1,
+    marginRight: 12,
+  },
+  compactRowTitle: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 15,
+    fontWeight: '800',
+    color: theme.textPrimary,
+    letterSpacing: -0.2,
+    marginBottom: 2,
+  },
+  compactRowSubtitle: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: theme.textSecondary,
+    letterSpacing: -0.1,
+    lineHeight: 15,
+  },
+  compactRowPrice: {
+    alignItems: 'flex-end',
+  },
+  compactRowPriceMain: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 16,
+    fontWeight: '800',
+    color: theme.textPrimary,
+    letterSpacing: -0.2,
+  },
+  compactRowPriceUnit: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.textMuted,
+    letterSpacing: -0.1,
+    marginTop: 1,
+  },
+  compactRowContactSales: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 13,
+    fontWeight: '800',
+    color: theme.textPrimary,
+    letterSpacing: -0.1,
+  },
+
+  // 2×2 trust grid.
+  trustGrid: {
+    marginHorizontal: 18,
+    marginTop: 14,
+    marginBottom: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 10,
+  },
+  trustGridCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '50%',
+    paddingRight: 8,
+  },
+
+  // Bottom-anchored CTA + fine print. Absolute-positioned below the
+  // scroll view, sits above the safe-area bottom inset.
+  bottomBar: {
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    backgroundColor: theme.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.border,
+  },
+  ctaButton: {
+    backgroundColor: '#F2C31B',
+    borderRadius: 16,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#F2C31B',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  ctaButtonDisabled: {
+    backgroundColor: theme.borderStrong,
+    shadowOpacity: 0,
+  },
+  ctaButtonText: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E1E1E',
+    letterSpacing: -0.2,
+  },
+  finePrintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    gap: 6,
+  },
+  finePrintText: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: theme.textSecondary,
+    letterSpacing: -0.1,
+  },
+  finePrintDot: {
+    fontSize: 11.5,
+    color: theme.textMuted,
+  },
+  finePrintRestore: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: theme.textPrimary,
+    letterSpacing: -0.1,
+    textDecorationLine: 'underline',
+  },
+
+  heroTitle: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 24,
+    fontWeight: '800',
+    color: theme.textPrimary,
+    letterSpacing: -0.5,
+    lineHeight: 30,
+    paddingHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  heroSubtitle: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 13.5,
+    fontWeight: '500',
+    color: theme.textSecondary,
+    letterSpacing: -0.1,
+    lineHeight: 19,
+    paddingHorizontal: 20,
+    marginBottom: 18,
+  },
+
+  // Annual emphasis: thicker border + stronger shadow when the user is
+  // looking at the Pro annual card. Sits on top of designCardPro base.
+  designCardProAnnual: {
+    borderWidth: 3,
+    shadowColor: '#F2C31B',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+
+  // Column price layout so the "Only $X/month" caption sits directly
+  // under the main price cluster without wrapping.
+  designPriceClusterCol: {
+    alignItems: 'flex-end',
+  },
+  // Per-month equivalent (Pro card, on yellow surface — dark ink).
+  designPricePerMonth: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#7A5B00',
+    letterSpacing: -0.1,
+    marginTop: 2,
+  },
+  // Per-month equivalent (Business card, on neutral surface — muted).
+  designPricePerMonthMuted: {
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: theme.textMuted,
+    letterSpacing: -0.1,
+    marginTop: 2,
+  },
+
+  // Trophy emoji sits inside the Most Popular pill on annual cadence.
+  mostPopularPillEmoji: {
+    fontSize: 11,
+    marginRight: 1,
+  },
+
+  // Trust bullets block between cards and legal footer.
+  trustBlock: {
+    marginHorizontal: 18,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: theme.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    gap: 8,
+  },
+  trustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trustCheck: {
+    marginRight: 8,
+  },
+  trustBulletText: {
+    flex: 1,
+    fontFamily: 'Alexandria_400Regular',
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.textPrimary,
+    letterSpacing: -0.1,
   },
 });
