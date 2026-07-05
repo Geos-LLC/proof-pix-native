@@ -20,6 +20,7 @@ import {
   formatLongDate,
 } from '../reports/layouts/_shared.js';
 import { resolveOptions } from '../reports/index.js';
+import { StudioEditOverlays } from './StudioOverlays';
 
 const PHOTO_MODE_COMBINED = 'mix';
 
@@ -65,14 +66,14 @@ const EditBadge = ({ onPress }) => (
   ) : null
 );
 
-// Photo cell for previews. `label` renders a chip top-left when set —
-// used to show the photo's custom name (or mode) so the report
-// "Show labels" switch has something to toggle in-preview. The
-// baked URI path (planned) will remove this in favor of the burned-in
-// chip, but until then this is the source of truth for the preview.
+// Photo cell for previews. Overlays the shared StudioEditOverlays
+// (PhotoLabels + PhotoWatermark + MetadataOverlay + BrandLogo +
+// PhotoMarkup) on top of the image so the preview shows the same
+// labels/watermark/timestamps the user configured in Studio. No
+// bespoke label chips — single source of truth is PhotoLabels.
 // `onEdit` renders a small pencil badge top-right; tapping it fires
 // the per-photo edit menu in ProjectDetailScreen.
-const PhotoSlot = ({ uri, theme, missing, timestamp, watermark, onEdit, label, chipBg, chipText }) => (
+const PhotoSlot = ({ photo, uri, theme, missing, onEdit }) => (
   <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
     {uri ? (
       <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
@@ -84,34 +85,14 @@ const PhotoSlot = ({ uri, theme, missing, timestamp, watermark, onEdit, label, c
         </Text>
       </View>
     )}
-    {label ? (
-      <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
-        <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]} numberOfLines={1}>{label}</Text>
-      </View>
-    ) : null}
-    {timestamp ? (
-      <View style={styles.tsOverlay}>
-        <Text style={styles.overlayText}>{timestamp}</Text>
-      </View>
-    ) : null}
-    {watermark ? (
-      <View style={styles.watermarkOverlay}>
-        <Text style={styles.overlayText} numberOfLines={1}>{watermark}</Text>
+    {photo && uri ? (
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <StudioEditOverlays photo={photo} theme={theme} combinedLayout="side" />
       </View>
     ) : null}
     <EditBadge onPress={onEdit} />
   </View>
 );
-
-// Given options.showLabels + a photo + a role hint, produce the mode
-// chip text (BEFORE / AFTER / PROGRESS / BEFORE & AFTER). Never uses
-// photo.name — internal names like "seed_wall_repair" would surface.
-// Returns null when showLabels is off so PhotoSlot skips the chip.
-const chipLabelFor = (photo, options, roleHint) => {
-  if (!photo) return null;
-  if (options?.showLabels === false) return null;
-  return roleHint || MODE_CHIP[photo.mode] || null;
-};
 
 const Note = ({ note, theme }) => (
   note ? (
@@ -151,15 +132,11 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, ch
     <View key={key} style={{ marginBottom: 12 }}>
       <RoleLabel text={role} show={showLabels} theme={theme} />
       <PhotoSlot
+        photo={photo}
         uri={photo.uri}
         theme={theme}
         missing=""
-        timestamp={showTimestamp ? formatShortStamp(tsOf(photo)) : null}
-        watermark={wm || null}
         onEdit={editHandler(photo)}
-        label={chipLabelFor(photo, options, (role || '').toUpperCase())}
-        chipBg={chipBg}
-        chipText={chipText}
       />
       {options.includeNotes && photo.notes ? <Note note={photo.notes} theme={theme} /> : null}
     </View>
@@ -205,29 +182,21 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, ch
                         <View style={{ flex: 1 }}>
                           <RoleLabel text="Before" show={showLabels} theme={theme} />
                           <PhotoSlot
+                            photo={set.before}
                             uri={set.before.uri}
                             theme={theme}
                             missing=""
-                            timestamp={showTimestamp ? formatShortStamp(tsOf(set.before)) : null}
-                            watermark={wm || null}
                             onEdit={editHandler(set.before)}
-                            label={chipLabelFor(set.before, options, 'BEFORE')}
-                            chipBg={chipBg}
-                            chipText={chipText}
                           />
                         </View>
                         <View style={{ flex: 1 }}>
                           <RoleLabel text="After" show={showLabels} theme={theme} />
                           <PhotoSlot
+                            photo={set.after}
                             uri={set.after.uri}
                             theme={theme}
                             missing=""
-                            timestamp={showTimestamp ? formatShortStamp(tsOf(set.after)) : null}
-                            watermark={wm || null}
                             onEdit={editHandler(set.after)}
-                            label={chipLabelFor(set.after, options, 'AFTER')}
-                            chipBg={chipBg}
-                            chipText={chipText}
                           />
                         </View>
                       </View>
@@ -299,14 +268,11 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, onPhotoEd
                     resizeMode="contain"
                   />
                 ) : null}
-                {(() => {
-                  const lab = chipLabelFor(c, options, MODE_CHIP.mix);
-                  return lab ? (
-                    <View style={styles.slotTag}>
-                      <Text style={styles.slotTagText} numberOfLines={1}>{lab}</Text>
-                    </View>
-                  ) : null;
-                })()}
+                {c.uri ? (
+                  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                    <StudioEditOverlays photo={c} theme={theme} combinedLayout="side" />
+                  </View>
+                ) : null}
                 <EditBadge onPress={typeof onPhotoEdit === 'function' ? () => onPhotoEdit(c) : undefined} />
               </View>
             );
@@ -368,14 +334,10 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chip
                           </Text>
                         </View>
                         <PhotoSlot
+                          photo={p}
                           uri={p.uri}
                           theme={theme}
-                          timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
-                          watermark={wm || null}
                           onEdit={editHandler(p)}
-                          label={chipLabelFor(p, options, (TIMELINE_STAGE_LABEL[p.mode] || '').toUpperCase())}
-                          chipBg={chipBg}
-                          chipText={chipText}
                         />
                         {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
                       </View>
@@ -449,14 +411,10 @@ const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText
                         style={[styles.setCell, { width: `${100 / cols}%` }]}
                       >
                         <PhotoSlot
+                          photo={p}
                           uri={p.uri}
                           theme={theme}
-                          chipBg={chipBg}
-                          chipText={chipText}
-                          timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
-                          watermark={wm || null}
                           onEdit={editHandler(p)}
-                          label={chipLabelFor(p, options, (MODE_CHIP[p.mode] || '').toUpperCase())}
                         />
                         {options.includeNotes && p.notes ? (
                           <Note note={p.notes} theme={theme} />
@@ -520,8 +478,8 @@ const ExecutivePreview = ({ photos, options, displayRoomName, theme, chipBg, chi
             <View key={`hl-${room}`} style={styles.section}>
               <SectionHeader name={displayRoomName(room)} theme={theme} />
               <View style={styles.pairRow}>
-                <PhotoSlot uri={pair.before?.uri} label="BEFORE" theme={theme} chipBg={chipBg} chipText={chipText} />
-                <PhotoSlot uri={pair.after?.uri} label="AFTER" theme={theme} chipBg={chipBg} chipText={chipText} />
+                <PhotoSlot photo={pair.before} uri={pair.before?.uri} theme={theme} />
+                <PhotoSlot photo={pair.after} uri={pair.after?.uri} theme={theme} />
               </View>
               {options.includeNotes && pair.after?.notes ? <Note note={pair.after.notes} theme={theme} /> : null}
             </View>

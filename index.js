@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] report-chip-mode-only-' + Date.now() + ' — Report photo chip now always shows the MODE label (BEFORE / AFTER / PROGRESS / BEFORE & AFTER) — never the raw photo name. Timeline + Sets previews now honor Include Watermark; timestamps already honored Include Metadata. Show Labels toggles the chip on/off. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] report-use-studio-overlays-' + Date.now() + ' — Report preview no longer draws its own chips. Overlays the shared StudioEditOverlays (PhotoLabels + PhotoWatermark + MetadataOverlay + BrandLogo + PhotoMarkup) on top of every preview photo — same labels, watermark, timestamps the user sees in Studio. Applied to Room-by-Room, Timeline, Sets, Executive, and Before&After combined heroes. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
