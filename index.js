@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] edit-top-right-' + Date.now() + ' — Edit pencil restored to top-right of the enlarged photo viewer header row (was moved to bottom on 941cd2c). Sits between the counter and the delete trash so edit+destructive actions cluster together. Removed the duplicate bottom-row pencil. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] report-edit-badge-' + Date.now() + ' — Report photo previews now render a small pencil badge on the top-right of each photo (Timeline, Room-by-Room, Sets, Before&After). Tap opens the per-photo edit menu (Edit / Reset / Remove). Enlarged viewer edit pencil already lives top-right next to delete. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

@@ -6,7 +6,7 @@
 // arrangement for each of the six layout types.
 
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   groupByRoom,
@@ -48,12 +48,31 @@ const SectionHeader = ({ name, theme }) => (
   </Text>
 );
 
+// Small pencil affordance rendered on top-right of any preview
+// photo — tap opens the per-photo edit action sheet in
+// ProjectDetailScreen. Absolutely positioned so it works on top of
+// PhotoSlot, raw Image covers, and combined heroes alike.
+const EditBadge = ({ onPress }) => (
+  onPress ? (
+    <TouchableOpacity
+      onPress={onPress}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      style={styles.editBadge}
+      activeOpacity={0.8}
+    >
+      <Ionicons name="pencil" size={12} color="#FFF" />
+    </TouchableOpacity>
+  ) : null
+);
+
 // Photo cell for previews. Chips and watermark overlays were removed
 // once the report pipeline started feeding baked photo URIs (the
 // editor's bake already composites label + watermark into the
 // image). The optional `label` prop now drops because the baked
 // image carries it; we keep `timestamp` since the bake doesn't.
-const PhotoSlot = ({ uri, theme, missing, timestamp, watermark }) => (
+// `onEdit` renders a small pencil badge top-right; tapping it fires
+// the per-photo edit menu in ProjectDetailScreen.
+const PhotoSlot = ({ uri, theme, missing, timestamp, watermark, onEdit }) => (
   <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
     {uri ? (
       <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
@@ -75,6 +94,7 @@ const PhotoSlot = ({ uri, theme, missing, timestamp, watermark }) => (
         <Text style={styles.overlayText} numberOfLines={1}>{watermark}</Text>
       </View>
     ) : null}
+    <EditBadge onPress={onEdit} />
   </View>
 );
 
@@ -103,13 +123,14 @@ const RoleLabel = ({ text, show, theme }) => (
   ) : null
 );
 
-const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkText }) => {
+const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkText, onPhotoEdit }) => {
   const groups = groupByRoom(photos);
   if (groups.length === 0) return <Empty theme={theme} />;
   const showTimestamp = options.includeMetadata === true;
   const wm = options.includeWatermark ? (watermarkText || '') : '';
   const includeProgress = options.includeProgressPhotos !== false;
   const showLabels = options.showLabels !== false;
+  const editHandler = (photo) => (typeof onPhotoEdit === 'function' ? () => onPhotoEdit(photo) : undefined);
 
   const fullSlot = (key, photo, role) => (
     <View key={key} style={{ marginBottom: 12 }}>
@@ -120,6 +141,7 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkT
         missing=""
         timestamp={showTimestamp ? formatShortStamp(tsOf(photo)) : null}
         watermark={wm || null}
+        onEdit={editHandler(photo)}
       />
       {options.includeNotes && photo.notes ? <Note note={photo.notes} theme={theme} /> : null}
     </View>
@@ -170,6 +192,7 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkT
                             missing=""
                             timestamp={showTimestamp ? formatShortStamp(tsOf(set.before)) : null}
                             watermark={wm || null}
+                            onEdit={editHandler(set.before)}
                           />
                         </View>
                         <View style={{ flex: 1 }}>
@@ -180,6 +203,7 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkT
                             missing=""
                             timestamp={showTimestamp ? formatShortStamp(tsOf(set.after)) : null}
                             watermark={wm || null}
+                            onEdit={editHandler(set.after)}
                           />
                         </View>
                       </View>
@@ -221,7 +245,7 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkT
 // PhotoWatermark, no MetadataOverlay. The report pipeline feeds a
 // baked URI that already has whatever labels/watermark/timestamps
 // the user chose; layering more chrome on top duplicates them.
-const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
+const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, onPhotoEdit }) => {
   // Mirror the HTML layout: ONLY combined ('mix') photos. Don't
   // synthesize fresh before/after pairs from raw photos — sets that
   // don't have a combined are intentionally omitted.
@@ -251,6 +275,7 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme }) => {
                     resizeMode="contain"
                   />
                 ) : null}
+                <EditBadge onPress={typeof onPhotoEdit === 'function' ? () => onPhotoEdit(c) : undefined} />
               </View>
             );
           })}
@@ -274,10 +299,11 @@ const TIMELINE_STAGE_LABEL = {
   after: 'After',
   mix: 'Combined',
 };
-const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, watermarkText }) => {
+const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, watermarkText, onPhotoEdit }) => {
   const days = groupByDateThenRoom(photos);
   const cols = clampSetCols(options.timelineColumns);
   const showTimestamp = options.includeMetadata === true;
+  const editHandler = (photo) => (typeof onPhotoEdit === 'function' ? () => onPhotoEdit(photo) : undefined);
   return (
     <View>
       {days.map((day) => {
@@ -312,6 +338,7 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, wate
                           uri={p.uri}
                           theme={theme}
                           timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
+                          onEdit={editHandler(p)}
                         />
                         {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
                       </View>
@@ -342,10 +369,11 @@ const setRangeStampPreview = (set) => {
   return first === last ? first : `${first} → ${last}`;
 };
 
-const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText }) => {
+const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText, onPhotoEdit }) => {
   const groups = groupByRoom(photos);
   const cols = clampSetCols(options.timelineColumns);
   const showTimestamp = options.includeMetadata === true;
+  const editHandler = (photo) => (typeof onPhotoEdit === 'function' ? () => onPhotoEdit(photo) : undefined);
   return (
     <View>
       {groups.map(({ room, photos: roomPhotos }) => {
@@ -388,6 +416,7 @@ const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText
                           chipBg={chipBg}
                           chipText={chipText}
                           timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
+                          onEdit={editHandler(p)}
                         />
                         {options.includeNotes && p.notes ? (
                           <Note note={p.notes} theme={theme} />
@@ -549,7 +578,7 @@ const Empty = ({ theme }) => (
 // ---------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------
-export default function ReportPreviewView({ photos, layoutId, options, displayRoomName, theme, branding }) {
+export default function ReportPreviewView({ photos, layoutId, options, displayRoomName, theme, branding, onPhotoEdit }) {
   const safePhotos = photos || [];
   // Run user options through the same merge that the HTML engine
   // uses so the preview honors per-layout defaults (e.g. timeline's
@@ -560,7 +589,7 @@ export default function ReportPreviewView({ photos, layoutId, options, displayRo
   const chipBg = branding?.brandColor || null;
   const chipText = chipBg ? contrastText(chipBg) : null;
   const watermarkText = opts.includeWatermark ? (branding?.watermarkText || '') : '';
-  const props = { photos: safePhotos, options: opts, displayRoomName, theme, chipBg, chipText, watermarkText };
+  const props = { photos: safePhotos, options: opts, displayRoomName, theme, chipBg, chipText, watermarkText, onPhotoEdit };
   switch (layoutId) {
     case 'before-after':       return <BeforeAfterPreview {...props} />;
     case 'timeline':           return <TimelinePreview {...props} />;
@@ -613,6 +642,15 @@ const styles = StyleSheet.create({
     maxWidth: '60%',
   },
   overlayText: { color: '#FFF', fontSize: 8, fontWeight: '600' },
+  editBadge: {
+    position: 'absolute',
+    top: 6, right: 6,
+    width: 24, height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   progressRow: { flexDirection: 'row', gap: 4, marginTop: 6 },
   progressTile: { width: 60, height: 60, borderRadius: 4, overflow: 'hidden' },
   progressThumb: { width: '100%', height: '100%' },
