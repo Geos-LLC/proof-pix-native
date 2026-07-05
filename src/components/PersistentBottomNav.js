@@ -44,6 +44,10 @@ const HIDDEN_ON = new Set([
   'PhotoSetPreview',
   'PhotoDetail',
   'Gallery',
+  // SharePreview is also a fullscreen EnlargedPhotoViewer with its own
+  // Share button on the bottom row — the persistent nav pill sat
+  // right on top of it. Users navigate out via the X close button.
+  'SharePreview',
 ]);
 
 // Sub-routes that conceptually belong to the Projects tab (so the active
