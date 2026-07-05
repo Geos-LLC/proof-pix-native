@@ -120,6 +120,13 @@ export default function PhotoLabels({
   combinedLayout = 'side',
   showLabelsOverride,
   positionOverrides,
+  // Signals that this photo is being rendered as one half of a combined
+  // pair, even if its own `mode` is 'before' / 'after'. Forwarded to the
+  // position pickers so they use the combined before/after cascade
+  // (beforeLabelPosition / afterLabelPosition) instead of the single
+  // singleLabelPosition cascade — mirrors DraggableLabelOverlay so
+  // Studio's drag preview and every non-drag render pick the same key.
+  combinedContext,
 }) {
   // Scoped — when `photo.overrides` is present, those win over global
   // Settings for this photo only.
@@ -136,11 +143,11 @@ export default function PhotoLabels({
 
   if (role === 'before' || role === 'after' || role === 'progress') {
     const pos = role === 'before'
-      ? pickBeforeLabelPosition(lps, photo)
-      : pickAfterLabelPosition(lps, photo);
+      ? pickBeforeLabelPosition(lps, photo, combinedContext)
+      : pickAfterLabelPosition(lps, photo, combinedContext);
     const off = role === 'before'
-      ? pickBeforeLabelOffset(lps, photo)
-      : pickAfterLabelOffset(lps, photo);
+      ? pickBeforeLabelOffset(lps, photo, combinedContext)
+      : pickAfterLabelOffset(lps, photo, combinedContext);
     return (
       <LabelWithMargins
         photo={photo}
@@ -194,6 +201,7 @@ export default function PhotoLabels({
               role="before"
               showLabelsOverride={enabled}
               positionOverrides={positionOverrides}
+              combinedContext
             />
           </View>
           <View pointerEvents="none" style={isStack ? halves.bottom : halves.right}>
@@ -202,6 +210,7 @@ export default function PhotoLabels({
               role="after"
               showLabelsOverride={enabled}
               positionOverrides={positionOverrides}
+              combinedContext
             />
           </View>
         </>

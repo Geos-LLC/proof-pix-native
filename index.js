@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] fullscreen-align-' + Date.now() + ' — Studio tap-to-fullscreen now wraps EnlargedPhotoViewer in absoluteFill so it covers full screen (was half-height). Reset button on fullscreen viewer moved to insets.top + 8 so it aligns with the X close button. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] edit-top-right-' + Date.now() + ' — Edit pencil restored to top-right of the enlarged photo viewer header row (was moved to bottom on 941cd2c). Sits between the counter and the delete trash so edit+destructive actions cluster together. Removed the duplicate bottom-row pencil. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

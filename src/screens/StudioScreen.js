@@ -1091,8 +1091,8 @@ export default function StudioScreen({ route, navigation }) {
             // 400-px max cap so it can take the full frame.
             frameAspectRatio={templateAspect}
             style={{ maxWidth: undefined, maxHeight: undefined, width: '100%', height: '100%', borderWidth: 0 }}
-            renderBeforeOverlay={() => <PhotoLabels photo={beforeForCompare} role="before" />}
-            renderAfterOverlay={() => <PhotoLabels photo={afterForCompare} role="after" />}
+            renderBeforeOverlay={() => <PhotoLabels photo={beforeForCompare} role="before" combinedContext />}
+            renderAfterOverlay={() => <PhotoLabels photo={afterForCompare} role="after" combinedContext />}
           />
         ) : (
           <>

@@ -327,7 +327,7 @@ export default function EnlargedPhotoViewer({
   // Bottom chrome = single row containing overlays + share + edit so
   // the photo gets the maximum vertical space possible.
   const setNavShown = !!(setLabelResolved || prevSetLabelResolved || nextSetLabelResolved);
-  const bottomRowShown = showOverlays || showEdit || !!shareLabel;
+  const bottomRowShown = showOverlays || !!shareLabel;
   // Tightened header height — set nav row + (X close + N/M counter +
   // delete) row sit close together so the photo can start higher.
   // The N/M counter now lives in the center slot of the close row,
@@ -487,8 +487,8 @@ export default function EnlargedPhotoViewer({
       )}
 
       {/* Top row 2 — X close on left, N/M counter centered between
-          X and delete, optional select checkbox tucked next to X,
-          optional delete trash on right. */}
+          X and edit/delete, optional select checkbox tucked next to
+          X, edit pencil + optional delete trash on right. */}
       <View style={[styles.headerRow, { top: insets.top + (setNavShown ? 40 : 8) }]}>
         <TouchableOpacity
           onPress={onClose}
@@ -523,6 +523,15 @@ export default function EnlargedPhotoViewer({
             </View>
           )}
         </View>
+        {showEdit && (
+          <TouchableOpacity
+            onPress={() => current && typeof onEdit === 'function' && onEdit(current)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={[styles.headerBtn, { backgroundColor: controlBg, marginRight: showDelete ? 8 : 0 }]}
+          >
+            <Ionicons name="pencil" size={18} color={controlIcon} />
+          </TouchableOpacity>
+        )}
         {showDelete && (
           <TouchableOpacity
             onPress={() => current && typeof onDelete === 'function' && onDelete(current)}
@@ -619,10 +628,10 @@ export default function EnlargedPhotoViewer({
         </View>
       )}
 
-      {/* Single bottom row — overlays switch | share button | edit
-          pencil. Inlined so the photo gets the maximum vertical
-          space and the user's three most-used actions are reachable
-          with one thumb. */}
+      {/* Single bottom row — overlays switch | share button.
+          (Edit pencil lives in the top-right header row alongside
+          the delete trash so both destructive/edit actions cluster
+          in the same reach.) */}
       {bottomRowShown && (
         <View style={[styles.bottomRow, { paddingBottom: insets.bottom + 8 }]}>
           {showOverlays ? (
@@ -649,15 +658,6 @@ export default function EnlargedPhotoViewer({
               </Text>
             </TouchableOpacity>
           ) : <View style={{ flex: 1 }} />}
-          {showEdit ? (
-            <TouchableOpacity
-              onPress={() => current && typeof onEdit === 'function' && onEdit(current)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={[styles.headerBtn, { backgroundColor: controlBg }]}
-            >
-              <Ionicons name="pencil" size={16} color={controlIcon} />
-            </TouchableOpacity>
-          ) : <View />}
         </View>
       )}
 
