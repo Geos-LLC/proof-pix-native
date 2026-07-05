@@ -103,15 +103,13 @@ const PhotoSlot = ({ uri, theme, missing, timestamp, watermark, onEdit, label, c
   </View>
 );
 
-// Given options.showLabels + a photo + a role hint, produce the chip
-// text to render top-left. Prefers the user's saved name; falls back
-// to the role hint (BEFORE / AFTER / PROGRESS / …). Returns null when
-// showLabels is off so PhotoSlot skips the chip entirely.
+// Given options.showLabels + a photo + a role hint, produce the mode
+// chip text (BEFORE / AFTER / PROGRESS / BEFORE & AFTER). Never uses
+// photo.name — internal names like "seed_wall_repair" would surface.
+// Returns null when showLabels is off so PhotoSlot skips the chip.
 const chipLabelFor = (photo, options, roleHint) => {
   if (!photo) return null;
   if (options?.showLabels === false) return null;
-  const raw = typeof photo.name === 'string' ? photo.name.trim() : '';
-  if (raw) return raw;
   return roleHint || MODE_CHIP[photo.mode] || null;
 };
 
@@ -337,6 +335,7 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chip
   const days = groupByDateThenRoom(photos);
   const cols = clampSetCols(options.timelineColumns);
   const showTimestamp = options.includeMetadata === true;
+  const wm = options.includeWatermark ? (watermarkText || '') : '';
   const editHandler = (photo) => (typeof onPhotoEdit === 'function' ? () => onPhotoEdit(photo) : undefined);
   return (
     <View>
@@ -372,6 +371,7 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chip
                           uri={p.uri}
                           theme={theme}
                           timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
+                          watermark={wm || null}
                           onEdit={editHandler(p)}
                           label={chipLabelFor(p, options, (TIMELINE_STAGE_LABEL[p.mode] || '').toUpperCase())}
                           chipBg={chipBg}
@@ -410,6 +410,7 @@ const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText
   const groups = groupByRoom(photos);
   const cols = clampSetCols(options.timelineColumns);
   const showTimestamp = options.includeMetadata === true;
+  const wm = options.includeWatermark ? (watermarkText || '') : '';
   const editHandler = (photo) => (typeof onPhotoEdit === 'function' ? () => onPhotoEdit(photo) : undefined);
   return (
     <View>
@@ -453,6 +454,7 @@ const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText
                           chipBg={chipBg}
                           chipText={chipText}
                           timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
+                          watermark={wm || null}
                           onEdit={editHandler(p)}
                           label={chipLabelFor(p, options, (MODE_CHIP[p.mode] || '').toUpperCase())}
                         />
