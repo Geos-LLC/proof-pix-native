@@ -1647,6 +1647,9 @@ export default function StudioScreen({ route, navigation }) {
         // (matches HomeScreen's rendering pattern). Without it, the
         // component's flex:1 backdrop only fills the remaining slot in
         // Studio's flex layout — showing a half-screen preview.
+        // Share button matches the capture / report-preview flows so
+        // the enlarged action row is consistent across the app. No
+        // edit pencil here — we're already inside the edit screen.
         <View style={StyleSheet.absoluteFill}>
           <EnlargedPhotoViewer
             photos={[tappedFullPhoto]}
@@ -1654,6 +1657,15 @@ export default function StudioScreen({ route, navigation }) {
             onClose={() => setTappedFullPhoto(null)}
             showOverlays
             overlaysOn
+            shareLabel="Share photo"
+            onShare={async (p) => {
+              if (!p?.uri) return;
+              try {
+                await Share.share({ url: p.uri, message: p.notes || '' });
+              } catch (_) {
+                // user dismissed
+              }
+            }}
           />
         </View>
       )}
