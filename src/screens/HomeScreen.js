@@ -221,6 +221,9 @@ export default function HomeScreen({ navigation, route }) {
   // Photo opened via tap inside the preview pager — drives a simple
   // full-screen modal viewer (image only, tap or chevron to close).
   const [tappedFullPhoto, setTappedFullPhoto] = useState(null);
+  // Fires the transient "Set N" flash inside EnlargedPhotoViewer
+  // whenever jumpToSet swaps the pool (edge swipe or chip tap).
+  const [fullScreenPoolSignal, setFullScreenPoolSignal] = useState({ nonce: 0, label: '' });
   // Tell the PersistentBottomNav to hide itself while the fullscreen
   // viewer is up so the user gets a clean edge-to-edge photo experience
   // (no nav pill floating over the bottom of the image). The reporter
@@ -2243,21 +2246,27 @@ export default function HomeScreen({ navigation, route }) {
         </Animated.View>
       </View>
 
-      <TouchableOpacity
-        style={[styles.fab, { bottom: 90 + insets.bottom }]}
-        onPress={() => {
-          if (!activeProjectId) {
-            openNewProjectModal(true);
-            return;
-          }
-          navigation.navigate('Camera', {
-            mode: 'before',
-            room: currentRoom
-          });
-        }}
-      >
-        <Ionicons name="camera" size={38} color="#000" />
-      </TouchableOpacity>
+      {/* Camera FAB — hidden while the fullscreen photo viewer
+          (tappedFullPhoto) is up. Its zIndex (100) sits above the
+          viewer's bottom action row, so leaving it visible covered
+          the Share button + Edit pencil we render there. */}
+      {!tappedFullPhoto && (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: 90 + insets.bottom }]}
+          onPress={() => {
+            if (!activeProjectId) {
+              openNewProjectModal(true);
+              return;
+            }
+            navigation.navigate('Camera', {
+              mode: 'before',
+              room: currentRoom
+            });
+          }}
+        >
+          <Ionicons name="camera" size={38} color="#000" />
+        </TouchableOpacity>
+      )}
 
       {/* Bottom nav moved to PersistentBottomNav (App.js root). */}
 
@@ -2888,12 +2897,22 @@ export default function HomeScreen({ navigation, route }) {
           0,
           roomBeforesForNav.findIndex((b) => b.id === activeBeforeIdNav)
         );
+        // Wrap prev/next around the room's before list so the last
+        // set's next-swipe lands on the first set (and vice versa).
+        // hasMultipleSetsNav guards against jump-to-self.
+        const hasMultipleSetsNav = roomBeforesForNav.length > 1;
         const prevBeforeNav = activeSetIdxNav > 0
           ? roomBeforesForNav[activeSetIdxNav - 1]
-          : null;
+          : (hasMultipleSetsNav ? roomBeforesForNav[roomBeforesForNav.length - 1] : null);
         const nextBeforeNav = activeSetIdxNav < roomBeforesForNav.length - 1
           ? roomBeforesForNav[activeSetIdxNav + 1]
-          : null;
+          : (hasMultipleSetsNav ? roomBeforesForNav[0] : null);
+        const prevSetIdxNav = activeSetIdxNav > 0
+          ? activeSetIdxNav - 1
+          : (hasMultipleSetsNav ? roomBeforesForNav.length - 1 : -1);
+        const nextSetIdxNav = activeSetIdxNav < roomBeforesForNav.length - 1
+          ? activeSetIdxNav + 1
+          : (hasMultipleSetsNav ? 0 : -1);
 
         // Build the members list for a given "before" (Before →
         // Progresses → After → Combined). Shared by both jump handlers.
@@ -2910,7 +2929,7 @@ export default function HomeScreen({ navigation, route }) {
           if (combined) members.push(combined);
           return { members, after: after || null };
         };
-        const jumpToSet = (before) => {
+        const jumpToSet = (before, targetSetIdx) => {
           if (!before) return;
           const built = buildMembersForBefore(before);
           if (!built.members?.length) return;
@@ -2922,6 +2941,12 @@ export default function HomeScreen({ navigation, route }) {
           // collapse back to the smaller UI. Only tappedFullPhoto drives
           // the shared viewer now.
           setTappedFullPhoto(built.members[0]);
+          if (typeof targetSetIdx === 'number' && targetSetIdx >= 0) {
+            setFullScreenPoolSignal((prev) => ({
+              nonce: prev.nonce + 1,
+              label: `Set ${targetSetIdx + 1}`,
+            }));
+          }
         };
         return (
           <View style={StyleSheet.absoluteFill}>
@@ -2935,10 +2960,11 @@ export default function HomeScreen({ navigation, route }) {
               initialPhotoId={liveTappedFullPhoto?.id || tappedFullPhoto?.id}
               onClose={() => setTappedFullPhoto(null)}
               setLabel={() => roomBeforesForNav.length > 1 ? `Set ${activeSetIdxNav + 1}` : ''}
-              prevSetLabel={() => prevBeforeNav ? `Set ${activeSetIdxNav}` : null}
-              nextSetLabel={() => nextBeforeNav ? `Set ${activeSetIdxNav + 2}` : null}
-              onPrevSet={() => jumpToSet(prevBeforeNav)}
-              onNextSet={() => jumpToSet(nextBeforeNav)}
+              prevSetLabel={() => prevSetIdxNav >= 0 ? `Set ${prevSetIdxNav + 1}` : null}
+              nextSetLabel={() => nextSetIdxNav >= 0 ? `Set ${nextSetIdxNav + 1}` : null}
+              onPrevSet={() => jumpToSet(prevBeforeNav, prevSetIdxNav)}
+              onNextSet={() => jumpToSet(nextBeforeNav, nextSetIdxNav)}
+              poolChangeSignal={fullScreenPoolSignal}
               showOverlays
               overlaysOn={showStudioEdits}
               onOverlaysChange={setShowStudioEdits}
@@ -2953,6 +2979,18 @@ export default function HomeScreen({ navigation, route }) {
                 if (!p?.id) return;
                 setTappedFullPhoto(null);
                 navigation.navigate('StudioDetail', { photoId: p.id });
+              }}
+              shareLabel="Share photo"
+              onShare={async (p) => {
+                if (!p?.uri) return;
+                try {
+                  await RNShare.share({
+                    url: p.uri,
+                    message: activeProject?.name || '',
+                  });
+                } catch (_) {
+                  // user dismissed
+                }
               }}
             />
           </View>

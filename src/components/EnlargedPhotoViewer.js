@@ -106,7 +106,8 @@ export default function EnlargedPhotoViewer({
   onToggleSelected,
   showDelete = false,
   onDelete,
-  // Bottom row 1 (overlays switch + edit) — moved out of the header.
+  // Bottom row (overlays switch + share + edit). Edit lives here
+  // rather than in the top-right so it doesn't cluster with delete.
   showEdit = false,
   onEdit,
   showOverlays = false,
@@ -120,6 +121,10 @@ export default function EnlargedPhotoViewer({
   // Used by the set-nav chevrons to land on the first photo of the
   // previous/next set without exposing a ref.
   scrollSignal,
+  // Fires the transient center-screen "Set N" flash when the parent
+  // swaps the photo pool (e.g. after wrapping from last set → first
+  // set on an edge swipe). Parent bumps `nonce` and provides `label`.
+  poolChangeSignal,
 }) {
   // Some screens (notably native-stack routes like PhotoSetPreview)
   // report 0 for the safe area top/bottom even though the viewer is
@@ -249,8 +254,8 @@ export default function EnlargedPhotoViewer({
           const currentZoom = zoomPhotoRef.current;
           if (!currentZoom) return;
           const idx = pool.findIndex((p) => p.id === currentZoom.id);
-          if (idx < 0) return;
-          const target = idx + (g.dx > 0 ? -1 : 1);
+          const forward = g.dx < 0;
+          const target = idx + (forward ? 1 : -1);
           if (target >= 0 && target < pool.length) {
             const next = pool[target];
             const live = liveById.get(next.id) || next;
@@ -259,13 +264,37 @@ export default function EnlargedPhotoViewer({
             // to the same photo the user last viewed here.
             setIdx(target);
             scrollRef.current?.scrollTo({ x: target * screenW, animated: false });
+            return;
+          }
+          // Edge overscroll → delegate to the set-jump handler when
+          // one is wired. The parent swaps the pool; the pool-sync
+          // effect below moves the zoom to the new pool's first
+          // photo so the fullscreen view stays open across sets.
+          if (forward && typeof onNextSet === 'function') {
+            onNextSet(currentZoom);
+          } else if (!forward && typeof onPrevSet === 'function') {
+            onPrevSet(currentZoom);
           }
         }
       },
       onPanResponderTerminationRequest: () => false,
     });
-  }, [pool, liveById, screenW]);
+  }, [pool, liveById, screenW, onNextSet, onPrevSet]);
   useEffect(() => { zoomPhotoRef.current = zoomPhoto; }, [zoomPhoto]);
+
+  // Sync the zoom photo to the pool after a set-jump. When the
+  // parent swaps the pool (e.g. onNextSet handler fires while the
+  // zoom layer is open), the currently-zoomed photo id may no
+  // longer exist in the new pool — swap to the new pool's first
+  // photo so the fullscreen view lands on Set N's opener instead
+  // of showing a stale bitmap or closing itself.
+  useEffect(() => {
+    if (!zoomPhoto) return;
+    if (pool.some((p) => p.id === zoomPhoto.id)) return;
+    if (pool.length === 0) return;
+    const nextRaw = pool[0];
+    setZoomPhoto(liveById.get(nextRaw.id) || nextRaw);
+  }, [pool, zoomPhoto, liveById]);
 
   // Transient label shown center-screen for ~500ms after a set jump.
   // Drives the dimmed "Set N" overlay so the user gets feedback that
@@ -296,6 +325,21 @@ export default function EnlargedPhotoViewer({
     if (transientTimerRef.current) clearTimeout(transientTimerRef.current);
   }, []);
 
+  // Pool-swap transient. Fires whenever the parent bumps
+  // poolChangeSignal.nonce — used by set-jump handlers so wrap-around
+  // swipes (last set → first set) still get the "Set N" flash even
+  // though there was no scrollSignal involved.
+  useEffect(() => {
+    if (!poolChangeSignal?.nonce || !poolChangeSignal?.label) return;
+    setTransientLabel(poolChangeSignal.label);
+    if (transientTimerRef.current) clearTimeout(transientTimerRef.current);
+    transientTimerRef.current = setTimeout(() => {
+      setTransientLabel(null);
+      transientTimerRef.current = null;
+    }, 700);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poolChangeSignal?.nonce]);
+
   // Auto-close if the pool empties.
   useEffect(() => {
     if (pool.length === 0 && typeof onClose === 'function') onClose();
@@ -325,9 +369,11 @@ export default function EnlargedPhotoViewer({
 
   // Top chrome = set nav row (when shown) + close-counter-delete row.
   // Bottom chrome = single row containing overlays + share + edit so
-  // the photo gets the maximum vertical space possible.
+  // the photo gets the maximum vertical space possible. Edit lives
+  // in the bottom row (right side) so the top row stays reserved for
+  // the destructive delete + close actions.
   const setNavShown = !!(setLabelResolved || prevSetLabelResolved || nextSetLabelResolved);
-  const bottomRowShown = showOverlays || !!shareLabel;
+  const bottomRowShown = showOverlays || !!shareLabel || showEdit;
   // Tightened header height — set nav row + (X close + N/M counter +
   // delete) row sit close together so the photo can start higher.
   // The N/M counter now lives in the center slot of the close row,
@@ -523,15 +569,6 @@ export default function EnlargedPhotoViewer({
             </View>
           )}
         </View>
-        {showEdit && (
-          <TouchableOpacity
-            onPress={() => current && typeof onEdit === 'function' && onEdit(current)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={[styles.headerBtn, { backgroundColor: controlBg, marginRight: showDelete ? 8 : 0 }]}
-          >
-            <Ionicons name="pencil" size={18} color={controlIcon} />
-          </TouchableOpacity>
-        )}
         {showDelete && (
           <TouchableOpacity
             onPress={() => current && typeof onDelete === 'function' && onDelete(current)}
@@ -628,10 +665,10 @@ export default function EnlargedPhotoViewer({
         </View>
       )}
 
-      {/* Single bottom row — overlays switch | share button.
-          (Edit pencil lives in the top-right header row alongside
-          the delete trash so both destructive/edit actions cluster
-          in the same reach.) */}
+      {/* Single bottom row — overlays switch | share button | edit
+          pencil. Edit sits on the right so it's easy to reach with
+          the same thumb that took the photo; delete stays up top so
+          the two are physically separated. */}
       {bottomRowShown && (
         <View style={[styles.bottomRow, { paddingBottom: insets.bottom + 8 }]}>
           {showOverlays ? (
@@ -658,6 +695,15 @@ export default function EnlargedPhotoViewer({
               </Text>
             </TouchableOpacity>
           ) : <View style={{ flex: 1 }} />}
+          {showEdit && (
+            <TouchableOpacity
+              onPress={() => current && typeof onEdit === 'function' && onEdit(current)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={[styles.headerBtn, { backgroundColor: controlBg }]}
+            >
+              <Ionicons name="pencil" size={18} color={controlIcon} />
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -826,8 +872,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0, right: 0,
     alignItems: 'center',
-    zIndex: 30,
-    elevation: 30,
+    // Sits above the fullscreen zoom layer (zIndex 100) so the
+    // "Set N" flash is visible even when the zoom overlay is open
+    // and the user is swiping between sets from the zoomed view.
+    zIndex: 150,
+    elevation: 150,
   },
   transientLabel: {
     paddingHorizontal: 24,

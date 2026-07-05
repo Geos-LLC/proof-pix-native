@@ -620,13 +620,26 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
 
   // The set the active photo belongs to, plus its position in the
   // set-order list. Drives the constant `Set N` label that the
-  // viewer's chips render.
+  // viewer's chips render. Prev/next wrap around at the ends so an
+  // edge swipe on the last set lands on the first set (and vice
+  // versa) — matches the wrap the user expects from a "carousel of
+  // sets". `hasMultipleSets` gates the wrap so a single-set view
+  // doesn't produce a jump-to-self.
   const activeSetId = current ? setIdOf.get(current.id) : null;
   const activeSetIdx = activeSetId ? setOrderList.indexOf(activeSetId) : -1;
-  const prevSetId = activeSetIdx > 0 ? setOrderList[activeSetIdx - 1] : null;
+  const hasMultipleSets = setOrderList.length > 1;
+  const prevSetId = activeSetIdx > 0
+    ? setOrderList[activeSetIdx - 1]
+    : (hasMultipleSets ? setOrderList[setOrderList.length - 1] : null);
   const nextSetId = activeSetIdx >= 0 && activeSetIdx < setOrderList.length - 1
     ? setOrderList[activeSetIdx + 1]
-    : null;
+    : (hasMultipleSets ? setOrderList[0] : null);
+  const prevSetIdx = activeSetIdx > 0
+    ? activeSetIdx - 1
+    : (hasMultipleSets ? setOrderList.length - 1 : -1);
+  const nextSetIdx = activeSetIdx >= 0 && activeSetIdx < setOrderList.length - 1
+    ? activeSetIdx + 1
+    : (hasMultipleSets ? 0 : -1);
 
   // Photos in the active set only — this is the pool we hand the
   // viewer. Re-derived on every render so it tracks any edits.
@@ -639,17 +652,28 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
   // actually does something — matches the HomeScreen wiring.
   const [pspShowOverlays, setPspShowOverlays] = useState(false);
 
+  // Signal that fires the transient "Set N" flash inside the viewer
+  // when a set jump swaps the pool. Bumped from goToPrev/NextSet so
+  // both the wrap-around edge swipe and the chip-tap route show the
+  // same feedback.
+  const [poolChangeSignal, setPoolChangeSignal] = useState({ nonce: 0, label: '' });
+  const bumpPoolSignal = (label) => {
+    setPoolChangeSignal((prev) => ({ nonce: prev.nonce + 1, label }));
+  };
+
   const goToPrevSet = () => {
-    console.warn('[v57][PhotoSetPreview] goToPrevSet pressed', { prevSetId, activeSetIdx });
     if (!prevSetId) return;
     const idx = firstIdxOfSet(prevSetId);
-    if (idx >= 0) setCurrentPhotoId(dayPhotos[idx].id);
+    if (idx < 0) return;
+    setCurrentPhotoId(dayPhotos[idx].id);
+    if (prevSetIdx >= 0) bumpPoolSignal(`Set ${prevSetIdx + 1}`);
   };
   const goToNextSet = () => {
-    console.warn('[v57][PhotoSetPreview] goToNextSet pressed', { nextSetId, activeSetIdx });
     if (!nextSetId) return;
     const idx = firstIdxOfSet(nextSetId);
-    if (idx >= 0) setCurrentPhotoId(dayPhotos[idx].id);
+    if (idx < 0) return;
+    setCurrentPhotoId(dayPhotos[idx].id);
+    if (nextSetIdx >= 0) bumpPoolSignal(`Set ${nextSetIdx + 1}`);
   };
 
   if (typeof console !== 'undefined') {
@@ -670,10 +694,11 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
       initialPhotoId={currentPhotoId || current?.id}
       onClose={() => navigation.goBack()}
       setLabel={() => activeSetIdx >= 0 ? `Set ${activeSetIdx + 1}` : ''}
-      prevSetLabel={() => prevSetId ? `Set ${activeSetIdx}` : null}
-      nextSetLabel={() => nextSetId ? `Set ${activeSetIdx + 2}` : null}
+      prevSetLabel={() => prevSetIdx >= 0 ? `Set ${prevSetIdx + 1}` : null}
+      nextSetLabel={() => nextSetIdx >= 0 ? `Set ${nextSetIdx + 1}` : null}
       onPrevSet={goToPrevSet}
       onNextSet={goToNextSet}
+      poolChangeSignal={poolChangeSignal}
       showOverlays
       overlaysOn={pspShowOverlays}
       onOverlaysChange={setPspShowOverlays}
