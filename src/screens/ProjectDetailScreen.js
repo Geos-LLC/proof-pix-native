@@ -1959,18 +1959,38 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // HTML file and transitions to the preview view. The user shares
   // from the preview, not from the editor; this avoids the
   // every-tap-makes-a-report problem the user flagged.
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (overrides = null) => {
     if (!project || projectPhotos.length === 0) {
       Alert.alert('No photos', 'This project has no photos to put in a report.');
       return;
     }
     if (isBuildingReport) return;
-    console.warn('[Report] Generate tapped — reportLayoutType state =', reportLayoutType);
+    // Callers can pass explicit `overrides` (photoIds/photoCount/title/
+    // layoutType/options) to bypass editor state. Needed when the user
+    // hits Regenerate from the preview after a per-photo edit: the
+    // editor state was never hydrated for this session so reading
+    // editorPhotoIds/reportPhotoCount from closure would give the
+    // initial empty values, wiping the report down to 1 photo.
+    const existing = targetReportId => reports.find((r) => r.id === targetReportId);
+    const existingActive = activeReportId ? existing(activeReportId) : null;
+    const effectivePhotoIds = Array.isArray(overrides?.photoIds)
+      ? overrides.photoIds
+      : (Array.isArray(editorPhotoIds) && editorPhotoIds.length > 0
+        ? editorPhotoIds
+        : (existingActive?.photoIds || projectPhotos.map((p) => p.id)));
+    const effectivePhotoCountRaw = overrides?.photoCount
+      || reportPhotoCount
+      || existingActive?.photoCount
+      || effectivePhotoIds.length;
+    const effectiveTitle = overrides?.title ?? reportTitle;
+    const effectiveLayoutType = overrides?.layoutType ?? reportLayoutType;
+    const effectiveOptions = overrides?.options ?? reportOptions;
+    console.warn('[Report] Generate tapped — reportLayoutType state =', effectiveLayoutType);
     setIsBuildingReport(true);
     try {
       const ts = Date.now();
-      const draftIds = Array.isArray(editorPhotoIds) ? editorPhotoIds : [];
-      const baseTitle = (reportTitle || '').trim() || project.name || 'Report';
+      const draftIds = effectivePhotoIds;
+      const baseTitle = (effectiveTitle || '').trim() || project.name || 'Report';
       let targetReportId = activeReportId;
       let nextReports;
       if (targetReportId && reports.find((r) => r.id === targetReportId)) {
@@ -1983,9 +2003,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 ...r,
                 title: baseTitle,
                 photoIds: draftIds,
-                photoCount: Math.max(1, Math.min(reportPhotoCount || draftIds.length, draftIds.length || 1)),
-                layoutType: reportLayoutType || DEFAULT_LAYOUT_ID,
-                options: { ...reportOptions },
+                photoCount: Math.max(1, Math.min(effectivePhotoCountRaw || draftIds.length, draftIds.length || 1)),
+                layoutType: effectiveLayoutType || DEFAULT_LAYOUT_ID,
+                options: { ...effectiveOptions },
                 updatedAt: ts,
               }
             : r,
@@ -1997,9 +2017,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
           id: newReportId(),
           title: baseTitle,
           photoIds: draftIds,
-          photoCount: Math.max(1, Math.min(reportPhotoCount || draftIds.length, draftIds.length || 1)),
-          layoutType: reportLayoutType || DEFAULT_LAYOUT_ID,
-          options: { ...reportOptions },
+          photoCount: Math.max(1, Math.min(effectivePhotoCountRaw || draftIds.length, draftIds.length || 1)),
+          layoutType: effectiveLayoutType || DEFAULT_LAYOUT_ID,
+          options: { ...effectiveOptions },
           createdAt: ts,
           updatedAt: ts,
         };
@@ -2032,8 +2052,8 @@ export default function ProjectDetailScreen({ route, navigation }) {
       await persistReportsToStorageOnly(finalizedReports);
       if (project?.id && patchProject) {
         await patchProject(project.id, {
-          lastReportLayoutType: reportLayoutType || DEFAULT_LAYOUT_ID,
-          lastReportOptions: { ...reportOptions },
+          lastReportLayoutType: effectiveLayoutType || DEFAULT_LAYOUT_ID,
+          lastReportOptions: { ...effectiveOptions },
         });
       }
       setReports(finalizedReports);
@@ -3231,14 +3251,19 @@ export default function ProjectDetailScreen({ route, navigation }) {
                         { text: 'Cancel', style: 'cancel' },
                         { text: 'Discard', style: 'destructive', onPress: () => { setReportPreviewStale(false); leave(); } },
                         { text: 'Save', onPress: () => {
-                          if (activeReport) {
-                            setEditorPhotoIds(activeReport.photoIds || []);
-                            setReportTitle(activeReport.title || '');
-                            setReportLayoutType(activeReport.layoutType || DEFAULT_LAYOUT_ID);
-                            setReportOptions(activeReport.options || {});
-                            setReportPhotoCount(activeReport.photoCount || (activeReport.photoIds || []).length);
-                          }
-                          handleGenerateReport().then(() => leave());
+                          // Pass activeReport's fields as explicit
+                          // overrides so handleGenerateReport doesn't
+                          // read stale editor state via closure (the
+                          // setState calls above wouldn't apply before
+                          // the async handler runs).
+                          const overrides = activeReport ? {
+                            photoIds: activeReport.photoIds || [],
+                            photoCount: activeReport.photoCount || (activeReport.photoIds || []).length,
+                            title: activeReport.title || '',
+                            layoutType: activeReport.layoutType || DEFAULT_LAYOUT_ID,
+                            options: activeReport.options || {},
+                          } : null;
+                          handleGenerateReport(overrides).then(() => leave());
                         } },
                       ],
                       { cancelable: true },
@@ -3343,17 +3368,19 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 <TouchableOpacity
                   style={[styles.reportPrimaryBtn, { backgroundColor: theme.accent, opacity: isBuildingReport ? 0.7 : 1 }]}
                   onPress={() => {
-                    // Hydrate the editor state from the live report
-                    // so handleGenerateReport sees the right photoIds
-                    // / options / layout — then call it.
-                    if (activeReport) {
-                      setEditorPhotoIds(activeReport.photoIds || []);
-                      setReportTitle(activeReport.title || '');
-                      setReportLayoutType(activeReport.layoutType || DEFAULT_LAYOUT_ID);
-                      setReportOptions(activeReport.options || {});
-                      setReportPhotoCount(activeReport.photoCount || (activeReport.photoIds || []).length);
-                    }
-                    handleGenerateReport();
+                    // Pass activeReport's fields as explicit overrides.
+                    // setState here wouldn't apply before the async
+                    // handleGenerateReport reads editor state via
+                    // closure — the report record would collapse to
+                    // photoIds=[] + photoCount=1 (initial state).
+                    const overrides = activeReport ? {
+                      photoIds: activeReport.photoIds || [],
+                      photoCount: activeReport.photoCount || (activeReport.photoIds || []).length,
+                      title: activeReport.title || '',
+                      layoutType: activeReport.layoutType || DEFAULT_LAYOUT_ID,
+                      options: activeReport.options || {},
+                    } : null;
+                    handleGenerateReport(overrides);
                   }}
                   disabled={isBuildingReport || projectPhotos.length === 0}
                   activeOpacity={0.85}
