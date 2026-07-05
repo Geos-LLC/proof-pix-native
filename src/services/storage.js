@@ -22,9 +22,17 @@ if (Platform.OS === 'android') {
 }
 
 const PHOTOS_METADATA_KEY = 'cleaning-photos-metadata';
+// Backup snapshot of the last non-empty photos metadata. Restored on load
+// when the primary key returns []/null but backup has photos. Prevents
+// data loss when any code path accidentally persists an empty write
+// (stale-closure caller, cold-start race, resetUserData miswired, etc.).
+const PHOTOS_METADATA_BACKUP_KEY = 'cleaning-photos-metadata-backup';
 const USER_PREFS_KEY = 'user-preferences';
 const SETTINGS_KEY = 'app-settings';
 const PROJECTS_KEY = 'tracked-projects';
+// Backup snapshot of the last non-empty projects list. Same rationale as
+// the photos backup — resilience against accidental wipes.
+const PROJECTS_BACKUP_KEY = 'tracked-projects-backup';
 const ACTIVE_PROJECT_ID_KEY = 'active-project-id';
 const ASSET_ID_MAP_KEY = 'asset-id-map';
 const UPLOAD_COUNTERS_KEY = 'upload-counters';
@@ -36,7 +44,19 @@ const UPLOAD_COUNTERS_KEY = 'upload-counters';
 export const loadPhotosMetadata = async () => {
   try {
     const saved = await readSecureJSON(PHOTOS_METADATA_KEY);
-    const list = saved || [];
+    let list = saved || [];
+    // Safety net: if primary key is empty but backup has photos, restore
+    // from backup. Covers accidental wipes from stale-closure callers,
+    // cold-start races, or miswired reset flows.
+    if (list.length === 0) {
+      const backup = await readSecureJSON(PHOTOS_METADATA_BACKUP_KEY);
+      if (Array.isArray(backup) && backup.length > 0) {
+        console.warn('[Storage] loadPhotosMetadata: primary empty, restoring from backup', { backup_count: backup.length });
+        list = backup;
+        // Re-hydrate primary so future reads are cheap.
+        try { await writeSecureJSON(PHOTOS_METADATA_KEY, backup); } catch {}
+      }
+    }
     const withOvr = list.filter(p => p && p.overrides && typeof p.overrides === 'object' && Object.keys(p.overrides).length);
     console.warn('[OVR] loadPhotosMetadata total=', list.length, 'withOverrides=', withOvr.length, 'sample=', withOvr.slice(0, 3).map(p => ({ id: p.id, keys: Object.keys(p.overrides) })));
     return list;
@@ -139,7 +159,23 @@ export const savePhotosMetadata = async (photos) => {
     const withOvrOut = metadata.filter(p => p && p.overrides && typeof p.overrides === 'object' && Object.keys(p.overrides).length);
     console.warn('[OVR] savePhotosMetadata in=', photos.length, 'inWithOvr=', withOvrIn.length, 'outWithOvr=', withOvrOut.length, 'sampleIn=', withOvrIn.slice(0, 3).map(p => ({ id: p.id, keys: Object.keys(p.overrides) })));
 
+    // Log empty writes prominently — these are the wipe risk. Include a
+    // stack trace so we can identify the caller in Loki.
+    if (metadata.length === 0) {
+      const stack = new Error('empty savePhotosMetadata trace').stack || '(no stack)';
+      console.warn('[Storage] savePhotosMetadata EMPTY WRITE — potential wipe', {
+        stack: stack.split('\n').slice(0, 6).join(' | '),
+      });
+    }
+
     await writeSecureJSON(PHOTOS_METADATA_KEY, metadata);
+
+    // Snapshot to backup key ONLY when we have real photos. On empty
+    // writes, leave the backup untouched so loadPhotosMetadata can
+    // restore from it. Explicit wipes via clearPhotos() clear both.
+    if (metadata.length > 0) {
+      try { await writeSecureJSON(PHOTOS_METADATA_BACKUP_KEY, metadata); } catch {}
+    }
 
     return true;
   } catch (error) {
@@ -153,6 +189,9 @@ export const savePhotosMetadata = async (photos) => {
 export const clearPhotos = async () => {
   try {
     await deleteSecure(PHOTOS_METADATA_KEY);
+    // Explicit wipe path must also clear the backup — otherwise
+    // loadPhotosMetadata would immediately restore from backup.
+    await deleteSecure(PHOTOS_METADATA_BACKUP_KEY);
   } catch (error) {
   }
 };
@@ -1025,7 +1064,18 @@ export const deleteAssetsBatch = async ({ filenames = [], prefixes = [], deleteF
 export const loadProjects = async () => {
   try {
     const saved = await readSecureJSON(PROJECTS_KEY);
-    return saved || [];
+    let list = saved || [];
+    // Same safety net as photos: if primary is empty but backup has
+    // entries, restore from backup and re-hydrate primary.
+    if (list.length === 0) {
+      const backup = await readSecureJSON(PROJECTS_BACKUP_KEY);
+      if (Array.isArray(backup) && backup.length > 0) {
+        console.warn('[Storage] loadProjects: primary empty, restoring from backup', { backup_count: backup.length });
+        list = backup;
+        try { await writeSecureJSON(PROJECTS_KEY, backup); } catch {}
+      }
+    }
+    return list;
   } catch (e) {
     return [];
   }
@@ -1036,8 +1086,23 @@ export const loadProjects = async () => {
  */
 export const saveProjects = async (projects) => {
   try {
-    console.warn('[Storage] saveProjects', { count: projects?.length || 0, ids: (projects || []).map(p => p?.id).slice(0, 10) });
-    await writeSecureJSON(PROJECTS_KEY, projects);
+    const list = projects || [];
+    if (list.length === 0) {
+      const stack = new Error('empty saveProjects trace').stack || '(no stack)';
+      console.warn('[Storage] saveProjects EMPTY WRITE — potential wipe', {
+        stack: stack.split('\n').slice(0, 6).join(' | '),
+      });
+    } else {
+      console.warn('[Storage] saveProjects', { count: list.length, ids: list.map(p => p?.id).slice(0, 10) });
+    }
+    await writeSecureJSON(PROJECTS_KEY, list);
+    // Only snapshot backup on non-empty writes. deleteProjectEntry's
+    // legitimate "remove one" flow still updates backup because the
+    // list is still non-empty. Full "clear all projects" would need
+    // an explicit clearProjects() helper (not yet implemented).
+    if (list.length > 0) {
+      try { await writeSecureJSON(PROJECTS_BACKUP_KEY, list); } catch {}
+    }
   } catch (e) {
     throw e;
   }

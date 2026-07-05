@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] batch9-labels-app-' + Date.now() + ' — batch8 + LabelCustomizationScreen (6 subfns fixed via styles prop) + App.js (ThemedNavigationContainer for dark-mode nav). Final theme migration OTA. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] data-resilience-' + Date.now() + ' — Photos+projects now have backup snapshots (cleaning-photos-metadata-backup + tracked-projects-backup). loadPhotosMetadata/loadProjects restore from backup when primary is empty. save*(empty) writes emit a stack trace for wipe-caller diagnosis. Reset User Data clears backups too. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

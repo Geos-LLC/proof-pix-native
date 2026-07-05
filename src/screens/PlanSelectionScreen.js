@@ -564,9 +564,9 @@ export default function PlanSelectionScreen({ navigation, route }) {
             <Text style={styles.designCardPriceFree}>Free</Text>
           </View>
           <View style={styles.designBullets}>
-            <Bullet text="Single project · 100 photos" />
-            <Bullet text="All capture modes" />
-            <Bullet text="Text notes · single-photo share" />
+            <Bullet styles={styles} text="Single project · 100 photos" />
+            <Bullet styles={styles} text="All capture modes" />
+            <Bullet styles={styles} text="Text notes · single-photo share" />
           </View>
         </TouchableOpacity>
 
@@ -607,10 +607,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
 
           <View style={styles.designBullets}>
-            <Bullet text="Unlimited projects & photos" tint="#7A5B00" />
-            <Bullet text="Combined formats & view modes" tint="#7A5B00" />
-            <Bullet text="Watermark, voice notes, markup" tint="#7A5B00" />
-            <Bullet text="Reports & cloud sync" tint="#7A5B00" />
+            <Bullet styles={styles} text="Unlimited projects & photos" tint="#7A5B00" />
+            <Bullet styles={styles} text="Combined formats & view modes" tint="#7A5B00" />
+            <Bullet styles={styles} text="Watermark, voice notes, markup" tint="#7A5B00" />
+            <Bullet styles={styles} text="Reports & cloud sync" tint="#7A5B00" />
           </View>
 
           <TouchableOpacity
@@ -668,10 +668,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
 
           <View style={styles.designBullets}>
-            <Bullet text="Everything in Pro" />
-            <Bullet text="Logo & timestamp overlays" />
-            <Bullet text="Team invites & shared projects" />
-            <Bullet text="Map-embedded reports" />
+            <Bullet styles={styles} text="Everything in Pro" />
+            <Bullet styles={styles} text="Logo & timestamp overlays" />
+            <Bullet styles={styles} text="Team invites & shared projects" />
+            <Bullet styles={styles} text="Map-embedded reports" />
           </View>
 
           {Platform.OS === 'android' && (
@@ -720,10 +720,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
 
           <View style={styles.designBullets}>
-            <Bullet text="Everything in Business" />
-            <Bullet text="Unlimited team members" />
-            <Bullet text="Multiple cloud accounts & teams" />
-            <Bullet text="API access, webhooks, priority support" />
+            <Bullet styles={styles} text="Everything in Business" />
+            <Bullet styles={styles} text="Unlimited team members" />
+            <Bullet styles={styles} text="Multiple cloud accounts & teams" />
+            <Bullet styles={styles} text="API access, webhooks, priority support" />
           </View>
 
           <TouchableOpacity
@@ -835,7 +835,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
 // One feature bullet line — round check + text. `tint` lets the Pro
 // card's bullets render in accent-ink for the soft-yellow surface,
 // while everyone else stays neutral grey.
-function Bullet({ text, tint }) {
+function Bullet({ styles, text, tint }) {
   return (
     <View style={styles.designBulletRow}>
       <View style={[styles.designBulletCheck, tint ? { backgroundColor: '#F2C31B' } : null]}>

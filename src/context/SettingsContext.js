@@ -1093,9 +1093,14 @@ export const SettingsProvider = ({ children }) => {
       await AsyncStorage.removeItem(CUSTOM_ROOMS_KEY);
       // Clear developer tools unlock state when resetting data
       await AsyncStorage.removeItem('@dev_tools_unlocked');
-      // Clear photos, projects, trial, and referral data
+      // Clear photos, projects, trial, and referral data — including
+      // backup snapshots (added 2026-07-05 for wipe resilience). Without
+      // clearing the backups, loadPhotosMetadata/loadProjects would
+      // immediately restore from backup and undo the reset.
       await deleteSecure('cleaning-photos-metadata');
+      await deleteSecure('cleaning-photos-metadata-backup');
       await deleteSecure('tracked-projects');
+      await deleteSecure('tracked-projects-backup');
       await deleteSecure('@user_trial_info');
       await AsyncStorage.removeItem('@user_referral_code');
       await AsyncStorage.removeItem('@referral_accepted');

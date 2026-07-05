@@ -1257,28 +1257,30 @@ export default function App() {
               <GlobalBackgroundChromeBaker />
               {/* Global upload progress indicator - shows on ALL screens */}
               <GlobalUploadIndicator navigationRef={navigationRef} />
+              {/* Trial Notification Modal — must render INSIDE
+                  SettingsProvider so useTheme() sees the real theme
+                  (falls back to lightTheme when outside → always
+                  white regardless of dark mode). */}
+              <TrialNotificationModal
+                visible={showTrialModal}
+                notification={trialNotification}
+                onClose={handleTrialModalClose}
+                onUpgrade={handleTrialUpgrade}
+                onRefer={handleTrialRefer}
+                onCTA={handleTrialCTA}
+              />
+
+              {/* Referral Prompt Modal — same reason, inside provider. */}
+              <ReferralPromptModal
+                visible={showReferralPrompt}
+                prompt={referralPrompt}
+                onClose={handleReferralPromptClose}
+                onPrimary={handleReferralPromptPrimary}
+                onSecondary={handleReferralPromptSecondary}
+              />
             </PhotoProvider>
           </AdminProvider>
         </SettingsProvider>
-        
-          {/* Trial Notification Modal */}
-          <TrialNotificationModal
-            visible={showTrialModal}
-            notification={trialNotification}
-            onClose={handleTrialModalClose}
-            onUpgrade={handleTrialUpgrade}
-            onRefer={handleTrialRefer}
-            onCTA={handleTrialCTA}
-          />
-
-          {/* Referral Prompt Modal — fires on value-moment + trial-ending */}
-          <ReferralPromptModal
-            visible={showReferralPrompt}
-            prompt={referralPrompt}
-            onClose={handleReferralPromptClose}
-            onPrimary={handleReferralPromptPrimary}
-            onSecondary={handleReferralPromptSecondary}
-          />
         </SafeAreaProvider>
       </View>
     </ErrorBoundary>

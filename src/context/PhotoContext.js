@@ -10,6 +10,11 @@ import crmService from '../services/crm';
 // (NOT Keychain) so it resets on reinstall — if a future reinstall
 // leaves Keychain projects empty again, recovery re-fires.
 const PROJECT_RECOVERY_MARKER_KEY = '@project_recovery_done_v1';
+// v2 introduced 2026-07-05 after a bug where v1 marker was set on
+// "no photos yet" case, permanently blocking recovery. v2 only sets
+// the marker after ACTUAL successful synthesis. Devices wedged on
+// v1 retry once, then move to v2 semantics.
+const PROJECT_RECOVERY_MARKER_KEY_V2 = '@project_recovery_done_v2';
 const ROOMS_RECOVERY_MARKER_KEY = '@rooms_recovery_done_v1';
 const CUSTOM_ROOMS_KEY = 'custom-rooms';
 
@@ -139,8 +144,12 @@ export const PhotoProvider = ({ children }) => {
       // later, we honour the empty state.
       if ((projectsList?.length || 0) === 0) {
         try {
-          const recoveryDone = await AsyncStorage.getItem(PROJECT_RECOVERY_MARKER_KEY);
-          if (!recoveryDone) {
+          // Marker was previously set even on the "no photos yet" case,
+          // which permanently blocked recovery once photos came back.
+          // Bump the key to v2 so devices that got wedged on v1 retry once,
+          // then only set the v2 marker after ACTUAL successful synthesis.
+          const recoveryDoneV2 = await AsyncStorage.getItem(PROJECT_RECOVERY_MARKER_KEY_V2);
+          if (!recoveryDoneV2) {
             const photoMeta = await loadPhotosMetadata();
             const byProjectId = new Map();
             for (const photo of photoMeta || []) {
@@ -167,12 +176,15 @@ export const PhotoProvider = ({ children }) => {
               console.warn('[PhotoContext] project recovery: synthesized', { count: synthesized.length, photo_count: (photoMeta || []).length, ids: synthesized.map(p => p.id) });
               await saveProjects(synthesized);
               projectsList = synthesized;
+              // Only set marker AFTER successful synthesis. If photos
+              // weren't ready yet, allow retry on next cold-start.
+              await AsyncStorage.setItem(PROJECT_RECOVERY_MARKER_KEY_V2, String(Date.now()));
             } else {
-              console.warn('[PhotoContext] project recovery: skipped — no photos carry projectId', { photo_count: (photoMeta || []).length });
+              console.warn('[PhotoContext] project recovery: waiting — no photos carry projectId yet', { photo_count: (photoMeta || []).length });
+              // Do NOT set marker; retry next cold-start once photos land.
             }
-            await AsyncStorage.setItem(PROJECT_RECOVERY_MARKER_KEY, String(Date.now()));
           } else {
-            console.warn('[PhotoContext] project recovery: marker present, skipping');
+            console.warn('[PhotoContext] project recovery: v2 marker present, skipping');
           }
         } catch (e) {
           console.warn('[PhotoContext] project recovery failed:', e?.message);
