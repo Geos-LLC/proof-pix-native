@@ -65,14 +65,14 @@ const EditBadge = ({ onPress }) => (
   ) : null
 );
 
-// Photo cell for previews. Chips and watermark overlays were removed
-// once the report pipeline started feeding baked photo URIs (the
-// editor's bake already composites label + watermark into the
-// image). The optional `label` prop now drops because the baked
-// image carries it; we keep `timestamp` since the bake doesn't.
+// Photo cell for previews. `label` renders a chip top-left when set —
+// used to show the photo's custom name (or mode) so the report
+// "Show labels" switch has something to toggle in-preview. The
+// baked URI path (planned) will remove this in favor of the burned-in
+// chip, but until then this is the source of truth for the preview.
 // `onEdit` renders a small pencil badge top-right; tapping it fires
 // the per-photo edit menu in ProjectDetailScreen.
-const PhotoSlot = ({ uri, theme, missing, timestamp, watermark, onEdit }) => (
+const PhotoSlot = ({ uri, theme, missing, timestamp, watermark, onEdit, label, chipBg, chipText }) => (
   <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
     {uri ? (
       <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
@@ -84,6 +84,11 @@ const PhotoSlot = ({ uri, theme, missing, timestamp, watermark, onEdit }) => (
         </Text>
       </View>
     )}
+    {label ? (
+      <View style={[styles.slotTag, chipBg ? { backgroundColor: chipBg } : null]}>
+        <Text style={[styles.slotTagText, chipText ? { color: chipText } : null]} numberOfLines={1}>{label}</Text>
+      </View>
+    ) : null}
     {timestamp ? (
       <View style={styles.tsOverlay}>
         <Text style={styles.overlayText}>{timestamp}</Text>
@@ -97,6 +102,18 @@ const PhotoSlot = ({ uri, theme, missing, timestamp, watermark, onEdit }) => (
     <EditBadge onPress={onEdit} />
   </View>
 );
+
+// Given options.showLabels + a photo + a role hint, produce the chip
+// text to render top-left. Prefers the user's saved name; falls back
+// to the role hint (BEFORE / AFTER / PROGRESS / …). Returns null when
+// showLabels is off so PhotoSlot skips the chip entirely.
+const chipLabelFor = (photo, options, roleHint) => {
+  if (!photo) return null;
+  if (options?.showLabels === false) return null;
+  const raw = typeof photo.name === 'string' ? photo.name.trim() : '';
+  if (raw) return raw;
+  return roleHint || MODE_CHIP[photo.mode] || null;
+};
 
 const Note = ({ note, theme }) => (
   note ? (
@@ -123,7 +140,7 @@ const RoleLabel = ({ text, show, theme }) => (
   ) : null
 );
 
-const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkText, onPhotoEdit }) => {
+const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText, onPhotoEdit }) => {
   const groups = groupByRoom(photos);
   if (groups.length === 0) return <Empty theme={theme} />;
   const showTimestamp = options.includeMetadata === true;
@@ -142,6 +159,9 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkT
         timestamp={showTimestamp ? formatShortStamp(tsOf(photo)) : null}
         watermark={wm || null}
         onEdit={editHandler(photo)}
+        label={chipLabelFor(photo, options, (role || '').toUpperCase())}
+        chipBg={chipBg}
+        chipText={chipText}
       />
       {options.includeNotes && photo.notes ? <Note note={photo.notes} theme={theme} /> : null}
     </View>
@@ -193,6 +213,9 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkT
                             timestamp={showTimestamp ? formatShortStamp(tsOf(set.before)) : null}
                             watermark={wm || null}
                             onEdit={editHandler(set.before)}
+                            label={chipLabelFor(set.before, options, 'BEFORE')}
+                            chipBg={chipBg}
+                            chipText={chipText}
                           />
                         </View>
                         <View style={{ flex: 1 }}>
@@ -204,6 +227,9 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, watermarkT
                             timestamp={showTimestamp ? formatShortStamp(tsOf(set.after)) : null}
                             watermark={wm || null}
                             onEdit={editHandler(set.after)}
+                            label={chipLabelFor(set.after, options, 'AFTER')}
+                            chipBg={chipBg}
+                            chipText={chipText}
                           />
                         </View>
                       </View>
@@ -275,6 +301,14 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, onPhotoEd
                     resizeMode="contain"
                   />
                 ) : null}
+                {(() => {
+                  const lab = chipLabelFor(c, options, MODE_CHIP.mix);
+                  return lab ? (
+                    <View style={styles.slotTag}>
+                      <Text style={styles.slotTagText} numberOfLines={1}>{lab}</Text>
+                    </View>
+                  ) : null;
+                })()}
                 <EditBadge onPress={typeof onPhotoEdit === 'function' ? () => onPhotoEdit(c) : undefined} />
               </View>
             );
@@ -299,7 +333,7 @@ const TIMELINE_STAGE_LABEL = {
   after: 'After',
   mix: 'Combined',
 };
-const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, watermarkText, onPhotoEdit }) => {
+const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText, onPhotoEdit }) => {
   const days = groupByDateThenRoom(photos);
   const cols = clampSetCols(options.timelineColumns);
   const showTimestamp = options.includeMetadata === true;
@@ -339,6 +373,9 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, wate
                           theme={theme}
                           timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
                           onEdit={editHandler(p)}
+                          label={chipLabelFor(p, options, (TIMELINE_STAGE_LABEL[p.mode] || '').toUpperCase())}
+                          chipBg={chipBg}
+                          chipText={chipText}
                         />
                         {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
                       </View>
@@ -417,6 +454,7 @@ const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText
                           chipText={chipText}
                           timestamp={showTimestamp ? formatShortStamp(tsOf(p)) : null}
                           onEdit={editHandler(p)}
+                          label={chipLabelFor(p, options, (MODE_CHIP[p.mode] || '').toUpperCase())}
                         />
                         {options.includeNotes && p.notes ? (
                           <Note note={p.notes} theme={theme} />
@@ -628,6 +666,7 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 6, left: 6,
     paddingHorizontal: 6, paddingVertical: 2,
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4,
+    maxWidth: '70%',
   },
   slotTagText: { color: '#FFF', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   tsOverlay: {

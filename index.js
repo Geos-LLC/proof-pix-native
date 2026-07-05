@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] report-edit-badge-' + Date.now() + ' — Report photo previews now render a small pencil badge on the top-right of each photo (Timeline, Room-by-Room, Sets, Before&After). Tap opens the per-photo edit menu (Edit / Reset / Remove). Enlarged viewer edit pencil already lives top-right next to delete. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] report-labels-switch-' + Date.now() + ' — Show Labels switch in the report editor now toggles a real label chip on each preview photo (Timeline, Room-by-Room, Sets, Before&After). Chip shows the photo saved name if set, otherwise falls back to the mode label (BEFORE / AFTER / PROGRESS / BEFORE & AFTER). Chip uses the report brand color when set. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
