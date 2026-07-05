@@ -38,6 +38,11 @@ export default function PannableImage({
   // pinch. Transforms are also reset to neutral so the picture is
   // stationary while the user annotates.
   disabled = false,
+  // Optional style override for the reset button. Callers that render
+  // this component below a translucent status bar (e.g. fullscreen
+  // viewer) pass `{ top: insets.top + 8 }` so the reset icon aligns
+  // with the sibling X close button that also lives at insets.top + 8.
+  resetBtnStyle,
 }) {
   // Mirror props that the (one-shot) PanResponder needs to consult at
   // runtime. PanResponder.create() is wrapped in useRef and so captures
@@ -393,7 +398,7 @@ export default function PannableImage({
       </Animated.View>
       {showResetButton && (
         <TouchableOpacity
-          style={styles.resetBtn}
+          style={[styles.resetBtn, resetBtnStyle]}
           onPress={reset}
           activeOpacity={0.8}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

@@ -20,7 +20,9 @@ import { useTheme } from '../hooks/useTheme';
 // an "Apply to: This Photo / This Room / Project" scope picker + Save bar.
 
 const APPLY_SCOPES = [
-  { key: 'photo', label: 'This Photo' },
+  // 'photo' key retained for compat; user-facing label is "This Set"
+  // because writes target the source before/after pair (per bde1342).
+  { key: 'photo', label: 'This Set' },
   { key: 'room', label: 'This Room' },
   { key: 'project', label: 'Project' },
 ];

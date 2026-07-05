@@ -36,6 +36,7 @@ import PhotoWatermark from '../components/PhotoWatermark';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
 import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
+import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
 import { getLabelPositions } from '../constants/rooms';
 import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } from 'react-native-svg';
 import { Audio } from 'expo-av';
@@ -128,7 +129,10 @@ const resolveDefaultFormat = (bitmapAspect, mode, viewMode, beforeOrientation) =
 // only the user-facing label changes to "This Folder" to match the
 // rest of the app's terminology (Sections/Folders, not Rooms).
 const APPLY_SCOPES = [
-  { key: 'photo', label: 'This Photo' },
+  // 'photo' key is retained for compat with existing scope handlers, but
+  // in combined-photo context the writes target the source before/after
+  // pair — so the user-facing label is "This Set" to match reality.
+  { key: 'photo', label: 'This Set' },
   { key: 'room', label: 'This Folder' },
   { key: 'project', label: 'Project' },
 ];
@@ -191,7 +195,7 @@ export default function StudioScreen({ route, navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { photos, updatePhoto } = usePhotos();
+  const { photos, updatePhoto, setPhotoOverride } = usePhotos();
   // Lifted above the settings destructure so useScopedSettings sees
   // the photoId — every read here cascades photo.overrides over global,
   // and the writers passed to the brand/watermark tile toggles route
@@ -528,8 +532,80 @@ export default function StudioScreen({ route, navigation }) {
   // the three apply-to scopes inline so the bottom of the screen stays
   // clean.
   const [saveMenuVisible, setSaveMenuVisible] = useState(false);
+  // Fullscreen preview state — populated when user taps the photo on
+  // the edit screen. Same shared EnlargedPhotoViewer that HomeScreen /
+  // PhotoSetPreview use, so the fullscreen experience is identical
+  // everywhere.
+  const [tappedFullPhoto, setTappedFullPhoto] = useState(null);
   const promoteOverridesToGlobal = usePromoteOverridesToGlobal();
   const resetPhotoOverrides = useResetPhotoOverrides();
+  // Entry snapshot of photos' overrides — captured on first mount so we
+  // can detect unsaved changes and offer to discard on back navigation.
+  // For combined photos, writes land on source before/after singles
+  // (per bde1342). Snapshot those too so Discard fully restores.
+  const entryOverridesRef = useRef(null);
+  useEffect(() => {
+    if (entryOverridesRef.current || !photo) return;
+    // Grab overrides for the current photo + any source pair photos.
+    const relevantIds = new Set([photo.id]);
+    if (photo.beforePhotoId) relevantIds.add(photo.beforePhotoId);
+    if (photo.beforeOverrideId) relevantIds.add(photo.beforeOverrideId);
+    if (photo.afterOverrideId) relevantIds.add(photo.afterOverrideId);
+    // Also look up combined source ids via id-prefix + name+room heuristic.
+    const idStr = String(photo.id || '');
+    if (idStr.startsWith('combined_')) {
+      const beforeIdStr = idStr.slice('combined_'.length);
+      relevantIds.add(beforeIdStr);
+      const afterMatch = photos.find(p =>
+        p.beforePhotoId && String(p.beforePhotoId) === beforeIdStr && p.mode === PHOTO_MODES.AFTER
+      );
+      if (afterMatch) relevantIds.add(afterMatch.id);
+    }
+    const snap = {};
+    for (const id of relevantIds) {
+      const p = photos.find(x => String(x.id) === String(id));
+      snap[id] = p?.overrides ? JSON.parse(JSON.stringify(p.overrides)) : null;
+    }
+    entryOverridesRef.current = snap;
+  }, [photo, photos]);
+
+  // Compare current overrides against entry snapshot. Called on back
+  // navigation to decide whether to prompt.
+  const hasUnsavedChanges = useCallback(() => {
+    const snap = entryOverridesRef.current;
+    if (!snap) return false;
+    for (const id of Object.keys(snap)) {
+      const p = photos.find(x => String(x.id) === String(id));
+      const current = p?.overrides || null;
+      if (JSON.stringify(current) !== JSON.stringify(snap[id])) return true;
+    }
+    return false;
+  }, [photos]);
+
+  // Restore each snapshotted photo to its entry overrides. Used by the
+  // "Discard changes" option in the save menu.
+  const discardChanges = useCallback(async () => {
+    const snap = entryOverridesRef.current;
+    if (!snap) return;
+    for (const id of Object.keys(snap)) {
+      try {
+        // updatePhoto is the write path used by setPhotoOverride /
+        // clearPhotoOverrides; passing overrides directly (snapshot
+        // or null) restores exact entry state.
+        await updatePhoto(id, { overrides: snap[id] });
+      } catch (_) {}
+    }
+  }, [updatePhoto]);
+
+  // Intercept back arrow: if the user has unsaved changes, open the
+  // save menu (with a Discard option) instead of leaving directly.
+  const handleBackPress = useCallback(() => {
+    if (hasUnsavedChanges()) {
+      setSaveMenuVisible(true);
+      return;
+    }
+    navigation.goBack();
+  }, [hasUnsavedChanges, navigation]);
   const [viewMode, setViewMode] = useState('side');
   // Initial pairTemplate is a neutral placeholder. The auto-default
   // effect below picks the right chip for each photo as it loads, but
@@ -948,7 +1024,7 @@ export default function StudioScreen({ route, navigation }) {
       >
       <View style={styles.headerRow}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBackPress}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
@@ -1020,13 +1096,20 @@ export default function StudioScreen({ route, navigation }) {
           />
         ) : (
           <>
-            <PannableImage
-              imageKey={photo.uri || photo.id}
-              source={{ uri: photo.uri }}
-              style={styles.photo}
-              resizeMode="cover"
-              disabled={activeTool !== 'layout'}
-            />
+            <TouchableOpacity
+              activeOpacity={0.98}
+              onPress={() => photo && setTappedFullPhoto(photo)}
+              style={StyleSheet.absoluteFill}
+            >
+              <PannableImage
+                imageKey={photo.uri || photo.id}
+                source={{ uri: photo.uri }}
+                style={styles.photo}
+                resizeMode="cover"
+                disabled={activeTool !== 'layout'}
+                showResetButton={false}
+              />
+            </TouchableOpacity>
             {/* Labels live OUTSIDE PannableImage so they anchor to the
                 photoFrame's corners — not the photo content. PannableImage
                 centers an overflowing Animated.View when frame and bitmap
@@ -1533,6 +1616,24 @@ export default function StudioScreen({ route, navigation }) {
               <Text style={[styles.saveMenuOptionText, { color: theme.danger || '#FF3B30' }]}>Reset this photo</Text>
             </TouchableOpacity>
           )}
+          {/* Discard action — restore snapshot of all affected photos
+              taken on screen entry, then navigate back. Only shown when
+              the user has made changes this session. */}
+          {hasUnsavedChanges() && (
+            <TouchableOpacity
+              style={[
+                styles.saveMenuOption,
+                { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.divider },
+              ]}
+              onPress={async () => {
+                setSaveMenuVisible(false);
+                try { await discardChanges(); } catch (_) {}
+                navigation.goBack();
+              }}
+            >
+              <Text style={[styles.saveMenuOptionText, { color: theme.danger || '#FF3B30' }]}>Leave without saving</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[styles.saveMenuCancel, { backgroundColor: theme.surface, borderColor: theme.border }]}
             onPress={() => setSaveMenuVisible(false)}
@@ -1541,6 +1642,21 @@ export default function StudioScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </Modal>
+      {tappedFullPhoto && (
+        // Wrap in absoluteFill so the viewer covers the entire screen
+        // (matches HomeScreen's rendering pattern). Without it, the
+        // component's flex:1 backdrop only fills the remaining slot in
+        // Studio's flex layout — showing a half-screen preview.
+        <View style={StyleSheet.absoluteFill}>
+          <EnlargedPhotoViewer
+            photos={[tappedFullPhoto]}
+            initialPhotoId={tappedFullPhoto.id}
+            onClose={() => setTappedFullPhoto(null)}
+            showOverlays
+            overlaysOn
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -1765,7 +1881,7 @@ function LabelsPanel({ theme, navigation, showLabels, toggleLabels, scope, setSc
 
       <TouchableOpacity
         style={[styles.deepLinkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        onPress={() => navigation.navigate('LabelCustomization')}
+        onPress={() => navigation.navigate('LabelCustomization', { photoId: photo?.id })}
       >
         <View style={{ flex: 1 }}>
           <Text style={[styles.deepLinkTitle, { color: theme.textPrimary }]}>Customize Labels</Text>

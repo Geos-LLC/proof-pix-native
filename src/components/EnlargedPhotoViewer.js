@@ -679,7 +679,8 @@ export default function EnlargedPhotoViewer({
               imageStyle={{ width: '100%', height: '100%' }}
               resizeMode="contain"
               panOnLongPress
-              showResetButton={false}
+              showResetButton
+              resetBtnStyle={{ top: insets.top + 8 }}
             >
               {overlaysOn && (
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>

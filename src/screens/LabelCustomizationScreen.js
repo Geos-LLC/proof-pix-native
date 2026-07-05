@@ -238,13 +238,13 @@ const LABEL_LANGUAGES = [
 ];
 
 export default function CustomizeLabelsScreen({ route, navigation }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   // Which orientation tab the position controls are editing.
   // 'portrait' edits beforeLabelPosition / afterLabelPosition (the legacy
   // settings, used for portrait + square photos). 'landscape' edits the new
   // *Landscape variants, which are applied to photos wider than they are tall.
   const [orientationTab, setOrientationTab] = useState('portrait');
-  const theme = useTheme();
-  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   // Studio passes a photoId so all writes target this one photo's
   // overrides. From main Settings the sheet is opened without a
@@ -418,6 +418,72 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
     [photoId, photos]
   );
 
+  // For a COMBINED preview photo, the Studio render (StudioScreen's
+  // DraggableLabelOverlay) uses `pairResolved.beforePhoto` /
+  // `pairResolved.afterPhoto` — the SOURCE single before/after photos,
+  // not the combined photo. Drag persistence also lands on those
+  // source photos' overrides. If picker writes went to the combined
+  // photo's overrides (as they would via useScopedSettings(photoId)
+  // when photoId is the combined id), the renderer would never see
+  // them. Resolve the source ids here so writers/readers below can
+  // target the same photos the renderer reads.
+  // Matches the wider isCombinedPhoto util below — accepts both the
+  // canonical 'mix' PHOTO_MODES.COMBINED value and the legacy
+  // 'combined' string that older photos may still carry.
+  const isCombinedPreview =
+    previewPhoto?.mode === PHOTO_MODES.COMBINED || previewPhoto?.mode === 'combined';
+  const combinedSourceIds = useMemo(() => {
+    if (!isCombinedPreview) return { beforeId: null, afterId: null };
+    const idStr = String(previewPhoto.id || '');
+    let beforePhoto = null;
+    if (idStr.startsWith('combined_')) {
+      const beforeIdStr = idStr.slice('combined_'.length);
+      beforePhoto = photos.find((p) => String(p.id) === beforeIdStr) || null;
+    }
+    if (!beforePhoto && previewPhoto.name && previewPhoto.room) {
+      beforePhoto = photos.find(
+        (p) => p.name === previewPhoto.name
+          && p.room === previewPhoto.room
+          && p.mode === PHOTO_MODES.BEFORE
+      ) || null;
+    }
+    let afterPhoto = beforePhoto
+      ? photos.find(
+          (p) => p.beforePhotoId === beforePhoto.id && p.mode === PHOTO_MODES.AFTER
+        ) || null
+      : null;
+    // Match pairResolved's swap-override handling in StudioScreen —
+    // only honor the override id when the referenced photo still exists.
+    if (previewPhoto.beforeOverrideId) {
+      const ov = photos.find((p) => String(p.id) === String(previewPhoto.beforeOverrideId));
+      if (ov) beforePhoto = ov;
+    }
+    if (previewPhoto.afterOverrideId) {
+      const ov = photos.find((p) => String(p.id) === String(previewPhoto.afterOverrideId));
+      if (ov) afterPhoto = ov;
+    }
+    return {
+      beforeId: beforePhoto?.id || null,
+      afterId: afterPhoto?.id || null,
+    };
+  }, [isCombinedPreview, previewPhoto, photos]);
+
+  // Snapshots of the source photos' overrides. Reads below prefer
+  // these when combined so the picker's active cell reflects the
+  // exact state the Studio render is showing.
+  const combinedBeforeSourceOv = useMemo(
+    () => (combinedSourceIds.beforeId
+      ? photos.find((p) => String(p.id) === String(combinedSourceIds.beforeId))?.overrides || null
+      : null),
+    [combinedSourceIds.beforeId, photos]
+  );
+  const combinedAfterSourceOv = useMemo(
+    () => (combinedSourceIds.afterId
+      ? photos.find((p) => String(p.id) === String(combinedSourceIds.afterId))?.overrides || null
+      : null),
+    [combinedSourceIds.afterId, photos]
+  );
+
   // Position helper: returns absolute-positioning styles relative to the
   // preview half. Uses percentage + transform for middle/center anchors so
   // they snap to the true geometric center regardless of preview height
@@ -440,19 +506,32 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
     return positions[position] || positions['left-top'];
   };
 
+  // Overlay source-photo overrides onto the merged settings when
+  // editing a combined photo (see combinedSourceIds above). For any
+  // other scope (single per-photo, or global) `combined*SourceOv` is
+  // null and reads fall through to the useScopedSettings values.
+  const readBeforePos = combinedBeforeSourceOv?.beforeLabelPosition ?? beforeLabelPosition;
+  const readBeforePosLs = combinedBeforeSourceOv?.beforeLabelPositionLandscape ?? beforeLabelPositionLandscape;
+  const readBeforeOffset = combinedBeforeSourceOv?.beforeLabelOffset ?? beforeLabelOffset;
+  const readBeforeOffsetLs = combinedBeforeSourceOv?.beforeLabelOffsetLandscape ?? beforeLabelOffsetLandscape;
+  const readAfterPos = combinedAfterSourceOv?.afterLabelPosition ?? afterLabelPosition;
+  const readAfterPosLs = combinedAfterSourceOv?.afterLabelPositionLandscape ?? afterLabelPositionLandscape;
+  const readAfterOffset = combinedAfterSourceOv?.afterLabelOffset ?? afterLabelOffset;
+  const readAfterOffsetLs = combinedAfterSourceOv?.afterLabelOffsetLandscape ?? afterLabelOffsetLandscape;
+
   // Active before/after positions for the currently-edited orientation tab.
   const activeBeforePos = orientationTab === 'landscape'
-    ? (beforeLabelPositionLandscape || beforeLabelPosition)
-    : beforeLabelPosition;
+    ? (readBeforePosLs || readBeforePos)
+    : readBeforePos;
   const activeAfterPos = orientationTab === 'landscape'
-    ? (afterLabelPositionLandscape || afterLabelPosition)
-    : afterLabelPosition;
+    ? (readAfterPosLs || readAfterPos)
+    : readAfterPos;
   const activeBeforeOffset = orientationTab === 'landscape'
-    ? beforeLabelOffsetLandscape
-    : beforeLabelOffset;
+    ? readBeforeOffsetLs
+    : readBeforeOffset;
   const activeAfterOffset = orientationTab === 'landscape'
-    ? afterLabelOffsetLandscape
-    : afterLabelOffset;
+    ? readAfterOffsetLs
+    : readAfterOffset;
   // Write to BOTH portrait + landscape variants on every position /
   // offset pick. The picker (pickBeforeLabelPosition / Offset) chooses
   // which key to READ based on the photo's actual orientation, so if
@@ -461,19 +540,45 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   // orientation tab. Per-photo overrides also store both keys so the
   // Studio render reflects the choice regardless of how the photo's
   // orientation is detected.
+  //
+  // For a COMBINED preview, writes bypass useScopedSettings and land
+  // directly on the source before/after single photos' overrides —
+  // matching where the Studio render (pairResolved-based) actually
+  // reads position/offset from. Without this, taps on the picker
+  // wrote to combined_photo.overrides which the renderer never sees.
   const updateActiveBeforePos = async (v) => {
+    if (isCombinedPreview && combinedSourceIds.beforeId) {
+      await setPhotoOverride(combinedSourceIds.beforeId, 'beforeLabelPosition', v);
+      await setPhotoOverride(combinedSourceIds.beforeId, 'beforeLabelPositionLandscape', v);
+      return;
+    }
     await updateBeforeLabelPosition(v);
     await updateBeforeLabelPositionLandscape(v);
   };
   const updateActiveAfterPos = async (v) => {
+    if (isCombinedPreview && combinedSourceIds.afterId) {
+      await setPhotoOverride(combinedSourceIds.afterId, 'afterLabelPosition', v);
+      await setPhotoOverride(combinedSourceIds.afterId, 'afterLabelPositionLandscape', v);
+      return;
+    }
     await updateAfterLabelPosition(v);
     await updateAfterLabelPositionLandscape(v);
   };
   const writeActiveBeforeOffset = async (v) => {
+    if (isCombinedPreview && combinedSourceIds.beforeId) {
+      await setPhotoOverride(combinedSourceIds.beforeId, 'beforeLabelOffset', v);
+      await setPhotoOverride(combinedSourceIds.beforeId, 'beforeLabelOffsetLandscape', v);
+      return;
+    }
     await updateBeforeLabelOffset(v);
     await updateBeforeLabelOffsetLandscape(v);
   };
   const writeActiveAfterOffset = async (v) => {
+    if (isCombinedPreview && combinedSourceIds.afterId) {
+      await setPhotoOverride(combinedSourceIds.afterId, 'afterLabelOffset', v);
+      await setPhotoOverride(combinedSourceIds.afterId, 'afterLabelOffsetLandscape', v);
+      return;
+    }
     await updateAfterLabelOffset(v);
     await updateAfterLabelOffsetLandscape(v);
   };
@@ -727,7 +832,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.backButton}>
           <View style={styles.backButtonCircle}>
-            <Ionicons name="close" size={20} color={COLORS.TEXT} />
+            <Ionicons name="close" size={20} color={theme.textPrimary} />
           </View>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Customize Labels</Text>
@@ -740,7 +845,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
             StudioScreen. */}
         <View style={styles.controlsRow}>
           <ControlButton
-            styles={styles}
             icon="ellipse-outline"
             label="Style"
             selected={labelCornerStyle === 'rounded'}
@@ -749,15 +853,15 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
               await guardedUpdateLabelCornerStyle(newStyle);
             }}
           />
-          <ControlButton styles={styles} icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
-          <ControlButton styles={styles} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-          <ColorControlButton styles={styles} color={labelBackgroundColor} label="BG Color" selected={true} onPress={() => openColorModal('bg')} />
+          <ControlButton icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
+          <ControlButton icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
+          <ColorControlButton color={labelBackgroundColor} label="BG Color" selected={true} onPress={() => openColorModal('bg')} />
         </View>
         <View style={styles.controlsRow}>
-          <ColorControlButton styles={styles} color={labelTextColor} label="Text Color" onPress={() => openColorModal('text')} />
-          <ControlButton styles={styles} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
-          <ControlButton styles={styles} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
-          <ControlButton styles={styles} icon="language" label="Language" onPress={() => setLanguageModalVisible(true)} />
+          <ColorControlButton color={labelTextColor} label="Text Color" onPress={() => openColorModal('text')} />
+          <ControlButton icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+          <ControlButton icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
+          <ControlButton icon="language" label="Language" onPress={() => setLanguageModalVisible(true)} />
         </View>
       </View>
 
@@ -768,13 +872,11 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
           previous shared BottomModal blocked scrolling with an
           onStartShouldSetResponder shim). */}
       <FontWheelSheet
-        styles={styles}
         visible={fontModalVisible}
         onClose={() => setFontModalVisible(false)}
         title="Label Font"
       >
         <WheelFontPicker
-          styles={styles}
           options={FONT_OPTIONS}
           value={labelFontFamily}
           onChange={(v) => { guardedUpdateLabelFontFamily(v); }}
@@ -784,7 +886,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
       {/* Label Language Modal */}
       <BottomModal
-        styles={styles}
         visible={languageModalVisible}
         onClose={() => setLanguageModalVisible(false)}
         title="Label Language"
@@ -816,7 +917,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
       {/* Color Picker Modal */}
       <BottomModal
-        styles={styles}
         visible={colorModalVisible}
         onClose={() => setColorModalVisible(false)}
         title={
@@ -824,7 +924,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
         }
         headerExtra={
           <TouchableOpacity style={styles.eyedropperButton}>
-            <Ionicons name="eyedrop-outline" size={20} color={COLORS.GRAY} />
+            <Ionicons name="eyedrop-outline" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
         }
       >
@@ -916,7 +1016,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
           single grid for everything else. For single photos the
           "before" position drives the lone label that's rendered. */}
       <BottomModal
-        styles={styles}
         visible={positionModalVisible}
         onClose={() => setPositionModalVisible(false)}
         title="Label Position"
@@ -994,7 +1093,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
       {/* Size — continuous slider (was Small / Medium / Large pills). */}
       <BottomModal
-        styles={styles}
         visible={sizeModalVisible}
         onClose={() => setSizeModalVisible(false)}
         title="Label Size"
@@ -1012,7 +1110,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
               </Text>
             </View>
             <SliderInput
-              styles={styles}
               value={typeof labelSize === 'number'
                 ? labelSize
                 : (SIZE_OPTIONS.find((s) => s.key === labelSize)?.fontSize || 14)}
@@ -1033,7 +1130,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
       {/* Margin Modal */}
       <BottomModal
-        styles={styles}
         visible={marginModalVisible}
         onClose={() => setMarginModalVisible(false)}
         title="Label Margin"
@@ -1044,7 +1140,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
               Vertical (Top/Bottom) : {labelMarginVertical}px
             </Text>
             <SliderInput
-              styles={styles}
               value={labelMarginVertical}
               onValueChange={updateLabelMarginVertical}
               onSlidingComplete={guardedUpdateLabelMarginVertical}
@@ -1061,7 +1156,6 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
               Horizontal (Left/Right) : {labelMarginHorizontal}px
             </Text>
             <SliderInput
-              styles={styles}
               value={labelMarginHorizontal}
               onValueChange={updateLabelMarginHorizontal}
               onSlidingComplete={guardedUpdateLabelMarginHorizontal}
@@ -1093,11 +1187,12 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 }
 
 // Control Button Component - Updated to use rounded squares like Figma
-// `styles` passed as prop — lives in LabelCustomizationScreen's closure.
-function ControlButton({ styles, icon, label, selected, onPress }) {
+function ControlButton({ icon, label, selected, onPress }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   return (
-    <TouchableOpacity 
-      style={styles.controlButton} 
+    <TouchableOpacity
+      style={styles.controlButton}
       onPress={onPress}
       activeOpacity={0.7}
     >
@@ -1105,7 +1200,7 @@ function ControlButton({ styles, icon, label, selected, onPress }) {
         styles.controlSquare,
         selected && styles.controlSquareSelected
       ]}>
-        <Ionicons name={icon} size={22} color={selected ? '#000' : '#666'} />
+        <Ionicons name={icon} size={22} color={selected ? theme.textPrimary : theme.textSecondary} />
       </View>
       <Text style={[
         styles.controlLabel,
@@ -1116,7 +1211,9 @@ function ControlButton({ styles, icon, label, selected, onPress }) {
 }
 
 // Color Control Button Component - Updated to use rounded squares
-function ColorControlButton({ styles, color, label, selected, onPress }) {
+function ColorControlButton({ color, label, selected, onPress }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   return (
     <TouchableOpacity style={styles.controlButton} onPress={onPress}>
       <View style={[
@@ -1137,9 +1234,11 @@ function ColorControlButton({ styles, color, label, selected, onPress }) {
 }
 
 // Bottom Modal Component - Updated to match standard design
-function BottomModal({ styles, visible, onClose, title, headerExtra, children, buttonText, onButtonPress, showButton = false }) {
+function BottomModal({ visible, onClose, title, headerExtra, children, buttonText, onButtonPress, showButton = false }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   if (!visible) return null;
-  
+
   return (
     <Modal
       visible={visible}
@@ -1157,7 +1256,7 @@ function BottomModal({ styles, visible, onClose, title, headerExtra, children, b
             {/* Close Button - Top Left */}
             <TouchableOpacity onPress={onClose} style={styles.modalClose}>
               <View style={styles.closeButtonCircle}>
-                <Ionicons name="close" size={20} color="#666666" />
+                <Ionicons name="close" size={20} color={theme.textSecondary} />
               </View>
             </TouchableOpacity>
 
@@ -1193,7 +1292,9 @@ function BottomModal({ styles, visible, onClose, title, headerExtra, children, b
 }
 
 // Slider Input Component
-function SliderInput({ styles, value, onValueChange, onSlidingComplete, min = 0, max = 100, step = 1, showValue = true, trackColor = COLORS.PRIMARY }) {
+function SliderInput({ value, onValueChange, onSlidingComplete, min = 0, max = 100, step = 1, showValue = true, trackColor = COLORS.PRIMARY }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const displayValue = step < 1
     ? Math.round(value * 100) / 100
     : Math.round(value);
@@ -1209,7 +1310,7 @@ function SliderInput({ styles, value, onValueChange, onSlidingComplete, min = 0,
         onValueChange={onValueChange}
         onSlidingComplete={onSlidingComplete}
         minimumTrackTintColor={trackColor}
-        maximumTrackTintColor={COLORS.BORDER}
+        maximumTrackTintColor={theme.border}
         thumbTintColor={trackColor}
       />
       {showValue && (
@@ -1232,7 +1333,9 @@ function SliderInput({ styles, value, onValueChange, onSlidingComplete, min = 0,
 // gestures inside die. Here the backdrop is only the *top* spacer
 // (above the sheet); the sheet itself is a regular View, so the
 // wheel scrolls normally.
-function FontWheelSheet({ styles, visible, onClose, title, children }) {
+function FontWheelSheet({ visible, onClose, title, children }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   if (!visible) return null;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -1243,7 +1346,7 @@ function FontWheelSheet({ styles, visible, onClose, title, children }) {
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={onClose} style={styles.modalClose}>
               <View style={styles.closeButtonCircle}>
-                <Ionicons name="close" size={20} color="#666666" />
+                <Ionicons name="close" size={20} color={theme.textSecondary} />
               </View>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>{title}</Text>
@@ -1266,7 +1369,9 @@ const WHEEL_VISIBLE_COUNT = 5;
 const WHEEL_CENTER_OFFSET = (WHEEL_VISIBLE_COUNT - 1) / 2; // 2
 const WHEEL_PICKER_HEIGHT = WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT;
 
-function WheelFontPicker({ styles, options, value, onChange, getFontFamily }) {
+function WheelFontPicker({ options, value, onChange, getFontFamily }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const scrollRef = useRef(null);
   // Seed scrollY at the initial selected item's pixel offset so the
   // per-item opacity/scale interpolations resolve correctly on the
@@ -1418,6 +1523,8 @@ function PreviewArea({
   marginV,
   marginH,
 }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [layout, setLayout] = useState({ w: 0, h: 0 });
   const onLayout = (e) => {
     const { width, height } = e.nativeEvent.layout;
@@ -1659,7 +1766,7 @@ const makeStyles = (theme) => StyleSheet.create({
   // detent can measure the screen's intrinsic content height and
   // shrink the sheet to exactly that size.
   sheetContainer: {
-    backgroundColor: theme.surfaceElevated,
+    backgroundColor: theme.background,
   },
   sheetBody: {
     paddingHorizontal: 16,
@@ -1669,7 +1776,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: theme.surfaceElevated,
+    backgroundColor: theme.background,
   },
   header: {
     flexDirection: 'row',
@@ -1678,7 +1785,7 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER,
+    borderBottomColor: theme.border,
   },
   backButton: {
     padding: 4,
@@ -1694,7 +1801,7 @@ const makeStyles = (theme) => StyleSheet.create({
   headerTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -1705,14 +1812,14 @@ const makeStyles = (theme) => StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
-    backgroundColor: COLORS.BACKGROUND,
+    backgroundColor: theme.surface,
   },
   previewSection: {
     marginBottom: 24,
   },
   orientationTabsRow: {
     flexDirection: 'row',
-    backgroundColor: COLORS.BACKGROUND,
+    backgroundColor: theme.surface,
     borderRadius: 8,
     padding: 4,
     marginBottom: 12,
@@ -1749,11 +1856,11 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   previewDividerVertical: {
     width: 1,
-    backgroundColor: theme.surfaceElevated,
+    backgroundColor: '#FFFFFF',
   },
   previewDividerHorizontal: {
     height: 1,
-    backgroundColor: theme.surfaceElevated,
+    backgroundColor: '#FFFFFF',
   },
   previewLabel: {
     paddingHorizontal: 12,
@@ -1765,7 +1872,7 @@ const makeStyles = (theme) => StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginBottom: 16,
     marginTop: 8,
   },
@@ -1785,13 +1892,13 @@ const makeStyles = (theme) => StyleSheet.create({
     borderRadius: 12,
     backgroundColor: theme.surfaceElevated,
     borderWidth: 1.5,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
   },
   controlSquareSelected: {
-    borderColor: '#000',
+    borderColor: theme.textPrimary,
     borderWidth: 2,
   },
   controlCircle: {
@@ -1800,13 +1907,13 @@ const makeStyles = (theme) => StyleSheet.create({
     borderRadius: 28,
     backgroundColor: theme.surfaceElevated,
     borderWidth: 2,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 4,
   },
   controlCircleSelected: {
-    borderColor: '#000',
+    borderColor: theme.textPrimary,
   },
   colorCircle: {
     width: 32,
@@ -1815,11 +1922,11 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   controlLabel: {
     fontSize: 11,
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
     textAlign: 'center',
   },
   controlLabelSelected: {
-    color: '#000',
+    color: theme.textPrimary,
     fontWeight: '600',
   },
   inputContainer: {
@@ -1827,19 +1934,19 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   inputLabel: {
     fontSize: 12,
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
     marginBottom: 6,
     marginLeft: 4,
   },
   input: {
     backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   modalOverlay: {
     flex: 1,
@@ -1847,7 +1954,7 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: theme.surfaceElevated,
+    backgroundColor: theme.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '90%',
@@ -1856,7 +1963,7 @@ const makeStyles = (theme) => StyleSheet.create({
   modalHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#E5E5E5',
+    backgroundColor: theme.border,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 8,
@@ -1893,7 +2000,7 @@ const makeStyles = (theme) => StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     flex: 1,
   },
@@ -1926,7 +2033,7 @@ const makeStyles = (theme) => StyleSheet.create({
     backgroundColor: 'transparent',
   },
   fontSheetContent: {
-    backgroundColor: theme.surfaceElevated,
+    backgroundColor: theme.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 20,
@@ -1960,10 +2067,10 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   wheelItemText: {
     fontSize: 20,
-    color: '#000',
+    color: theme.textPrimary,
   },
   modalActionButton: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.textPrimary,
     borderRadius: 12,
     paddingVertical: 16,
     marginHorizontal: 20,
@@ -1972,7 +2079,7 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   modalActionButtonText: {
-    color: '#FFFFFF',
+    color: theme.background,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -1982,14 +2089,14 @@ const makeStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER,
+    borderBottomColor: theme.border,
   },
   listItemSelected: {
-    backgroundColor: '#F9F9F9',
+    backgroundColor: theme.surface,
   },
   listItemText: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   checkmark: {
     fontSize: 18,
@@ -2009,7 +2116,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   fontListItemText: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '500',
   },
   fontListItemTextSelected: {
@@ -2024,7 +2131,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   colorTabs: {
     flexDirection: 'row',
-    backgroundColor: COLORS.BACKGROUND,
+    backgroundColor: theme.surface,
     borderRadius: 8,
     padding: 4,
     marginBottom: 16,
@@ -2040,10 +2147,10 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   colorTabText: {
     fontSize: 14,
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
   },
   colorTabTextActive: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '600',
   },
   colorGrid: {
@@ -2111,14 +2218,14 @@ const makeStyles = (theme) => StyleSheet.create({
     height: 56,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
   },
   colorPreviewSmall: {
     width: 32,
     height: 32,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
   },
   colorPreviewSelected: {
     borderWidth: 2,
@@ -2128,13 +2235,13 @@ const makeStyles = (theme) => StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: COLORS.BACKGROUND,
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   addColorText: {
     fontSize: 20,
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
   },
   applyButton: {
     backgroundColor: COLORS.PRIMARY,
@@ -2162,21 +2269,21 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   orientationTabText: {
     fontSize: 14,
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
   },
   orientationTabTextActive: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '600',
   },
   orientationHint: {
     fontSize: 12,
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
     textAlign: 'center',
     marginBottom: 16,
   },
   gridSwitcher: {
     flexDirection: 'row',
-    backgroundColor: COLORS.BORDER,
+    backgroundColor: theme.border,
     borderRadius: 10,
     padding: 3,
     marginBottom: 18,
@@ -2201,7 +2308,7 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.textSecondary,
   },
   gridSwitcherTextActive: {
-    color: '#000',
+    color: theme.textPrimary,
   },
   positionGrid: {
     flexDirection: 'row',
@@ -2215,7 +2322,7 @@ const makeStyles = (theme) => StyleSheet.create({
   positionHalfLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
     textAlign: 'center',
     marginBottom: 8,
     letterSpacing: 0.4,
@@ -2239,10 +2346,10 @@ const makeStyles = (theme) => StyleSheet.create({
     maxWidth: 60,
     aspectRatio: 1,
     minHeight: 50,
-    backgroundColor: COLORS.BORDER,
+    backgroundColor: theme.border,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     marginHorizontal: 2,
   },
   positionCellSelected: {
@@ -2252,7 +2359,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   positionDivider: {
     width: 2,
-    backgroundColor: COLORS.BORDER,
+    backgroundColor: theme.border,
   },
   sizeContainer: {
     flexDirection: 'row',
@@ -2262,7 +2369,7 @@ const makeStyles = (theme) => StyleSheet.create({
     gap: 16,
   },
   sizeButton: {
-    backgroundColor: COLORS.BORDER,
+    backgroundColor: theme.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2285,6 +2392,7 @@ const makeStyles = (theme) => StyleSheet.create({
   marginLabel: {
     fontSize: 14,
     fontWeight: '600',
+    color: theme.textPrimary,
     marginBottom: 12,
   },
   opacityLabelContainer: {
@@ -2295,6 +2403,7 @@ const makeStyles = (theme) => StyleSheet.create({
   opacityValueText: {
     fontSize: 14,
     fontWeight: '600',
+    color: theme.textPrimary,
     minWidth: 50,
     textAlign: 'right',
     fontVariant: ['tabular-nums'],
@@ -2314,7 +2423,7 @@ const makeStyles = (theme) => StyleSheet.create({
     textAlign: 'right',
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   opacityContainer: {
     padding: 24,
@@ -2322,28 +2431,29 @@ const makeStyles = (theme) => StyleSheet.create({
   opacityModalLabel: {
     fontSize: 16,
     fontWeight: '600',
+    color: theme.textPrimary,
     marginBottom: 16,
   },
   lockedSection: {
-    backgroundColor: '#F9F9F9',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderStyle: 'dashed',
   },
   lockedTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginTop: 12,
     marginBottom: 8,
   },
   lockedMessage: {
     fontSize: 14,
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 16,
