@@ -43,6 +43,13 @@ export default function PannableImage({
   // viewer) pass `{ top: insets.top + 8 }` so the reset icon aligns
   // with the sibling X close button that also lives at insets.top + 8.
   resetBtnStyle,
+  // 'cover' (default) sizes the element to fill the wrapper in both
+  // axes with overflow in one — panning reveals the overflow (Studio's
+  // format-frame behavior). 'contain' sizes the element to FIT inside
+  // the wrapper preserving aspect (letterbox) — the fullscreen enlarged
+  // viewer wants this so the user sees the whole photo at scale=1 and
+  // pinch-zooms in from there.
+  fitMode = 'cover',
 }) {
   // Mirror props that the (one-shot) PanResponder needs to consult at
   // runtime. PanResponder.create() is wrapped in useRef and so captures
@@ -91,9 +98,13 @@ export default function PannableImage({
     return () => { cancelled = true; };
   }, [source?.uri]);
 
-  // Element size: large enough that the bitmap, drawn at its natural aspect
-  // ratio, completely covers the viewport in one dimension and overflows the
-  // other. The overflow is what gets panned across.
+  // Element size: shape depends on fitMode.
+  //  cover   — element is large enough that the bitmap covers the
+  //            viewport in one axis and overflows the other. Pan reveals
+  //            the overflow (Studio's format-frame behavior).
+  //  contain — element FITS the viewport (letterbox in one axis) so the
+  //            full photo is visible at scale=1. Pinch scales it up from
+  //            there. Enlarged viewer uses this.
   const elementSize = useMemo(() => {
     const wW = wrapperSize.w;
     const wH = wrapperSize.h;
@@ -102,13 +113,22 @@ export default function PannableImage({
     if (!wW || !wH || !bW || !bH) return { w: wW || 0, h: wH || 0 };
     const bitmapAspect = bW / bH;
     const wrapperAspect = wW / wH;
+    if (fitMode === 'contain') {
+      if (bitmapAspect > wrapperAspect) {
+        // Wider than viewport → fit by width, letterbox top/bottom.
+        return { w: wW, h: wW / bitmapAspect };
+      }
+      // Taller (or same) → fit by height, letterbox left/right.
+      return { w: wH * bitmapAspect, h: wH };
+    }
+    // cover
     if (bitmapAspect > wrapperAspect) {
       // Picture is wider than the viewport → fit by height, overflow width.
       return { w: wH * bitmapAspect, h: wH };
     }
     // Picture is taller (or same) → fit by width, overflow height.
     return { w: wW, h: wW / bitmapAspect };
-  }, [wrapperSize, bitmapSize]);
+  }, [wrapperSize, bitmapSize, fitMode]);
 
   useEffect(() => {
     elementSizeRef.current = elementSize;

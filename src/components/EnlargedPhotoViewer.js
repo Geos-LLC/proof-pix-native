@@ -745,6 +745,7 @@ export default function EnlargedPhotoViewer({
               style={{ width: '100%', height: '100%' }}
               imageStyle={{ width: '100%', height: '100%' }}
               resizeMode="contain"
+              fitMode="contain"
               panOnLongPress
               showResetButton
               resetBtnStyle={{ top: insets.top + 8 }}
