@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] markup-4x2-grid-' + Date.now() + ' — MarkupSheet consolidates the 6 tools + Color + Size into a single 4-column × 2-row grid = 8 tiles total, matching Customize Labels exactly. No section labels. Dismissal behavior unchanged (X → Studio, any other dismiss → MarkupEditor). Built ' + new Date().toISOString());
+console.warn('[BUNDLE] markup-enlarge-icon-' + Date.now() + ' — MarkupSheet now has TWO explicit affordances in the header: X (neutral tile, top-left) returns to Studio, ⤢ enlarge (accent-filled tile, top-right) hands off to the full-screen MarkupEditor with the picked tool/color/stroke. Drag-down + tap-outside dismiss normally (no hidden intercept). Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

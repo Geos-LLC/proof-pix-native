@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -96,32 +96,19 @@ export default function MarkupSheetScreen({ navigation, route }) {
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [sizeModalVisible, setSizeModalVisible] = useState(false);
 
-  // Two ways to leave the sheet:
+  // Two explicit affordances in the header:
   //   • X (top-left)      → return to Studio, abort markup
-  //   • ANY OTHER dismiss → open the full-screen MarkupEditor with the
-  //     current picks. That covers: tap the picture behind the sheet,
-  //     swipe the sheet down, hardware back on Android.
-  // We intercept beforeRemove to distinguish the two. The ref prevents
-  // the redirect from re-firing the listener and looping.
-  const skipEditorOnCloseRef = useRef(false);
-  useEffect(() => {
-    const unsub = navigation.addListener('beforeRemove', (e) => {
-      if (skipEditorOnCloseRef.current) return;
-      e.preventDefault();
-      skipEditorOnCloseRef.current = true;
-      navigation.replace('MarkupEditor', {
-        photoId,
-        initialTool: tool,
-        initialColor: color,
-        initialStroke: stroke,
-      });
+  //   • ⤢ enlarge (right) → open the full-screen MarkupEditor with
+  //     the picked tool / color / stroke pre-filled
+  // No hidden gestures — drag-down or tap outside dismisses normally
+  // (returns to Studio, same as X).
+  const openEditor = () => {
+    navigation.replace('MarkupEditor', {
+      photoId,
+      initialTool: tool,
+      initialColor: color,
+      initialStroke: stroke,
     });
-    return unsub;
-  }, [navigation, photoId, tool, color, stroke]);
-
-  const handleClose = () => {
-    skipEditorOnCloseRef.current = true;
-    navigation.goBack();
   };
 
   return (
@@ -129,13 +116,19 @@ export default function MarkupSheetScreen({ navigation, route }) {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerClose}
-          onPress={handleClose}
+          onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons name="close" size={18} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Markup</Text>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          style={styles.headerEnlarge}
+          onPress={openEditor}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="scan-outline" size={18} color={theme.accentText} />
+        </TouchableOpacity>
       </View>
 
       {/* Single 4-column grid — 6 tools + Color + Size = 8 tiles total,
@@ -225,6 +218,18 @@ const makeStyles = (theme) => StyleSheet.create({
     height: 36,
     borderRadius: 18,
     backgroundColor: theme.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Filled accent tile on the right — mirrors the customization sheets'
+  // "primary action lives on the right" convention (Save pill on the
+  // Studio header). Contrast against the neutral X on the left makes the
+  // "go draw" step visually obvious.
+  headerEnlarge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
