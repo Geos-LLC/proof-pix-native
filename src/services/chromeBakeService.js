@@ -169,7 +169,12 @@ class ChromeBakeService {
   bakeChrome(photo, labelSettings) {
     if (!photo?.uri || !photo?.id) return Promise.resolve(photo?.uri || null);
     const settingsHash = ChromeBakeService.labelSettingsHash(labelSettings);
-    const cacheKey = `${photo.id}_${settingsHash}`;
+    // pairTemplate is part of the cache key so a Studio format change
+    // (e.g. square → 16:9) misses the cache and re-bakes the photo at
+    // the new aspect — otherwise the share / report keeps returning the
+    // previous format's baked JPG.
+    const formatKey = photo.pairTemplate || 'auto';
+    const cacheKey = `${photo.id}_${settingsHash}_${formatKey}`;
 
     return new Promise((resolve) => {
       // Cache hit short-circuits the entire queue/render path.

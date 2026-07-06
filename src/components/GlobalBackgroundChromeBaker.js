@@ -39,6 +39,7 @@ import { useScopedSettings } from '../hooks/useScopedSettings';
 import { useTheme } from '../hooks/useTheme';
 import { usePhotos } from '../context/PhotoContext';
 import { PHOTO_MODES } from '../constants/rooms';
+import { FORMAT_ASPECTS } from '../constants/formats';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -287,9 +288,26 @@ function BakeJob({ photo, onComplete }) {
   // 800 px is still plenty for a PDF/HTML report; the image is embedded
   // as a data URI so smaller is better for memory.
   const TARGET_SIDE = 800;
-  const scale = Math.min(1, TARGET_SIDE / Math.max(w, h));
-  const renderW = Math.round(w * scale);
-  const renderH = Math.round(h * scale);
+  // Studio format wins over the bitmap's natural aspect: if the user
+  // picked a chip in Studio (photo.pairTemplate), the bake matches that
+  // frame so downstream share / report artifacts look identical to what
+  // Studio showed. Falls back to the bitmap aspect when no format is
+  // saved so pre-Studio photos still bake at their natural shape.
+  const bitmapAspect = w / h;
+  const formatAspect = FORMAT_ASPECTS[photo?.pairTemplate];
+  const targetAspect = formatAspect || bitmapAspect;
+  let renderW, renderH;
+  if (targetAspect >= 1) {
+    renderW = TARGET_SIDE;
+    renderH = Math.max(1, Math.round(TARGET_SIDE / targetAspect));
+  } else {
+    renderH = TARGET_SIDE;
+    renderW = Math.max(1, Math.round(TARGET_SIDE * targetAspect));
+  }
+  // Stack-vs-side is a property of the source bitmap (how before/after
+  // were composited at capture), NOT of the Studio format. Keep this
+  // computed from the raw w/h so labels land on the correct halves even
+  // when the user picks a format aspect that differs from the source.
   const layout = resolveLayout(photo, w, h);
 
   return (

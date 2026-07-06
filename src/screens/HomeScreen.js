@@ -51,6 +51,8 @@ import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
 import { useUiOverlayReporter } from '../components/uiOverlayState';
+import chromeBakeService from '../services/chromeBakeService';
+import { useBakeLabelSettings } from '../utils/bakeSettings';
 import * as ExpoLocation from 'expo-location';
 // IAP handled by PlanSelectionScreen
 import Constants from 'expo-constants';
@@ -197,6 +199,7 @@ export default function HomeScreen({ navigation, route }) {
     deletePhoto,
   } = usePhotos();
 
+  const bakeLabelSettings = useBakeLabelSettings();
   const [fullScreenPhoto, setFullScreenPhoto] = useState(null);
   // Bare mode = preview with all chrome hidden (just the photo + a small
   // return arrow). Entered by double-tapping the photo INSIDE the preview;
@@ -3007,9 +3010,21 @@ export default function HomeScreen({ navigation, route }) {
               shareLabel="Share photo"
               onShare={async (p) => {
                 if (!p?.uri) return;
+                // Route through chromeBakeService so the shared JPG
+                // carries the Studio format (pairTemplate crop) +
+                // overlay stack (label / watermark / brand logo /
+                // metadata / markup). Falls back to the raw uri if the
+                // bake fails so the share still succeeds.
+                let shareUri = p.uri;
+                try {
+                  const baked = await chromeBakeService.bakeChrome(p, bakeLabelSettings);
+                  if (baked) shareUri = baked;
+                } catch (bakeErr) {
+                  console.warn('[HomeScreen] fullscreen bake before share failed:', bakeErr?.message);
+                }
                 try {
                   await RNShare.share({
-                    url: p.uri,
+                    url: shareUri,
                     message: activeProject?.name || '',
                   });
                 } catch (_) {

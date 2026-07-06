@@ -2,6 +2,8 @@
 // no native imports) so a layout can be unit-tested by feeding it a
 // stub `helpers.fileToDataUri` and an array of plain-object photos.
 
+import { FORMAT_ASPECTS } from '../../constants/formats.js';
+
 export const escapeHtml = (s) =>
   String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -278,9 +280,21 @@ export const chipForMode = (mode) => {
 // so adding them again would duplicate. The only optional overlay
 // kept is the timestamp, since the bake doesn't include one and the
 // editor doesn't either.
+//
+// Studio format: when the user picks a format chip in Studio the
+// selection lands on photo.pairTemplate. We reflect that here by
+// giving the wrap a fixed aspect-ratio + object-fit:cover on the img
+// so the report frames the photo the same way Studio does. Without a
+// saved pairTemplate the wrap sizes to the image's natural shape as
+// before, so pre-Studio photos still render exactly like they did.
 export const photoImgHtml = ({ data, photo, alt = '', showTimestamp, watermarkText }) => {
+  const aspect = FORMAT_ASPECTS[photo?.pairTemplate];
+  const wrapStyle = aspect ? ` style="aspect-ratio:${aspect};overflow:hidden"` : '';
+  const imgStyle = aspect
+    ? ` style="width:100%;height:100%;object-fit:cover;display:block"`
+    : '';
   const inner = data
-    ? `<img src="${data}" alt="${escapeHtml(alt)}" />`
+    ? `<img src="${data}" alt="${escapeHtml(alt)}"${imgStyle} />`
     : `<div class="missing">Image unavailable</div>`;
   const ts = showTimestamp && photo
     ? `<div class="ts-overlay">${escapeHtml(formatShortStamp(tsOf(photo)))}</div>`
@@ -293,7 +307,7 @@ export const photoImgHtml = ({ data, photo, alt = '', showTimestamp, watermarkTe
   const wm = watermarkText
     ? `<div class="watermark-overlay">${escapeHtml(watermarkText)}</div>`
     : '';
-  return `<div class="photo-wrap">${inner}${ts}${wm}</div>`;
+  return `<div class="photo-wrap"${wrapStyle}>${inner}${ts}${wm}</div>`;
 };
 
 export const htmlDocument = ({ title, css, body, brandColor }) => {

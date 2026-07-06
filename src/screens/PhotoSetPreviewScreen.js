@@ -24,6 +24,8 @@ import { PHOTO_MODES } from '../constants/rooms';
 import { computeSetIds } from '../utils/photoSets';
 import PhotoLabels from '../components/PhotoLabels';
 import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
+import chromeBakeService from '../services/chromeBakeService';
+import { useBakeLabelSettings } from '../utils/bakeSettings';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -118,6 +120,7 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
   const theme = useTheme();
   const { getPhotosByProject, updatePhoto, deletePhoto, setCurrentRoom } = usePhotos();
   const { getRooms } = useSettings();
+  const bakeLabelSettings = useBakeLabelSettings();
   const allRooms = useMemo(() => getRooms() || [], [getRooms]);
   const roomDataMap = useMemo(() => {
     const map = new Map();
@@ -522,11 +525,24 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
   // Share the currently-visible single photo via the OS share sheet.
   // Available to every plan (starter included) — single-picture
   // share is the one export gesture the user wanted to keep free.
+  //
+  // Route through chromeBakeService so the shared JPG carries the same
+  // Studio format (pairTemplate aspect crop) + overlay stack (label,
+  // watermark, brand logo, metadata, markup) the user sees on the edit
+  // screen. bakeChrome returns the original uri on any bake failure so
+  // the share still succeeds even if the flatten pipeline hiccups.
   const handleShareCurrent = async () => {
     if (!current?.uri) return;
+    let shareUri = current.uri;
+    try {
+      const baked = await chromeBakeService.bakeChrome(current, bakeLabelSettings);
+      if (baked) shareUri = baked;
+    } catch (bakeErr) {
+      console.warn('[PhotoSetPreview] bake before share failed:', bakeErr?.message);
+    }
     try {
       await RNShare.share({
-        url: current.uri,
+        url: shareUri,
         message: current.name || '',
       });
     } catch (_) {
