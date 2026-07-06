@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] report-regen-preserve-photos-' + Date.now() + ' — Regenerating a report after a per-photo edit no longer collapses it to 1 photo. handleGenerateReport now accepts explicit overrides; callers in the preview (Save-on-back and Regenerate button) pass activeReport photoIds/photoCount directly so the async setState does not race. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] markup-palette-docked-' + Date.now() + ' — Customization sheets share one header (circular X + centered 20px title, no divider). Watermark+Metadata containers dropped flex:1 so formSheet fitToContents can measure. Markup palette is now a docked bottom sheet with grabber, Tool/Adjust eyebrows, and full-width Undo/Clear pills. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
