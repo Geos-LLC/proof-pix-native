@@ -146,13 +146,21 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
   };
 
   return (
+    // No `flex: 1` on the SafeAreaView — the parent sheet is presented
+    // with sheetAllowedDetents='fitToContents' (see App.js), so we want
+    // the sheet to hug the actual content height instead of stretching
+    // to a full-screen detent and leaving a wide empty bar at the bottom.
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Unified sheet header — circular X on the left, centered title,
+          balanced 36px spacer on the right. Same pattern used on
+          Watermark + Labels so all three customization sheets read as
+          one family. */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="close" size={24} color={theme.textPrimary} />
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.headerClose}>
+          <Ionicons name="close" size={18} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Metadata</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView
@@ -430,7 +438,7 @@ function BottomModal({ styles, visible, onClose, title, theme, children, hideHea
 }
 
 const makeStyles = (theme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
+  container: { backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -439,8 +447,17 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 12,
   },
-  headerTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 17, fontWeight: '700', color: theme.textPrimary },
-  body: { paddingHorizontal: 16, paddingBottom: 32 },
+  headerClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerSpacer: { width: 36 },
+  headerTitle: { fontFamily: FONTS.ALEXANDRIA, fontSize: 20, fontWeight: '700', color: theme.textPrimary },
+  body: { paddingHorizontal: 16, paddingBottom: 16 },
   sectionLabel: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 11,

@@ -391,16 +391,22 @@ export default function MarkupEditorScreen({ route, navigation }) {
         </Animated.View>
       </View>
 
+      {/* Docked palette sheet — rounded top corners, grabber, section
+          eyebrows ("Tool" / "Adjust"), and Undo/Clear pill row at the
+          bottom. Mirrors the ProofPix Markup Editor design spec. */}
       <View
         style={[
           styles.palette,
           {
-            paddingBottom: 8 + insets.bottom,
+            paddingBottom: 10 + insets.bottom,
             backgroundColor: theme.surfaceElevated,
-            borderTopColor: theme.divider,
+            borderColor: theme.border,
           },
         ]}
       >
+        <View style={[styles.paletteGrabber, { backgroundColor: theme.borderStrong }]} />
+
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Tool</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolRow}>
           {MARKUP_TOOLS.map((t) => {
             const isActive = markupTool === t.key;
@@ -428,6 +434,7 @@ export default function MarkupEditorScreen({ route, navigation }) {
           })}
         </ScrollView>
 
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 12 }]}>Adjust</Text>
         <View style={styles.controlsRow}>
           <View style={styles.colorRow}>
             {MARKUP_COLORS.map((c) => {
@@ -474,7 +481,10 @@ export default function MarkupEditorScreen({ route, navigation }) {
 
         <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.actionBtn, { opacity: shapes.length === 0 ? 0.4 : 1 }]}
+            style={[
+              styles.actionBtn,
+              { backgroundColor: theme.surface, borderColor: theme.border, opacity: shapes.length === 0 ? 0.4 : 1 },
+            ]}
             onPress={handleUndo}
             disabled={shapes.length === 0}
           >
@@ -482,7 +492,10 @@ export default function MarkupEditorScreen({ route, navigation }) {
             <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>Undo</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionBtn, { opacity: shapes.length === 0 ? 0.4 : 1 }]}
+            style={[
+              styles.actionBtn,
+              { backgroundColor: theme.surface, borderColor: theme.border, opacity: shapes.length === 0 ? 0.4 : 1 },
+            ]}
             onPress={handleClear}
             disabled={shapes.length === 0}
           >
@@ -512,7 +525,38 @@ const styles = StyleSheet.create({
   saveBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 13, fontWeight: '700' },
   canvas: { flex: 1, position: 'relative', overflow: 'hidden' },
   photo: { width: '100%', height: '100%' },
-  palette: { paddingTop: 10, paddingHorizontal: 12, gap: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  palette: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    marginTop: -18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  paletteGrabber: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  sectionLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    marginTop: 6,
+    marginBottom: 8,
+  },
   toolRow: { flexDirection: 'row', gap: 6, paddingRight: 12 },
   toolBtn: {
     flexDirection: 'row',
@@ -537,9 +581,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   strokeBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, fontWeight: '700' },
-  actionRow: { flexDirection: 'row', gap: 16, justifyContent: 'center', paddingTop: 4 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  actionBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 12, fontWeight: '700' },
+  actionRow: { flexDirection: 'row', gap: 10, paddingTop: 14 },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 46,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  actionBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 13, fontWeight: '700' },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 14 },
 });

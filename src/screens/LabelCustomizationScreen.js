@@ -905,15 +905,15 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.sheetContainer} edges={['top']}>
-      {/* Header — close (X) on the left matches the sheet presentation. */}
+      {/* Unified sheet header — circular X on the left, centered title,
+          balanced 36px spacer on the right. Divider removed to match
+          Watermark + Metadata sheets; all three now read as one family. */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.backButton}>
-          <View style={styles.backButtonCircle}>
-            <Ionicons name="close" size={20} color={theme.textPrimary} />
-          </View>
+        <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.headerClose}>
+          <Ionicons name="close" size={18} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Customize Labels</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.sheetBody}>
@@ -1774,22 +1774,40 @@ const makeStyles = (theme) => StyleSheet.create({
   sheetBody: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 24,
+    paddingBottom: 16,
     gap: 16,
   },
   container: {
     flex: 1,
     backgroundColor: theme.background,
   },
+  // Unified with Watermark + Metadata: circular close on the left,
+  // 20px centered title, 36px balance spacer, no border divider.
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
+    paddingTop: 8,
+    paddingBottom: 12,
   },
+  headerClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerSpacer: { width: 36 },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: theme.textPrimary,
+  },
+  // Legacy backButton / backButtonCircle preserved below for any internal
+  // callers that still reference them. The header itself now uses the
+  // headerClose / headerSpacer / headerTitle trio above.
   backButton: {
     padding: 4,
   },
@@ -1800,11 +1818,6 @@ const makeStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: theme.textPrimary,
   },
   keyboardAvoidingView: {
     flex: 1,
