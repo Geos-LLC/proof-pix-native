@@ -1395,6 +1395,26 @@ export const restorePurchases = async () => {
   await initIAPIfNeeded();
 
   try {
+    // iOS: getAvailablePurchases reads Transaction.currentEntitlements from the
+    // local StoreKit 2 cache — no network. Legacy StoreKit 1 receipts and
+    // entitlements bought under an older build often aren't in that cache on
+    // fresh install / after Apple-ID switch / long dormancy. RNIap.restorePurchases()
+    // internally runs AppStore.sync() first, forcing Apple to hand the receipt
+    // down. Do that here, then read entitlements. Android's Play Billing already
+    // rehydrates on getAvailablePurchases, so RNIap.restorePurchases() is a no-op
+    // pass-through there (still safe to call).
+    console.log('[IAP] Forcing App Store sync via RNIap.restorePurchases()...');
+    try {
+      await RNIap.restorePurchases();
+      console.log('[IAP] Sync complete');
+    } catch (syncErr) {
+      const msg = syncErr?.message || '';
+      if (msg.includes('Request Canceled') || msg.includes('USER_CANCELLED') || msg.includes('canceled')) {
+        throw syncErr; // user cancelled the Apple-ID password prompt
+      }
+      console.warn('[IAP] AppStore.sync() failed, falling back to cached entitlements:', msg);
+    }
+
     console.log('[IAP] Calling RNIap.getAvailablePurchases()...');
     const purchases = await RNIap.getAvailablePurchases();
     console.log('[IAP] Restore successful, found', purchases?.length || 0, 'purchase(s)');
