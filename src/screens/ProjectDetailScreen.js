@@ -1218,13 +1218,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
     [project, getPhotosByProject]
   );
 
-  // "Share Project" entry from HomeScreen's action-sheet. One-shot: on
-  // arrival with `initialShareFlow=true`, drop into Timeline selection
-  // mode with selectionPurpose='share' — same state the "Pick photos"
-  // link in the Share tab produces. Starter plan is single-photo share
-  // only (gated at share time by MULTI_PHOTO_SHARE), so we seed the draft
-  // with just the first photo instead of all of them. Consume the flag
-  // via setParams so a subsequent focus doesn't re-trigger.
+  // "Share Project" entry from HomeScreen action-sheet and ProjectsScreen
+  // 3-dot menu. One-shot: on arrival with `initialShareFlow=true`, open
+  // the Share tab and immediately show the "Share N photos" format sheet
+  // (the same state a user reaches by tapping "Share Project Photos" on
+  // the Share tab card). Starter plan is single-photo share only (gated
+  // at share time by MULTI_PHOTO_SHARE), so we seed pending ids with just
+  // the first photo instead of all of them — the modal reads "Share 1
+  // photo" and no paywall fires. Consume the flag via setParams so a
+  // subsequent focus doesn't re-trigger.
   useEffect(() => {
     if (!route?.params?.initialShareFlow) return;
     if (!project) return;
@@ -1233,10 +1235,10 @@ export default function ProjectDetailScreen({ route, navigation }) {
     const seedIds = canMultiShare
       ? projectPhotos.map((p) => p.id)
       : [projectPhotos[0].id];
-    setActiveTab('timeline');
-    setSelectionPurpose('share');
-    setSelectionDraft(new Set(seedIds));
-    setSelectionMode(true);
+    setSharePhotosFilter('all');
+    setPendingSharePhotoIds(seedIds);
+    setActiveTab('share');
+    setShareFormatModalVisible(true);
     navigation.setParams({ initialShareFlow: undefined });
   }, [route?.params?.initialShareFlow, project, projectPhotos, canUse, navigation]);
 

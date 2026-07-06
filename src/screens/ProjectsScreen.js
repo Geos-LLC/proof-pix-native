@@ -539,17 +539,16 @@ export default function ProjectsScreen({ navigation, route }) {
       Alert.alert(t('gallery.noPhotosTitle'), t('gallery.noPhotosInProject'));
       return;
     }
-    // Seed link provider default to whichever cloud the user has connected
-    // (Google wins ties since most users start there). Without this the
-    // selector would default to Google even when only Dropbox is linked.
-    if (!isAuthenticated && dropboxAuthService.isAuthenticated()) {
-      setShareLinkProvider('dropbox');
-    } else {
-      setShareLinkProvider('google');
-    }
-    setShareFormat('files');
-    setProjectToShare(project);
-    setShareOptionsVisible(true);
+    // Route to the canonical Share flow inside ProjectDetail — same
+    // destination as HomeScreen's action-sheet Share button. Lands on the
+    // Share tab with the "Share N photos" format modal auto-opened,
+    // matching the single source-of-truth UX. The old local
+    // shareOptionsVisible modal (below in JSX) is now dead code kept
+    // around only until the follow-up cleanup PR.
+    navigation.navigate('ProjectDetail', {
+      projectId: project.id,
+      initialShareFlow: true,
+    });
   };
 
   const handleFormatToggle = (key) => {
