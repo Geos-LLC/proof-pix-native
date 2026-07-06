@@ -4630,6 +4630,56 @@ export default function SettingsScreen({ navigation, route }) {
                 >
                     <View style={styles.customModalContent}>
                     <View style={styles.testButtons}>
+                      {/* Plan override — flip local userPlan without an IAP.
+                          Every feature gate reads userPlan, so tapping one of
+                          these instantly unlocks Pro / Business / Enterprise
+                          UI + capabilities for the current session. No sub
+                          required; no receipt validation. Use for feature QA
+                          on TestFlight where production subs can't be
+                          restored. Current plan is shown in the button label. */}
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#666', marginBottom: 6, marginTop: 2 }}>
+                        Plan override (current: {userPlan || 'starter'})
+                      </Text>
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#607D8B' }]}
+                        onPress={async () => {
+                          await updateUserPlan('starter');
+                          Alert.alert('Plan set', 'userPlan → starter. Free-tier gates active.');
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Set → Starter (Free)</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#F2C31B' }]}
+                        onPress={async () => {
+                          await updateUserPlan('pro');
+                          Alert.alert('Plan set', 'userPlan → pro. All Pro features unlocked.');
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#1E1E1E' }]}>Set → Pro</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#4CAF50' }]}
+                        onPress={async () => {
+                          await updateUserPlan('business');
+                          Alert.alert('Plan set', 'userPlan → business. Team + Pro features unlocked.');
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Set → Business</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#3F51B5' }]}
+                        onPress={async () => {
+                          await updateUserPlan('enterprise');
+                          Alert.alert('Plan set', 'userPlan → enterprise. All features unlocked.');
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Set → Enterprise</Text>
+                      </TouchableOpacity>
+                      <View style={{ height: 12 }} />
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#666', marginBottom: 6 }}>
+                        Trial simulation
+                      </Text>
                       <TouchableOpacity
                         style={styles.testButton}
                         onPress={async () => {
