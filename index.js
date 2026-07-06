@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] markup-enlarge-icon-' + Date.now() + ' — MarkupSheet now has TWO explicit affordances in the header: X (neutral tile, top-left) returns to Studio, ⤢ enlarge (accent-filled tile, top-right) hands off to the full-screen MarkupEditor with the picked tool/color/stroke. Drag-down + tap-outside dismiss normally (no hidden intercept). Built ' + new Date().toISOString());
+console.warn('[BUNDLE] markup-floating-panel-' + Date.now() + ' — Studio Notes>Markup now sets activeTool=markup (was navigating to MarkupSheet route). A floating bottom-sheet-styled panel renders over the Studio toolbar with the 4x2 tile grid (6 tools + Color + Size). Drawing happens on the Studio photo above; swipe + label drag are already suppressed via isMarkupActiveRef. Enlarge icon (accent-yellow, top-right of the panel header) hands off to the full-screen MarkupEditor with the picks. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

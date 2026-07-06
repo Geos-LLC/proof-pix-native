@@ -12,6 +12,7 @@ import {
   Share,
   Alert,
   Modal,
+  Pressable,
   PanResponder,
   Animated,
   KeyboardAvoidingView,
@@ -29,8 +30,10 @@ import { PHOTO_MODES } from '../constants/rooms';
 import { usePhotos } from '../context/PhotoContext';
 import { compositeImages } from '../utils/imageCompositor';
 import { useScopedSettings, usePromoteOverridesToGlobal, useResetPhotoOverrides } from '../hooks/useScopedSettings';
+import Slider from '@react-native-community/slider';
 import { useTheme } from '../hooks/useTheme';
 import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
+import ColorGridPicker from '../components/ColorGridPicker';
 import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 import PhotoLabels from '../components/PhotoLabels';
 import DraggableLabelOverlay from '../components/DraggableLabelOverlay';
@@ -443,6 +446,10 @@ export default function StudioScreen({ route, navigation }) {
   const [markupShapes, setMarkupShapes] = useState([]);
   const [markupInProgress, setMarkupInProgress] = useState(null);
   const [markupTextDraft, setMarkupTextDraft] = useState({ visible: false, x: 0, y: 0, value: '' });
+  // Sub-sheets opened from the floating markup panel — Color uses the
+  // shared ColorGridPicker, Size is a stroke-width slider.
+  const [markupColorSheetOpen, setMarkupColorSheetOpen] = useState(false);
+  const [markupSizeSheetOpen, setMarkupSizeSheetOpen] = useState(false);
   const isMarkupActive = activeTool === 'markup';
 
   // Gesture hint overlay — fades out automatically and is throttled by
@@ -1364,24 +1371,11 @@ export default function StudioScreen({ route, navigation }) {
             setScope={setScope}
           />
         )}
-        {activeTool === 'markup' && (
-          <MarkupPanel
-            theme={theme}
-            navigation={navigation}
-            photoId={photo?.id}
-            markupTool={markupTool}
-            setMarkupTool={setMarkupTool}
-            markupColor={markupColor}
-            setMarkupColor={setMarkupColor}
-            markupStroke={markupStroke}
-            setMarkupStroke={setMarkupStroke}
-            onUndo={() => setMarkupShapes((s) => s.slice(0, -1))}
-            onClear={() => setMarkupShapes([])}
-            shapeCount={markupShapes.length}
-            scope={scope}
-            setScope={setScope}
-          />
-        )}
+        {/* MarkupPanel moved out of ScrollView — it now renders as a
+            floating bottom-sheet overlay near the SafeAreaView root
+            (below), on top of the Studio toolbar. The overlay layout
+            gives it the proper "sheet" look (rounded top corners,
+            grabber, shadow) that the user asked for. */}
         {activeTool === 'notes' && (
           <NotesPanel
             theme={theme}
@@ -1686,6 +1680,234 @@ export default function StudioScreen({ route, navigation }) {
           />
         </View>
       )}
+      {/* Floating markup panel — bottom-sheet-styled overlay that sits
+          on top of the Studio toolbar when the user is in markup mode.
+          Studio's markup PanResponder already captures drawing touches
+          on the photo above (see markupResponder + isMarkupActiveRef),
+          swipe-navigate + label drag are already suppressed while
+          isMarkupActive is true. This panel only owns tool selection
+          + Undo/Clear + the enlarge affordance. */}
+      {activeTool === 'markup' && (
+        <View style={styles.markupSheetWrap} pointerEvents="box-none">
+          <View
+            style={[
+              styles.markupSheet,
+              {
+                backgroundColor: theme.surfaceElevated,
+                borderColor: theme.border,
+                paddingBottom: 10 + insets.bottom,
+              },
+            ]}
+          >
+            <View style={[styles.markupSheetGrabber, { backgroundColor: theme.borderStrong }]} />
+            <View style={styles.markupSheetHeader}>
+              <TouchableOpacity
+                style={[styles.markupSheetHeaderBtn, { backgroundColor: theme.surface }]}
+                onPress={() => setActiveTool('notes')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={18} color={theme.textPrimary} />
+              </TouchableOpacity>
+              <Text style={[styles.markupSheetTitle, { color: theme.textPrimary }]}>Markup</Text>
+              <TouchableOpacity
+                style={[styles.markupSheetHeaderBtn, { backgroundColor: theme.accent }]}
+                onPress={() => navigation.navigate('MarkupEditor', {
+                  photoId: photo?.id,
+                  initialTool: markupTool,
+                  initialColor: markupColor,
+                  initialStroke: markupStroke,
+                })}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="scan-outline" size={18} color={theme.accentText} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Single 4-column grid — 6 tools + Color + Size = 8 tiles
+                (2 rows of 4), matching Customize Labels. */}
+            <View style={styles.markupSheetTileGrid}>
+              {MARKUP_TOOLS.map((t) => {
+                const isActive = markupTool === t.key;
+                return (
+                  <TouchableOpacity
+                    key={t.key}
+                    style={styles.markupSheetTileCell}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setMarkupTool(t.key);
+                      if (typeof t.defaultStroke === 'number' && t.defaultStroke > 0) {
+                        setMarkupStroke(t.defaultStroke);
+                      }
+                    }}
+                  >
+                    <View style={[
+                      styles.markupSheetTile,
+                      {
+                        backgroundColor: isActive ? theme.accent : theme.surface,
+                        borderColor: isActive ? theme.accent : theme.border,
+                      },
+                    ]}>
+                      <Ionicons name={t.icon} size={22} color={isActive ? theme.accentText : theme.textPrimary} />
+                    </View>
+                    <Text
+                      style={[
+                        styles.markupSheetTileLabel,
+                        { color: isActive ? theme.textPrimary : theme.textSecondary, fontWeight: isActive ? '700' : '500' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {/* Color tile — shows current markupColor as a swatch. */}
+              <TouchableOpacity
+                style={styles.markupSheetTileCell}
+                activeOpacity={0.7}
+                onPress={() => setMarkupColorSheetOpen(true)}
+              >
+                <View style={[
+                  styles.markupSheetTile,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                ]}>
+                  <View style={[
+                    styles.markupSheetTileSwatch,
+                    { backgroundColor: markupColor, borderColor: theme.border },
+                  ]} />
+                </View>
+                <Text style={[styles.markupSheetTileLabel, { color: theme.textSecondary }]}>Color</Text>
+              </TouchableOpacity>
+              {/* Size tile — opens stroke slider sheet. */}
+              <TouchableOpacity
+                style={styles.markupSheetTileCell}
+                activeOpacity={0.7}
+                onPress={() => setMarkupSizeSheetOpen(true)}
+              >
+                <View style={[
+                  styles.markupSheetTile,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                ]}>
+                  <Ionicons name="resize-outline" size={22} color={theme.textPrimary} />
+                </View>
+                <Text style={[styles.markupSheetTileLabel, { color: theme.textSecondary }]}>Size</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Undo / Clear pill row. */}
+            <View style={styles.markupSheetActionRow}>
+              <TouchableOpacity
+                style={[
+                  styles.markupSheetActionBtn,
+                  { backgroundColor: theme.surface, borderColor: theme.border, opacity: markupShapes.length === 0 ? 0.4 : 1 },
+                ]}
+                onPress={() => setMarkupShapes((s) => s.slice(0, -1))}
+                disabled={markupShapes.length === 0}
+              >
+                <Ionicons name="arrow-undo-outline" size={16} color={theme.textPrimary} />
+                <Text style={[styles.markupSheetActionText, { color: theme.textPrimary }]}>Undo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.markupSheetActionBtn,
+                  { backgroundColor: theme.surface, borderColor: theme.border, opacity: markupShapes.length === 0 ? 0.4 : 1 },
+                ]}
+                onPress={() => setMarkupShapes([])}
+                disabled={markupShapes.length === 0}
+              >
+                <Ionicons name="trash-outline" size={16} color={theme.danger} />
+                <Text style={[styles.markupSheetActionText, { color: theme.danger }]}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Color sub-sheet — opened from the floating markup panel's
+          Color tile. Reuses the shared ColorGridPicker. */}
+      {markupColorSheetOpen && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setMarkupColorSheetOpen(false)}>
+          <Pressable
+            style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: theme.scrim }}
+            onPress={() => setMarkupColorSheetOpen(false)}
+          >
+            <View
+              onStartShouldSetResponder={() => true}
+              style={{
+                backgroundColor: theme.surfaceElevated,
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingBottom: 24 + insets.bottom,
+              }}
+            >
+              <View style={{
+                width: 40, height: 4, borderRadius: 2,
+                alignSelf: 'center', marginTop: 8, marginBottom: 6,
+                backgroundColor: theme.borderStrong,
+              }} />
+              <ColorGridPicker
+                theme={theme}
+                value={markupColor}
+                onChange={(hex) => setMarkupColor(hex)}
+                onDone={() => setMarkupColorSheetOpen(false)}
+              />
+            </View>
+          </Pressable>
+        </Modal>
+      )}
+
+      {/* Size sub-sheet — stroke-width slider (1-24 px). */}
+      {markupSizeSheetOpen && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setMarkupSizeSheetOpen(false)}>
+          <Pressable
+            style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: theme.scrim }}
+            onPress={() => setMarkupSizeSheetOpen(false)}
+          >
+            <View
+              onStartShouldSetResponder={() => true}
+              style={{
+                backgroundColor: theme.surfaceElevated,
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingBottom: 24 + insets.bottom,
+              }}
+            >
+              <View style={{
+                width: 40, height: 4, borderRadius: 2,
+                alignSelf: 'center', marginTop: 8, marginBottom: 6,
+                backgroundColor: theme.borderStrong,
+              }} />
+              <View style={{ padding: 16 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600', color: theme.textPrimary }}>Stroke width</Text>
+                  <Text style={{ fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '700', color: theme.textPrimary }}>{markupStroke} px</Text>
+                </View>
+                <Slider
+                  style={{ width: '100%', height: 40 }}
+                  minimumValue={1}
+                  maximumValue={24}
+                  step={1}
+                  value={markupStroke}
+                  onValueChange={(v) => setMarkupStroke(Math.round(v))}
+                  minimumTrackTintColor={theme.accent}
+                  maximumTrackTintColor={theme.border}
+                  thumbTintColor={theme.accent}
+                />
+                <TouchableOpacity
+                  style={{
+                    marginTop: 14, paddingVertical: 14, borderRadius: 12,
+                    alignItems: 'center', backgroundColor: theme.accent,
+                  }}
+                  onPress={() => setMarkupSizeSheetOpen(false)}
+                >
+                  <Text style={{ fontFamily: FONTS.ALEXANDRIA, fontSize: 16, fontWeight: '700', color: theme.accentText }}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Pressable>
+        </Modal>
+      )}
+
     </SafeAreaView>
   );
 }
@@ -2229,12 +2451,15 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
               }]}
               onPress={() => {
                 if (t.isShortcut && t.key === 'markup') {
-                  // Markup opens as a "pop-up" bottom sheet first
-                  // (MarkupSheet, formSheet presentation) — matches how
-                  // Watermark / Metadata / Labels open. From the sheet,
-                  // the user taps "Enlarge to mark" to hand off to the
-                  // full-screen MarkupEditor for pinch-zoom + drawing.
-                  navigation?.navigate('MarkupSheet', { photoId: photo?.id });
+                  // Flip Studio into markup mode. The overlaid
+                  // MarkupPanel (bottom-sheet-styled) appears above the
+                  // Studio toolbar and drawing gestures activate on the
+                  // photo above. Swipe + label drag are already gated
+                  // via `isMarkupActiveRef` (see markupResponder + the
+                  // swipe useMemo). Enlarge icon inside MarkupPanel
+                  // hands off to the full-screen MarkupEditor for
+                  // pinch-zoom + detailed work.
+                  setActiveTool?.('markup');
                   return;
                 }
                 setTab(t.key);
@@ -3273,6 +3498,110 @@ const styles = StyleSheet.create({
   markupActionText: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
+    fontWeight: '700',
+  },
+  // Floating markup panel — sits absolutely at the bottom of the
+  // Studio screen when activeTool === 'markup', overlaying the
+  // Layout/Labels/Notes/Export toolbar. Photo above stays fully
+  // interactive for drawing.
+  markupSheetWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 90,
+  },
+  markupSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  markupSheetGrabber: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  markupSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  markupSheetHeaderBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markupSheetTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  markupSheetTileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -6,
+    rowGap: 14,
+    marginTop: 4,
+  },
+  markupSheetTileCell: {
+    width: '25%',
+    paddingHorizontal: 6,
+    alignItems: 'center',
+  },
+  markupSheetTile: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  markupSheetTileSwatch: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  markupSheetTileLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  markupSheetActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  markupSheetActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 46,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  markupSheetActionText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
     fontWeight: '700',
   },
   markupZoomBtn: {
