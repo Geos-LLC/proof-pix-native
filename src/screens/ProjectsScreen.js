@@ -1700,7 +1700,8 @@ export default function ProjectsScreen({ navigation, route }) {
           title={t('projects.deleteProject', { defaultValue: 'Delete Project' })}
           message={t('projects.deleteProjectMessage', {
             defaultValue: `Are you sure you want to delete "${projectToDelete.name}"? This will remove the project. Uncheck the box below to keep the photos.`,
-            projectName: projectToDelete.name
+            name: projectToDelete.name,
+            projectName: projectToDelete.name,
           })}
           onCancel={() => {
             setShowDeleteConfirm(false);

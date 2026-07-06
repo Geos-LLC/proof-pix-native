@@ -3139,7 +3139,7 @@ export default function SettingsScreen({ navigation, route }) {
           activeOpacity={0.85}
         >
           <View style={styles.manageSubscriptionIc}>
-            <Ionicons name="card-outline" size={19} color="#1E1E1E" />
+            <Ionicons name="card-outline" size={19} color={theme.textPrimary} />
           </View>
           <View style={styles.manageSubscriptionMeta}>
             <Text style={styles.manageSubscriptionTitle}>
@@ -3153,7 +3153,7 @@ export default function SettingsScreen({ navigation, route }) {
               })}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.manageInAppStoreLink}
@@ -3191,7 +3191,7 @@ export default function SettingsScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
-              <Ionicons name="text" size={19} color="#1E1E1E" />
+              <Ionicons name="text" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
               <Text style={styles.ppRowTitle}>
@@ -3201,7 +3201,7 @@ export default function SettingsScreen({ navigation, route }) {
                 {getCurrentLanguage()?.name || 'English'}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
 
           {/* Industry & sections — opens the standalone IndustrySections
@@ -3213,7 +3213,7 @@ export default function SettingsScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
-              <Ionicons name="folder-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="folder-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
               <Text style={styles.ppRowTitle}>
@@ -3221,11 +3221,12 @@ export default function SettingsScreen({ navigation, route }) {
               </Text>
               <Text style={styles.ppRowSub} numberOfLines={1}>
                 {t('settings.industryFoldersSub', {
+                  count: (Array.isArray(customRooms) ? customRooms.length : 0) || 5,
                   defaultValue: `${(Array.isArray(customRooms) ? customRooms.length : 0) || 5} folders`,
                 })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
 
           {/* Appearance — opens the standalone Appearance screen with
@@ -3236,7 +3237,7 @@ export default function SettingsScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
-              <Ionicons name="contrast-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="contrast-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
               <Text style={styles.ppRowTitle}>
@@ -3248,7 +3249,7 @@ export default function SettingsScreen({ navigation, route }) {
                   : t('settings.themeLight', { defaultValue: 'Light' })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -3275,7 +3276,7 @@ export default function SettingsScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
-              <Ionicons name="cloud-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="cloud-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
               <View style={styles.ppRowTitleRow}>
@@ -3290,7 +3291,7 @@ export default function SettingsScreen({ navigation, route }) {
                 {t('settings.cloudSyncSub', { defaultValue: 'Google Drive · Dropbox' })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
 
           {/* Team members — opens the standalone Team members screen
@@ -3301,7 +3302,7 @@ export default function SettingsScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
-              <Ionicons name="layers-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="layers-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
               <View style={styles.ppRowTitleRow}>
@@ -3316,7 +3317,7 @@ export default function SettingsScreen({ navigation, route }) {
                 {t('settings.teamMembersSub', { defaultValue: 'Invite your crew' })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
 
           {/* Refer & earn — navigates to ReferralScreen (design 36). */}
@@ -3326,7 +3327,7 @@ export default function SettingsScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
-              <Ionicons name="gift-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="gift-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
               <Text style={styles.ppRowTitle}>
@@ -3336,7 +3337,7 @@ export default function SettingsScreen({ navigation, route }) {
                 {t('settings.referEarnSub', { defaultValue: 'Earn 7 extra trial days per friend' })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
 
           {/* Help & support — navigates to the new HelpSupportScreen
@@ -3348,7 +3349,7 @@ export default function SettingsScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <View style={styles.ppRowIc}>
-              <Ionicons name="chatbubble-ellipses-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="chatbubble-ellipses-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
               <Text style={styles.ppRowTitle}>
@@ -3358,7 +3359,7 @@ export default function SettingsScreen({ navigation, route }) {
                 {t('settings.helpSupportSub', { defaultValue: 'Chat, email, or browse the help center' })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
         </View>
 

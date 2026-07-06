@@ -365,7 +365,7 @@ export default function ReferralScreen({ navigation, route }) {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
+            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>
             {t('referral.screenTitle', { defaultValue: 'Invite Friends' })}
@@ -391,7 +391,7 @@ export default function ReferralScreen({ navigation, route }) {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
+          <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>
           {t('referral.screenTitle', { defaultValue: 'Invite Friends' })}
@@ -427,7 +427,7 @@ export default function ReferralScreen({ navigation, route }) {
           </View>
           {/* Illustration placeholder - can be replaced with actual image */}
           <View style={styles.illustrationContainer}>
-            <Ionicons name="megaphone" size={60} color={COLORS.TEXT} />
+            <Ionicons name="megaphone" size={60} color={theme.textPrimary} />
           </View>
         </View>
 
@@ -497,7 +497,7 @@ export default function ReferralScreen({ navigation, route }) {
         {/* Progress Cards */}
         <View style={styles.progressCards}>
           <View style={styles.progressCard}>
-            <Ionicons name="people" size={24} color={COLORS.TEXT} />
+            <Ionicons name="people" size={24} color={theme.textPrimary} />
             <Text style={styles.progressCardValue}>
               {completedCount} out of 3
             </Text>
@@ -506,7 +506,7 @@ export default function ReferralScreen({ navigation, route }) {
             </Text>
           </View>
           <View style={styles.progressCard}>
-            <Ionicons name="trophy" size={24} color={COLORS.TEXT} />
+            <Ionicons name="trophy" size={24} color={theme.textPrimary} />
             <Text style={styles.progressCardValue}>
               {monthsEarned * 7} {monthsEarned * 7 === 1 ? 'Day' : 'Days'}
             </Text>
@@ -559,7 +559,7 @@ export default function ReferralScreen({ navigation, route }) {
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   <View style={styles.closeButtonCircle}>
-                    <Ionicons name="close" size={20} color="#666666" />
+                    <Ionicons name="close" size={20} color={theme.textSecondary} />
                   </View>
                 </TouchableOpacity>
                 <Text style={styles.modalTitle}>
@@ -689,7 +689,7 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: theme.border,
     backgroundColor: theme.surfaceElevated,
   },
   backButton: {
@@ -702,7 +702,7 @@ const makeStyles = (theme) => StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.textPrimary,
     letterSpacing: -0.3,
   },
   headerTitleContainer: {
@@ -733,7 +733,7 @@ const makeStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontSize: 16,
   },
   earnFreeSection: {
@@ -749,14 +749,14 @@ const makeStyles = (theme) => StyleSheet.create({
   earnFreeTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.textPrimary,
     marginBottom: 8,
     letterSpacing: -0.4,
     lineHeight: 28,
   },
   earnFreeSubtitle: {
     fontSize: 13,
-    color: '#5A5A5A',
+    color: theme.textSecondary,
     marginBottom: 14,
     lineHeight: 18,
   },
@@ -765,7 +765,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   rewardText: {
     fontSize: 16,
-    color: '#000000',
+    color: theme.textPrimary,
     fontWeight: '600',
     marginBottom: 8,
     letterSpacing: -0.2,
@@ -781,7 +781,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   codeLabel: {
     fontSize: 16,
-    color: '#000000',
+    color: theme.textPrimary,
     marginBottom: 12,
     fontWeight: '600',
     letterSpacing: -0.2,
@@ -854,7 +854,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   shareCodeButton: {
     flex: 1,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.mode === 'dark' ? theme.accent : '#1E1E1E',
     borderRadius: 13,
     height: 42,
     paddingHorizontal: 16,
@@ -862,7 +862,7 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   shareCodeButtonText: {
-    color: '#FFFFFF',
+    color: theme.mode === 'dark' ? theme.accentText : '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: -0.1,
@@ -925,18 +925,18 @@ const makeStyles = (theme) => StyleSheet.create({
     marginHorizontal: 24,
     height: 52,
     borderRadius: 16,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.mode === 'dark' ? theme.accent : '#1E1E1E',
     alignItems: 'center',
     justifyContent: 'center',
   },
   applyCodeButtonDisabled: {
-    backgroundColor: '#CCCCCC',
+    backgroundColor: theme.borderStrong,
   },
   applyCodeButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: theme.mode === 'dark' ? theme.accentText : '#FFFFFF',
     letterSpacing: -0.1,
   },
   progressCards: {
@@ -964,7 +964,7 @@ const makeStyles = (theme) => StyleSheet.create({
   progressCardValue: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
   },
   progressCardLabel: {
@@ -977,7 +977,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   progressBar: {
     height: 8,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: theme.surface,
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 8,
@@ -1037,7 +1037,7 @@ const makeStyles = (theme) => StyleSheet.create({
   dragHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#E5E5E5',
+    backgroundColor: theme.borderStrong,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 8,
@@ -1068,7 +1068,7 @@ const makeStyles = (theme) => StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     flex: 1,
     fontFamily: FONTS.ALEXANDRIA,
@@ -1085,7 +1085,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   modalText: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     lineHeight: 24,
     marginBottom: 16,
   },
@@ -1099,13 +1099,13 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   modalNoteText: {
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: '#7A5B00',
     lineHeight: 20,
   },
   modalSubtitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginBottom: 12,
     marginTop: 8,
     fontFamily: FONTS.ALEXANDRIA,
@@ -1124,11 +1124,11 @@ const makeStyles = (theme) => StyleSheet.create({
   modalBenefitText: {
     flex: 1,
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     lineHeight: 20,
   },
   modalButton: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.mode === 'dark' ? theme.accent : '#000000',
     borderRadius: 12,
     paddingVertical: 16,
     marginHorizontal: 20,
@@ -1137,7 +1137,7 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   modalButtonText: {
-    color: '#FFFFFF',
+    color: theme.mode === 'dark' ? theme.accentText : '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
     fontFamily: FONTS.ALEXANDRIA,

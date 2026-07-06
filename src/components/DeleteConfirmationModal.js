@@ -107,7 +107,7 @@ const DeleteConfirmationModal = ({
             {/* Close Button - Top Left */}
             <TouchableOpacity onPress={handleCancel} style={styles.closeButton}>
               <View style={styles.closeButtonCircle}>
-                <Ionicons name="close" size={20} color="#666666" />
+                <Ionicons name="close" size={20} color={theme.textSecondary} />
               </View>
             </TouchableOpacity>
 
@@ -231,7 +231,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   message: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textSecondary,
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 22,
@@ -264,7 +264,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   checkboxLabel: {
     fontSize: 14,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '500',
     flex: 1,
   },
@@ -285,12 +285,12 @@ const makeStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.surface,
   },
   cancelButtonText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
   deleteButton: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.mode === 'dark' ? theme.danger : '#000000',
   },
   deleteButtonText: {
     color: '#FFFFFF',
