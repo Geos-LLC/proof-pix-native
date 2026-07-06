@@ -112,6 +112,7 @@ import LogoCustomizationScreen from './src/screens/LogoCustomizationScreen';
 import BrandingSettingsScreen from './src/screens/BrandingSettingsScreen';
 import MetadataCustomizationScreen from './src/screens/MetadataCustomizationScreen';
 import MarkupEditorScreen from './src/screens/MarkupEditorScreen';
+import MarkupSheetScreen from './src/screens/MarkupSheetScreen';
 import SharePreviewScreen from './src/screens/SharePreviewScreen';
 import {
   StudioLayoutScreen,
@@ -561,6 +562,24 @@ function AppNavigator() {
         name="BrandingSettings"
         component={BrandingSettingsScreen}
         options={{ animation: 'slide_from_right' }}
+      />
+      {/* Quick "pop-up" markup config sheet. formSheet presentation
+          keeps the Studio photo visible behind, matching the Watermark /
+          Metadata / Labels UX. From here the user taps "Enlarge to mark"
+          to hand off to the full-screen MarkupEditor for actual drawing
+          (with pinch-zoom). */}
+      <Stack.Screen
+        name="MarkupSheet"
+        component={MarkupSheetScreen}
+        options={{
+          presentation: 'formSheet',
+          animation: 'slide_from_bottom',
+          sheetAllowedDetents: 'fitToContents',
+          sheetGrabberVisible: true,
+          sheetCornerRadius: 22,
+          sheetLargestUndimmedDetentIndex: 'last',
+          headerShown: false,
+        }}
       />
       <Stack.Screen
         name="MarkupEditor"

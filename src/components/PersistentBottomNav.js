@@ -53,6 +53,10 @@ const HIDDEN_ON = new Set([
   // right on top of the color row, so the user couldn't pick colors.
   // Users navigate out via the X close button in the top header.
   'MarkupEditor',
+  // MarkupSheet is the quick-config pop-up before MarkupEditor —
+  // presented as a formSheet with its own X close, so the persistent
+  // nav pill would just clutter the sheet body.
+  'MarkupSheet',
 ]);
 
 // Sub-routes that conceptually belong to the Projects tab (so the active

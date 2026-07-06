@@ -2229,12 +2229,12 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
               }]}
               onPress={() => {
                 if (t.isShortcut && t.key === 'markup') {
-                  // Markup opens the dedicated MarkupEditor route — the
-                  // full-screen canvas + docked palette design that lets
-                  // the user pinch-zoom and drop tight marks. Studio's
-                  // inline MarkupPanel is kept as dead code for now (the
-                  // Notes shortcut is the only Studio entry point).
-                  navigation?.navigate('MarkupEditor', { photoId: photo?.id });
+                  // Markup opens as a "pop-up" bottom sheet first
+                  // (MarkupSheet, formSheet presentation) — matches how
+                  // Watermark / Metadata / Labels open. From the sheet,
+                  // the user taps "Enlarge to mark" to hand off to the
+                  // full-screen MarkupEditor for pinch-zoom + drawing.
+                  navigation?.navigate('MarkupSheet', { photoId: photo?.id });
                   return;
                 }
                 setTab(t.key);

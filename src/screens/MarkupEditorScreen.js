@@ -148,9 +148,11 @@ export default function MarkupEditorScreen({ route, navigation }) {
     [photoId, photos]
   );
 
-  const [markupTool, setMarkupTool] = useState('draw');
-  const [markupColor, setMarkupColor] = useState('#FF3B30');
-  const [markupStroke, setMarkupStroke] = useState(4);
+  // Seed from any params the sheet handed off, so the user's tool /
+  // color / stroke picks carry into the full-screen editor.
+  const [markupTool, setMarkupTool] = useState(route?.params?.initialTool || 'draw');
+  const [markupColor, setMarkupColor] = useState(route?.params?.initialColor || '#FF3B30');
+  const [markupStroke, setMarkupStroke] = useState(route?.params?.initialStroke || 4);
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [sizeModalVisible, setSizeModalVisible] = useState(false);
   // Markup can be either the legacy raw-array format or the new

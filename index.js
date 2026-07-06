@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] markup-tile-grid-' + Date.now() + ' — Studio Notes>Markup routes back to the full-screen MarkupEditor (over the studio toolbar). MarkupEditor palette rewritten to match the design spec: TOOL section is a 4-column tile grid (icon square + label under), ADJUST section is a Color tile + Size tile that open bottom-sheet modals (ColorGridPicker for Color, stroke slider for Size). Full-width Undo/Clear pill row stays. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] markup-two-step-' + Date.now() + ' — Markup now opens in two steps: (1) MarkupSheet pops up from the bottom as a formSheet with the same tile design + sizing as Customize Labels (52×52 tiles, TOOL + ADJUST sections). (2) Tapping "Enlarge to mark" hands off to the full-screen MarkupEditor for pinch-zoom + drawing, carrying the picked tool/color/stroke as initial state. Studio Notes>Markup routes to MarkupSheet first. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
