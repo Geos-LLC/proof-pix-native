@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import OverrideConflictModal from '../components/OverrideConflictModal';
+import ColorGridPicker from '../components/ColorGridPicker';
 // useFeaturePermissions / FEATURES removed — used to gate the watermark
 // section, which now lives on the dedicated Watermark Customization
 // screen.
@@ -991,101 +992,23 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
         </View>
       </BottomModal>
 
-      {/* Color Picker Modal */}
+      {/* Color Picker Modal — now uses the shared ColorGridPicker (same
+          markup Watermark + Metadata use). Header hidden so the photo
+          behind stays visible while the user scans the grid; grabber +
+          tap-outside close the sheet. Live-preview through previewColor
+          on every tap; Apply is the picker's built-in Done button. */}
       <BottomModal
         visible={colorModalVisible}
         onClose={() => setColorModalVisible(false)}
-        title={
-          colorModalType === 'bg' ? 'Background Color' : 'Text Color'
-        }
-        headerExtra={
-          <TouchableOpacity style={styles.eyedropperButton}>
-            <Ionicons name="eyedrop-outline" size={20} color={theme.textSecondary} />
-          </TouchableOpacity>
-        }
+        hideHeader
       >
-        <View style={styles.colorPickerContainer}>
-          {/* Tabs */}
-          <View style={styles.colorTabs}>
-            {['Grid', 'Spectrum', 'Sliders'].map(tab => (
-                      <TouchableOpacity
-                key={tab}
-                        style={[
-                  styles.colorTab,
-                  colorTab === tab && styles.colorTabActive
-                ]}
-                onPress={() => setColorTab(tab)}
-              >
-                <Text style={[
-                  styles.colorTabText,
-                  colorTab === tab && styles.colorTabTextActive
-                ]}>{tab}</Text>
-                      </TouchableOpacity>
-            ))}
-            </View>
-
-          {/* Color Grid */}
-          {colorTab === 'Grid' && (
-            <View style={styles.colorGrid}>
-              {COLOR_GRID.map((row, rowIdx) => (
-                <View key={rowIdx} style={styles.colorGridRow}>
-                  {row.map((color, colIdx) => (
-              <TouchableOpacity
-                      key={`${rowIdx}-${colIdx}`}
-                  style={[
-                        styles.colorCell,
-                        { backgroundColor: color },
-                        tempColor === color && styles.colorCellSelected
-                      ]}
-                      onPress={() => previewColor(color)}
-                    />
-                  ))}
-                </View>
-              ))}
-              </View>
-          )}
-
-          {/* Opacity Slider */}
-          <View style={styles.opacitySection}>
-            <Text style={styles.opacityLabel}>Opacity</Text>
-            <View style={styles.opacitySliderContainer}>
-              <View style={[
-                styles.opacitySliderTrack,
-                { background: `linear-gradient(to right, transparent, ${tempColor})` }
-              ]}>
-                <View style={styles.opacityCheckered} />
-                </View>
-              <Text style={styles.opacityValue}>{colorOpacity}%</Text>
-            </View>
-          </View>
-
-          {/* Color Preview & Saved Colors */}
-          <View style={styles.colorPreviewSection}>
-            <View style={[
-              styles.colorPreviewLarge,
-              { backgroundColor: tempColor }
-            ]} />
-            {SAVED_COLORS.map((color, idx) => (
-                  <TouchableOpacity
-                key={idx}
-                    style={[
-                  styles.colorPreviewSmall,
-                  { backgroundColor: color },
-                  tempColor === color && styles.colorPreviewSelected
-                ]}
-                onPress={() => previewColor(color)}
-                  />
-                ))}
-            <TouchableOpacity style={styles.addColorButton}>
-              <Text style={styles.addColorText}>+</Text>
-            </TouchableOpacity>
-              </View>
-
-          {/* Apply Button */}
-          <TouchableOpacity style={styles.applyButton} onPress={applyColor}>
-            <Text style={styles.applyButtonText}>Apply</Text>
-          </TouchableOpacity>
-        </View>
+        <ColorGridPicker
+          theme={theme}
+          value={tempColor}
+          onChange={(hex) => previewColor(hex)}
+          onDone={applyColor}
+          doneLabel="Apply"
+        />
       </BottomModal>
 
       {/* Position Modal — dual Before/After grid for combined photos,
@@ -1310,7 +1233,7 @@ function ColorControlButton({ color, label, selected, onPress }) {
 }
 
 // Bottom Modal Component - Updated to match standard design
-function BottomModal({ visible, onClose, title, headerExtra, children, buttonText, onButtonPress, showButton = false }) {
+function BottomModal({ visible, onClose, title, headerExtra, children, buttonText, onButtonPress, showButton = false, hideHeader = false }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   if (!visible) return null;
@@ -1327,25 +1250,29 @@ function BottomModal({ visible, onClose, title, headerExtra, children, buttonTex
           {/* Drag Handle */}
           <View style={styles.modalHandle} />
 
-          {/* Header */}
-          <View style={styles.modalHeader}>
-            {/* Close Button - Top Left */}
-            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-              <View style={styles.closeButtonCircle}>
-                <Ionicons name="close" size={20} color={theme.textSecondary} />
-              </View>
-            </TouchableOpacity>
+          {/* Header — hidden for the color modal so the photo behind
+              stays visible while the user scans the grid. Grabber +
+              tap-outside still close the sheet. */}
+          {!hideHeader && (
+            <View style={styles.modalHeader}>
+              {/* Close Button - Top Left */}
+              <TouchableOpacity onPress={onClose} style={styles.modalClose}>
+                <View style={styles.closeButtonCircle}>
+                  <Ionicons name="close" size={20} color={theme.textSecondary} />
+                </View>
+              </TouchableOpacity>
 
-            {/* Title - Centered */}
-            <Text style={styles.modalTitle}>{title}</Text>
+              {/* Title - Centered */}
+              <Text style={styles.modalTitle}>{title}</Text>
 
-            {/* Header Extra (if provided) or Spacer */}
-            {headerExtra ? (
-              <View style={styles.modalHeaderExtra}>{headerExtra}</View>
-            ) : (
-              <View style={styles.headerSpacer} />
-            )}
-          </View>
+              {/* Header Extra (if provided) or Spacer */}
+              {headerExtra ? (
+                <View style={styles.modalHeaderExtra}>{headerExtra}</View>
+              ) : (
+                <View style={styles.headerSpacer} />
+              )}
+            </View>
+          )}
 
           {/* Content - Render children directly without ScrollView wrapper */}
           <View style={styles.modalBody} onStartShouldSetResponder={() => true}>

@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
 // 12-hue × 10-shade HSL grid — same generator as LabelCustomizationScreen
 // so the three color pickers (Labels, Watermark, Metadata) render an
@@ -39,47 +38,26 @@ const buildColorGrid = () => {
 
 const COLOR_GRID = buildColorGrid();
 
-// Preset row across the bottom of the picker — same palette the Labels
-// picker uses so switching between features feels consistent.
+// Single-row preset strip below the grid. Trimmed to 7 distinct colors +
+// preview swatch = 8 items so the row never wraps on a 390-wide screen,
+// even after modal padding. If we need more presets later, add a
+// horizontal ScrollView here instead of wrapping.
 const SAVED_COLORS = [
-  '#A855F7', '#000000', '#3B82F6', '#22C55E', '#EAB308', '#EF4444',
-  '#06B6D4', '#A855F7', '#6366F1', '#F43F5E',
+  '#A855F7', '#000000', '#3B82F6', '#22C55E',
+  '#EAB308', '#EF4444', '#06B6D4',
 ];
 
 // Shared color picker used by Labels, Watermark, and Metadata bottom
 // sheets. Live-preview on every cell tap (via `onChange`), plus a
 // primary "Done" button that closes the sheet. Consumers pass the
-// current color and an onDone handler; opacity control is intentionally
-// omitted here — none of the three call sites persist opacity via this
-// picker (opacity gets its own dedicated slider modal).
+// current color and an onDone handler. No tabs, no title — the parent
+// modal handles chrome; this keeps the sheet short so the photo behind
+// remains visible.
 export default function ColorGridPicker({ theme, value, onChange, onDone, doneLabel = 'Done' }) {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const normalized = (value || '').toUpperCase();
   return (
     <View style={styles.container}>
-      {/* Tabs bar — only Grid is wired today. Left in place so the UI
-          matches the Labels reference and to leave room for Spectrum /
-          Sliders variants down the line. */}
-      <View style={styles.tabs}>
-        {['Grid', 'Spectrum', 'Sliders'].map((tab) => {
-          const isActive = tab === 'Grid';
-          return (
-            <View
-              key={tab}
-              style={[
-                styles.tab,
-                isActive && styles.tabActive,
-              ]}
-            >
-              <Text style={[
-                styles.tabText,
-                isActive && styles.tabTextActive,
-              ]}>{tab}</Text>
-            </View>
-          );
-        })}
-      </View>
-
       <View style={styles.grid}>
         {COLOR_GRID.map((row, rowIdx) => (
           <View key={rowIdx} style={styles.gridRow}>
@@ -101,6 +79,8 @@ export default function ColorGridPicker({ theme, value, onChange, onDone, doneLa
         ))}
       </View>
 
+      {/* Single-row preview + presets. flexWrap:'nowrap' + fixed sizes
+          guarantee a single line — see SAVED_COLORS comment above. */}
       <View style={styles.previewRow}>
         <View style={[styles.previewLarge, { backgroundColor: normalized || '#FFFFFF', borderColor: theme.border }]} />
         {SAVED_COLORS.map((color, idx) => {
@@ -117,9 +97,6 @@ export default function ColorGridPicker({ theme, value, onChange, onDone, doneLa
             />
           );
         })}
-        <View style={[styles.addBtn, { backgroundColor: theme.surface }]}>
-          <Ionicons name="add" size={18} color={theme.textSecondary} />
-        </View>
       </View>
 
       <TouchableOpacity
@@ -134,33 +111,9 @@ export default function ColorGridPicker({ theme, value, onChange, onDone, doneLa
 }
 
 const makeStyles = (theme) => StyleSheet.create({
-  container: { padding: 16 },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: theme.surface,
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 16,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 6,
-  },
-  tabActive: {
-    backgroundColor: theme.surfaceElevated,
-  },
-  tabText: {
-    fontSize: 14,
-    color: theme.textSecondary,
-  },
-  tabTextActive: {
-    color: theme.textPrimary,
-    fontWeight: '600',
-  },
+  container: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
   grid: {
-    marginBottom: 16,
+    marginBottom: 14,
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -179,27 +132,20 @@ const makeStyles = (theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 16,
-    flexWrap: 'wrap',
+    marginBottom: 14,
+    flexWrap: 'nowrap',
   },
   previewLarge: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: 10,
     borderWidth: 1,
   },
   previewSmall: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 1,
-  },
-  addBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   doneBtn: {
     paddingVertical: 14,

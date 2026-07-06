@@ -365,10 +365,10 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
         </View>
       </BottomModal>
 
-      {/* Color Modal — same picker Labels uses so all three surfaces
-          feel consistent. Live-preview writes on every tap; Done just
-          closes the sheet. */}
-      <BottomModal styles={styles} visible={colorModalVisible} onClose={() => setColorModalVisible(false)} title="Watermark Color" theme={theme}>
+      {/* Color Modal — same picker Labels uses. Header hidden so the
+          photo behind stays visible; grabber + tap-outside close still
+          available. */}
+      <BottomModal styles={styles} visible={colorModalVisible} onClose={() => setColorModalVisible(false)} theme={theme} hideHeader>
         <ColorGridPicker
           theme={theme}
           value={watermarkColor || '#FFD700'}
@@ -402,7 +402,7 @@ function ColorButton({ styles, theme, color, onPress }) {
   );
 }
 
-function BottomModal({ styles, visible, onClose, title, theme, children }) {
+function BottomModal({ styles, visible, onClose, title, theme, children, hideHeader = false }) {
   if (!visible) return null;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -415,13 +415,19 @@ function BottomModal({ styles, visible, onClose, title, theme, children }) {
           onStartShouldSetResponder={() => true}
         >
           <View style={styles.modalHandle} />
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-              <Ionicons name="close" size={22} color={theme.textPrimary} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>{title}</Text>
-            <View style={{ width: 22 }} />
-          </View>
+          {/* `hideHeader` skips the title bar entirely — used by the
+              color modal so the photo behind stays visible as the user
+              scans the grid live. Grabber stays for the drag-to-close
+              affordance; tap-outside also closes via the Pressable. */}
+          {!hideHeader && (
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={onClose} style={styles.modalClose}>
+                <Ionicons name="close" size={22} color={theme.textPrimary} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>{title}</Text>
+              <View style={{ width: 22 }} />
+            </View>
+          )}
           <View style={styles.modalBody}>{children}</View>
         </View>
       </Pressable>

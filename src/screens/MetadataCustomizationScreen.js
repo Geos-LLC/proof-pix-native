@@ -357,9 +357,10 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
         </View>
       </BottomModal>
 
-      {/* Color Modal — shared picker used by Labels + Watermark. Writes
-          live on every tap; Done just closes the sheet. */}
-      <BottomModal styles={styles} visible={colorModalVisible} onClose={() => setColorModalVisible(false)} title="Metadata Color" theme={theme}>
+      {/* Color Modal — shared picker used by Labels + Watermark. Header
+          hidden so the photo behind stays visible; grabber + tap-outside
+          still close the sheet. */}
+      <BottomModal styles={styles} visible={colorModalVisible} onClose={() => setColorModalVisible(false)} theme={theme} hideHeader>
         <ColorGridPicker
           theme={theme}
           value={metaColor || '#FFFFFF'}
@@ -396,7 +397,7 @@ function ColorButton({ styles, theme, color, onPress }) {
   );
 }
 
-function BottomModal({ styles, visible, onClose, title, theme, children }) {
+function BottomModal({ styles, visible, onClose, title, theme, children, hideHeader = false }) {
   if (!visible) return null;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -409,13 +410,18 @@ function BottomModal({ styles, visible, onClose, title, theme, children }) {
           onStartShouldSetResponder={() => true}
         >
           <View style={styles.modalHandle} />
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-              <Ionicons name="close" size={22} color={theme.textPrimary} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>{title}</Text>
-            <View style={{ width: 22 }} />
-          </View>
+          {/* `hideHeader` skips the title bar entirely — used by the
+              color modal so the photo behind stays visible while the
+              user scans the grid. Grabber + tap-outside still close. */}
+          {!hideHeader && (
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={onClose} style={styles.modalClose}>
+                <Ionicons name="close" size={22} color={theme.textPrimary} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>{title}</Text>
+              <View style={{ width: 22 }} />
+            </View>
+          )}
           <View style={styles.modalBody}>{children}</View>
         </View>
       </Pressable>
