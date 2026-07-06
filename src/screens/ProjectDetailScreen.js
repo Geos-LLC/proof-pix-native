@@ -3109,6 +3109,13 @@ export default function ProjectDetailScreen({ route, navigation }) {
                           );
                         }
                         const isOverlaysToggle = key === 'showOverlays';
+                        // Some toggles have a follow-up "Customize →" link
+                        // to the screen where the underlying settings live,
+                        // so users can flip the report knob and jump
+                        // straight to its config without leaving the flow.
+                        const customizeRoute = key === 'includeBranding' ? 'BrandingSettings'
+                          : isOverlaysToggle ? 'LabelsLanguage'
+                          : null;
                         return (
                           <View
                             key={key}
@@ -3119,9 +3126,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
                               {meta.description ? (
                                 <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
                               ) : null}
-                              {isOverlaysToggle && (
+                              {customizeRoute && (
                                 <TouchableOpacity
-                                  onPress={() => navigation.navigate('LabelsLanguage')}
+                                  onPress={() => navigation.navigate(customizeRoute)}
                                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                                   style={{ marginTop: 4 }}
                                 >
