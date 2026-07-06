@@ -2941,38 +2941,70 @@ export default function ProjectDetailScreen({ route, navigation }) {
 
               {/* Branding section — shows current report branding summary
                   with a link to open BrandingSettings. Falls back to
-                  the photo-editor logo when no report logo is set. */}
-              <View style={styles.reportSectionHeader}>
-                <Text style={[styles.reportSectionLabel, { color: theme.textSecondary }]}>BRANDING</Text>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('BrandingSettings')}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                >
-                  <Text style={[styles.reportSectionLink, { color: theme.accent }]}>Edit →</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                {(reportBrandLogoUri || brandLogoUri) ? (
-                  <Image
-                    source={{ uri: reportBrandLogoUri || brandLogoUri }}
-                    style={styles.reportLogoThumb}
-                    resizeMode="contain"
-                  />
-                ) : null}
-                <View style={{ flex: 1, marginLeft: (reportBrandLogoUri || brandLogoUri) ? 10 : 0 }}>
-                  {reportCompanyName ? (
-                    <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>{reportCompanyName}</Text>
-                  ) : (
-                    <Text style={[styles.reportRowSubtle, { color: theme.textMuted || theme.textSecondary }]}>No company name set</Text>
-                  )}
-                  <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>
-                    {reportBrandLogoUri ? 'Report logo' : brandLogoUri ? 'Using photo logo (no report logo set)' : 'No logo set'}
-                  </Text>
-                </View>
-                {reportBrandColor ? (
-                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: reportBrandColor, marginLeft: 8 }} />
-                ) : null}
-              </View>
+                  the photo-editor logo when no report logo is set.
+                  When the active layout declares includeBranding, the
+                  toggle lives here (not in the layout-options block
+                  below) so users flip it in-context with the config it
+                  drives. */}
+              {(() => {
+                const layoutForBranding = getLayout(reportLayoutType);
+                const supportsBrandingToggle = layoutForBranding.supportedOptions.includes('includeBranding');
+                const brandingResolved = resolveOptions(layoutForBranding.id, reportOptions);
+                const brandingOn = brandingResolved.includeBranding !== false;
+                return (
+                  <>
+                    <View style={styles.reportSectionHeader}>
+                      <Text style={[styles.reportSectionLabel, { color: theme.textSecondary }]}>BRANDING</Text>
+                      <TouchableOpacity
+                        onPress={() => navigation.navigate('BrandingSettings')}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Text style={[styles.reportSectionLink, { color: theme.accent }]}>Edit →</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {supportsBrandingToggle && (
+                      <View style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>
+                            {OPTION_META.includeBranding.label}
+                          </Text>
+                          <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>
+                            {OPTION_META.includeBranding.description}
+                          </Text>
+                        </View>
+                        <Switch
+                          value={brandingOn}
+                          onValueChange={(next) => setReportOptions((prev) => ({ ...prev, includeBranding: next }))}
+                          trackColor={{ false: '#E0E0E0', true: theme.accent }}
+                          thumbColor="#FFFFFF"
+                        />
+                      </View>
+                    )}
+                    <View style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                      {(reportBrandLogoUri || brandLogoUri) ? (
+                        <Image
+                          source={{ uri: reportBrandLogoUri || brandLogoUri }}
+                          style={styles.reportLogoThumb}
+                          resizeMode="contain"
+                        />
+                      ) : null}
+                      <View style={{ flex: 1, marginLeft: (reportBrandLogoUri || brandLogoUri) ? 10 : 0 }}>
+                        {reportCompanyName ? (
+                          <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>{reportCompanyName}</Text>
+                        ) : (
+                          <Text style={[styles.reportRowSubtle, { color: theme.textMuted || theme.textSecondary }]}>No company name set</Text>
+                        )}
+                        <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>
+                          {reportBrandLogoUri ? 'Report logo' : brandLogoUri ? 'Using photo logo (no report logo set)' : 'No logo set'}
+                        </Text>
+                      </View>
+                      {reportBrandColor ? (
+                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: reportBrandColor, marginLeft: 8 }} />
+                      ) : null}
+                    </View>
+                  </>
+                );
+              })()}
 
               {/* Photo count stepper. Max is the active report's
                   saved photo pool; min 1. The "Pick photos" link
@@ -3109,13 +3141,6 @@ export default function ProjectDetailScreen({ route, navigation }) {
                           );
                         }
                         const isOverlaysToggle = key === 'showOverlays';
-                        // Some toggles have a follow-up "Customize →" link
-                        // to the screen where the underlying settings live,
-                        // so users can flip the report knob and jump
-                        // straight to its config without leaving the flow.
-                        const customizeRoute = key === 'includeBranding' ? 'BrandingSettings'
-                          : isOverlaysToggle ? 'LabelsLanguage'
-                          : null;
                         return (
                           <View
                             key={key}
@@ -3126,9 +3151,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
                               {meta.description ? (
                                 <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
                               ) : null}
-                              {customizeRoute && (
+                              {isOverlaysToggle && (
                                 <TouchableOpacity
-                                  onPress={() => navigation.navigate(customizeRoute)}
+                                  onPress={() => navigation.navigate('LabelsLanguage')}
                                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                                   style={{ marginTop: 4 }}
                                 >
@@ -3149,14 +3174,22 @@ export default function ProjectDetailScreen({ route, navigation }) {
                       const supportedSet = new Set(currentLayout.supportedOptions);
                       const knownKeys = new Set(REPORT_OPTION_GROUPS.flatMap((g) => g.keys));
                       const orphanKeys = currentLayout.supportedOptions.filter((k) => !knownKeys.has(k));
+                      // includeBranding lives inside the BRANDING section
+                      // (rendered above alongside the logo / company /
+                      // color summary + "Edit →" link to BrandingSettings)
+                      // so users toggle it in-context with the config it
+                      // controls. Skip it here to avoid a duplicate row.
+                      const HOISTED_KEYS = new Set(['includeBranding']);
                       return (
                         <>
                           {REPORT_OPTION_GROUPS.map((group) => {
-                            const groupKeys = group.keys.filter((k) => supportedSet.has(k));
+                            const groupKeys = group.keys.filter((k) => supportedSet.has(k) && !HOISTED_KEYS.has(k));
                             // Tack any orphan keys (declared by a layout
                             // but not categorized in REPORT_OPTION_GROUPS)
                             // onto the Layout section as a safety net.
-                            const keys = group.id === 'layout' ? [...groupKeys, ...orphanKeys] : groupKeys;
+                            const keys = group.id === 'layout'
+                              ? [...groupKeys, ...orphanKeys.filter((k) => !HOISTED_KEYS.has(k))]
+                              : groupKeys;
                             if (keys.length === 0) return null;
                             return (
                               <React.Fragment key={group.id}>
