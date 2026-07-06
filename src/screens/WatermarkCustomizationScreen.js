@@ -171,95 +171,64 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
           {/* Preview removed — the screen opens as a bottom sheet over
               Studio, so the photo behind the sheet IS the preview. */}
 
-          {/* Custom text toggle — only for tiers that own CUSTOM_WATERMARKS.
-              Starter sees a compact Pro-upgrade banner instead so the
-              screen still feels usable (they can move the mark's position
-              below). */}
-          {canCustomize ? (
-            <>
-              <Text style={styles.sectionLabel}>CUSTOM TEXT</Text>
-              <View style={styles.toggleRow}>
-                <Text style={styles.toggleLabel}>Use custom watermark</Text>
-                <Switch
-                  value={!!customWatermarkEnabled}
-                  onValueChange={toggleWatermark}
-                  trackColor={{ false: theme.border, true: theme.accent }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              {customWatermarkEnabled && (
-                <>
-                  <TextInput
-                    style={styles.input}
-                    value={watermarkText}
-                    onChangeText={updateWatermarkText}
-                    placeholder="Watermark text"
-                    placeholderTextColor={theme.textMuted}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    value={watermarkLink}
-                    onChangeText={updateWatermarkLink}
-                    placeholder="Optional link (https://…)"
-                    placeholderTextColor={theme.textMuted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                  />
-                </>
-              )}
-            </>
-          ) : (
-            <TouchableOpacity
-              onPress={openPaywall}
-              activeOpacity={0.85}
-              style={{
-                marginTop: 4,
-                padding: 14,
-                borderRadius: 12,
-                backgroundColor: theme.surfaceAccent,
-                borderWidth: 1,
-                borderColor: theme.accent,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 10,
+          {/* Menu is identical for every tier — the paywall fires only on
+              the actions that require CUSTOM_WATERMARKS. Position is the
+              one free customization for starter. */}
+          <Text style={styles.sectionLabel}>CUSTOM TEXT</Text>
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>Use custom watermark</Text>
+            <Switch
+              value={!!customWatermarkEnabled}
+              onValueChange={(v) => {
+                // Flipping to ON = enabling customization. Starter can't,
+                // paywall. Flipping OFF is fine — that just restores the
+                // default text.
+                if (v && !canCustomize) { openPaywall(); return; }
+                toggleWatermark(v);
               }}
-            >
-              <Ionicons name="lock-closed" size={18} color={theme.accentInk} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: theme.textPrimary, fontFamily: FONTS.ALEXANDRIA }}>
-                  Upgrade to customize watermark
-                </Text>
-                <Text style={{ marginTop: 2, fontSize: 12, color: theme.textSecondary, fontFamily: FONTS.ALEXANDRIA }}>
-                  Change the text, font, size, color, opacity, margin. You can still move the position below.
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-            </TouchableOpacity>
+              trackColor={{ false: theme.border, true: theme.accent }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+
+          {customWatermarkEnabled && (
+            <>
+              <TextInput
+                style={styles.input}
+                value={watermarkText}
+                onChangeText={(txt) => { if (!canCustomize) { openPaywall(); return; } updateWatermarkText(txt); }}
+                placeholder="Watermark text"
+                placeholderTextColor={theme.textMuted}
+                editable={canCustomize}
+              />
+              <TextInput
+                style={styles.input}
+                value={watermarkLink}
+                onChangeText={(txt) => { if (!canCustomize) { openPaywall(); return; } updateWatermarkLink(txt); }}
+                placeholder="Optional link (https://…)"
+                placeholderTextColor={theme.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                editable={canCustomize}
+              />
+            </>
           )}
 
-          {/* Controls — Position is always available. Everything else is
-              gated by CUSTOM_WATERMARKS and hidden for starter. */}
-          <Text style={styles.sectionLabel}>{canCustomize ? 'CONTROLS' : 'POSITION'}</Text>
-          {canCustomize ? (
-            <>
-              <View style={styles.controlsRow}>
-                <ControlButton styles={styles} theme={theme} icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
-                <ControlButton styles={styles} theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-                <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
-              </View>
-              <View style={[styles.controlsRow, { marginTop: 12 }]}>
-                <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
-                <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
-                <ColorButton styles={styles} theme={theme} color={watermarkColor || '#FFD700'} onPress={() => setColorModalVisible(true)} />
-              </View>
-            </>
-          ) : (
-            <View style={styles.controlsRow}>
-              <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
-            </View>
-          )}
+          {/* Controls — same 6 buttons for every tier. Position is free.
+              Font / Size / Margin / Opacity / Color kick starter to the
+              paywall on tap. */}
+          <Text style={styles.sectionLabel}>CONTROLS</Text>
+          <View style={styles.controlsRow}>
+            <ControlButton styles={styles} theme={theme} icon="text" label="Font" onPress={() => { if (!canCustomize) { openPaywall(); return; } setFontModalVisible(true); }} />
+            <ControlButton styles={styles} theme={theme} icon="resize" label="Size" onPress={() => { if (!canCustomize) { openPaywall(); return; } setSizeModalVisible(true); }} />
+            <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+          </View>
+          <View style={[styles.controlsRow, { marginTop: 12 }]}>
+            <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => { if (!canCustomize) { openPaywall(); return; } setMarginModalVisible(true); }} />
+            <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => { if (!canCustomize) { openPaywall(); return; } setOpacityModalVisible(true); }} />
+            <ColorButton styles={styles} theme={theme} color={watermarkColor || '#FFD700'} onPress={() => { if (!canCustomize) { openPaywall(); return; } setColorModalVisible(true); }} />
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
