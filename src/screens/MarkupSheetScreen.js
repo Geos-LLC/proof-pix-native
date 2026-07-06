@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -96,13 +96,32 @@ export default function MarkupSheetScreen({ navigation, route }) {
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [sizeModalVisible, setSizeModalVisible] = useState(false);
 
-  const openEditor = () => {
-    navigation.replace('MarkupEditor', {
-      photoId,
-      initialTool: tool,
-      initialColor: color,
-      initialStroke: stroke,
+  // Two ways to leave the sheet:
+  //   • X (top-left)      → return to Studio, abort markup
+  //   • ANY OTHER dismiss → open the full-screen MarkupEditor with the
+  //     current picks. That covers: tap the picture behind the sheet,
+  //     swipe the sheet down, hardware back on Android.
+  // We intercept beforeRemove to distinguish the two. The ref prevents
+  // the redirect from re-firing the listener and looping.
+  const skipEditorOnCloseRef = useRef(false);
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', (e) => {
+      if (skipEditorOnCloseRef.current) return;
+      e.preventDefault();
+      skipEditorOnCloseRef.current = true;
+      navigation.replace('MarkupEditor', {
+        photoId,
+        initialTool: tool,
+        initialColor: color,
+        initialStroke: stroke,
+      });
     });
+    return unsub;
+  }, [navigation, photoId, tool, color, stroke]);
+
+  const handleClose = () => {
+    skipEditorOnCloseRef.current = true;
+    navigation.goBack();
   };
 
   return (
@@ -110,7 +129,7 @@ export default function MarkupSheetScreen({ navigation, route }) {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerClose}
-          onPress={() => navigation.goBack()}
+          onPress={handleClose}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons name="close" size={18} color={theme.textPrimary} />
@@ -152,21 +171,6 @@ export default function MarkupSheetScreen({ navigation, route }) {
             onPress={() => setSizeModalVisible(true)}
           />
         </View>
-
-        {/* Primary CTA — hands the current picks to MarkupEditor so the
-            user can pinch-zoom and drop precise marks. Uses replace()
-            so the sheet doesn't stack behind the editor on the nav
-            stack — back from the editor goes straight to Studio. */}
-        <TouchableOpacity
-          style={[styles.primaryBtn, { backgroundColor: theme.accent }]}
-          onPress={openEditor}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="scan-outline" size={18} color={theme.accentText} />
-          <Text style={[styles.primaryBtnText, { color: theme.accentText }]}>
-            Enlarge to mark
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <SheetPopup visible={colorModalVisible} onClose={() => setColorModalVisible(false)} theme={theme}>
@@ -248,25 +252,24 @@ const makeStyles = (theme) => StyleSheet.create({
     marginTop: 6,
     marginBottom: 8,
   },
-  // 4-column grid — matches Customize Labels tile sizing (52×52
-  // rounded square, 11px label). marginHorizontal on the row + padding
-  // on the cell give the correct outer gutter without over-padding.
+  // 3-column grid — 6 tools split into 2 balanced rows of 3. Tiles
+  // are 60×60 rounded squares (slightly larger than the customization
+  // sheets' 52×52 because we have fewer columns and more room per tile).
   tileGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginHorizontal: -8,
-    rowGap: 12,
+    rowGap: 14,
   },
   tileCell: {
-    width: '25%',
+    width: '33.333%',
     paddingHorizontal: 8,
     alignItems: 'center',
-    minWidth: 70,
   },
   tile: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    borderRadius: 14,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',

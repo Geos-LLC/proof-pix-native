@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] markup-two-step-' + Date.now() + ' — Markup now opens in two steps: (1) MarkupSheet pops up from the bottom as a formSheet with the same tile design + sizing as Customize Labels (52×52 tiles, TOOL + ADJUST sections). (2) Tapping "Enlarge to mark" hands off to the full-screen MarkupEditor for pinch-zoom + drawing, carrying the picked tool/color/stroke as initial state. Studio Notes>Markup routes to MarkupSheet first. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] markup-tap-picture-' + Date.now() + ' — MarkupSheet tools now render in a 3-col grid = balanced 2 rows of 3. "Enlarge to mark" button removed; any sheet dismissal (drag-down, tap on the picture behind, Android back) intercepts via beforeRemove and replaces the sheet with the full-screen MarkupEditor, carrying the picked tool/color/stroke. Only the X close top-left returns to Studio without opening the editor. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
