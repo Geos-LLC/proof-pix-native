@@ -388,13 +388,22 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   };
 
   const applyColor = async () => {
-    const hexColor = convertToHex(tempColor);
-    if (colorModalType === 'bg') {
-      await guardedUpdateLabelBackgroundColor(hexColor);
-    } else if (colorModalType === 'text') {
-      await guardedUpdateLabelTextColor(hexColor);
-    }
+    // Apply is now a "Done" button — the color already wrote on each
+    // grid/palette tap via previewColor below, so this just closes.
     setColorModalVisible(false);
+  };
+
+  // Live-preview color pick: setTempColor for visual state + write
+  // through combinedStyleWriter so the label re-renders on the Studio
+  // photo behind the sheet. Bypasses the conflict-modal guard used by
+  // Apply because live preview would pop the modal on every tap.
+  // combinedStyleWriter is defined further down but only referenced at
+  // tap-time; closure captures the current-render binding.
+  const previewColor = (color) => {
+    setTempColor(color);
+    const hex = convertToHex(color);
+    if (colorModalType === 'bg') combinedStyleWriter('labelBackgroundColor')(hex);
+    else if (colorModalType === 'text') combinedStyleWriter('labelTextColor')(hex);
   };
 
   const currentFont = FONT_OPTIONS.find(f => f.key === labelFontFamily)?.label || 'Arial Blank';
@@ -1028,7 +1037,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
                         { backgroundColor: color },
                         tempColor === color && styles.colorCellSelected
                       ]}
-                      onPress={() => setTempColor(color)}
+                      onPress={() => previewColor(color)}
                     />
                   ))}
                 </View>
@@ -1064,7 +1073,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
                   { backgroundColor: color },
                   tempColor === color && styles.colorPreviewSelected
                 ]}
-                onPress={() => setTempColor(color)}
+                onPress={() => previewColor(color)}
                   />
                 ))}
             <TouchableOpacity style={styles.addColorButton}>
@@ -2017,7 +2026,10 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    // Transparent so the Studio photo behind the customize sheet stays
+    // fully lit — user wants to watch label / color / margin changes
+    // apply live on the picture without a dim curtain in the way.
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
   },
   modalContent: {
@@ -2230,7 +2242,10 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   colorCell: {
     flex: 1,
-    aspectRatio: 1,
+    // Wide cells (1.6:1) — grid stays at full color coverage but is
+    // ~40% shorter, leaving more of the Studio photo visible above so
+    // the user can watch the color apply live as they scan the grid.
+    aspectRatio: 1.6,
   },
   colorCellSelected: {
     borderWidth: 2,

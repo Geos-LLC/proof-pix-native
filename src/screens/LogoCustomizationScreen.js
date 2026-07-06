@@ -426,7 +426,8 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: theme.scrim || 'rgba(0,0,0,0.5)',
+    // Transparent — user tweaks logo overlay live on the Studio photo.
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
   },
   modalContent: {

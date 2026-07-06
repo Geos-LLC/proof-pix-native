@@ -508,7 +508,9 @@ const makeStyles = (theme) => StyleSheet.create({
   swatch: { width: 32, height: 32, borderRadius: 16 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: theme.scrim || 'rgba(0,0,0,0.5)',
+    // Transparent — user tweaks metadata overlay live on the Studio
+    // photo behind, so no dim curtain.
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
   },
   modalContent: {

@@ -520,7 +520,9 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: theme.scrim || 'rgba(0,0,0,0.5)',
+    // Transparent — keep the Studio picture visible while the user
+    // tweaks watermark controls in the modal submenus.
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
   },
   modalContent: {
