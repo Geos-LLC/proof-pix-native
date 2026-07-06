@@ -245,11 +245,13 @@ export default function PhotoLabels({
       srcBefore = null;
       srcAfter = null;
     }
-    // For combined photos the halves each become the new measurement
-    // context — pass no `sizeScale` prop so each nested PhotoLabels
-    // runs its own onLayout on its half's dimensions. That way a label
-    // on one side of a 400px combined lands at scale ~0.57 (200px
-    // half) instead of the full-container scale.
+    // For combined photos we pass the OUTER container's sizeScale down
+    // to each half so the labels match what Studio renders — Studio's
+    // DraggableLabelOverlay uses PhotoLabel with sizeScale=1, so if the
+    // Preview / Enlarged halves independently measured 50% of the outer
+    // width they'd render at scale ~0.5 and look half-size next to
+    // Studio. Inheriting the outer scale keeps every screen visually
+    // consistent regardless of stack vs side layout.
     if (srcBefore || srcAfter) {
       const beforeSide = srcBefore || photo;
       const afterSide = srcAfter || photo;
@@ -262,6 +264,7 @@ export default function PhotoLabels({
               showLabelsOverride={enabled}
               positionOverrides={positionOverrides}
               combinedContext
+              sizeScale={sizeScale}
             />
           </View>
           <View pointerEvents="none" style={isStack ? halves.bottom : halves.right}>
@@ -271,6 +274,7 @@ export default function PhotoLabels({
               showLabelsOverride={enabled}
               positionOverrides={positionOverrides}
               combinedContext
+              sizeScale={sizeScale}
             />
           </View>
         </>

@@ -41,6 +41,17 @@ const FORMAT_ASPECTS = {
   'tall-1-2': 0.5,
 };
 
+// A combined photo's before/after halves are stacked when the source
+// pair was captured in landscape (top/bottom) and side-by-side when
+// captured portrait (left/right). Studio derives this from
+// `orientation` / `cameraViewMode`; mirroring the same logic here so
+// the enlarged viewer paints labels on the correct halves.
+const combinedLayoutFor = (photo) => {
+  if (!photo) return 'side';
+  if (photo.orientation === 'landscape' || photo.cameraViewMode === 'landscape') return 'stack';
+  return 'side';
+};
+
 // Per-frame component so each visible photo has its own load /
 // error state. Photos whose URI loads cleanly render normally;
 // photos whose URI is truthy but the file is gone (deleted on disk,
@@ -83,7 +94,7 @@ const PhotoFrame = ({ photo, overlayMode, frameW, frameH, theme }) => {
         </View>
       )}
       {overlayMode && photo.uri && !loadFailed && loaded && (
-        <StudioEditOverlays photo={photo} theme={theme} renderLabels combinedLayout="side" />
+        <StudioEditOverlays photo={photo} theme={theme} renderLabels combinedLayout={combinedLayoutFor(photo)} />
       )}
     </View>
   );
@@ -730,7 +741,7 @@ export default function EnlargedPhotoViewer({
             >
               {overlaysOn && (
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                  <StudioEditOverlays photo={zoomPhoto} theme={theme} renderLabels combinedLayout="side" />
+                  <StudioEditOverlays photo={zoomPhoto} theme={theme} renderLabels combinedLayout={combinedLayoutFor(zoomPhoto)} />
                 </View>
               )}
             </PannableImage>
