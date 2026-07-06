@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
+import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
 import PositionGrid, { resolvePositionKey, POSITION_KEY_TO_OFFSET } from '../components/PositionGrid';
 import { PHOTO_MODES } from '../constants/rooms';
@@ -71,18 +72,22 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { canUse } = useFeaturePermissions();
-  // If the user doesn't have the CUSTOM_WATERMARKS feature, we route
-  // them to PlanSelection instead of silently dismissing the screen
-  // (previous behavior: `navigation.goBack()` on mount, which made the
-  // Watermark customization tile look broken). PlanSelection lets the
-  // user upgrade in-context; if they cancel, they land back on the
-  // referring screen — same net result as the old auto-dismiss but
-  // with a visible reason.
-  useEffect(() => {
-    if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
-      navigation.replace('PlanSelection', { mode: 'upgrade' });
-    }
-  }, [canUse, navigation]);
+  // Starter tier can still land on this screen — they get a stripped-down
+  // version with ONLY the Position control unlocked. Everything else
+  // (custom text toggle, text/link inputs, font, size, margin, opacity,
+  // color) is hidden and swapped for a single "Upgrade to Pro" hint,
+  // per product spec: "user can change the location of the mark, but not
+  // change it or turn it off." The previous auto-redirect to
+  // PlanSelection was too aggressive — users often just want to move the
+  // default watermark to a different corner and shouldn't be forced
+  // through the paywall to do so.
+  const canCustomize = canUse(FEATURES.CUSTOM_WATERMARKS);
+  const openPaywall = () => {
+    navigation.navigate('PlanSelection', {
+      mode: 'upgrade',
+      trigger: PAYWALL_TRIGGERS.WATERMARK,
+    });
+  };
 
   const {
     customWatermarkEnabled,
@@ -166,52 +171,95 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
           {/* Preview removed — the screen opens as a bottom sheet over
               Studio, so the photo behind the sheet IS the preview. */}
 
-          {/* Custom text toggle */}
-          <Text style={styles.sectionLabel}>CUSTOM TEXT</Text>
-          <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Use custom watermark</Text>
-            <Switch
-              value={!!customWatermarkEnabled}
-              onValueChange={toggleWatermark}
-              trackColor={{ false: theme.border, true: theme.accent }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-
-          {customWatermarkEnabled && (
+          {/* Custom text toggle — only for tiers that own CUSTOM_WATERMARKS.
+              Starter sees a compact Pro-upgrade banner instead so the
+              screen still feels usable (they can move the mark's position
+              below). */}
+          {canCustomize ? (
             <>
-              <TextInput
-                style={styles.input}
-                value={watermarkText}
-                onChangeText={updateWatermarkText}
-                placeholder="Watermark text"
-                placeholderTextColor={theme.textMuted}
-              />
-              <TextInput
-                style={styles.input}
-                value={watermarkLink}
-                onChangeText={updateWatermarkLink}
-                placeholder="Optional link (https://…)"
-                placeholderTextColor={theme.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-              />
+              <Text style={styles.sectionLabel}>CUSTOM TEXT</Text>
+              <View style={styles.toggleRow}>
+                <Text style={styles.toggleLabel}>Use custom watermark</Text>
+                <Switch
+                  value={!!customWatermarkEnabled}
+                  onValueChange={toggleWatermark}
+                  trackColor={{ false: theme.border, true: theme.accent }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              {customWatermarkEnabled && (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    value={watermarkText}
+                    onChangeText={updateWatermarkText}
+                    placeholder="Watermark text"
+                    placeholderTextColor={theme.textMuted}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    value={watermarkLink}
+                    onChangeText={updateWatermarkLink}
+                    placeholder="Optional link (https://…)"
+                    placeholderTextColor={theme.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                  />
+                </>
+              )}
             </>
+          ) : (
+            <TouchableOpacity
+              onPress={openPaywall}
+              activeOpacity={0.85}
+              style={{
+                marginTop: 4,
+                padding: 14,
+                borderRadius: 12,
+                backgroundColor: theme.surfaceAccent,
+                borderWidth: 1,
+                borderColor: theme.accent,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <Ionicons name="lock-closed" size={18} color={theme.accentInk} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: theme.textPrimary, fontFamily: FONTS.ALEXANDRIA }}>
+                  Upgrade to customize watermark
+                </Text>
+                <Text style={{ marginTop: 2, fontSize: 12, color: theme.textSecondary, fontFamily: FONTS.ALEXANDRIA }}>
+                  Change the text, font, size, color, opacity, margin. You can still move the position below.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+            </TouchableOpacity>
           )}
 
-          {/* Controls */}
-          <Text style={styles.sectionLabel}>CONTROLS</Text>
-          <View style={styles.controlsRow}>
-            <ControlButton styles={styles} theme={theme} icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
-            <ControlButton styles={styles} theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-            <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
-          </View>
-          <View style={[styles.controlsRow, { marginTop: 12 }]}>
-            <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
-            <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
-            <ColorButton styles={styles} theme={theme} color={watermarkColor || '#FFD700'} onPress={() => setColorModalVisible(true)} />
-          </View>
+          {/* Controls — Position is always available. Everything else is
+              gated by CUSTOM_WATERMARKS and hidden for starter. */}
+          <Text style={styles.sectionLabel}>{canCustomize ? 'CONTROLS' : 'POSITION'}</Text>
+          {canCustomize ? (
+            <>
+              <View style={styles.controlsRow}>
+                <ControlButton styles={styles} theme={theme} icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
+                <ControlButton styles={styles} theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
+                <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+              </View>
+              <View style={[styles.controlsRow, { marginTop: 12 }]}>
+                <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
+                <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
+                <ColorButton styles={styles} theme={theme} color={watermarkColor || '#FFD700'} onPress={() => setColorModalVisible(true)} />
+              </View>
+            </>
+          ) : (
+            <View style={styles.controlsRow}>
+              <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 

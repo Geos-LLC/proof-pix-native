@@ -13,6 +13,8 @@ import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../hooks/useTheme';
+import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
+import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 
 // LabelsLanguageScreen — dedicated route.
 //
@@ -48,6 +50,20 @@ export default function LabelsLanguageScreen({ navigation }) {
     updateShowBrandLogo,
     brandLogoUri,
   } = useSettings();
+  const { canUse } = useFeaturePermissions();
+
+  // Starter can't hide the watermark — REMOVE_WATERMARK gates the "off"
+  // direction. Kick attempts to turn off to the paywall; ON is always OK.
+  const handleWatermarkToggle = (v) => {
+    if (!v && !canUse(FEATURES.REMOVE_WATERMARK)) {
+      navigation.navigate('PlanSelection', {
+        mode: 'upgrade',
+        trigger: PAYWALL_TRIGGERS.WATERMARK,
+      });
+      return;
+    }
+    updateShowWatermark(v);
+  };
 
   const labelLanguageSubtitle = useLabelLanguageSubtitle();
 
@@ -104,7 +120,7 @@ export default function LabelsLanguageScreen({ navigation }) {
             title={t('labelsLanguage.watermark', { defaultValue: 'Watermark' })}
             subtitle={t('labelsLanguage.watermarkSub', { defaultValue: 'Brand mark on shared photos' })}
             switchValue={!!showWatermark}
-            onSwitch={updateShowWatermark}
+            onSwitch={handleWatermarkToggle}
             onPress={() => navigation.navigate('WatermarkCustomization')}
           />
           <BrandTile

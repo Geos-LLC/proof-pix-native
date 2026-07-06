@@ -30,6 +30,8 @@ import { usePhotos } from '../context/PhotoContext';
 import { compositeImages } from '../utils/imageCompositor';
 import { useScopedSettings, usePromoteOverridesToGlobal, useResetPhotoOverrides } from '../hooks/useScopedSettings';
 import { useTheme } from '../hooks/useTheme';
+import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
+import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 import PhotoLabels from '../components/PhotoLabels';
 import DraggableLabelOverlay from '../components/DraggableLabelOverlay';
 import PhotoWatermark from '../components/PhotoWatermark';
@@ -195,6 +197,7 @@ export default function StudioScreen({ route, navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const { canUse } = useFeaturePermissions();
   const { photos, updatePhoto, setPhotoOverride } = usePhotos();
   // Lifted above the settings destructure so useScopedSettings sees
   // the photoId — every read here cascades photo.overrides over global,
@@ -1397,7 +1400,19 @@ export default function StudioScreen({ route, navigation }) {
             showBrandLogo={showBrandLogo}
             updateShowBrandLogo={updateShowBrandLogo}
             showWatermark={showWatermark}
-            updateShowWatermark={updateShowWatermark}
+            updateShowWatermark={(v) => {
+              // Starter can't hide the watermark — turning it OFF requires
+              // REMOVE_WATERMARK. Turning ON is always OK. Kick the toggle
+              // to the paywall instead of silently doing nothing.
+              if (!v && !canUse(FEATURES.REMOVE_WATERMARK)) {
+                navigation.navigate('PlanSelection', {
+                  mode: 'upgrade',
+                  trigger: PAYWALL_TRIGGERS.WATERMARK,
+                });
+                return;
+              }
+              updateShowWatermark(v);
+            }}
             watermarkText={watermarkText}
             showPreviewMetadata={showPreviewMetadata}
             togglePreviewMetadata={togglePreviewMetadata}
