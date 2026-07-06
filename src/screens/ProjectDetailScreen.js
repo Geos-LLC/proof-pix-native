@@ -824,7 +824,16 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // resets pendingSharePhotoIds to match — overrides any prior
   // manual "Pick photos" selection, which the user can redo from the
   // same sheet via the Pick photos link if needed.
+  //
+  // Starter is single-photo share only. Both pills ("All photos" /
+  // "Only combined") would swap in every photo matching the filter, so
+  // either tap by a starter fires the paywall — matches the gate on
+  // Select all / Select date in the Timeline selection flow below.
   const applySharePhotosFilter = (filter) => {
+    if (!canUse(FEATURES.MULTI_PHOTO_SHARE)) {
+      showMultiSharePaywall();
+      return;
+    }
     setSharePhotosFilter(filter);
     setPendingSharePhotoIds(photoIdsForShareFilter(filter));
   };
@@ -1385,7 +1394,43 @@ export default function ProjectDetailScreen({ route, navigation }) {
     setReportViewMode('list');
     setActiveTab('timeline');
   };
+  // Starter is single-photo share only. Instead of letting them build a
+  // multi-select and hitting the paywall at Share time (frustrating —
+  // they've already done the work), we gate the *entry points* to a
+  // multi-selection: Select all, date-bucket select all, and any tap that
+  // would grow the draft from 1 → 2+. Removals and single swaps stay
+  // free. Only fires when selectionPurpose==='share' — Reports selection
+  // isn't gated by MULTI_PHOTO_SHARE.
+  const showMultiSharePaywall = useCallback(() => {
+    navigation.navigate('PlanSelection', {
+      mode: 'upgrade',
+      trigger: PAYWALL_TRIGGERS.MULTI_PHOTO_SHARE,
+    });
+  }, [navigation]);
+  const shareGateActive = () =>
+    selectionPurpose === 'share' && !canUse(FEATURES.MULTI_PHOTO_SHARE);
+
   const togglePhotoSelected = (photoId) => {
+    if (shareGateActive()) {
+      const already = selectionDraft.has(photoId);
+      // Deselect is always OK (only shrinks the set).
+      if (already) {
+        setSelectionDraft((prev) => {
+          const next = new Set(prev);
+          next.delete(photoId);
+          return next;
+        });
+        return;
+      }
+      // Add is OK only if the draft is currently empty — the result stays
+      // at size 1. Adding when already at 1 = paywall.
+      if (selectionDraft.size >= 1) {
+        showMultiSharePaywall();
+        return;
+      }
+      setSelectionDraft(new Set([photoId]));
+      return;
+    }
     setSelectionDraft((prev) => {
       const next = new Set(prev);
       if (next.has(photoId)) next.delete(photoId);
@@ -1394,11 +1439,30 @@ export default function ProjectDetailScreen({ route, navigation }) {
     });
   };
   const toggleSelectAll = () => {
+    if (shareGateActive()) {
+      showMultiSharePaywall();
+      return;
+    }
     const allSelected = projectPhotos.length > 0 && selectionDraft.size === projectPhotos.length;
     if (allSelected) setSelectionDraft(new Set());
     else setSelectionDraft(new Set(projectPhotos.map((p) => p.id)));
   };
   const toggleSelectDate = (datePhotoIds) => {
+    if (shareGateActive()) {
+      // Bucket toggle only matters if it would *add* multiple. A pure
+      // shrink (everything in the bucket is already selected) is fine.
+      const anyMissing = datePhotoIds.some((id) => !selectionDraft.has(id));
+      if (anyMissing) {
+        showMultiSharePaywall();
+        return;
+      }
+      setSelectionDraft((prev) => {
+        const next = new Set(prev);
+        datePhotoIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      return;
+    }
     const allSelected = datePhotoIds.every((id) => selectionDraft.has(id));
     setSelectionDraft((prev) => {
       const next = new Set(prev);
