@@ -18,7 +18,7 @@ import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
-import PositionGrid, { resolvePositionKey } from '../components/PositionGrid';
+import PositionGrid, { resolvePositionKey, POSITION_KEY_TO_OFFSET } from '../components/PositionGrid';
 import { PHOTO_MODES } from '../constants/rooms';
 
 const POSITIONS = [
@@ -226,7 +226,11 @@ export default function LogoCustomizationScreen({ navigation, route }) {
             mode="single"
             value={resolvePositionKey(brandLogoOffset, brandLogoPosition)}
             onChange={async (pos) => {
-              await updateBrandLogoOffset(null);
+              // See MetadataCustomizationScreen note — write the
+              // explicit fractional offset so per-photo overrides land
+              // on the chosen corner instead of falling through to a
+              // leaked global offset.
+              await updateBrandLogoOffset(POSITION_KEY_TO_OFFSET[pos]);
               await updateBrandLogoPosition(pos);
             }}
             theme={theme}

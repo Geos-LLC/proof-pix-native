@@ -17,7 +17,7 @@ import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
-import PositionGrid, { resolvePositionKey } from '../components/PositionGrid';
+import PositionGrid, { resolvePositionKey, POSITION_KEY_TO_OFFSET } from '../components/PositionGrid';
 import { PHOTO_MODES } from '../constants/rooms';
 
 const POSITIONS = [
@@ -301,7 +301,15 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
             mode="single"
             value={resolvePositionKey(metaOffset, metaPosition)}
             onChange={async (pos) => {
-              await updateMetaOffset(null);
+              // Write the explicit fractional offset for the picked
+              // cell (not null) so the render's offset-first cascade
+              // lands on the chosen corner. Previously we cleared the
+              // offset and only wrote the position key — in per-photo
+              // scope the cleared override let the global offset leak
+              // through and dominate the position key, so the grid
+              // pick had no visible effect. Legacy position key still
+              // written for readers that fall back to it.
+              await updateMetaOffset(POSITION_KEY_TO_OFFSET[pos]);
               await updateMetaPosition(pos);
             }}
             theme={theme}

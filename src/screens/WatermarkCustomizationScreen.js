@@ -22,7 +22,7 @@ import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
-import PositionGrid, { resolvePositionKey } from '../components/PositionGrid';
+import PositionGrid, { resolvePositionKey, POSITION_KEY_TO_OFFSET } from '../components/PositionGrid';
 import { PHOTO_MODES } from '../constants/rooms';
 
 const POSITIONS = [
@@ -276,7 +276,11 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
             mode="single"
             value={resolvePositionKey(watermarkOffset, watermarkPosition)}
             onChange={async (pos) => {
-              await updateWatermarkOffset(null);
+              // See MetadataCustomizationScreen note — write the
+              // explicit fractional offset so per-photo overrides land
+              // on the chosen corner instead of falling through to a
+              // leaked global offset.
+              await updateWatermarkOffset(POSITION_KEY_TO_OFFSET[pos]);
               await updateWatermarkPosition(pos);
             }}
             theme={theme}
