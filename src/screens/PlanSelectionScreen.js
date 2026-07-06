@@ -772,22 +772,24 @@ export default function PlanSelectionScreen({ navigation, route }) {
             </View>
           </View>
 
-          {/* Full 6-bullet stack per design source — value + features. */}
+          {/* Full 6-bullet stack per design source — value + features.
+              Bullets explicitly mention the features gated for Starter
+              (unlimited sets, progress photos, multi-photo share) so
+              the upgrade value is clear. */}
           {showAnnualForPro ? (
             <View style={styles.proBullets}>
               <Bullet text={proAnnualSavings ? `Save ${proAnnualSavings}% vs monthly` : 'Save 25% vs monthly'} tint="#7A5B00" />
               <Bullet text="Get 3 months free" tint="#7A5B00" />
               <Bullet text="Lowest price — locked for 12 months" tint="#7A5B00" />
-              <Bullet text="Unlimited projects & photos" tint="#7A5B00" />
-              <Bullet text="Branded PDF reports & cloud sync" tint="#7A5B00" />
-              <Bullet text="Watermark, logo, voice notes & markup" tint="#7A5B00" />
+              <Bullet text="Unlimited sets, projects & photos" tint="#7A5B00" />
+              <Bullet text="Progress photos & multi-photo share" tint="#7A5B00" />
+              <Bullet text="Branded PDF reports, cloud sync, markup & watermark" tint="#7A5B00" />
             </View>
           ) : (
             <View style={styles.proBullets}>
-              <Bullet text="Flexible monthly billing" tint="#7A5B00" />
-              <Bullet text="Cancel anytime" tint="#7A5B00" />
-              <Bullet text="Upgrade or downgrade anytime" tint="#7A5B00" />
-              <Bullet text="Unlimited projects & photos" tint="#7A5B00" />
+              <Bullet text="Flexible monthly billing · cancel anytime" tint="#7A5B00" />
+              <Bullet text="Unlimited sets, projects & photos" tint="#7A5B00" />
+              <Bullet text="Progress photos & multi-photo share" tint="#7A5B00" />
               <Bullet text="Branded PDF reports & cloud sync" tint="#7A5B00" />
               <Bullet text="Watermark, logo, voice notes & markup" tint="#7A5B00" />
             </View>
