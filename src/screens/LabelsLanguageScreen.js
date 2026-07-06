@@ -190,6 +190,19 @@ function BrandTile({ styles, icon, title, subtitle, switchValue, switchDisabled,
   // navigation row with a chevron on the right (Report Branding uses
   // this — it doesn't have an on/off concept, only a destination).
   const showSwitch = typeof onSwitch === 'function';
+  // Tapping Customize turns the feature ON before navigating — if the
+  // user is opening the customize sheet they clearly want the overlay
+  // enabled, and it's confusing to tune position/color for a chip that
+  // isn't rendering. Skip when the switch is disabled (e.g. Logo tile
+  // when no brand logo file has been uploaded — the switch can't turn
+  // on without a URI, so silently enabling it would flip the state to
+  // an invalid combination).
+  const handleCustomize = () => {
+    if (showSwitch && !switchDisabled && !switchValue) {
+      try { onSwitch(true); } catch (_) {}
+    }
+    if (typeof onPress === 'function') onPress();
+  };
   return (
     <View style={styles.row}>
       <View style={styles.rowIc}>
@@ -203,7 +216,7 @@ function BrandTile({ styles, icon, title, subtitle, switchValue, switchDisabled,
             works for switch-less tiles via the chevron path below. */}
         <TouchableOpacity
           style={styles.customizeLink}
-          onPress={onPress}
+          onPress={handleCustomize}
           hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
           activeOpacity={0.6}
         >
@@ -221,7 +234,7 @@ function BrandTile({ styles, icon, title, subtitle, switchValue, switchDisabled,
           style={styles.brandTileSwitch}
         />
       ) : (
-        <TouchableOpacity onPress={onPress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity onPress={handleCustomize} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
         </TouchableOpacity>
       )}

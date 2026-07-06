@@ -71,8 +71,17 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { canUse } = useFeaturePermissions();
+  // If the user doesn't have the CUSTOM_WATERMARKS feature, we route
+  // them to PlanSelection instead of silently dismissing the screen
+  // (previous behavior: `navigation.goBack()` on mount, which made the
+  // Watermark customization tile look broken). PlanSelection lets the
+  // user upgrade in-context; if they cancel, they land back on the
+  // referring screen — same net result as the old auto-dismiss but
+  // with a visible reason.
   useEffect(() => {
-    if (!canUse(FEATURES.CUSTOM_WATERMARKS)) navigation.goBack();
+    if (!canUse(FEATURES.CUSTOM_WATERMARKS)) {
+      navigation.replace('PlanSelection', { mode: 'upgrade' });
+    }
   }, [canUse, navigation]);
 
   const {
