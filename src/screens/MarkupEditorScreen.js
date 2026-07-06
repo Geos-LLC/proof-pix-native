@@ -6,15 +6,18 @@ import {
   StyleSheet,
   TouchableOpacity,
   PanResponder,
-  ScrollView,
+  Modal,
+  Pressable,
   Animated,
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } from 'react-native-svg';
 import { FONTS } from '../constants/fonts';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
+import ColorGridPicker from '../components/ColorGridPicker';
 
 // Dedicated full-screen markup editor.
 //
@@ -148,6 +151,8 @@ export default function MarkupEditorScreen({ route, navigation }) {
   const [markupTool, setMarkupTool] = useState('draw');
   const [markupColor, setMarkupColor] = useState('#FF3B30');
   const [markupStroke, setMarkupStroke] = useState(4);
+  const [colorModalVisible, setColorModalVisible] = useState(false);
+  const [sizeModalVisible, setSizeModalVisible] = useState(false);
   // Markup can be either the legacy raw-array format or the new
   // { bounds, shapes } object. Normalise on load so we always work with
   // an array internally.
@@ -406,76 +411,70 @@ export default function MarkupEditorScreen({ route, navigation }) {
       >
         <View style={[styles.paletteGrabber, { backgroundColor: theme.borderStrong }]} />
 
+        {/* TOOL section — 4-column tile grid (icon square + label under).
+            Matches the ProofPix Markup design spec. With 6 tools the
+            second row has 2 tiles + 2 empty slots (auto-filled by grid). */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Tool</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolRow}>
+        <View style={styles.tileGrid}>
           {MARKUP_TOOLS.map((t) => {
             const isActive = markupTool === t.key;
             return (
-              <TouchableOpacity
-                key={t.key}
-                style={[
-                  styles.toolBtn,
-                  {
-                    backgroundColor: isActive ? theme.accent : theme.surface,
-                    borderColor: isActive ? theme.accent : theme.border,
-                  },
-                ]}
-                onPress={() => {
-                  setMarkupTool(t.key);
-                  if (typeof t.defaultStroke === 'number') setMarkupStroke(t.defaultStroke);
-                }}
-              >
-                <Ionicons name={t.icon} size={16} color={isActive ? theme.accentText : theme.textPrimary} />
-                <Text style={[styles.toolBtnText, { color: isActive ? theme.accentText : theme.textPrimary }]}>
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 12 }]}>Adjust</Text>
-        <View style={styles.controlsRow}>
-          <View style={styles.colorRow}>
-            {MARKUP_COLORS.map((c) => {
-              const isActive = markupColor === c;
-              return (
+              <View key={t.key} style={styles.tileCell}>
                 <TouchableOpacity
-                  key={c}
                   style={[
-                    styles.colorDot,
-                    {
-                      backgroundColor: c,
-                      borderColor: isActive ? theme.accent : theme.border,
-                      borderWidth: isActive ? 3 : 1,
-                    },
-                  ]}
-                  onPress={() => setMarkupColor(c)}
-                />
-              );
-            })}
-          </View>
-          <View style={styles.strokeRow}>
-            {STROKE_PRESETS.map((s) => {
-              const isActive = markupStroke === s.value;
-              return (
-                <TouchableOpacity
-                  key={s.key}
-                  style={[
-                    styles.strokeBtn,
+                    styles.tile,
                     {
                       backgroundColor: isActive ? theme.accent : theme.surface,
                       borderColor: isActive ? theme.accent : theme.border,
                     },
                   ]}
-                  onPress={() => setMarkupStroke(s.value)}
+                  onPress={() => {
+                    setMarkupTool(t.key);
+                    if (typeof t.defaultStroke === 'number') setMarkupStroke(t.defaultStroke);
+                  }}
+                  activeOpacity={0.85}
                 >
-                  <Text style={[styles.strokeBtnText, { color: isActive ? theme.accentText : theme.textPrimary }]}>
-                    {s.key}
-                  </Text>
+                  <Ionicons name={t.icon} size={22} color={isActive ? theme.accentText : theme.textPrimary} />
                 </TouchableOpacity>
-              );
-            })}
+                <Text
+                  style={[
+                    styles.tileLabel,
+                    { color: isActive ? theme.textPrimary : theme.textSecondary, fontWeight: isActive ? '700' : '500' },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {t.label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* ADJUST section — 4-column grid holding Color + Size tiles.
+            Both open dedicated bottom sheets so the palette stays clean;
+            same pattern the Watermark / Metadata customization screens
+            use for their Color modal. */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 12 }]}>Adjust</Text>
+        <View style={styles.tileGrid}>
+          <View style={styles.tileCell}>
+            <TouchableOpacity
+              style={[styles.tile, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={() => setColorModalVisible(true)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.tileSwatch, { backgroundColor: markupColor, borderColor: theme.border }]} />
+            </TouchableOpacity>
+            <Text style={[styles.tileLabel, { color: theme.textSecondary }]}>Color</Text>
+          </View>
+          <View style={styles.tileCell}>
+            <TouchableOpacity
+              style={[styles.tile, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={() => setSizeModalVisible(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="resize-outline" size={22} color={theme.textPrimary} />
+            </TouchableOpacity>
+            <Text style={[styles.tileLabel, { color: theme.textSecondary }]}>Size</Text>
           </View>
         </View>
 
@@ -504,7 +503,75 @@ export default function MarkupEditorScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Color modal — reuses the shared ColorGridPicker (same picker
+          Labels / Watermark / Metadata use). Header hidden so more of
+          the canvas stays visible. Tap-outside or Done closes. */}
+      <MarkupBottomSheet visible={colorModalVisible} onClose={() => setColorModalVisible(false)} theme={theme}>
+        <ColorGridPicker
+          theme={theme}
+          value={markupColor}
+          onChange={(hex) => setMarkupColor(hex)}
+          onDone={() => setColorModalVisible(false)}
+        />
+      </MarkupBottomSheet>
+
+      {/* Size modal — slider from 1 to 24 px. Live-updates the stroke
+          for future strokes. Existing shapes keep the width they were
+          drawn with. */}
+      <MarkupBottomSheet visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} theme={theme}>
+        <View style={{ padding: 16 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={{ fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '600', color: theme.textPrimary }}>Stroke width</Text>
+            <Text style={{ fontFamily: FONTS.ALEXANDRIA, fontSize: 14, fontWeight: '700', color: theme.textPrimary }}>{markupStroke} px</Text>
+          </View>
+          <Slider
+            style={{ width: '100%', height: 40 }}
+            minimumValue={1}
+            maximumValue={24}
+            step={1}
+            value={markupStroke}
+            onValueChange={(v) => setMarkupStroke(Math.round(v))}
+            minimumTrackTintColor={theme.accent}
+            maximumTrackTintColor={theme.border}
+            thumbTintColor={theme.accent}
+          />
+          <TouchableOpacity
+            style={{
+              marginTop: 14,
+              paddingVertical: 14,
+              borderRadius: 12,
+              alignItems: 'center',
+              backgroundColor: theme.accent,
+            }}
+            onPress={() => setSizeModalVisible(false)}
+            activeOpacity={0.85}
+          >
+            <Text style={{ fontFamily: FONTS.ALEXANDRIA, fontSize: 16, fontWeight: '700', color: theme.accentText }}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </MarkupBottomSheet>
     </SafeAreaView>
+  );
+}
+
+// Bottom sheet for the Color + Size sub-menus. Local to MarkupEditor —
+// the customization screens each define their own BottomModal + we
+// don't want to leak canvas gestures underneath so this stays isolated.
+function MarkupBottomSheet({ visible, onClose, children, theme }) {
+  if (!visible) return null;
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={[styles.sheetOverlay, { backgroundColor: theme.scrim }]} onPress={onClose}>
+        <View
+          style={[styles.sheetContent, { backgroundColor: theme.surfaceElevated }]}
+          onStartShouldSetResponder={() => true}
+        >
+          <View style={[styles.sheetHandle, { backgroundColor: theme.borderStrong }]} />
+          {children}
+        </View>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -557,30 +624,60 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 8,
   },
-  toolRow: { flexDirection: 'row', gap: 6, paddingRight: 12 },
-  toolBtn: {
+  // 4-column tile grid — mirrors the customization ControlButton layout
+  // in the ProofPix Markup design spec. Tiles wrap onto extra rows if
+  // there are more than 4 (Tool section has 6 tools = 2 rows).
+  tileGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    flexWrap: 'wrap',
+    marginHorizontal: -6,
+    rowGap: 12,
   },
-  toolBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, fontWeight: '600' },
-  controlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  colorRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  colorDot: { width: 24, height: 24, borderRadius: 12 },
-  strokeRow: { flexDirection: 'row', gap: 6 },
-  strokeBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    minWidth: 30,
+  tileCell: {
+    width: '25%',
+    paddingHorizontal: 6,
     alignItems: 'center',
   },
-  strokeBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, fontWeight: '700' },
+  tile: {
+    width: 54,
+    height: 54,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  tileSwatch: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  tileLabel: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  // Bottom-sheet chrome for the Color + Size sub-menus. Same look as the
+  // customization screens: dim scrim, rounded top, grabber, tap-outside
+  // to close.
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheetContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 24,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 6,
+  },
   actionRow: { flexDirection: 'row', gap: 10, paddingTop: 14 },
   actionBtn: {
     flex: 1,

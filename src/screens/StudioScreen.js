@@ -2229,12 +2229,12 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
               }]}
               onPress={() => {
                 if (t.isShortcut && t.key === 'markup') {
-                  // Match the other Studio tools: stay on Studio, just
-                  // flip activeTool to 'markup'. The inline MarkupPanel
-                  // + drawing gestures on the photo above become active.
-                  // Zooming into the full-screen editor is a secondary
-                  // affordance ("Zoom & mark") inside MarkupPanel itself.
-                  setActiveTool?.('markup');
+                  // Markup opens the dedicated MarkupEditor route — the
+                  // full-screen canvas + docked palette design that lets
+                  // the user pinch-zoom and drop tight marks. Studio's
+                  // inline MarkupPanel is kept as dead code for now (the
+                  // Notes shortcut is the only Studio entry point).
+                  navigation?.navigate('MarkupEditor', { photoId: photo?.id });
                   return;
                 }
                 setTab(t.key);
