@@ -40,13 +40,10 @@ export default {
   id: 'sets',
   name: 'Sets',
   description: 'Each room grouped into before → progress → after sets.',
-  supportedOptions: ['includeNotes', 'includeBranding', 'includeMetadata', 'includeWatermark', 'includeLogo', 'showLabels', 'timelineColumns'],
+  supportedOptions: ['includeNotes', 'includeBranding', 'showLabels', 'timelineColumns'],
   defaults: {
     includeNotes: true,
     includeBranding: true,
-    includeMetadata: false,
-    includeWatermark: false,
-    includeLogo: false,
     showLabels: true,
     timelineColumns: 2,
   },
@@ -59,8 +56,9 @@ export default {
     const companyName = showBranding ? (branding?.companyName || '') : '';
     const brandColor = branding?.brandColor || null;
     const cols = clampCols(options.timelineColumns);
-    const watermarkText = options.includeWatermark ? (branding?.watermarkText || '') : '';
-    const showTimestamp = options.includeMetadata === true;
+    const showOverlays = options.showLabels !== false;
+    const watermarkText = showOverlays ? (branding?.watermarkText || '') : '';
+    const showTimestamp = showOverlays;
 
     const groups = groupByRoom(photos);
     const sections = [];

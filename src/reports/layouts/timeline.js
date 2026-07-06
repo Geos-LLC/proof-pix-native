@@ -42,13 +42,10 @@ export default {
   id: 'timeline',
   name: 'Timeline',
   description: 'Day-by-day timeline grouped by room.',
-  supportedOptions: ['includeNotes', 'includeBranding', 'includeMetadata', 'includeWatermark', 'includeLogo', 'showLabels', 'timelineColumns'],
+  supportedOptions: ['includeNotes', 'includeBranding', 'showLabels', 'timelineColumns'],
   defaults: {
     includeNotes: true,
     includeBranding: true,
-    includeMetadata: false,
-    includeWatermark: false,
-    includeLogo: false,
     showLabels: true,
     timelineColumns: 1,
   },
@@ -61,7 +58,7 @@ export default {
     const companyName = showBranding ? (branding?.companyName || '') : '';
     const brandColor = branding?.brandColor || null;
     const cols = clampCols(options.timelineColumns);
-    const showTimestamp = options.includeMetadata === true;
+    const showTimestamp = options.showLabels !== false;
 
     const days = groupByDateThenRoom(photos);
     const sections = [];

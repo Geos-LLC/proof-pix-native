@@ -82,12 +82,7 @@ const REPORT_OPTION_GROUPS = [
   {
     id: 'report',
     title: 'REPORT',
-    keys: ['includeBranding', 'includeLocation', 'includeNotes', 'includeProgressPhotos'],
-  },
-  {
-    id: 'overlays',
-    title: 'PHOTO OVERLAYS',
-    keys: ['showLabels', 'includeMetadata', 'includeWatermark', 'includeLogo'],
+    keys: ['includeBranding', 'includeLocation', 'includeNotes', 'includeProgressPhotos', 'showLabels'],
   },
   {
     id: 'layout',
@@ -3145,16 +3140,12 @@ export default function ProjectDetailScreen({ route, navigation }) {
                             </View>
                           );
                         }
-                        // Each overlay toggle gets a Customize → link to
-                        // the settings screen where its underlying config
-                        // lives, so users can flip the report knob and
-                        // jump straight into styling / positioning it.
+                        // "Include overlays" (showLabels) links to
+                        // LabelsLanguage where the per-overlay config
+                        // (labels, watermark, brand logo, metadata) lives.
                         const CUSTOMIZE_ROUTE_BY_KEY = {
                           showOverlays: 'LabelsLanguage',
                           showLabels: 'LabelsLanguage',
-                          includeMetadata: 'MetadataCustomization',
-                          includeWatermark: 'WatermarkCustomization',
-                          includeLogo: 'LogoCustomization',
                         };
                         const customizeRoute = CUSTOMIZE_ROUTE_BY_KEY[key];
                         return (

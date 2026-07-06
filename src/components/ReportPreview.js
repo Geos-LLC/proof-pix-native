@@ -77,15 +77,20 @@ const EditBadge = ({ onPress }) => (
 // Each `include*` toggle in the report editor maps 1:1 to a
 // StudioEditOverlays render flag so the preview matches what the
 // exported HTML/PDF will actually contain.
-const overlayFlagsFromOptions = (options) => ({
-  renderLabels: options?.showLabels !== false,
-  renderWatermark: options?.includeWatermark !== false,
-  renderMetadata: options?.includeMetadata === true,
-  // includeBranding is header-only; includeLogo is the on-photo brand
-  // logo overlay. Layouts that don't declare includeLogo get undefined
-  // here and the overlay stays off, which matches HTML-export parity.
-  renderBrandLogo: options?.includeLogo === true,
-});
+// Single "Include overlays" gate — showLabels controls ALL overlay
+// categories in the preview (labels, watermark, brand logo, metadata).
+// Each overlay's individual on/off + styling still comes from
+// LabelsLanguage → SettingsContext; this just toggles the whole stack
+// per report.
+const overlayFlagsFromOptions = (options) => {
+  const on = options?.showLabels !== false;
+  return {
+    renderLabels: on,
+    renderWatermark: on,
+    renderMetadata: on,
+    renderBrandLogo: on,
+  };
+};
 
 const PhotoSlot = ({ photo, uri, theme, missing, onEdit, options }) => {
   const flags = overlayFlagsFromOptions(options);
@@ -136,11 +141,9 @@ const RoleLabel = ({ text, show, theme }) => (
   ) : null
 );
 
-const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText, onPhotoEdit }) => {
+const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, onPhotoEdit }) => {
   const groups = groupByRoom(photos);
   if (groups.length === 0) return <Empty theme={theme} />;
-  const showTimestamp = options.includeMetadata === true;
-  const wm = options.includeWatermark ? (watermarkText || '') : '';
   const includeProgress = options.includeProgressPhotos !== false;
   const showLabels = options.showLabels !== false;
   const editHandler = (photo) => (typeof onPhotoEdit === 'function' ? () => onPhotoEdit(photo) : undefined);
@@ -318,11 +321,9 @@ const TIMELINE_STAGE_LABEL = {
   after: 'After',
   mix: 'Combined',
 };
-const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText, onPhotoEdit }) => {
+const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, onPhotoEdit }) => {
   const days = groupByDateThenRoom(photos);
   const cols = clampSetCols(options.timelineColumns);
-  const showTimestamp = options.includeMetadata === true;
-  const wm = options.includeWatermark ? (watermarkText || '') : '';
   const editHandler = (photo) => (typeof onPhotoEdit === 'function' ? () => onPhotoEdit(photo) : undefined);
   return (
     <View>
@@ -390,11 +391,9 @@ const setRangeStampPreview = (set) => {
   return first === last ? first : `${first} → ${last}`;
 };
 
-const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, watermarkText, onPhotoEdit }) => {
+const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText, onPhotoEdit }) => {
   const groups = groupByRoom(photos);
   const cols = clampSetCols(options.timelineColumns);
-  const showTimestamp = options.includeMetadata === true;
-  const wm = options.includeWatermark ? (watermarkText || '') : '';
   const editHandler = (photo) => (typeof onPhotoEdit === 'function' ? () => onPhotoEdit(photo) : undefined);
   return (
     <View>
@@ -609,8 +608,7 @@ export default function ReportPreviewView({ photos, layoutId, options, displayRo
   const opts = resolveOptions(layoutId || 'room-by-room', options || {});
   const chipBg = branding?.brandColor || null;
   const chipText = chipBg ? contrastText(chipBg) : null;
-  const watermarkText = opts.includeWatermark ? (branding?.watermarkText || '') : '';
-  const props = { photos: safePhotos, options: opts, displayRoomName, theme, chipBg, chipText, watermarkText, onPhotoEdit };
+  const props = { photos: safePhotos, options: opts, displayRoomName, theme, chipBg, chipText, onPhotoEdit };
   switch (layoutId) {
     case 'before-after':       return <BeforeAfterPreview {...props} />;
     case 'timeline':           return <TimelinePreview {...props} />;

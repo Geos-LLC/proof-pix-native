@@ -42,11 +42,6 @@ export const OPTION_META = {
     description: 'Show photo notes in the report.',
     control: 'switch',
   },
-  includeMetadata: {
-    label: 'Include metadata',
-    description: 'Show timestamps and capture details.',
-    control: 'switch',
-  },
   includeBranding: {
     label: 'Include branding',
     description: 'Show your logo in the header.',
@@ -58,8 +53,8 @@ export const OPTION_META = {
     control: 'switch',
   },
   showLabels: {
-    label: 'Show labels',
-    description: 'Display each photo’s saved label.',
+    label: 'Include overlays',
+    description: 'Show labels, watermark, brand logo, and metadata on report photos.',
     control: 'switch',
   },
   galleryColumns: {
@@ -85,16 +80,6 @@ export const OPTION_META = {
   docShowDeviceMetadata: {
     label: 'Show device metadata',
     description: 'Include dimensions, aspect ratio, and template.',
-    control: 'switch',
-  },
-  includeWatermark: {
-    label: 'Include watermark',
-    description: 'Overlay your watermark on report photos.',
-    control: 'switch',
-  },
-  includeLogo: {
-    label: 'Include logo',
-    description: 'Overlay your brand logo on report photos.',
     control: 'switch',
   },
   timelineColumns: {

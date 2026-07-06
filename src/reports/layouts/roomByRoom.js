@@ -4,12 +4,11 @@
 //   2. Before photo (full width)
 //   3. After photo (full width)
 //   4. A single "Progress" header followed by small progress thumbs
-// When `showLabels` is on each big photo carries its mode label
-// (Before / After / Before & After). Progress photos share a single
-// "Progress" line header instead of per-thumb labels since the tiles
-// are too small for individual chips. Watermark + timestamp overlays
-// honor `includeWatermark` / `includeMetadata`; header logo honors
-// `includeBranding`.
+// When `showLabels` ("Include overlays") is on, each big photo carries
+// its mode label (Before / After / Before & After) plus watermark and
+// timestamp overlays; header logo honors `includeBranding`.
+// Progress photos share a single "Progress" line header instead of
+// per-thumb labels since the tiles are too small for individual chips.
 
 import {
   escapeHtml, formatLongDate, sortByTime, groupByRoom, groupBySet,
@@ -55,18 +54,12 @@ export default {
     'includeNotes',
     'includeBranding',
     'includeProgressPhotos',
-    'includeMetadata',
-    'includeWatermark',
-    'includeLogo',
     'showLabels',
   ],
   defaults: {
     includeNotes: true,
     includeBranding: true,
     includeProgressPhotos: true,
-    includeMetadata: false,
-    includeWatermark: false,
-    includeLogo: false,
     showLabels: true,
   },
 
@@ -77,9 +70,12 @@ export default {
       : null;
     const companyName = showBranding ? (branding?.companyName || '') : '';
     const brandColor = branding?.brandColor || null;
-    const showTimestamp = options.includeMetadata === true;
-    const watermarkText = options.includeWatermark ? (branding?.watermarkText || '') : '';
+    // Single "Include overlays" gate — when off, no per-photo overlays
+    // (labels, watermark, timestamp) render. When on, each still honors
+    // its individual config from LabelsLanguage (watermark text etc.).
     const showLabels = options.showLabels !== false;
+    const showTimestamp = showLabels;
+    const watermarkText = showLabels ? (branding?.watermarkText || '') : '';
 
     const roleLabel = (text) =>
       showLabels ? `<div class="role-label">${escapeHtml(text)}</div>` : '';
