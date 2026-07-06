@@ -138,8 +138,10 @@ export default function MarkupSheetScreen({ navigation, route }) {
         <View style={styles.headerSpacer} />
       </View>
 
+      {/* Single 4-column grid — 6 tools + Color + Size = 8 tiles total,
+          exactly 2 rows of 4. Same layout Customize Labels uses so the
+          two sheets read as one family. No section split. */}
       <View style={styles.body}>
-        <Text style={styles.sectionLabel}>Tool</Text>
         <View style={styles.tileGrid}>
           {MARKUP_TOOLS.map((t) => (
             <ControlTile
@@ -154,10 +156,6 @@ export default function MarkupSheetScreen({ navigation, route }) {
               }}
             />
           ))}
-        </View>
-
-        <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Adjust</Text>
-        <View style={styles.tileGrid}>
           <ControlTile
             theme={theme}
             label="Color"
@@ -252,24 +250,23 @@ const makeStyles = (theme) => StyleSheet.create({
     marginTop: 6,
     marginBottom: 8,
   },
-  // 3-column grid — 6 tools split into 2 balanced rows of 3. Tiles
-  // are 60×60 rounded squares (slightly larger than the customization
-  // sheets' 52×52 because we have fewer columns and more room per tile).
+  // 4-column grid — 8 tiles total (6 tools + Color + Size) laid out as
+  // 2 balanced rows of 4. Matches Customize Labels tile sizing (52×52).
   tileGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -8,
+    marginHorizontal: -6,
     rowGap: 14,
   },
   tileCell: {
-    width: '33.333%',
-    paddingHorizontal: 8,
+    width: '25%',
+    paddingHorizontal: 6,
     alignItems: 'center',
   },
   tile: {
-    width: 60,
-    height: 60,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 12,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
