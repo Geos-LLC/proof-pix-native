@@ -3036,42 +3036,117 @@ export default function HomeScreen({ navigation, route }) {
         );
       })()}
 
+      {/* Project switcher / manage sheet — matches the design in
+          design-screens/ProofPix Project Menu (standalone).html:
+          single-accent bottom sheet with grabber, title+subtitle+X,
+          list of project rows (circular check + meta), grouped action
+          card (Edit / Share / Delete), and a primary "+ New Project"
+          CTA at the bottom. */}
       <Modal
         visible={openProjectVisible}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setOpenProjectVisible(false)}
       >
-        <View style={styles.optionsModalOverlay}>
-          <View style={styles.optionsModalContent}>
-            <Text style={styles.optionsTitle}>
-              {t('projects.switchProject', { defaultValue: 'Projects' })}
-            </Text>
+        <View style={styles.projectSheetOverlay}>
+          <TouchableOpacity
+            style={styles.projectSheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setOpenProjectVisible(false)}
+          />
+          <View style={styles.projectSheetContainer}>
+            {/* Grab handle */}
+            <View style={styles.projectSheetGrabber} />
 
+            {/* Header: title + subtitle + round X close */}
+            <View style={styles.projectSheetHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.projectSheetTitle}>
+                  {t('projects.title', { defaultValue: 'Projects' })}
+                </Text>
+                <Text style={styles.projectSheetSubtitle}>
+                  {t('home.projectSheetSubtitle', { defaultValue: 'Switch or manage your project' })}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.projectSheetCloseBtn}
+                onPress={() => setOpenProjectVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={18} color={theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Project switcher list. Each row: circular check dot, name +
+                meta ("N photos · M sets · updated Xh ago"), OPEN badge on
+                the active row / chevron on the others. */}
             {projects.length > 0 && (
-              <ScrollView style={styles.projectList} showsVerticalScrollIndicator={false}>
+              <ScrollView
+                style={styles.projectSheetList}
+                contentContainerStyle={{ paddingHorizontal: 18, paddingVertical: 12, gap: 8 }}
+                showsVerticalScrollIndicator={false}
+              >
                 {projects.map((proj) => {
                   const isActive = proj.id === activeProjectId;
+                  const projPhotos = getPhotosByProject(proj.id) || [];
+                  const setCount = countSets(projPhotos);
+                  let latestTs = 0;
+                  for (const p of projPhotos) {
+                    const ts = typeof p.timestamp === 'number'
+                      ? p.timestamp
+                      : (p.createdAt ? new Date(p.createdAt).getTime() : 0);
+                    if (ts > latestTs) latestTs = ts;
+                  }
+                  const metaParts = [
+                    `${projPhotos.length} ${projPhotos.length === 1 ? 'photo' : 'photos'}`,
+                    `${setCount} ${setCount === 1 ? 'set' : 'sets'}`,
+                  ];
+                  if (latestTs) metaParts.push(formatProjectRelative(latestTs));
+                  const meta = metaParts.join(' · ');
                   return (
                     <TouchableOpacity
                       key={proj.id}
                       style={[
-                        styles.projectItem,
-                        isActive && { backgroundColor: '#FFEAA0', borderWidth: 1.5, borderColor: '#F2C31B' },
+                        styles.projectSheetRow,
+                        isActive
+                          ? { backgroundColor: theme.surfaceAccent, borderColor: theme.accent }
+                          : { backgroundColor: theme.surface, borderColor: 'transparent' },
                       ]}
                       onPress={() => {
                         setActiveProject(proj.id);
                         setOpenProjectVisible(false);
                       }}
+                      activeOpacity={0.85}
                     >
-                      <View style={styles.projectItemContent}>
+                      <View style={[
+                        styles.projectSheetCheck,
+                        isActive
+                          ? { backgroundColor: theme.accent, borderColor: theme.accent }
+                          : { backgroundColor: 'transparent', borderColor: theme.borderStrong },
+                      ]}>
                         {isActive && (
-                          <Ionicons name="checkmark-circle" size={18} color="#B8860B" style={{ marginRight: 8 }} />
+                          <Ionicons name="checkmark" size={15} color={theme.accentText} />
                         )}
-                        <Text style={[styles.projectItemText, isActive && { fontWeight: '700', color: '#000' }]} numberOfLines={1}>
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text
+                          style={[styles.projectSheetRowName, { color: theme.textPrimary, fontWeight: isActive ? '700' : '600' }]}
+                          numberOfLines={1}
+                        >
                           {proj.name}
                         </Text>
+                        <Text
+                          style={[styles.projectSheetRowMeta, { color: isActive ? theme.accentInk : theme.textSecondary }]}
+                          numberOfLines={1}
+                        >
+                          {meta}
+                        </Text>
                       </View>
+                      {isActive ? (
+                        <Text style={[styles.projectSheetOpenBadge, { color: theme.accentInk }]}>OPEN</Text>
+                      ) : (
+                        <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                      )}
                     </TouchableOpacity>
                   );
                 })}
@@ -3079,77 +3154,81 @@ export default function HomeScreen({ navigation, route }) {
             )}
 
             {projects.length === 0 && (
-              <Text style={{ textAlign: 'center', color: theme.textMuted, marginBottom: 12 }}>
+              <Text style={{ textAlign: 'center', color: theme.textMuted, marginVertical: 20 }}>
                 {t('projects.noProjects')}
               </Text>
             )}
 
-            <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />
-
+            {/* Grouped actions for the current project — Edit / Share /
+                Delete inside a single elevated card with dividers between
+                rows. Danger row gets a red tint on the icon square + label. */}
             {activeProject && (
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#FFF8E1' }]}
-                onPress={() => {
-                  setOpenProjectVisible(false);
-                  setTimeout(() => {
-                    setEditedProjectName(activeProject.name);
-                    setIsEditingProjectName(true);
-                  }, 100);
-                }}
-              >
-                <Ionicons name="pencil-outline" size={18} color="#B8860B" style={{ marginRight: 6 }} />
-                <Text style={[styles.actionBtnText, { color: '#B8860B' }]}>{t('home.renameProject', { defaultValue: 'Edit' })}</Text>
-              </TouchableOpacity>
+              <View style={{ paddingHorizontal: 18, paddingTop: 10 }}>
+                <Text style={[styles.projectSheetEyebrow, { color: theme.textMuted }]}>
+                  {t('home.currentProject', { defaultValue: 'Current project' })}
+                </Text>
+                <View style={[styles.projectSheetCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}>
+                  <ProjectSheetActionRow
+                    first
+                    theme={theme}
+                    icon="pencil-outline"
+                    label={t('home.editDetails', { defaultValue: 'Edit details' })}
+                    sub={t('home.editDetailsSub', { defaultValue: 'Name, address, industry' })}
+                    onPress={() => {
+                      setOpenProjectVisible(false);
+                      setTimeout(() => {
+                        setEditedProjectName(activeProject.name);
+                        setIsEditingProjectName(true);
+                      }, 100);
+                    }}
+                  />
+                  <ProjectSheetActionRow
+                    theme={theme}
+                    icon="share-outline"
+                    label={t('home.shareProject', { defaultValue: 'Share project' })}
+                    sub={t('home.shareProjectSub', { defaultValue: 'Send report link or export' })}
+                    onPress={() => {
+                      setOpenProjectVisible(false);
+                      navigation.navigate('ProjectDetail', {
+                        projectId: activeProject.id,
+                        initialShareFlow: true,
+                      });
+                    }}
+                  />
+                  <ProjectSheetActionRow
+                    theme={theme}
+                    icon="trash-outline"
+                    label={t('home.deleteProject', { defaultValue: 'Delete project' })}
+                    danger
+                    onPress={() => {
+                      selectedProjectsForDeleteRef.current = new Set([activeProject.id]);
+                      setOpenProjectVisible(false);
+                      setTimeout(() => {
+                        setShowDeleteProjectsConfirm(true);
+                      }, 300);
+                    }}
+                  />
+                </View>
+              </View>
             )}
 
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#22A45D', marginTop: 8 }]}
-              onPress={() => {
-                setOpenProjectVisible(false);
-                setTimeout(() => openNewProjectModal(false), 50);
-              }}
-            >
-              <Text style={[styles.actionBtnText, { color: 'white' }]}>＋ {t('home.newProject')}</Text>
-            </TouchableOpacity>
-
-            {activeProject && (
+            {/* Primary CTA — the only accent-filled button on the sheet.
+                Everything else is grouped inside the card above. */}
+            <View style={{ paddingHorizontal: 18, paddingTop: 16 }}>
               <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#FFE6E6', marginTop: 8 }]}
-                onPress={() => {
-                  selectedProjectsForDeleteRef.current = new Set([activeProject.id]);
-                  setOpenProjectVisible(false);
-                  setTimeout(() => {
-                    setShowDeleteProjectsConfirm(true);
-                  }, 300);
-                }}
-              >
-                <Ionicons name="trash-outline" size={18} color="#CC0000" style={{ marginRight: 6 }} />
-                <Text style={[styles.actionBtnText, { color: '#CC0000' }]}>{t('common.delete', { defaultValue: 'Delete' })}</Text>
-              </TouchableOpacity>
-            )}
-
-            {activeProject && (
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: '#D6ECFF', marginTop: 8 }]}
+                style={[styles.projectSheetPrimary, { backgroundColor: theme.accent }]}
                 onPress={() => {
                   setOpenProjectVisible(false);
-                  navigation.navigate('ProjectDetail', {
-                    projectId: activeProject.id,
-                    initialShareFlow: true,
-                  });
+                  setTimeout(() => openNewProjectModal(false), 50);
                 }}
+                activeOpacity={0.85}
               >
-                <Ionicons name="share-outline" size={18} color="#0077CC" style={{ marginRight: 6 }} />
-                <Text style={[styles.actionBtnText, { color: '#0077CC' }]}>{t('home.shareProject', { defaultValue: 'Share' })}</Text>
+                <Ionicons name="add" size={20} color={theme.accentText} style={{ marginRight: 6 }} />
+                <Text style={[styles.projectSheetPrimaryText, { color: theme.accentText }]}>
+                  {t('home.newProject', { defaultValue: 'New Project' })}
+                </Text>
               </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: '#F2F2F2', marginTop: 16 }]}
-              onPress={() => setOpenProjectVisible(false)}
-            >
-              <Text style={styles.actionBtnText}>{t('common.close')}</Text>
-            </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -3329,6 +3408,68 @@ export default function HomeScreen({ navigation, route }) {
         </View>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+// "Xh ago" / "Yesterday" / date fallback for the project switcher sheet
+// meta line. Kept local to HomeScreen so the sheet doesn't reach into
+// ProjectsScreen's formatRelative helper (which lives inside its own
+// file-scope closure).
+const formatProjectRelative = (ts) => {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+  return new Date(ts).toLocaleDateString();
+};
+
+// A single row inside the "Current project" grouped card in the project
+// switcher sheet. Icon-square tile on the left (danger variant tints
+// the square + label red), 15px label + optional 12px sub, chevron on
+// the right. `first` hides the top divider.
+function ProjectSheetActionRow({ theme, icon, label, sub, danger, first, onPress }) {
+  const iconTint = danger ? theme.danger : theme.textPrimary;
+  const iconBg = danger
+    ? 'rgba(219, 68, 70, 0.12)'
+    : theme.surface;
+  return (
+    <TouchableOpacity
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 13,
+        paddingVertical: 13,
+        paddingHorizontal: 14,
+        borderTopWidth: first ? 0 : StyleSheet.hairlineWidth,
+        borderTopColor: theme.divider,
+      }}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={{
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: iconBg,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <Ionicons name={icon} size={19} color={iconTint} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 15, fontWeight: '600', color: danger ? theme.danger : theme.textPrimary }}>
+          {label}
+        </Text>
+        {sub ? (
+          <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }} numberOfLines={1}>
+            {sub}
+          </Text>
+        ) : null}
+      </View>
+      <Ionicons name="chevron-forward" size={15} color={theme.textMuted} />
+    </TouchableOpacity>
   );
 }
 
@@ -4833,6 +4974,127 @@ const makeStyles = (theme) => StyleSheet.create({
     color: COLORS.PRIMARY,
     fontSize: 16,
     fontWeight: '700'
+  },
+  // Project switcher bottom-sheet — mirrors the design spec in
+  // design-screens/ProofPix Project Menu (standalone).html. Uses the
+  // theme surface tokens directly so it flips light/dark cleanly.
+  projectSheetOverlay: {
+    flex: 1,
+    backgroundColor: theme.scrim,
+    justifyContent: 'flex-end',
+  },
+  projectSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  projectSheetContainer: {
+    backgroundColor: theme.surfaceElevated,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderTopWidth: 1,
+    borderColor: theme.border,
+    paddingBottom: 26,
+    maxHeight: '92%',
+    ...theme.shadowPop,
+  },
+  projectSheetGrabber: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.borderStrong,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  projectSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  projectSheetTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    color: theme.textPrimary,
+    fontFamily: FONTS.ALEXANDRIA,
+  },
+  projectSheetSubtitle: {
+    fontSize: 12.5,
+    color: theme.textSecondary,
+    marginTop: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+  },
+  projectSheetCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: theme.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  projectSheetList: {
+    maxHeight: 280,
+  },
+  projectSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 13,
+    borderWidth: 1.5,
+  },
+  projectSheetCheck: {
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  projectSheetRowName: {
+    fontSize: 14.5,
+    fontFamily: FONTS.ALEXANDRIA,
+  },
+  projectSheetRowMeta: {
+    fontSize: 12,
+    marginTop: 1,
+    fontFamily: FONTS.ALEXANDRIA,
+  },
+  projectSheetOpenBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    fontFamily: FONTS.ALEXANDRIA,
+  },
+  projectSheetEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    paddingHorizontal: 2,
+    paddingBottom: 8,
+    paddingTop: 6,
+    fontFamily: FONTS.ALEXANDRIA,
+  },
+  projectSheetCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  projectSheetPrimary: {
+    height: 52,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  projectSheetPrimaryText: {
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: FONTS.ALEXANDRIA,
   },
   optionsModalOverlay: {
     flex: 1,
