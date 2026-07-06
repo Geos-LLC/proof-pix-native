@@ -1367,6 +1367,8 @@ export default function StudioScreen({ route, navigation }) {
         {activeTool === 'markup' && (
           <MarkupPanel
             theme={theme}
+            navigation={navigation}
+            photoId={photo?.id}
             markupTool={markupTool}
             setMarkupTool={setMarkupTool}
             markupColor={markupColor}
@@ -2036,6 +2038,8 @@ function MarkupShape({ shape, theme }) {
 
 function MarkupPanel({
   theme,
+  navigation,
+  photoId,
   markupTool,
   setMarkupTool,
   markupColor,
@@ -2148,6 +2152,26 @@ function MarkupPanel({
         </TouchableOpacity>
       </View>
 
+      {/* Secondary affordance: hop into the full-screen MarkupEditor for
+          zoom-in + detailed marking. Studio's inline panel is meant for
+          quick single-tap marks; the fullscreen editor gets pinch-to-zoom
+          so the user can drop tight strokes on small details. Shapes are
+          persisted on photo.markup, so entering the editor picks up where
+          the inline session left off. */}
+      {navigation && photoId && (
+        <TouchableOpacity
+          style={[styles.markupZoomBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+          onPress={() => navigation.navigate('MarkupEditor', { photoId })}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="scan-outline" size={16} color={theme.textPrimary} />
+          <Text style={[styles.markupZoomBtnText, { color: theme.textPrimary }]}>
+            Zoom & mark
+          </Text>
+          <Ionicons name="chevron-forward" size={14} color={theme.textMuted} style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
+      )}
+
     </View>
   );
 }
@@ -2205,7 +2229,12 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
               }]}
               onPress={() => {
                 if (t.isShortcut && t.key === 'markup') {
-                  navigation?.navigate('MarkupEditor', { photoId: photo?.id });
+                  // Match the other Studio tools: stay on Studio, just
+                  // flip activeTool to 'markup'. The inline MarkupPanel
+                  // + drawing gestures on the photo above become active.
+                  // Zooming into the full-screen editor is a secondary
+                  // affordance ("Zoom & mark") inside MarkupPanel itself.
+                  setActiveTool?.('markup');
                   return;
                 }
                 setTab(t.key);
@@ -3244,6 +3273,21 @@ const styles = StyleSheet.create({
   markupActionText: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
+    fontWeight: '700',
+  },
+  markupZoomBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 12,
+  },
+  markupZoomBtnText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
     fontWeight: '700',
   },
   markupTextDraft: {

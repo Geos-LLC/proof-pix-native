@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] markup-palette-docked-' + Date.now() + ' — Customization sheets share one header (circular X + centered 20px title, no divider). Watermark+Metadata containers dropped flex:1 so formSheet fitToContents can measure. Markup palette is now a docked bottom sheet with grabber, Tool/Adjust eyebrows, and full-width Undo/Clear pills. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] markup-inline-first-' + Date.now() + ' — Notes-panel Markup shortcut now sets activeTool=markup instead of navigating away, so the inline MarkupPanel + Studio drawing gestures activate (matches the other tools UX — photo stays visible). Added a "Zoom & mark" secondary button inside MarkupPanel that navigates to the full-screen MarkupEditor for zoom + detailed marking. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
