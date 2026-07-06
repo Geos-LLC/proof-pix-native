@@ -18,6 +18,7 @@ import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
 import PositionGrid, { resolvePositionKey, POSITION_KEY_TO_OFFSET } from '../components/PositionGrid';
+import ColorGridPicker from '../components/ColorGridPicker';
 import { PHOTO_MODES } from '../constants/rooms';
 
 const POSITIONS = [
@@ -55,8 +56,6 @@ const PREVIEW_FONT_MAP = {
   share: 'RobotoMono_700Bold',
 };
 const getPreviewFontFamily = (key) => PREVIEW_FONT_MAP[key] || PREVIEW_FONT_MAP.system;
-
-const COLORS = ['#FFFFFF', '#000000', '#FF3B30', '#FFCC00', '#34C759', '#007AFF'];
 
 const FIELD_DEFS = [
   { key: 'date', label: 'Date', icon: 'calendar-outline' },
@@ -114,6 +113,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
   const [marginModalVisible, setMarginModalVisible] = useState(false);
   const [fontModalVisible, setFontModalVisible] = useState(false);
   const [opacityModalVisible, setOpacityModalVisible] = useState(false);
+  const [colorModalVisible, setColorModalVisible] = useState(false);
 
   const onPreviewLayout = (e) => {
     const { width, height } = e.nativeEvent.layout;
@@ -200,7 +200,9 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
           })}
         </View>
 
-        {/* ─── Controls ─── */}
+        {/* ─── Controls ─── Color moved into the row as a dedicated tile
+            that opens the shared ColorGridPicker modal — matches how
+            Watermark exposes its color, so both surfaces feel the same. */}
         <Text style={styles.sectionLabel}>CONTROLS</Text>
         <View style={styles.controlsRow}>
           <ControlButton styles={styles} theme={theme} icon="text" label="Style" onPress={() => setFontModalVisible(true)} />
@@ -210,28 +212,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
         <View style={[styles.controlsRow, { marginTop: 12 }]}>
           <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
           <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
-        </View>
-
-        {/* ─── Color ─── */}
-        <Text style={styles.sectionLabel}>COLOR</Text>
-        <View style={styles.swatchRow}>
-          {COLORS.map((c) => {
-            const isActive = metaColor === c;
-            return (
-              <TouchableOpacity
-                key={c}
-                onPress={() => updateMetaColor(c)}
-                style={[
-                  styles.swatch,
-                  {
-                    backgroundColor: c,
-                    borderColor: isActive ? theme.accent : theme.border,
-                    borderWidth: isActive ? 3 : StyleSheet.hairlineWidth,
-                  },
-                ]}
-              />
-            );
-          })}
+          <ColorButton styles={styles} theme={theme} color={metaColor || '#FFFFFF'} onPress={() => setColorModalVisible(true)} />
         </View>
       </ScrollView>
 
@@ -375,6 +356,17 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
           />
         </View>
       </BottomModal>
+
+      {/* Color Modal — shared picker used by Labels + Watermark. Writes
+          live on every tap; Done just closes the sheet. */}
+      <BottomModal styles={styles} visible={colorModalVisible} onClose={() => setColorModalVisible(false)} title="Metadata Color" theme={theme}>
+        <ColorGridPicker
+          theme={theme}
+          value={metaColor || '#FFFFFF'}
+          onChange={(hex) => updateMetaColor(hex)}
+          onDone={() => setColorModalVisible(false)}
+        />
+      </BottomModal>
     </SafeAreaView>
   );
 }
@@ -386,6 +378,20 @@ function ControlButton({ styles, theme, icon, label, onPress }) {
         <Ionicons name={icon} size={22} color={theme.textPrimary} />
       </View>
       <Text style={styles.controlLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// Same shape as ControlButton, but the square shows a swatch of the
+// current color instead of a monochrome icon — matches Watermark's
+// ColorButton so the Metadata sheet reads consistently.
+function ColorButton({ styles, theme, color, onPress }) {
+  return (
+    <TouchableOpacity style={styles.controlButton} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.controlSquare}>
+        <View style={[styles.colorSwatchInline, { backgroundColor: color, borderColor: theme.border }]} />
+      </View>
+      <Text style={styles.controlLabel}>Color</Text>
     </TouchableOpacity>
   );
 }
@@ -487,6 +493,13 @@ const makeStyles = (theme) => StyleSheet.create({
     borderColor: theme.border,
   },
   controlLabel: { fontFamily: FONTS.ALEXANDRIA, fontSize: 11, textAlign: 'center', color: theme.textSecondary },
+  // Swatch inside the Color control tile — matches Watermark's version.
+  colorSwatchInline: {
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   positionGrid: {
     padding: 8,
     borderRadius: 12,
@@ -504,8 +517,8 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
     borderColor: theme.border,
   },
-  swatchRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  swatch: { width: 32, height: 32, borderRadius: 16 },
+  // Legacy swatch row + swatch styles removed — Color now lives in the
+  // controls row and opens the shared ColorGridPicker modal.
   modalOverlay: {
     flex: 1,
     // Transparent — user tweaks metadata overlay live on the Studio

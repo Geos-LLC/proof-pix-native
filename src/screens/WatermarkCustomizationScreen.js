@@ -24,6 +24,7 @@ import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions'
 import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 import DraggablePreviewItem from '../components/DraggablePreviewItem';
 import PositionGrid, { resolvePositionKey, POSITION_KEY_TO_OFFSET } from '../components/PositionGrid';
+import ColorGridPicker from '../components/ColorGridPicker';
 import { PHOTO_MODES } from '../constants/rooms';
 
 const POSITIONS = [
@@ -364,26 +365,16 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
         </View>
       </BottomModal>
 
-      {/* Color Modal */}
+      {/* Color Modal — same picker Labels uses so all three surfaces
+          feel consistent. Live-preview writes on every tap; Done just
+          closes the sheet. */}
       <BottomModal styles={styles} visible={colorModalVisible} onClose={() => setColorModalVisible(false)} title="Watermark Color" theme={theme}>
-        <View style={styles.colorPalette}>
-          {COLOR_SWATCHES.map((c) => {
-            const isActive = (watermarkColor || '').toUpperCase() === c.toUpperCase();
-            return (
-              <TouchableOpacity
-                key={c}
-                onPress={async () => {
-                  await updateWatermarkColor(c);
-                  setColorModalVisible(false);
-                }}
-                style={[
-                  styles.swatch,
-                  { backgroundColor: c, borderColor: isActive ? theme.accent : theme.border, borderWidth: isActive ? 3 : StyleSheet.hairlineWidth },
-                ]}
-              />
-            );
-          })}
-        </View>
+        <ColorGridPicker
+          theme={theme}
+          value={watermarkColor || '#FFD700'}
+          onChange={(hex) => updateWatermarkColor(hex)}
+          onDone={() => setColorModalVisible(false)}
+        />
       </BottomModal>
     </SafeAreaView>
   );
