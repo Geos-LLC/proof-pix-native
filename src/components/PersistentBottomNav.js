@@ -181,12 +181,15 @@ function NavItem({ active, onPress, iconSource, ionicon, label, inactiveTint, ac
       {iconSource ? (
         <Image
           source={iconSource}
+          // Always pass an explicit tintColor. RN Image doesn't clear a
+          // previous tintColor when the style prop drops it, so the last
+          // dark-mode tint would linger (or fall back to iOS's system
+          // blue tint) after switching back to light. Setting it every
+          // render keeps the color in sync with the active theme.
           style={[
             styles.icon,
-            // PNG icons are dark-on-light. In dark mode we tint them by
-            // hiding the underlying alpha-mask via a colored overlay.
-            isDark && { tintColor: tint, opacity: active ? 1 : 0.9 },
-            !isDark && !active && { opacity: 0.62 },
+            { tintColor: tint },
+            !active && { opacity: isDark ? 0.9 : 0.62 },
           ]}
           resizeMode="contain"
         />

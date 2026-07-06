@@ -2147,7 +2147,11 @@ export default function HomeScreen({ navigation, route }) {
                 style={styles.upgradeButton}
                 onPress={() => navigation.navigate('PlanSelection')}
               >
-                <Image source={require('../../assets/Magic_Stick.png')} style={styles.upgradeButtonImage} resizeMode="contain" />
+                <Image
+                  source={require('../../assets/Magic_Stick.png')}
+                  style={[styles.upgradeButtonImage, { tintColor: theme.textPrimary }]}
+                  resizeMode="contain"
+                />
                 <Text style={styles.upgradeButtonText}>Upgrade</Text>
               </TouchableOpacity>
             )}
