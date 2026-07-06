@@ -41,14 +41,24 @@ const FORMAT_ASPECTS = {
   'tall-1-2': 0.5,
 };
 
-// A combined photo's before/after halves are stacked when the source
-// pair was captured in landscape (top/bottom) and side-by-side when
-// captured portrait (left/right). Studio derives this from
-// `orientation` / `cameraViewMode`; mirroring the same logic here so
-// the enlarged viewer paints labels on the correct halves.
+// A combined photo's before/after halves are either stacked (top/bottom)
+// or side-by-side (left/right). CameraScreen persists this as
+// `photo.combinedLayout` when the composite is saved — that's the
+// authoritative signal. Fall through to the source's orientation and
+// finally the combined image's own dimensions so pre-2026-07 photos
+// missing the field still resolve to the correct layout (a stacked
+// composite is taller than wide; a side-by-side is wider than tall).
 const combinedLayoutFor = (photo) => {
   if (!photo) return 'side';
+  const stored = photo.combinedLayout;
+  if (stored === 'stack' || stored === 'STACK') return 'stack';
+  if (stored === 'side' || stored === 'SIDE') return 'side';
   if (photo.orientation === 'landscape' || photo.cameraViewMode === 'landscape') return 'stack';
+  const w = photo.originalWidth || photo.width;
+  const h = photo.originalHeight || photo.height;
+  if (typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0) {
+    return h > w ? 'stack' : 'side';
+  }
   return 'side';
 };
 
