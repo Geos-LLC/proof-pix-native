@@ -71,7 +71,7 @@ const LABEL_SIZE_MAP = {
  * @param {object} style - Additional custom styles to override
  * @param {object} textStyle - Additional custom text styles
  */
-export default function PhotoLabel({ label, position = 'left-top', style = {}, textStyle = {}, backgroundColor, textColor, size, freeformOffset = null, photo = null }) {
+export default function PhotoLabel({ label, position = 'left-top', style = {}, textStyle = {}, backgroundColor, textColor, size, freeformOffset = null, photo = null, sizeScale = 1 }) {
   // When `photo` is provided, useScopedSettings cascades `photo.overrides`
   // over global Settings for color/font/size/etc. Without a photo prop
   // (legacy call sites) this is identical to useSettings().
@@ -123,7 +123,18 @@ export default function PhotoLabel({ label, position = 'left-top', style = {}, t
         minWidth: Math.max(40, Math.round(explicitNumeric * 5)),
       }
     : null;
-  const sizeStyle = sizeConfigFromNumber || LABEL_SIZE_MAP[sizeKey];
+  const rawSizeStyle = sizeConfigFromNumber || LABEL_SIZE_MAP[sizeKey];
+  // Apply the container-derived sizeScale so labels shrink on small
+  // report/thumbnail previews without changing the user's absolute
+  // size preference. Default 1 = no change for full-size Studio views.
+  const scale = typeof sizeScale === 'number' && sizeScale > 0 ? sizeScale : 1;
+  const sizeStyle = scale === 1 ? rawSizeStyle : {
+    fontSize: Math.max(8, rawSizeStyle.fontSize * scale),
+    paddingHorizontal: Math.max(3, rawSizeStyle.paddingHorizontal * scale),
+    paddingVertical: Math.max(1, rawSizeStyle.paddingVertical * scale),
+    borderRadius: Math.max(2, rawSizeStyle.borderRadius * scale),
+    minWidth: Math.max(24, rawSizeStyle.minWidth * scale),
+  };
   // `rounded` should be a real pill (fully rounded ends) so the
   // square/rounded toggle reads as a meaningful visual change. Using
   // a large radius capped by half the size lets RN render a true

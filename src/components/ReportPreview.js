@@ -21,6 +21,18 @@ import {
 } from '../reports/layouts/_shared.js';
 import { resolveOptions } from '../reports/index.js';
 import { StudioEditOverlays } from './StudioOverlays';
+import { getFormatAspect } from '../constants/formats';
+
+// Fallback aspect used when a photo doesn't carry a Studio format and
+// has no bitmap dimensions. 1 keeps the historical square-slot look.
+const photoAspect = (p, fallback = 1) => {
+  const fromFormat = getFormatAspect(p?.pairTemplate);
+  if (fromFormat) return fromFormat;
+  const w = p?.originalWidth || p?.width;
+  const h = p?.originalHeight || p?.height;
+  if (w && h) return w / h;
+  return fallback;
+};
 
 const PHOTO_MODE_COMBINED = 'mix';
 
@@ -94,8 +106,12 @@ const overlayFlagsFromOptions = (options) => {
 
 const PhotoSlot = ({ photo, uri, theme, missing, onEdit, options }) => {
   const flags = overlayFlagsFromOptions(options);
+  // Honor the format the user picked in Studio (photo.pairTemplate). If
+  // absent, fall back to a square slot — the historical shape kept the
+  // pair rows compact and predictable.
+  const aspect = photoAspect(photo, 1);
   return (
-    <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+    <View style={[styles.slot, { aspectRatio: aspect, borderColor: theme.border, backgroundColor: theme.surface }]}>
       {uri ? (
         <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
       ) : (
@@ -280,9 +296,7 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, onPhotoEd
         <View key={`room-${room}`} style={styles.section}>
           <SectionHeader name={displayRoomName(room)} theme={theme} />
           {combinedPhotos.map((c) => {
-            const w = c.originalWidth || c.width;
-            const h = c.originalHeight || c.height;
-            const aspect = (w && h) ? (w / h) : (16 / 9);
+            const aspect = photoAspect(c, 16 / 9);
             return (
               <View key={`combined-${c.id}`} style={[styles.combinedHero, { aspectRatio: aspect }]}>
                 {c.uri ? (
@@ -639,7 +653,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   pairRow: { flexDirection: 'row', gap: 6 },
-  slot: { flex: 1, aspectRatio: 1, borderRadius: 8, borderWidth: 1, overflow: 'hidden' },
+  slot: { flex: 1, borderRadius: 8, borderWidth: 1, overflow: 'hidden' },
   slotImage: { width: '100%', height: '100%' },
   slotPlaceholder: { alignItems: 'center', justifyContent: 'center', gap: 4 },
   slotMissing: { fontSize: 10 },

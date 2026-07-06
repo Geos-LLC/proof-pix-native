@@ -14,12 +14,27 @@
 // always driven by SettingsContext.showLabels so the toggle switches in
 // Settings, Gallery, and Studio panels are the one and only authority.
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import { PHOTO_MODES } from '../constants/rooms';
 import PhotoLabel from './PhotoLabel';
+
+// Reference width used to derive a label size scale factor. Labels are
+// designed for a ~350px-wide preview (typical Studio frame on a phone).
+// Anything smaller scales the label down proportionally so a 150px
+// thumbnail doesn't get the same-size chip as a 350px hero. Clamped to
+// avoid absurdly tiny or gigantic labels on edge-case containers.
+const LABEL_REFERENCE_WIDTH = 350;
+const MIN_LABEL_SCALE = 0.5;
+const MAX_LABEL_SCALE = 1;
+
+const computeLabelSizeScale = (width) => {
+  if (!width || width <= 0) return 1;
+  const raw = width / LABEL_REFERENCE_WIDTH;
+  return Math.max(MIN_LABEL_SCALE, Math.min(MAX_LABEL_SCALE, raw));
+};
 import {
   pickBeforeLabelPosition,
   pickAfterLabelPosition,
@@ -97,19 +112,19 @@ const collectPositionSettings = (settings) => ({
 // Position-key path (no freeform offset) bypasses the inset wrapper
 // because PhotoLabel already pulls the margin from
 // `getLabelPositions(marginV, marginH)` directly.
-function LabelWithMargins({ photo, label, position, freeformOffset, marginH, marginV }) {
+function LabelWithMargins({ photo, label, position, freeformOffset, marginH, marginV, sizeScale }) {
   const useFreeform = freeformOffset
     && typeof freeformOffset.x === 'number'
     && typeof freeformOffset.y === 'number';
   if (!useFreeform) {
-    return <PhotoLabel photo={photo} label={label} position={position} />;
+    return <PhotoLabel photo={photo} label={label} position={position} sizeScale={sizeScale} />;
   }
   return (
     <View
       pointerEvents="none"
       style={{ position: 'absolute', top: marginV, bottom: marginV, left: marginH, right: marginH }}
     >
-      <PhotoLabel photo={photo} label={label} position="left-top" freeformOffset={freeformOffset} />
+      <PhotoLabel photo={photo} label={label} position="left-top" freeformOffset={freeformOffset} sizeScale={sizeScale} />
     </View>
   );
 }
@@ -127,19 +142,58 @@ export default function PhotoLabels({
   // singleLabelPosition cascade — mirrors DraggableLabelOverlay so
   // Studio's drag preview and every non-drag render pick the same key.
   combinedContext,
+  // When the caller already knows the container width (or an explicit
+  // scale) it can pass one down and skip the onLayout measurement.
+  // Used by the combined branch below so half-container renders derive
+  // their scale from the parent measurement without their own layout
+  // pass.
+  sizeScale: sizeScaleProp,
 }) {
   // Scoped — when `photo.overrides` is present, those win over global
   // Settings for this photo only.
   const settings = useScopedSettings(photo?.id);
   const { photos } = usePhotos();
+  // Measure the container so labels can scale down on small thumbnails
+  // (report pair cards, timeline grids) instead of stamping the same
+  // pixel-sized chip on every photo regardless of frame size.
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const handleLayout = useCallback((e) => {
+    const w = e?.nativeEvent?.layout?.width;
+    if (typeof w === 'number' && Math.abs(w - measuredWidth) > 1) {
+      setMeasuredWidth(w);
+    }
+  }, [measuredWidth]);
+  const sizeScale = typeof sizeScaleProp === 'number'
+    ? sizeScaleProp
+    : computeLabelSizeScale(measuredWidth);
   const enabled = typeof showLabelsOverride === 'boolean'
     ? showLabelsOverride
     : settings.showLabels;
-  if (!enabled || !photo) return null;
+  if (!enabled || !photo) {
+    // Still mount the layout wrapper so onLayout has a chance to fire
+    // when the toggle flips back on — otherwise the measurement stays
+    // 0 and the first render post-toggle scales too aggressively.
+    return typeof sizeScaleProp === 'number'
+      ? null
+      : <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={handleLayout} />;
+  }
 
   const lps = positionOverrides || collectPositionSettings(settings);
   const marginH = settings.labelMarginHorizontal ?? 10;
   const marginV = settings.labelMarginVertical ?? 10;
+
+  // Wrap output in an absoluteFill container so onLayout can report the
+  // container size. When a scale was passed from a parent (combined
+  // branch recursion), skip the wrapper — the parent already measured.
+  const wrap = (children) => (
+    typeof sizeScaleProp === 'number'
+      ? children
+      : (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={handleLayout}>
+          {children}
+        </View>
+      )
+  );
 
   if (role === 'before' || role === 'after' || role === 'progress') {
     const pos = role === 'before'
@@ -148,7 +202,7 @@ export default function PhotoLabels({
     const off = role === 'before'
       ? pickBeforeLabelOffset(lps, photo, combinedContext)
       : pickAfterLabelOffset(lps, photo, combinedContext);
-    return (
+    return wrap(
       <LabelWithMargins
         photo={photo}
         label={LABEL_TEXT[role]}
@@ -156,6 +210,7 @@ export default function PhotoLabels({
         freeformOffset={off}
         marginH={marginH}
         marginV={marginV}
+        sizeScale={sizeScale}
       />
     );
   }
@@ -190,10 +245,15 @@ export default function PhotoLabels({
       srcBefore = null;
       srcAfter = null;
     }
+    // For combined photos the halves each become the new measurement
+    // context — pass no `sizeScale` prop so each nested PhotoLabels
+    // runs its own onLayout on its half's dimensions. That way a label
+    // on one side of a 400px combined lands at scale ~0.57 (200px
+    // half) instead of the full-container scale.
     if (srcBefore || srcAfter) {
       const beforeSide = srcBefore || photo;
       const afterSide = srcAfter || photo;
-      return (
+      return wrap(
         <>
           <View pointerEvents="none" style={isStack ? halves.top : halves.left}>
             <PhotoLabels
@@ -219,7 +279,7 @@ export default function PhotoLabels({
     // Fallback: legacy inline render using the combined photo's own
     // scoped settings — the pre-fix behavior. Preserves rendering when
     // source lookup fails or returns nothing.
-    return (
+    return wrap(
       <>
         <View pointerEvents="none" style={isStack ? halves.top : halves.left}>
           <LabelWithMargins
@@ -229,6 +289,7 @@ export default function PhotoLabels({
             freeformOffset={pickBeforeLabelOffset(lps, photo)}
             marginH={marginH}
             marginV={marginV}
+            sizeScale={sizeScale}
           />
         </View>
         <View pointerEvents="none" style={isStack ? halves.bottom : halves.right}>
@@ -239,6 +300,7 @@ export default function PhotoLabels({
             freeformOffset={pickAfterLabelOffset(lps, photo)}
             marginH={marginH}
             marginV={marginV}
+            sizeScale={sizeScale}
           />
         </View>
       </>
@@ -252,7 +314,7 @@ export default function PhotoLabels({
     const off = mode === 'before'
       ? pickBeforeLabelOffset(lps, photo)
       : pickAfterLabelOffset(lps, photo);
-    return (
+    return wrap(
       <LabelWithMargins
         photo={photo}
         label={LABEL_TEXT[mode]}
@@ -260,9 +322,10 @@ export default function PhotoLabels({
         freeformOffset={off}
         marginH={marginH}
         marginV={marginV}
+        sizeScale={sizeScale}
       />
     );
   }
 
-  return null;
+  return wrap(null);
 }
