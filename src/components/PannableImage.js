@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { View, Image, Animated, PanResponder, StyleSheet, TouchableOpacity, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
  * Accepts a subset of <Image> props. children are rendered on top of the
  * image (used for label overlays).
  */
-export default function PannableImage({
+function PannableImageImpl({
   source,
   style,
   imageStyle,
@@ -50,7 +50,7 @@ export default function PannableImage({
   // viewer wants this so the user sees the whole photo at scale=1 and
   // pinch-zooms in from there.
   fitMode = 'cover',
-}) {
+}, forwardedRef) {
   // Mirror props that the (one-shot) PanResponder needs to consult at
   // runtime. PanResponder.create() is wrapped in useRef and so captures
   // only the FIRST render's closure — without these refs, the `disabled`
@@ -365,6 +365,12 @@ export default function PannableImage({
     scale.setValue(1);
   };
 
+  // Expose reset to parents (EnlargedPhotoViewer wants its own top-level
+  // reset button that lives outside PannableImage's panResponder-attached
+  // wrapper, since the internal reset TouchableOpacity was competing with
+  // the wrapper's touch/pan handlers).
+  useImperativeHandle(forwardedRef, () => ({ reset }), []);
+
   const transform = [
     { translateX: panX },
     { translateY: panY },
@@ -466,3 +472,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
 });
+
+const PannableImage = forwardRef(PannableImageImpl);
+export default PannableImage;

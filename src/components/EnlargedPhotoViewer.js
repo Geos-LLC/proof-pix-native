@@ -212,6 +212,7 @@ export default function EnlargedPhotoViewer({
   const [zoomPhoto, setZoomPhoto] = useState(null);
   const zoomOpenRef = useRef(false);
   useEffect(() => { zoomOpenRef.current = !!zoomPhoto; }, [zoomPhoto]);
+  const zoomPannableRef = useRef(null);
 
 
   // Swipe-down-to-close gesture. Captures only when the gesture is
@@ -733,7 +734,8 @@ export default function EnlargedPhotoViewer({
           so a 1-finger swipe falls through to the parent
           zoomGestureResponder (sideways navigates, downward closes).
           Briefly long-press then drag to pan; pinch always zooms.
-          Reset button hidden. */}
+          Reset lives at the top-level header (not inside PannableImage)
+          so the wrapper's panResponder can't swallow the tap. */}
       {zoomPhoto && (
         <View
           style={styles.zoomLayer}
@@ -741,14 +743,14 @@ export default function EnlargedPhotoViewer({
         >
           <View style={{ width: screenW, height: screenH, overflow: 'hidden' }}>
             <PannableImage
+              ref={zoomPannableRef}
               source={{ uri: zoomPhoto.uri }}
               style={{ width: '100%', height: '100%' }}
               imageStyle={{ width: '100%', height: '100%' }}
               resizeMode="contain"
               fitMode="contain"
               panOnLongPress
-              showResetButton
-              resetBtnStyle={{ top: insets.top + 8 }}
+              showResetButton={false}
             >
               {overlaysOn && (
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -764,6 +766,14 @@ export default function EnlargedPhotoViewer({
               style={styles.zoomClose}
             >
               <Ionicons name="close" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity
+              onPress={() => zoomPannableRef.current?.reset?.()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.zoomReset}
+            >
+              <Ionicons name="refresh-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -937,6 +947,11 @@ const styles = StyleSheet.create({
     zIndex: 110,
   },
   zoomClose: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  zoomReset: {
     width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.55)',
