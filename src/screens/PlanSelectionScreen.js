@@ -750,15 +750,22 @@ export default function PlanSelectionScreen({ navigation, route }) {
                 <ActivityIndicator size="small" color="#1E1E1E" />
               ) : showAnnualForPro ? (
                 <>
+                  {/* Lead with the per-month equivalent so the sticker price
+                      reads at monthly scale — the raw yearly number scared
+                      users off before they saw the value. The actual annual
+                      total moves into the caption below with "billed
+                      annually" context. Falls back to the yearly number as
+                      the big line if the store hasn't returned a per-month
+                      breakdown yet. */}
                   <View style={styles.designPriceCluster}>
-                    <Text style={styles.proCardPrice}>{proAnnualPrice}</Text>
-                    <Text style={styles.proCardPriceUnit}>/year</Text>
+                    <Text style={styles.proCardPrice}>{proAnnualPerMonth || proAnnualPrice}</Text>
+                    <Text style={styles.proCardPriceUnit}>{proAnnualPerMonth ? '/month' : '/year'}</Text>
                   </View>
-                  {proAnnualPerMonth ? (
-                    <Text style={styles.proCardPriceCaption}>
-                      Just {proAnnualPerMonth}/month · billed annually
-                    </Text>
-                  ) : null}
+                  <Text style={styles.proCardPriceCaption}>
+                    {proAnnualPerMonth
+                      ? `${proAnnualPrice}/year · billed annually`
+                      : 'Billed annually'}
+                  </Text>
                 </>
               ) : (
                 <>
@@ -819,8 +826,8 @@ export default function PlanSelectionScreen({ navigation, route }) {
             <Text style={styles.compactRowTitle}>Business</Text>
             <Text style={styles.compactRowSubtitle}>
               {showAnnualForBusiness
-                ? (businessAnnualPerMonth
-                    ? `Everything in Pro + teams · ${businessAnnualPerMonth}/mo`
+                ? (businessAnnualPrice
+                    ? `Everything in Pro + teams · ${businessAnnualPrice}/yr billed annually`
                     : 'Everything in Pro + teams')
                 : 'Everything in Pro + teams & logo overlays'}
             </Text>
@@ -830,8 +837,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
               <ActivityIndicator size="small" color={theme.textPrimary} />
             ) : showAnnualForBusiness ? (
               <>
-                <Text style={styles.compactRowPriceMain}>{businessAnnualPrice}</Text>
-                <Text style={styles.compactRowPriceUnit}>/year</Text>
+                {/* Right column now shows the per-month equivalent on the
+                    annual cadence so the sticker price matches Pro's card.
+                    Yearly total moved into the subtitle above. Falls back to
+                    the yearly number if the store hasn't returned a per-month
+                    breakdown yet. */}
+                <Text style={styles.compactRowPriceMain}>{businessAnnualPerMonth || businessAnnualPrice}</Text>
+                <Text style={styles.compactRowPriceUnit}>{businessAnnualPerMonth ? '/month' : '/year'}</Text>
               </>
             ) : (
               <>
