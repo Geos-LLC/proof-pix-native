@@ -498,6 +498,11 @@ function AppNavigator() {
           sheetAllowedDetents: 'fitToContents',
           sheetGrabberVisible: true,
           sheetCornerRadius: 22,
+          // Keep the Studio photo behind the sheet fully lit so the
+          // user can watch label / watermark / logo / metadata changes
+          // apply live as they tweak controls. 'last' disables dimming
+          // at every allowed detent.
+          sheetLargestUndimmedDetentIndex: 'last',
           headerShown: false,
         }}
       />
@@ -510,6 +515,11 @@ function AppNavigator() {
           sheetAllowedDetents: 'fitToContents',
           sheetGrabberVisible: true,
           sheetCornerRadius: 22,
+          // Keep the Studio photo behind the sheet fully lit so the
+          // user can watch label / watermark / logo / metadata changes
+          // apply live as they tweak controls. 'last' disables dimming
+          // at every allowed detent.
+          sheetLargestUndimmedDetentIndex: 'last',
           headerShown: false,
         }}
       />
@@ -522,6 +532,11 @@ function AppNavigator() {
           sheetAllowedDetents: 'fitToContents',
           sheetGrabberVisible: true,
           sheetCornerRadius: 22,
+          // Keep the Studio photo behind the sheet fully lit so the
+          // user can watch label / watermark / logo / metadata changes
+          // apply live as they tweak controls. 'last' disables dimming
+          // at every allowed detent.
+          sheetLargestUndimmedDetentIndex: 'last',
           headerShown: false,
         }}
       />
@@ -534,6 +549,11 @@ function AppNavigator() {
           sheetAllowedDetents: 'fitToContents',
           sheetGrabberVisible: true,
           sheetCornerRadius: 22,
+          // Keep the Studio photo behind the sheet fully lit so the
+          // user can watch label / watermark / logo / metadata changes
+          // apply live as they tweak controls. 'last' disables dimming
+          // at every allowed detent.
+          sheetLargestUndimmedDetentIndex: 'last',
           headerShown: false,
         }}
       />
