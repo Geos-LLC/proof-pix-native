@@ -48,6 +48,11 @@ const HIDDEN_ON = new Set([
   // Share button on the bottom row — the persistent nav pill sat
   // right on top of it. Users navigate out via the X close button.
   'SharePreview',
+  // MarkupEditor renders its own bottom toolbar (Draw / Brush /
+  // Highlight / Arrow + color palette). The persistent nav pill sat
+  // right on top of the color row, so the user couldn't pick colors.
+  // Users navigate out via the X close button in the top header.
+  'MarkupEditor',
 ]);
 
 // Sub-routes that conceptually belong to the Projects tab (so the active
