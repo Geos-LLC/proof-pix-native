@@ -81,7 +81,10 @@ const overlayFlagsFromOptions = (options) => ({
   renderLabels: options?.showLabels !== false,
   renderWatermark: options?.includeWatermark !== false,
   renderMetadata: options?.includeMetadata === true,
-  renderBrandLogo: options?.includeBranding !== false,
+  // includeBranding is header-only; includeLogo is the on-photo brand
+  // logo overlay. Layouts that don't declare includeLogo get undefined
+  // here and the overlay stays off, which matches HTML-export parity.
+  renderBrandLogo: options?.includeLogo === true,
 });
 
 const PhotoSlot = ({ photo, uri, theme, missing, onEdit, options }) => {

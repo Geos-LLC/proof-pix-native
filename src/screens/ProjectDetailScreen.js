@@ -85,6 +85,11 @@ const REPORT_OPTION_GROUPS = [
     keys: ['includeBranding', 'includeLocation', 'includeNotes', 'includeProgressPhotos'],
   },
   {
+    id: 'overlays',
+    title: 'PHOTO OVERLAYS',
+    keys: ['showLabels', 'includeMetadata', 'includeWatermark', 'includeLogo'],
+  },
+  {
     id: 'layout',
     title: 'LAYOUT',
     keys: ['showOverlays', 'galleryColumns', 'timelineColumns', 'docShowGps', 'docShowCaptureTime', 'docShowDeviceMetadata'],
@@ -3140,7 +3145,18 @@ export default function ProjectDetailScreen({ route, navigation }) {
                             </View>
                           );
                         }
-                        const isOverlaysToggle = key === 'showOverlays';
+                        // Each overlay toggle gets a Customize → link to
+                        // the settings screen where its underlying config
+                        // lives, so users can flip the report knob and
+                        // jump straight into styling / positioning it.
+                        const CUSTOMIZE_ROUTE_BY_KEY = {
+                          showOverlays: 'LabelsLanguage',
+                          showLabels: 'LabelsLanguage',
+                          includeMetadata: 'MetadataCustomization',
+                          includeWatermark: 'WatermarkCustomization',
+                          includeLogo: 'LogoCustomization',
+                        };
+                        const customizeRoute = CUSTOMIZE_ROUTE_BY_KEY[key];
                         return (
                           <View
                             key={key}
@@ -3151,9 +3167,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
                               {meta.description ? (
                                 <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>{meta.description}</Text>
                               ) : null}
-                              {isOverlaysToggle && (
+                              {customizeRoute && (
                                 <TouchableOpacity
-                                  onPress={() => navigation.navigate('LabelsLanguage')}
+                                  onPress={() => navigation.navigate(customizeRoute)}
                                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                                   style={{ marginTop: 4 }}
                                 >

@@ -92,6 +92,11 @@ export const OPTION_META = {
     description: 'Overlay your watermark on report photos.',
     control: 'switch',
   },
+  includeLogo: {
+    label: 'Include logo',
+    description: 'Overlay your brand logo on report photos.',
+    control: 'switch',
+  },
   timelineColumns: {
     label: 'Photos per row',
     description: 'How many photos appear side-by-side inside one set.',

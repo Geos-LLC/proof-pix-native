@@ -57,6 +57,7 @@ export default {
     'includeProgressPhotos',
     'includeMetadata',
     'includeWatermark',
+    'includeLogo',
     'showLabels',
   ],
   defaults: {
@@ -65,6 +66,7 @@ export default {
     includeProgressPhotos: true,
     includeMetadata: false,
     includeWatermark: false,
+    includeLogo: false,
     showLabels: true,
   },
 
