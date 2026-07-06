@@ -38,6 +38,9 @@ import { savePhotoToDevice } from '../services/storage';
 import { createAlbumName } from '../services/uploadService';
 import { getLocationName } from '../config/locations';
 import { COLORS, PHOTO_MODES, getLabelPositions } from '../constants/rooms';
+import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { FEATURES } from '../constants/featurePermissions';
+import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 import { FONTS } from '../constants/fonts';
 import PhotoLabel from '../components/PhotoLabel';
 import PhotoWatermark from '../components/PhotoWatermark';
@@ -238,6 +241,8 @@ export default function CameraScreen({ route, navigation }) {
     userName,
     location,
   } = useSettings();
+
+  const { canUse } = useFeaturePermissions();
 
   // Vision Camera setup - request a multi-physical-lens logical device so we
   // can seamlessly zoom from the device's widest lens (0.5x on most phones,
@@ -2244,6 +2249,16 @@ export default function CameraScreen({ route, navigation }) {
   // photos are kept clean/raw per spec.
   const handleProgressPhoto = async (uri) => {
     try {
+      // Starter tier: no progress photos. Bounce to paywall with the
+      // PROGRESS_PHOTOS trigger so the paywall banner explains what's
+      // being unlocked. Team members inherit their admin's tier.
+      if (!canUse(FEATURES.PROGRESS_PHOTOS)) {
+        navigation.navigate('PlanSelection', {
+          mode: 'upgrade',
+          trigger: PAYWALL_TRIGGERS.PROGRESS_PHOTOS,
+        });
+        return;
+      }
       const currentOrientation = deviceOrientation;
       // Same deterministic derivation as handleBeforePhoto — no
       // Image.getSize probe, no branchy ratio guessing. The stored
@@ -2370,8 +2385,17 @@ export default function CameraScreen({ route, navigation }) {
         .find((p) => p.name === activeBeforePhoto.name);
       if (currentSetAfter) {
         const deleteStart = Date.now();
-        await updatePhoto(currentSetAfter.id, { mode: PHOTO_MODES.PROGRESS });
-        console.log(`[DEBUG] â±ï¸Demote previous after to progress: ${Date.now() - deleteStart}ms`);
+        // Sequential progression demotes the previous After to a Progress
+        // photo so users can see the sequence of takes. Starter tier
+        // doesn't have PROGRESS_PHOTOS entitlement, so on retake we DROP
+        // the previous After's metadata reference instead of demoting.
+        // The set collapses back to a single active before/after pair.
+        if (canUse(FEATURES.PROGRESS_PHOTOS)) {
+          await updatePhoto(currentSetAfter.id, { mode: PHOTO_MODES.PROGRESS });
+        } else {
+          await deletePhoto(currentSetAfter.id, { deleteFromStorage: false });
+        }
+        console.log(`[DEBUG]â±ï¸Demote previous after to progress: ${Date.now() - deleteStart}ms`);
       }
       if (currentSetCombined) {
         const deleteStart = Date.now();

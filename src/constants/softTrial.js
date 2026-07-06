@@ -35,4 +35,7 @@ export const PAYWALL_TRIGGERS = {
   HD_EXPORT: 'hd_export',
   UNLIMITED: 'unlimited',
   GENERIC: 'generic',
+  SETS_LIMIT: 'sets_limit',           // Starter tried to start an 11th before/after set
+  PROGRESS_PHOTOS: 'progress_photos', // Starter tried to capture a progress photo
+  MULTI_PHOTO_SHARE: 'multi_share',   // Starter tried to share more than one photo at once
 };

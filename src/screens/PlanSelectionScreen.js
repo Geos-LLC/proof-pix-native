@@ -694,7 +694,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
                     ? 'Export in HD'
                     : trigger === PAYWALL_TRIGGERS.UNLIMITED
                       ? 'Unlimited projects & exports'
-                      : 'Upgrade to keep going'}
+                      : trigger === PAYWALL_TRIGGERS.SETS_LIMIT
+                        ? "You've used all 10 free before/after sets"
+                        : trigger === PAYWALL_TRIGGERS.PROGRESS_PHOTOS
+                          ? 'Progress photos are a Pro feature'
+                          : trigger === PAYWALL_TRIGGERS.MULTI_PHOTO_SHARE
+                            ? 'Share multiple photos at once'
+                            : 'Upgrade to keep going'}
             </Text>
             <Text style={styles.triggerBannerSubtitle}>
               Remove watermark {'•'} Unlimited projects {'•'} Reports
@@ -875,7 +881,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
           <View style={styles.compactRowBody}>
             <Text style={styles.compactRowTitle}>Starter</Text>
             <Text style={styles.compactRowSubtitle}>
-              Single project · 100 photos · text notes
+              10 before/after sets · single-photo share
             </Text>
           </View>
           <View style={styles.compactRowPrice}>

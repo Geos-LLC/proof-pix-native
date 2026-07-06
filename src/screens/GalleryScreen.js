@@ -1227,10 +1227,24 @@ export default function GalleryScreen({ navigation, route }) {
   const handleShareSelected = async () => {
     const selected = getSelectedPhotos();
     const selectedSets = getSelectedPhotoSets();
-    
+
     if (selected.length === 0 && selectedSets.length === 0) {
       Alert.alert('No Selection', 'Please select photos to share.');
       return;
+    }
+
+    // Starter tier is single-photo share only. Bounce to paywall if more
+    // than one individual photo is selected, or if any *set* is selected
+    // (a set expands to 2-3 photos: before + after + optional combined —
+    // even one set counts as multi-share).
+    if (!canUse(FEATURES.MULTI_PHOTO_SHARE)) {
+      if (selected.length > 1 || selectedSets.length > 0) {
+        navigation.navigate('PlanSelection', {
+          mode: 'upgrade',
+          trigger: PAYWALL_TRIGGERS.MULTI_PHOTO_SHARE,
+        });
+        return;
+      }
     }
 
     setShareSelectedPhotos({ individual: selected, sets: selectedSets });

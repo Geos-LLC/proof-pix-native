@@ -36,6 +36,8 @@ import JSZip from 'jszip';
 import { usePhotos } from '../context/PhotoContext';
 import { useAdmin } from '../context/AdminContext';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { FEATURES } from '../constants/featurePermissions';
+import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 import { PHOTO_MODES, COLORS } from '../constants/rooms';
 import dropboxAuthService from '../services/dropboxAuthService';
 import googleDriveService from '../services/googleDriveService';
@@ -298,7 +300,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const theme = useTheme();
   const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos, clearPhotoOverrides } = usePhotos();
   const { isAuthenticated, connectedAccounts } = useAdmin();
-  const { effectivePlan } = useFeaturePermissions();
+  const { effectivePlan, canUse } = useFeaturePermissions();
   const {
     getRooms,
     showLabels,
@@ -983,6 +985,19 @@ export default function ProjectDetailScreen({ route, navigation }) {
       if (sharePhotos.length === 0) {
         Alert.alert('No Photos', 'No photos were selected to share.');
         setSharing(false);
+        return;
+      }
+      // Starter tier is single-photo share only. Anything ≥2 kicks to
+      // paywall (MULTI_PHOTO_SHARE trigger). The SharePreview / single-
+      // photo tap paths go through this same function with a length-1
+      // override, so they stay allowed.
+      if (sharePhotos.length > 1 && !canUse(FEATURES.MULTI_PHOTO_SHARE)) {
+        setSharing(false);
+        setShareStatus('');
+        navigation.navigate('PlanSelection', {
+          mode: 'upgrade',
+          trigger: PAYWALL_TRIGGERS.MULTI_PHOTO_SHARE,
+        });
         return;
       }
       setShareStatus('Preparing photos...');

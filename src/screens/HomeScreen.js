@@ -45,6 +45,8 @@ import { LOCATIONS, getLocationName } from '../config/locations';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import RoomEditor from '../components/RoomEditor';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { countSets } from '../utils/photoSets';
+import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
@@ -1470,6 +1472,21 @@ export default function HomeScreen({ navigation, route }) {
     }
   };
 
+  // Starter tier is capped at maxSets before/after sets across the whole app.
+  // Returns true if the current tap should proceed to Camera; returns false
+  // and opens the paywall (SETS_LIMIT trigger) if the user has already used
+  // their allotment. Team members are exempt — they operate under the
+  // admin's tier.
+  const guardStartSet = () => {
+    if (isTeamMember) return true;
+    if (!exceedsLimit('maxSets', countSets(photos || []))) return true;
+    navigation.navigate('PlanSelection', {
+      mode: 'upgrade',
+      trigger: PAYWALL_TRIGGERS.SETS_LIMIT,
+    });
+    return false;
+  };
+
   const handleCreateProject = async () => {
     if (!isTeamMember && exceedsLimit('maxProjects', projects.length)) {
       setNewProjectVisible(false);
@@ -1500,6 +1517,7 @@ export default function HomeScreen({ navigation, route }) {
       setNewProjectNamePart('');
       if (pendingCameraAfterCreate) {
         setPendingCameraAfterCreate(false);
+        if (!guardStartSet()) return;
         navigation.navigate('Camera', {
           mode: 'before',
           room: currentRoom
@@ -1731,6 +1749,7 @@ export default function HomeScreen({ navigation, route }) {
                 openNewProjectModal(true);
                 return;
               }
+              if (!guardStartSet()) return;
               navigation.navigate('Camera', {
                 mode: 'before',
                 room: currentRoom
@@ -2258,6 +2277,7 @@ export default function HomeScreen({ navigation, route }) {
               openNewProjectModal(true);
               return;
             }
+            if (!guardStartSet()) return;
             navigation.navigate('Camera', {
               mode: 'before',
               room: currentRoom

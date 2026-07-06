@@ -844,6 +844,19 @@ export default function ProjectsScreen({ navigation, route }) {
         setSharing(false);
         return;
       }
+      // Starter tier is single-photo share only. This screen's "Share
+      // project" flow expands into 1..N photos (before/after/combined
+      // toggles), so if more than one photo lands in the batch and the
+      // user is on Starter, bounce to paywall.
+      if (sharePhotos.length > 1 && !canUse(FEATURES.MULTI_PHOTO_SHARE)) {
+        setSharing(false);
+        setShareOptionsVisible(false);
+        navigation.navigate('PlanSelection', {
+          mode: 'upgrade',
+          trigger: PAYWALL_TRIGGERS.MULTI_PHOTO_SHARE,
+        });
+        return;
+      }
 
       setShareStatus(t('gallery.preparingPhotos', { defaultValue: 'Preparing photos...' }));
 

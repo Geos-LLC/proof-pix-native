@@ -14,6 +14,8 @@ export const FEATURES = {
   PHOTO_EXPORT: 'photo_export',
   BULK_DELETE: 'bulk_delete',
   UNLIMITED_SHARING: 'unlimited_sharing',
+  MULTI_PHOTO_SHARE: 'multi_photo_share',
+  PROGRESS_PHOTOS: 'progress_photos',
   REMOVE_WATERMARK: 'remove_watermark',
   MARKUP: 'markup',
   VOICE_NOTES: 'voice_notes',
@@ -59,26 +61,30 @@ export const FEATURES = {
 
 // Role definitions for each tier
 //
-// Starter: before/after workflow, combined image gen + sharing, progress photos,
-//          1 project, watermark shown (no remove).
-// Pro:     Starter + remove watermark, unlimited projects, reports, markup,
-//          voice notes, cloud sync.
-// Business: Pro + logo, metadata, team, shared projects.
+// Starter (free): before/after workflow only, 10 sets max total, 1 project,
+//                 watermark shown (no remove), no progress photos,
+//                 single-photo share only (no multi-photo share).
+// Pro:            Starter + progress photos, multi-photo share,
+//                 remove watermark, unlimited sets/projects, reports,
+//                 markup, voice notes, cloud sync.
+// Business:       Pro + logo, metadata, team, shared projects.
 //
-// Note: before/after workflow, combined image generation/sharing, and progress
-// photos are core capabilities available to every tier, so they don't appear as
-// gated features.
+// Notes:
+// - `maxSets` caps total distinct before/after sets across the whole app.
+//   Enforced at capture time via computeSetIds / countSets.
+// - `MULTI_PHOTO_SHARE` gates any share sheet that sends more than one URL.
+// - `PROGRESS_PHOTOS` gates capturing/attaching a Progress photo to a set.
 export const TIER_ROLES = {
   starter: {
     name: 'Starter',
     features: [
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
-      FEATURES.UNLIMITED_SHARING,
     ],
     limits: {
       maxProjects: 1,
-      maxPhotosPerProject: 100,
+      maxSets: 10,
+      maxPhotosPerProject: 30, // 10 sets × up to 3 photos/set (before + after + combined)
       maxTeamMembers: 0,
       maxCloudAccounts: 0,
     }
@@ -91,6 +97,8 @@ export const TIER_ROLES = {
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
       FEATURES.UNLIMITED_SHARING,
+      FEATURES.MULTI_PHOTO_SHARE,
+      FEATURES.PROGRESS_PHOTOS,
       FEATURES.REMOVE_WATERMARK,
       FEATURES.MARKUP,
       FEATURES.VOICE_NOTES,
@@ -109,6 +117,7 @@ export const TIER_ROLES = {
     ],
     limits: {
       maxProjects: -1, // Unlimited
+      maxSets: -1, // Unlimited
       maxPhotosPerProject: -1, // Unlimited
       maxTeamMembers: 0, // No team features
       maxCloudAccounts: 1,
@@ -123,6 +132,8 @@ export const TIER_ROLES = {
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
       FEATURES.UNLIMITED_SHARING,
+      FEATURES.MULTI_PHOTO_SHARE,
+      FEATURES.PROGRESS_PHOTOS,
       FEATURES.REMOVE_WATERMARK,
       FEATURES.MARKUP,
       FEATURES.VOICE_NOTES,
@@ -147,6 +158,7 @@ export const TIER_ROLES = {
     ],
     limits: {
       maxProjects: -1,
+      maxSets: -1,
       maxPhotosPerProject: -1,
       maxTeamMembers: 10,
       maxCloudAccounts: 2,
@@ -161,6 +173,8 @@ export const TIER_ROLES = {
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
       FEATURES.UNLIMITED_SHARING,
+      FEATURES.MULTI_PHOTO_SHARE,
+      FEATURES.PROGRESS_PHOTOS,
       FEATURES.REMOVE_WATERMARK,
       FEATURES.MARKUP,
       FEATURES.VOICE_NOTES,
@@ -192,12 +206,13 @@ export const TIER_ROLES = {
     ],
     limits: {
       maxProjects: -1,
+      maxSets: -1,
       maxPhotosPerProject: -1,
       maxTeamMembers: -1, // Unlimited
       maxCloudAccounts: -1, // Unlimited
     }
   },
-  
+
   team: {
     name: 'Team',
     features: [
@@ -205,12 +220,15 @@ export const TIER_ROLES = {
       FEATURES.PHOTO_EXPORT,
       FEATURES.BULK_DELETE,
       FEATURES.UNLIMITED_SHARING,
+      FEATURES.MULTI_PHOTO_SHARE,
+      FEATURES.PROGRESS_PHOTOS,
       FEATURES.MULTIPLE_PROJECTS,
       FEATURES.CUSTOM_LABELS,
       FEATURES.TEAM_COLLABORATION,
     ],
     limits: {
       maxProjects: -1,
+      maxSets: -1,
       maxPhotosPerProject: -1,
       maxTeamMembers: 0, // Team members don't have team management
       maxCloudAccounts: 0, // Team members use admin's cloud
