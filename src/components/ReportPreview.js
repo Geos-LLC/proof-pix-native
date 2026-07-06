@@ -73,26 +73,40 @@ const EditBadge = ({ onPress }) => (
 // bespoke label chips — single source of truth is PhotoLabels.
 // `onEdit` renders a small pencil badge top-right; tapping it fires
 // the per-photo edit menu in ProjectDetailScreen.
-const PhotoSlot = ({ photo, uri, theme, missing, onEdit }) => (
-  <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-    {uri ? (
-      <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
-    ) : (
-      <View style={[styles.slotImage, styles.slotPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
-        <Ionicons name="image-outline" size={28} color={theme.textMuted} />
-        <Text style={[styles.slotMissing, { color: theme.textMuted }]}>
-          {missing || 'Image unavailable'}
-        </Text>
-      </View>
-    )}
-    {photo && uri ? (
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <StudioEditOverlays photo={photo} theme={theme} combinedLayout="side" />
-      </View>
-    ) : null}
-    <EditBadge onPress={onEdit} />
-  </View>
-);
+// Report options drive which overlays are painted on the preview.
+// Each `include*` toggle in the report editor maps 1:1 to a
+// StudioEditOverlays render flag so the preview matches what the
+// exported HTML/PDF will actually contain.
+const overlayFlagsFromOptions = (options) => ({
+  renderLabels: options?.showLabels !== false,
+  renderWatermark: options?.includeWatermark !== false,
+  renderMetadata: options?.includeMetadata === true,
+  renderBrandLogo: options?.includeBranding !== false,
+});
+
+const PhotoSlot = ({ photo, uri, theme, missing, onEdit, options }) => {
+  const flags = overlayFlagsFromOptions(options);
+  return (
+    <View style={[styles.slot, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+      {uri ? (
+        <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" />
+      ) : (
+        <View style={[styles.slotImage, styles.slotPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+          <Ionicons name="image-outline" size={28} color={theme.textMuted} />
+          <Text style={[styles.slotMissing, { color: theme.textMuted }]}>
+            {missing || 'Image unavailable'}
+          </Text>
+        </View>
+      )}
+      {photo && uri ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <StudioEditOverlays photo={photo} theme={theme} combinedLayout="side" {...flags} />
+        </View>
+      ) : null}
+      <EditBadge onPress={onEdit} />
+    </View>
+  );
+};
 
 const Note = ({ note, theme }) => (
   note ? (
@@ -137,6 +151,7 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, ch
         theme={theme}
         missing=""
         onEdit={editHandler(photo)}
+        options={options}
       />
       {options.includeNotes && photo.notes ? <Note note={photo.notes} theme={theme} /> : null}
     </View>
@@ -187,6 +202,7 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, ch
                             theme={theme}
                             missing=""
                             onEdit={editHandler(set.before)}
+                            options={options}
                           />
                         </View>
                         <View style={{ flex: 1 }}>
@@ -197,6 +213,7 @@ const RoomByRoomPreview = ({ photos, options, displayRoomName, theme, chipBg, ch
                             theme={theme}
                             missing=""
                             onEdit={editHandler(set.after)}
+                            options={options}
                           />
                         </View>
                       </View>
@@ -250,6 +267,7 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, onPhotoEd
     }))
     .filter((g) => g.combinedPhotos.length > 0);
   if (visible.length === 0) return <Empty theme={theme} />;
+  const overlayFlags = overlayFlagsFromOptions(options);
   return (
     <View>
       {visible.map(({ room, combinedPhotos }) => (
@@ -270,7 +288,7 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, onPhotoEd
                 ) : null}
                 {c.uri ? (
                   <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                    <StudioEditOverlays photo={c} theme={theme} combinedLayout="side" />
+                    <StudioEditOverlays photo={c} theme={theme} combinedLayout="side" {...overlayFlags} />
                   </View>
                 ) : null}
                 <EditBadge onPress={typeof onPhotoEdit === 'function' ? () => onPhotoEdit(c) : undefined} />
@@ -338,6 +356,7 @@ const TimelinePreview = ({ photos, options, displayRoomName, theme, chipBg, chip
                           uri={p.uri}
                           theme={theme}
                           onEdit={editHandler(p)}
+                          options={options}
                         />
                         {options.includeNotes && p.notes ? <Note note={p.notes} theme={theme} /> : null}
                       </View>
@@ -415,6 +434,7 @@ const SetsPreview = ({ photos, options, displayRoomName, theme, chipBg, chipText
                           uri={p.uri}
                           theme={theme}
                           onEdit={editHandler(p)}
+                          options={options}
                         />
                         {options.includeNotes && p.notes ? (
                           <Note note={p.notes} theme={theme} />
@@ -478,8 +498,8 @@ const ExecutivePreview = ({ photos, options, displayRoomName, theme, chipBg, chi
             <View key={`hl-${room}`} style={styles.section}>
               <SectionHeader name={displayRoomName(room)} theme={theme} />
               <View style={styles.pairRow}>
-                <PhotoSlot photo={pair.before} uri={pair.before?.uri} theme={theme} />
-                <PhotoSlot photo={pair.after} uri={pair.after?.uri} theme={theme} />
+                <PhotoSlot photo={pair.before} uri={pair.before?.uri} theme={theme} options={options} />
+                <PhotoSlot photo={pair.after} uri={pair.after?.uri} theme={theme} options={options} />
               </View>
               {options.includeNotes && pair.after?.notes ? <Note note={pair.after.notes} theme={theme} /> : null}
             </View>

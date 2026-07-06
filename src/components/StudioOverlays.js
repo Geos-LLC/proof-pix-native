@@ -262,6 +262,9 @@ export function StudioEditOverlays({
   photo,
   theme,
   renderLabels = true,
+  renderWatermark = true,
+  renderMetadata = true,
+  renderBrandLogo = true,
   combinedLayout = 'side',
 }) {
   const s = useScopedSettings(photo?.id);
@@ -269,8 +272,8 @@ export function StudioEditOverlays({
   return (
     <>
       {renderLabels && <PhotoLabels photo={photo} combinedLayout={combinedLayout} />}
-      {s.showWatermark && <PhotoWatermark photo={photo} />}
-      {s.showBrandLogo && s.brandLogoUri && (
+      {renderWatermark && s.showWatermark && <PhotoWatermark photo={photo} />}
+      {renderBrandLogo && s.showBrandLogo && s.brandLogoUri && (
         <BrandLogoOverlay
           uri={s.brandLogoUri}
           position={s.brandLogoPosition}
@@ -278,7 +281,7 @@ export function StudioEditOverlays({
           offset={s.brandLogoOffset}
         />
       )}
-      {s.showPreviewMetadata && (
+      {renderMetadata && s.showPreviewMetadata && (
         <MetadataOverlay
           photo={photo}
           location={s.location}
