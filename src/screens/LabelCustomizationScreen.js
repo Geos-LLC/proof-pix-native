@@ -320,9 +320,9 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   const openColorModal = (type) => {
     setColorModalType(type);
     if (type === 'bg') {
-      setTempColor(labelBackgroundColor);
+      setTempColor(effectiveLabelBackgroundColor);
     } else {
-      setTempColor(labelTextColor);
+      setTempColor(effectiveLabelTextColor);
     }
     setColorModalVisible(true);
   };
@@ -401,6 +401,11 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
   // currentSize supports both the legacy small/medium/large strings and
   // numeric font sizes (from the new slider). Numeric → derive padding
   // proportionally; string → look up in SIZE_OPTIONS.
+  // Uses the destructured labelSize (from useScopedSettings) here
+  // because `effective*` values aren't defined yet at this point in
+  // the component. This value is only used by the currentSize
+  // computation, which is superseded by the slider-side reads that
+  // do use effectiveLabelSize below.
   const currentSize = useMemo(() => {
     if (typeof labelSize === 'number') {
       return { fontSize: labelSize, padding: Math.max(4, Math.round(labelSize * 0.6)) };
@@ -505,6 +510,26 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
     };
     return positions[position] || positions['left-top'];
   };
+
+  // Label-style reads honor source-photo overrides too when editing a
+  // combined preview — writes go there (combinedStyleWriter), so
+  // reading from the combined photo's scope would show the wrong
+  // current value in the sheet and the sliders would snap back to
+  // global defaults after each drag.
+  const readStyleOv = (key) => {
+    if (!isCombinedPreview) return undefined;
+    if (combinedBeforeSourceOv && combinedBeforeSourceOv[key] !== undefined) return combinedBeforeSourceOv[key];
+    if (combinedAfterSourceOv && combinedAfterSourceOv[key] !== undefined) return combinedAfterSourceOv[key];
+    return undefined;
+  };
+  const effectiveLabelBackgroundColor = readStyleOv('labelBackgroundColor') ?? labelBackgroundColor;
+  const effectiveLabelTextColor = readStyleOv('labelTextColor') ?? labelTextColor;
+  const effectiveLabelFontFamily = readStyleOv('labelFontFamily') ?? labelFontFamily;
+  const effectiveLabelSize = readStyleOv('labelSize') ?? labelSize;
+  const effectiveLabelCornerStyle = readStyleOv('labelCornerStyle') ?? labelCornerStyle;
+  const effectiveLabelMarginVertical = readStyleOv('labelMarginVertical') ?? labelMarginVertical;
+  const effectiveLabelMarginHorizontal = readStyleOv('labelMarginHorizontal') ?? labelMarginHorizontal;
+  const effectiveLabelLanguage = readStyleOv('labelLanguage') ?? labelLanguage;
 
   // Overlay source-photo overrides onto the merged settings when
   // editing a combined photo (see combinedSourceIds above). For any
@@ -689,17 +714,59 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
     findCombinedAfterConflicts,
   );
 
+  // For a combined-photo preview the Studio render reads label styles
+  // from the SOURCE before/after photos (see DraggableLabelOverlay in
+  // StudioScreen — it walks pairResolved.beforePhoto / .afterPhoto).
+  // useScopedSettings(photoId) writers target the COMBINED photo's
+  // overrides, so a font/size/color change made from the combined
+  // customize entry would never show up on the rendered labels.
+  // Route those writes to both source photos, mirroring how the
+  // position writers (writeActiveBeforeOffset) already do it.
+  const combinedStyleWriter = (key) => async (value) => {
+    if (isCombinedPreview && (combinedSourceIds.beforeId || combinedSourceIds.afterId)) {
+      const tasks = [];
+      if (combinedSourceIds.beforeId) tasks.push(setPhotoOverride(combinedSourceIds.beforeId, key, value));
+      if (combinedSourceIds.afterId) tasks.push(setPhotoOverride(combinedSourceIds.afterId, key, value));
+      await Promise.all(tasks);
+      return;
+    }
+    // Single-photo scope (photoId is the source photo) or global (no
+    // photoId) — delegate to the scoped writer for its own routing.
+    const scopedWriters = {
+      labelBackgroundColor: updateLabelBackgroundColor,
+      labelTextColor: updateLabelTextColor,
+      labelFontFamily: updateLabelFontFamily,
+      labelSize: updateLabelSize,
+      labelCornerStyle: updateLabelCornerStyle,
+      labelMarginVertical: updateLabelMarginVertical,
+      labelMarginHorizontal: updateLabelMarginHorizontal,
+      labelLanguage: updateLabelLanguage,
+    };
+    const writer = scopedWriters[key];
+    if (writer) await writer(value);
+  };
+
   // Guarded wrappers for the non-position label setting writers, so
   // changing color / font / size / corner / margin at the global Settings
   // level also surfaces the conflict modal when individual photos
   // override the same field.
-  const guardedUpdateLabelBackgroundColor = guardedUpdater(updateLabelBackgroundColor, ['labelBackgroundColor']);
-  const guardedUpdateLabelTextColor = guardedUpdater(updateLabelTextColor, ['labelTextColor']);
-  const guardedUpdateLabelFontFamily = guardedUpdater(updateLabelFontFamily, ['labelFontFamily']);
-  const guardedUpdateLabelSize = guardedUpdater(updateLabelSize, ['labelSize']);
-  const guardedUpdateLabelCornerStyle = guardedUpdater(updateLabelCornerStyle, ['labelCornerStyle']);
-  const guardedUpdateLabelMarginVertical = guardedUpdater(updateLabelMarginVertical, ['labelMarginVertical']);
-  const guardedUpdateLabelMarginHorizontal = guardedUpdater(updateLabelMarginHorizontal, ['labelMarginHorizontal']);
+  const guardedUpdateLabelBackgroundColor = guardedUpdater(combinedStyleWriter('labelBackgroundColor'), ['labelBackgroundColor']);
+  const guardedUpdateLabelTextColor = guardedUpdater(combinedStyleWriter('labelTextColor'), ['labelTextColor']);
+  const guardedUpdateLabelFontFamily = guardedUpdater(combinedStyleWriter('labelFontFamily'), ['labelFontFamily']);
+  const guardedUpdateLabelSize = guardedUpdater(combinedStyleWriter('labelSize'), ['labelSize']);
+  const guardedUpdateLabelCornerStyle = guardedUpdater(combinedStyleWriter('labelCornerStyle'), ['labelCornerStyle']);
+  const guardedUpdateLabelMarginVertical = guardedUpdater(combinedStyleWriter('labelMarginVertical'), ['labelMarginVertical']);
+  const guardedUpdateLabelMarginHorizontal = guardedUpdater(combinedStyleWriter('labelMarginHorizontal'), ['labelMarginHorizontal']);
+  // Language uses the same routing but has no guarded wrapper — the
+  // language sheet writes directly.
+  const routedUpdateLabelLanguage = combinedStyleWriter('labelLanguage');
+  // Live slider updates for size / margin should also route through
+  // combinedStyleWriter so the label restyles on the Studio photo as
+  // the user drags. `onSlidingComplete` still fires the guarded write
+  // to trigger the conflict modal in global scope.
+  const liveUpdateLabelSize = combinedStyleWriter('labelSize');
+  const liveUpdateLabelMarginVertical = combinedStyleWriter('labelMarginVertical');
+  const liveUpdateLabelMarginHorizontal = combinedStyleWriter('labelMarginHorizontal');
 
   const closeConflict = () =>
     setConflictModal({ visible: false, photos: [], pendingWrite: null, overrideKeys: [] });
@@ -847,18 +914,18 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
           <ControlButton
             icon="ellipse-outline"
             label="Style"
-            selected={labelCornerStyle === 'rounded'}
+            selected={effectiveLabelCornerStyle === 'rounded'}
             onPress={async () => {
-              const newStyle = labelCornerStyle === 'rounded' ? 'square' : 'rounded';
+              const newStyle = effectiveLabelCornerStyle === 'rounded' ? 'square' : 'rounded';
               await guardedUpdateLabelCornerStyle(newStyle);
             }}
           />
           <ControlButton icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
           <ControlButton icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-          <ColorControlButton color={labelBackgroundColor} label="BG Color" selected={true} onPress={() => openColorModal('bg')} />
+          <ColorControlButton color={effectiveLabelBackgroundColor} label="BG Color" selected={true} onPress={() => openColorModal('bg')} />
         </View>
         <View style={styles.controlsRow}>
-          <ColorControlButton color={labelTextColor} label="Text Color" onPress={() => openColorModal('text')} />
+          <ColorControlButton color={effectiveLabelTextColor} label="Text Color" onPress={() => openColorModal('text')} />
           <ControlButton icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
           <ControlButton icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
           <ControlButton icon="language" label="Language" onPress={() => setLanguageModalVisible(true)} />
@@ -878,7 +945,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
       >
         <WheelFontPicker
           options={FONT_OPTIONS}
-          value={labelFontFamily}
+          value={effectiveLabelFontFamily}
           onChange={(v) => { guardedUpdateLabelFontFamily(v); }}
           getFontFamily={getPreviewFontFamily}
         />
@@ -892,7 +959,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
       >
         <View style={styles.fontListContainer}>
           {LABEL_LANGUAGES.map((lang) => {
-            const isSelected = labelLanguage === lang.code;
+            const isSelected = effectiveLabelLanguage === lang.code;
             return (
               <TouchableOpacity
                 key={lang.code}
@@ -901,7 +968,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
                   isSelected && styles.fontListItemSelected
                 ]}
                 onPress={async () => {
-                  await updateLabelLanguage(lang.code);
+                  await routedUpdateLabelLanguage(lang.code);
                   setLanguageModalVisible(false);
                 }}
               >
@@ -1102,21 +1169,21 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
             <View style={styles.opacityLabelContainer}>
               <Text style={styles.marginLabel}>Label size :</Text>
               <Text style={styles.opacityValueText}>
-                {typeof labelSize === 'number' ? `${labelSize}px` : (
-                  SIZE_OPTIONS.find((s) => s.key === labelSize)?.fontSize
-                    ? `${SIZE_OPTIONS.find((s) => s.key === labelSize).fontSize}px`
+                {typeof effectiveLabelSize === 'number' ? `${effectiveLabelSize}px` : (
+                  SIZE_OPTIONS.find((s) => s.key === effectiveLabelSize)?.fontSize
+                    ? `${SIZE_OPTIONS.find((s) => s.key === effectiveLabelSize).fontSize}px`
                     : '14px'
                 )}
               </Text>
             </View>
             <SliderInput
-              value={typeof labelSize === 'number'
-                ? labelSize
-                : (SIZE_OPTIONS.find((s) => s.key === labelSize)?.fontSize || 14)}
+              value={typeof effectiveLabelSize === 'number'
+                ? effectiveLabelSize
+                : (SIZE_OPTIONS.find((s) => s.key === effectiveLabelSize)?.fontSize || 14)}
               // Live preview during the drag uses the raw writer so we
               // don't pop the conflict modal on every tick. Conflict
               // check fires only on release (onSlidingComplete).
-              onValueChange={(v) => updateLabelSize(Math.round(v))}
+              onValueChange={(v) => liveUpdateLabelSize(Math.round(v))}
               onSlidingComplete={(v) => guardedUpdateLabelSize(Math.round(v))}
               min={10}
               max={32}
@@ -1137,11 +1204,11 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
         <View style={styles.marginContainer}>
           <View style={styles.marginSection}>
             <Text style={styles.marginLabel}>
-              Vertical (Top/Bottom) : {labelMarginVertical}px
+              Vertical (Top/Bottom) : {effectiveLabelMarginVertical}px
             </Text>
             <SliderInput
-              value={labelMarginVertical}
-              onValueChange={updateLabelMarginVertical}
+              value={effectiveLabelMarginVertical}
+              onValueChange={liveUpdateLabelMarginVertical}
               onSlidingComplete={guardedUpdateLabelMarginVertical}
               min={0}
               max={50}
@@ -1153,11 +1220,11 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
           <View style={styles.marginSection}>
             <Text style={styles.marginLabel}>
-              Horizontal (Left/Right) : {labelMarginHorizontal}px
+              Horizontal (Left/Right) : {effectiveLabelMarginHorizontal}px
             </Text>
             <SliderInput
-              value={labelMarginHorizontal}
-              onValueChange={updateLabelMarginHorizontal}
+              value={effectiveLabelMarginHorizontal}
+              onValueChange={liveUpdateLabelMarginHorizontal}
               onSlidingComplete={guardedUpdateLabelMarginHorizontal}
               min={0}
               max={50}
