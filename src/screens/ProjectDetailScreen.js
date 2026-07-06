@@ -1218,6 +1218,28 @@ export default function ProjectDetailScreen({ route, navigation }) {
     [project, getPhotosByProject]
   );
 
+  // "Share Project" entry from HomeScreen's action-sheet. One-shot: on
+  // arrival with `initialShareFlow=true`, drop into Timeline selection
+  // mode with selectionPurpose='share' — same state the "Pick photos"
+  // link in the Share tab produces. Starter plan is single-photo share
+  // only (gated at share time by MULTI_PHOTO_SHARE), so we seed the draft
+  // with just the first photo instead of all of them. Consume the flag
+  // via setParams so a subsequent focus doesn't re-trigger.
+  useEffect(() => {
+    if (!route?.params?.initialShareFlow) return;
+    if (!project) return;
+    if ((projectPhotos?.length || 0) === 0) return;
+    const canMultiShare = canUse(FEATURES.MULTI_PHOTO_SHARE);
+    const seedIds = canMultiShare
+      ? projectPhotos.map((p) => p.id)
+      : [projectPhotos[0].id];
+    setActiveTab('timeline');
+    setSelectionPurpose('share');
+    setSelectionDraft(new Set(seedIds));
+    setSelectionMode(true);
+    navigation.setParams({ initialShareFlow: undefined });
+  }, [route?.params?.initialShareFlow, project, projectPhotos, canUse, navigation]);
+
   // No more URI baking. The report renders the original photo file
   // with the BEFORE/AFTER chip overlaid as an HTML/CSS `<div>` —
   // same model as the studio's PhotoLabels component, just rendered

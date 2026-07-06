@@ -3079,12 +3079,12 @@ export default function HomeScreen({ navigation, route }) {
             )}
 
             {projects.length === 0 && (
-              <Text style={{ textAlign: 'center', color: '#999', marginBottom: 12 }}>
+              <Text style={{ textAlign: 'center', color: theme.textMuted, marginBottom: 12 }}>
                 {t('projects.noProjects')}
               </Text>
             )}
 
-            <View style={{ height: 1, backgroundColor: '#ECECEC', marginVertical: 12 }} />
+            <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />
 
             {activeProject && (
               <TouchableOpacity
@@ -3133,7 +3133,10 @@ export default function HomeScreen({ navigation, route }) {
                 style={[styles.actionBtn, { backgroundColor: '#D6ECFF', marginTop: 8 }]}
                 onPress={() => {
                   setOpenProjectVisible(false);
-                  navigation.reset({ index: 0, routes: [{ name: 'Gallery', params: { openManage: true } }] });
+                  navigation.navigate('ProjectDetail', {
+                    projectId: activeProject.id,
+                    initialShareFlow: true,
+                  });
                 }}
               >
                 <Ionicons name="share-outline" size={18} color="#0077CC" style={{ marginRight: 6 }} />
@@ -3482,12 +3485,12 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   projectNameInput: {
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   fab: {
     position: 'absolute',

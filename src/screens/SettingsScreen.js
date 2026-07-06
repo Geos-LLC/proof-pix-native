@@ -9434,7 +9434,7 @@ const makeStyles = (theme) => StyleSheet.create({
     proofPixText: {
       fontSize: 24,
       fontWeight: '700',
-      color: COLORS.TEXT,
+      color: theme.textPrimary,
       fontFamily: FONTS.ALEXANDRIA,
     },
     versionText: {

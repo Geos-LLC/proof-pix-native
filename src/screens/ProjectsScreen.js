@@ -1464,22 +1464,22 @@ export default function ProjectsScreen({ navigation, route }) {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.modalOverlayTop}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{t('projects.newProject', { defaultValue: 'New Project' })}</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.surfaceElevated }]}>
+            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>{t('projects.newProject', { defaultValue: 'New Project' })}</Text>
             {/* Project name input with a trailing ✕ button so the
                 user can wipe the whole field (auto-filled address or
                 typed name) in one tap. */}
             <View style={{ position: 'relative', justifyContent: 'center' }}>
               <TextInput
                 ref={newProjectNameRef}
-                style={[styles.input, { paddingRight: 38 }]}
+                style={[styles.input, { paddingRight: 38, backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
                 placeholder={t('projects.projectNamePlaceholder', { defaultValue: 'Project name' })}
                 value={newProjectNamePart}
                 onChangeText={(text) => {
                   setNewProjectNamePart(text);
                   if (newProjectNameSelection) setNewProjectNameSelection(null);
                 }}
-                placeholderTextColor="#999"
+                placeholderTextColor={theme.textMuted}
                 selection={newProjectNameSelection}
               />
               {newProjectNamePart?.length > 0 && (
@@ -1495,13 +1495,13 @@ export default function ProjectsScreen({ navigation, route }) {
                     width: 24,
                     height: 24,
                     borderRadius: 12,
-                    backgroundColor: '#E5E5E5',
+                    backgroundColor: theme.border,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Ionicons name="close" size={14} color="#666" />
+                  <Ionicons name="close" size={14} color={theme.textMuted} />
                 </TouchableOpacity>
               )}
             </View>
@@ -1529,7 +1529,8 @@ export default function ProjectsScreen({ navigation, route }) {
                   paddingVertical: 8,
                   paddingHorizontal: 12,
                   borderRadius: 8,
-                  backgroundColor: locationLoadingInModal ? '#E8E8E8' : '#F0F0F0',
+                  backgroundColor: theme.surface,
+                  opacity: locationLoadingInModal ? 0.7 : 1,
                 }}
               >
                 {locationLoadingInModal ? (
@@ -1537,7 +1538,7 @@ export default function ProjectsScreen({ navigation, route }) {
                 ) : (
                   <Ionicons name="locate" size={18} color={COLORS.PRIMARY} style={{ marginRight: 6 }} />
                 )}
-                <Text style={{ fontSize: 13, color: '#333' }}>
+                <Text style={{ fontSize: 13, color: theme.textPrimary }}>
                   {locationLoadingInModal
                     ? t('projects.gettingLocation', { defaultValue: 'Getting location…' })
                     : t('projects.useCurrentLocation', { defaultValue: 'Use current location' })}
@@ -1565,7 +1566,7 @@ export default function ProjectsScreen({ navigation, route }) {
                     height: 22,
                     borderRadius: 5,
                     borderWidth: 2,
-                    borderColor: autoUseCurrentLocationForProjects ? COLORS.PRIMARY : '#BBB',
+                    borderColor: autoUseCurrentLocationForProjects ? COLORS.PRIMARY : theme.borderStrong,
                     backgroundColor: autoUseCurrentLocationForProjects ? COLORS.PRIMARY : 'transparent',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1575,7 +1576,7 @@ export default function ProjectsScreen({ navigation, route }) {
                     <Ionicons name="checkmark" size={16} color="#000" />
                   )}
                 </View>
-                <Text style={{ fontSize: 12, color: '#555' }}>
+                <Text style={{ fontSize: 12, color: theme.textSecondary }}>
                   {t('projects.always', { defaultValue: 'Always' })}
                 </Text>
               </TouchableOpacity>
@@ -1584,7 +1585,7 @@ export default function ProjectsScreen({ navigation, route }) {
             {/* Industry picker — defaults to the onboarding choice but
                 lets the user override per-project. Tapping it expands
                 an inline list. */}
-            <Text style={{ marginTop: 16, marginBottom: 6, fontSize: 13, color: '#555', fontWeight: '600' }}>
+            <Text style={{ marginTop: 16, marginBottom: 6, fontSize: 13, color: theme.textSecondary, fontWeight: '600' }}>
               {t('projects.industry', { defaultValue: 'Industry' })}
             </Text>
             <TouchableOpacity
@@ -1594,11 +1595,11 @@ export default function ProjectsScreen({ navigation, route }) {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 borderWidth: 1,
-                borderColor: '#DDD',
+                borderColor: theme.border,
                 borderRadius: 10,
                 paddingVertical: 12,
                 paddingHorizontal: 14,
-                backgroundColor: '#FAFAFA',
+                backgroundColor: theme.surface,
               }}
               activeOpacity={0.85}
             >
@@ -1607,10 +1608,10 @@ export default function ProjectsScreen({ navigation, route }) {
                   <Ionicons
                     name={getIndustryById(newProjectIndustry)?.icon || 'briefcase-outline'}
                     size={18}
-                    color="#333"
+                    color={theme.textPrimary}
                   />
                 )}
-                <Text style={{ fontSize: 14, color: '#333' }}>
+                <Text style={{ fontSize: 14, color: theme.textPrimary }}>
                   {getIndustryById(newProjectIndustry)?.defaultLabel
                     || t('projects.pickIndustry', { defaultValue: 'Pick an industry' })}
                 </Text>
@@ -1618,7 +1619,7 @@ export default function ProjectsScreen({ navigation, route }) {
               <Ionicons
                 name={industryPickerOpen ? 'chevron-up' : 'chevron-down'}
                 size={18}
-                color="#666"
+                color={theme.textMuted}
               />
             </TouchableOpacity>
             {industryPickerOpen && (
@@ -1626,10 +1627,10 @@ export default function ProjectsScreen({ navigation, route }) {
                 style={{
                   marginTop: 6,
                   borderWidth: 1,
-                  borderColor: '#DDD',
+                  borderColor: theme.border,
                   borderRadius: 10,
                   maxHeight: 220,
-                  backgroundColor: '#FFFFFF',
+                  backgroundColor: theme.surfaceElevated,
                   overflow: 'hidden',
                 }}
               >
@@ -1649,11 +1650,11 @@ export default function ProjectsScreen({ navigation, route }) {
                           gap: 10,
                           paddingVertical: 10,
                           paddingHorizontal: 14,
-                          backgroundColor: active ? '#FFF4C2' : 'transparent',
+                          backgroundColor: active ? theme.surfaceAccent : 'transparent',
                         }}
                       >
-                        <Ionicons name={ind.icon || 'briefcase-outline'} size={18} color="#333" />
-                        <Text style={{ flex: 1, fontSize: 14, color: '#333' }}>
+                        <Ionicons name={ind.icon || 'briefcase-outline'} size={18} color={theme.textPrimary} />
+                        <Text style={{ flex: 1, fontSize: 14, color: theme.textPrimary }}>
                           {ind.defaultLabel}
                         </Text>
                         {active && <Ionicons name="checkmark" size={16} color="#F2C31B" />}
@@ -1666,13 +1667,13 @@ export default function ProjectsScreen({ navigation, route }) {
 
             <View style={[styles.modalButtons, { marginTop: 24 }]}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
+                style={[styles.modalButton, styles.modalButtonCancel, { backgroundColor: theme.surface }]}
                 onPress={() => {
                   setNewProjectNamePart('');
                   setNewProjectVisible(false);
                 }}
               >
-                <Text style={styles.modalButtonTextCancel}>{t('common.cancel')}</Text>
+                <Text style={[styles.modalButtonTextCancel, { color: theme.textPrimary }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
