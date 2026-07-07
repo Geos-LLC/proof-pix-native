@@ -410,10 +410,6 @@ export default function RoomEditor({ visible, onClose, onSave, initialRooms = nu
       isDefault: markAsDefault,
     };
     setRooms((prev) => {
-      if (prev.length >= 10) {
-        Alert.alert(t('roomEditor.limitReached'), t('roomEditor.limitReachedMessage'));
-        return prev;
-      }
       const updatedRooms = [...prev, newRoom];
       onSave(updatedRooms);
       return updatedRooms;
