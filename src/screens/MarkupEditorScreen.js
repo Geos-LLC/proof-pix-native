@@ -18,6 +18,7 @@ import { FONTS } from '../constants/fonts';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import ColorGridPicker from '../components/ColorGridPicker';
+import PhotoLabels from '../components/PhotoLabels';
 
 // Dedicated full-screen markup editor.
 //
@@ -316,20 +317,44 @@ export default function MarkupEditorScreen({ route, navigation }) {
     ]).start();
   };
 
-  const handleSave = async () => {
-    if (photo?.id) {
-      // Persist canvas bounds alongside shapes so other screens
-      // (Studio's photo overlay) can render the same shapes at the
-      // right proportions in a frame of any size.
-      const layout = canvasLayoutRef.current;
-      const payload = {
-        bounds: { w: layout.w || 0, h: layout.h || 0 },
-        shapes,
-      };
+  // Persist current shapes + canvas bounds to photo.markup. Reused by
+  // the Save button AND the auto-save path (X close, hardware back,
+  // any other unmount) so the user's work never disappears when they
+  // leave the screen.
+  const persistShapes = useCallback(async () => {
+    if (!photo?.id) return;
+    const layout = canvasLayoutRef.current;
+    const payload = {
+      bounds: { w: layout.w || 0, h: layout.h || 0 },
+      shapes,
+    };
+    try {
       await updatePhoto(photo.id, { markup: payload });
+    } catch (e) {
+      // swallow — persistence failures shouldn't block the goBack
     }
+  }, [photo?.id, shapes, updatePhoto]);
+  // Keep the latest persist function reachable from cleanup handlers
+  // (the useEffect cleanup captures the closure at mount, but we want
+  // it to write the LATEST shapes on unmount).
+  const persistShapesRef = useRef(persistShapes);
+  useEffect(() => { persistShapesRef.current = persistShapes; }, [persistShapes]);
+
+  const handleSave = async () => {
+    await persistShapes();
     navigation.goBack();
   };
+  const handleClose = async () => {
+    // X-close is the "keep-my-work" path too — a lot of users hit X
+    // instead of Save and lost strokes before. Silently persist.
+    await persistShapes();
+    navigation.goBack();
+  };
+  // Last-line-of-defense: hardware back / gesture pop / any other
+  // teardown still writes the current shapes before leaving.
+  useEffect(() => {
+    return () => { persistShapesRef.current?.(); };
+  }, []);
   const handleUndo = () => setShapes((s) => s.slice(0, -1));
   const handleClear = () => setShapes([]);
 
@@ -361,7 +386,7 @@ export default function MarkupEditorScreen({ route, navigation }) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       <View style={[styles.header, { backgroundColor: theme.background, borderBottomColor: theme.divider }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <TouchableOpacity onPress={handleClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Ionicons name="close" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.textPrimary }]}>Markup</Text>
@@ -391,6 +416,13 @@ export default function MarkupEditorScreen({ route, navigation }) {
       >
         <Animated.View style={[StyleSheet.absoluteFill, transformStyle]}>
           <Image source={{ uri: photo.uri }} style={styles.photo} resizeMode="contain" />
+          {/* Read-only labels overlay — respects SettingsContext.showLabels
+              so if the user has labels turned on for Studio, they show up
+              here too. pointerEvents='none' means drawing gestures still
+              reach the canvas underneath. */}
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <PhotoLabels photo={photo} />
+          </View>
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <Svg width="100%" height="100%">
               {shapes.map((shape, i) => (
