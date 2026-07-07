@@ -357,7 +357,7 @@ export default function TeamMembersScreen({ navigation }) {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="chevron-back" size={20} color="#1E1E1E" />
+          <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('teamMembers.title', { defaultValue: 'Team members' })}</Text>
         <View style={styles.headerIconBtn} />
@@ -378,7 +378,7 @@ export default function TeamMembersScreen({ navigation }) {
           // ---- Gate ----
           <View style={styles.heroCard}>
             <View style={styles.heroIcon}>
-              <Ionicons name="people-outline" size={26} color="#1E1E1E" />
+              <Ionicons name="people-outline" size={26} color={theme.textPrimary} />
             </View>
             <Text style={styles.heroTitle}>
               {t('teamMembers.gateTitle', { defaultValue: 'Team requires Business' })}
@@ -402,7 +402,7 @@ export default function TeamMembersScreen({ navigation }) {
           // ---- Set up required ----
           <View style={styles.heroCard}>
             <View style={styles.heroIcon}>
-              <Ionicons name="rocket-outline" size={26} color="#1E1E1E" />
+              <Ionicons name="rocket-outline" size={26} color={theme.textPrimary} />
             </View>
             <Text style={styles.heroTitle}>
               {t('teamMembers.setupTitle', { defaultValue: 'Set up your team' })}
@@ -450,7 +450,7 @@ export default function TeamMembersScreen({ navigation }) {
 
             <View style={styles.heroCard}>
               <View style={styles.heroIcon}>
-                <Ionicons name="qr-code-outline" size={26} color="#1E1E1E" />
+                <Ionicons name="qr-code-outline" size={26} color={theme.textPrimary} />
               </View>
               <Text style={styles.heroTitle}>
                 {t('teamMembers.inviteTitle', { defaultValue: 'Invite your crew' })}
@@ -539,7 +539,7 @@ export default function TeamMembersScreen({ navigation }) {
                           <Ionicons
                             name={m.hasJoined ? 'person-outline' : 'mail-outline'}
                             size={19}
-                            color="#1E1E1E"
+                            color={theme.textPrimary}
                           />
                         </View>
                         <View style={styles.rowMeta}>
@@ -643,7 +643,7 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
-    backgroundColor: 'rgba(30,30,30,0.1)',
+    backgroundColor: theme.surface,
   },
   businessBadgeText: {
     fontFamily: FONTS.ALEXANDRIA,

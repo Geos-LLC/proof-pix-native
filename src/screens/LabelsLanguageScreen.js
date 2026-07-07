@@ -75,7 +75,7 @@ export default function LabelsLanguageScreen({ navigation }) {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="chevron-back" size={20} color="#1E1E1E" />
+          <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {t('labelsLanguage.title', { defaultValue: 'Labels & language' })}
@@ -107,6 +107,7 @@ export default function LabelsLanguageScreen({ navigation }) {
         <View style={styles.rowGroup}>
           <BrandTile
             styles={styles}
+            theme={theme}
             icon="pricetag-outline"
             title={t('labelsLanguage.labels', { defaultValue: 'Labels' })}
             subtitle={t('labelsLanguage.labelsSub', { defaultValue: 'Before / After captions on every photo' })}
@@ -116,6 +117,7 @@ export default function LabelsLanguageScreen({ navigation }) {
           />
           <BrandTile
             styles={styles}
+            theme={theme}
             icon="copy-outline"
             title={t('labelsLanguage.watermark', { defaultValue: 'Watermark' })}
             subtitle={t('labelsLanguage.watermarkSub', { defaultValue: 'Brand mark on shared photos' })}
@@ -125,6 +127,7 @@ export default function LabelsLanguageScreen({ navigation }) {
           />
           <BrandTile
             styles={styles}
+            theme={theme}
             icon="image-outline"
             title={t('labelsLanguage.logo', { defaultValue: 'Logo' })}
             subtitle={brandLogoUri
@@ -137,6 +140,7 @@ export default function LabelsLanguageScreen({ navigation }) {
           />
           <BrandTile
             styles={styles}
+            theme={theme}
             icon="information-circle-outline"
             title={t('labelsLanguage.metadata', { defaultValue: 'Metadata' })}
             subtitle={t('labelsLanguage.metadataSub', { defaultValue: 'Date · time · address overlays' })}
@@ -149,6 +153,7 @@ export default function LabelsLanguageScreen({ navigation }) {
               report logo / company name / accent color. */}
           <BrandTile
             styles={styles}
+            theme={theme}
             icon="document-text-outline"
             title={t('labelsLanguage.reportBranding', { defaultValue: 'Report Branding' })}
             subtitle={t('labelsLanguage.reportBrandingSub', { defaultValue: 'Logo · company name · accent color' })}
@@ -167,7 +172,7 @@ export default function LabelsLanguageScreen({ navigation }) {
             activeOpacity={0.85}
           >
             <View style={styles.rowIc}>
-              <Ionicons name="language-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="language-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>
@@ -175,7 +180,7 @@ export default function LabelsLanguageScreen({ navigation }) {
               </Text>
               <Text style={styles.rowSub} numberOfLines={1}>{labelLanguageSubtitle}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
 
         </View>
@@ -201,7 +206,7 @@ function useLabelLanguageSubtitle() {
 // on the right, tap navigates to the customize screen.
 // `styles` is passed as a prop because it lives in LabelsLanguageScreen's
 // closure (useMemo(makeStyles)), not at module scope.
-function BrandTile({ styles, icon, title, subtitle, switchValue, switchDisabled, onSwitch, onPress }) {
+function BrandTile({ styles, theme, icon, title, subtitle, switchValue, switchDisabled, onSwitch, onPress }) {
   // When no `onSwitch` is supplied the tile renders as a plain
   // navigation row with a chevron on the right (Report Branding uses
   // this — it doesn't have an on/off concept, only a destination).
@@ -222,7 +227,7 @@ function BrandTile({ styles, icon, title, subtitle, switchValue, switchDisabled,
   return (
     <View style={styles.row}>
       <View style={styles.rowIc}>
-        <Ionicons name={icon} size={19} color="#1E1E1E" />
+        <Ionicons name={icon} size={19} color={theme.textPrimary} />
       </View>
       <View style={styles.rowMeta}>
         <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
@@ -237,7 +242,7 @@ function BrandTile({ styles, icon, title, subtitle, switchValue, switchDisabled,
           activeOpacity={0.6}
         >
           <Text style={styles.customizeLinkText}>Customize</Text>
-          <Ionicons name="chevron-forward" size={13} color="#7A5B00" />
+          <Ionicons name="chevron-forward" size={13} color={theme.accentInk} />
         </TouchableOpacity>
       </View>
       {showSwitch ? (
@@ -245,13 +250,13 @@ function BrandTile({ styles, icon, title, subtitle, switchValue, switchDisabled,
           value={!!switchValue}
           onValueChange={onSwitch}
           disabled={!!switchDisabled}
-          trackColor={{ false: '#E0E0E0', true: '#F2C31B' }}
+          trackColor={{ false: theme.borderStrong, true: '#F2C31B' }}
           thumbColor="#FFFFFF"
           style={styles.brandTileSwitch}
         />
       ) : (
         <TouchableOpacity onPress={handleCustomize} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+          <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
         </TouchableOpacity>
       )}
     </View>

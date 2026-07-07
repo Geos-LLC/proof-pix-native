@@ -219,7 +219,7 @@ export default function HelpSupportScreen({ navigation }) {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="chevron-back" size={20} color="#1E1E1E" />
+          <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {t('helpSupport.title', { defaultValue: 'Help & support' })}
@@ -241,7 +241,7 @@ export default function HelpSupportScreen({ navigation }) {
           <View style={styles.rowGroup}>
             <TouchableOpacity style={styles.row} onPress={handleEmailUs} activeOpacity={0.85}>
               <View style={styles.rowIc}>
-                <Ionicons name="mail-outline" size={19} color="#1E1E1E" />
+                <Ionicons name="mail-outline" size={19} color={theme.textPrimary} />
               </View>
               <View style={styles.rowMeta}>
                 <Text style={styles.rowTitle}>
@@ -249,12 +249,12 @@ export default function HelpSupportScreen({ navigation }) {
                 </Text>
                 <Text style={styles.rowSub} numberOfLines={1}>{SUPPORT_EMAIL}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+              <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.row} onPress={handleHelpCenter} activeOpacity={0.85}>
               <View style={styles.rowIc}>
-                <Ionicons name="document-text-outline" size={19} color="#1E1E1E" />
+                <Ionicons name="document-text-outline" size={19} color={theme.textPrimary} />
               </View>
               <View style={styles.rowMeta}>
                 <Text style={styles.rowTitle}>
@@ -264,7 +264,7 @@ export default function HelpSupportScreen({ navigation }) {
                   {t('helpSupport.helpCenterSub', { defaultValue: 'Guides & FAQs' })}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#9A9A9A" />
+              <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
             </TouchableOpacity>
           </View>
 
@@ -310,7 +310,7 @@ export default function HelpSupportScreen({ navigation }) {
               value={emailInput}
               onChangeText={setEmailInput}
               placeholder="you@company.com"
-              placeholderTextColor="#9A9A9A"
+              placeholderTextColor={theme.textMuted}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -324,7 +324,7 @@ export default function HelpSupportScreen({ navigation }) {
               value={phone}
               onChangeText={setPhone}
               placeholder="+1 (555) 123-4567"
-              placeholderTextColor="#9A9A9A"
+              placeholderTextColor={theme.textMuted}
               keyboardType="phone-pad"
               autoCorrect={false}
             />
@@ -339,7 +339,7 @@ export default function HelpSupportScreen({ navigation }) {
               onChangeText={setBody}
               multiline
               placeholder={t('helpSupport.placeholder', { defaultValue: "Tell us what's on your mind…" })}
-              placeholderTextColor="#9A9A9A"
+              placeholderTextColor={theme.textMuted}
               textAlignVertical="top"
             />
           </View>
@@ -369,7 +369,7 @@ export default function HelpSupportScreen({ navigation }) {
 const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.background,
   },
   header: {
     flexDirection: 'row',
@@ -383,7 +383,7 @@ const makeStyles = (theme) => StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 999,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -392,7 +392,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 17,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.2,
   },
   rowGroup: {
@@ -406,10 +406,10 @@ const makeStyles = (theme) => StyleSheet.create({
     gap: 13,
     paddingVertical: 13,
     paddingHorizontal: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     shadowColor: '#141420',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
@@ -420,7 +420,7 @@ const makeStyles = (theme) => StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -432,14 +432,14 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
   },
   rowSub: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '500',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
     marginTop: 1,
   },
@@ -449,7 +449,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.1,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
     marginTop: 22,
     marginBottom: 8,
@@ -462,7 +462,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   segmented: {
     flexDirection: 'row',
-    backgroundColor: '#F4F4F4',
+    backgroundColor: theme.surface,
     borderRadius: 11,
     padding: 4,
   },
@@ -474,7 +474,7 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   segmentActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     shadowColor: '#141420',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -485,21 +485,21 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 13,
     fontWeight: '600',
-    color: '#666666',
+    color: theme.textSecondary,
     letterSpacing: -0.1,
   },
   segmentTextActive: {
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     fontWeight: '700',
   },
 
   emailCard: {
     marginHorizontal: 18,
     marginTop: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     paddingHorizontal: 14,
     paddingVertical: 12,
     shadowColor: '#141420',
@@ -513,30 +513,30 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '700',
     letterSpacing: 1.1,
-    color: '#9A9A9A',
+    color: theme.textMuted,
     textTransform: 'uppercase',
     marginBottom: 4,
   },
   emailInput: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
     paddingVertical: 4,
   },
   cardDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: '#ECECEC',
+    backgroundColor: theme.border,
     marginVertical: 10,
   },
   textAreaCard: {
     marginHorizontal: 18,
     marginTop: 10,
     minHeight: 120,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surfaceElevated,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ECECEC',
+    borderColor: theme.border,
     paddingHorizontal: 14,
     paddingVertical: 12,
     shadowColor: '#141420',
@@ -548,12 +548,15 @@ const makeStyles = (theme) => StyleSheet.create({
   textArea: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 14,
-    color: '#1E1E1E',
+    color: theme.textPrimary,
     letterSpacing: -0.1,
     minHeight: 90,
     paddingVertical: 0,
   },
 
+  // Yellow CTA — stays yellow in both modes (accent tone matches the
+  // brand). Text is intentionally #1E1E1E so it reads on the yellow fill
+  // regardless of theme.
   primaryButton: {
     marginHorizontal: 18,
     marginTop: 12,
@@ -586,7 +589,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 11.5,
     fontWeight: '500',
-    color: '#9A9A9A',
+    color: theme.textMuted,
     letterSpacing: -0.1,
   },
 });

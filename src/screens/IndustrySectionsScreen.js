@@ -176,7 +176,7 @@ export default function IndustrySectionsScreen({ navigation }) {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="chevron-back" size={20} color="#1E1E1E" />
+          <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {t('industrySections.title', { defaultValue: 'Industry & folders' })}
@@ -340,7 +340,7 @@ export default function IndustrySectionsScreen({ navigation }) {
           {/* Customize Sections — opens the existing RoomEditor modal
               for full add / rename / remove / reorder of folders. */}
           <TouchableOpacity
-            style={[styles.settingRow, { borderTopWidth: 1, borderTopColor: 'rgba(0, 0, 0, 0.1)' }]}
+            style={[styles.settingRow, { borderTopWidth: 1, borderTopColor: theme.border }]}
             onPress={() => setShowRoomEditor(true)}
           >
             <View style={styles.settingInfo}>
@@ -351,13 +351,13 @@ export default function IndustrySectionsScreen({ navigation }) {
                 {t('settings.customizeSectionsDescription', { defaultValue: 'Add/edit/remove sections' })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#666666" />
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
           </TouchableOpacity>
 
           {/* Choose industry — opens the qualification modal in non-
               mandatory mode so it can be dismissed without changes. */}
           <TouchableOpacity
-            style={[styles.settingRow, { borderTopWidth: 1, borderTopColor: 'rgba(0, 0, 0, 0.1)' }]}
+            style={[styles.settingRow, { borderTopWidth: 1, borderTopColor: theme.border }]}
             onPress={() => {
               try { logEvent('qualification_prompt_shown', { context: 'settings_repick' }); } catch {}
               setShowIndustryPicker(true);
@@ -371,7 +371,7 @@ export default function IndustrySectionsScreen({ navigation }) {
                 {t('settings.chooseIndustryDescription', { defaultValue: 'Replace your sections with a preset list for your business type.' })}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#666666" />
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -496,13 +496,13 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingRight: 16,
   },
   settingLabel: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '600',
     fontSize: 15,
     flexShrink: 1,
   },
   settingDescription: {
-    color: COLORS.GRAY,
+    color: theme.textMuted,
     fontSize: 12,
     flexShrink: 1,
   },
@@ -512,20 +512,20 @@ const makeStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     padding: 12,
     borderRadius: 8,
   },
   locationPickerText: {
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     fontWeight: '600',
   },
-  locationPickerArrow: { color: COLORS.GRAY },
+  locationPickerArrow: { color: theme.textMuted },
 
   locationDropdown: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: COLORS.BORDER,
+    borderColor: theme.border,
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -541,10 +541,10 @@ const makeStyles = (theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.BORDER,
+    borderBottomColor: theme.border,
   },
   locationOptionSelected: { backgroundColor: theme.surface },
-  locationOptionText: { color: COLORS.TEXT },
+  locationOptionText: { color: theme.textPrimary },
   locationOptionTextSelected: { fontWeight: '700' },
   locationOptionCheck: {
     position: 'absolute',
@@ -563,7 +563,7 @@ const makeStyles = (theme) => StyleSheet.create({
     borderRadius: 10,
     backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
+    borderColor: theme.border,
     minWidth: 65,
     gap: 6,
   },
