@@ -265,6 +265,7 @@ export function StudioEditOverlays({
   renderWatermark = true,
   renderMetadata = true,
   renderBrandLogo = true,
+  renderMarkup = true,
   combinedLayout = 'side',
 }) {
   const s = useScopedSettings(photo?.id);
@@ -297,7 +298,10 @@ export function StudioEditOverlays({
           offset={s.metaOffset}
         />
       )}
-      <PhotoMarkupOverlay photo={photo} theme={theme} />
+      {/* `renderMarkup={false}` — MarkupEditor draws its own live shapes
+          from local state and doesn't want the persisted shapes
+          layer on top of them. */}
+      {renderMarkup && <PhotoMarkupOverlay photo={photo} theme={theme} />}
     </>
   );
 }

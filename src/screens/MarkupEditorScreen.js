@@ -18,7 +18,7 @@ import { FONTS } from '../constants/fonts';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import ColorGridPicker from '../components/ColorGridPicker';
-import PhotoLabels from '../components/PhotoLabels';
+import { StudioEditOverlays } from '../components/StudioOverlays';
 
 // Dedicated full-screen markup editor.
 //
@@ -160,6 +160,29 @@ export default function MarkupEditorScreen({ route, navigation }) {
   const [markupStroke, setMarkupStroke] = useState(route?.params?.initialStroke || 4);
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [sizeModalVisible, setSizeModalVisible] = useState(false);
+
+  // Photo aspect ratio (width / height). We shape the canvas frame to
+  // this ratio so overlays (labels, watermark, brand logo, metadata)
+  // land on the actual photo pixels — not on the letterbox around a
+  // resizeMode='contain' image. Falls back to 3:4 portrait.
+  const photoAspect = useMemo(() => {
+    if (!photo) return 3 / 4;
+    const w = Number(photo.width);
+    const h = Number(photo.height);
+    if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+      return w / h;
+    }
+    if (typeof photo.aspectRatio === 'string') {
+      const [aw, ah] = photo.aspectRatio.split(':').map(Number);
+      if (Number.isFinite(aw) && Number.isFinite(ah) && aw > 0 && ah > 0) {
+        return aw / ah;
+      }
+    }
+    if (typeof photo.aspectRatio === 'number' && photo.aspectRatio > 0) {
+      return photo.aspectRatio;
+    }
+    return 3 / 4;
+  }, [photo]);
   // Markup can be either the legacy raw-array format or the new
   // { bounds, shapes } object. Normalise on load so we always work with
   // an array internally.
@@ -407,31 +430,40 @@ export default function MarkupEditorScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* Single PanResponder owns the canvas. Image + SVG live inside
-          one Animated.View so they zoom + pan together. */}
-      <View
-        style={[styles.canvas, { backgroundColor: theme.surface }]}
-        onLayout={onCanvasLayout}
-        {...responder.panHandlers}
-      >
-        <Animated.View style={[StyleSheet.absoluteFill, transformStyle]}>
-          <Image source={{ uri: photo.uri }} style={styles.photo} resizeMode="contain" />
-          {/* Read-only labels overlay — respects SettingsContext.showLabels
-              so if the user has labels turned on for Studio, they show up
-              here too. pointerEvents='none' means drawing gestures still
-              reach the canvas underneath. */}
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <PhotoLabels photo={photo} />
-          </View>
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <Svg width="100%" height="100%">
-              {shapes.map((shape, i) => (
-                <MarkupShape key={`s-${i}`} shape={shape} />
-              ))}
-              {inProgress && <MarkupShape key="in-progress" shape={inProgress} />}
-            </Svg>
-          </View>
-        </Animated.View>
+      {/* Canvas wrapper — centers the photo-shaped canvas frame in the
+          available space between the header and the palette. */}
+      <View style={styles.canvasWrap}>
+        {/* The canvas itself matches the photo's aspect ratio so overlays
+            (labels, watermark, logo, metadata) land on the actual photo
+            pixels instead of the letterbox that a resizeMode='contain'
+            image would otherwise produce. */}
+        <View
+          style={[
+            styles.canvas,
+            { backgroundColor: theme.surface, aspectRatio: photoAspect },
+          ]}
+          onLayout={onCanvasLayout}
+          {...responder.panHandlers}
+        >
+          <Animated.View style={[StyleSheet.absoluteFill, transformStyle]}>
+            <Image source={{ uri: photo.uri }} style={styles.photo} resizeMode="cover" />
+            {/* Every read-only overlay Studio renders — labels, watermark,
+                brand logo, metadata. renderMarkup=false because the
+                persisted markup layer is replaced below by the live
+                shapes state we're editing. */}
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <StudioEditOverlays photo={photo} theme={theme} renderMarkup={false} />
+            </View>
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <Svg width="100%" height="100%">
+                {shapes.map((shape, i) => (
+                  <MarkupShape key={`s-${i}`} shape={shape} />
+                ))}
+                {inProgress && <MarkupShape key="in-progress" shape={inProgress} />}
+              </Svg>
+            </View>
+          </Animated.View>
+        </View>
       </View>
 
       {/* Docked palette sheet — rounded top corners, grabber, section
@@ -619,7 +651,24 @@ const styles = StyleSheet.create({
   title: { fontFamily: FONTS.ALEXANDRIA, fontSize: 16, fontWeight: '700' },
   saveBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100 },
   saveBtnText: { fontFamily: FONTS.ALEXANDRIA, fontSize: 13, fontWeight: '700' },
-  canvas: { flex: 1, position: 'relative', overflow: 'hidden' },
+  // Wrapper fills the space between header and palette; the canvas
+  // itself sits centered inside with maxWidth/maxHeight so the
+  // photo-shaped aspectRatio scales to fit.
+  canvasWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+    overflow: 'hidden',
+  },
+  canvas: {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    width: '100%',
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 8,
+  },
   photo: { width: '100%', height: '100%' },
   palette: {
     paddingHorizontal: 16,
