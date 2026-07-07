@@ -2373,12 +2373,35 @@ function VoiceTab({ theme, photo, updatePhoto }) {
         Alert.alert('Microphone permission needed', 'Enable microphone access in Settings to record voice notes.');
         return;
       }
+      // expo-av's internal foreground flag can get stuck at NO when the
+      // AV observer registers after UIApplicationDidBecomeActive fired,
+      // causing prepareToRecordAsync to reject with "This experience is
+      // currently in the background". Toggling setIsEnabledAsync re-syncs
+      // the session state; we still retry once on the background error.
+      try { await Audio.setIsEnabledAsync(true); } catch (_) {}
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
       });
-      const r = new Audio.Recording();
-      await r.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      const prepare = async () => {
+        const rec = new Audio.Recording();
+        await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+        return rec;
+      };
+      let r;
+      try {
+        r = await prepare();
+      } catch (e) {
+        if (/background/i.test(e?.message || '')) {
+          await new Promise((res) => setTimeout(res, 350));
+          try { await Audio.setIsEnabledAsync(false); } catch (_) {}
+          try { await Audio.setIsEnabledAsync(true); } catch (_) {}
+          r = await prepare();
+        } else {
+          throw e;
+        }
+      }
       await r.startAsync();
       setRecording(r);
       setIsRecording(true);
