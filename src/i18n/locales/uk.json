@@ -133,7 +133,17 @@
     "uploadPhotos": "Завантажити 2 фотографії",
     "deleteSomeFailed": "Не вдалося видалити деякі проекти. Будь ласка, спробуйте ще раз.",
     "upgrade": "Оновити",
-    "setLabel": "Набір {{n}}"
+    "setLabel": "Набір {{n}}",
+    "projectSheetSubtitle": "Перемкнути або керувати проєктом",
+    "currentProject": "Поточний проєкт",
+    "editDetails": "Редагувати деталі",
+    "editDetailsSub": "Назва, адреса, галузь",
+    "shareProjectSub": "Надіслати посилання на звіт або експорт",
+    "deleteProject": "Видалити проєкт",
+    "justNow": "Щойно",
+    "minutesAgo": "{{n}} хв тому",
+    "hoursAgo": "{{n}} год тому",
+    "daysAgo": "{{n}} дн тому"
   },
   "projects": {
     "title": "Проекти",
@@ -1285,7 +1295,18 @@
     "title": "Розмітка",
     "photoNotFound": "Фото не знайдено.",
     "undo": "Скасувати",
-    "clear": "Очистити"
+    "clear": "Очистити",
+    "tools": {
+      "draw": "Малювати",
+      "brush": "Пензлик",
+      "highlight": "Маркер",
+      "arrow": "Стрілка",
+      "circle": "Коло",
+      "measure": "Лінійка",
+      "text": "Текст"
+    },
+    "colorLabel": "Колір",
+    "sizeLabel": "Розмір"
   },
   "metadata": {
     "title": "Метадані",
@@ -1453,7 +1474,17 @@
     "exportTitle": "Експорт",
     "exportFormatLabel": "ФОРМАТ ЕКСПОРТУ",
     "exportPlaceholder": "Параметри експорту з'являться в наступному релізі — тут оберете формат, роздільну здатність та призначення.",
-    "customizeLabelsSubtitle": "Колір, шрифт, розмір, позиція, мітки за режимом"
+    "customizeLabelsSubtitle": "Колір, шрифт, розмір, позиція, мітки за режимом",
+    "customize": "Налаштувати",
+    "toolbar": {
+      "layout": "Макет",
+      "labels": "Мітки",
+      "notes": "Нотатки",
+      "export": "Експорт"
+    },
+    "applyScopeSet": "Цей набір",
+    "applyScopeFolder": "Ця тека",
+    "applyScopeProject": "Проєкт"
   },
   "reportPreview": {
     "progress": "ПРОГРЕС",
@@ -1704,6 +1735,22 @@
   "projectDetail": {
     "selectDate": "Вибрати дату",
     "deselectDate": "Скасувати вибір",
-    "roomMetaWithSets": "{{count}} фото · {{sets}} наборів"
+    "roomMetaWithSets": "{{count}} фото · {{sets}} наборів",
+    "tabTimeline": "Хронологія",
+    "tabLocations": "Локації",
+    "tabReport": "Звіт",
+    "tabShare": "Поділитися",
+    "shareThisProject": "Поділитися проєктом",
+    "shareSubtitle": "Надішліть звіт або оберіть фото для надсилання.",
+    "shareReportTitle": "Поділитися звітом",
+    "shareReportOpen": "Відкрити «{{name}}» і поділитися",
+    "shareReportEmpty": "Створіть охайний PDF-звіт з цього проєкту",
+    "sharePhotosTitle": "Поділитися фото проєкту",
+    "sharePhotosSubtitle": "Оберіть фото з галереї та надішліть як Файли, ZIP, PDF або посиланням Drive/Dropbox",
+    "newReport": "Новий звіт",
+    "thisProject": "Цей проєкт",
+    "allProjects": "Усі проєкти",
+    "mostRecent": "Останнє: {{date}}",
+    "selectPhotos": "Вибрати фото"
   }
 }

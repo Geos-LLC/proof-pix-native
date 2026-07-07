@@ -118,15 +118,21 @@ import { useTheme } from '../hooks/useTheme';
 import { FONTS } from '../constants/fonts';
 import { computeSetIds } from '../utils/photoSets';
 
+// Tabs source-of-truth. Labels are keys, not strings — the tab strip
+// resolves them through t() at render so the whole bar switches language
+// live without a remount.
 const TABS = [
-  { key: 'timeline', label: 'Timeline' },
-  { key: 'location', label: 'Locations' },
-  { key: 'report', label: 'Report' },
-  { key: 'share', label: 'Share' },
+  { key: 'timeline', labelKey: 'projectDetail.tabTimeline' },
+  { key: 'location', labelKey: 'projectDetail.tabLocations' },
+  { key: 'report',   labelKey: 'projectDetail.tabReport' },
+  { key: 'share',    labelKey: 'projectDetail.tabShare' },
 ];
 
-const formatDateLabel = (ts) =>
-  new Date(ts).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+// Date section headers respect the active i18n locale. We used to hard-
+// code 'en-US' which surfaced "July 6, 2026" even when the UI was
+// Russian; formatDateLabelI18n receives i18n.language from the caller.
+const formatDateLabelI18n = (ts, locale) =>
+  new Date(ts).toLocaleDateString(locale || 'en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
 // Date-section view: each day surfaces every photo taken on that day
 // as its own tile. Set membership is computed per (room, date) so each
@@ -295,7 +301,12 @@ const buildTimeline = (photos) => {
 };
 
 export default function ProjectDetailScreen({ route, navigation }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // Local alias so we can pass the active locale to Intl-based date
+  // formatters (Timeline day headers, "Most recent: …" prefix). Falls
+  // back to en-US when i18n is still initialising.
+  const dateLocale = i18n?.language || 'en-US';
+  const formatDateLabel = (ts) => formatDateLabelI18n(ts, dateLocale);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos, clearPhotoOverrides } = usePhotos();
@@ -2309,7 +2320,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   { color: isActive ? theme.accentText : theme.textSecondary },
                 ]}
               >
-                {tab.label}
+                {t(tab.labelKey)}
               </Text>
             </TouchableOpacity>
           );
@@ -2344,7 +2355,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 >
                   <Ionicons name="checkbox-outline" size={16} color={theme.textPrimary} />
                   <Text style={[styles.timelineSelectPillText, { color: theme.textPrimary }]}>
-                    Select photos
+                    {t('projectDetail.selectPhotos')}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -2581,7 +2592,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                                 stays on each tile inside the room
                                 section. */}
                             <Text style={[styles.roomTileName, { color: theme.textPrimary }]} numberOfLines={1}>
-                              Set {tile.setIndex}
+                              {t('home.setLabel', { n: tile.setIndex })}
                             </Text>
                           </TouchableOpacity>
                         );
@@ -2724,8 +2735,8 @@ export default function ProjectDetailScreen({ route, navigation }) {
           const ScopeToggle = (
             <View style={[styles.locationsScopeRow, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}>
               {[
-                { key: 'project', label: 'This project' },
-                { key: 'all', label: 'All projects' },
+                { key: 'project', label: t('projectDetail.thisProject') },
+                { key: 'all', label: t('projectDetail.allProjects') },
               ].map((opt) => {
                 const active = locationsScope === opt.key;
                 return (
@@ -2843,7 +2854,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                       ) : null}
                       {bucket.ts > 0 && (
                         <Text style={[styles.locationCardMeta, { color: theme.textMuted }]}>
-                          Most recent: {new Date(bucket.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {t('projectDetail.mostRecent', { date: new Date(bucket.ts).toLocaleDateString(dateLocale, { month: 'short', day: 'numeric', year: 'numeric' }) })}
                         </Text>
                       )}
                     </View>
@@ -2874,7 +2885,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
             >
               <Ionicons name="add" size={18} color={theme.accentText} />
               <Text style={[styles.reportPrimaryBtnText, { color: theme.accentText }]}>
-                New report
+                {t('projectDetail.newReport')}
               </Text>
             </TouchableOpacity>
             {reports.length === 0 ? (
@@ -3571,10 +3582,10 @@ export default function ProjectDetailScreen({ route, navigation }) {
         {activeTab === 'share' && (
           <View style={shareTabStyles.container}>
             <Text style={[shareTabStyles.heading, { color: theme.textPrimary }]}>
-              Share this project
+              {t('projectDetail.shareThisProject')}
             </Text>
             <Text style={[shareTabStyles.subheading, { color: theme.textSecondary }]}>
-              Send a generated report, or pick photos to send out.
+              {t('projectDetail.shareSubtitle')}
             </Text>
 
             <TouchableOpacity
@@ -3587,12 +3598,12 @@ export default function ProjectDetailScreen({ route, navigation }) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[shareTabStyles.actionTitle, { color: theme.textPrimary }]}>
-                  Share Project Report
+                  {t('projectDetail.shareReportTitle')}
                 </Text>
                 <Text style={[shareTabStyles.actionSubtitle, { color: theme.textSecondary }]}>
                   {reports && reports.length > 0
-                    ? `Open "${reports[0].title || 'your report'}" and share it`
-                    : 'Build a polished PDF report from this project'}
+                    ? t('projectDetail.shareReportOpen', { name: reports[0].title || t('projectDetail.shareReportFallbackName', { defaultValue: 'your report' }) })
+                    : t('projectDetail.shareReportEmpty')}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
@@ -3608,10 +3619,10 @@ export default function ProjectDetailScreen({ route, navigation }) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[shareTabStyles.actionTitle, { color: theme.textPrimary }]}>
-                  Share Project Photos
+                  {t('projectDetail.sharePhotosTitle')}
                 </Text>
                 <Text style={[shareTabStyles.actionSubtitle, { color: theme.textSecondary }]}>
-                  Pick photos from the gallery, then send as Files, ZIP, PDF, or a Drive/Dropbox link
+                  {t('projectDetail.sharePhotosSubtitle')}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />

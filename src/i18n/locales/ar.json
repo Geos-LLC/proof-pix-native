@@ -157,7 +157,17 @@
     "uploadPhotos": "رفع صورتين",
     "deleteSomeFailed": "فشل حذف بعض المشاريع. يرجى المحاولة مرة أخرى.",
     "upgrade": "ترقية",
-    "setLabel": "المجموعة {{n}}"
+    "setLabel": "المجموعة {{n}}",
+    "projectSheetSubtitle": "بدّل أو أدر مشروعك",
+    "currentProject": "المشروع الحالي",
+    "editDetails": "تعديل التفاصيل",
+    "editDetailsSub": "الاسم والعنوان والقطاع",
+    "shareProjectSub": "إرسال رابط التقرير أو تصديره",
+    "deleteProject": "حذف المشروع",
+    "justNow": "الآن",
+    "minutesAgo": "قبل {{n}} د",
+    "hoursAgo": "قبل {{n}} س",
+    "daysAgo": "قبل {{n}} ي"
   },
   "projects": {
     "title": "المشاريع",
@@ -1297,7 +1307,18 @@
     "title": "وضع علامات",
     "photoNotFound": "لم يتم العثور على الصورة.",
     "undo": "تراجع",
-    "clear": "مسح"
+    "clear": "مسح",
+    "tools": {
+      "draw": "رسم",
+      "brush": "فرشاة",
+      "highlight": "تمييز",
+      "arrow": "سهم",
+      "circle": "دائرة",
+      "measure": "قياس",
+      "text": "نص"
+    },
+    "colorLabel": "لون",
+    "sizeLabel": "الحجم"
   },
   "metadata": {
     "title": "البيانات الوصفية",
@@ -1465,7 +1486,17 @@
     "exportTitle": "تصدير",
     "exportFormatLabel": "تنسيق التصدير",
     "exportPlaceholder": "خيارات التصدير قادمة في التحديث التالي — اختر التنسيق والدقة والوجهة هنا.",
-    "customizeLabelsSubtitle": "اللون والخط والحجم والموضع وتسميات لكل وضع"
+    "customizeLabelsSubtitle": "اللون والخط والحجم والموضع وتسميات لكل وضع",
+    "customize": "تخصيص",
+    "toolbar": {
+      "layout": "التخطيط",
+      "labels": "الملصقات",
+      "notes": "الملاحظات",
+      "export": "تصدير"
+    },
+    "applyScopeSet": "هذه المجموعة",
+    "applyScopeFolder": "هذا المجلد",
+    "applyScopeProject": "المشروع"
   },
   "reportPreview": {
     "progress": "التقدم",
@@ -1716,6 +1747,22 @@
   "projectDetail": {
     "selectDate": "اختر التاريخ",
     "deselectDate": "إلغاء تحديد التاريخ",
-    "roomMetaWithSets": "{{count}} صور · {{sets}} مجموعات"
+    "roomMetaWithSets": "{{count}} صور · {{sets}} مجموعات",
+    "tabTimeline": "الجدول الزمني",
+    "tabLocations": "المواقع",
+    "tabReport": "التقرير",
+    "tabShare": "مشاركة",
+    "shareThisProject": "شارك هذا المشروع",
+    "shareSubtitle": "أرسل تقريراً منشأً أو اختر صوراً لإرسالها.",
+    "shareReportTitle": "مشاركة تقرير المشروع",
+    "shareReportOpen": "افتح \"{{name}}\" وشاركه",
+    "shareReportEmpty": "أنشئ تقرير PDF أنيقاً لهذا المشروع",
+    "sharePhotosTitle": "مشاركة صور المشروع",
+    "sharePhotosSubtitle": "اختر صوراً من المعرض ثم أرسلها كملفات أو ZIP أو PDF أو رابط Drive/Dropbox",
+    "newReport": "تقرير جديد",
+    "thisProject": "هذا المشروع",
+    "allProjects": "كل المشاريع",
+    "mostRecent": "الأحدث: {{date}}",
+    "selectPhotos": "اختر الصور"
   }
 }

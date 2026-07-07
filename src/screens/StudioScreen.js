@@ -47,21 +47,23 @@ import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } fro
 import { Audio } from 'expo-av';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 
+// Toolbar labels are i18n keys; the bottom nav resolves them through t()
+// at render so language switches don't need a screen remount.
 const TOOLBAR = [
-  { key: 'layout', label: 'Layout', icon: 'crop-outline' },
-  { key: 'branding', label: 'Labels', icon: 'pricetags-outline' },
-  { key: 'notes', label: 'Notes', icon: 'document-text-outline' },
-  { key: 'export', label: 'Export', icon: 'share-outline' },
+  { key: 'layout',   labelKey: 'studio.toolbar.layout',  icon: 'crop-outline' },
+  { key: 'branding', labelKey: 'studio.toolbar.labels',  icon: 'pricetags-outline' },
+  { key: 'notes',    labelKey: 'studio.toolbar.notes',   icon: 'document-text-outline' },
+  { key: 'export',   labelKey: 'studio.toolbar.export',  icon: 'share-outline' },
 ];
 
 const MARKUP_TOOLS = [
-  { key: 'draw', label: 'Draw', icon: 'pencil-outline', defaultStroke: 3 },
-  { key: 'brush', label: 'Brush', icon: 'brush-outline', defaultStroke: 8 },
-  { key: 'highlight', label: 'Highlight', icon: 'color-fill-outline', defaultStroke: 16, opacity: 0.4 },
-  { key: 'arrow', label: 'Arrow', icon: 'arrow-forward-outline', defaultStroke: 3 },
-  { key: 'circle', label: 'Circle', icon: 'ellipse-outline', defaultStroke: 3 },
-  { key: 'measure', label: 'Measure', icon: 'ruler-outline', defaultStroke: 2 },
-  { key: 'text', label: 'Text', icon: 'chatbubble-ellipses-outline', defaultStroke: 0 },
+  { key: 'draw',      labelKey: 'markup.tools.draw',      icon: 'pencil-outline',              defaultStroke: 3 },
+  { key: 'brush',     labelKey: 'markup.tools.brush',     icon: 'brush-outline',               defaultStroke: 8 },
+  { key: 'highlight', labelKey: 'markup.tools.highlight', icon: 'color-fill-outline',          defaultStroke: 16, opacity: 0.4 },
+  { key: 'arrow',     labelKey: 'markup.tools.arrow',     icon: 'arrow-forward-outline',       defaultStroke: 3 },
+  { key: 'circle',    labelKey: 'markup.tools.circle',    icon: 'ellipse-outline',             defaultStroke: 3 },
+  { key: 'measure',   labelKey: 'markup.tools.measure',   icon: 'ruler-outline',               defaultStroke: 2 },
+  { key: 'text',      labelKey: 'markup.tools.text',      icon: 'chatbubble-ellipses-outline', defaultStroke: 0 },
 ];
 
 const MARKUP_COLORS = ['#FF3B30', '#FFCC00', '#34C759', '#007AFF', '#FFFFFF', '#000000'];
@@ -137,9 +139,9 @@ const APPLY_SCOPES = [
   // 'photo' key is retained for compat with existing scope handlers, but
   // in combined-photo context the writes target the source before/after
   // pair — so the user-facing label is "This Set" to match reality.
-  { key: 'photo', label: 'This Set' },
-  { key: 'room', label: 'This Folder' },
-  { key: 'project', label: 'Project' },
+  { key: 'photo',   labelKey: 'studio.applyScopeSet' },
+  { key: 'room',    labelKey: 'studio.applyScopeFolder' },
+  { key: 'project', labelKey: 'studio.applyScopeProject' },
 ];
 
 const LABEL_POSITION_OPTIONS = [
@@ -156,9 +158,11 @@ const tsOf = (p) =>
     ? p.timestamp
     : (p?.createdAt ? new Date(p.createdAt).getTime() : 0);
 
-const formatDate = (ts) =>
+// Locale-aware date formatter. Callers pass the active i18n.language;
+// falls back to en-US for early boot before i18n is ready.
+const formatDate = (ts, locale) =>
   ts
-    ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    ? new Date(ts).toLocaleDateString(locale || 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : '';
 
 const modeBadgeText = (mode) => {
@@ -185,19 +189,20 @@ const watermarkPositionStyle = (pos) => {
   }
 };
 
-const formatPhotoMeta = (photo, userLocation) => {
+const formatPhotoMeta = (photo, userLocation, locale) => {
   const ts = typeof photo?.timestamp === 'number'
     ? photo.timestamp
     : (photo?.createdAt ? new Date(photo.createdAt).getTime() : 0);
   if (!ts) return '';
-  const date = new Date(ts).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const date = new Date(ts).toLocaleDateString(locale || 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   const time = new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const where = (photo?.location || userLocation || '').toString().trim();
   return [date, time, where].filter(Boolean).join(' · ');
 };
 
 export default function StudioScreen({ route, navigation }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n?.language || 'en-US';
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { canUse } = useFeaturePermissions();
@@ -996,7 +1001,7 @@ export default function StudioScreen({ route, navigation }) {
                         {room || 'Combined'}
                       </Text>
                       <Text style={[styles.gridItemSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
-                        {formatDate(tsOf(p))}
+                        {formatDate(tsOf(p), dateLocale)}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1044,14 +1049,14 @@ export default function StudioScreen({ route, navigation }) {
             {roomDisplayName || 'Studio'}
           </Text>
           <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
-            {formatDate(tsOf(photo))}
+            {formatDate(tsOf(photo), dateLocale)}
           </Text>
         </View>
         <TouchableOpacity
           style={[styles.saveBtn, { backgroundColor: theme.accent }]}
           onPress={() => setSaveMenuVisible(true)}
         >
-          <Text style={[styles.saveBtnText, { color: theme.accentText }]}>Save</Text>
+          <Text style={[styles.saveBtnText, { color: theme.accentText }]}>{t('common.save')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -1059,7 +1064,7 @@ export default function StudioScreen({ route, navigation }) {
           on-picture overlay (with field toggles + position + styling) is
           gated on the user's `showPreviewMetadata` switch. */}
       <Text style={[styles.metaLine, { color: theme.textSecondary }]} numberOfLines={1}>
-        {formatPhotoMeta(photo, location)}
+        {formatPhotoMeta(photo, location, dateLocale)}
       </Text>
 
       <View
@@ -1460,7 +1465,7 @@ export default function StudioScreen({ route, navigation }) {
                   { color: isActive ? theme.accent : theme.textSecondary, fontWeight: isActive ? '700' : '500' },
                 ]}
               >
-                {tool.label}
+                {t(tool.labelKey)}
               </Text>
             </TouchableOpacity>
           );
@@ -1582,7 +1587,7 @@ export default function StudioScreen({ route, navigation }) {
             },
           ]}
         >
-          <Text style={[styles.saveMenuTitle, { color: theme.textPrimary }]}>Apply changes to…</Text>
+          <Text style={[styles.saveMenuTitle, { color: theme.textPrimary }]}>{t('studio.applyChangesToTitle')}</Text>
           {APPLY_SCOPES.map((s, i) => (
             <TouchableOpacity
               key={s.key}
@@ -1604,7 +1609,7 @@ export default function StudioScreen({ route, navigation }) {
                 navigation.goBack();
               }}
             >
-              <Text style={[styles.saveMenuOptionText, { color: theme.textPrimary }]}>{s.label}</Text>
+              <Text style={[styles.saveMenuOptionText, { color: theme.textPrimary }]}>{t(s.labelKey)}</Text>
               {scope === s.key && (
                 <Ionicons name="checkmark" size={18} color={theme.accent} />
               )}
@@ -1624,7 +1629,7 @@ export default function StudioScreen({ route, navigation }) {
                 setSaveMenuVisible(false);
               }}
             >
-              <Text style={[styles.saveMenuOptionText, { color: theme.danger || '#FF3B30' }]}>Reset this photo</Text>
+              <Text style={[styles.saveMenuOptionText, { color: theme.danger || '#FF3B30' }]}>{t('studio.resetPhoto')}</Text>
             </TouchableOpacity>
           )}
           {/* Discard action — restore snapshot of all affected photos
@@ -1642,14 +1647,14 @@ export default function StudioScreen({ route, navigation }) {
                 navigation.goBack();
               }}
             >
-              <Text style={[styles.saveMenuOptionText, { color: theme.danger || '#FF3B30' }]}>Leave without saving</Text>
+              <Text style={[styles.saveMenuOptionText, { color: theme.danger || '#FF3B30' }]}>{t('studio.leaveWithoutSaving', { defaultValue: 'Leave without saving' })}</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             style={[styles.saveMenuCancel, { backgroundColor: theme.surface, borderColor: theme.border }]}
             onPress={() => setSaveMenuVisible(false)}
           >
-            <Text style={[styles.saveMenuCancelText, { color: theme.textSecondary }]}>Cancel</Text>
+            <Text style={[styles.saveMenuCancelText, { color: theme.textSecondary }]}>{t('common.cancel')}</Text>
           </TouchableOpacity>
         </View>
       </Modal>
@@ -1711,7 +1716,7 @@ function ScopePicker({ theme, scope, setScope }) {
                   { color: isActive ? theme.accentText : theme.textPrimary },
                 ]}
               >
-                {s.label}
+                {t(s.labelKey)}
               </Text>
             </TouchableOpacity>
           );
@@ -2046,15 +2051,16 @@ function MarkupPanel({
   scope,
   setScope,
 }) {
+  const { t } = useTranslation();
   return (
     <View>
       <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>TOOL</Text>
       <View style={styles.chipRow}>
-        {MARKUP_TOOLS.map((t) => {
-          const isActive = markupTool === t.key;
+        {MARKUP_TOOLS.map((mt) => {
+          const isActive = markupTool === mt.key;
           return (
             <TouchableOpacity
-              key={t.key}
+              key={mt.key}
               style={[
                 styles.markupToolBtn,
                 {
@@ -2063,19 +2069,19 @@ function MarkupPanel({
                 },
               ]}
               onPress={() => {
-                setMarkupTool(t.key);
-                if (typeof t.defaultStroke === 'number' && t.defaultStroke > 0) {
-                  setMarkupStroke(t.defaultStroke);
+                setMarkupTool(mt.key);
+                if (typeof mt.defaultStroke === 'number' && mt.defaultStroke > 0) {
+                  setMarkupStroke(mt.defaultStroke);
                 }
               }}
               activeOpacity={0.85}
             >
-              <Ionicons name={t.icon} size={18} color={isActive ? theme.accentText : theme.textPrimary} />
+              <Ionicons name={mt.icon} size={18} color={isActive ? theme.accentText : theme.textPrimary} />
               <Text
                 style={[styles.markupToolText, { color: isActive ? theme.accentText : theme.textPrimary }]}
                 numberOfLines={1}
               >
-                {t.label}
+                {t(mt.labelKey)}
               </Text>
             </TouchableOpacity>
           );
@@ -2171,6 +2177,7 @@ function MarkupPanel({
 }
 
 function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool, navigation }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('notes');
   const [noteText, setNoteText] = useState(photo?.notes || '');
   const [noteType, setNoteType] = useState(photo?.noteType || 'report');
@@ -2203,17 +2210,17 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
         contentContainerStyle={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}
       >
         {[
-          { key: 'notes', label: 'Notes', icon: 'document-text-outline' },
-          { key: 'voice', label: 'Voice', icon: 'mic-outline' },
+          { key: 'notes',  labelKey: 'studio.notesTab',  icon: 'document-text-outline' },
+          { key: 'voice',  labelKey: 'studio.voiceTab',  icon: 'mic-outline' },
           // 'markup' is a shortcut — tapping it doesn't switch the
           // Notes-panel inner tab, it jumps the whole Studio to the
           // Markup tool (which has the drawing surface + tool palette).
-          { key: 'markup', label: 'Markup', icon: 'create-outline', isShortcut: true },
-        ].map((t) => {
-          const isActive = !t.isShortcut && tab === t.key;
+          { key: 'markup', labelKey: 'studio.markupTab', icon: 'create-outline', isShortcut: true },
+        ].map((item) => {
+          const isActive = !item.isShortcut && tab === item.key;
           return (
             <TouchableOpacity
-              key={t.key}
+              key={item.key}
               style={[styles.chip, {
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -2222,7 +2229,7 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
                 borderColor: isActive ? theme.accent : theme.border,
               }]}
               onPress={() => {
-                if (t.isShortcut && t.key === 'markup') {
+                if (item.isShortcut && item.key === 'markup') {
                   // Direct navigation to the full-screen MarkupEditor
                   // — the drawing experience lives there. Inline / sheet
                   // configurations kept confusing users because they
@@ -2230,12 +2237,12 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
                   navigation?.navigate('MarkupEditor', { photoId: photo?.id });
                   return;
                 }
-                setTab(t.key);
+                setTab(item.key);
               }}
             >
-              <Ionicons name={t.icon} size={14} color={isActive ? theme.accentText : theme.textPrimary} />
+              <Ionicons name={item.icon} size={14} color={isActive ? theme.accentText : theme.textPrimary} />
               <Text style={[styles.chipText, { color: isActive ? theme.accentText : theme.textPrimary }]}>
-                {t.label}
+                {t(item.labelKey)}
               </Text>
             </TouchableOpacity>
           );
@@ -2248,7 +2255,7 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
             <TextInput
               value={noteText}
               onChangeText={persistNote}
-              placeholder="Add a note about this photo…"
+              placeholder={t('studio.notesPlaceholder')}
               placeholderTextColor={theme.textMuted}
               multiline
               textAlignVertical="top"
@@ -2261,11 +2268,11 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
               }}
             />
           </View>
-          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>NOTE TYPE</Text>
+          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t('studio.noteTypeLabel')}</Text>
           <View style={styles.chipRow}>
             {[
-              { key: 'report', label: 'Report Note' },
-              { key: 'private', label: 'Private Note' },
+              { key: 'report', labelKey: 'studio.reportNote' },
+              { key: 'private', labelKey: 'studio.privateNote' },
             ].map((nt) => {
               const isActive = noteType === nt.key;
               return (
@@ -2278,7 +2285,7 @@ function NotesPanel({ theme, photo, updatePhoto, scope, setScope, setActiveTool,
                   onPress={() => persistNoteType(nt.key)}
                 >
                   <Text style={[styles.chipText, { color: isActive ? theme.accentText : theme.textPrimary }]}>
-                    {nt.label}
+                    {t(nt.labelKey)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -2635,6 +2642,7 @@ function BrandingPanel({
   showLabels,
   toggleLabels,
 }) {
+  const { t } = useTranslation();
   // Three Tags tiles stacked vertically. Each tile's body opens its own
   // customize screen that shows ONLY that feature's settings — Logo
   // (upload, placement, size), Watermark (text, placement, styling),
@@ -2651,7 +2659,8 @@ function BrandingPanel({
     <View style={styles.brandTileRow}>
       <BrandTile
         theme={theme}
-        title="Logo"
+        title={t('studio.brand.logo')}
+        customizeLabel={t('studio.customize')}
         icon={
           brandLogoUri
             ? null
@@ -2665,7 +2674,8 @@ function BrandingPanel({
       />
       <BrandTile
         theme={theme}
-        title="Watermark"
+        title={t('studio.brand.watermark')}
+        customizeLabel={t('studio.customize')}
         icon="pricetag-outline"
         toggleValue={!!showWatermark}
         onToggle={(v) => updateShowWatermark(v)}
@@ -2673,7 +2683,8 @@ function BrandingPanel({
       />
       <BrandTile
         theme={theme}
-        title="Metadata"
+        title={t('studio.brand.metadata')}
+        customizeLabel={t('studio.customize')}
         icon="information-circle-outline"
         toggleValue={!!showPreviewMetadata}
         onToggle={togglePreviewMetadata}
@@ -2681,7 +2692,8 @@ function BrandingPanel({
       />
       <BrandTile
         theme={theme}
-        title="Labels"
+        title={t('studio.brand.labels')}
+        customizeLabel={t('studio.customize')}
         icon="pricetag-outline"
         toggleValue={!!showLabels}
         onToggle={toggleLabels}
@@ -2697,6 +2709,7 @@ function BrandingPanel({
 function BrandTile({
   theme,
   title,
+  customizeLabel,
   icon,
   previewUri,
   toggleValue,
@@ -2732,7 +2745,7 @@ function BrandTile({
           <Text style={[styles.brandTileTitle, { color: theme.textPrimary }]} numberOfLines={1}>
             {title}
           </Text>
-          <Text style={[styles.brandTileCustomize, { color: theme.textSecondary }]}>Customize</Text>
+          <Text style={[styles.brandTileCustomize, { color: theme.textSecondary }]}>{customizeLabel || 'Customize'}</Text>
           <Ionicons name="chevron-forward" size={12} color={theme.textSecondary} />
         </View>
       </TouchableOpacity>

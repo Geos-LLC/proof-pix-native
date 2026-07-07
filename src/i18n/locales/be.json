@@ -151,7 +151,17 @@
     "uploadPhotos": "Загрузіць 2 фота",
     "deleteSomeFailed": "Не ўдалося выдаліць некаторыя праекты. Калі ласка, паспрабуйце яшчэ раз.",
     "upgrade": "Абнавіць",
-    "setLabel": "Набор {{n}}"
+    "setLabel": "Набор {{n}}",
+    "projectSheetSubtitle": "Пераключыць ці кіраваць праектам",
+    "currentProject": "Бягучы праект",
+    "editDetails": "Рэдагаваць звесткі",
+    "editDetailsSub": "Назва, адрас, галіна",
+    "shareProjectSub": "Даслаць спасылку на справаздачу ці экспарт",
+    "deleteProject": "Выдаліць праект",
+    "justNow": "Толькі што",
+    "minutesAgo": "{{n}} хв таму",
+    "hoursAgo": "{{n}} г таму",
+    "daysAgo": "{{n}} дн таму"
   },
   "projects": {
     "title": "Праекты",
@@ -1300,7 +1310,18 @@
     "title": "Разметка",
     "photoNotFound": "Фота не знойдзена.",
     "undo": "Адмяніць",
-    "clear": "Ачысціць"
+    "clear": "Ачысціць",
+    "tools": {
+      "draw": "Маляваць",
+      "brush": "Пэндзаль",
+      "highlight": "Маркер",
+      "arrow": "Стрэлка",
+      "circle": "Круг",
+      "measure": "Лінейка",
+      "text": "Тэкст"
+    },
+    "colorLabel": "Колер",
+    "sizeLabel": "Памер"
   },
   "metadata": {
     "title": "Метаданыя",
@@ -1468,7 +1489,17 @@
     "exportTitle": "Экспарт",
     "exportFormatLabel": "ФАРМАТ ЭКСПАРТУ",
     "exportPlaceholder": "Опцыі экспарту з'явяцца ў наступным абнаўленні — выбіраць фармат, разрозненне і месца прызначэння будзеце тут.",
-    "customizeLabelsSubtitle": "Колер, шрыфт, памер, пазіцыя, подпісы для кожнага рэжыму"
+    "customizeLabelsSubtitle": "Колер, шрыфт, памер, пазіцыя, подпісы для кожнага рэжыму",
+    "customize": "Наладзіць",
+    "toolbar": {
+      "layout": "Макет",
+      "labels": "Меткі",
+      "notes": "Нататкі",
+      "export": "Экспарт"
+    },
+    "applyScopeSet": "Гэты набор",
+    "applyScopeFolder": "Гэта папка",
+    "applyScopeProject": "Праект"
   },
   "reportPreview": {
     "progress": "ПРАГРЭС",
@@ -1719,6 +1750,22 @@
   "projectDetail": {
     "selectDate": "Выбраць дату",
     "deselectDate": "Зняць выбар",
-    "roomMetaWithSets": "{{count}} фота · {{sets}} набораў"
+    "roomMetaWithSets": "{{count}} фота · {{sets}} набораў",
+    "tabTimeline": "Храналогія",
+    "tabLocations": "Лакацыі",
+    "tabReport": "Справаздача",
+    "tabShare": "Падзяліцца",
+    "shareThisProject": "Падзяліцца праектам",
+    "shareSubtitle": "Дашліце справаздачу або выберыце фота для адпраўкі.",
+    "shareReportTitle": "Падзяліцца справаздачай",
+    "shareReportOpen": "Адкрыць «{{name}}» і падзяліцца",
+    "shareReportEmpty": "Стварыце акуратную PDF-справаздачу па праекце",
+    "sharePhotosTitle": "Падзяліцца фота праекта",
+    "sharePhotosSubtitle": "Выберыце фота з галерэі і дашліце як Файлы, ZIP, PDF або спасылкай Drive/Dropbox",
+    "newReport": "Новая справаздача",
+    "thisProject": "Гэты праект",
+    "allProjects": "Усе праекты",
+    "mostRecent": "Апошняе: {{date}}",
+    "selectPhotos": "Выбраць фота"
   }
 }

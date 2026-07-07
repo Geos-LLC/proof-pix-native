@@ -149,7 +149,17 @@
     "uploadPhotos": "Enviar 2 Fotos",
     "deleteSomeFailed": "Falha ao excluir alguns projetos. Por favor, tente novamente.",
     "upgrade": "Atualizar",
-    "setLabel": "Set {{n}}"
+    "setLabel": "Set {{n}}",
+    "projectSheetSubtitle": "Alternar ou gerenciar seu projeto",
+    "currentProject": "Projeto atual",
+    "editDetails": "Editar detalhes",
+    "editDetailsSub": "Nome, endereço, setor",
+    "shareProjectSub": "Enviar link do relatório ou exportar",
+    "deleteProject": "Excluir projeto",
+    "justNow": "Agora",
+    "minutesAgo": "há {{n}} min",
+    "hoursAgo": "há {{n}} h",
+    "daysAgo": "há {{n}} d"
   },
   "projects": {
     "title": "Projetos",
@@ -1288,7 +1298,18 @@
     "title": "Marcação",
     "photoNotFound": "Foto não encontrada.",
     "undo": "Desfazer",
-    "clear": "Limpar"
+    "clear": "Limpar",
+    "tools": {
+      "draw": "Desenhar",
+      "brush": "Pincel",
+      "highlight": "Destacar",
+      "arrow": "Seta",
+      "circle": "Círculo",
+      "measure": "Medir",
+      "text": "Texto"
+    },
+    "colorLabel": "Cor",
+    "sizeLabel": "Tamanho"
   },
   "metadata": {
     "title": "Metadados",
@@ -1456,7 +1477,17 @@
     "exportTitle": "Exportar",
     "exportFormatLabel": "FORMATO DE EXPORTAÇÃO",
     "exportPlaceholder": "Opções de exportação chegarão na próxima etapa — escolha formato, resolução e destino aqui.",
-    "customizeLabelsSubtitle": "Cor, fonte, tamanho, posição, rótulos por modo"
+    "customizeLabelsSubtitle": "Cor, fonte, tamanho, posição, rótulos por modo",
+    "customize": "Personalizar",
+    "toolbar": {
+      "layout": "Layout",
+      "labels": "Etiquetas",
+      "notes": "Notas",
+      "export": "Exportar"
+    },
+    "applyScopeSet": "Este conjunto",
+    "applyScopeFolder": "Esta pasta",
+    "applyScopeProject": "Projeto"
   },
   "reportPreview": {
     "progress": "PROGRESSO",
@@ -1707,6 +1738,22 @@
   "projectDetail": {
     "selectDate": "Selecionar data",
     "deselectDate": "Desmarcar data",
-    "roomMetaWithSets": "{{count}} fotos · {{sets}} conjuntos"
+    "roomMetaWithSets": "{{count}} fotos · {{sets}} conjuntos",
+    "tabTimeline": "Linha do tempo",
+    "tabLocations": "Locais",
+    "tabReport": "Relatório",
+    "tabShare": "Compartilhar",
+    "shareThisProject": "Compartilhar este projeto",
+    "shareSubtitle": "Envie um relatório gerado ou escolha fotos para enviar.",
+    "shareReportTitle": "Compartilhar Relatório do Projeto",
+    "shareReportOpen": "Abrir \"{{name}}\" e compartilhar",
+    "shareReportEmpty": "Gere um relatório PDF caprichado deste projeto",
+    "sharePhotosTitle": "Compartilhar Fotos do Projeto",
+    "sharePhotosSubtitle": "Escolha fotos da galeria e envie como Arquivos, ZIP, PDF ou link do Drive/Dropbox",
+    "newReport": "Novo relatório",
+    "thisProject": "Este projeto",
+    "allProjects": "Todos os projetos",
+    "mostRecent": "Mais recente: {{date}}",
+    "selectPhotos": "Selecionar fotos"
   }
 }

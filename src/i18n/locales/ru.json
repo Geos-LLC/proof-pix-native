@@ -152,7 +152,17 @@
     "uploadPhotos": "Загрузить 2 фото",
     "deleteSomeFailed": "Не удалось удалить некоторые проекты. Пожалуйста, попробуйте ещё раз.",
     "upgrade": "Улучшить",
-    "setLabel": "Набор {{n}}"
+    "setLabel": "Набор {{n}}",
+    "projectSheetSubtitle": "Переключить или управлять проектом",
+    "currentProject": "Текущий проект",
+    "editDetails": "Изменить данные",
+    "editDetailsSub": "Название, адрес, отрасль",
+    "shareProjectSub": "Отправить ссылку на отчёт или экспорт",
+    "deleteProject": "Удалить проект",
+    "justNow": "Только что",
+    "minutesAgo": "{{n}} мин назад",
+    "hoursAgo": "{{n}} ч назад",
+    "daysAgo": "{{n}} дн назад"
   },
   "projects": {
     "title": "Проекты",
@@ -1286,7 +1296,18 @@
     "title": "Разметка",
     "photoNotFound": "Фото не найдено.",
     "undo": "Отменить",
-    "clear": "Очистить"
+    "clear": "Очистить",
+    "tools": {
+      "draw": "Рисовать",
+      "brush": "Кисть",
+      "highlight": "Маркер",
+      "arrow": "Стрелка",
+      "circle": "Круг",
+      "measure": "Линейка",
+      "text": "Текст"
+    },
+    "colorLabel": "Цвет",
+    "sizeLabel": "Размер"
   },
   "metadata": {
     "title": "Метаданные",
@@ -1454,7 +1475,17 @@
     "exportTitle": "Экспорт",
     "exportFormatLabel": "ФОРМАТ ЭКСПОРТА",
     "exportPlaceholder": "Параметры экспорта появятся в следующем обновлении — здесь можно будет выбрать формат, разрешение и место сохранения.",
-    "customizeLabelsSubtitle": "Цвет, шрифт, размер, позиция, подписи для каждого режима"
+    "customizeLabelsSubtitle": "Цвет, шрифт, размер, позиция, подписи для каждого режима",
+    "customize": "Настроить",
+    "toolbar": {
+      "layout": "Макет",
+      "labels": "Метки",
+      "notes": "Заметки",
+      "export": "Экспорт"
+    },
+    "applyScopeSet": "Этот набор",
+    "applyScopeFolder": "Эта папка",
+    "applyScopeProject": "Проект"
   },
   "reportPreview": {
     "progress": "ПРОГРЕСС",
@@ -1705,6 +1736,22 @@
   "projectDetail": {
     "selectDate": "Выбрать дату",
     "deselectDate": "Снять выбор",
-    "roomMetaWithSets": "{{count}} фото · {{sets}} наборов"
+    "roomMetaWithSets": "{{count}} фото · {{sets}} наборов",
+    "tabTimeline": "Хронология",
+    "tabLocations": "Локации",
+    "tabReport": "Отчёт",
+    "tabShare": "Поделиться",
+    "shareThisProject": "Поделиться проектом",
+    "shareSubtitle": "Отправьте отчёт или выберите фото для отправки.",
+    "shareReportTitle": "Поделиться отчётом",
+    "shareReportOpen": "Открыть «{{name}}» и поделиться",
+    "shareReportEmpty": "Создайте аккуратный PDF-отчёт по этому проекту",
+    "sharePhotosTitle": "Поделиться фото проекта",
+    "sharePhotosSubtitle": "Выберите фото из галереи и отправьте как Файлы, ZIP, PDF или ссылкой Drive/Dropbox",
+    "newReport": "Новый отчёт",
+    "thisProject": "Этот проект",
+    "allProjects": "Все проекты",
+    "mostRecent": "Последнее: {{date}}",
+    "selectPhotos": "Выбрать фото"
   }
 }

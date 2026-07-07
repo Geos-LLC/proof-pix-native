@@ -147,7 +147,17 @@
     "uploadPhotos": "사진 2장 업로드",
     "deleteSomeFailed": "일부 프로젝트 삭제에 실패했습니다. 다시 시도해 주세요.",
     "upgrade": "업그레이드",
-    "setLabel": "세트 {{n}}"
+    "setLabel": "세트 {{n}}",
+    "projectSheetSubtitle": "프로젝트 전환 또는 관리",
+    "currentProject": "현재 프로젝트",
+    "editDetails": "세부정보 편집",
+    "editDetailsSub": "이름, 주소, 업종",
+    "shareProjectSub": "보고서 링크 보내기 또는 내보내기",
+    "deleteProject": "프로젝트 삭제",
+    "justNow": "방금",
+    "minutesAgo": "{{n}}분 전",
+    "hoursAgo": "{{n}}시간 전",
+    "daysAgo": "{{n}}일 전"
   },
   "projects": {
     "title": "프로젝트",
@@ -1284,7 +1294,18 @@
     "title": "마크업",
     "photoNotFound": "사진을 찾을 수 없습니다.",
     "undo": "실행 취소",
-    "clear": "지우기"
+    "clear": "지우기",
+    "tools": {
+      "draw": "그리기",
+      "brush": "브러시",
+      "highlight": "하이라이트",
+      "arrow": "화살표",
+      "circle": "원",
+      "measure": "측정",
+      "text": "텍스트"
+    },
+    "colorLabel": "색상",
+    "sizeLabel": "크기"
   },
   "metadata": {
     "title": "메타데이터",
@@ -1452,7 +1473,17 @@
     "exportTitle": "내보내기",
     "exportFormatLabel": "내보내기 형식",
     "exportPlaceholder": "내보내기 옵션은 다음 업데이트에서 제공됩니다 — 여기서 형식, 해상도 및 대상을 선택하세요.",
-    "customizeLabelsSubtitle": "색상, 글꼴, 크기, 위치, 모드별 라벨"
+    "customizeLabelsSubtitle": "색상, 글꼴, 크기, 위치, 모드별 라벨",
+    "customize": "사용자화",
+    "toolbar": {
+      "layout": "레이아웃",
+      "labels": "레이블",
+      "notes": "메모",
+      "export": "내보내기"
+    },
+    "applyScopeSet": "이 세트",
+    "applyScopeFolder": "이 폴더",
+    "applyScopeProject": "프로젝트"
   },
   "reportPreview": {
     "progress": "진행 상황",
@@ -1703,6 +1734,22 @@
   "projectDetail": {
     "selectDate": "날짜 선택",
     "deselectDate": "날짜 선택 취소",
-    "roomMetaWithSets": "사진 {{count}}장 · 세트 {{sets}}개"
+    "roomMetaWithSets": "사진 {{count}}장 · 세트 {{sets}}개",
+    "tabTimeline": "타임라인",
+    "tabLocations": "위치",
+    "tabReport": "보고서",
+    "tabShare": "공유",
+    "shareThisProject": "이 프로젝트 공유",
+    "shareSubtitle": "보고서를 보내거나 보낼 사진을 선택하세요.",
+    "shareReportTitle": "프로젝트 보고서 공유",
+    "shareReportOpen": "\"{{name}}\" 열어 공유하기",
+    "shareReportEmpty": "이 프로젝트로 깔끔한 PDF 보고서를 만드세요",
+    "sharePhotosTitle": "프로젝트 사진 공유",
+    "sharePhotosSubtitle": "갤러리에서 사진을 선택해 파일, ZIP, PDF 또는 Drive/Dropbox 링크로 보내세요",
+    "newReport": "새 보고서",
+    "thisProject": "이 프로젝트",
+    "allProjects": "모든 프로젝트",
+    "mostRecent": "최근: {{date}}",
+    "selectPhotos": "사진 선택"
   }
 }

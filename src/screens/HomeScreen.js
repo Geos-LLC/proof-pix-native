@@ -187,7 +187,8 @@ const aspectForPhoto = (p) => {
 };
 
 export default function HomeScreen({ navigation, route }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n?.language || undefined;
   const {
     currentRoom,
     setCurrentRoom,
@@ -3062,10 +3063,10 @@ export default function HomeScreen({ navigation, route }) {
             <View style={styles.projectSheetHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.projectSheetTitle}>
-                  {t('projects.title', { defaultValue: 'Projects' })}
+                  {t('projects.title')}
                 </Text>
                 <Text style={styles.projectSheetSubtitle}>
-                  {t('home.projectSheetSubtitle', { defaultValue: 'Switch or manage your project' })}
+                  {t('home.projectSheetSubtitle')}
                 </Text>
               </View>
               <TouchableOpacity
@@ -3101,7 +3102,7 @@ export default function HomeScreen({ navigation, route }) {
                     t('common.photoCount', { count: projPhotos.length }),
                     t('common.setCount', { count: setCount }),
                   ];
-                  if (latestTs) metaParts.push(formatProjectRelative(latestTs));
+                  if (latestTs) metaParts.push(formatProjectRelative(latestTs, t, dateLocale));
                   const meta = metaParts.join(' · ');
                   return (
                     <TouchableOpacity
@@ -3165,15 +3166,15 @@ export default function HomeScreen({ navigation, route }) {
             {activeProject && (
               <View style={{ paddingHorizontal: 18, paddingTop: 10 }}>
                 <Text style={[styles.projectSheetEyebrow, { color: theme.textMuted }]}>
-                  {t('home.currentProject', { defaultValue: 'Current project' })}
+                  {t('home.currentProject')}
                 </Text>
                 <View style={[styles.projectSheetCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}>
                   <ProjectSheetActionRow
                     first
                     theme={theme}
                     icon="pencil-outline"
-                    label={t('home.editDetails', { defaultValue: 'Edit details' })}
-                    sub={t('home.editDetailsSub', { defaultValue: 'Name, address, industry' })}
+                    label={t('home.editDetails')}
+                    sub={t('home.editDetailsSub')}
                     onPress={() => {
                       setOpenProjectVisible(false);
                       setTimeout(() => {
@@ -3185,8 +3186,8 @@ export default function HomeScreen({ navigation, route }) {
                   <ProjectSheetActionRow
                     theme={theme}
                     icon="share-outline"
-                    label={t('home.shareProject', { defaultValue: 'Share project' })}
-                    sub={t('home.shareProjectSub', { defaultValue: 'Send report link or export' })}
+                    label={t('home.shareProject')}
+                    sub={t('home.shareProjectSub')}
                     onPress={() => {
                       setOpenProjectVisible(false);
                       navigation.navigate('ProjectDetail', {
@@ -3198,7 +3199,7 @@ export default function HomeScreen({ navigation, route }) {
                   <ProjectSheetActionRow
                     theme={theme}
                     icon="trash-outline"
-                    label={t('home.deleteProject', { defaultValue: 'Delete project' })}
+                    label={t('home.deleteProject')}
                     danger
                     onPress={() => {
                       selectedProjectsForDeleteRef.current = new Set([activeProject.id]);
@@ -3225,7 +3226,7 @@ export default function HomeScreen({ navigation, route }) {
               >
                 <Ionicons name="add" size={20} color={theme.accentText} style={{ marginRight: 6 }} />
                 <Text style={[styles.projectSheetPrimaryText, { color: theme.accentText }]}>
-                  {t('home.newProject', { defaultValue: 'New Project' })}
+                  {t('home.newProject')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -3414,15 +3415,16 @@ export default function HomeScreen({ navigation, route }) {
 // "Xh ago" / "Yesterday" / date fallback for the project switcher sheet
 // meta line. Kept local to HomeScreen so the sheet doesn't reach into
 // ProjectsScreen's formatRelative helper (which lives inside its own
-// file-scope closure).
-const formatProjectRelative = (ts) => {
+// file-scope closure). Accepts t + locale so the string is fully
+// localized — under Russian we render "12 ч назад" not "12h ago".
+const formatProjectRelative = (ts, t, locale) => {
   if (!ts) return '';
   const diff = Date.now() - ts;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
-  return new Date(ts).toLocaleDateString();
+  if (diff < 60_000) return t('home.justNow');
+  if (diff < 3_600_000) return t('home.minutesAgo', { n: Math.floor(diff / 60_000) });
+  if (diff < 86_400_000) return t('home.hoursAgo', { n: Math.floor(diff / 3_600_000) });
+  if (diff < 604_800_000) return t('home.daysAgo', { n: Math.floor(diff / 86_400_000) });
+  return new Date(ts).toLocaleDateString(locale || undefined);
 };
 
 // A single row inside the "Current project" grouped card in the project

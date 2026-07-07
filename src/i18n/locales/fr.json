@@ -149,7 +149,17 @@
     "uploadPhotos": "Téléverser 2 photos",
     "deleteSomeFailed": "Échec de la suppression de certains projets. Veuillez réessayer.",
     "upgrade": "Améliorer",
-    "setLabel": "Set {{n}}"
+    "setLabel": "Set {{n}}",
+    "projectSheetSubtitle": "Changez ou gérez votre projet",
+    "currentProject": "Projet actuel",
+    "editDetails": "Modifier les détails",
+    "editDetailsSub": "Nom, adresse, secteur",
+    "shareProjectSub": "Envoyer le lien du rapport ou exporter",
+    "deleteProject": "Supprimer le projet",
+    "justNow": "À l’instant",
+    "minutesAgo": "il y a {{n}} min",
+    "hoursAgo": "il y a {{n}} h",
+    "daysAgo": "il y a {{n}} j"
   },
   "projects": {
     "title": "Projets",
@@ -1332,7 +1342,18 @@
     "title": "Annotation",
     "photoNotFound": "Photo introuvable.",
     "undo": "Annuler",
-    "clear": "Effacer"
+    "clear": "Effacer",
+    "tools": {
+      "draw": "Dessiner",
+      "brush": "Pinceau",
+      "highlight": "Surligner",
+      "arrow": "Flèche",
+      "circle": "Cercle",
+      "measure": "Mesurer",
+      "text": "Texte"
+    },
+    "colorLabel": "Couleur",
+    "sizeLabel": "Taille"
   },
   "metadata": {
     "title": "Métadonnées",
@@ -1500,7 +1521,17 @@
     "exportTitle": "Exporter",
     "exportFormatLabel": "FORMAT D'EXPORT",
     "exportPlaceholder": "Options d'export disponibles prochainement — choisissez le format, la résolution et la destination ici.",
-    "customizeLabelsSubtitle": "Couleur, police, taille, position, étiquettes par mode"
+    "customizeLabelsSubtitle": "Couleur, police, taille, position, étiquettes par mode",
+    "customize": "Personnaliser",
+    "toolbar": {
+      "layout": "Mise en page",
+      "labels": "Étiquettes",
+      "notes": "Notes",
+      "export": "Exporter"
+    },
+    "applyScopeSet": "Ce set",
+    "applyScopeFolder": "Ce dossier",
+    "applyScopeProject": "Projet"
   },
   "reportPreview": {
     "progress": "PROGRESSION",
@@ -1751,6 +1782,22 @@
   "projectDetail": {
     "selectDate": "Sélectionner la date",
     "deselectDate": "Désélectionner la date",
-    "roomMetaWithSets": "{{count}} photos · {{sets}} sets"
+    "roomMetaWithSets": "{{count}} photos · {{sets}} sets",
+    "tabTimeline": "Chronologie",
+    "tabLocations": "Lieux",
+    "tabReport": "Rapport",
+    "tabShare": "Partager",
+    "shareThisProject": "Partager ce projet",
+    "shareSubtitle": "Envoyez un rapport ou choisissez des photos à envoyer.",
+    "shareReportTitle": "Partager le rapport du projet",
+    "shareReportOpen": "Ouvrir « {{name}} » et partager",
+    "shareReportEmpty": "Créez un rapport PDF soigné de ce projet",
+    "sharePhotosTitle": "Partager les photos du projet",
+    "sharePhotosSubtitle": "Choisissez des photos dans la galerie puis envoyez-les en Fichiers, ZIP, PDF ou lien Drive/Dropbox",
+    "newReport": "Nouveau rapport",
+    "thisProject": "Ce projet",
+    "allProjects": "Tous les projets",
+    "mostRecent": "Plus récent : {{date}}",
+    "selectPhotos": "Choisir des photos"
   }
 }

@@ -149,7 +149,17 @@
     "uploadPhotos": "Mag-upload ng 2 Larawan",
     "deleteSomeFailed": "Hindi natanggal ang ilang proyekto. Pakisubukang muli.",
     "upgrade": "I-upgrade",
-    "setLabel": "Set {{n}}"
+    "setLabel": "Set {{n}}",
+    "projectSheetSubtitle": "Palitan o pamahalaan ang iyong proyekto",
+    "currentProject": "Kasalukuyang proyekto",
+    "editDetails": "I-edit ang mga detalye",
+    "editDetailsSub": "Pangalan, address, industriya",
+    "shareProjectSub": "Magpadala ng link ng ulat o i-export",
+    "deleteProject": "Tanggalin ang proyekto",
+    "justNow": "Ngayon lang",
+    "minutesAgo": "{{n}} min ang nakalipas",
+    "hoursAgo": "{{n}} oras ang nakalipas",
+    "daysAgo": "{{n}} araw ang nakalipas"
   },
   "projects": {
     "title": "Mga Proyekto",
@@ -1288,7 +1298,18 @@
     "title": "Markup",
     "photoNotFound": "Hindi nahanap ang larawan.",
     "undo": "I-undo",
-    "clear": "I-clear"
+    "clear": "I-clear",
+    "tools": {
+      "draw": "Iguhit",
+      "brush": "Brush",
+      "highlight": "Highlight",
+      "arrow": "Arrow",
+      "circle": "Bilog",
+      "measure": "Sukat",
+      "text": "Teksto"
+    },
+    "colorLabel": "Kulay",
+    "sizeLabel": "Sukat"
   },
   "metadata": {
     "title": "Metadata",
@@ -1456,7 +1477,17 @@
     "exportTitle": "Export",
     "exportFormatLabel": "EXPORT FORMAT",
     "exportPlaceholder": "Mga opsyon sa export paparating sa susunod na pass — piliin ang format, resolusyon, at destinasyon dito.",
-    "customizeLabelsSubtitle": "Kulay, font, laki, posisyon, mga label per-mode"
+    "customizeLabelsSubtitle": "Kulay, font, laki, posisyon, mga label per-mode",
+    "customize": "I-customize",
+    "toolbar": {
+      "layout": "Layout",
+      "labels": "Mga label",
+      "notes": "Mga tala",
+      "export": "I-export"
+    },
+    "applyScopeSet": "Set na ito",
+    "applyScopeFolder": "Folder na ito",
+    "applyScopeProject": "Proyekto"
   },
   "reportPreview": {
     "progress": "PROGRESO",
@@ -1707,6 +1738,22 @@
   "projectDetail": {
     "selectDate": "Piliin ang petsa",
     "deselectDate": "I-deselect ang petsa",
-    "roomMetaWithSets": "{{count}} larawan · {{sets}} set"
+    "roomMetaWithSets": "{{count}} larawan · {{sets}} set",
+    "tabTimeline": "Timeline",
+    "tabLocations": "Mga Lokasyon",
+    "tabReport": "Ulat",
+    "tabShare": "Ibahagi",
+    "shareThisProject": "Ibahagi ang proyektong ito",
+    "shareSubtitle": "Magpadala ng ulat, o pumili ng mga larawan para ipadala.",
+    "shareReportTitle": "Ibahagi ang Ulat ng Proyekto",
+    "shareReportOpen": "Buksan ang \"{{name}}\" at ibahagi",
+    "shareReportEmpty": "Gumawa ng malinis na PDF na ulat mula sa proyektong ito",
+    "sharePhotosTitle": "Ibahagi ang mga Larawan ng Proyekto",
+    "sharePhotosSubtitle": "Pumili ng mga larawan mula sa gallery, pagkatapos ipadala bilang Files, ZIP, PDF, o link ng Drive/Dropbox",
+    "newReport": "Bagong ulat",
+    "thisProject": "Proyektong ito",
+    "allProjects": "Lahat ng proyekto",
+    "mostRecent": "Pinakabago: {{date}}",
+    "selectPhotos": "Piliin ang mga larawan"
   }
 }

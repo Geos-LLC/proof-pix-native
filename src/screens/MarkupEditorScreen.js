@@ -13,6 +13,7 @@ import {
 import Slider from '@react-native-community/slider';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } from 'react-native-svg';
 import { FONTS } from '../constants/fonts';
 import { usePhotos } from '../context/PhotoContext';
@@ -40,12 +41,12 @@ import { StudioEditOverlays } from '../components/StudioOverlays';
 // (never landed well as a freehand shape). Text is included so the
 // palette matches Studio's inline markup tool set.
 const MARKUP_TOOLS = [
-  { key: 'draw', label: 'Draw', icon: 'pencil-outline', defaultStroke: 3 },
-  { key: 'brush', label: 'Brush', icon: 'brush-outline', defaultStroke: 8 },
-  { key: 'highlight', label: 'Highlight', icon: 'color-fill-outline', defaultStroke: 16 },
-  { key: 'arrow', label: 'Arrow', icon: 'arrow-forward-outline', defaultStroke: 3 },
-  { key: 'measure', label: 'Measure', icon: 'resize-outline', defaultStroke: 2 },
-  { key: 'text', label: 'Text', icon: 'chatbubble-ellipses-outline', defaultStroke: 0 },
+  { key: 'draw',      labelKey: 'markup.tools.draw',      icon: 'pencil-outline',              defaultStroke: 3 },
+  { key: 'brush',     labelKey: 'markup.tools.brush',     icon: 'brush-outline',               defaultStroke: 8 },
+  { key: 'highlight', labelKey: 'markup.tools.highlight', icon: 'color-fill-outline',          defaultStroke: 16 },
+  { key: 'arrow',     labelKey: 'markup.tools.arrow',     icon: 'arrow-forward-outline',       defaultStroke: 3 },
+  { key: 'measure',   labelKey: 'markup.tools.measure',   icon: 'resize-outline',              defaultStroke: 2 },
+  { key: 'text',      labelKey: 'markup.tools.text',      icon: 'chatbubble-ellipses-outline', defaultStroke: 0 },
 ];
 const MARKUP_COLORS = ['#FF3B30', '#FFCC00', '#34C759', '#007AFF', '#FFFFFF', '#000000'];
 const STROKE_PRESETS = [
@@ -146,6 +147,7 @@ const centerOf = (touches) => ({
 export default function MarkupEditorScreen({ route, navigation }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const { photos, updatePhoto } = usePhotos();
   const photoId = route?.params?.photoId;
   const photo = useMemo(
@@ -388,11 +390,11 @@ export default function MarkupEditorScreen({ route, navigation }) {
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>Markup</Text>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>{t('markup.title')}</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.emptyState}>
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Photo not found.</Text>
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t('markup.photoNotFound')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -425,7 +427,7 @@ export default function MarkupEditorScreen({ route, navigation }) {
             style={[styles.saveBtn, { backgroundColor: theme.accent }]}
             onPress={handleSave}
           >
-            <Text style={[styles.saveBtnText, { color: theme.accentText }]}>Save</Text>
+            <Text style={[styles.saveBtnText, { color: theme.accentText }]}>{t('common.save')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -485,10 +487,10 @@ export default function MarkupEditorScreen({ route, navigation }) {
             tiles laid out as 2 rows of 4. No section labels: the same
             layout the customization sheets use. */}
         <View style={styles.tileGrid}>
-          {MARKUP_TOOLS.map((t) => {
-            const isActive = markupTool === t.key;
+          {MARKUP_TOOLS.map((tool) => {
+            const isActive = markupTool === tool.key;
             return (
-              <View key={t.key} style={styles.tileCell}>
+              <View key={tool.key} style={styles.tileCell}>
                 <TouchableOpacity
                   style={[
                     styles.tile,
@@ -498,12 +500,12 @@ export default function MarkupEditorScreen({ route, navigation }) {
                     },
                   ]}
                   onPress={() => {
-                    setMarkupTool(t.key);
-                    if (typeof t.defaultStroke === 'number') setMarkupStroke(t.defaultStroke);
+                    setMarkupTool(tool.key);
+                    if (typeof tool.defaultStroke === 'number') setMarkupStroke(tool.defaultStroke);
                   }}
                   activeOpacity={0.85}
                 >
-                  <Ionicons name={t.icon} size={22} color={isActive ? theme.accentText : theme.textPrimary} />
+                  <Ionicons name={tool.icon} size={22} color={isActive ? theme.accentText : theme.textPrimary} />
                 </TouchableOpacity>
                 <Text
                   style={[
@@ -512,7 +514,7 @@ export default function MarkupEditorScreen({ route, navigation }) {
                   ]}
                   numberOfLines={1}
                 >
-                  {t.label}
+                  {t(tool.labelKey)}
                 </Text>
               </View>
             );
@@ -525,7 +527,7 @@ export default function MarkupEditorScreen({ route, navigation }) {
             >
               <View style={[styles.tileSwatch, { backgroundColor: markupColor, borderColor: theme.border }]} />
             </TouchableOpacity>
-            <Text style={[styles.tileLabel, { color: theme.textSecondary }]}>Color</Text>
+            <Text style={[styles.tileLabel, { color: theme.textSecondary }]}>{t('markup.colorLabel')}</Text>
           </View>
           <View style={styles.tileCell}>
             <TouchableOpacity
@@ -535,7 +537,7 @@ export default function MarkupEditorScreen({ route, navigation }) {
             >
               <Ionicons name="resize-outline" size={22} color={theme.textPrimary} />
             </TouchableOpacity>
-            <Text style={[styles.tileLabel, { color: theme.textSecondary }]}>Size</Text>
+            <Text style={[styles.tileLabel, { color: theme.textSecondary }]}>{t('markup.sizeLabel')}</Text>
           </View>
         </View>
 
@@ -549,7 +551,7 @@ export default function MarkupEditorScreen({ route, navigation }) {
             disabled={shapes.length === 0}
           >
             <Ionicons name="arrow-undo-outline" size={16} color={theme.textPrimary} />
-            <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>Undo</Text>
+            <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>{t('markup.undo')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
@@ -560,7 +562,7 @@ export default function MarkupEditorScreen({ route, navigation }) {
             disabled={shapes.length === 0}
           >
             <Ionicons name="trash-outline" size={16} color={theme.danger} />
-            <Text style={[styles.actionBtnText, { color: theme.danger }]}>Clear</Text>
+            <Text style={[styles.actionBtnText, { color: theme.danger }]}>{t('markup.clear')}</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -150,12 +150,39 @@
     "uploadPhotos": "Upload 2 Photos",
     "deleteSomeFailed": "Failed to delete some projects. Please try again.",
     "upgrade": "Upgrade",
-    "setLabel": "Set {{n}}"
+    "setLabel": "Set {{n}}",
+    "projectSheetSubtitle": "Switch or manage your project",
+    "currentProject": "Current project",
+    "editDetails": "Edit details",
+    "editDetailsSub": "Name, address, industry",
+    "shareProject": "Share project",
+    "shareProjectSub": "Send report link or export",
+    "deleteProject": "Delete project",
+    "justNow": "Just now",
+    "minutesAgo": "{{n}}m ago",
+    "hoursAgo": "{{n}}h ago",
+    "daysAgo": "{{n}}d ago"
   },
   "projectDetail": {
     "selectDate": "Select date",
     "deselectDate": "Deselect date",
-    "roomMetaWithSets": "{{count}} photos · {{sets}} sets"
+    "roomMetaWithSets": "{{count}} photos · {{sets}} sets",
+    "tabTimeline": "Timeline",
+    "tabLocations": "Locations",
+    "tabReport": "Report",
+    "tabShare": "Share",
+    "shareThisProject": "Share this project",
+    "shareSubtitle": "Send a generated report, or pick photos to send out.",
+    "shareReportTitle": "Share Project Report",
+    "shareReportOpen": "Open \"{{name}}\" and share it",
+    "shareReportEmpty": "Build a polished PDF report from this project",
+    "sharePhotosTitle": "Share Project Photos",
+    "sharePhotosSubtitle": "Pick photos from the gallery, then send as Files, ZIP, PDF, or a Drive/Dropbox link",
+    "newReport": "New report",
+    "thisProject": "This project",
+    "allProjects": "All projects",
+    "mostRecent": "Most recent: {{date}}",
+    "selectPhotos": "Select photos"
   },
   "projects": {
     "title": "Projects",
@@ -1288,7 +1315,18 @@
     "title": "Markup",
     "photoNotFound": "Photo not found.",
     "undo": "Undo",
-    "clear": "Clear"
+    "clear": "Clear",
+    "tools": {
+      "draw": "Draw",
+      "brush": "Brush",
+      "highlight": "Highlight",
+      "arrow": "Arrow",
+      "circle": "Circle",
+      "measure": "Measure",
+      "text": "Text"
+    },
+    "colorLabel": "Color",
+    "sizeLabel": "Size"
   },
   "metadata": {
     "title": "Metadata",
@@ -1456,7 +1494,17 @@
     "exportTitle": "Export",
     "exportFormatLabel": "EXPORT FORMAT",
     "exportPlaceholder": "Export options coming next pass — choose format, resolution, and destination here.",
-    "customizeLabelsSubtitle": "Color, font, size, position, per-mode labels"
+    "customizeLabelsSubtitle": "Color, font, size, position, per-mode labels",
+    "customize": "Customize",
+    "toolbar": {
+      "layout": "Layout",
+      "labels": "Labels",
+      "notes": "Notes",
+      "export": "Export"
+    },
+    "applyScopeSet": "This Set",
+    "applyScopeFolder": "This Folder",
+    "applyScopeProject": "Project"
   },
   "reportPreview": {
     "progress": "PROGRESS",

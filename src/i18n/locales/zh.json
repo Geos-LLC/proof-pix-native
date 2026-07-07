@@ -147,7 +147,17 @@
     "uploadPhotos": "上传 2 张照片",
     "deleteSomeFailed": "删除部分项目失败。请重试。",
     "upgrade": "升级",
-    "setLabel": "第 {{n}} 组"
+    "setLabel": "第 {{n}} 组",
+    "projectSheetSubtitle": "切换或管理您的项目",
+    "currentProject": "当前项目",
+    "editDetails": "编辑详情",
+    "editDetailsSub": "名称、地址、行业",
+    "shareProjectSub": "发送报告链接或导出",
+    "deleteProject": "删除项目",
+    "justNow": "刚刚",
+    "minutesAgo": "{{n}} 分钟前",
+    "hoursAgo": "{{n}} 小时前",
+    "daysAgo": "{{n}} 天前"
   },
   "projects": {
     "title": "项目",
@@ -1286,7 +1296,18 @@
     "title": "标注",
     "photoNotFound": "未找到照片。",
     "undo": "撤销",
-    "clear": "清除"
+    "clear": "清除",
+    "tools": {
+      "draw": "绘制",
+      "brush": "画笔",
+      "highlight": "高亮",
+      "arrow": "箭头",
+      "circle": "圆形",
+      "measure": "测量",
+      "text": "文本"
+    },
+    "colorLabel": "颜色",
+    "sizeLabel": "大小"
   },
   "metadata": {
     "title": "元数据",
@@ -1454,7 +1475,17 @@
     "exportTitle": "导出",
     "exportFormatLabel": "导出格式",
     "exportPlaceholder": "导出选项将在下次更新中推出——在此选择格式、分辨率和目标位置。",
-    "customizeLabelsSubtitle": "颜色、字体、大小、位置、按模式设置标签"
+    "customizeLabelsSubtitle": "颜色、字体、大小、位置、按模式设置标签",
+    "customize": "自定义",
+    "toolbar": {
+      "layout": "布局",
+      "labels": "标签",
+      "notes": "备注",
+      "export": "导出"
+    },
+    "applyScopeSet": "本组",
+    "applyScopeFolder": "本文件夹",
+    "applyScopeProject": "项目"
   },
   "reportPreview": {
     "progress": "进度",
@@ -1705,6 +1736,22 @@
   "projectDetail": {
     "selectDate": "选择日期",
     "deselectDate": "取消选择日期",
-    "roomMetaWithSets": "{{count}} 张照片 · {{sets}} 组"
+    "roomMetaWithSets": "{{count}} 张照片 · {{sets}} 组",
+    "tabTimeline": "时间线",
+    "tabLocations": "位置",
+    "tabReport": "报告",
+    "tabShare": "分享",
+    "shareThisProject": "分享此项目",
+    "shareSubtitle": "发送生成的报告，或挑选照片发送。",
+    "shareReportTitle": "分享项目报告",
+    "shareReportOpen": "打开\"{{name}}\"并分享",
+    "shareReportEmpty": "为此项目生成精致的 PDF 报告",
+    "sharePhotosTitle": "分享项目照片",
+    "sharePhotosSubtitle": "从图库选择照片，然后作为文件、ZIP、PDF 或 Drive/Dropbox 链接发送",
+    "newReport": "新报告",
+    "thisProject": "此项目",
+    "allProjects": "所有项目",
+    "mostRecent": "最近：{{date}}",
+    "selectPhotos": "选择照片"
   }
 }

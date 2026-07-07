@@ -147,7 +147,17 @@
     "uploadPhotos": "Tải lên 2 Ảnh",
     "deleteSomeFailed": "Không thể xóa một số dự án. Vui lòng thử lại.",
     "upgrade": "Nâng cấp",
-    "setLabel": "Bộ {{n}}"
+    "setLabel": "Bộ {{n}}",
+    "projectSheetSubtitle": "Chuyển đổi hoặc quản lý dự án của bạn",
+    "currentProject": "Dự án hiện tại",
+    "editDetails": "Sửa chi tiết",
+    "editDetailsSub": "Tên, địa chỉ, ngành",
+    "shareProjectSub": "Gửi liên kết báo cáo hoặc xuất",
+    "deleteProject": "Xóa dự án",
+    "justNow": "Vừa xong",
+    "minutesAgo": "{{n}} phút trước",
+    "hoursAgo": "{{n}} giờ trước",
+    "daysAgo": "{{n}} ngày trước"
   },
   "projects": {
     "title": "Dự án",
@@ -1300,7 +1310,18 @@
     "title": "Đánh dấu",
     "photoNotFound": "Không tìm thấy ảnh.",
     "undo": "Hoàn tác",
-    "clear": "Xóa hết"
+    "clear": "Xóa hết",
+    "tools": {
+      "draw": "Vẽ",
+      "brush": "Cọ",
+      "highlight": "Đánh dấu",
+      "arrow": "Mũi tên",
+      "circle": "Vòng tròn",
+      "measure": "Đo",
+      "text": "Văn bản"
+    },
+    "colorLabel": "Màu",
+    "sizeLabel": "Kích thước"
   },
   "metadata": {
     "title": "Siêu dữ liệu",
@@ -1468,7 +1489,17 @@
     "exportTitle": "Xuất",
     "exportFormatLabel": "ĐỊNH DẠNG XUẤT",
     "exportPlaceholder": "Tùy chọn xuất sẽ có ở bản cập nhật tới — chọn định dạng, độ phân giải và điểm đến tại đây.",
-    "customizeLabelsSubtitle": "Màu, phông chữ, kích thước, vị trí, nhãn cho từng chế độ"
+    "customizeLabelsSubtitle": "Màu, phông chữ, kích thước, vị trí, nhãn cho từng chế độ",
+    "customize": "Tùy chỉnh",
+    "toolbar": {
+      "layout": "Bố cục",
+      "labels": "Nhãn",
+      "notes": "Ghi chú",
+      "export": "Xuất"
+    },
+    "applyScopeSet": "Bộ này",
+    "applyScopeFolder": "Thư mục này",
+    "applyScopeProject": "Dự án"
   },
   "reportPreview": {
     "progress": "TIẾN ĐỘ",
@@ -1719,6 +1750,22 @@
   "projectDetail": {
     "selectDate": "Chọn ngày",
     "deselectDate": "Bỏ chọn ngày",
-    "roomMetaWithSets": "{{count}} ảnh · {{sets}} bộ"
+    "roomMetaWithSets": "{{count}} ảnh · {{sets}} bộ",
+    "tabTimeline": "Dòng thời gian",
+    "tabLocations": "Vị trí",
+    "tabReport": "Báo cáo",
+    "tabShare": "Chia sẻ",
+    "shareThisProject": "Chia sẻ dự án này",
+    "shareSubtitle": "Gửi báo cáo được tạo hoặc chọn ảnh để gửi.",
+    "shareReportTitle": "Chia sẻ báo cáo dự án",
+    "shareReportOpen": "Mở \"{{name}}\" và chia sẻ",
+    "shareReportEmpty": "Tạo báo cáo PDF chỉn chu cho dự án này",
+    "sharePhotosTitle": "Chia sẻ ảnh dự án",
+    "sharePhotosSubtitle": "Chọn ảnh từ thư viện rồi gửi dưới dạng Tệp, ZIP, PDF hoặc liên kết Drive/Dropbox",
+    "newReport": "Báo cáo mới",
+    "thisProject": "Dự án này",
+    "allProjects": "Tất cả dự án",
+    "mostRecent": "Gần nhất: {{date}}",
+    "selectPhotos": "Chọn ảnh"
   }
 }
