@@ -1515,6 +1515,17 @@ export default function CameraScreen({ route, navigation }) {
     }, [hasPermission, requestPermission, dimensions, deviceOrientation, cameraViewMode, aspectRatio, pictureSize, mode])
   );
 
+  // Allow free rotation while the camera is focused so users can shoot
+  // landscape. The rest of the app is portrait-locked in App.js.
+  useFocusEffect(
+    useCallback(() => {
+      ScreenOrientation.unlockAsync().catch(() => {});
+      return () => {
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+      };
+    }, [])
+  );
+
   useEffect(() => {
     if (!hasPermission) {
       requestPermission();

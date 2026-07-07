@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox, Platform, Image, StatusBar } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
 
 // Keep the native splash screen visible until we explicitly hide it
@@ -814,6 +815,13 @@ export default function App() {
     Quicksand_600SemiBold,
     Quicksand_700Bold,
   });
+
+  // Lock the app to portrait globally. CameraScreen re-enables free
+  // rotation via useFocusEffect + unlockAsync() so users can capture
+  // landscape photos, then re-locks portrait on blur.
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
 
   useEffect(() => {
     // Initialize Firebase and Analytics
