@@ -3293,9 +3293,18 @@ export default function HomeScreen({ navigation, route }) {
           setRoomEditorMode('customize');
         }}
         onSave={(rooms) => {
+          // Auto-select a newly-created section so the next captured
+          // photo lands in it. Without this, currentRoom stays on the
+          // previously-active tab and users report "can't find the
+          // pictures under the new section" — the photos went to the
+          // old room they didn't realize was still selected.
+          const prevIds = new Set((customRooms || []).map((r) => r.id));
+          const newlyAdded = (rooms || []).filter((r) => !prevIds.has(r.id));
           saveCustomRooms(rooms);
           if (contextMenuRoom) {
             setCurrentRoom(contextMenuRoom.id);
+          } else if (newlyAdded.length > 0) {
+            setCurrentRoom(newlyAdded[newlyAdded.length - 1].id);
           }
           setShowRoomEditor(false);
           setContextMenuRoom(null);
