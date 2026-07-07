@@ -2111,7 +2111,7 @@ export default function HomeScreen({ navigation, route }) {
           <View key={item.key || `set-wrap-${i}`} style={styles.setTileWrapper}>
             {item}
             <Text style={styles.setTileLabel} numberOfLines={1}>
-              {`Set ${gridSetNumbers[i] ?? i + 1}`}
+              {t('home.setLabel', { n: gridSetNumbers[i] ?? i + 1, defaultValue: `Set ${gridSetNumbers[i] ?? i + 1}` })}
             </Text>
           </View>
         ))}
@@ -2143,7 +2143,7 @@ export default function HomeScreen({ navigation, route }) {
               <Text style={[
                 styles.starterButtonText,
                 styles.planButtonSelectedText
-              ]}>{(userPlan || 'starter').charAt(0).toUpperCase() + (userPlan || 'starter').slice(1)}</Text>
+              ]}>{t(`planModal.${userPlan || 'starter'}`, { defaultValue: (userPlan || 'starter').charAt(0).toUpperCase() + (userPlan || 'starter').slice(1) })}</Text>
             </TouchableOpacity>
             {(!userPlan || userPlan === 'starter') && (
               <TouchableOpacity
@@ -2155,7 +2155,7 @@ export default function HomeScreen({ navigation, route }) {
                   style={[styles.upgradeButtonImage, { tintColor: theme.textPrimary }]}
                   resizeMode="contain"
                 />
-                <Text style={styles.upgradeButtonText}>Upgrade</Text>
+                <Text style={styles.upgradeButtonText}>{t('home.upgrade')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -2169,7 +2169,7 @@ export default function HomeScreen({ navigation, route }) {
       <View style={styles.projectNameContainer}>
         <View style={styles.projectInfoRow}>
           <View style={styles.projectInfoLeft}>
-            <Text style={styles.projectLabel}>Project</Text>
+            <Text style={styles.projectLabel}>{t('home.projectLabel')}</Text>
             {(() => {
               const activeProject = projects.find(p => p.id === activeProjectId);
               const displayName = activeProject?.name || t('projects.noProjects');
@@ -2257,7 +2257,7 @@ export default function HomeScreen({ navigation, route }) {
                 style={{ marginRight: 4 }}
               />
               <Text style={styles.sortPillText}>
-                {captureSortOrder === 'asc' ? 'Oldest first' : 'Newest first'}
+                {captureSortOrder === 'asc' ? t('home.sortOldestFirst') : t('home.sortNewestFirst')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -3007,7 +3007,7 @@ export default function HomeScreen({ navigation, route }) {
                 setTappedFullPhoto(null);
                 navigation.navigate('StudioDetail', { photoId: p.id });
               }}
-              shareLabel="Share photo"
+              shareLabel={t('home.sharePhoto')}
               onShare={async (p) => {
                 if (!p?.uri) return;
                 // Route through chromeBakeService so the shared JPG
@@ -3098,8 +3098,8 @@ export default function HomeScreen({ navigation, route }) {
                     if (ts > latestTs) latestTs = ts;
                   }
                   const metaParts = [
-                    `${projPhotos.length} ${projPhotos.length === 1 ? 'photo' : 'photos'}`,
-                    `${setCount} ${setCount === 1 ? 'set' : 'sets'}`,
+                    t('common.photoCount', { count: projPhotos.length }),
+                    t('common.setCount', { count: setCount }),
                   ];
                   if (latestTs) metaParts.push(formatProjectRelative(latestTs));
                   const meta = metaParts.join(' · ');

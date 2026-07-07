@@ -49,7 +49,19 @@
     "genericError": "May nangyaring mali. Pakisubukang muli.",
     "info": "Impormasyon",
     "openSettings": "Buksan ang Mga Setting",
-    "remove": "Alisin"
+    "remove": "Alisin",
+    "share": "Ibahagi",
+    "color": "Kulay",
+    "font": "Font",
+    "size": "Sukat",
+    "position": "Posisyon",
+    "margin": "Margin",
+    "opacity": "Opacity",
+    "style": "Estilo",
+    "photoCount": "{{count}} larawan",
+    "photoCount_plural": "{{count}} larawan",
+    "setCount": "{{count}} set",
+    "setCount_plural": "{{count}} set"
   },
   "enterprise": {
     "title": "Enterprise Plan Request",
@@ -135,7 +147,9 @@
     "takeNext": "Kuhanin ang Susunod",
     "updateAfter": "I-update ang After",
     "uploadPhotos": "Mag-upload ng 2 Larawan",
-    "deleteSomeFailed": "Hindi natanggal ang ilang proyekto. Pakisubukang muli."
+    "deleteSomeFailed": "Hindi natanggal ang ilang proyekto. Pakisubukang muli.",
+    "upgrade": "I-upgrade",
+    "setLabel": "Set {{n}}"
   },
   "projects": {
     "title": "Mga Proyekto",
@@ -944,7 +958,19 @@
       "grid": "Grid",
       "spectrum": "Spectrum",
       "sliders": "Sliders"
-    }
+    },
+    "customizeLabels": "I-customize ang mga label",
+    "bgColor": "Kulay ng background",
+    "labelPositionTitle": "Posisyon ng label",
+    "labelMarginTitle": "Margin ng label",
+    "labelSizeTitle": "Sukat ng label",
+    "labelSizeInline": "Sukat ng label :",
+    "marginVerticalInline": "Patayo (Itaas/Ibaba) : {{value}}px",
+    "marginHorizontalInline": "Pahalang (Kaliwa/Kanan) : {{value}}px",
+    "applyDone": "Ilapat",
+    "editingOrientation": "Ini-edit ang mga posisyon ng {{orientation}} na larawan. Palitan sa preview sa itaas.",
+    "orientationVertical": "patayo (portrait + kwadrado)",
+    "orientationHorizontal": "pahalang (landscape)"
   },
   "folderCustomization": {
     "title": "I-edit ang mga Folder",
@@ -1283,7 +1309,11 @@
       "address": "Address",
       "gpsCoordinates": "GPS coordinates",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "Opacity",
+    "color": "Kulay",
+    "marginVertical": "Patayo (Itaas/Ibaba)",
+    "marginHorizontal": "Pahalang (Kaliwa/Kanan)"
   },
   "logoCustomization": {
     "title": "Logo",
@@ -1298,7 +1328,12 @@
     "logoPosition": "Posisyon ng Logo",
     "permissionNeededTitle": "Kailangan ng pahintulot",
     "permissionNeededMessage": "Kailangan ng access sa photo library para mag-upload ng logo.",
-    "couldNotOpenLibrary": "Hindi mabuksan ang library"
+    "couldNotOpenLibrary": "Hindi mabuksan ang library",
+    "remove": "Alisin",
+    "logoSizeLabel": "Sukat ng logo",
+    "marginTitle": "Margin",
+    "marginVertical": "Patayo (Itaas/Ibaba)",
+    "marginHorizontal": "Pahalang (Kaliwa/Kanan)"
   },
   "watermark": {
     "title": "Watermark",
@@ -1319,7 +1354,12 @@
     "fontModalTitle": "Font ng Watermark",
     "sizeModalTitle": "Laki ng Watermark",
     "fontSizeLabel": "Laki ng font",
-    "marginTitle": "Margin"
+    "marginTitle": "Margin",
+    "positionTitle": "Posisyon",
+    "opacityTitle": "Opacity",
+    "opacityLabel": "Opacity",
+    "marginVertical": "Patayo (Itaas/Ibaba)",
+    "marginHorizontal": "Pahalang (Kaliwa/Kanan)"
   },
   "studio": {
     "title": "Studio",
@@ -1663,5 +1703,10 @@
     "setupIncompleteMessage": "Ang team setup ay nangangailangan ng valid na Google connection. Mangyaring siguraduhing naka-sign in ka sa Google Drive.",
     "proxyInitErrorFallback": "Nabigo ang pag-initialize ng proxy session",
     "generateInviteErrorFallback": "Nabigo ang pagbuo ng imbitasyon"
+  },
+  "projectDetail": {
+    "selectDate": "Piliin ang petsa",
+    "deselectDate": "I-deselect ang petsa",
+    "roomMetaWithSets": "{{count}} larawan · {{sets}} set"
   }
 }

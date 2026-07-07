@@ -12,6 +12,7 @@ import {
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
@@ -58,10 +59,10 @@ const PREVIEW_FONT_MAP = {
 const getPreviewFontFamily = (key) => PREVIEW_FONT_MAP[key] || PREVIEW_FONT_MAP.system;
 
 const FIELD_DEFS = [
-  { key: 'date', label: 'Date', icon: 'calendar-outline' },
-  { key: 'time', label: 'Time', icon: 'time-outline' },
-  { key: 'address', label: 'Address', icon: 'location-outline' },
-  { key: 'gps', label: 'GPS coordinates', icon: 'navigate-outline' },
+  { key: 'date', tKey: 'metadata.fields.date', label: 'Date', icon: 'calendar-outline' },
+  { key: 'time', tKey: 'metadata.fields.time', label: 'Time', icon: 'time-outline' },
+  { key: 'address', tKey: 'metadata.fields.address', label: 'Address', icon: 'location-outline' },
+  { key: 'gps', tKey: 'metadata.fields.gpsCoordinates', shortTKey: 'metadata.fields.gpsShort', label: 'GPS coordinates', shortLabel: 'GPS', icon: 'navigate-outline' },
 ];
 
 // Map any saved size value (numeric or legacy string) to a numeric font
@@ -73,6 +74,7 @@ const toNumericFontSize = (v) => (typeof v === 'number' ? v : (LEGACY_FONT_SIZE[
 export default function MetadataCustomizationScreen({ navigation, route }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { t } = useTranslation();
   const {
     metaShowDate,
     metaShowTime,
@@ -135,7 +137,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
     if (where) parts.push(where);
   }
   if (metaShowGps && previewPhoto?.gps) parts.push(String(previewPhoto.gps));
-  const captionText = parts.length ? parts.join(' · ') : 'Metadata preview';
+  const captionText = parts.length ? parts.join(' · ') : t('metadata.previewFallback');
 
   const fieldValue = (key) => {
     if (key === 'date') return metaShowDate;
@@ -159,7 +161,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.headerClose}>
           <Ionicons name="close" size={18} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Metadata</Text>
+        <Text style={styles.headerTitle}>{t('metadata.title')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -172,7 +174,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
             behind it IS the preview. */}
 
         {/* ─── Fields ─── */}
-        <Text style={styles.sectionLabel}>FIELDS</Text>
+        <Text style={styles.sectionLabel}>{t('metadata.fieldsEyebrow')}</Text>
         <View style={styles.fieldPillRow}>
           {FIELD_DEFS.map((f) => {
             const active = !!fieldValue(f.key);
@@ -201,7 +203,9 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
                   ]}
                   numberOfLines={1}
                 >
-                  {f.label === 'GPS coordinates' ? 'GPS' : f.label}
+                  {f.key === 'gps'
+                    ? t(f.shortTKey, { defaultValue: f.shortLabel })
+                    : t(f.tKey, { defaultValue: f.label })}
                 </Text>
               </TouchableOpacity>
             );
@@ -211,21 +215,21 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
         {/* ─── Controls ─── Color moved into the row as a dedicated tile
             that opens the shared ColorGridPicker modal — matches how
             Watermark exposes its color, so both surfaces feel the same. */}
-        <Text style={styles.sectionLabel}>CONTROLS</Text>
+        <Text style={styles.sectionLabel}>{t('metadata.controlsEyebrow')}</Text>
         <View style={styles.controlsRow}>
-          <ControlButton styles={styles} theme={theme} icon="text" label="Style" onPress={() => setFontModalVisible(true)} />
-          <ControlButton styles={styles} theme={theme} icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-          <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="text" label={t('metadata.style')} onPress={() => setFontModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="resize" label={t('metadata.size')} onPress={() => setSizeModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="move" label={t('metadata.position')} onPress={() => setPositionModalVisible(true)} />
         </View>
         <View style={[styles.controlsRow, { marginTop: 12 }]}>
-          <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
-          <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => setOpacityModalVisible(true)} />
-          <ColorButton styles={styles} theme={theme} color={metaColor || '#FFFFFF'} onPress={() => setColorModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label={t('metadata.margin')} onPress={() => setMarginModalVisible(true)} />
+          <ControlButton styles={styles} theme={theme} icon="contrast-outline" label={t('metadata.opacity')} onPress={() => setOpacityModalVisible(true)} />
+          <ColorButton styles={styles} theme={theme} color={metaColor || '#FFFFFF'} label={t('metadata.color')} onPress={() => setColorModalVisible(true)} />
         </View>
       </ScrollView>
 
       {/* Font Modal */}
-      <BottomModal styles={styles} visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title="Text Style" theme={theme}>
+      <BottomModal styles={styles} visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title={t('metadata.textStyle')} theme={theme}>
         <View style={{ paddingVertical: 4 }}>
           {FONT_OPTIONS.map((font) => {
             const isSelected = metaFontFamily === font.key;
@@ -261,10 +265,10 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Size Modal */}
-      <BottomModal styles={styles} visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title="Text Size" theme={theme}>
+      <BottomModal styles={styles} visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title={t('metadata.textSize')} theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Font size</Text>
+            <Text style={styles.modalLabel}>{t('metadata.fontSize')}</Text>
             <Text style={styles.modalLabelValue}>{numericSize}px</Text>
           </View>
           <Slider
@@ -283,7 +287,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Position Modal */}
-      <BottomModal styles={styles} visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title="Position" theme={theme}>
+      <BottomModal styles={styles} visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title={t('metadata.position')} theme={theme}>
         <View style={{ padding: 16 }}>
           <PositionGrid
             layout={combinedGridLayout(previewPhoto)}
@@ -307,10 +311,10 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Margin Modal */}
-      <BottomModal styles={styles} visible={marginModalVisible} onClose={() => setMarginModalVisible(false)} title="Margin" theme={theme}>
+      <BottomModal styles={styles} visible={marginModalVisible} onClose={() => setMarginModalVisible(false)} title={t('metadata.margin')} theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Vertical (Top/Bottom)</Text>
+            <Text style={styles.modalLabel}>{t('metadata.marginVertical')}</Text>
             <Text style={styles.modalLabelValue}>{labelMarginVertical}px</Text>
           </View>
           <Slider
@@ -327,7 +331,7 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
         </View>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Horizontal (Left/Right)</Text>
+            <Text style={styles.modalLabel}>{t('metadata.marginHorizontal')}</Text>
             <Text style={styles.modalLabelValue}>{labelMarginHorizontal}px</Text>
           </View>
           <Slider
@@ -345,10 +349,10 @@ export default function MetadataCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Opacity Modal */}
-      <BottomModal styles={styles} visible={opacityModalVisible} onClose={() => setOpacityModalVisible(false)} title="Opacity" theme={theme}>
+      <BottomModal styles={styles} visible={opacityModalVisible} onClose={() => setOpacityModalVisible(false)} title={t('metadata.opacity')} theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Opacity</Text>
+            <Text style={styles.modalLabel}>{t('metadata.opacity')}</Text>
             <Text style={styles.modalLabelValue}>{Math.round((metaOpacity ?? 0.85) * 100)}%</Text>
           </View>
           <Slider
@@ -394,13 +398,13 @@ function ControlButton({ styles, theme, icon, label, onPress }) {
 // Same shape as ControlButton, but the square shows a swatch of the
 // current color instead of a monochrome icon — matches Watermark's
 // ColorButton so the Metadata sheet reads consistently.
-function ColorButton({ styles, theme, color, onPress }) {
+function ColorButton({ styles, theme, color, label, onPress }) {
   return (
     <TouchableOpacity style={styles.controlButton} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.controlSquare}>
         <View style={[styles.colorSwatchInline, { backgroundColor: color, borderColor: theme.border }]} />
       </View>
-      <Text style={styles.controlLabel}>Color</Text>
+      <Text style={styles.controlLabel}>{label}</Text>
     </TouchableOpacity>
   );
 }

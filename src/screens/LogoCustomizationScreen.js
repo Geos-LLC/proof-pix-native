@@ -13,6 +13,7 @@ import {
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
@@ -44,6 +45,7 @@ const LEGACY_SIZE_PX = { small: 40, medium: 60, large: 84 };
 export default function LogoCustomizationScreen({ navigation, route }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { t } = useTranslation();
   const {
     brandLogoUri,
     updateBrandLogoUri,
@@ -88,7 +90,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
       const ImagePicker = require('expo-image-picker');
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'Photo library access is required to upload a logo.');
+        Alert.alert(t('logoCustomization.permissionNeededTitle'), t('logoCustomization.permissionNeededMessage'));
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -100,7 +102,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
       const uri = result?.assets?.[0]?.uri;
       if (uri && !result.canceled) await updateBrandLogoUri(uri);
     } catch (e) {
-      Alert.alert("Couldn't open library", e?.message || 'Unknown error');
+      Alert.alert(t('logoCustomization.couldNotOpenLibrary'), e?.message || t('common.unknownError'));
     }
   };
 
@@ -110,7 +112,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="close" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Logo</Text>
+        <Text style={styles.headerTitle}>{t('logoCustomization.title')}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -123,7 +125,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
             behind it IS the preview. */}
 
         {/* ─── Upload ─── */}
-        <Text style={styles.sectionLabel}>UPLOAD</Text>
+        <Text style={styles.sectionLabel}>{t('logoCustomization.uploadEyebrow')}</Text>
         <View style={styles.uploadCard}>
           <View style={styles.logoPreview}>
             {brandLogoUri ? (
@@ -139,7 +141,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
             >
               <Ionicons name="cloud-upload-outline" size={14} color={theme.accentText} />
               <Text style={[styles.actionBtnText, { color: theme.accentText }]}>
-                {brandLogoUri ? 'Replace' : 'Upload'}
+                {brandLogoUri ? t('logoCustomization.replace') : t('logoCustomization.upload')}
               </Text>
             </TouchableOpacity>
             {brandLogoUri && (
@@ -151,34 +153,34 @@ export default function LogoCustomizationScreen({ navigation, route }) {
                 onPress={() => updateBrandLogoUri(null)}
               >
                 <Ionicons name="trash-outline" size={14} color={theme.danger} />
-                <Text style={[styles.actionBtnText, { color: theme.danger }]}>Remove</Text>
+                <Text style={[styles.actionBtnText, { color: theme.danger }]}>{t('logoCustomization.remove')}</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
 
         {/* ─── Controls ─── */}
-        <Text style={styles.sectionLabel}>CONTROLS</Text>
+        <Text style={styles.sectionLabel}>{t('logoCustomization.controlsEyebrow')}</Text>
         <View style={styles.controlsRow}>
           <ControlButton
             styles={styles}
             theme={theme}
             icon="resize"
-            label="Size"
+            label={t('logoCustomization.size')}
             onPress={() => setSizeModalVisible(true)}
           />
           <ControlButton
             styles={styles}
             theme={theme}
             icon="move"
-            label="Position"
+            label={t('logoCustomization.position')}
             onPress={() => setPositionModalVisible(true)}
           />
           <ControlButton
             styles={styles}
             theme={theme}
             icon="swap-horizontal-outline"
-            label="Margin"
+            label={t('logoCustomization.margin')}
             onPress={() => setMarginModalVisible(true)}
           />
         </View>
@@ -189,12 +191,12 @@ export default function LogoCustomizationScreen({ navigation, route }) {
         styles={styles}
         visible={sizeModalVisible}
         onClose={() => setSizeModalVisible(false)}
-        title="Logo Size"
+        title={t('logoCustomization.logoSize')}
         theme={theme}
       >
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Logo size</Text>
+            <Text style={styles.modalLabel}>{t('logoCustomization.logoSizeLabel')}</Text>
             <Text style={styles.modalLabelValue}>{numericSize}px</Text>
           </View>
           <Slider
@@ -217,7 +219,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
         styles={styles}
         visible={positionModalVisible}
         onClose={() => setPositionModalVisible(false)}
-        title="Logo Position"
+        title={t('logoCustomization.logoPosition')}
         theme={theme}
       >
         <View style={{ padding: 16 }}>
@@ -244,12 +246,12 @@ export default function LogoCustomizationScreen({ navigation, route }) {
         styles={styles}
         visible={marginModalVisible}
         onClose={() => setMarginModalVisible(false)}
-        title="Margin"
+        title={t('logoCustomization.marginTitle')}
         theme={theme}
       >
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Vertical (Top/Bottom)</Text>
+            <Text style={styles.modalLabel}>{t('logoCustomization.marginVertical')}</Text>
             <Text style={styles.modalLabelValue}>{labelMarginVertical}px</Text>
           </View>
           <Slider
@@ -266,7 +268,7 @@ export default function LogoCustomizationScreen({ navigation, route }) {
         </View>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Horizontal (Left/Right)</Text>
+            <Text style={styles.modalLabel}>{t('logoCustomization.marginHorizontal')}</Text>
             <Text style={styles.modalLabelValue}>{labelMarginHorizontal}px</Text>
           </View>
           <Slider

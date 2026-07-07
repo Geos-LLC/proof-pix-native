@@ -49,7 +49,22 @@
     "genericError": "Что-то пошло не так. Пожалуйста, попробуйте ещё раз.",
     "info": "Информация",
     "openSettings": "Открыть Настройки",
-    "remove": "Удалить"
+    "remove": "Удалить",
+    "share": "Поделиться",
+    "color": "Цвет",
+    "font": "Шрифт",
+    "size": "Размер",
+    "position": "Позиция",
+    "margin": "Отступ",
+    "opacity": "Прозрачность",
+    "style": "Стиль",
+    "progress": "Прогресс",
+    "photoCount_0": "{{count}} фото",
+    "photoCount_1": "{{count}} фото",
+    "photoCount_2": "{{count}} фото",
+    "setCount_0": "{{count}} набор",
+    "setCount_1": "{{count}} набора",
+    "setCount_2": "{{count}} наборов"
   },
   "firstLoad": {
     "title": "Добро пожаловать в ProofPix",
@@ -135,7 +150,9 @@
     "takeNext": "Сделать следующее",
     "updateAfter": "Обновить «После»",
     "uploadPhotos": "Загрузить 2 фото",
-    "deleteSomeFailed": "Не удалось удалить некоторые проекты. Пожалуйста, попробуйте ещё раз."
+    "deleteSomeFailed": "Не удалось удалить некоторые проекты. Пожалуйста, попробуйте ещё раз.",
+    "upgrade": "Улучшить",
+    "setLabel": "Набор {{n}}"
   },
   "projects": {
     "title": "Проекты",
@@ -944,7 +961,19 @@
       "grid": "Сетка",
       "spectrum": "Спектр",
       "sliders": "Слайдеры"
-    }
+    },
+    "customizeLabels": "Настроить метки",
+    "bgColor": "Цвет фона",
+    "labelPositionTitle": "Позиция метки",
+    "labelMarginTitle": "Отступ метки",
+    "labelSizeTitle": "Размер метки",
+    "labelSizeInline": "Размер метки :",
+    "marginVerticalInline": "Вертикально (сверху/снизу) : {{value}}px",
+    "marginHorizontalInline": "Горизонтально (слева/справа) : {{value}}px",
+    "applyDone": "Применить",
+    "editingOrientation": "Редактируются позиции {{orientation}} фото. Переключите в предпросмотре выше.",
+    "orientationVertical": "вертикальных (портрет + квадрат)",
+    "orientationHorizontal": "горизонтальных (пейзаж)"
   },
   "folderCustomization": {
     "title": "Редактировать папки",
@@ -1278,7 +1307,11 @@
       "address": "Адрес",
       "gpsCoordinates": "GPS-координаты",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "Прозрачность",
+    "color": "Цвет",
+    "marginVertical": "Вертикально (сверху/снизу)",
+    "marginHorizontal": "Горизонтально (слева/справа)"
   },
   "logoCustomization": {
     "title": "Логотип",
@@ -1293,7 +1326,12 @@
     "logoPosition": "Позиция логотипа",
     "permissionNeededTitle": "Требуется разрешение",
     "permissionNeededMessage": "Для загрузки логотипа требуется доступ к фото-библиотеке.",
-    "couldNotOpenLibrary": "Не удалось открыть библиотеку"
+    "couldNotOpenLibrary": "Не удалось открыть библиотеку",
+    "remove": "Удалить",
+    "logoSizeLabel": "Размер логотипа",
+    "marginTitle": "Отступ",
+    "marginVertical": "Вертикально (сверху/снизу)",
+    "marginHorizontal": "Горизонтально (слева/справа)"
   },
   "watermark": {
     "title": "Водяной знак",
@@ -1314,7 +1352,12 @@
     "fontModalTitle": "Шрифт водяного знака",
     "sizeModalTitle": "Размер водяного знака",
     "fontSizeLabel": "Размер шрифта",
-    "marginTitle": "Поля"
+    "marginTitle": "Поля",
+    "positionTitle": "Позиция",
+    "opacityTitle": "Прозрачность",
+    "opacityLabel": "Прозрачность",
+    "marginVertical": "Вертикально (сверху/снизу)",
+    "marginHorizontal": "Горизонтально (слева/справа)"
   },
   "studio": {
     "title": "Студия",
@@ -1658,5 +1701,10 @@
     "setupIncompleteMessage": "Для настройки команды требуется действующее подключение Google. Убедитесь, что вы вошли в Google Drive.",
     "proxyInitErrorFallback": "Не удалось инициализировать прокси-сессию",
     "generateInviteErrorFallback": "Не удалось создать приглашение"
+  },
+  "projectDetail": {
+    "selectDate": "Выбрать дату",
+    "deselectDate": "Снять выбор",
+    "roomMetaWithSets": "{{count}} фото · {{sets}} наборов"
   }
 }

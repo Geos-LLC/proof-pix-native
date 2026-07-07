@@ -49,7 +49,17 @@
     "genericError": "出错了。请重试。",
     "info": "信息",
     "openSettings": "打开设置",
-    "remove": "移除"
+    "remove": "移除",
+    "share": "分享",
+    "color": "颜色",
+    "font": "字体",
+    "size": "大小",
+    "position": "位置",
+    "margin": "边距",
+    "opacity": "不透明度",
+    "style": "样式",
+    "photoCount": "{{count}} 张照片",
+    "setCount": "{{count}} 组"
   },
   "firstLoad": {
     "title": "欢迎使用 ProofPix",
@@ -135,7 +145,9 @@
     "takeNext": "拍下一张",
     "updateAfter": "更新之后照片",
     "uploadPhotos": "上传 2 张照片",
-    "deleteSomeFailed": "删除部分项目失败。请重试。"
+    "deleteSomeFailed": "删除部分项目失败。请重试。",
+    "upgrade": "升级",
+    "setLabel": "第 {{n}} 组"
   },
   "projects": {
     "title": "项目",
@@ -944,7 +956,19 @@
       "grid": "网格",
       "spectrum": "光谱",
       "sliders": "滑块"
-    }
+    },
+    "customizeLabels": "自定义标签",
+    "bgColor": "背景颜色",
+    "labelPositionTitle": "标签位置",
+    "labelMarginTitle": "标签边距",
+    "labelSizeTitle": "标签大小",
+    "labelSizeInline": "标签大小 ：",
+    "marginVerticalInline": "垂直（上/下） ：{{value}}px",
+    "marginHorizontalInline": "水平（左/右） ：{{value}}px",
+    "applyDone": "应用",
+    "editingOrientation": "正在编辑{{orientation}}照片位置。请在上面的预览中切换。",
+    "orientationVertical": "垂直（纵向 + 方形）",
+    "orientationHorizontal": "水平（横向）"
   },
   "folderCustomization": {
     "title": "编辑文件夹",
@@ -1283,7 +1307,11 @@
       "address": "地址",
       "gpsCoordinates": "GPS 坐标",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "不透明度",
+    "color": "颜色",
+    "marginVertical": "垂直（上/下）",
+    "marginHorizontal": "水平（左/右）"
   },
   "logoCustomization": {
     "title": "徽标",
@@ -1298,7 +1326,12 @@
     "logoPosition": "徽标位置",
     "permissionNeededTitle": "需要权限",
     "permissionNeededMessage": "上传徽标需要照片库访问权限。",
-    "couldNotOpenLibrary": "无法打开图库"
+    "couldNotOpenLibrary": "无法打开图库",
+    "remove": "删除",
+    "logoSizeLabel": "徽标大小",
+    "marginTitle": "边距",
+    "marginVertical": "垂直（上/下）",
+    "marginHorizontal": "水平（左/右）"
   },
   "watermark": {
     "title": "水印",
@@ -1319,7 +1352,12 @@
     "fontModalTitle": "水印字体",
     "sizeModalTitle": "水印大小",
     "fontSizeLabel": "字体大小",
-    "marginTitle": "边距"
+    "marginTitle": "边距",
+    "positionTitle": "位置",
+    "opacityTitle": "不透明度",
+    "opacityLabel": "不透明度",
+    "marginVertical": "垂直（上/下）",
+    "marginHorizontal": "水平（左/右）"
   },
   "studio": {
     "title": "工作室",
@@ -1663,5 +1701,10 @@
     "setupIncompleteMessage": "团队设置需要有效的 Google 连接。请确认您已登录 Google Drive。",
     "proxyInitErrorFallback": "初始化代理会话失败",
     "generateInviteErrorFallback": "生成邀请失败"
+  },
+  "projectDetail": {
+    "selectDate": "选择日期",
+    "deselectDate": "取消选择日期",
+    "roomMetaWithSets": "{{count}} 张照片 · {{sets}} 组"
   }
 }

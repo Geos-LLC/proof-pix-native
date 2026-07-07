@@ -696,7 +696,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
         {sharing ? (
           <ActivityIndicator />
         ) : (
-          <Text style={styles.shareButtonText}>Share</Text>
+          <Text style={styles.shareButtonText}>{t('common.share')}</Text>
         )}
       </TouchableOpacity>
 

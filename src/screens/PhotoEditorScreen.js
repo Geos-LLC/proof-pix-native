@@ -892,7 +892,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
         
         <View style={styles.titleContainer}>
           <Text style={styles.title}>{currentPhotoSet.before.name}</Text>
-          <Text style={[styles.subtitle, { color: '#FFC107' }]}>COMBINED</Text>
+          <Text style={[styles.subtitle, { color: '#FFC107' }]}>{t('common.combined').toUpperCase()}</Text>
         </View>
         
         <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
@@ -930,7 +930,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
       </View>
 
       <View style={styles.templateSelector} {...templatePanResponder.panHandlers}>
-        <Text style={styles.selectorTitle}>Choose Template:</Text>
+        <Text style={styles.selectorTitle}>{t('photoEditor.chooseTemplate')}</Text>
         <ScrollView
           ref={templateScrollRef}
           horizontal
@@ -969,7 +969,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
         {saving ? (
           <ActivityIndicator />
         ) : (
-          <Text style={styles.shareButtonText}>Share</Text>
+          <Text style={styles.shareButtonText}>{t('common.share')}</Text>
         )}
       </TouchableOpacity>
 

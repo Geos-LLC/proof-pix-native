@@ -27,6 +27,7 @@
 //   onShareNow(photoId)   — kicks off the share for the single visible photo
 import React, { useState, useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
 import { useSettings } from '../context/SettingsContext';
 
@@ -53,6 +54,7 @@ export default function SharePreviewScreen({ route, navigation }) {
   } = route?.params || {};
 
   const settings = useSettings();
+  const { t } = useTranslation();
   const roomDisplayName = useCallback((roomId) => {
     if (!roomId) return '';
     try {
@@ -249,7 +251,7 @@ export default function SharePreviewScreen({ route, navigation }) {
       showOverlays
       overlaysOn={overlaysOn}
       onOverlaysChange={handleOverlaysChange}
-      shareLabel="Share photo"
+      shareLabel={t('home.sharePhoto')}
       onShare={handleShare}
     />
   );

@@ -16,6 +16,7 @@ import {
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
@@ -72,6 +73,7 @@ const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
 export default function WatermarkCustomizationScreen({ navigation, route }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { t } = useTranslation();
   const { canUse } = useFeaturePermissions();
   // Starter tier can still land on this screen — they get a stripped-down
   // version with ONLY the Position control unlocked. Everything else
@@ -162,7 +164,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.headerClose}>
           <Ionicons name="close" size={18} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Watermark</Text>
+        <Text style={styles.headerTitle}>{t('watermark.title')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -182,9 +184,9 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
           {/* Menu is identical for every tier — the paywall fires only on
               the actions that require CUSTOM_WATERMARKS. Position is the
               one free customization for starter. */}
-          <Text style={styles.sectionLabel}>CUSTOM TEXT</Text>
+          <Text style={styles.sectionLabel}>{t('watermark.customTextLabel')}</Text>
           <View style={styles.toggleRow}>
-            <Text style={styles.toggleLabel}>Use custom watermark</Text>
+            <Text style={styles.toggleLabel}>{t('watermark.useCustomToggle')}</Text>
             <Switch
               value={!!customWatermarkEnabled}
               onValueChange={(v) => {
@@ -205,7 +207,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
                 style={styles.input}
                 value={watermarkText}
                 onChangeText={(txt) => { if (!canCustomize) { openPaywall(); return; } updateWatermarkText(txt); }}
-                placeholder="Watermark text"
+                placeholder={t('watermark.textPlaceholder')}
                 placeholderTextColor={theme.textMuted}
                 editable={canCustomize}
               />
@@ -213,7 +215,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
                 style={styles.input}
                 value={watermarkLink}
                 onChangeText={(txt) => { if (!canCustomize) { openPaywall(); return; } updateWatermarkLink(txt); }}
-                placeholder="Optional link (https://…)"
+                placeholder={t('watermark.linkPlaceholder')}
                 placeholderTextColor={theme.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -226,22 +228,22 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
           {/* Controls — same 6 buttons for every tier. Position is free.
               Font / Size / Margin / Opacity / Color kick starter to the
               paywall on tap. */}
-          <Text style={styles.sectionLabel}>CONTROLS</Text>
+          <Text style={styles.sectionLabel}>{t('watermark.controlsLabel')}</Text>
           <View style={styles.controlsRow}>
-            <ControlButton styles={styles} theme={theme} icon="text" label="Font" onPress={() => { if (!canCustomize) { openPaywall(); return; } setFontModalVisible(true); }} />
-            <ControlButton styles={styles} theme={theme} icon="resize" label="Size" onPress={() => { if (!canCustomize) { openPaywall(); return; } setSizeModalVisible(true); }} />
-            <ControlButton styles={styles} theme={theme} icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
+            <ControlButton styles={styles} theme={theme} icon="text" label={t('watermark.controls.font')} onPress={() => { if (!canCustomize) { openPaywall(); return; } setFontModalVisible(true); }} />
+            <ControlButton styles={styles} theme={theme} icon="resize" label={t('watermark.controls.size')} onPress={() => { if (!canCustomize) { openPaywall(); return; } setSizeModalVisible(true); }} />
+            <ControlButton styles={styles} theme={theme} icon="move" label={t('watermark.controls.position')} onPress={() => setPositionModalVisible(true)} />
           </View>
           <View style={[styles.controlsRow, { marginTop: 12 }]}>
-            <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label="Margin" onPress={() => { if (!canCustomize) { openPaywall(); return; } setMarginModalVisible(true); }} />
-            <ControlButton styles={styles} theme={theme} icon="contrast-outline" label="Opacity" onPress={() => { if (!canCustomize) { openPaywall(); return; } setOpacityModalVisible(true); }} />
-            <ColorButton styles={styles} theme={theme} color={watermarkColor || '#FFD700'} onPress={() => { if (!canCustomize) { openPaywall(); return; } setColorModalVisible(true); }} />
+            <ControlButton styles={styles} theme={theme} icon="swap-horizontal-outline" label={t('watermark.controls.margin')} onPress={() => { if (!canCustomize) { openPaywall(); return; } setMarginModalVisible(true); }} />
+            <ControlButton styles={styles} theme={theme} icon="contrast-outline" label={t('watermark.controls.opacity')} onPress={() => { if (!canCustomize) { openPaywall(); return; } setOpacityModalVisible(true); }} />
+            <ColorButton styles={styles} theme={theme} color={watermarkColor || '#FFD700'} label={t('watermark.controls.color')} onPress={() => { if (!canCustomize) { openPaywall(); return; } setColorModalVisible(true); }} />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Font Modal */}
-      <BottomModal styles={styles} visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title="Watermark Font" theme={theme}>
+      <BottomModal styles={styles} visible={fontModalVisible} onClose={() => setFontModalVisible(false)} title={t('watermark.fontModalTitle')} theme={theme}>
         <View style={{ paddingVertical: 4 }}>
           {FONT_OPTIONS.map((font) => {
             const isSelected = watermarkFontFamily === font.key;
@@ -272,10 +274,10 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Size Modal */}
-      <BottomModal styles={styles} visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title="Watermark Size" theme={theme}>
+      <BottomModal styles={styles} visible={sizeModalVisible} onClose={() => setSizeModalVisible(false)} title={t('watermark.sizeModalTitle')} theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Font size</Text>
+            <Text style={styles.modalLabel}>{t('watermark.fontSizeLabel')}</Text>
             <Text style={styles.modalLabelValue}>{numericSize}px</Text>
           </View>
           <Slider
@@ -294,7 +296,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Position Modal */}
-      <BottomModal styles={styles} visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title="Position" theme={theme}>
+      <BottomModal styles={styles} visible={positionModalVisible} onClose={() => setPositionModalVisible(false)} title={t('watermark.positionTitle')} theme={theme}>
         <View style={{ padding: 16 }}>
           <PositionGrid
             layout={combinedGridLayout(previewPhoto)}
@@ -314,10 +316,10 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Margin Modal */}
-      <BottomModal styles={styles} visible={marginModalVisible} onClose={() => setMarginModalVisible(false)} title="Margin" theme={theme}>
+      <BottomModal styles={styles} visible={marginModalVisible} onClose={() => setMarginModalVisible(false)} title={t('watermark.marginTitle')} theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Vertical (Top/Bottom)</Text>
+            <Text style={styles.modalLabel}>{t('watermark.marginVertical')}</Text>
             <Text style={styles.modalLabelValue}>{labelMarginVertical}px</Text>
           </View>
           <Slider
@@ -334,7 +336,7 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
         </View>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Horizontal (Left/Right)</Text>
+            <Text style={styles.modalLabel}>{t('watermark.marginHorizontal')}</Text>
             <Text style={styles.modalLabelValue}>{labelMarginHorizontal}px</Text>
           </View>
           <Slider
@@ -352,10 +354,10 @@ export default function WatermarkCustomizationScreen({ navigation, route }) {
       </BottomModal>
 
       {/* Opacity Modal */}
-      <BottomModal styles={styles} visible={opacityModalVisible} onClose={() => setOpacityModalVisible(false)} title="Opacity" theme={theme}>
+      <BottomModal styles={styles} visible={opacityModalVisible} onClose={() => setOpacityModalVisible(false)} title={t('watermark.opacityTitle')} theme={theme}>
         <View style={styles.modalSection}>
           <View style={styles.sliderHeader}>
-            <Text style={styles.modalLabel}>Opacity</Text>
+            <Text style={styles.modalLabel}>{t('watermark.opacityLabel')}</Text>
             <Text style={styles.modalLabelValue}>{Math.round((watermarkOpacity ?? 0.5) * 100)}%</Text>
           </View>
           <Slider
@@ -398,13 +400,13 @@ function ControlButton({ styles, theme, icon, label, onPress }) {
   );
 }
 
-function ColorButton({ styles, theme, color, onPress }) {
+function ColorButton({ styles, theme, color, label, onPress }) {
   return (
     <TouchableOpacity style={styles.controlButton} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.controlSquare}>
         <View style={[styles.colorSwatchInline, { backgroundColor: color }]} />
       </View>
-      <Text style={styles.controlLabel}>Color</Text>
+      <Text style={styles.controlLabel}>{label}</Text>
     </TouchableOpacity>
   );
 }

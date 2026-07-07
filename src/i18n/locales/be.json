@@ -49,7 +49,21 @@
     "genericError": "Нешта пайшло не так. Калі ласка, паспрабуйце яшчэ раз.",
     "info": "Інфармацыя",
     "openSettings": "Адкрыць Налады",
-    "remove": "Выдаліць"
+    "remove": "Выдаліць",
+    "share": "Падзяліцца",
+    "color": "Колер",
+    "font": "Шрыфт",
+    "size": "Памер",
+    "position": "Пазіцыя",
+    "margin": "Водступ",
+    "opacity": "Празрыстасць",
+    "style": "Стыль",
+    "photoCount_0": "{{count}} фота",
+    "photoCount_1": "{{count}} фота",
+    "photoCount_2": "{{count}} фота",
+    "setCount_0": "{{count}} набор",
+    "setCount_1": "{{count}} наборы",
+    "setCount_2": "{{count}} набораў"
   },
   "enterprise": {
     "title": "Enterprise Plan Request",
@@ -135,7 +149,9 @@
     "takeNext": "Зрабіць наступнае",
     "updateAfter": "Абнавіць 'Пасля'",
     "uploadPhotos": "Загрузіць 2 фота",
-    "deleteSomeFailed": "Не ўдалося выдаліць некаторыя праекты. Калі ласка, паспрабуйце яшчэ раз."
+    "deleteSomeFailed": "Не ўдалося выдаліць некаторыя праекты. Калі ласка, паспрабуйце яшчэ раз.",
+    "upgrade": "Абнавіць",
+    "setLabel": "Набор {{n}}"
   },
   "projects": {
     "title": "Праекты",
@@ -959,7 +975,19 @@
       "grid": "Сетка",
       "spectrum": "Спектр",
       "sliders": "Паўзункі"
-    }
+    },
+    "customizeLabels": "Наладзіць меткі",
+    "bgColor": "Колер фону",
+    "labelPositionTitle": "Пазіцыя меткі",
+    "labelMarginTitle": "Водступ меткі",
+    "labelSizeTitle": "Памер меткі",
+    "labelSizeInline": "Памер меткі :",
+    "marginVerticalInline": "Вертыкальна (верх/ніз) : {{value}}px",
+    "marginHorizontalInline": "Гарызантальна (лева/права) : {{value}}px",
+    "applyDone": "Ужыць",
+    "editingOrientation": "Рэдагуюцца пазіцыі {{orientation}} фота. Пераключыце ў папярэднім праглядзе вышэй.",
+    "orientationVertical": "вертыкальных (партрэт + квадрат)",
+    "orientationHorizontal": "гарызантальных (пейзаж)"
   },
   "folderCustomization": {
     "title": "Рэдагаваць папкі",
@@ -1293,7 +1321,11 @@
       "address": "Адрас",
       "gpsCoordinates": "GPS-каардынаты",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "Празрыстасць",
+    "color": "Колер",
+    "marginVertical": "Вертыкальна (верх/ніз)",
+    "marginHorizontal": "Гарызантальна (лева/права)"
   },
   "logoCustomization": {
     "title": "Лагатып",
@@ -1308,7 +1340,12 @@
     "logoPosition": "Пазіцыя лагатыпа",
     "permissionNeededTitle": "Патрабуецца дазвол",
     "permissionNeededMessage": "Для загрузкі лагатыпа патрэбны доступ да фотабібліятэкі.",
-    "couldNotOpenLibrary": "Не ўдалося адкрыць бібліятэку"
+    "couldNotOpenLibrary": "Не ўдалося адкрыць бібліятэку",
+    "remove": "Выдаліць",
+    "logoSizeLabel": "Памер лагатыпа",
+    "marginTitle": "Водступ",
+    "marginVertical": "Вертыкальна (верх/ніз)",
+    "marginHorizontal": "Гарызантальна (лева/права)"
   },
   "watermark": {
     "title": "Вадзяны знак",
@@ -1329,7 +1366,12 @@
     "fontModalTitle": "Шрыфт вадзянога знака",
     "sizeModalTitle": "Памер вадзянога знака",
     "fontSizeLabel": "Памер шрыфта",
-    "marginTitle": "Водступ"
+    "marginTitle": "Водступ",
+    "positionTitle": "Пазіцыя",
+    "opacityTitle": "Празрыстасць",
+    "opacityLabel": "Празрыстасць",
+    "marginVertical": "Вертыкальна (верх/ніз)",
+    "marginHorizontal": "Гарызантальна (лева/права)"
   },
   "studio": {
     "title": "Студыя",
@@ -1673,5 +1715,10 @@
     "setupIncompleteMessage": "Настройка каманды патрабуе сапраўднага падключэння да Google. Калі ласка, пераканайцеся, што вы ўвайшлі ў Google Drive.",
     "proxyInitErrorFallback": "Не ўдалося ініцыялізаваць проксі-сесію",
     "generateInviteErrorFallback": "Не ўдалося стварыць запрашэнне"
+  },
+  "projectDetail": {
+    "selectDate": "Выбраць дату",
+    "deselectDate": "Зняць выбар",
+    "roomMetaWithSets": "{{count}} фота · {{sets}} набораў"
   }
 }

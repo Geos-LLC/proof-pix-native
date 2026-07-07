@@ -49,7 +49,27 @@
     "genericError": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
     "info": "معلومات",
     "openSettings": "فتح الإعدادات",
-    "remove": "إزالة"
+    "remove": "إزالة",
+    "share": "مشاركة",
+    "color": "لون",
+    "font": "خط",
+    "size": "الحجم",
+    "position": "الموضع",
+    "margin": "الهامش",
+    "opacity": "الشفافية",
+    "style": "النمط",
+    "photoCount_0": "{{count}} صورة",
+    "photoCount_1": "{{count}} صورة",
+    "photoCount_2": "{{count}} صورتان",
+    "photoCount_3": "{{count}} صور",
+    "photoCount_4": "{{count}} صورة",
+    "photoCount_5": "{{count}} صورة",
+    "setCount_0": "{{count}} مجموعة",
+    "setCount_1": "{{count}} مجموعة",
+    "setCount_2": "{{count}} مجموعتان",
+    "setCount_3": "{{count}} مجموعات",
+    "setCount_4": "{{count}} مجموعة",
+    "setCount_5": "{{count}} مجموعة"
   },
   "firstLoad": {
     "title": "مرحبًا بك في ProofPix",
@@ -135,7 +155,9 @@
     "takeNext": "التقاط التالية",
     "updateAfter": "تحديث صورة بعد",
     "uploadPhotos": "رفع صورتين",
-    "deleteSomeFailed": "فشل حذف بعض المشاريع. يرجى المحاولة مرة أخرى."
+    "deleteSomeFailed": "فشل حذف بعض المشاريع. يرجى المحاولة مرة أخرى.",
+    "upgrade": "ترقية",
+    "setLabel": "المجموعة {{n}}"
   },
   "projects": {
     "title": "المشاريع",
@@ -945,7 +967,19 @@
       "grid": "شبكة",
       "spectrum": "طيف",
       "sliders": "أشرطة تمرير"
-    }
+    },
+    "customizeLabels": "تخصيص الملصقات",
+    "bgColor": "لون الخلفية",
+    "labelPositionTitle": "موضع الملصق",
+    "labelMarginTitle": "هامش الملصق",
+    "labelSizeTitle": "حجم الملصق",
+    "labelSizeInline": "حجم الملصق :",
+    "marginVerticalInline": "عمودي (أعلى/أسفل) : {{value}}px",
+    "marginHorizontalInline": "أفقي (يسار/يمين) : {{value}}px",
+    "applyDone": "تطبيق",
+    "editingOrientation": "تحرير مواضع الصور {{orientation}}. بدل في المعاينة أعلاه.",
+    "orientationVertical": "العمودية (طولية + مربعة)",
+    "orientationHorizontal": "الأفقية (عرضية)"
   },
   "folderCustomization": {
     "title": "تعديل المجلدات",
@@ -1284,7 +1318,11 @@
       "address": "العنوان",
       "gpsCoordinates": "إحداثيات GPS",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "الشفافية",
+    "color": "لون",
+    "marginVertical": "عمودي (أعلى/أسفل)",
+    "marginHorizontal": "أفقي (يسار/يمين)"
   },
   "logoCustomization": {
     "title": "الشعار",
@@ -1299,7 +1337,12 @@
     "logoPosition": "موضع الشعار",
     "permissionNeededTitle": "الإذن مطلوب",
     "permissionNeededMessage": "الوصول إلى مكتبة الصور مطلوب لرفع الشعار.",
-    "couldNotOpenLibrary": "تعذر فتح المكتبة"
+    "couldNotOpenLibrary": "تعذر فتح المكتبة",
+    "remove": "إزالة",
+    "logoSizeLabel": "حجم الشعار",
+    "marginTitle": "الهامش",
+    "marginVertical": "عمودي (أعلى/أسفل)",
+    "marginHorizontal": "أفقي (يسار/يمين)"
   },
   "watermark": {
     "title": "العلامة المائية",
@@ -1320,7 +1363,12 @@
     "fontModalTitle": "خط العلامة المائية",
     "sizeModalTitle": "حجم العلامة المائية",
     "fontSizeLabel": "حجم الخط",
-    "marginTitle": "الهامش"
+    "marginTitle": "الهامش",
+    "positionTitle": "الموضع",
+    "opacityTitle": "الشفافية",
+    "opacityLabel": "الشفافية",
+    "marginVertical": "عمودي (أعلى/أسفل)",
+    "marginHorizontal": "أفقي (يسار/يمين)"
   },
   "studio": {
     "title": "الاستوديو",
@@ -1664,5 +1712,10 @@
     "setupIncompleteMessage": "يتطلب إعداد الفريق اتصال Google صالح. يرجى التأكد من تسجيل الدخول إلى Google Drive.",
     "proxyInitErrorFallback": "فشل تهيئة جلسة الوكيل",
     "generateInviteErrorFallback": "فشل إنشاء الدعوة"
+  },
+  "projectDetail": {
+    "selectDate": "اختر التاريخ",
+    "deselectDate": "إلغاء تحديد التاريخ",
+    "roomMetaWithSets": "{{count}} صور · {{sets}} مجموعات"
   }
 }

@@ -50,7 +50,19 @@
     "genericError": "Something went wrong. Please try again.",
     "info": "Info",
     "openSettings": "Open Settings",
-    "remove": "Remove"
+    "remove": "Remove",
+    "share": "Share",
+    "color": "Color",
+    "font": "Font",
+    "size": "Size",
+    "position": "Position",
+    "margin": "Margin",
+    "opacity": "Opacity",
+    "style": "Style",
+    "photoCount": "{{count}} photo",
+    "photoCount_plural": "{{count}} photos",
+    "setCount": "{{count}} set",
+    "setCount_plural": "{{count}} sets"
   },
   "firstLoad": {
     "title": "Welcome to ProofPix",
@@ -136,7 +148,14 @@
     "takeNext": "Take Next",
     "updateAfter": "Update After",
     "uploadPhotos": "Upload 2 Photos",
-    "deleteSomeFailed": "Failed to delete some projects. Please try again."
+    "deleteSomeFailed": "Failed to delete some projects. Please try again.",
+    "upgrade": "Upgrade",
+    "setLabel": "Set {{n}}"
+  },
+  "projectDetail": {
+    "selectDate": "Select date",
+    "deselectDate": "Deselect date",
+    "roomMetaWithSets": "{{count}} photos · {{sets}} sets"
   },
   "projects": {
     "title": "Projects",
@@ -868,6 +887,18 @@
     "inviteTokenLabel": "Invite Token:"
   },
   "labelCustomization": {
+    "customizeLabels": "Customize Labels",
+    "bgColor": "BG Color",
+    "labelPositionTitle": "Label Position",
+    "labelMarginTitle": "Label Margin",
+    "labelSizeTitle": "Label Size",
+    "labelSizeInline": "Label size :",
+    "marginVerticalInline": "Vertical (Top/Bottom) : {{value}}px",
+    "marginHorizontalInline": "Horizontal (Left/Right) : {{value}}px",
+    "applyDone": "Apply",
+    "editingOrientation": "Editing {{orientation}} photo positions. Switch in the preview above.",
+    "orientationVertical": "vertical (portrait + square)",
+    "orientationHorizontal": "horizontal (landscape)",
     "title": "Label Customization",
     "description": "Customize the appearance of BEFORE and AFTER labels",
     "backgroundColor": "Background Color",
@@ -1267,10 +1298,14 @@
     "size": "Size",
     "position": "Position",
     "margin": "Margin",
+    "opacity": "Opacity",
+    "color": "Color",
     "colorEyebrow": "COLOR",
     "textStyle": "Text Style",
     "textSize": "Text Size",
     "fontSize": "Font size",
+    "marginVertical": "Vertical (Top/Bottom)",
+    "marginHorizontal": "Horizontal (Left/Right)",
     "previewFallback": "Metadata preview",
     "fields": {
       "date": "Date",
@@ -1285,12 +1320,17 @@
     "uploadEyebrow": "UPLOAD",
     "replace": "Replace",
     "upload": "Upload",
+    "remove": "Remove",
     "controlsEyebrow": "CONTROLS",
     "size": "Size",
     "position": "Position",
     "margin": "Margin",
     "logoSize": "Logo Size",
+    "logoSizeLabel": "Logo size",
     "logoPosition": "Logo Position",
+    "marginTitle": "Margin",
+    "marginVertical": "Vertical (Top/Bottom)",
+    "marginHorizontal": "Horizontal (Left/Right)",
     "permissionNeededTitle": "Permission needed",
     "permissionNeededMessage": "Photo library access is required to upload a logo.",
     "couldNotOpenLibrary": "Couldn't open library"
@@ -1314,7 +1354,12 @@
     "fontModalTitle": "Watermark Font",
     "sizeModalTitle": "Watermark Size",
     "fontSizeLabel": "Font size",
-    "marginTitle": "Margin"
+    "marginTitle": "Margin",
+    "positionTitle": "Position",
+    "opacityTitle": "Opacity",
+    "opacityLabel": "Opacity",
+    "marginVertical": "Vertical (Top/Bottom)",
+    "marginHorizontal": "Horizontal (Left/Right)"
   },
   "studio": {
     "title": "Studio",

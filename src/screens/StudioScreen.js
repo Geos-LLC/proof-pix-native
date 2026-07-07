@@ -1668,7 +1668,7 @@ export default function StudioScreen({ route, navigation }) {
             onClose={() => setTappedFullPhoto(null)}
             showOverlays
             overlaysOn
-            shareLabel="Share photo"
+            shareLabel={t('home.sharePhoto')}
             onShare={async (p) => {
               if (!p?.uri) return;
               try {

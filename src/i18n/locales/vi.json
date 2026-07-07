@@ -49,7 +49,17 @@
     "genericError": "Đã xảy ra lỗi. Vui lòng thử lại.",
     "info": "Thông tin",
     "openSettings": "Mở Cài đặt",
-    "remove": "Gỡ bỏ"
+    "remove": "Gỡ bỏ",
+    "share": "Chia sẻ",
+    "color": "Màu",
+    "font": "Phông chữ",
+    "size": "Kích thước",
+    "position": "Vị trí",
+    "margin": "Lề",
+    "opacity": "Độ mờ",
+    "style": "Kiểu",
+    "photoCount": "{{count}} ảnh",
+    "setCount": "{{count}} bộ"
   },
   "enterprise": {
     "title": "Enterprise Plan Request",
@@ -135,7 +145,9 @@
     "takeNext": "Chụp Tiếp",
     "updateAfter": "Cập nhật Sau",
     "uploadPhotos": "Tải lên 2 Ảnh",
-    "deleteSomeFailed": "Không thể xóa một số dự án. Vui lòng thử lại."
+    "deleteSomeFailed": "Không thể xóa một số dự án. Vui lòng thử lại.",
+    "upgrade": "Nâng cấp",
+    "setLabel": "Bộ {{n}}"
   },
   "projects": {
     "title": "Dự án",
@@ -958,7 +970,19 @@
       "grid": "Lưới",
       "spectrum": "Quang phổ",
       "sliders": "Thanh trượt"
-    }
+    },
+    "customizeLabels": "Tùy chỉnh nhãn",
+    "bgColor": "Màu nền",
+    "labelPositionTitle": "Vị trí nhãn",
+    "labelMarginTitle": "Lề nhãn",
+    "labelSizeTitle": "Kích thước nhãn",
+    "labelSizeInline": "Kích thước nhãn :",
+    "marginVerticalInline": "Dọc (Trên/Dưới) : {{value}}px",
+    "marginHorizontalInline": "Ngang (Trái/Phải) : {{value}}px",
+    "applyDone": "Áp dụng",
+    "editingOrientation": "Đang chỉnh sửa vị trí ảnh {{orientation}}. Chuyển đổi trong bản xem trước ở trên.",
+    "orientationVertical": "dọc (chân dung + vuông)",
+    "orientationHorizontal": "ngang (phong cảnh)"
   },
   "folderCustomization": {
     "title": "Chỉnh sửa Thư mục",
@@ -1297,7 +1321,11 @@
       "address": "Địa chỉ",
       "gpsCoordinates": "Tọa độ GPS",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "Độ mờ",
+    "color": "Màu",
+    "marginVertical": "Dọc (Trên/Dưới)",
+    "marginHorizontal": "Ngang (Trái/Phải)"
   },
   "logoCustomization": {
     "title": "Logo",
@@ -1312,7 +1340,12 @@
     "logoPosition": "Vị trí Logo",
     "permissionNeededTitle": "Cần quyền truy cập",
     "permissionNeededMessage": "Cần quyền truy cập thư viện ảnh để tải lên logo.",
-    "couldNotOpenLibrary": "Không thể mở thư viện"
+    "couldNotOpenLibrary": "Không thể mở thư viện",
+    "remove": "Xóa",
+    "logoSizeLabel": "Kích thước logo",
+    "marginTitle": "Lề",
+    "marginVertical": "Dọc (Trên/Dưới)",
+    "marginHorizontal": "Ngang (Trái/Phải)"
   },
   "watermark": {
     "title": "Hình mờ",
@@ -1333,7 +1366,12 @@
     "fontModalTitle": "Phông chữ Hình mờ",
     "sizeModalTitle": "Cỡ Hình mờ",
     "fontSizeLabel": "Cỡ chữ",
-    "marginTitle": "Lề"
+    "marginTitle": "Lề",
+    "positionTitle": "Vị trí",
+    "opacityTitle": "Độ mờ",
+    "opacityLabel": "Độ mờ",
+    "marginVertical": "Dọc (Trên/Dưới)",
+    "marginHorizontal": "Ngang (Trái/Phải)"
   },
   "studio": {
     "title": "Studio",
@@ -1677,5 +1715,10 @@
     "setupIncompleteMessage": "Thiết lập nhóm yêu cầu kết nối Google hợp lệ. Vui lòng đảm bảo bạn đã đăng nhập Google Drive.",
     "proxyInitErrorFallback": "Không thể khởi tạo phiên proxy",
     "generateInviteErrorFallback": "Không thể tạo lời mời"
+  },
+  "projectDetail": {
+    "selectDate": "Chọn ngày",
+    "deselectDate": "Bỏ chọn ngày",
+    "roomMetaWithSets": "{{count}} ảnh · {{sets}} bộ"
   }
 }

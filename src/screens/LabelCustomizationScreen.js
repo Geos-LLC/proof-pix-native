@@ -17,6 +17,7 @@ import {
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { usePhotos } from '../context/PhotoContext';
 import OverrideConflictModal from '../components/OverrideConflictModal';
@@ -241,6 +242,7 @@ const LABEL_LANGUAGES = [
 export default function CustomizeLabelsScreen({ route, navigation }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { t } = useTranslation();
   // Which orientation tab the position controls are editing.
   // 'portrait' edits beforeLabelPosition / afterLabelPosition (the legacy
   // settings, used for portrait + square photos). 'landscape' edits the new
@@ -912,7 +914,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation?.goBack?.()} style={styles.headerClose}>
           <Ionicons name="close" size={18} color={theme.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Customize Labels</Text>
+        <Text style={styles.headerTitle}>{t('labelCustomization.customizeLabels')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -923,22 +925,22 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
         <View style={styles.controlsRow}>
           <ControlButton
             icon="ellipse-outline"
-            label="Style"
+            label={t('labelCustomization.style')}
             selected={effectiveLabelCornerStyle === 'rounded'}
             onPress={async () => {
               const newStyle = effectiveLabelCornerStyle === 'rounded' ? 'square' : 'rounded';
               await guardedUpdateLabelCornerStyle(newStyle);
             }}
           />
-          <ControlButton icon="text" label="Font" onPress={() => setFontModalVisible(true)} />
-          <ControlButton icon="resize" label="Size" onPress={() => setSizeModalVisible(true)} />
-          <ColorControlButton color={effectiveLabelBackgroundColor} label="BG Color" selected={true} onPress={() => openColorModal('bg')} />
+          <ControlButton icon="text" label={t('labelCustomization.font')} onPress={() => setFontModalVisible(true)} />
+          <ControlButton icon="resize" label={t('labelCustomization.size')} onPress={() => setSizeModalVisible(true)} />
+          <ColorControlButton color={effectiveLabelBackgroundColor} label={t('labelCustomization.bgColor')} selected={true} onPress={() => openColorModal('bg')} />
         </View>
         <View style={styles.controlsRow}>
-          <ColorControlButton color={effectiveLabelTextColor} label="Text Color" onPress={() => openColorModal('text')} />
-          <ControlButton icon="move" label="Position" onPress={() => setPositionModalVisible(true)} />
-          <ControlButton icon="swap-horizontal-outline" label="Margin" onPress={() => setMarginModalVisible(true)} />
-          <ControlButton icon="language" label="Language" onPress={() => setLanguageModalVisible(true)} />
+          <ColorControlButton color={effectiveLabelTextColor} label={t('labelCustomization.textColor')} onPress={() => openColorModal('text')} />
+          <ControlButton icon="move" label={t('labelCustomization.position')} onPress={() => setPositionModalVisible(true)} />
+          <ControlButton icon="swap-horizontal-outline" label={t('labelCustomization.margin')} onPress={() => setMarginModalVisible(true)} />
+          <ControlButton icon="language" label={t('labelCustomization.language')} onPress={() => setLanguageModalVisible(true)} />
         </View>
       </View>
 
@@ -951,7 +953,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
       <FontWheelSheet
         visible={fontModalVisible}
         onClose={() => setFontModalVisible(false)}
-        title="Label Font"
+        title={t('labelCustomization.labelFont')}
       >
         <WheelFontPicker
           options={FONT_OPTIONS}
@@ -965,7 +967,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
       <BottomModal
         visible={languageModalVisible}
         onClose={() => setLanguageModalVisible(false)}
-        title="Label Language"
+        title={t('labelCustomization.labelLanguage')}
       >
         <View style={styles.fontListContainer}>
           {LABEL_LANGUAGES.map((lang) => {
@@ -1007,7 +1009,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
           value={tempColor}
           onChange={(hex) => previewColor(hex)}
           onDone={applyColor}
-          doneLabel="Apply"
+          doneLabel={t('labelCustomization.applyDone')}
         />
       </BottomModal>
 
@@ -1017,11 +1019,15 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
       <BottomModal
         visible={positionModalVisible}
         onClose={() => setPositionModalVisible(false)}
-        title="Label Position"
+        title={t('labelCustomization.labelPositionTitle')}
       >
         <View style={styles.positionContainer}>
           <Text style={styles.orientationHint}>
-            Editing {orientationTab === 'portrait' ? 'vertical (portrait + square)' : 'horizontal (landscape)'} photo positions. Switch in the preview above.
+            {t('labelCustomization.editingOrientation', {
+              orientation: orientationTab === 'portrait'
+                ? t('labelCustomization.orientationVertical')
+                : t('labelCustomization.orientationHorizontal'),
+            })}
           </Text>
 
           {showBothGrids ? (
@@ -1039,7 +1045,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
                   <Text style={[
                     styles.gridSwitcherText,
                     positionGridView === 'single' && styles.gridSwitcherTextActive,
-                  ]}>Single picture</Text>
+                  ]}>{t('labelCustomization.singlePicture')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -1051,7 +1057,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
                   <Text style={[
                     styles.gridSwitcherText,
                     positionGridView === 'combined' && styles.gridSwitcherTextActive,
-                  ]}>Combined picture</Text>
+                  ]}>{t('labelCustomization.combinedPicture')}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1094,12 +1100,12 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
       <BottomModal
         visible={sizeModalVisible}
         onClose={() => setSizeModalVisible(false)}
-        title="Label Size"
+        title={t('labelCustomization.labelSizeTitle')}
       >
         <View style={styles.marginContainer}>
           <View style={styles.marginSection}>
             <View style={styles.opacityLabelContainer}>
-              <Text style={styles.marginLabel}>Label size :</Text>
+              <Text style={styles.marginLabel}>{t('labelCustomization.labelSizeInline')}</Text>
               <Text style={styles.opacityValueText}>
                 {typeof effectiveLabelSize === 'number' ? `${effectiveLabelSize}px` : (
                   SIZE_OPTIONS.find((s) => s.key === effectiveLabelSize)?.fontSize
@@ -1131,12 +1137,12 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
       <BottomModal
         visible={marginModalVisible}
         onClose={() => setMarginModalVisible(false)}
-        title="Label Margin"
+        title={t('labelCustomization.labelMarginTitle')}
       >
         <View style={styles.marginContainer}>
           <View style={styles.marginSection}>
             <Text style={styles.marginLabel}>
-              Vertical (Top/Bottom) : {effectiveLabelMarginVertical}px
+              {t('labelCustomization.marginVerticalInline', { value: effectiveLabelMarginVertical })}
             </Text>
             <SliderInput
               value={effectiveLabelMarginVertical}
@@ -1152,7 +1158,7 @@ export default function CustomizeLabelsScreen({ route, navigation }) {
 
           <View style={styles.marginSection}>
             <Text style={styles.marginLabel}>
-              Horizontal (Left/Right) : {effectiveLabelMarginHorizontal}px
+              {t('labelCustomization.marginHorizontalInline', { value: effectiveLabelMarginHorizontal })}
             </Text>
             <SliderInput
               value={effectiveLabelMarginHorizontal}

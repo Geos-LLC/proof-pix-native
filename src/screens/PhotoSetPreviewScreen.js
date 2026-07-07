@@ -722,7 +722,7 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
       onDelete={(p) => { if (p) { setCurrentPhotoId(p.id); handleDeletePhoto(); } }}
       showEdit
       onEdit={(p) => navigation.navigate('StudioDetail', { photoId: p.id })}
-      shareLabel="Share photo"
+      shareLabel={t('home.sharePhoto')}
       onShare={(p) => { if (p) { setCurrentPhotoId(p.id); handleShareCurrent(); } }}
     />
   );

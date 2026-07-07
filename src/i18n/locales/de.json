@@ -49,7 +49,19 @@
     "genericError": "Etwas ist schief gelaufen. Bitte versuchen Sie es erneut.",
     "info": "Info",
     "openSettings": "Einstellungen öffnen",
-    "remove": "Entfernen"
+    "remove": "Entfernen",
+    "share": "Teilen",
+    "color": "Farbe",
+    "font": "Schrift",
+    "size": "Größe",
+    "position": "Position",
+    "margin": "Rand",
+    "opacity": "Deckkraft",
+    "style": "Stil",
+    "photoCount": "{{count}} Foto",
+    "photoCount_plural": "{{count}} Fotos",
+    "setCount": "{{count}} Set",
+    "setCount_plural": "{{count}} Sets"
   },
   "firstLoad": {
     "title": "Willkommen bei ProofPix",
@@ -135,7 +147,9 @@
     "takeNext": "Nächstes aufnehmen",
     "updateAfter": "Nachher aktualisieren",
     "uploadPhotos": "2 Fotos hochladen",
-    "deleteSomeFailed": "Einige Projekte konnten nicht gelöscht werden. Bitte erneut versuchen."
+    "deleteSomeFailed": "Einige Projekte konnten nicht gelöscht werden. Bitte erneut versuchen.",
+    "upgrade": "Upgrade",
+    "setLabel": "Set {{n}}"
   },
   "projects": {
     "title": "Projekte",
@@ -944,7 +958,19 @@
       "grid": "Raster",
       "spectrum": "Spektrum",
       "sliders": "Schieberegler"
-    }
+    },
+    "customizeLabels": "Beschriftungen anpassen",
+    "bgColor": "Hintergrundfarbe",
+    "labelPositionTitle": "Position der Beschriftung",
+    "labelMarginTitle": "Beschriftungsrand",
+    "labelSizeTitle": "Beschriftungsgröße",
+    "labelSizeInline": "Beschriftungsgröße :",
+    "marginVerticalInline": "Vertikal (oben/unten) : {{value}}px",
+    "marginHorizontalInline": "Horizontal (links/rechts) : {{value}}px",
+    "applyDone": "Übernehmen",
+    "editingOrientation": "Positionen für {{orientation}} Fotos bearbeiten. Wechseln in der Vorschau oben.",
+    "orientationVertical": "vertikale (Hoch- + Quadratformat)",
+    "orientationHorizontal": "horizontale (Querformat)"
   },
   "folderCustomization": {
     "title": "Ordner bearbeiten",
@@ -1283,7 +1309,11 @@
       "address": "Adresse",
       "gpsCoordinates": "GPS-Koordinaten",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "Deckkraft",
+    "color": "Farbe",
+    "marginVertical": "Vertikal (oben/unten)",
+    "marginHorizontal": "Horizontal (links/rechts)"
   },
   "logoCustomization": {
     "title": "Logo",
@@ -1298,7 +1328,12 @@
     "logoPosition": "Logo-Position",
     "permissionNeededTitle": "Berechtigung erforderlich",
     "permissionNeededMessage": "Für das Hochladen eines Logos wird Zugriff auf die Fotomediathek benötigt.",
-    "couldNotOpenLibrary": "Mediathek konnte nicht geöffnet werden"
+    "couldNotOpenLibrary": "Mediathek konnte nicht geöffnet werden",
+    "remove": "Entfernen",
+    "logoSizeLabel": "Logo-Größe",
+    "marginTitle": "Rand",
+    "marginVertical": "Vertikal (oben/unten)",
+    "marginHorizontal": "Horizontal (links/rechts)"
   },
   "watermark": {
     "title": "Wasserzeichen",
@@ -1319,7 +1354,12 @@
     "fontModalTitle": "Wasserzeichen-Schriftart",
     "sizeModalTitle": "Wasserzeichen-Größe",
     "fontSizeLabel": "Schriftgröße",
-    "marginTitle": "Rand"
+    "marginTitle": "Rand",
+    "positionTitle": "Position",
+    "opacityTitle": "Deckkraft",
+    "opacityLabel": "Deckkraft",
+    "marginVertical": "Vertikal (oben/unten)",
+    "marginHorizontal": "Horizontal (links/rechts)"
   },
   "studio": {
     "title": "Studio",
@@ -1663,5 +1703,10 @@
     "setupIncompleteMessage": "Team-Einrichtung erfordert eine gültige Google-Verbindung. Bitte stellen Sie sicher, dass Sie bei Google Drive angemeldet sind.",
     "proxyInitErrorFallback": "Proxy-Sitzung konnte nicht initialisiert werden",
     "generateInviteErrorFallback": "Einladung konnte nicht erstellt werden"
+  },
+  "projectDetail": {
+    "selectDate": "Datum wählen",
+    "deselectDate": "Auswahl aufheben",
+    "roomMetaWithSets": "{{count}} Fotos · {{sets}} Sets"
   }
 }

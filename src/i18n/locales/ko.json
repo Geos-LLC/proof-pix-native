@@ -49,7 +49,17 @@
     "genericError": "문제가 발생했습니다. 다시 시도해 주세요.",
     "info": "정보",
     "openSettings": "설정 열기",
-    "remove": "제거"
+    "remove": "제거",
+    "share": "공유",
+    "color": "색상",
+    "font": "글꼴",
+    "size": "크기",
+    "position": "위치",
+    "margin": "여백",
+    "opacity": "불투명도",
+    "style": "스타일",
+    "photoCount": "사진 {{count}}장",
+    "setCount": "세트 {{count}}개"
   },
   "firstLoad": {
     "title": "ProofPix에 오신 것을 환영합니다",
@@ -135,7 +145,9 @@
     "takeNext": "다음 촬영",
     "updateAfter": "이후 업데이트",
     "uploadPhotos": "사진 2장 업로드",
-    "deleteSomeFailed": "일부 프로젝트 삭제에 실패했습니다. 다시 시도해 주세요."
+    "deleteSomeFailed": "일부 프로젝트 삭제에 실패했습니다. 다시 시도해 주세요.",
+    "upgrade": "업그레이드",
+    "setLabel": "세트 {{n}}"
   },
   "projects": {
     "title": "프로젝트",
@@ -944,7 +956,19 @@
       "grid": "그리드",
       "spectrum": "스펙트럼",
       "sliders": "슬라이더"
-    }
+    },
+    "customizeLabels": "레이블 사용자화",
+    "bgColor": "배경색",
+    "labelPositionTitle": "레이블 위치",
+    "labelMarginTitle": "레이블 여백",
+    "labelSizeTitle": "레이블 크기",
+    "labelSizeInline": "레이블 크기 :",
+    "marginVerticalInline": "세로(위/아래) : {{value}}px",
+    "marginHorizontalInline": "가로(좌/우) : {{value}}px",
+    "applyDone": "적용",
+    "editingOrientation": "{{orientation}} 사진 위치를 편집 중입니다. 위 미리보기에서 전환하세요.",
+    "orientationVertical": "세로(세로 방향 + 정사각형)",
+    "orientationHorizontal": "가로(가로 방향)"
   },
   "folderCustomization": {
     "title": "폴더 편집",
@@ -1281,7 +1305,11 @@
       "address": "주소",
       "gpsCoordinates": "GPS 좌표",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "불투명도",
+    "color": "색상",
+    "marginVertical": "세로(위/아래)",
+    "marginHorizontal": "가로(좌/우)"
   },
   "logoCustomization": {
     "title": "로고",
@@ -1296,7 +1324,12 @@
     "logoPosition": "로고 위치",
     "permissionNeededTitle": "권한 필요",
     "permissionNeededMessage": "로고를 업로드하려면 사진 라이브러리 접근 권한이 필요합니다.",
-    "couldNotOpenLibrary": "라이브러리를 열 수 없습니다"
+    "couldNotOpenLibrary": "라이브러리를 열 수 없습니다",
+    "remove": "제거",
+    "logoSizeLabel": "로고 크기",
+    "marginTitle": "여백",
+    "marginVertical": "세로(위/아래)",
+    "marginHorizontal": "가로(좌/우)"
   },
   "watermark": {
     "title": "워터마크",
@@ -1317,7 +1350,12 @@
     "fontModalTitle": "워터마크 글꼴",
     "sizeModalTitle": "워터마크 크기",
     "fontSizeLabel": "글꼴 크기",
-    "marginTitle": "여백"
+    "marginTitle": "여백",
+    "positionTitle": "위치",
+    "opacityTitle": "불투명도",
+    "opacityLabel": "불투명도",
+    "marginVertical": "세로(위/아래)",
+    "marginHorizontal": "가로(좌/우)"
   },
   "studio": {
     "title": "스튜디오",
@@ -1661,5 +1699,10 @@
     "setupIncompleteMessage": "팀 설정에는 유효한 Google 연결이 필요합니다. Google Drive에 로그인되어 있는지 확인해 주세요.",
     "proxyInitErrorFallback": "프록시 세션 초기화에 실패했습니다",
     "generateInviteErrorFallback": "초대 생성에 실패했습니다"
+  },
+  "projectDetail": {
+    "selectDate": "날짜 선택",
+    "deselectDate": "날짜 선택 취소",
+    "roomMetaWithSets": "사진 {{count}}장 · 세트 {{sets}}개"
   }
 }

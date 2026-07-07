@@ -2506,12 +2506,12 @@ export default function ProjectDetailScreen({ route, navigation }) {
                         )}
                       </View>
                       <Text style={[styles.dateMeta, { color: dateAllSelected ? theme.accent : theme.textSecondary }]}>
-                        {dateAllSelected ? 'Deselect date' : 'Select date'}
+                        {dateAllSelected ? t('projectDetail.deselectDate') : t('projectDetail.selectDate')}
                       </Text>
                     </TouchableOpacity>
                   ) : (
                   <Text style={[styles.dateMeta, { color: theme.textSecondary }]}>
-                    {group.totalPhotos} {group.totalPhotos === 1 ? 'photo' : 'photos'}
+                    {t('common.photoCount', { count: group.totalPhotos })}
                   </Text>
                   )}
                 </View>
@@ -2526,8 +2526,9 @@ export default function ProjectDetailScreen({ route, navigation }) {
                         {displayRoomName(room.name)}
                       </Text>
                       <Text style={[styles.timelineRoomMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                        {room.photoCount} {room.photoCount === 1 ? 'photo' : 'photos'}
-                        {room.setCount > 1 ? ` · ${room.setCount} sets` : ''}
+                        {room.setCount > 1
+                          ? t('projectDetail.roomMetaWithSets', { count: room.photoCount, sets: room.setCount })
+                          : t('common.photoCount', { count: room.photoCount })}
                       </Text>
                     </View>
                     <View style={styles.timelineGrid}>

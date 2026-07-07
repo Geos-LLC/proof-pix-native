@@ -1332,19 +1332,19 @@ export default function ProjectsScreen({ navigation, route }) {
                       );
                     })()}
                     <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {stats.count} {stats.count === 1 ? 'photo' : 'photos'} · {stats.sets} {stats.sets === 1 ? 'set' : 'sets'} · Updated {formatRelative(updatedTs)}
+                      {t('projects.cardMeta', { count: stats.count, sets: stats.sets, updated: formatRelative(updatedTs) })}
                     </Text>
                     <View style={styles.countersRow}>
                       <View style={styles.counter}>
-                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>Before</Text>
+                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>{t('common.before')}</Text>
                         <Text style={[styles.counterValue, { color: theme.modeBefore }]}>{stats.counters.before}</Text>
                       </View>
                       <View style={styles.counter}>
-                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>Progress</Text>
+                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>{t('common.progress')}</Text>
                         <Text style={[styles.counterValue, { color: theme.modeProgress }]}>{stats.counters.progress}</Text>
                       </View>
                       <View style={styles.counter}>
-                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>After</Text>
+                        <Text style={[styles.counterLabel, { color: theme.textMuted }]}>{t('common.after')}</Text>
                         <Text style={[styles.counterValue, { color: theme.modeAfter }]}>{stats.counters.after}</Text>
                       </View>
                     </View>

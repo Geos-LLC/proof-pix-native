@@ -49,7 +49,21 @@
     "genericError": "Щось пішло не так. Будь ласка, спробуйте ще раз.",
     "info": "Інформація",
     "openSettings": "Відкрити Налаштування",
-    "remove": "Видалити"
+    "remove": "Видалити",
+    "share": "Поділитися",
+    "color": "Колір",
+    "font": "Шрифт",
+    "size": "Розмір",
+    "position": "Позиція",
+    "margin": "Відступ",
+    "opacity": "Прозорість",
+    "style": "Стиль",
+    "photoCount_0": "{{count}} фото",
+    "photoCount_1": "{{count}} фото",
+    "photoCount_2": "{{count}} фото",
+    "setCount_0": "{{count}} набір",
+    "setCount_1": "{{count}} набори",
+    "setCount_2": "{{count}} наборів"
   },
   "firstLoad": {
     "title": "Ласкаво просимо до ProofPix",
@@ -117,7 +131,9 @@
     "takeNext": "Зробити наступне",
     "updateAfter": "Оновити \"Після\"",
     "uploadPhotos": "Завантажити 2 фотографії",
-    "deleteSomeFailed": "Не вдалося видалити деякі проекти. Будь ласка, спробуйте ще раз."
+    "deleteSomeFailed": "Не вдалося видалити деякі проекти. Будь ласка, спробуйте ще раз.",
+    "upgrade": "Оновити",
+    "setLabel": "Набір {{n}}"
   },
   "projects": {
     "title": "Проекти",
@@ -926,7 +942,19 @@
       "grid": "Сітка",
       "spectrum": "Спектр",
       "sliders": "Повзунки"
-    }
+    },
+    "customizeLabels": "Налаштувати мітки",
+    "bgColor": "Колір тла",
+    "labelPositionTitle": "Позиція мітки",
+    "labelMarginTitle": "Відступ мітки",
+    "labelSizeTitle": "Розмір мітки",
+    "labelSizeInline": "Розмір мітки :",
+    "marginVerticalInline": "Вертикально (верх/низ) : {{value}}px",
+    "marginHorizontalInline": "Горизонтально (ліво/право) : {{value}}px",
+    "applyDone": "Застосувати",
+    "editingOrientation": "Редагуються позиції {{orientation}} фото. Перемкніть у попередньому перегляді вище.",
+    "orientationVertical": "вертикальних (портрет + квадрат)",
+    "orientationHorizontal": "горизонтальних (пейзаж)"
   },
   "folderCustomization": {
     "title": "Редагувати папки",
@@ -1278,7 +1306,11 @@
       "address": "Адреса",
       "gpsCoordinates": "Координати GPS",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "Прозорість",
+    "color": "Колір",
+    "marginVertical": "Вертикально (верх/низ)",
+    "marginHorizontal": "Горизонтально (ліво/право)"
   },
   "logoCustomization": {
     "title": "Логотип",
@@ -1293,7 +1325,12 @@
     "logoPosition": "Позиція логотипа",
     "permissionNeededTitle": "Потрібен дозвіл",
     "permissionNeededMessage": "Для завантаження логотипа потрібен доступ до бібліотеки фотографій.",
-    "couldNotOpenLibrary": "Не вдалося відкрити бібліотеку"
+    "couldNotOpenLibrary": "Не вдалося відкрити бібліотеку",
+    "remove": "Видалити",
+    "logoSizeLabel": "Розмір логотипа",
+    "marginTitle": "Відступ",
+    "marginVertical": "Вертикально (верх/низ)",
+    "marginHorizontal": "Горизонтально (ліво/право)"
   },
   "watermark": {
     "title": "Водяний знак",
@@ -1314,7 +1351,12 @@
     "fontModalTitle": "Шрифт водяного знака",
     "sizeModalTitle": "Розмір водяного знака",
     "fontSizeLabel": "Розмір шрифту",
-    "marginTitle": "Поле"
+    "marginTitle": "Поле",
+    "positionTitle": "Позиція",
+    "opacityTitle": "Прозорість",
+    "opacityLabel": "Прозорість",
+    "marginVertical": "Вертикально (верх/низ)",
+    "marginHorizontal": "Горизонтально (ліво/право)"
   },
   "studio": {
     "title": "Студія",
@@ -1658,5 +1700,10 @@
     "setupIncompleteMessage": "Налаштування команди вимагає дійсного підключення до Google. Будь ласка, переконайтеся, що ви увійшли в Google Drive.",
     "proxyInitErrorFallback": "Не вдалося ініціалізувати проксі-сесію",
     "generateInviteErrorFallback": "Не вдалося згенерувати запрошення"
+  },
+  "projectDetail": {
+    "selectDate": "Вибрати дату",
+    "deselectDate": "Скасувати вибір",
+    "roomMetaWithSets": "{{count}} фото · {{sets}} наборів"
   }
 }

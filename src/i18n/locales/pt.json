@@ -49,7 +49,19 @@
     "genericError": "Algo deu errado. Por favor, tente novamente.",
     "info": "Info",
     "openSettings": "Abrir Configurações",
-    "remove": "Remover"
+    "remove": "Remover",
+    "share": "Compartilhar",
+    "color": "Cor",
+    "font": "Fonte",
+    "size": "Tamanho",
+    "position": "Posição",
+    "margin": "Margem",
+    "opacity": "Opacidade",
+    "style": "Estilo",
+    "photoCount": "{{count}} foto",
+    "photoCount_plural": "{{count}} fotos",
+    "setCount": "{{count}} conjunto",
+    "setCount_plural": "{{count}} conjuntos"
   },
   "firstLoad": {
     "title": "Bem-vindo ao ProofPix",
@@ -135,7 +147,9 @@
     "takeNext": "Tirar Próxima",
     "updateAfter": "Atualizar Depois",
     "uploadPhotos": "Enviar 2 Fotos",
-    "deleteSomeFailed": "Falha ao excluir alguns projetos. Por favor, tente novamente."
+    "deleteSomeFailed": "Falha ao excluir alguns projetos. Por favor, tente novamente.",
+    "upgrade": "Atualizar",
+    "setLabel": "Set {{n}}"
   },
   "projects": {
     "title": "Projetos",
@@ -944,7 +958,19 @@
       "grid": "Grade",
       "spectrum": "Espectro",
       "sliders": "Controles"
-    }
+    },
+    "customizeLabels": "Personalizar etiquetas",
+    "bgColor": "Cor de fundo",
+    "labelPositionTitle": "Posição da etiqueta",
+    "labelMarginTitle": "Margem da etiqueta",
+    "labelSizeTitle": "Tamanho da etiqueta",
+    "labelSizeInline": "Tamanho da etiqueta :",
+    "marginVerticalInline": "Vertical (cima/baixo) : {{value}}px",
+    "marginHorizontalInline": "Horizontal (esq/dir) : {{value}}px",
+    "applyDone": "Aplicar",
+    "editingOrientation": "Editando posições de fotos {{orientation}}. Alterne na pré-visualização acima.",
+    "orientationVertical": "verticais (retrato + quadrado)",
+    "orientationHorizontal": "horizontais (paisagem)"
   },
   "folderCustomization": {
     "title": "Editar Pastas",
@@ -1283,7 +1309,11 @@
       "address": "Endereço",
       "gpsCoordinates": "Coordenadas GPS",
       "gpsShort": "GPS"
-    }
+    },
+    "opacity": "Opacidade",
+    "color": "Cor",
+    "marginVertical": "Vertical (cima/baixo)",
+    "marginHorizontal": "Horizontal (esq/dir)"
   },
   "logoCustomization": {
     "title": "Logo",
@@ -1298,7 +1328,12 @@
     "logoPosition": "Posição do Logo",
     "permissionNeededTitle": "Permissão necessária",
     "permissionNeededMessage": "Acesso à biblioteca de fotos é necessário para enviar um logo.",
-    "couldNotOpenLibrary": "Não foi possível abrir a biblioteca"
+    "couldNotOpenLibrary": "Não foi possível abrir a biblioteca",
+    "remove": "Remover",
+    "logoSizeLabel": "Tamanho do logo",
+    "marginTitle": "Margem",
+    "marginVertical": "Vertical (cima/baixo)",
+    "marginHorizontal": "Horizontal (esq/dir)"
   },
   "watermark": {
     "title": "Marca d'água",
@@ -1319,7 +1354,12 @@
     "fontModalTitle": "Fonte da Marca d'água",
     "sizeModalTitle": "Tamanho da Marca d'água",
     "fontSizeLabel": "Tamanho da fonte",
-    "marginTitle": "Margem"
+    "marginTitle": "Margem",
+    "positionTitle": "Posição",
+    "opacityTitle": "Opacidade",
+    "opacityLabel": "Opacidade",
+    "marginVertical": "Vertical (cima/baixo)",
+    "marginHorizontal": "Horizontal (esq/dir)"
   },
   "studio": {
     "title": "Estúdio",
@@ -1663,5 +1703,10 @@
     "setupIncompleteMessage": "A configuração da equipe requer uma conexão Google válida. Por favor, certifique-se de que está conectado ao Google Drive.",
     "proxyInitErrorFallback": "Falha ao inicializar a sessão proxy",
     "generateInviteErrorFallback": "Falha ao gerar convite"
+  },
+  "projectDetail": {
+    "selectDate": "Selecionar data",
+    "deselectDate": "Desmarcar data",
+    "roomMetaWithSets": "{{count}} fotos · {{sets}} conjuntos"
   }
 }
