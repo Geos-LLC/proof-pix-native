@@ -2477,7 +2477,20 @@ function VoiceTab({ theme, photo, updatePhoto }) {
         await sound.unloadAsync();
         setSound(null);
       }
-      const { sound: s } = await Audio.Sound.createAsync({ uri: audioUri });
+      // Reset audio session to Playback so iOS routes to the loud speaker
+      // instead of the earpiece. Recording leaves the session in the
+      // PlayAndRecord category which defaults to the receiver — playback
+      // then sounds very quiet until we switch back.
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+        });
+      } catch (_) {}
+      const { sound: s } = await Audio.Sound.createAsync(
+        { uri: audioUri },
+        { volume: 1.0 },
+      );
       s.setOnPlaybackStatusUpdate((st) => {
         if (st?.didJustFinish) {
           setIsPlaying(false);
