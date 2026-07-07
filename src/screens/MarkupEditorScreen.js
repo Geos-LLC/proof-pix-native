@@ -417,10 +417,9 @@ export default function MarkupEditorScreen({ route, navigation }) {
       >
         <View style={[styles.paletteGrabber, { backgroundColor: theme.borderStrong }]} />
 
-        {/* TOOL section — 4-column tile grid (icon square + label under).
-            Matches the ProofPix Markup design spec. With 6 tools the
-            second row has 2 tiles + 2 empty slots (auto-filled by grid). */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Tool</Text>
+        {/* Single 4-column × 2-row grid — 6 tools + Color + Size = 8
+            tiles laid out as 2 rows of 4. No section labels: the same
+            layout the customization sheets use. */}
         <View style={styles.tileGrid}>
           {MARKUP_TOOLS.map((t) => {
             const isActive = markupTool === t.key;
@@ -454,14 +453,6 @@ export default function MarkupEditorScreen({ route, navigation }) {
               </View>
             );
           })}
-        </View>
-
-        {/* ADJUST section — 4-column grid holding Color + Size tiles.
-            Both open dedicated bottom sheets so the palette stays clean;
-            same pattern the Watermark / Metadata customization screens
-            use for their Color modal. */}
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 12 }]}>Adjust</Text>
-        <View style={styles.tileGrid}>
           <View style={styles.tileCell}>
             <TouchableOpacity
               style={[styles.tile, { backgroundColor: theme.surface, borderColor: theme.border }]}
