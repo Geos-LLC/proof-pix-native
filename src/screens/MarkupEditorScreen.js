@@ -34,13 +34,17 @@ import ColorGridPicker from '../components/ColorGridPicker';
 // screen regardless of zoom level so strokes don't get visually fatter
 // while you're zoomed in.
 
+// 6 tools + Color + Size = 8 buttons total, arranged as a 4-column
+// × 2-row grid in the palette. Circle removed at product request
+// (never landed well as a freehand shape). Text is included so the
+// palette matches Studio's inline markup tool set.
 const MARKUP_TOOLS = [
   { key: 'draw', label: 'Draw', icon: 'pencil-outline', defaultStroke: 3 },
   { key: 'brush', label: 'Brush', icon: 'brush-outline', defaultStroke: 8 },
   { key: 'highlight', label: 'Highlight', icon: 'color-fill-outline', defaultStroke: 16 },
   { key: 'arrow', label: 'Arrow', icon: 'arrow-forward-outline', defaultStroke: 3 },
-  { key: 'circle', label: 'Circle', icon: 'ellipse-outline', defaultStroke: 3 },
   { key: 'measure', label: 'Measure', icon: 'resize-outline', defaultStroke: 2 },
+  { key: 'text', label: 'Text', icon: 'chatbubble-ellipses-outline', defaultStroke: 0 },
 ];
 const MARKUP_COLORS = ['#FF3B30', '#FFCC00', '#34C759', '#007AFF', '#FFFFFF', '#000000'];
 const STROKE_PRESETS = [

@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] markup-floating-panel-' + Date.now() + ' — Studio Notes>Markup now sets activeTool=markup (was navigating to MarkupSheet route). A floating bottom-sheet-styled panel renders over the Studio toolbar with the 4x2 tile grid (6 tools + Color + Size). Drawing happens on the Studio photo above; swipe + label drag are already suppressed via isMarkupActiveRef. Enlarge icon (accent-yellow, top-right of the panel header) hands off to the full-screen MarkupEditor with the picks. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] markup-fullscreen-direct-' + Date.now() + ' — Studio Notes>Markup navigates directly to the full-screen MarkupEditor (previous inline / sheet variants confused users because they could not actually draw on tiny previews). MarkupEditor palette: 8 buttons in a 4x2 grid (Draw, Brush, Highlight, Arrow, Measure, Text, Color, Size). Circle removed. Undo / Clear pills below. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
