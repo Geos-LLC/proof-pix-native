@@ -123,7 +123,7 @@ const probeBrokerDeployToken = () => new Promise((resolve) => {
     method: 'GET',
     hostname: url.hostname,
     path: `${url.pathname}${url.search}`,
-    timeout: 10_000,
+    timeout: 20_000,
   }, (res) => { res.resume(); resolve(res.statusCode); });
   req.on('error', (err) => resolve(`error: ${err.message}`));
   req.on('timeout', () => { req.destroy(); resolve('timeout'); });
@@ -142,7 +142,7 @@ const probeBrokerKey = () => new Promise((resolve) => {
         'x-loghub-source': LOGHUB_SOURCE,
         'x-loghub-key': fixpromptKey,
       },
-      timeout: 10_000,
+      timeout: 20_000,
     },
     (res) => { res.resume(); resolve(res.statusCode); },
   );

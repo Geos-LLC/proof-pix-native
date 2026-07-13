@@ -710,6 +710,7 @@
     "manageInAppStore": "Cancel, update billing & view receipts in the App Store",
     "manageInPlayStore": "Cancel, update billing & view receipts in Play Store",
     "manageSubscription": "Change plan",
+    "redeemCode": "Redeem a code",
     "multipleAccountsDescription": "Connect multiple Google or Dropbox accounts. Each account can have its own team setup.",
     "nameRequired": "Please enter your name",
     "noPurchasesFound": "No active subscriptions found. If you recently purchased, please wait a moment and try again.",
@@ -1315,6 +1316,7 @@
     "title": "Markup",
     "photoNotFound": "Photo not found.",
     "undo": "Undo",
+    "redo": "Redo",
     "clear": "Clear",
     "tools": {
       "draw": "Draw",
@@ -1500,11 +1502,36 @@
       "layout": "Layout",
       "labels": "Labels",
       "notes": "Notes",
-      "export": "Export"
+      "templates": "Templates"
     },
     "applyScopeSet": "This Set",
     "applyScopeFolder": "This Folder",
-    "applyScopeProject": "Project"
+    "applyScopeProject": "Project",
+    "templatesTitle": "TEMPLATES",
+    "saveAsTemplate": "Save as template…",
+    "saveAsTemplateSubtitle": "Snapshot this photo's look as a reusable template",
+    "template": {
+      "presetSubtitle": "Preset · tap to apply",
+      "userSubtitle": "Tap to apply · long-press to delete",
+      "applied": "Applied",
+      "namePromptTitle": "Name this template",
+      "namePlaceholder": "e.g. Kitchen Report",
+      "deleteTitle": "Delete template?",
+      "deleteMessage": "Delete \"{{name}}\"? This cannot be undone."
+    }
+  },
+  "report": {
+    "applyTemplate": "Apply template",
+    "applyTemplateSubtitle": "Reuse a saved layout + options",
+    "saveAsTemplate": "Save as template…",
+    "saveAsTemplateSubtitle": "Snapshot this layout + options",
+    "noTemplates": "No saved templates yet. Save the current layout with \"Save as template…\" first.",
+    "template": {
+      "namePromptTitle": "Name this template",
+      "namePlaceholder": "e.g. Standard Handoff Report",
+      "deleteTitle": "Delete template?",
+      "deleteMessage": "Delete \"{{name}}\"?"
+    }
   },
   "reportPreview": {
     "progress": "PROGRESS",

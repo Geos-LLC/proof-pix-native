@@ -292,6 +292,12 @@ export default function CompareViewer({
   const dragStartRef = useRef(initialSplit);
   const knobPanResponder = useRef(
     PanResponder.create({
+      // CAPTURE-phase claim keeps the knob's drag from ever being handed
+      // to an ancestor (Studio's swipe-navigate responder used to steal
+      // it the moment the finger moved horizontally, which the user saw
+      // as "the whole screen slides instead of the divider").
+      onStartShouldSetPanResponderCapture: () => modeRef.current === 'split',
+      onMoveShouldSetPanResponderCapture: () => modeRef.current === 'split',
       onStartShouldSetPanResponder: () => modeRef.current === 'split',
       onMoveShouldSetPanResponder: () => modeRef.current === 'split',
       onPanResponderTerminationRequest: () => false,

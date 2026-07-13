@@ -2,6 +2,28 @@
  * Enterprise Contact Service
  * Handles sending enterprise plan request emails via EmailJS REST API
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+
+// Read the FixPrompt SDK's persistent per-install UUID. The SDK stamps
+// this on every log line in Loki as `device_id`, so surfacing it in the
+// contact email lets support run
+//   {service_name="proofpix-native"} | json | device_id="<id>"
+// to see the exact bug reports from the user who sent the message.
+// Read order mirrors the SDK's own read order in
+// FixLoop/react-native-sdk/src/session.ts: SecureStore first (survives
+// iOS reinstall via Keychain), AsyncStorage fallback.
+const readFixPromptDeviceId = async () => {
+  try {
+    const secure = await SecureStore.getItemAsync('fixprompt_device_id');
+    if (secure) return secure;
+  } catch {}
+  try {
+    const legacy = await AsyncStorage.getItem('@fixprompt/device_id');
+    if (legacy) return legacy;
+  } catch {}
+  return '';
+};
 
 // EmailJS configuration from environment variables
 const EMAILJS_SERVICE_ID = process.env.EXPO_PUBLIC_EMAILJS_SERVICE_ID;
@@ -33,7 +55,23 @@ class EnterpriseContactService {
    * @returns {Promise<boolean>} - True if email sent successfully
    */
   async sendRequest(formData) {
-    const { name, email, phone, description } = formData;
+    const {
+      name,
+      email,
+      phone,
+      description,
+      // Client-context metadata surfaced in the EmailJS template so
+      // support can triage inbound in-app messages without asking the
+      // user for basics. All optional — service degrades to empty
+      // strings when the caller doesn't pass them.
+      topic,
+      plan,
+      country,
+      version,
+      build,
+      platform,
+      deviceId,
+    } = formData;
 
     // Validate required fields
     if (!name || !name.trim()) {
@@ -54,13 +92,32 @@ class EnterpriseContactService {
       throw new Error('EMAIL_NOT_CONFIGURED');
     }
 
+    // If the caller didn't hand us a device id, resolve it here so the
+    // template row is never blank on paths that forget to pass it.
+    const resolvedDeviceId = (deviceId && String(deviceId).trim())
+      || (await readFixPromptDeviceId())
+      || '';
+
     try {
       const templateParams = {
         from_name: name.trim(),
         from_email: email.trim(),
-        phone: phone?.trim() || 'Not provided',
+        // Alias for the template's client-context table — same value as
+        // from_email, cleaner var name for the metadata row.
+        email: email.trim(),
+        phone: phone?.trim() || '—',
         message: description?.trim() || 'No description provided',
         to_email: 'info@geos-ai.com',
+        // Client-context vars for the metadata table in the HTML
+        // template. Every var falls back to '—' when unset so the
+        // template renders a clean dash instead of a bare "{{var}}".
+        topic: (topic && String(topic).trim()) || '—',
+        plan: (plan && String(plan).trim()) || '—',
+        country: (country && String(country).trim()) || '—',
+        version: (version && String(version).trim()) || '—',
+        build: (build && String(build).trim()) || '—',
+        platform: (platform && String(platform).trim()) || '—',
+        device_id: resolvedDeviceId || '—',
       };
 
       // Log configuration for debugging

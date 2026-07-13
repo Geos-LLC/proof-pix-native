@@ -43,6 +43,11 @@ import PannableImage from '../components/PannableImage';
 import CompareViewer from '../components/CompareViewer';
 import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
 import { getLabelPositions } from '../constants/rooms';
+import {
+  listAllTemplates as listAllPhotoTemplates,
+  saveUserTemplate as savePhotoTemplate,
+  deleteUserTemplate as deletePhotoTemplate,
+} from '../services/photoTemplateService';
 import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } from 'react-native-svg';
 import { Audio } from 'expo-av';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
@@ -50,10 +55,10 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-spe
 // Toolbar labels are i18n keys; the bottom nav resolves them through t()
 // at render so language switches don't need a screen remount.
 const TOOLBAR = [
-  { key: 'layout',   labelKey: 'studio.toolbar.layout',  icon: 'crop-outline' },
-  { key: 'branding', labelKey: 'studio.toolbar.labels',  icon: 'pricetags-outline' },
-  { key: 'notes',    labelKey: 'studio.toolbar.notes',   icon: 'document-text-outline' },
-  { key: 'export',   labelKey: 'studio.toolbar.export',  icon: 'share-outline' },
+  { key: 'layout',    labelKey: 'studio.toolbar.layout',    icon: 'crop-outline' },
+  { key: 'branding',  labelKey: 'studio.toolbar.labels',    icon: 'pricetags-outline' },
+  { key: 'notes',     labelKey: 'studio.toolbar.notes',     icon: 'document-text-outline' },
+  { key: 'templates', labelKey: 'studio.toolbar.templates', icon: 'albums-outline' },
 ];
 
 const MARKUP_TOOLS = [
@@ -327,6 +332,12 @@ export default function StudioScreen({ route, navigation }) {
   const markupToolRef = useRef('draw');
   const markupColorRef = useRef('#FF3B30');
   const markupStrokeRef = useRef(4);
+  // Split / Overlay compare modes have their own inner gestures (divider
+  // drag, cross-fade slider). Studio's swipe-navigate responder reads
+  // this ref so it stands down while those modes are active, otherwise
+  // horizontal drags on the compare view get hijacked as "swipe to next
+  // photo" and the whole frame slides sideways instead of the divider.
+  const viewModeRef = useRef('side');
   useEffect(() => { isMarkupActiveRef.current = isMarkupActive; }, [isMarkupActive]);
   useEffect(() => { markupToolRef.current = markupTool; }, [markupTool]);
   useEffect(() => { markupColorRef.current = markupColor; }, [markupColor]);
@@ -403,6 +414,11 @@ export default function StudioScreen({ route, navigation }) {
           // mode actually suppresses swipe-navigate even though this
           // useMemo doesn't list isMarkupActive in its deps.
           if (isMarkupActiveRef.current) return false;
+          // Compare modes own horizontal gestures (Split divider, Overlay
+          // slider). Skip swipe-navigate here or the outer view steals
+          // the drag mid-gesture and slides the whole frame instead of
+          // the divider.
+          if (viewModeRef.current === 'split' || viewModeRef.current === 'overlay') return false;
           const horizontalDominant = Math.abs(gs.dx) > Math.abs(gs.dy) * 1.4;
           if (!horizontalDominant) return false;
           return Math.abs(gs.dx) > 20 || Math.abs(gs.vx) > 0.25;
@@ -547,6 +563,11 @@ export default function StudioScreen({ route, navigation }) {
   // the three apply-to scopes inline so the bottom of the screen stays
   // clean.
   const [saveMenuVisible, setSaveMenuVisible] = useState(false);
+  // Save-as-template naming modal. Opened from a row inside the
+  // save-menu; captures this photo's `pairTemplate` + `overrides` under
+  // the entered name via photoTemplateService.
+  const [saveTemplateVisible, setSaveTemplateVisible] = useState(false);
+  const [templateNameDraft, setTemplateNameDraft] = useState('');
   // Fullscreen preview state — populated when user taps the photo on
   // the edit screen. Same shared EnlargedPhotoViewer that HomeScreen /
   // PhotoSetPreview use, so the fullscreen experience is identical
@@ -622,6 +643,7 @@ export default function StudioScreen({ route, navigation }) {
     navigation.goBack();
   }, [hasUnsavedChanges, navigation]);
   const [viewMode, setViewMode] = useState('side');
+  useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
   // Initial pairTemplate is a neutral placeholder. The auto-default
   // effect below picks the right chip for each photo as it loads, but
   // if the photo already has a saved `pairTemplate` (set the last time
@@ -1421,8 +1443,24 @@ export default function StudioScreen({ route, navigation }) {
             toggleLabels={toggleLabels}
           />
         )}
-        {activeTool === 'export' && (
-          <ExportPanel theme={theme} navigation={navigation} photo={photo} />
+        {activeTool === 'templates' && (
+          <TemplatesPanel
+            theme={theme}
+            photo={photo}
+            photos={photos}
+            updatePhoto={updatePhoto}
+            onRequestSave={() => setSaveTemplateVisible(true)}
+            onApplied={(tpl) => {
+              // Sync Studio's local pairTemplate state so the preview
+              // frame re-shapes immediately. The auto-default useEffect
+              // gates by lastDefaultedKeyRef.current === photo.id and
+              // won't re-fire on external pairTemplate writes.
+              const nextFmt = tpl?.photoFields?.pairTemplate;
+              if (nextFmt && FORMAT_ASPECTS[nextFmt] != null) {
+                setPairTemplateState(nextFmt);
+              }
+            }}
+          />
         )}
       </ScrollView>
 
@@ -1615,6 +1653,28 @@ export default function StudioScreen({ route, navigation }) {
               )}
             </TouchableOpacity>
           ))}
+          {/* Save-as-template action — snapshots the current photo's
+              overrides + pairTemplate under a user-entered name so the
+              same look can be re-applied elsewhere via the Templates
+              tool. Hidden when there's nothing customized to save. */}
+          {(photo?.overrides && Object.keys(photo.overrides).length > 0) || photo?.pairTemplate ? (
+            <TouchableOpacity
+              style={[
+                styles.saveMenuOption,
+                { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.divider },
+              ]}
+              onPress={() => {
+                setSaveMenuVisible(false);
+                setTemplateNameDraft('');
+                setSaveTemplateVisible(true);
+              }}
+            >
+              <Text style={[styles.saveMenuOptionText, { color: theme.textPrimary }]}>
+                {t('studio.saveAsTemplate', { defaultValue: 'Save as template…' })}
+              </Text>
+              <Ionicons name="bookmark-outline" size={18} color={theme.textSecondary} />
+            </TouchableOpacity>
+          ) : null}
           {/* Reset action — drops this photo's overrides so it follows
               global Settings again. Hidden when the photo has nothing
               custom to reset. */}
@@ -1658,6 +1718,135 @@ export default function StudioScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* Save-as-template naming prompt. Opened from the save-menu row
+          or the Templates panel. Persists via photoTemplateService and
+          leaves the current photo's state untouched. */}
+      <Modal
+        visible={saveTemplateVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSaveTemplateVisible(false)}
+      >
+        {/* Centered dialog — the previous bottom-sheet layout hid the
+            input behind the keyboard on iOS. KeyboardAvoidingView with
+            `padding` behavior lifts the card so the TextInput stays
+            visible while typing. */}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <TouchableWithoutFeedback onPress={() => setSaveTemplateVisible(false)}>
+            <View style={StyleSheet.absoluteFill}>
+              <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+            </View>
+          </TouchableWithoutFeedback>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }} pointerEvents="box-none">
+            <View
+              style={{
+                width: '100%',
+                maxWidth: 380,
+                backgroundColor: theme.surfaceElevated,
+                borderColor: theme.border,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderRadius: 16,
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: 12,
+              }}
+            >
+              <Text style={[styles.saveMenuTitle, { color: theme.textPrimary, marginBottom: 10 }]}>
+                {t('studio.template.namePromptTitle', { defaultValue: 'Name this template' })}
+              </Text>
+              <TextInput
+                value={templateNameDraft}
+                onChangeText={setTemplateNameDraft}
+                placeholder={t('studio.template.namePlaceholder', { defaultValue: 'e.g. Kitchen Report' })}
+                placeholderTextColor={theme.textMuted || theme.textSecondary}
+                autoFocus
+                selectionColor={theme.accent}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: theme.accent,
+                  backgroundColor: theme.surface,
+                  color: theme.textPrimary,
+                  fontFamily: FONTS.ALEXANDRIA,
+                  fontSize: 16,
+                  marginBottom: 14,
+                }}
+                returnKeyType="done"
+                onSubmitEditing={async () => {
+                  const name = (templateNameDraft || '').trim();
+                  if (!name || !photo) return;
+                  try {
+                    await savePhotoTemplate({
+                      name,
+                      photoFields: photo.pairTemplate ? { pairTemplate: photo.pairTemplate } : null,
+                      overrides: photo.overrides || {},
+                    });
+                    setSaveTemplateVisible(false);
+                    setTemplateNameDraft('');
+                  } catch (e) {
+                    Alert.alert('Error', e.message || 'Could not save template.');
+                  }
+                }}
+              />
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    alignItems: 'center',
+                  }}
+                  onPress={() => setSaveTemplateVisible(false)}
+                >
+                  <Text style={{ color: theme.textSecondary, fontFamily: FONTS.ALEXANDRIA, fontSize: 15 }}>
+                    {t('common.cancel')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    backgroundColor: theme.accent,
+                    alignItems: 'center',
+                    opacity: (templateNameDraft || '').trim() ? 1 : 0.5,
+                  }}
+                  disabled={!(templateNameDraft || '').trim()}
+                  onPress={async () => {
+                    const name = (templateNameDraft || '').trim();
+                    if (!name || !photo) return;
+                    try {
+                      await savePhotoTemplate({
+                        name,
+                        photoFields: photo.pairTemplate ? { pairTemplate: photo.pairTemplate } : null,
+                        overrides: photo.overrides || {},
+                      });
+                      setSaveTemplateVisible(false);
+                      setTemplateNameDraft('');
+                    } catch (e) {
+                      Alert.alert('Error', e.message || 'Could not save template.');
+                    }
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontFamily: FONTS.ALEXANDRIA, fontSize: 15, fontWeight: '700' }}>
+                    {t('common.save', { defaultValue: 'Save' })}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {tappedFullPhoto && (
         // Wrap in absoluteFill so the viewer covers the entire screen
         // (matches HomeScreen's rendering pattern). Without it, the
@@ -2456,6 +2645,20 @@ function VoiceTab({ theme, photo, updatePhoto }) {
       const uri = recording.getURI();
       setRecording(null);
       setIsRecording(false);
+      // Flip the AVAudioSession back to Playback the moment recording
+      // ends so subsequent playback (or any other audio) routes to the
+      // loud speaker instead of the receiver. Doing it here — not only
+      // in playRecording — also covers the case where the user hits
+      // play from a fresh mount without re-recording.
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: false,
+          playThroughEarpieceAndroid: false,
+        });
+      } catch (_) {}
       // Stop the speech recognizer too — its `end` event will
       // settle `recognitionActive` shortly after.
       try { await ExpoSpeechRecognitionModule.stop(); } catch (e) {
@@ -2487,13 +2690,22 @@ function VoiceTab({ theme, photo, updatePhoto }) {
       // Reset audio session to Playback so iOS routes to the loud speaker
       // instead of the earpiece. Recording leaves the session in the
       // PlayAndRecord category which defaults to the receiver — playback
-      // then sounds very quiet until we switch back.
+      // then sounds very quiet until we switch back. Cycling
+      // setIsEnabledAsync around the mode change forces iOS to
+      // re-evaluate the output route; just flipping allowsRecordingIOS
+      // alone is not enough when the prior category was PlayAndRecord —
+      // the receiver route can stick until the session is deactivated.
+      try { await Audio.setIsEnabledAsync(false); } catch (_) {}
       try {
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
           playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: false,
+          playThroughEarpieceAndroid: false,
         });
       } catch (_) {}
+      try { await Audio.setIsEnabledAsync(true); } catch (_) {}
       const { sound: s } = await Audio.Sound.createAsync(
         { uri: audioUri },
         { volume: 1.0 },
@@ -2761,48 +2973,164 @@ function BrandTile({
   );
 }
 
-function ExportPanel({ theme, navigation, photo }) {
-  const shareNow = async () => {
-    if (!photo?.uri) {
-      Alert.alert('Nothing to share', 'No photo URI available.');
-      return;
-    }
+// Resolve the source before/after singles behind a combined photo.
+// Mirrors PhotoLabels.resolveCombinedSources + StudioScreen.pairResolved
+// so applying a template targets the SAME records the label/watermark/
+// logo overlays actually read from — otherwise combined-photo templates
+// would write to `combined_<id>` overrides (empty) and nothing visible
+// would change.
+function resolveSourcesForCombined(photo, photos) {
+  if (!photo) return { before: null, after: null };
+  const idStr = String(photo.id || '');
+  let before = null;
+  if (idStr.startsWith('combined_')) {
+    const beforeIdStr = idStr.slice('combined_'.length);
+    before = photos.find((p) => String(p.id) === beforeIdStr) || null;
+  }
+  if (!before && photo.name && photo.room) {
+    before = photos.find(
+      (p) => p.name === photo.name && p.room === photo.room && p.mode === PHOTO_MODES.BEFORE
+    ) || null;
+  }
+  const after = before
+    ? photos.find((p) => p.beforePhotoId === before.id && p.mode === PHOTO_MODES.AFTER) || null
+    : null;
+  return { before, after };
+}
+
+// Apply a template as a REPLACEMENT (not merge). Presets are "looks",
+// so residual keys from a previous preset must not bleed through —
+// otherwise applying preset A → preset B leaves preset A's logo/meta
+// position ghosts behind when B doesn't set them.
+//
+// For combined photos we cascade to the source before + after so
+// PhotoLabels / overlays (which resolve overrides via source ids) see
+// the change. Format (pairTemplate) is written to every touched photo.
+async function applyTemplateToPhoto(updatePhoto, targetPhoto, allPhotos, template) {
+  if (!targetPhoto || !template) return;
+  const overrides = template.overrides && Object.keys(template.overrides).length
+    ? { ...template.overrides }
+    : null;
+  const pairTpl = template.photoFields?.pairTemplate;
+  const patch = { overrides };
+  if (pairTpl) patch.pairTemplate = pairTpl;
+
+  const targets = [targetPhoto];
+  if (targetPhoto.mode === PHOTO_MODES.COMBINED) {
+    const { before, after } = resolveSourcesForCombined(targetPhoto, allPhotos);
+    if (before) targets.push(before);
+    if (after) targets.push(after);
+  }
+  for (const p of targets) {
+    try { await updatePhoto(p.id, patch); } catch (_) {}
+  }
+}
+
+function TemplatesPanel({ theme, photo, photos, updatePhoto, onRequestSave, onApplied }) {
+  const { t } = useTranslation();
+  const [templates, setTemplates] = useState([]);
+  const [appliedFlash, setAppliedFlash] = useState(null);
+
+  const reload = useCallback(async () => {
     try {
-      await Share.share({ url: photo.uri, message: photo.notes || '' });
+      const list = await listAllPhotoTemplates();
+      setTemplates(list);
     } catch (e) {
-      // user dismissed
+      console.warn('[TemplatesPanel] load failed', e);
     }
+  }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const handleApply = async (tpl) => {
+    if (!photo) return;
+    try {
+      await applyTemplateToPhoto(updatePhoto, photo, photos, tpl);
+      if (typeof onApplied === 'function') onApplied(tpl);
+      setAppliedFlash(tpl.id);
+      setTimeout(() => setAppliedFlash((cur) => (cur === tpl.id ? null : cur)), 1200);
+    } catch (e) {
+      console.warn('[TemplatesPanel] apply failed', e);
+    }
+  };
+
+  const handleDelete = (tpl) => {
+    if (!tpl || tpl.isPreset) return;
+    Alert.alert(
+      t('studio.template.deleteTitle', { defaultValue: 'Delete template?' }),
+      t('studio.template.deleteMessage', { name: tpl.name, defaultValue: `Delete "${tpl.name}"? This cannot be undone.` }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete', { defaultValue: 'Delete' }),
+          style: 'destructive',
+          onPress: async () => {
+            await deletePhotoTemplate(tpl.id);
+            await reload();
+          },
+        },
+      ],
+    );
   };
 
   return (
     <View>
-      <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>EXPORT</Text>
+      <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+        {t('studio.templatesTitle', { defaultValue: 'TEMPLATES' })}
+      </Text>
+
       <TouchableOpacity
         style={[styles.deepLinkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        onPress={shareNow}
+        onPress={onRequestSave}
       >
-        <Ionicons name="share-outline" size={18} color={theme.textPrimary} style={{ marginRight: 12 }} />
+        <Ionicons name="bookmark-outline" size={18} color={theme.textPrimary} style={{ marginRight: 12 }} />
         <View style={{ flex: 1 }}>
-          <Text style={[styles.deepLinkTitle, { color: theme.textPrimary }]}>Share this photo</Text>
+          <Text style={[styles.deepLinkTitle, { color: theme.textPrimary }]}>
+            {t('studio.saveAsTemplate', { defaultValue: 'Save as template…' })}
+          </Text>
           <Text style={[styles.deepLinkSubtitle, { color: theme.textSecondary }]}>
-            Native share sheet (Messages, Mail, copy, save, etc.)
+            {t('studio.saveAsTemplateSubtitle', { defaultValue: 'Snapshot this photo\'s look as a reusable template' })}
           </Text>
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.deepLinkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Projects' }] })}
-      >
-        <Ionicons name="cloud-upload-outline" size={18} color={theme.textPrimary} style={{ marginRight: 12 }} />
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.deepLinkTitle, { color: theme.textPrimary }]}>Project share / upload</Text>
-          <Text style={[styles.deepLinkSubtitle, { color: theme.textSecondary }]}>
-            Reuses the existing share + cloud upload flow on Projects
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-      </TouchableOpacity>
+      {templates.map((tpl) => {
+        const applied = appliedFlash === tpl.id;
+        const isPreset = !!tpl.isPreset;
+        return (
+          <TouchableOpacity
+            key={tpl.id}
+            style={[styles.deepLinkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={() => handleApply(tpl)}
+            onLongPress={() => handleDelete(tpl)}
+          >
+            <Ionicons
+              name={isPreset ? 'sparkles-outline' : 'albums-outline'}
+              size={18}
+              color={applied ? theme.accent : theme.textPrimary}
+              style={{ marginRight: 12 }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.deepLinkTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+                {tpl.name}
+              </Text>
+              <Text style={[styles.deepLinkSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
+                {isPreset
+                  ? t('studio.template.presetSubtitle', { defaultValue: 'Preset · tap to apply' })
+                  : t('studio.template.userSubtitle', { defaultValue: 'Tap to apply · long-press to delete' })}
+              </Text>
+            </View>
+            {applied ? (
+              <Text style={{ color: theme.accent, fontFamily: FONTS.ALEXANDRIA, fontSize: 12, marginRight: 4 }}>
+                {t('studio.template.applied', { defaultValue: 'Applied' })}
+              </Text>
+            ) : null}
+            <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -2940,7 +3268,10 @@ const styles = StyleSheet.create({
   // is centered horizontally and sized to fit the picture's template
   // aspect inside.
   photoArea: {
-    height: 360,
+    // Was 360. Trimmed to 320 so the panel below has room for all three
+    // Layout groups (Source Photos, Format, View Mode) without the
+    // last one scrolling under the bottom tab bar on standard iPhones.
+    height: 320,
     width: '100%',
     paddingHorizontal: 16,
     alignItems: 'center',
@@ -3069,18 +3400,21 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   toolPanel: { flex: 1 },
+  // Tightened top/bottom padding + section spacing so the three Layout
+  // groups (Source Photos, Format, View Mode) fit inside the scroll
+  // area without scrolling to the last one on standard-height phones.
   toolPanelContent: {
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   sectionLabel: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.6,
-    marginTop: 12,
-    marginBottom: 8,
+    marginTop: 8,
+    marginBottom: 6,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chipRowScroll: { flexDirection: 'row', gap: 8, paddingRight: 8 },
@@ -3535,12 +3869,16 @@ const styles = StyleSheet.create({
   },
   formatCard: {
     flex: 1,
-    aspectRatio: 1,
+    // Was aspectRatio: 1 (square cards). Wider ratio saves ~15pt of
+    // vertical space per row so the View Mode group below stays
+    // visible without scrolling on standard-height phones.
+    aspectRatio: 1.15,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 4,
     paddingHorizontal: 4,
+    paddingVertical: 6,
   },
   formatCardLabel: {
     fontFamily: FONTS.ALEXANDRIA,

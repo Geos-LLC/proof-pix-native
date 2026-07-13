@@ -10,6 +10,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   Platform,
+  NativeModules,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,37 @@ import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../hooks/useTheme';
 import enterpriseContactService from '../services/enterpriseContactService';
 import Constants from 'expo-constants';
+import { isTrialActive, getTrialDaysRemaining } from '../services/trialService';
+
+// Extract the ISO country code from the device locale without a new
+// dependency. iOS exposes `AppleLocale` / `AppleLanguages` via
+// SettingsManager; Android exposes `localeIdentifier` via I18nManager.
+// Both look like `en_US` or `en-US`; we return the region half.
+const getDeviceCountry = () => {
+  try {
+    const locale = Platform.OS === 'ios'
+      ? (NativeModules.SettingsManager?.settings?.AppleLocale
+        || NativeModules.SettingsManager?.settings?.AppleLanguages?.[0]
+        || '')
+      : (NativeModules.I18nManager?.localeIdentifier || '');
+    const m = String(locale).match(/[_-]([A-Za-z]{2})\b/);
+    return m ? m[1].toUpperCase() : '';
+  } catch { return ''; }
+};
+
+// Render the user's plan as a short label for the contact email
+// metadata row. Free tier is called out explicitly; paid plans get a
+// trial badge with days remaining when applicable.
+const formatPlanLabel = (userPlan, trialActive, daysLeft) => {
+  const tier = userPlan || 'starter';
+  const label = tier.charAt(0).toUpperCase() + tier.slice(1);
+  if (tier === 'starter') return `${label} (Free)`;
+  if (trialActive) {
+    const d = Number.isFinite(daysLeft) ? daysLeft : 0;
+    return `${label} (Trial · ${d} day${d === 1 ? '' : 's'} left)`;
+  }
+  return `${label} (Paid)`;
+};
 
 // HelpSupportScreen — design 37.
 //
@@ -46,7 +78,7 @@ const TABS = [
 export default function HelpSupportScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { userName } = useSettings();
+  const { userName, userPlan } = useSettings();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
@@ -141,6 +173,9 @@ export default function HelpSupportScreen({ navigation }) {
     const appVersion = Constants?.expoConfig?.version
       || Constants?.manifest?.version
       || '—';
+    const buildNumberForSend = Constants?.expoConfig?.ios?.buildNumber
+      || Constants?.expoConfig?.android?.versionCode
+      || '—';
     const subject = `[${topic}] ProofPix in-app feedback`;
     // EmailJS template expects `description` (mapped to `message` inside
     // the service) — passing `message` was the silent failure in the
@@ -149,6 +184,22 @@ export default function HelpSupportScreen({ navigation }) {
     const description =
       `${trimmed}\n\n` +
       `— Sent from ProofPix v${appVersion} on ${platform}.`;
+
+    // Gather client-context vars for the EmailJS metadata table. Trial
+    // state is resolved async but the calls are fast (local storage
+    // reads); a failure on either falls through to the default plan
+    // label. Country is a synchronous NativeModules read.
+    let trialActive = false;
+    let trialDaysLeft = 0;
+    try { trialActive = await isTrialActive(); } catch {}
+    if (trialActive) {
+      try { trialDaysLeft = await getTrialDaysRemaining(); } catch {}
+    }
+    const planLabel = formatPlanLabel(userPlan, trialActive, trialDaysLeft);
+    const countryCode = getDeviceCountry();
+    const platformLabel = platform === 'ios' ? 'iOS'
+      : platform === 'android' ? 'Android'
+      : platform;
 
     // Single-path send through the internal EmailJS engine. The legacy
     // ContactUs screen used the same enterpriseContactService and treated
@@ -163,6 +214,16 @@ export default function HelpSupportScreen({ navigation }) {
         email: effectiveEmail,
         phone: phone.trim(),
         description: `${subject}\n\n${description}`,
+        // Metadata for the EmailJS template's client-context table.
+        topic,
+        plan: planLabel,
+        country: countryCode,
+        version: appVersion,
+        build: String(buildNumberForSend),
+        platform: platformLabel,
+        // deviceId omitted — service resolves it from SecureStore
+        // /AsyncStorage internally so the FixPrompt SDK's UUID always
+        // wins over anything we could pass from here.
       });
 
       // Persist email + phone unconditionally so the next send is

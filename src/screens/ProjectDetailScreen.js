@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Platform,
   Linking,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -71,6 +72,11 @@ import {
 } from '../reports';
 import { consumePendingLayoutSelection } from '../reports/pickerBridge';
 import ReportPreviewView from '../components/ReportPreview';
+import {
+  listReportTemplates,
+  saveReportTemplate,
+  deleteReportTemplate,
+} from '../services/reportTemplateService';
 
 // Group keys for the report editor sheet. Section "Report" carries
 // the knobs that change WHAT lands in the report (branding, location
@@ -1112,6 +1118,14 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const [reportLayoutType, setReportLayoutType] = useState(DEFAULT_LAYOUT_ID);
   const [reportOptions, setReportOptions] = useState({});
   const [isBuildingReport, setIsBuildingReport] = useState(false);
+  // Report templates — user-saved bundles of (layoutType + options)
+  // reusable across reports. `pickerVisible` shows the apply picker,
+  // `savePromptVisible` shows the naming prompt; both are local to the
+  // Report editor. Templates load once when the picker opens.
+  const [reportTemplatePickerVisible, setReportTemplatePickerVisible] = useState(false);
+  const [reportTemplateSaveVisible, setReportTemplateSaveVisible] = useState(false);
+  const [reportTemplateNameDraft, setReportTemplateNameDraft] = useState('');
+  const [reportTemplates, setReportTemplates] = useState([]);
 
   // Selection mode for the Timeline grid. Enters via the
   // "Select photos" pill at the top of the Timeline tab, exits via
@@ -3181,6 +3195,52 @@ export default function ProjectDetailScreen({ route, navigation }) {
                       <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
                     </TouchableOpacity>
 
+                    {/* Report templates — snapshot the current
+                        layoutType + reportOptions under a name and
+                        reapply to any report later. Templates live in
+                        AsyncStorage (per-device). No shipped presets:
+                        the user creates their own. */}
+                    <TouchableOpacity
+                      style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                      onPress={async () => {
+                        try {
+                          const list = await listReportTemplates();
+                          setReportTemplates(list);
+                        } catch (_) {}
+                        setReportTemplatePickerVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="albums-outline" size={18} color={theme.textPrimary} style={{ marginRight: 12 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>
+                          {t('report.applyTemplate', { defaultValue: 'Apply template' })}
+                        </Text>
+                        <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>
+                          {t('report.applyTemplateSubtitle', { defaultValue: 'Reuse a saved layout + options' })}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.reportRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                      onPress={() => {
+                        setReportTemplateNameDraft('');
+                        setReportTemplateSaveVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="bookmark-outline" size={18} color={theme.textPrimary} style={{ marginRight: 12 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.reportRowLabel, { color: theme.textPrimary }]}>
+                          {t('report.saveAsTemplate', { defaultValue: 'Save as template…' })}
+                        </Text>
+                        <Text style={[styles.reportRowSubtle, { color: theme.textSecondary }]}>
+                          {t('report.saveAsTemplateSubtitle', { defaultValue: 'Snapshot this layout + options' })}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+
                     {/* Layout-specific options — rendered from the
                         layout's supportedOptions + OPTION_META, split
                         into two sections by REPORT_OPTION_GROUPS so
@@ -4209,6 +4269,200 @@ export default function ProjectDetailScreen({ route, navigation }) {
             </Text>
           </TouchableOpacity>
         </View>
+      </Modal>
+
+      {/* Report template picker — lists user-saved report templates.
+          Tap a row to apply (writes layoutType + options into the
+          editor draft; user still has to hit Generate to persist).
+          Long-press to delete. No shipped presets for reports. */}
+      <Modal
+        visible={reportTemplatePickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReportTemplatePickerVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setReportTemplatePickerVisible(false)}>
+          <View style={styles.sheetBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={[styles.sheetContainer, { backgroundColor: theme.surface, paddingBottom: 12 + insets.bottom }]}>
+          <View style={[styles.sheetHandle, { backgroundColor: theme.borderStrong }]} />
+          <Text style={[styles.sheetTitle, { color: theme.textPrimary }]}>
+            {t('report.applyTemplate', { defaultValue: 'Apply template' })}
+          </Text>
+          {reportTemplates.length === 0 ? (
+            <View style={{ paddingHorizontal: 20, paddingVertical: 24 }}>
+              <Text style={{ color: theme.textSecondary, fontFamily: 'Alexandria_400Regular', textAlign: 'center' }}>
+                {t('report.noTemplates', { defaultValue: 'No saved templates yet. Save the current layout with "Save as template…" first.' })}
+              </Text>
+            </View>
+          ) : (
+            reportTemplates.map((tpl) => (
+              <TouchableOpacity
+                key={tpl.id}
+                style={styles.sheetAction}
+                onPress={() => {
+                  setReportLayoutType(tpl.layoutType || DEFAULT_LAYOUT_ID);
+                  setReportOptions({ ...(tpl.options || {}) });
+                  setReportPreviewStale(true);
+                  setReportTemplatePickerVisible(false);
+                }}
+                onLongPress={() => {
+                  Alert.alert(
+                    t('report.template.deleteTitle', { defaultValue: 'Delete template?' }),
+                    t('report.template.deleteMessage', { name: tpl.name, defaultValue: `Delete "${tpl.name}"?` }),
+                    [
+                      { text: t('common.cancel'), style: 'cancel' },
+                      {
+                        text: t('common.delete', { defaultValue: 'Delete' }),
+                        style: 'destructive',
+                        onPress: async () => {
+                          await deleteReportTemplate(tpl.id);
+                          try {
+                            const list = await listReportTemplates();
+                            setReportTemplates(list);
+                          } catch (_) {}
+                        },
+                      },
+                    ],
+                  );
+                }}
+              >
+                <Ionicons name="albums-outline" size={20} color={theme.textPrimary} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.sheetActionText, { color: theme.textPrimary }]} numberOfLines={1}>
+                    {tpl.name}
+                  </Text>
+                  <Text style={{ color: theme.textSecondary, fontFamily: 'Alexandria_400Regular', fontSize: 12 }}>
+                    {getLayout(tpl.layoutType || DEFAULT_LAYOUT_ID).name}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+          <TouchableOpacity
+            style={[styles.sheetCancel, { backgroundColor: theme.surfaceElevated }]}
+            onPress={() => setReportTemplatePickerVisible(false)}
+          >
+            <Text style={[styles.sheetCancelText, { color: theme.textPrimary }]}>
+              {t('common.cancel', { defaultValue: 'Cancel' })}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Report save-as-template naming prompt. Centered dialog (the
+          bottom-sheet form hid the input behind the keyboard). */}
+      <Modal
+        visible={reportTemplateSaveVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReportTemplateSaveVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <TouchableWithoutFeedback onPress={() => setReportTemplateSaveVisible(false)}>
+            <View style={StyleSheet.absoluteFill}>
+              <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+            </View>
+          </TouchableWithoutFeedback>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }} pointerEvents="box-none">
+            <View
+              style={{
+                width: '100%',
+                maxWidth: 380,
+                backgroundColor: theme.surfaceElevated || theme.surface,
+                borderColor: theme.border,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderRadius: 16,
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: 12,
+              }}
+            >
+              <Text style={[styles.sheetTitle, { color: theme.textPrimary, marginBottom: 10, paddingHorizontal: 0 }]}>
+                {t('report.template.namePromptTitle', { defaultValue: 'Name this template' })}
+              </Text>
+              <TextInput
+                value={reportTemplateNameDraft}
+                onChangeText={setReportTemplateNameDraft}
+                placeholder={t('report.template.namePlaceholder', { defaultValue: 'e.g. Standard Handoff Report' })}
+                placeholderTextColor={theme.textMuted || theme.textSecondary}
+                autoFocus
+                selectionColor={theme.accent}
+                returnKeyType="done"
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: theme.accent,
+                  backgroundColor: theme.surface,
+                  color: theme.textPrimary,
+                  fontFamily: 'Alexandria_400Regular',
+                  fontSize: 16,
+                  marginBottom: 14,
+                }}
+                onSubmitEditing={async () => {
+                  const name = (reportTemplateNameDraft || '').trim();
+                  if (!name) return;
+                  try {
+                    await saveReportTemplate({ name, layoutType: reportLayoutType, options: reportOptions });
+                    setReportTemplateSaveVisible(false);
+                    setReportTemplateNameDraft('');
+                  } catch (e) {
+                    Alert.alert('Error', e.message || 'Could not save template.');
+                  }
+                }}
+              />
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    alignItems: 'center',
+                  }}
+                  onPress={() => setReportTemplateSaveVisible(false)}
+                >
+                  <Text style={{ color: theme.textSecondary, fontFamily: 'Alexandria_400Regular', fontSize: 15 }}>
+                    {t('common.cancel', { defaultValue: 'Cancel' })}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    backgroundColor: theme.accent,
+                    alignItems: 'center',
+                    opacity: (reportTemplateNameDraft || '').trim() ? 1 : 0.5,
+                  }}
+                  disabled={!(reportTemplateNameDraft || '').trim()}
+                  onPress={async () => {
+                    const name = (reportTemplateNameDraft || '').trim();
+                    if (!name) return;
+                    try {
+                      await saveReportTemplate({ name, layoutType: reportLayoutType, options: reportOptions });
+                      setReportTemplateSaveVisible(false);
+                      setReportTemplateNameDraft('');
+                    } catch (e) {
+                      Alert.alert('Error', e.message || 'Could not save template.');
+                    }
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontFamily: 'Alexandria_400Regular', fontSize: 15, fontWeight: '700' }}>
+                    {t('common.save', { defaultValue: 'Save' })}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

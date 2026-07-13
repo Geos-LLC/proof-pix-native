@@ -195,6 +195,10 @@ export default function MarkupEditorScreen({ route, navigation }) {
     return [];
   }, [photo?.markup]);
   const [shapes, setShapes] = useState(initialShapes);
+  // Redo stack: Undo pops from shapes → pushes here. Redo does the
+  // inverse. Any new drawing clears the redo stack so a "future" history
+  // isn't stitched onto a divergent past.
+  const [redoStack, setRedoStack] = useState([]);
   const [inProgress, setInProgress] = useState(null);
 
   // Live refs for tool / color / stroke so the one-shot PanResponder
@@ -323,7 +327,12 @@ export default function MarkupEditorScreen({ route, navigation }) {
       onPanResponderRelease: () => {
         pinchingRef.current = false;
         setInProgress((prev) => {
-          if (prev) setShapes((s) => [...s, prev]);
+          if (prev) {
+            setShapes((s) => [...s, prev]);
+            // New action wipes the redo stack — can't redo forward once
+            // the history has diverged.
+            setRedoStack([]);
+          }
           return null;
         });
       },
@@ -380,8 +389,30 @@ export default function MarkupEditorScreen({ route, navigation }) {
   useEffect(() => {
     return () => { persistShapesRef.current?.(); };
   }, []);
-  const handleUndo = () => setShapes((s) => s.slice(0, -1));
-  const handleClear = () => setShapes([]);
+  const handleUndo = () => {
+    setShapes((s) => {
+      if (s.length === 0) return s;
+      const last = s[s.length - 1];
+      setRedoStack((r) => [...r, last]);
+      return s.slice(0, -1);
+    });
+  };
+  const handleRedo = () => {
+    setRedoStack((r) => {
+      if (r.length === 0) return r;
+      const last = r[r.length - 1];
+      setShapes((s) => [...s, last]);
+      return r.slice(0, -1);
+    });
+  };
+  const handleClear = () => {
+    // Push everything to redo so a mistaken Clear can be reversed.
+    setShapes((s) => {
+      if (s.length === 0) return s;
+      setRedoStack((r) => [...r, ...s]);
+      return [];
+    });
+  };
 
   if (!photo) {
     return (
@@ -552,6 +583,17 @@ export default function MarkupEditorScreen({ route, navigation }) {
           >
             <Ionicons name="arrow-undo-outline" size={16} color={theme.textPrimary} />
             <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>{t('markup.undo')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              { backgroundColor: theme.surface, borderColor: theme.border, opacity: redoStack.length === 0 ? 0.4 : 1 },
+            ]}
+            onPress={handleRedo}
+            disabled={redoStack.length === 0}
+          >
+            <Ionicons name="arrow-redo-outline" size={16} color={theme.textPrimary} />
+            <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>{t('markup.redo', { defaultValue: 'Redo' })}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
