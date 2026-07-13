@@ -17,9 +17,7 @@ import { useTheme } from '../hooks/useTheme';
 //
 // Three radio rows (Light / Dark / System). Each row is a hairline
 // card with a leading icon tile + label + a check on the active row.
-// "System" maps to whichever of light/dark we have today since the
-// app's themeMode store is boolean (light|dark) only — pass-through
-// for now; future pass can hook it into Appearance.useColorScheme().
+// 'system' resolves via useColorScheme() in useTheme.
 
 export default function AppearanceScreen({ navigation }) {
   const { t } = useTranslation();
@@ -28,16 +26,7 @@ export default function AppearanceScreen({ navigation }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
-  const choose = (mode) => {
-    if (mode === 'system') {
-      // No system pass-through yet — collapse to light for now.
-      setThemeMode('light');
-      return;
-    }
-    setThemeMode(mode);
-  };
-
-  const isLight = themeMode !== 'dark';
+  const choose = (mode) => setThemeMode(mode);
 
   const options = [
     {
@@ -45,7 +34,7 @@ export default function AppearanceScreen({ navigation }) {
       icon: 'sunny-outline',
       label: t('appearance.light', { defaultValue: 'Light' }),
       sub: t('appearance.lightSub', { defaultValue: 'Bright background, dark text' }),
-      active: isLight,
+      active: themeMode === 'light',
     },
     {
       key: 'dark',
@@ -58,8 +47,8 @@ export default function AppearanceScreen({ navigation }) {
       key: 'system',
       icon: 'phone-portrait-outline',
       label: t('appearance.system', { defaultValue: 'System' }),
-      sub: t('appearance.systemSub', { defaultValue: 'Match the device setting (preview — uses Light for now)' }),
-      active: false,
+      sub: t('appearance.systemSub', { defaultValue: 'Match the device setting' }),
+      active: themeMode === 'system',
     },
   ];
 

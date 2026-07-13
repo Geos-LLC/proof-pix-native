@@ -1,4 +1,5 @@
 import { useContext } from 'react';
+import { useColorScheme } from 'react-native';
 import { SettingsContext } from '../context/SettingsContext';
 import { getTheme, lightTheme } from '../constants/theme';
 
@@ -10,6 +11,11 @@ import { getTheme, lightTheme } from '../constants/theme';
 // `feedback_usetheme_outside_provider.md`.
 export const useTheme = () => {
   const context = useContext(SettingsContext);
+  const system = useColorScheme();
   if (!context) return lightTheme;
-  return getTheme(context.themeMode);
+  const mode =
+    context.themeMode === 'system'
+      ? (system === 'dark' ? 'dark' : 'light')
+      : context.themeMode;
+  return getTheme(mode);
 };

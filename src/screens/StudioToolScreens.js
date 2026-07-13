@@ -216,8 +216,8 @@ export function StudioLabelsScreen({ route, navigation }) {
         <Switch
           value={!!showLabels}
           onValueChange={toggleLabels}
-          trackColor={{ false: '#E0E0E0', true: theme.accent }}
-          thumbColor="#FFFFFF"
+          trackColor={{ false: theme.borderStrong, true: theme.accent }}
+          thumbColor={theme.background}
         />
       </View>
 
@@ -402,8 +402,8 @@ function BrandToggle({ theme, label, value, onChange, hint }) {
       <Switch
         value={value}
         onValueChange={onChange}
-        trackColor={{ false: '#E0E0E0', true: theme.accent }}
-        thumbColor="#FFFFFF"
+        trackColor={{ false: theme.borderStrong, true: theme.accent }}
+        thumbColor={theme.background}
       />
     </View>
   );

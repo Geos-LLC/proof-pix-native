@@ -430,7 +430,11 @@ export const SettingsProvider = ({ children }) => {
             ? settings.autoUseCurrentLocationForProjects
             : false
         );
-        setThemeModeState(settings.themeMode === 'dark' ? 'dark' : 'light');
+        setThemeModeState(
+          settings.themeMode === 'dark' || settings.themeMode === 'system'
+            ? settings.themeMode
+            : 'light'
+        );
       }
       
       // Even when the main settings blob is entirely missing (first
@@ -572,7 +576,7 @@ export const SettingsProvider = ({ children }) => {
   };
 
   const setThemeMode = async (mode) => {
-    const next = mode === 'dark' ? 'dark' : 'light';
+    const next = mode === 'dark' || mode === 'system' ? mode : 'light';
     setThemeModeState(next);
     await saveSettings({ themeMode: next });
   };

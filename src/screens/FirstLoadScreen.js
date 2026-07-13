@@ -20,7 +20,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
-import { COLORS } from '../constants/rooms';
 import { logLanguageChange, logOnboardingCompleted, logOnboardingStepCompleted } from '../utils/analytics';
 import { FONTS } from '../constants/fonts';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -331,7 +330,7 @@ export default function FirstLoadScreen({ navigation, route }) {
             style={styles.languageFlagImage}
             resizeMode="cover"
           />
-          <Ionicons name="chevron-down" style={{padding:2}} size={18} color="#200E32" />
+          <Ionicons name="chevron-down" style={{padding:2}} size={18} color={theme.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -372,7 +371,7 @@ export default function FirstLoadScreen({ navigation, route }) {
                 value={userName}
                 onChangeText={setUserName}
                 placeholder={'Alex Bond'}
-                placeholderTextColor="#999"
+                placeholderTextColor={theme.textMuted}
                 autoCapitalize="words"
                 autoCorrect={false}
                 onFocus={handleNameInputFocus}
@@ -416,7 +415,7 @@ export default function FirstLoadScreen({ navigation, route }) {
             onPress={() => setReferralCodeModalVisible(true)}
             activeOpacity={0.7}
           >
-            <Ionicons name="ticket-outline" size={14} color="#7A5B00" />
+            <Ionicons name="ticket-outline" size={14} color={theme.accentInk} />
             <Text style={styles.haveReferralLinkText}>
               {t('firstLoad.haveReferralCode', { defaultValue: 'I have a referral code' })}
             </Text>
@@ -447,7 +446,7 @@ export default function FirstLoadScreen({ navigation, route }) {
                 style={styles.modalCloseButtonTop}
                 onPress={() => setLanguageModalVisible(false)}
               >
-                <Ionicons name="close" size={24} color={COLORS.TEXT} />
+                <Ionicons name="close" size={24} color={theme.textPrimary} />
               </TouchableOpacity>
               <Text style={styles.modalTitleBottomSheet}>
                 {t('firstLoad.changeLanguage', { defaultValue: 'Change Language' })}
@@ -475,7 +474,7 @@ export default function FirstLoadScreen({ navigation, route }) {
                   </Text>
                   {i18n.language === language.code && (
                     <View style={styles.checkmarkCircle}>
-                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      <Ionicons name="checkmark" size={16} color={theme.accentText} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -513,7 +512,7 @@ export default function FirstLoadScreen({ navigation, route }) {
                   style={styles.modalCloseButtonTop}
                   onPress={() => setReferralCodeModalVisible(false)}
                 >
-                  <Ionicons name="close" size={24} color={COLORS.TEXT} />
+                  <Ionicons name="close" size={24} color={theme.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.modalTitleBottomSheet}>
                   {t('referral.enterCodeTitle', { defaultValue: 'Enter Referral Code' })}
@@ -533,7 +532,7 @@ export default function FirstLoadScreen({ navigation, route }) {
                   value={referralCodeInput}
                   onChangeText={(text) => setReferralCodeInput(text.toUpperCase().replace(/\s/g, ''))}
                   placeholder={t('referral.codePlaceholder', { defaultValue: 'ENTER CODE' })}
-                  placeholderTextColor="#999"
+                  placeholderTextColor={theme.textMuted}
                   autoCapitalize="characters"
                   autoCorrect={false}
                   maxLength={16}
@@ -597,7 +596,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 25,
     fontWeight: 'bold',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     letterSpacing: -0.11,
   },
   languageSelector: {
@@ -680,7 +679,7 @@ const makeStyles = (theme) => StyleSheet.create({
   inputBox: {
     backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: '#D5D5D5',
+    borderColor: theme.borderStrong,
     borderRadius: 11,
     paddingHorizontal: 12,
     paddingTop: 5,
@@ -690,7 +689,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
+    color: theme.textPrimary,
     opacity: 0.65,
     marginBottom: 4,
   },
@@ -698,12 +697,12 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
+    color: theme.textPrimary,
     padding: 0,
     margin: 0,
   },
   saveButton: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.textPrimary,
     borderRadius: 100,
     paddingVertical: 12,
     alignItems: 'center',
@@ -712,7 +711,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     fontFamily: 'Alexandria_400Regular',
-    color: '#FFFFFF',
+    color: theme.background,
   },
   orContainer: {
     flexDirection: 'row',
@@ -725,14 +724,14 @@ const makeStyles = (theme) => StyleSheet.create({
   orLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#000000',
+    backgroundColor: theme.textPrimary,
     opacity: 0.2,
   },
   orText: {
     fontSize: 13,
     fontWeight: '300',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     marginHorizontal: 8,
     textTransform: 'uppercase',
   },
@@ -744,7 +743,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textDecorationLine: 'underline',
     letterSpacing: 0.3,
   },
@@ -760,7 +759,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     fontFamily: 'Alexandria_400Regular',
-    color: '#7A5B00',
+    color: theme.accentInk,
     letterSpacing: -0.1,
   },
   referralOnboardingSheet: {
@@ -786,7 +785,7 @@ const makeStyles = (theme) => StyleSheet.create({
   referralOnboardingInput: {
     backgroundColor: theme.surface,
     borderWidth: 1.5,
-    borderColor: '#F2C31B',
+    borderColor: theme.accent,
     borderRadius: 14,
     paddingVertical: 16,
     paddingHorizontal: 16,
@@ -801,18 +800,18 @@ const makeStyles = (theme) => StyleSheet.create({
     marginHorizontal: 24,
     height: 52,
     borderRadius: 16,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   referralOnboardingApplyButtonDisabled: {
-    backgroundColor: '#CCCCCC',
+    backgroundColor: theme.borderStrong,
   },
   referralOnboardingApplyButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: theme.background,
     letterSpacing: -0.1,
   },
   modalOverlay: {
@@ -848,7 +847,7 @@ const makeStyles = (theme) => StyleSheet.create({
   modalHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#E5E5E5',
+    backgroundColor: theme.border,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 8,
@@ -881,7 +880,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     flex: 1,
     textAlign: 'center',
   },
@@ -903,7 +902,7 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
+    borderBottomColor: theme.divider,
   },
   flagCircle: {
     width: 40,
@@ -922,7 +921,7 @@ const makeStyles = (theme) => StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: COLORS.PRIMARY,
+    backgroundColor: theme.accent,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -931,11 +930,11 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '400',
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
   closeModalButton: {
     marginTop: 16,
-    backgroundColor: '#F2F2F2',
+    backgroundColor: theme.surface,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
@@ -974,7 +973,7 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingBottom: 20,
   },
   referralSubmitButton: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.textPrimary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
@@ -982,7 +981,7 @@ const makeStyles = (theme) => StyleSheet.create({
     marginBottom: 12,
   },
   referralSubmitButtonText: {
-    color: '#FFFFFF',
+    color: theme.background,
     fontSize: 16,
     fontWeight: '600',
     fontFamily: FONTS.ALEXANDRIA,
@@ -1012,7 +1011,7 @@ const makeStyles = (theme) => StyleSheet.create({
   successTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#000',
+    color: theme.textPrimary,
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -1025,7 +1024,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   highlightText: {
     fontWeight: 'bold',
-    color: '#000',
+    color: theme.textPrimary,
   },
   successSubtext: {
     fontSize: 14,
@@ -1035,7 +1034,7 @@ const makeStyles = (theme) => StyleSheet.create({
     textAlign: 'center',
   },
   successButton: {
-    backgroundColor: '#F2C31B',
+    backgroundColor: theme.accent,
     paddingVertical: 14,
     paddingHorizontal: 48,
     borderRadius: 12,
@@ -1045,7 +1044,7 @@ const makeStyles = (theme) => StyleSheet.create({
   successButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#000',
+    color: theme.accentText,
   },
   closeButtonCircle: {
     width: 32,
@@ -1076,7 +1075,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 20,
@@ -1090,7 +1089,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     lineHeight: 26,
   },
   languageInfoSubtext: {
@@ -1103,12 +1102,12 @@ const makeStyles = (theme) => StyleSheet.create({
     width: '100%',
   },
   languageInfoSettingsHighlight: {
-    color: COLORS.PRIMARY,
+    color: theme.accentInk,
     fontWeight: '600',
     fontFamily: FONTS.ALEXANDRIA,
   },
   languageInfoButton: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.textPrimary,
     borderRadius: 12,
     paddingVertical: 16,
     marginHorizontal: 20,
@@ -1117,7 +1116,7 @@ const makeStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   languageInfoButtonText: {
-    color: '#FFFFFF',
+    color: theme.background,
     fontSize: 16,
     fontWeight: '600',
     fontFamily: FONTS.ALEXANDRIA,

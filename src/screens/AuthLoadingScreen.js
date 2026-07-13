@@ -276,15 +276,18 @@ export default function AuthLoadingScreen({ navigation }) {
   //   • 3 small dots cycling yellow/grey as a loading indicator
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar
+        barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
 
       <View style={styles.logoTile}>
-        <Ionicons name="camera" size={36} color="#1E1E1E" />
+        <Ionicons name="camera" size={36} color={theme.accentText} />
       </View>
       <Text style={styles.appTitle}>ProofPix</Text>
       <Text style={styles.tagline}>Before &amp; after, proven.</Text>
 
-      <LoadingDots styles={styles} />
+      <LoadingDots styles={styles} theme={theme} />
     </View>
   );
 }
@@ -293,8 +296,10 @@ export default function AuthLoadingScreen({ navigation }) {
 // because it lives in AuthLoadingScreen's closure (useMemo(makeStyles)),
 // not at module scope — the stash version had a ReferenceError at render
 // that hung the app on splash.
-function LoadingDots({ styles }) {
+function LoadingDots({ styles, theme }) {
   const progress = useRef(new Animated.Value(0)).current;
+  const active = theme?.accent || '#F2C31B';
+  const inactive = theme?.borderStrong || '#E0E0E0';
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -313,10 +318,10 @@ function LoadingDots({ styles }) {
     progress.interpolate({
       inputRange: [0, 1, 2, 3],
       outputRange: [
-        index === 0 ? '#F2C31B' : '#E0E0E0',
-        index === 1 ? '#F2C31B' : '#E0E0E0',
-        index === 2 ? '#F2C31B' : '#E0E0E0',
-        index === 0 ? '#F2C31B' : '#E0E0E0',
+        index === 0 ? active : inactive,
+        index === 1 ? active : inactive,
+        index === 2 ? active : inactive,
+        index === 0 ? active : inactive,
       ],
     });
 

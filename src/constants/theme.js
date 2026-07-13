@@ -40,11 +40,11 @@ export const lightTheme = {
   surfaceAccent: '#FFEAA0',
 
   textPrimary: '#1E1E1E',
-  textSecondary: '#666666',
+  textSecondary: '#565656',
   textMuted: '#9A9A9A',
   textInverse: '#FFFFFF',
 
-  border: '#ECECEC',
+  border: '#E0E0E0',
   borderStrong: '#D0D0D0',
   divider: '#EEEEEE',
 
@@ -78,17 +78,17 @@ export const darkTheme = {
   mode: 'dark',
 
   background: '#0A0A0A',
-  surface: '#1A1A1A',
-  surfaceElevated: '#242424',
+  surface: '#202020',
+  surfaceElevated: '#2B2B2B',
   surfaceAccent: '#3A2E0A',
 
   textPrimary: '#FFFFFF',
   textSecondary: '#C8C8C8',
-  textMuted: '#A0A0A0',
+  textMuted: '#8E8E8E',
   textInverse: '#0A0A0A',
 
-  border: '#2A2A2A',
-  borderStrong: '#3A3A3A',
+  border: '#3C3C3C',
+  borderStrong: '#4E4E4E',
   divider: '#1F1F1F',
 
   accent: '#F2C31B',

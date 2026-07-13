@@ -1695,7 +1695,7 @@ export default function HomeScreen({ navigation, route }) {
                   <RoomIcon
                     roomId={room.id}
                     size={30}
-                    color={isActive ? '#000' : theme.textPrimary}
+                    color={theme.textPrimary}
                   />
                 )}
                 <Text
@@ -3523,7 +3523,7 @@ const makeStyles = (theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#F2C31B',
+    borderColor: theme.accent,
     borderRadius: 30,
     overflow: 'hidden',
     height: 32,
@@ -3734,8 +3734,8 @@ const makeStyles = (theme) => StyleSheet.create({
   // Active room: yellow fill + dark border. Only the active card has a
   // visible border so the eye lands cleanly on the focused room.
   roomTabActive: {
-    backgroundColor: '#FFEAA0',
-    borderColor: '#1E1E1E',
+    backgroundColor: theme.surfaceAccent,
+    borderColor: theme.textPrimary,
     borderWidth: 2,
   },
   // Inactive room with photos — full opacity, no border. Cleaner row
@@ -3764,7 +3764,7 @@ const makeStyles = (theme) => StyleSheet.create({
     flexShrink: 0,
   },
   roomTabTextActive: {
-    color: '#000000',
+    color: theme.textPrimary,
     fontWeight: '590',
   },
   content: {
@@ -3918,7 +3918,7 @@ const makeStyles = (theme) => StyleSheet.create({
     height: 28,
     paddingHorizontal: 8,
     borderRadius: 14,
-    backgroundColor: '#F2C31B',
+    backgroundColor: theme.accent,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
