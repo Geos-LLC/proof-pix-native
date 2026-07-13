@@ -1471,6 +1471,49 @@ export const openManageSubscriptions = () => {
 };
 
 /**
+ * Present the store's promo-/offer-code redemption UI.
+ *
+ * iOS 14+ has a native StoreKit sheet (`presentCodeRedemptionSheetIOS`)
+ * that pops over the current view — no context switch. On any earlier
+ * iOS we fall back to the App Store redeem URL.
+ *
+ * Android has no in-app redemption sheet; the Play Store owns the flow.
+ * We deep-link to Play's "Redeem code" screen so the user just pastes
+ * and confirms.
+ *
+ * All paths are wrapped in try/catch: if the native call throws (e.g.,
+ * missing sandbox account on TestFlight), we fall through to the URL
+ * so the user still ends up somewhere they can redeem.
+ */
+export const presentRedeemCode = async () => {
+  if (Platform.OS === 'ios') {
+    try {
+      if (typeof RNIap.presentCodeRedemptionSheetIOS === 'function') {
+        await RNIap.presentCodeRedemptionSheetIOS();
+        return true;
+      }
+    } catch (e) {
+      console.warn('[IAP] presentCodeRedemptionSheetIOS failed:', e?.message);
+    }
+    // Fallback: open the App Store redeem page in Safari, which then
+    // deep-links back into the App Store app.
+    try {
+      await Linking.openURL('https://apps.apple.com/redeem');
+      return true;
+    } catch {}
+    return false;
+  }
+  if (Platform.OS === 'android') {
+    try {
+      await Linking.openURL('https://play.google.com/redeem');
+      return true;
+    } catch {}
+    return false;
+  }
+  return false;
+};
+
+/**
  * Parse ISO 8601 duration string to number of days.
  * Handles: P3D, P7D, P15D, P1W, P2W, P1M, P3M, P6M, P1Y
  */

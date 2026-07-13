@@ -75,7 +75,7 @@ import {
   logSubscriptionRestored,
   logEvent,
 } from '../utils/analytics';
-import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions, getAvailablePurchases, computeEntitlements, diagnoseIAPState } from '../services/iapService';
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions, getAvailablePurchases, computeEntitlements, diagnoseIAPState, presentRedeemCode } from '../services/iapService';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import * as Application from 'expo-application';
 import * as ExpoLocation from 'expo-location';
@@ -3194,6 +3194,23 @@ export default function SettingsScreen({ navigation, route }) {
               : t('settings.manageInPlayStore', {
                   defaultValue: 'Cancel, update billing & view receipts in Play Store',
                 })}
+          </Text>
+        </TouchableOpacity>
+        {/* Redeem code — pops the platform's native code-redemption UI.
+            iOS 14+ shows an in-app StoreKit sheet; older iOS + Android
+            open the store's Redeem page. Handled in iapService so all
+            store-side UX stays in one place. Kept as a secondary link
+            (same look as the manage-store link above) instead of a full
+            row so free / non-subscribed users don't over-index on it. */}
+        <TouchableOpacity
+          style={styles.manageInAppStoreLink}
+          onPress={() => { try { presentRedeemCode(); } catch {} }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.manageInAppStoreLinkText}>
+            {t('settings.redeemCode', {
+              defaultValue: 'Redeem a code',
+            })}
           </Text>
         </TouchableOpacity>
 
