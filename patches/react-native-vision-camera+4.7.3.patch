@@ -1,0 +1,37 @@
+diff --git a/node_modules/react-native-vision-camera/ios/Core/CameraSession+Photo.swift b/node_modules/react-native-vision-camera/ios/Core/CameraSession+Photo.swift
+index 12f5c07..72344f1 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/CameraSession+Photo.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/CameraSession+Photo.swift
+@@ -36,6 +36,32 @@ extension CameraSession {
+         return
+       }
+ 
++      // ProofPix — Gate takePhoto on the AVCaptureSession actually
++      // streaming. Shutter taps that land during device / format /
++      // orientation reconfig on slower iPhones hit AVFoundation
++      // -11803 "Recording failed". We wait up to 1.5s for isRunning
++      // via KVO (native mirror of the sessionReadyRef gate in
++      // CameraScreen.js — keeps the fix intact even if JS bundle
++      // ships an older build without the ref).
++      if !self.captureSession.isRunning {
++        let semaphore = DispatchSemaphore(value: 0)
++        let observer = self.captureSession.observe(\.isRunning, options: [.new]) { session, _ in
++          if session.isRunning {
++            semaphore.signal()
++          }
++        }
++        // Re-check after registering the observer — the transition may
++        // have happened between the guard above and the observe call.
++        if !self.captureSession.isRunning {
++          _ = semaphore.wait(timeout: .now() + 1.5)
++        }
++        observer.invalidate()
++        if !self.captureSession.isRunning {
++          promise.reject(error: .session(.cameraNotReady))
++          return
++        }
++      }
++
+       VisionLogger.log(level: .info, message: "Capturing photo...")
+ 
+       // Create photo settings
