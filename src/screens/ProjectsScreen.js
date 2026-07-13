@@ -472,7 +472,10 @@ export default function ProjectsScreen({ navigation, route }) {
     const ids = Array.from(selectedProjects);
     if (ids.length === 0) return;
     Alert.alert(
-      t('projects.deleteSelectedTitle', { defaultValue: `Delete ${ids.length} project${ids.length === 1 ? '' : 's'}?` }),
+      t('projects.deleteSelectedTitle', {
+        count: ids.length,
+        defaultValue: `Delete ${ids.length} project${ids.length === 1 ? '' : 's'}?`,
+      }),
       t('projects.deleteSelectedBody', { defaultValue: 'Photos stay in your iOS Photos library. Project records + linked photo metadata in the app will be removed.' }),
       [
         { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
@@ -480,9 +483,19 @@ export default function ProjectsScreen({ navigation, route }) {
           text: t('common.delete', { defaultValue: 'Delete' }),
           style: 'destructive',
           onPress: async () => {
+            const deletedSet = new Set(ids);
+            const activeWasDeleted = activeProjectId && deletedSet.has(activeProjectId);
             for (const id of ids) {
               try { await deleteProject(id, { deleteFromStorage: false }); }
               catch (e) { console.warn('[ProjectsScreen] bulk delete failed for', id, e?.message); }
+            }
+            // Mirror the single-project delete flow: if the active project
+            // was one of the deleted, hand active over to a survivor (or
+            // null). Without this, downstream screens keep pointing at a
+            // ghost projectId and the list can look stale.
+            if (activeWasDeleted) {
+              const survivor = projects.find(p => !deletedSet.has(p.id));
+              setActiveProject(survivor ? survivor.id : null);
             }
             exitMultiSelect();
           },

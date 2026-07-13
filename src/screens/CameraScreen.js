@@ -4422,7 +4422,9 @@ export default function CameraScreen({ route, navigation }) {
           if (!currentPhoto) return;
           Alert.alert(
             'Delete photo?',
-            'This photo will be removed permanently.',
+            currentPhoto.name
+              ? `Are you sure you want to delete "${currentPhoto.name}"?`
+              : 'This photo will be removed permanently.',
             [
               { text: 'Cancel', style: 'cancel' },
               {
@@ -4713,7 +4715,9 @@ export default function CameraScreen({ route, navigation }) {
                           onPress={() => {
                             Alert.alert(
                               'Delete photo?',
-                              'This photo will be removed permanently.',
+                              photo.name
+                                ? `Are you sure you want to delete "${photo.name}"?`
+                                : 'This photo will be removed permanently.',
                               [
                                 { text: 'Cancel', style: 'cancel' },
                                 {

@@ -556,7 +556,10 @@ export default function PhotoSetPreviewScreen({ route, navigation }) {
     if (!current) return;
     Alert.alert(
       t('photoSet.deleteTitle', { defaultValue: 'Delete photo?' }),
-      t('photoSet.deleteMessage', { defaultValue: 'This photo will be removed from the project.' }),
+      t('home.deletePhotoSetConfirm', {
+        name: current.name || '',
+        defaultValue: `Are you sure you want to delete "${current.name || ''}"?`,
+      }),
       [
         { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
         {

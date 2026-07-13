@@ -1262,11 +1262,28 @@ export default function GalleryScreen({ navigation, route }) {
   const handleDeleteSelectedConfirmed = async (deleteFromStorageParam) => {
     try {
       const photosToDelete = getSelectedPhotos();
+      const setsToDelete = getSelectedPhotoSets();
+
+      // Track ids we've already deleted via deletePhotoSet so we don't
+      // hit them again via the loose-photo loop. Combined-only selections
+      // (id = `combined_<beforeId>`) never surface in getSelectedPhotos —
+      // without this branch, the trash button appears to do nothing.
+      const consumedIds = new Set();
+      for (const set of setsToDelete) {
+        try {
+          await deletePhotoSet(set.before.id, { deleteFromStorage: deleteFromStorageParam });
+          if (set.before?.id) consumedIds.add(set.before.id);
+          if (set.after?.id) consumedIds.add(set.after.id);
+        } catch (e) {
+          console.warn('[GALLERY] deletePhotoSet failed for', set.before?.id, e?.message);
+        }
+      }
 
       for (const photo of photosToDelete) {
+        if (consumedIds.has(photo.id)) continue;
         await deletePhoto(photo.id, { deleteFromStorage: deleteFromStorageParam });
       }
-      
+
       setSelectedPhotos(new Set());
       isSelectionModeRef.current = false;
       setIsSelectionMode(false);
@@ -2740,7 +2757,10 @@ export default function GalleryScreen({ navigation, route }) {
         <DeleteConfirmationModal
           visible={showDeleteSelectedConfirm}
           title={t('home.deletePhotoSet')}
-          message={t('gallery.deleteSelectedConfirm', { defaultValue: `Are you sure you want to delete ${selectedPhotos.size} selected photo(s)?` })}
+          message={t('gallery.deleteSelectedConfirm', {
+            count: selectedPhotos.size,
+            defaultValue: `Are you sure you want to delete ${selectedPhotos.size} selected photo(s)?`,
+          })}
           onConfirm={handleDeleteSelectedConfirmed}
           onCancel={() => setShowDeleteSelectedConfirm(false)}
           deleteFromStorageDefault={true}
