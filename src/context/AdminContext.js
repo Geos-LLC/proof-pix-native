@@ -808,12 +808,21 @@ export function AdminProvider({ children }) {
       // Ensure the team member name is set in settings (this is the name used for the team member account)
       // Note: The name should already be set from the test modal, but we ensure it's there
 
-      // Register team member join with proxy server
+      // Register team member join with proxy server.
+      // Server returns 403/404 when the token has been revoked or was never valid —
+      // fail the join hard so a removed member can't re-enter team mode with a stale code.
+      // A missing status means a true network error; allow the optimistic join so a flaky
+      // connection doesn't lock legitimate joiners out.
       try {
         await proxyService.registerTeamMemberJoin(sessionId, token, memberName);
       } catch (registerError) {
-        console.warn('[ADMIN] Failed to register team member (non-critical):', registerError.message);
-        // Continue anyway - the join can still work
+        if (registerError?.status === 403 || registerError?.status === 404) {
+          return {
+            success: false,
+            error: 'This invite code is no longer valid. Please request a new one from your team admin.',
+          };
+        }
+        console.warn('[ADMIN] Failed to register team member (network error, continuing):', registerError.message);
       }
 
       const newTeamInfo = { token, sessionId, useProxy: true };

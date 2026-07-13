@@ -415,7 +415,9 @@ class ProxyService {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[PROXY] Register join error:', errorText);
-        throw new Error(`Failed to register team member: ${response.status}`);
+        const err = new Error(`Failed to register team member: ${response.status}`);
+        err.status = response.status;
+        throw err;
       }
 
       const data = await response.json();
