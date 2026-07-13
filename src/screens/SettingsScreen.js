@@ -1945,6 +1945,26 @@ export default function SettingsScreen({ navigation, route }) {
       return;
     }
 
+    const hasTeamFeature = !!proxySessionId
+      || canUse(FEATURES.TEAM_MANAGEMENT)
+      || canUse(FEATURES.TEAM_COLLABORATION);
+    if (!hasTeamFeature) {
+      Alert.alert(
+        t('teamMembers.upgradeTitle', { defaultValue: 'Team requires Business' }),
+        t('teamMembers.upgradeMessage', {
+          defaultValue: 'Upgrade to Business or Enterprise to set up a team and invite members.',
+        }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+          {
+            text: t('teamMembers.upgradeCTA', { defaultValue: 'Upgrade' }),
+            onPress: () => navigation.navigate('PlanSelection', { mode: 'upgrade' }),
+          },
+        ],
+      );
+      return;
+    }
+
     // Check if user is trying to set up team with iCloud
     if (currentAccountType === 'apple') {
       Alert.alert(
@@ -2119,8 +2139,14 @@ export default function SettingsScreen({ navigation, route }) {
 
         // Step 1: Find or create the Google Drive folder
         console.log('[SETUP] Finding or creating Google Drive folder...');
-        folderIdOrPath = await googleDriveService.findOrCreateProofPixFolder();
+        try {
+          folderIdOrPath = await googleDriveService.findOrCreateProofPixFolder();
+        } catch (folderErr) {
+          console.error('[SETUP] Drive folder create failed:', folderErr?.message || String(folderErr));
+          throw folderErr;
+        }
         if (!folderIdOrPath) {
+          console.error('[SETUP] Drive folder create returned null folderId');
           throw new Error('Failed to create Google Drive folder');
         }
         await saveFolderId(folderIdOrPath);

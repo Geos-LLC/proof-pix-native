@@ -204,6 +204,7 @@ export default function TeamMembersScreen({ navigation }) {
       try {
         folderId = await googleDriveService.findOrCreateProofPixFolder();
       } catch (e) {
+        console.error('[SETUP] Drive folder create failed:', e?.message || String(e));
         Alert.alert(
           t('common.error', { defaultValue: 'Error' }),
           e?.message || 'Could not create the shared Drive folder.',
@@ -211,6 +212,7 @@ export default function TeamMembersScreen({ navigation }) {
         return;
       }
       if (!folderId) {
+        console.error('[SETUP] Drive folder create returned null folderId');
         Alert.alert(
           t('common.error', { defaultValue: 'Error' }),
           'Could not create the shared Drive folder.',
