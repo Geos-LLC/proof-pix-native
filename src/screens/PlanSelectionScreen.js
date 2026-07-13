@@ -733,10 +733,17 @@ export default function PlanSelectionScreen({ navigation, route }) {
           ) : null}
 
           <View style={styles.proCardHeader}>
-            {/* Selected radio dot (Pro is always selected in this layout). */}
-            <View style={styles.radioDotSelected}>
-              <Ionicons name="checkmark" size={12} color="#1E1E1E" />
-            </View>
+            {/* Radio dot reflects the user's current plan. Filled green +
+                white checkmark when Pro is active; empty circle otherwise.
+                Keeps a single visual language with the compact rows below
+                so "filled dot = your plan" reads consistently. */}
+            {currentTier === 'pro' ? (
+              <View style={[styles.radioDotCurrent, { marginRight: 0 }]}>
+                <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+              </View>
+            ) : (
+              <View style={[styles.radioDotEmpty, { marginRight: 0, marginTop: 2 }]} />
+            )}
 
             <View style={styles.proCardTitleBlock}>
               <Text style={styles.proCardTitle}>Pro</Text>
@@ -821,7 +828,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
           disabled={currentTier === 'business'}
           activeOpacity={currentTier === 'business' ? 1 : 0.85}
         >
-          <View style={styles.radioDotEmpty} />
+          {currentTier === 'business' ? (
+            <View style={styles.radioDotCurrent}>
+              <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+            </View>
+          ) : (
+            <View style={styles.radioDotEmpty} />
+          )}
           <View style={styles.compactRowBody}>
             <Text style={styles.compactRowTitle}>Business</Text>
             <Text style={styles.compactRowSubtitle}>
@@ -865,7 +878,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
           disabled={currentTier === 'enterprise'}
           activeOpacity={currentTier === 'enterprise' ? 1 : 0.85}
         >
-          <View style={styles.radioDotEmpty} />
+          {currentTier === 'enterprise' ? (
+            <View style={styles.radioDotCurrent}>
+              <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+            </View>
+          ) : (
+            <View style={styles.radioDotEmpty} />
+          )}
           <View style={styles.compactRowBody}>
             <Text style={styles.compactRowTitle}>Enterprise</Text>
             <Text style={styles.compactRowSubtitle}>
@@ -891,7 +910,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
           disabled={currentTier === 'starter'}
           activeOpacity={currentTier === 'starter' ? 1 : 0.85}
         >
-          <View style={styles.radioDotEmpty} />
+          {currentTier === 'starter' ? (
+            <View style={styles.radioDotCurrent}>
+              <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+            </View>
+          ) : (
+            <View style={styles.radioDotEmpty} />
+          )}
           <View style={styles.compactRowBody}>
             <Text style={styles.compactRowTitle}>Starter</Text>
             <Text style={styles.compactRowSubtitle}>
@@ -2062,6 +2087,19 @@ const makeStyles = (theme) => StyleSheet.create({
     borderWidth: 1.5,
     borderColor: theme.borderStrong,
     marginRight: 12,
+  },
+  // Green filled circle + white checkmark — marks the user's current plan.
+  // Matches the green border language on the row/card so "filled dot +
+  // green border" both point at the same fact.
+  radioDotCurrent: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#34C759',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    marginTop: 2,
   },
 
   // Dark MOST POPULAR pill — sits on top-right of the Pro card. Matches
