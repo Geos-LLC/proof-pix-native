@@ -316,7 +316,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos, clearPhotoOverrides } = usePhotos();
-  const { isAuthenticated, connectedAccounts } = useAdmin();
+  const { isAuthenticated, connectedAccounts, accountType, folderId: adminFolderId, saveFolderId } = useAdmin();
   const { effectivePlan, canUse } = useFeaturePermissions();
   const {
     getRooms,
@@ -749,6 +749,71 @@ export default function ProjectDetailScreen({ route, navigation }) {
     setPendingSharePhotoIds(photoIdsForShareFilter('all'));
     setActiveTab('share');
     setShareFormatModalVisible(true);
+  };
+
+  // "Open Google Drive Folder" — one-tap jump to this project's album
+  // folder in Drive. First call resolves + creates the album via the
+  // existing findOrCreateAlbumFolder chain, caches the folder ID on the
+  // project record (`driveFolderId`), and opens the folder URL.
+  // Subsequent calls short-circuit straight to Linking.openURL, no
+  // Drive API round-trip. Gated on Google admins — Dropbox/Apple use
+  // different providers and this shortcut wouldn't apply there.
+  const [driveOpening, setDriveOpening] = useState(false);
+  const canOpenDriveFolder = accountType === 'google' && isAuthenticated;
+  const handleOpenProjectDriveFolder = async () => {
+    if (driveOpening) return;
+    if (!canOpenDriveFolder) {
+      Alert.alert(
+        t('projectDetail.openDriveFolderNoGoogleTitle', { defaultValue: 'Google Drive not connected' }),
+        t('projectDetail.openDriveFolderNoGoogleMessage', {
+          defaultValue: 'Sign in to Google in Settings → Cloud sync to open this project on Drive.',
+        }),
+      );
+      return;
+    }
+    const openUrl = async (id) => {
+      const url = `https://drive.google.com/drive/folders/${id}`;
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) throw new Error('cannot-open');
+      await Linking.openURL(url);
+    };
+    // Fast path — folder ID already cached on the project record.
+    if (project?.driveFolderId) {
+      try {
+        await openUrl(project.driveFolderId);
+        return;
+      } catch {
+        // fall through to re-resolve if the cached ID is stale (folder
+        // was moved to trash, admin re-signed with a different account,
+        // etc.)
+      }
+    }
+    setDriveOpening(true);
+    try {
+      let rootId = adminFolderId;
+      if (!rootId) {
+        rootId = await googleDriveService.findOrCreateProofPixFolder();
+        if (rootId && saveFolderId) {
+          try { await saveFolderId(rootId); } catch {}
+        }
+      }
+      if (!rootId) throw new Error('no-root');
+      const safeName = (project?.name || 'ProofPix Project').replace(/[\\/:*?"<>|]/g, '_');
+      const albumId = await googleDriveService.findOrCreateAlbumFolder(rootId, safeName);
+      if (!albumId) throw new Error('no-album');
+      if (project?.id && patchProject) {
+        try { await patchProject(project.id, { driveFolderId: albumId }); } catch {}
+      }
+      await openUrl(albumId);
+    } catch (e) {
+      console.warn('[ProjectDetail] open drive folder failed:', e?.message);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('projectDetail.openDriveFolderError', { defaultValue: 'Could not open the Drive folder.' }),
+      );
+    } finally {
+      setDriveOpening(false);
+    }
   };
 
   // CRM bulk upload: explicit, user-triggered. Sends every photo in
@@ -3647,6 +3712,34 @@ export default function ProjectDetailScreen({ route, navigation }) {
             <Text style={[shareTabStyles.subheading, { color: theme.textSecondary }]}>
               {t('projectDetail.shareSubtitle')}
             </Text>
+
+            {canOpenDriveFolder && (
+              <TouchableOpacity
+                style={[shareTabStyles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: driveOpening ? 0.6 : 1 }]}
+                onPress={handleOpenProjectDriveFolder}
+                disabled={driveOpening}
+                activeOpacity={0.85}
+              >
+                <View style={[shareTabStyles.actionIconWrap, { backgroundColor: COLORS.PRIMARY }]}>
+                  <Ionicons name="folder-open-outline" size={26} color="#000" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[shareTabStyles.actionTitle, { color: theme.textPrimary }]}>
+                    {driveOpening
+                      ? t('projectDetail.openDriveFolderResolving', { defaultValue: 'Opening Google Drive…' })
+                      : t('projectDetail.openDriveFolderTitle', { defaultValue: 'Open Google Drive Folder' })}
+                  </Text>
+                  <Text style={[shareTabStyles.actionSubtitle, { color: theme.textSecondary }]}>
+                    {t('projectDetail.openDriveFolderSubtitle', { defaultValue: "Jump to this project's photos on Drive" })}
+                  </Text>
+                </View>
+                {driveOpening ? (
+                  <ActivityIndicator size="small" color={theme.textMuted} />
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                )}
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[shareTabStyles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}

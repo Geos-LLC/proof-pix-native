@@ -1,0 +1,36 @@
+diff --git a/node_modules/expo-av/ios/EXAV/EXAV.m b/node_modules/expo-av/ios/EXAV/EXAV.m
+index 7153d28..535f2f2 100644
+--- a/node_modules/expo-av/ios/EXAV/EXAV.m
++++ b/node_modules/expo-av/ios/EXAV/EXAV.m
+@@ -324,11 +324,28 @@ EX_EXPORT_MODULE(ExponentAV);
+   }
+     
+   if (_allowsAudioRecording) {
+-    // Bluetooth input is only available when recording is allowed
+-    requiredAudioCategoryOptions = requiredAudioCategoryOptions | AVAudioSessionCategoryOptionAllowBluetooth;
++    // Bluetooth input is only available when recording is allowed.
++    // DefaultToSpeaker keeps the output on the loud speaker instead of
++    // the receiver (earpiece) — without it, PlayAndRecord caches a
++    // receiver route that sticks around even after we transition back
++    // to Playback for memo playback, so voice-memo playback ends up
++    // quiet and audible only when held to the ear.
++    requiredAudioCategoryOptions = requiredAudioCategoryOptions | AVAudioSessionCategoryOptionAllowBluetooth | AVAudioSessionCategoryOptionDefaultToSpeaker;
+   }
+ 
+-  return [_kernelAudioSessionManagerDelegate setCategory:requiredAudioCategory withOptions:requiredAudioCategoryOptions forModule:self];
++  NSError *categoryError = [_kernelAudioSessionManagerDelegate setCategory:requiredAudioCategory withOptions:requiredAudioCategoryOptions forModule:self];
++
++  // Belt-and-suspenders: even with DefaultToSpeaker set on the
++  // category, iOS can retain a cached earpiece route from a prior
++  // PlayAndRecord activation. Force the port override to Speaker
++  // whenever we're in PlayAndRecord so subsequent playback (in the
++  // same session or after transitioning to Playback) uses the loud
++  // speaker. The override is a no-op on Playback category.
++  if (!categoryError && _allowsAudioRecording) {
++    [[AVAudioSession sharedInstance] overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
++  }
++
++  return categoryError;
+ }
+ 
+ - (EXAVAudioSessionMode)_getAudioSessionModeRequired

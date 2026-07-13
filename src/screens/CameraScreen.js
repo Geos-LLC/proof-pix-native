@@ -190,6 +190,16 @@ export default function CameraScreen({ route, navigation }) {
   const lastTap = useRef(null);
   const longPressTimer = useRef(null);
   const cameraRef = useRef(null);
+  // Tracks whether vision-camera's native capture session is fully
+  // configured and streaming. Flipped true on onStarted, false on
+  // onStopped and whenever device/format change forces a native
+  // reconfig. Guards takePicture against firing before the session
+  // is ready — the iOS AVFoundation "-11803 Recording failed" alert
+  // (see feedback_camera_session_not_ready.md) is exactly this
+  // race: shutter tapped while the session is still reconfiguring
+  // after a rotation or aspect toggle.
+  const sessionReadyRef = useRef(false);
+  const sessionReadyWaitersRef = useRef([]);
   const [pictureSize, setPictureSize] = useState('Photo'); // Use iOS preset for full resolution
   // Background label preparation is now handled by GlobalBackgroundLabelPreparation component
   // No local state needed - uses global service that stays mounted regardless of navigation
@@ -524,6 +534,11 @@ export default function CameraScreen({ route, navigation }) {
   // ready, instead of guessing with a fixed timer.
   const handleCameraStarted = useCallback(() => {
     console.warn(`[CAMDIAG] Camera onStarted at ${Date.now()}`);
+    sessionReadyRef.current = true;
+    // Drain any takePicture calls that were waiting on the session
+    const waiters = sessionReadyWaitersRef.current;
+    sessionReadyWaitersRef.current = [];
+    waiters.forEach((r) => r());
     if (aspectTransitionTimerRef.current) {
       clearTimeout(aspectTransitionTimerRef.current);
       aspectTransitionTimerRef.current = null;
@@ -533,7 +548,22 @@ export default function CameraScreen({ route, navigation }) {
 
   const handleCameraStopped = useCallback(() => {
     console.warn(`[CAMDIAG] Camera onStopped at ${Date.now()}`);
+    sessionReadyRef.current = false;
   }, []);
+
+  const handleCameraError = useCallback((err) => {
+    // Surface native session errors (e.g. -11803 configuration failure)
+    // so Loki has a signal beyond the shutter alert.
+    console.warn(`[CAMDIAG] Camera onError: ${err?.code || '?'} ${err?.message || err}`);
+  }, []);
+
+  // Device switch (front/back) or format change (aspect toggle) forces
+  // vision-camera to tear down and rebuild the AVCaptureSession. Mark
+  // ready = false so the next shutter tap waits for onStarted instead
+  // of racing the reconfig and getting -11803 from AVFoundation.
+  useEffect(() => {
+    sessionReadyRef.current = false;
+  }, [device?.id, format]);
 
   useEffect(() => {
     return () => {
@@ -1729,12 +1759,50 @@ export default function CameraScreen({ route, navigation }) {
         }
       }
 
-      const photo = await cameraRef.current.takePhoto({
+      // Wait for the native capture session to be streaming before
+      // firing the shutter. Older / slower iPhones (and freshly
+      // rotated sessions) hit AVFoundation -11803 "Recording failed"
+      // when takePhoto is called mid-reconfig. onStarted resolves
+      // any queued waiters; 1500ms fallback so we never hang the UI.
+      if (!sessionReadyRef.current) {
+        console.warn('[CAMDIAG] shutter awaiting session ready');
+        await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            sessionReadyWaitersRef.current =
+              sessionReadyWaitersRef.current.filter((r) => r !== resolve);
+            resolve();
+          }, 1500);
+          sessionReadyWaitersRef.current.push(() => {
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
+      }
+
+      const takePhotoOnce = () => cameraRef.current.takePhoto({
         qualityPrioritization: 'quality',
         // Only request flash if the current device reports flash support
         flash: enableTorch && supportsFlash ? 'on' : 'off',
         enableShutterSound: shutterSoundEnabled
       });
+
+      let photo;
+      try {
+        photo = await takePhotoOnce();
+      } catch (err) {
+        // AVFoundationErrorDomain -11803 = AVErrorRecordingFailed —
+        // transient session state right after reconfig. One retry
+        // after a short settle fixes it in practice.
+        const msg = String(err?.message || err?.code || '');
+        const isRecordingFailure =
+          /-?11803/.test(msg) ||
+          /Recording failed/i.test(msg) ||
+          /Aufnahme fehlgeschlagen/i.test(msg);
+        if (!isRecordingFailure) throw err;
+        console.warn('[CAMDIAG] -11803 on first take, retrying after 400ms');
+        await new Promise((r) => setTimeout(r, 400));
+        photo = await takePhotoOnce();
+      }
       const photoUri = `file://${photo.path}`;
       // No post-capture crop needed: each cameraViewMode uses the
       // sensor format that natively produces the target aspect (4:3
@@ -3131,6 +3199,7 @@ export default function CameraScreen({ route, navigation }) {
                     resizeMode="cover"
                     onStarted={handleCameraStarted}
                     onStopped={handleCameraStopped}
+                    onError={handleCameraError}
                   />
                 )}
                 {mode === 'after' && getActiveBeforePhoto() && (() => {

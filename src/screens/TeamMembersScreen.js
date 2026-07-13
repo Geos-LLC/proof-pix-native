@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Share,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +56,7 @@ export default function TeamMembersScreen({ navigation }) {
     saveFolderId,
     updateTeamName,
     userInfo: adminUserInfo,
+    folderId,
   } = useAdmin();
   const { userPlan } = useSettings();
   const { canUse } = useFeaturePermissions();
@@ -153,6 +155,34 @@ export default function TeamMembersScreen({ navigation }) {
         },
       ],
     );
+  };
+
+  // Open the shared team Google Drive folder in the Drive app / browser.
+  // Members all upload into the same root folder (session.folderId on
+  // the proxy), organized by album subfolder per project. We keep the
+  // per-member button consistent — every "Open Google Drive Folder"
+  // row lands on the same shared root the admin owns.
+  const handleOpenTeamFolder = async () => {
+    if (!folderId) {
+      Alert.alert(
+        t('teamMembers.setupRequiredTitle', { defaultValue: 'Set up your team first' }),
+        t('teamMembers.driveFolderMissing', {
+          defaultValue: 'Finish team setup so we can create the shared Google Drive folder.',
+        }),
+      );
+      return;
+    }
+    const url = `https://drive.google.com/drive/folders/${folderId}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) throw new Error('cannot-open');
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('teamMembers.driveOpenError', { defaultValue: 'Could not open Google Drive.' }),
+      );
+    }
   };
 
   // Re-share a previously generated invite — same rich message
@@ -548,6 +578,18 @@ export default function TeamMembersScreen({ navigation }) {
                           <Text style={styles.rowTitle} numberOfLines={1}>
                             {m.name || t('teamMembers.pendingInvite', { defaultValue: 'Pending invite' })}
                           </Text>
+                          <View style={m.hasJoined ? styles.statusPillConnected : styles.statusPillPending}>
+                            <Ionicons
+                              name={m.hasJoined ? 'checkmark-circle' : 'time-outline'}
+                              size={11}
+                              color={m.hasJoined ? '#1E7A3C' : '#7A5B00'}
+                            />
+                            <Text style={m.hasJoined ? styles.statusPillTextConnected : styles.statusPillTextPending}>
+                              {m.hasJoined
+                                ? t('teamMembers.statusConnected', { defaultValue: 'Connected' })
+                                : t('teamMembers.statusPending', { defaultValue: 'Pending invite' })}
+                            </Text>
+                          </View>
                           {m.email && m.email !== m.name ? (
                             <Text style={styles.rowSub} numberOfLines={1}>{m.email}</Text>
                           ) : null}
@@ -557,6 +599,19 @@ export default function TeamMembersScreen({ navigation }) {
                             </Text>
                           ) : null}
                           <View style={styles.rowActions}>
+                            {folderId ? (
+                              <TouchableOpacity
+                                onPress={handleOpenTeamFolder}
+                                style={styles.rowActionLink}
+                                hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
+                              >
+                                <Ionicons name="folder-open-outline" size={13} color="#7A5B00" />
+                                <Text style={styles.rowActionLinkText}>
+                                  {t('teamMembers.openDriveFolder', { defaultValue: 'Open Google Drive Folder' })}
+                                </Text>
+                                <Ionicons name="arrow-forward" size={11} color="#7A5B00" />
+                              </TouchableOpacity>
+                            ) : null}
                             {m.token ? (
                               <>
                                 <TouchableOpacity
@@ -825,6 +880,45 @@ const makeStyles = (theme) => StyleSheet.create({
     fontWeight: '700',
     color: '#7A5B00',
     letterSpacing: -0.1,
+  },
+  // Status pill under the member name. "Connected" is greenish, matches
+  // the ✓ intent in the design; "Pending" reuses the invite-code amber
+  // palette so the whole "waiting to join" state reads consistently.
+  statusPillConnected: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: '#E8F5EC',
+    marginTop: 4,
+  },
+  statusPillPending: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: '#FFF4C2',
+    marginTop: 4,
+  },
+  statusPillTextConnected: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#1E7A3C',
+    letterSpacing: 0.1,
+  },
+  statusPillTextPending: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#7A5B00',
+    letterSpacing: 0.1,
   },
   // Refresh action next to the "Members & invites" eyebrow — pulls
   // a fresh list from the proxy. Tiny accent-coloured link.
