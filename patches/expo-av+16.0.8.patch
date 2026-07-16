@@ -1,5 +1,5 @@
 diff --git a/node_modules/expo-av/ios/EXAV/EXAV.m b/node_modules/expo-av/ios/EXAV/EXAV.m
-index 7153d28..535f2f2 100644
+index 7153d28..4cff87d 100644
 --- a/node_modules/expo-av/ios/EXAV/EXAV.m
 +++ b/node_modules/expo-av/ios/EXAV/EXAV.m
 @@ -324,11 +324,28 @@ EX_EXPORT_MODULE(ExponentAV);
@@ -34,3 +34,19 @@ index 7153d28..535f2f2 100644
  }
  
  - (EXAVAudioSessionMode)_getAudioSessionModeRequired
+@@ -380,6 +397,15 @@ EX_EXPORT_MODULE(ExponentAV);
+     return error;
+   }
+ 
++  // Re-assert the loud-speaker route on every session activation while
++  // in PlayAndRecord. iOS may drop the port override across activate/
++  // deactivate cycles or when a Sound is created; without this, voice
++  // memo playback silently reverts to the receiver. Safe no-op if the
++  // route is already Speaker.
++  if (_allowsAudioRecording) {
++    [[AVAudioSession sharedInstance] overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
++  }
++
+   _currentAudioSessionMode = audioSessionModeRequired;
+   return nil;
+ }

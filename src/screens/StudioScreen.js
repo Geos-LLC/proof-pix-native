@@ -50,6 +50,21 @@ import {
 } from '../services/photoTemplateService';
 import Svg, { Path, Line, Circle as SvgCircle, Polygon, Text as SvgText, G } from 'react-native-svg';
 import { Audio } from 'expo-av';
+import * as Application from 'expo-application';
+
+// The expo-av+16.0.8 patch (native fix shipped in iOS build 90+) forces
+// AVAudioSession to route to the loud speaker while in PlayAndRecord.
+// On older binaries the patch isn't present, so entering PlayAndRecord
+// at play time would leave iOS on its default receiver route — WORSE
+// than staying in Playback. Gate the PlayAndRecord trick behind the
+// build number.
+const IOS_VOICE_MEMO_SPEAKER_PATCH_MIN_BUILD = 90;
+const hasVoiceMemoSpeakerPatch = () => {
+  if (Platform.OS !== 'ios') return false;
+  const raw = Application.nativeBuildVersion;
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n >= IOS_VOICE_MEMO_SPEAKER_PATCH_MIN_BUILD;
+};
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 
 // Toolbar labels are i18n keys; the bottom nav resolves them through t()
@@ -1127,6 +1142,11 @@ export default function StudioScreen({ route, navigation }) {
             // built-in 1:1 fallback. Also strip CompareViewer's
             // 400-px max cap so it can take the full frame.
             frameAspectRatio={templateAspect}
+            // Landscape combined photos read naturally top-to-bottom, so
+            // route the split divider onto the horizontal axis for them
+            // (BEFORE on top, AFTER on the bottom) instead of the
+            // portrait default of left/right.
+            dividerOrientation={combinedIsStacked ? 'horizontal' : 'vertical'}
             style={{ maxWidth: undefined, maxHeight: undefined, width: '100%', height: '100%', borderWidth: 0 }}
             renderBeforeOverlay={() => <PhotoLabels photo={beforeForCompare} role="before" combinedContext />}
             renderAfterOverlay={() => <PhotoLabels photo={afterForCompare} role="after" combinedContext />}
@@ -2645,20 +2665,22 @@ function VoiceTab({ theme, photo, updatePhoto }) {
       const uri = recording.getURI();
       setRecording(null);
       setIsRecording(false);
-      // Flip the AVAudioSession back to Playback the moment recording
-      // ends so subsequent playback (or any other audio) routes to the
-      // loud speaker instead of the receiver. Doing it here — not only
-      // in playRecording — also covers the case where the user hits
-      // play from a fresh mount without re-recording.
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: false,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (_) {}
+      // On build 90+ (patched expo-av) stay in PlayAndRecord so the
+      // native speaker override remains in effect; playRecording will
+      // re-trigger setCategory to re-fire it. On older binaries fall
+      // back to switching to Playback — the patch isn't there, so
+      // Playback's default speaker route is the best we can do from JS.
+      if (!hasVoiceMemoSpeakerPatch()) {
+        try {
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: false,
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            shouldDuckAndroid: false,
+            playThroughEarpieceAndroid: false,
+          });
+        } catch (_) {}
+      }
       // Stop the speech recognizer too — its `end` event will
       // settle `recognitionActive` shortly after.
       try { await ExpoSpeechRecognitionModule.stop(); } catch (e) {
@@ -2687,14 +2709,19 @@ function VoiceTab({ theme, photo, updatePhoto }) {
         await sound.unloadAsync();
         setSound(null);
       }
-      // Reset audio session to Playback so iOS routes to the loud speaker
-      // instead of the earpiece. Recording leaves the session in the
-      // PlayAndRecord category which defaults to the receiver — playback
-      // then sounds very quiet until we switch back. Cycling
-      // setIsEnabledAsync around the mode change forces iOS to
-      // re-evaluate the output route; just flipping allowsRecordingIOS
-      // alone is not enough when the prior category was PlayAndRecord —
-      // the receiver route can stick until the session is deactivated.
+      // Force iOS to route memo playback to the loud speaker. The exact
+      // sequence depends on whether the binary carries the expo-av
+      // speaker-override patch (build 90+).
+      //
+      // Build 90+ (patched): cycle Playback → PlayAndRecord to bypass
+      // EXAV.m's early-return at the top of setCategory. The
+      // PlayAndRecord branch of the patch calls
+      // overrideOutputAudioPort:.speaker, which is the only reliable
+      // way to clear iOS's cached receiver route from a prior recording.
+      //
+      // Older binaries: no override available. Best-effort switch to
+      // Playback with a setIsEnabledAsync deactivate/reactivate cycle
+      // to force iOS to re-evaluate routing.
       try { await Audio.setIsEnabledAsync(false); } catch (_) {}
       try {
         await Audio.setAudioModeAsync({
@@ -2705,6 +2732,17 @@ function VoiceTab({ theme, photo, updatePhoto }) {
           playThroughEarpieceAndroid: false,
         });
       } catch (_) {}
+      if (hasVoiceMemoSpeakerPatch()) {
+        try {
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            shouldDuckAndroid: false,
+            playThroughEarpieceAndroid: false,
+          });
+        } catch (_) {}
+      }
       try { await Audio.setIsEnabledAsync(true); } catch (_) {}
       const { sound: s } = await Audio.Sound.createAsync(
         { uri: audioUri },
