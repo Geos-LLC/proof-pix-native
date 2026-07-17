@@ -64,7 +64,15 @@ export default function CompareViewer({
   // before above after in the same frame (only relevant for split / pair
   // modes — overlay/side-by-side use their own layouts).
   templateLayout = 'sidebyside',
+  // Which axis the split/overlay divider runs on. 'vertical' (default) =
+  // vertical line, BEFORE on the left / AFTER on the right — matches
+  // portrait combined photos. 'horizontal' = horizontal line, BEFORE on
+  // top / AFTER on the bottom — used for landscape combined photos so
+  // the two halves each see a wide-format image instead of a squished
+  // vertical strip.
+  dividerOrientation = 'vertical',
 }) {
+  const isHorizontal = dividerOrientation === 'horizontal';
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const beforeUri = beforePhoto?.uri;
@@ -184,6 +192,8 @@ export default function CompareViewer({
   // containerSize.w, just exposed under the old name and ref.
   const containerWidth = containerSize.w;
   const containerWidthRef = useRef(0);
+  // Mirror for the horizontal-divider math (dy / containerHeight).
+  const containerHeightRef = useRef(0);
 
   const splitAnim = useRef(new Animated.Value(initialSplit)).current;
   const splitRef = useRef(initialSplit);
@@ -288,27 +298,45 @@ export default function CompareViewer({
 
   // Dedicated PanResponder for the split divider knob. Only attaches to the
   // knob's hit area, so dragging anywhere else in the frame goes to the pan/
-  // pinch responder above. Horizontal motion translates to splitAnim 0..1.
+  // pinch responder above. Motion on the divider's own axis (dx for
+  // vertical divider, dy for horizontal) translates to splitAnim 0..1.
+  // Single-finger only — two-finger touches fall through to the outer
+  // pinch responder so zoom still works even when the enlarged hit area
+  // overlaps the pinch target.
   const dragStartRef = useRef(initialSplit);
+  const isHorizontalRef = useRef(isHorizontal);
+  useEffect(() => { isHorizontalRef.current = isHorizontal; }, [isHorizontal]);
   const knobPanResponder = useRef(
     PanResponder.create({
       // CAPTURE-phase claim keeps the knob's drag from ever being handed
       // to an ancestor (Studio's swipe-navigate responder used to steal
       // it the moment the finger moved horizontally, which the user saw
       // as "the whole screen slides instead of the divider").
-      onStartShouldSetPanResponderCapture: () => modeRef.current === 'split',
-      onMoveShouldSetPanResponderCapture: () => modeRef.current === 'split',
-      onStartShouldSetPanResponder: () => modeRef.current === 'split',
-      onMoveShouldSetPanResponder: () => modeRef.current === 'split',
+      onStartShouldSetPanResponderCapture: (evt) =>
+        modeRef.current === 'split' && evt.nativeEvent.touches.length <= 1,
+      onMoveShouldSetPanResponderCapture: (evt) =>
+        modeRef.current === 'split' && evt.nativeEvent.touches.length <= 1,
+      onStartShouldSetPanResponder: (evt) =>
+        modeRef.current === 'split' && evt.nativeEvent.touches.length <= 1,
+      onMoveShouldSetPanResponder: (evt) =>
+        modeRef.current === 'split' && evt.nativeEvent.touches.length <= 1,
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => { dragStartRef.current = splitRef.current; },
       onPanResponderMove: (_, gs) => {
-        const w = containerWidthRef.current;
-        if (w <= 0) return;
-        const dx = gs.dx / w;
-        const next = Math.max(0, Math.min(1, dragStartRef.current + dx));
-        splitAnim.setValue(next);
+        if (isHorizontalRef.current) {
+          const h = containerHeightRef.current;
+          if (h <= 0) return;
+          const dy = gs.dy / h;
+          const next = Math.max(0, Math.min(1, dragStartRef.current + dy));
+          splitAnim.setValue(next);
+        } else {
+          const w = containerWidthRef.current;
+          if (w <= 0) return;
+          const dx = gs.dx / w;
+          const next = Math.max(0, Math.min(1, dragStartRef.current + dx));
+          splitAnim.setValue(next);
+        }
       },
     })
   ).current;
@@ -325,6 +353,7 @@ export default function CompareViewer({
     const { width, height } = e.nativeEvent.layout;
     setContainerSize((prev) => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
     containerWidthRef.current = width;
+    containerHeightRef.current = height;
   };
 
   // Reset button — top-right corner of every mode. Tap to return both photos
@@ -437,7 +466,11 @@ export default function CompareViewer({
         {renderBeforeOverlay ? renderBeforeOverlay() : null}
         {renderAfterOverlay ? renderAfterOverlay() : null}
 
-        {/* Opacity slider pinned to the bottom of the frame */}
+        {/* Opacity slider pinned to the bottom of the frame. The row is
+            deliberately tall (44pt) so the slider's tap band is the full
+            iOS finger-friendly target; tapToSeek lets the user tap
+            anywhere along the track and jump the thumb there instead of
+            having to grab the tiny circle. */}
         <View style={styles.overlaySliderRow}>
           <Text style={styles.overlaySliderLabelLeft}>Before</Text>
           <Slider
@@ -450,6 +483,7 @@ export default function CompareViewer({
             minimumTrackTintColor="#F2C31B"
             maximumTrackTintColor="rgba(255,255,255,0.45)"
             thumbTintColor="#F2C31B"
+            tapToSeek
           />
           <Text style={styles.overlaySliderLabelRight}>After</Text>
         </View>
@@ -460,11 +494,14 @@ export default function CompareViewer({
   }
 
   // ----- Render: Split (draggable divider) -----------------------------------
-  const overlayWidthPct = splitAnim.interpolate({
+  // Interpolations shared for both orientations — the axis they apply to
+  // is different (width vs height / left vs top) but the 0..1 range is
+  // the same.
+  const overlaySizePct = splitAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0%', '100%'],
   });
-  const dividerLeftPct = splitAnim.interpolate({
+  const dividerPosPct = splitAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0%', '100%'],
   });
@@ -480,19 +517,31 @@ export default function CompareViewer({
       onTouchCancel={handleTouchEnd}
     >
       {/* Base = AFTER fills the whole frame. The BEFORE overlay clips it
-          from the left up to the divider, so LEFT of divider = BEFORE
-          and RIGHT of divider = AFTER (the conventional reading order).
-          Both images render at the BEFORE bitmap's natural aspect (via
-          framedSizedStyle) so pan/zoom reveals the photo's real
-          overflow instead of just sliding a flat crop. */}
+          from the leading edge up to the divider, so LEFT/TOP of divider
+          = BEFORE and RIGHT/BOTTOM of divider = AFTER (the conventional
+          reading order — left→right for portrait pairs, top→bottom for
+          landscape pairs). Both images render at the BEFORE bitmap's
+          natural aspect (via framedSizedStyle) so pan/zoom reveals the
+          photo's real overflow instead of just sliding a flat crop. */}
       <Animated.Image
         source={{ uri: afterUri }}
         style={[framedSizedStyle || styles.absoluteImage, { transform: panTransform }]}
         resizeMode={framedResizeMode}
       />
 
-      <Animated.View style={[styles.splitOverlay, { width: overlayWidthPct }]} pointerEvents="none">
-        <View style={[styles.splitOverlayInner, { width: containerWidth || '100%', height: containerSize.h || '100%' }]}>
+      <Animated.View
+        style={[
+          isHorizontal ? styles.splitOverlayH : styles.splitOverlay,
+          isHorizontal ? { height: overlaySizePct } : { width: overlaySizePct },
+        ]}
+        pointerEvents="none"
+      >
+        <View
+          style={[
+            styles.splitOverlayInner,
+            { width: containerWidth || '100%', height: containerSize.h || '100%' },
+          ]}
+        >
           <Animated.Image
             source={{ uri: beforeUri }}
             style={[framedSizedStyle || styles.fullImage, { transform: panTransform }]}
@@ -506,19 +555,29 @@ export default function CompareViewer({
       {renderBeforeOverlay ? renderBeforeOverlay() : null}
       {renderAfterOverlay ? renderAfterOverlay() : null}
 
-      {/* Divider stays visible across the whole frame, but only the circular
-          knob captures touch — knobPanResponder attaches just to the knob.
-          Drags anywhere else in the frame fall through to the outer
-          pan/pinch responder, so photos can be panned/zoomed without
-          accidentally moving the divider. */}
+      {/* Divider stays visible across the whole frame. The hit area is a
+          fat band centered on the divider (80px thick) so the user can
+          drag anywhere near the knob — not just on the tiny circle
+          itself. knobPanResponder lives on the hit area, so single-
+          finger drags there move the divider while two-finger pinches
+          fall through to the outer pan/pinch responder for zoom. */}
       <Animated.View
-        style={[styles.splitDividerHitArea, { left: dividerLeftPct }]}
-        pointerEvents="box-none"
+        style={[
+          isHorizontal ? styles.splitDividerHitAreaH : styles.splitDividerHitArea,
+          isHorizontal ? { top: dividerPosPct } : { left: dividerPosPct },
+        ]}
+        {...knobPanResponder.panHandlers}
       >
-        <View style={styles.splitDividerLine} pointerEvents="none" />
-        <View style={styles.splitDividerKnob} {...knobPanResponder.panHandlers}>
-          <Ionicons name="chevron-back" size={14} color="#000" />
-          <Ionicons name="chevron-forward" size={14} color="#000" />
+        <View
+          style={isHorizontal ? styles.splitDividerLineH : styles.splitDividerLine}
+          pointerEvents="none"
+        />
+        <View
+          style={[styles.splitDividerKnob, isHorizontal && styles.splitDividerKnobColumn]}
+          pointerEvents="none"
+        >
+          <Ionicons name={isHorizontal ? 'chevron-up' : 'chevron-back'} size={14} color="#000" />
+          <Ionicons name={isHorizontal ? 'chevron-down' : 'chevron-forward'} size={14} color="#000" />
         </View>
       </Animated.View>
 
@@ -581,10 +640,12 @@ const makeStyles = (theme) => StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
+    minHeight: 44,
   },
   overlaySlider: {
     flex: 1,
     marginHorizontal: 6,
+    height: 40,
   },
   overlaySliderLabelLeft: {
     color: '#FFFFFF',
@@ -599,7 +660,7 @@ const makeStyles = (theme) => StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // Split -------------------------------------------------------------------
+  // Split (vertical divider — portrait combined photos) --------------------
   splitOverlay: {
     position: 'absolute',
     top: 0,
@@ -617,8 +678,8 @@ const makeStyles = (theme) => StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: 56,
-    marginLeft: -28,
+    width: 80,
+    marginLeft: -40,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -629,10 +690,36 @@ const makeStyles = (theme) => StyleSheet.create({
     width: 2,
     backgroundColor: '#FFFFFF',
   },
+
+  // Split (horizontal divider — landscape combined photos) ----------------
+  splitOverlayH: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+  },
+  splitDividerHitAreaH: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 80,
+    marginTop: -40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitDividerLineH: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: '#FFFFFF',
+  },
+
   splitDividerKnob: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
@@ -642,6 +729,9 @@ const makeStyles = (theme) => StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 3,
     elevation: 4,
+  },
+  splitDividerKnobColumn: {
+    flexDirection: 'column',
   },
 
   // Viewport-shape toggle pinned to the top-right corner of every mode.
