@@ -1064,18 +1064,20 @@ export const deleteAssetsBatch = async ({ filenames = [], prefixes = [], deleteF
 export const loadProjects = async () => {
   try {
     const saved = await readSecureJSON(PROJECTS_KEY);
-    let list = saved || [];
-    // Same safety net as photos: if primary is empty but backup has
-    // entries, restore from backup and re-hydrate primary.
-    if (list.length === 0) {
+    // Distinguish "never written" (null) from "intentionally cleared" ([]).
+    // Only restore from backup in the never-written case — otherwise a user
+    // deleting their last project sees it resurrected from the backup on
+    // the very next read.
+    if (saved == null) {
       const backup = await readSecureJSON(PROJECTS_BACKUP_KEY);
       if (Array.isArray(backup) && backup.length > 0) {
-        console.warn('[Storage] loadProjects: primary empty, restoring from backup', { backup_count: backup.length });
-        list = backup;
+        console.warn('[Storage] loadProjects: primary unset, restoring from backup', { backup_count: backup.length });
         try { await writeSecureJSON(PROJECTS_KEY, backup); } catch {}
+        return backup;
       }
+      return [];
     }
-    return list;
+    return Array.isArray(saved) ? saved : [];
   } catch (e) {
     return [];
   }
@@ -1132,6 +1134,13 @@ export const deleteProjectEntry = async (projectId) => {
   const list = await loadProjects();
   const filtered = list.filter(p => p.id !== projectId);
   await saveProjects(filtered);
+  // saveProjects skips backup writes when the list is empty (guard against
+  // accidental wipes). Deleting the last project is a legitimate empty
+  // write, so sync the backup here — otherwise loadProjects sees primary
+  // empty on next read and restores the just-deleted project from backup.
+  if (filtered.length === 0) {
+    try { await writeSecureJSON(PROJECTS_BACKUP_KEY, []); } catch {}
+  }
 };
 
 // Active project persistence (Keychain-mirrored so it survives iOS reinstall)
