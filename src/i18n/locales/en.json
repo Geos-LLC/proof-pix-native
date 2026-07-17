@@ -168,6 +168,8 @@
     "deselectDate": "Deselect date",
     "roomMetaWithSets": "{{count}} photos · {{sets}} sets",
     "tabTimeline": "Timeline",
+    "tabPhotos": "Photos",
+    "photosSubGallery": "Gallery",
     "tabLocations": "Locations",
     "tabReport": "Report",
     "tabShare": "Share",

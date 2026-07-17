@@ -1736,6 +1736,8 @@
     "deselectDate": "날짜 선택 취소",
     "roomMetaWithSets": "사진 {{count}}장 · 세트 {{sets}}개",
     "tabTimeline": "타임라인",
+    "tabPhotos": "사진",
+    "photosSubGallery": "갤러리",
     "tabLocations": "위치",
     "tabReport": "보고서",
     "tabShare": "공유",

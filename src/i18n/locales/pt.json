@@ -1740,6 +1740,8 @@
     "deselectDate": "Desmarcar data",
     "roomMetaWithSets": "{{count}} fotos · {{sets}} conjuntos",
     "tabTimeline": "Linha do tempo",
+    "tabPhotos": "Fotos",
+    "photosSubGallery": "Galeria",
     "tabLocations": "Locais",
     "tabReport": "Relatório",
     "tabShare": "Compartilhar",

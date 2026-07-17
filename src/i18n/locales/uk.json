@@ -1737,6 +1737,8 @@
     "deselectDate": "Скасувати вибір",
     "roomMetaWithSets": "{{count}} фото · {{sets}} наборів",
     "tabTimeline": "Хронологія",
+    "tabPhotos": "Фото",
+    "photosSubGallery": "Галерея",
     "tabLocations": "Локації",
     "tabReport": "Звіт",
     "tabShare": "Поділитися",

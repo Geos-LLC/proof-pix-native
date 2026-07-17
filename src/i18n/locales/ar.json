@@ -1749,6 +1749,8 @@
     "deselectDate": "إلغاء تحديد التاريخ",
     "roomMetaWithSets": "{{count}} صور · {{sets}} مجموعات",
     "tabTimeline": "الجدول الزمني",
+    "tabPhotos": "الصور",
+    "photosSubGallery": "المعرض",
     "tabLocations": "المواقع",
     "tabReport": "التقرير",
     "tabShare": "مشاركة",

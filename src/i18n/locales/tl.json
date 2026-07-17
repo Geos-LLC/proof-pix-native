@@ -1740,6 +1740,8 @@
     "deselectDate": "I-deselect ang petsa",
     "roomMetaWithSets": "{{count}} larawan · {{sets}} set",
     "tabTimeline": "Timeline",
+    "tabPhotos": "Mga Larawan",
+    "photosSubGallery": "Gallery",
     "tabLocations": "Mga Lokasyon",
     "tabReport": "Ulat",
     "tabShare": "Ibahagi",

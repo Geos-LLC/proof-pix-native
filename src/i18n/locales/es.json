@@ -1784,6 +1784,8 @@
     "deselectDate": "Deseleccionar fecha",
     "roomMetaWithSets": "{{count}} fotos · {{sets}} conjuntos",
     "tabTimeline": "Cronología",
+    "tabPhotos": "Fotos",
+    "photosSubGallery": "Galería",
     "tabLocations": "Ubicaciones",
     "tabReport": "Informe",
     "tabShare": "Compartir",

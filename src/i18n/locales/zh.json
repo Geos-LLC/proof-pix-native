@@ -1738,6 +1738,8 @@
     "deselectDate": "取消选择日期",
     "roomMetaWithSets": "{{count}} 张照片 · {{sets}} 组",
     "tabTimeline": "时间线",
+    "tabPhotos": "照片",
+    "photosSubGallery": "图库",
     "tabLocations": "位置",
     "tabReport": "报告",
     "tabShare": "分享",

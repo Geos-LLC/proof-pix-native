@@ -1740,6 +1740,8 @@
     "deselectDate": "Auswahl aufheben",
     "roomMetaWithSets": "{{count}} Fotos · {{sets}} Sets",
     "tabTimeline": "Zeitachse",
+    "tabPhotos": "Fotos",
+    "photosSubGallery": "Galerie",
     "tabLocations": "Orte",
     "tabReport": "Bericht",
     "tabShare": "Teilen",

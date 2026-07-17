@@ -1738,6 +1738,8 @@
     "deselectDate": "Снять выбор",
     "roomMetaWithSets": "{{count}} фото · {{sets}} наборов",
     "tabTimeline": "Хронология",
+    "tabPhotos": "Фото",
+    "photosSubGallery": "Галерея",
     "tabLocations": "Локации",
     "tabReport": "Отчёт",
     "tabShare": "Поделиться",

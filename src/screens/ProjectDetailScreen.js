@@ -128,7 +128,7 @@ import { computeSetIds } from '../utils/photoSets';
 // resolves them through t() at render so the whole bar switches language
 // live without a remount.
 const TABS = [
-  { key: 'timeline', labelKey: 'projectDetail.tabTimeline' },
+  { key: 'timeline', labelKey: 'projectDetail.tabPhotos' },
   { key: 'location', labelKey: 'projectDetail.tabLocations' },
   { key: 'report',   labelKey: 'projectDetail.tabReport' },
   { key: 'share',    labelKey: 'projectDetail.tabShare' },
@@ -476,6 +476,11 @@ export default function ProjectDetailScreen({ route, navigation }) {
   );
 
   const [activeTab, setActiveTab] = useState('timeline');
+  // Sub-tab under the "Photos" top tab: 'timeline' = existing
+  // date → room → grid view; 'gallery' = flat 4-col grid of every
+  // photo in the project sorted newest first. Selection mode is
+  // shared across both sub-tabs.
+  const [photosSubTab, setPhotosSubTab] = useState('timeline');
   // Locations tab: 'project' shows only THIS project's locations,
   // 'all' aggregates every project the user has. Default is 'project'
   // so the tab still answers "where were this project's photos taken"
@@ -1427,6 +1432,25 @@ export default function ProjectDetailScreen({ route, navigation }) {
   // Set-by-set layout used by the Pick photos selection mode. Each
   // entry is { id, room, before, progress[], after, combined, ts }.
   const setList = useMemo(() => buildSetList(projectPhotos), [projectPhotos]);
+  // Flat gallery list for the Photos → Gallery sub-tab. Applies the
+  // same filters buildTimeline does (drop combined/mix and side-by-
+  // side composite URIs) so the user sees the original captures once
+  // each, newest → oldest.
+  const galleryTiles = useMemo(() => {
+    const tiles = [];
+    for (const p of projectPhotos) {
+      if (!p) continue;
+      if (p.mode === 'mix' || p.mode === 'combined') continue;
+      if (p.uri && /_COMBINED_(?:BASE|EDIT)_(?:SIDE|STACK)_/i.test(p.uri)) continue;
+      const ts = tsOfPhoto(p);
+      if (!ts) continue;
+      const dateKey = new Date(ts).toLocaleDateString('en-CA');
+      const roomName = p.room || 'Unsorted';
+      tiles.push({ id: p.id, uri: p.uri, ts, dateKey, roomName });
+    }
+    tiles.sort((a, b) => b.ts - a.ts);
+    return tiles;
+  }, [projectPhotos]);
 
   const handleRoomTap = (dateKey, roomName) => {
     navigation.navigate('PhotoSetPreview', {
@@ -2421,6 +2445,43 @@ export default function ProjectDetailScreen({ route, navigation }) {
             </View>
           ) : (
             <>
+              {/* Sub-tab strip under the "Photos" top tab. Timeline =
+                  date → room grouped view; Gallery = flat grid of every
+                  photo newest-first. Hidden while the user is in
+                  selection mode (the set-list picker takes over). */}
+              {!selectionMode && (
+                <View style={styles.photosSubTabsRow}>
+                  {[
+                    { key: 'timeline', labelKey: 'projectDetail.tabTimeline' },
+                    { key: 'gallery', labelKey: 'projectDetail.photosSubGallery' },
+                  ].map((sub) => {
+                    const isActive = photosSubTab === sub.key;
+                    return (
+                      <TouchableOpacity
+                        key={sub.key}
+                        onPress={() => setPhotosSubTab(sub.key)}
+                        style={[
+                          styles.photosSubTab,
+                          {
+                            backgroundColor: isActive ? theme.surfaceElevated : 'transparent',
+                            borderColor: isActive ? theme.borderStrong : theme.border,
+                          },
+                        ]}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Text
+                          style={[
+                            styles.photosSubTabText,
+                            { color: isActive ? theme.textPrimary : theme.textSecondary },
+                          ]}
+                        >
+                          {t(sub.labelKey)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
               {/* Select-photos pill — replaces the long-press entry
                   for selection mode now that long-press is reserved
                   for the enlarged-preview overlay. Hidden once
@@ -2568,7 +2629,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                     </View>
                   );
                 })
-              ) : (
+              ) : photosSubTab === 'timeline' ? (
               timelineGroups.map((group) => {
                 const datePhotoIds = group.rooms.flatMap((r) => r.photoTiles.map((t) => t.id));
                 const dateAllSelected = selectionMode && datePhotoIds.length > 0 && datePhotoIds.every((id) => selectionDraft.has(id));
@@ -2682,6 +2743,36 @@ export default function ProjectDetailScreen({ route, navigation }) {
               </View>
               );
               })
+              ) : (
+              // Gallery sub-tab: flat 4-column grid of every photo in
+              // the project, sorted newest → oldest. Reuses the
+              // timelineGrid tile styles for visual parity with the
+              // Timeline sub-tab. Tap → PhotoSetPreview anchored on
+              // the tapped photo; long-press → enlarged preview
+              // overlay (same as Timeline).
+              <View style={styles.timelineGrid}>
+                {galleryTiles.map((tile) => (
+                  <TouchableOpacity
+                    key={`gallery-${tile.id}`}
+                    style={styles.timelineGridTile}
+                    onPress={() => handleSetTap(tile.dateKey, tile.roomName, tile.id)}
+                    onLongPress={() => { if (tile.uri) setEnlargedPreviewUri(tile.uri); }}
+                    onPressOut={() => { if (enlargedPreviewUri) setEnlargedPreviewUri(null); }}
+                    delayLongPress={250}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.timelineGridThumbWrap}>
+                      {tile.uri ? (
+                        <Image source={{ uri: tile.uri }} style={styles.timelineGridThumb} />
+                      ) : (
+                        <View style={[styles.timelineGridThumb, styles.roomTilePlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                          <Ionicons name="image-outline" size={28} color={theme.textMuted} />
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
               )}
             </>
           )
@@ -4594,6 +4685,27 @@ const styles = StyleSheet.create({
   tabText: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 13,
+    fontWeight: '600',
+  },
+  // Sub-tab strip under the "Photos" top tab. Sits inside the scroll
+  // container (not the fixed header), so it scrolls out of view once
+  // the user is deep in a long grid — same behavior as other page-
+  // level filters. Pill style is intentionally quieter than the top-
+  // level tabs so the hierarchy reads: top tab (loud) → sub tab (soft).
+  photosSubTabsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 12,
+  },
+  photosSubTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  photosSubTabText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
     fontWeight: '600',
   },
   scroll: { flex: 1 },
