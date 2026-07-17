@@ -838,6 +838,46 @@ export const PhotoProvider = ({ children }) => {
     await savePhotos([]);
   };
 
+  // Fire-and-forget sync of a project's metadata to the proxy so the
+  // admin can see it in Team Projects. No-op for individual / admin
+  // accounts — only team_member projects flow to the shared list.
+  // Any failure is swallowed here; the proxy upload endpoint upserts
+  // by album name as a backstop, so counts still populate server-side
+  // even if this specific sync round-trip fails.
+  const syncProjectToProxyIfTeamMember = async (project) => {
+    try {
+      const mode = await AsyncStorage.getItem('@admin_user_mode');
+      if (mode !== 'team_member') return;
+      // TEAM_MEMBER_INFO is Keychain-backed; readSecureJSON pulls it
+      // from Keychain first, AsyncStorage second — matches the join
+      // flow's storage contract.
+      const info = await readSecureJSON('@team_member_info');
+      if (!info?.sessionId || !info?.token) return;
+
+      let memberName = null;
+      try {
+        const stored = await AsyncStorage.getItem('app-settings');
+        const parsed = stored ? JSON.parse(stored) : {};
+        memberName = parsed?.userName || null;
+      } catch {}
+
+      // Lazy-require proxyService — mirrors the pattern used for
+      // expo-print / crashlytics / FixPrompt elsewhere. Keeps this
+      // import off the module-load path so older binaries that
+      // predate any proxyService change won't brick an OTA.
+      const proxyService = require('../services/proxyService').default;
+      await proxyService.syncTeamProject(info.sessionId, info.token, {
+        id: project.id,
+        name: project.name,
+        industry: project.industry ?? null,
+        createdAt: project.createdAt ?? null,
+        memberName,
+      });
+    } catch (err) {
+      console.warn('[PhotoContext] syncProjectToProxyIfTeamMember failed:', err?.message);
+    }
+  };
+
   // ===== Project operations =====
   const createProject = async (name, opts = {}) => {
     try {
@@ -857,7 +897,11 @@ export const PhotoProvider = ({ children }) => {
 
       // Save projects to persistent storage
       await saveProjects(updatedProjects);
-      
+
+      // Publish to Team Projects (no-op for non-team_member accounts).
+      // Fire-and-forget — the create should never block on network.
+      syncProjectToProxyIfTeamMember(newProject);
+
       // Reset custom rooms to default when new project is created
       // Auto-assign only unassigned photos to the new project — read from
       // photosRef.current so we don't operate on stale state and accidentally
@@ -896,6 +940,14 @@ export const PhotoProvider = ({ children }) => {
       projectsRef.current = updated;
       setProjects(updated);
       await saveProjects(updated);
+
+      // Propagate the rename to Team Projects so the admin sees the
+      // member's current-facing name. folderId on the proxy is
+      // preserved (upsert only overwrites name / updatedAt), so any
+      // stored Drive link still resolves — even if the Drive folder
+      // itself keeps the older name it was created with.
+      const renamed = updated.find(p => p.id === projectId);
+      if (renamed) syncProjectToProxyIfTeamMember(renamed);
     } catch (error) {
       throw error;
     }

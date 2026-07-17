@@ -547,6 +547,72 @@ class ProxyService {
   }
 
   /**
+   * Sync a team-member-owned project's metadata to the proxy so the
+   * admin can see it in Team Projects. Fire-and-forget: callers pass
+   * `{ silent: true }` in most cases because a failed sync will be
+   * healed by the next upload (upload endpoint upserts by album name).
+   *
+   * @param {string} sessionId - Proxy session ID
+   * @param {string} token - The team member's invite token
+   * @param {Object} project - { id, name, industry?, createdAt?, memberName? }
+   * @returns {Promise<{success: boolean, project?: Object}>}
+   */
+  async syncTeamProject(sessionId, token, project) {
+    try {
+      if (!sessionId || !token || !project?.id || !project?.name) {
+        return { success: false, error: 'MISSING_ARGS' };
+      }
+      const response = await fetch(`${PROXY_SERVER_URL}/api/team/${sessionId}/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          id: project.id,
+          name: project.name,
+          industry: project.industry ?? null,
+          createdAt: project.createdAt ?? null,
+          memberName: project.memberName ?? null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn('[PROXY] syncTeamProject error:', response.status, errorText);
+        const err = new Error(`Failed to sync team project: ${response.status}`);
+        err.status = response.status;
+        throw err;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error syncing team project:', error?.message);
+      throw error;
+    }
+  }
+
+  /**
+   * List team-member projects for an admin (sorted by updatedAt desc).
+   * @param {string} sessionId - Proxy session ID
+   * @returns {Promise<{success: boolean, projects: Array}>}
+   */
+  async getTeamProjects(sessionId) {
+    try {
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/projects`, {
+        method: 'GET',
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn('[PROXY] getTeamProjects error:', response.status, errorText);
+        throw new Error(`Failed to get team projects: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error getting team projects:', error?.message);
+      throw error;
+    }
+  }
+
+  /**
    * Get session info including admin user info
    * @param {string} sessionId - Proxy session ID
    * @returns {Promise<{adminUserInfo: {name, email, picture}, folderId: string}>}

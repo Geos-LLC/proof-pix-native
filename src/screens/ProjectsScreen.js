@@ -1191,6 +1191,84 @@ export default function ProjectsScreen({ navigation, route }) {
     return getPhotosByProject(projectId).length;
   };
 
+  // ===== Team Projects (admin-only) =====
+  // Admins with an active proxy session get a "Team Projects" sub-tab
+  // that surfaces the projects team members have created / uploaded to.
+  // Data lives in Vercel KV on the proxy — populated by
+  // syncTeamProject on create/rename AND by the upload endpoint as a
+  // backstop (so counts still show up for older member builds that
+  // don't publish on create). No photo blobs are fetched — the admin
+  // taps "Open in Drive" to inspect the actual folder.
+  const showTeamTab = userMode === 'admin' && !!proxySessionId;
+  const [projectsTab, setProjectsTab] = useState('mine'); // 'mine' | 'team'
+  const [teamProjects, setTeamProjects] = useState([]);
+  const [teamProjectsLoading, setTeamProjectsLoading] = useState(false);
+  const [teamProjectsError, setTeamProjectsError] = useState(null);
+
+  const fetchTeamProjects = async ({ userInitiated = false } = {}) => {
+    if (!proxySessionId) return;
+    if (userInitiated || teamProjects.length === 0) {
+      setTeamProjectsLoading(true);
+    }
+    try {
+      setTeamProjectsError(null);
+      const proxyService = require('../services/proxyService').default;
+      const result = await proxyService.getTeamProjects(proxySessionId);
+      setTeamProjects(Array.isArray(result?.projects) ? result.projects : []);
+    } catch (err) {
+      console.warn('[ProjectsScreen] Failed to load team projects:', err?.message);
+      setTeamProjectsError(err?.message || 'Failed to load');
+    } finally {
+      setTeamProjectsLoading(false);
+    }
+  };
+
+  // Fetch on tab switch / session change. Not on mount to avoid a
+  // wasted request for admins who never open the Team tab.
+  useEffect(() => {
+    if (projectsTab === 'team' && showTeamTab) {
+      fetchTeamProjects();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectsTab, showTeamTab, proxySessionId]);
+
+  // If the admin loses proxy access mid-session (signed out from
+  // team), snap back to the local tab so the empty Team view doesn't
+  // strand them.
+  useEffect(() => {
+    if (!showTeamTab && projectsTab === 'team') setProjectsTab('mine');
+  }, [showTeamTab, projectsTab]);
+
+  const filteredTeamProjects = searchQuery.trim()
+    ? teamProjects.filter((p) =>
+        (p.name || '').toLowerCase().includes(searchQuery.trim().toLowerCase())
+      )
+    : teamProjects;
+
+  const handleOpenTeamProjectFolder = async (proj) => {
+    const url = proj?.folderUrl
+      || (proj?.folderId ? `https://drive.google.com/drive/folders/${proj.folderId}` : null);
+    if (!url) {
+      Alert.alert(
+        t('projects.teamNoFolderTitle', { defaultValue: 'No folder yet' }),
+        t('projects.teamNoFolderMessage', {
+          defaultValue: 'This project has no uploads yet, so there is no Drive folder to open.',
+        }),
+      );
+      return;
+    }
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) throw new Error('cannot-open');
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('teamMembers.driveOpenError', { defaultValue: 'Could not open Google Drive.' }),
+      );
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       <View style={styles.headerRow}>
@@ -1199,7 +1277,53 @@ export default function ProjectsScreen({ navigation, route }) {
         </Text>
       </View>
 
-      {isMultiSelectMode ? (
+      {showTeamTab && (
+        <View style={styles.tabsRow}>
+          <TouchableOpacity
+            style={[
+              styles.tabBtn,
+              projectsTab === 'mine' && { borderBottomColor: theme.accent, borderBottomWidth: 2 },
+            ]}
+            onPress={() => {
+              if (isMultiSelectMode) exitMultiSelect();
+              setProjectsTab('mine');
+            }}
+            hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+          >
+            <Text
+              style={[
+                styles.tabBtnText,
+                { color: projectsTab === 'mine' ? theme.textPrimary : theme.textMuted },
+              ]}
+            >
+              {t('projects.tabs.mine', { defaultValue: 'My projects' })}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.tabBtn,
+              projectsTab === 'team' && { borderBottomColor: theme.accent, borderBottomWidth: 2 },
+            ]}
+            onPress={() => {
+              if (isMultiSelectMode) exitMultiSelect();
+              setProjectsTab('team');
+            }}
+            hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+          >
+            <Text
+              style={[
+                styles.tabBtnText,
+                { color: projectsTab === 'team' ? theme.textPrimary : theme.textMuted },
+              ]}
+            >
+              {t('projects.tabs.team', { defaultValue: 'Team projects' })}
+              {teamProjects.length > 0 ? ` (${teamProjects.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isMultiSelectMode && projectsTab === 'mine' ? (
         <View style={[styles.searchRow, { alignItems: 'center' }]}>
           <TouchableOpacity onPress={exitMultiSelect} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="close" size={22} color={theme.textPrimary} />
@@ -1267,7 +1391,143 @@ export default function ProjectsScreen({ navigation, route }) {
         style={styles.scrollView}
         contentContainerStyle={[styles.content, { paddingBottom: 20 + insets.bottom + 50 + 24 }]}
       >
-        {projects.length === 0 ? (
+        {projectsTab === 'team' && showTeamTab ? (
+          teamProjectsLoading && teamProjects.length === 0 ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator size="small" color={theme.textMuted} />
+              <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary, marginTop: 10 }]}>
+                {t('projects.teamLoading', { defaultValue: 'Loading team projects…' })}
+              </Text>
+            </View>
+          ) : teamProjectsError && teamProjects.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
+                {t('projects.teamErrorTitle', { defaultValue: 'Could not load' })}
+              </Text>
+              <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary }]}>
+                {teamProjectsError}
+              </Text>
+              <TouchableOpacity
+                onPress={() => fetchTeamProjects({ userInitiated: true })}
+                style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: theme.accent }}
+              >
+                <Text style={{ color: theme.accentText, fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' }}>
+                  {t('common.retry', { defaultValue: 'Retry' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : filteredTeamProjects.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
+                {searchQuery.trim()
+                  ? t('projects.noMatch', { defaultValue: 'No projects match your search' })
+                  : t('projects.teamEmptyTitle', { defaultValue: 'No team projects yet' })}
+              </Text>
+              {!searchQuery.trim() && (
+                <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary }]}>
+                  {t('projects.teamEmptyBody', {
+                    defaultValue: 'Projects created by your team members will appear here.',
+                  })}
+                </Text>
+              )}
+              <TouchableOpacity
+                onPress={() => fetchTeamProjects({ userInitiated: true })}
+                style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border }}
+              >
+                <Text style={{ color: theme.textPrimary, fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' }}>
+                  {t('common.refresh', { defaultValue: 'Refresh' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <View style={styles.teamRefreshRow}>
+                <Text style={[styles.teamRefreshHint, { color: theme.textMuted }]} numberOfLines={1}>
+                  {t('projects.teamCount', {
+                    count: filteredTeamProjects.length,
+                    defaultValue: '{{count}} project(s)',
+                  })}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => fetchTeamProjects({ userInitiated: true })}
+                  disabled={teamProjectsLoading}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  {teamProjectsLoading ? (
+                    <ActivityIndicator size="small" color={theme.textMuted} />
+                  ) : (
+                    <Ionicons name="refresh" size={18} color={theme.textSecondary} />
+                  )}
+                </TouchableOpacity>
+              </View>
+              {filteredTeamProjects.map((tp) => {
+                const industry = tp.industry ? getIndustryById(tp.industry) : null;
+                const updatedTs = tp.updatedAt ? Date.parse(tp.updatedAt) : 0;
+                return (
+                  <View
+                    key={tp.id}
+                    style={[
+                      styles.cardNew,
+                      { backgroundColor: theme.surface, borderColor: 'transparent' },
+                    ]}
+                  >
+                    <View style={styles.cardRow}>
+                      <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                        <Ionicons name="folder-outline" size={26} color={theme.textMuted} />
+                      </View>
+
+                      <View style={styles.cardBody}>
+                        <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {tp.name}
+                        </Text>
+                        {industry && (
+                          <View style={[styles.industryChip, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}>
+                            <Ionicons name={industry.icon} size={11} color={theme.textSecondary} />
+                            <Text style={[styles.industryChipText, { color: theme.textSecondary }]} numberOfLines={1}>
+                              {t(industry.labelKey, { defaultValue: industry.defaultLabel })}
+                            </Text>
+                          </View>
+                        )}
+                        <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {t('projects.teamCardMeta', {
+                            owner: tp.ownerName || 'Team member',
+                            count: tp.photoCount || 0,
+                            updated: formatRelative(updatedTs),
+                            defaultValue: '{{owner}} · {{count}} photos · {{updated}}',
+                          })}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => handleOpenTeamProjectFolder(tp)}
+                          style={[
+                            styles.teamOpenBtn,
+                            { borderColor: theme.border, backgroundColor: theme.surfaceElevated },
+                          ]}
+                          hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+                        >
+                          <Ionicons
+                            name="folder-open-outline"
+                            size={14}
+                            color={tp.folderId ? theme.textPrimary : theme.textMuted}
+                          />
+                          <Text
+                            style={[
+                              styles.teamOpenBtnText,
+                              { color: tp.folderId ? theme.textPrimary : theme.textMuted },
+                            ]}
+                          >
+                            {tp.folderId
+                              ? t('projects.teamOpenInDrive', { defaultValue: 'Open in Drive' })
+                              : t('projects.teamNoDriveYet', { defaultValue: 'No uploads yet' })}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </>
+          )
+        ) : projects.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>{t('projects.noProjects')}</Text>
             <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary }]}>
@@ -1407,12 +1667,14 @@ export default function ProjectsScreen({ navigation, route }) {
       {/* Bottom nav moved to PersistentBottomNav (App.js root). */}
 
 
-      <TouchableOpacity
-        style={[styles.floatingAddButton, { bottom: 20 + insets.bottom + 50 + 16, backgroundColor: theme.accent }]}
-        onPress={openNewProjectModal}
-      >
-        <Ionicons name="add" size={40} color={theme.accentText} />
-      </TouchableOpacity>
+      {projectsTab === 'mine' && (
+        <TouchableOpacity
+          style={[styles.floatingAddButton, { bottom: 20 + insets.bottom + 50 + 16, backgroundColor: theme.accent }]}
+          onPress={openNewProjectModal}
+        >
+          <Ionicons name="add" size={40} color={theme.accentText} />
+        </TouchableOpacity>
+      )}
 
       <Modal
         visible={!!actionSheetProject}
@@ -2140,6 +2402,52 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 19,
     paddingBottom: 12,
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 19,
+    marginBottom: 6,
+    gap: 20,
+  },
+  tabBtn: {
+    paddingVertical: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabBtnText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  teamRefreshRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingBottom: 8,
+  },
+  teamRefreshHint: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 12,
+  },
+  teamOpenBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  teamOpenBtnText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '600',
   },
   searchBar: {
     flex: 1,
