@@ -1469,12 +1469,10 @@ export default function ProjectDetailScreen({ route, navigation }) {
     setSelectionDraft(allIds);
     setSelectionMode(true);
   };
-  // Delete flows. `handleDeleteSelected` deletes the current selection
-  // draft and exits selection mode; `handleDeleteAll` wipes every photo
-  // in the project without needing selection mode. Both confirm via
-  // Alert first and default to leaving the underlying device files
-  // alone (options={deleteFromStorage:false}) so the user's Photos
-  // library stays intact — same policy as the Delete Photo Set flow.
+  // Delete flow — only reachable from within selection mode, once the
+  // user has picked at least one photo. Confirms via Alert and skips
+  // device-file deletion so the underlying Photos-library asset stays
+  // intact (matches the existing Delete Photo Set policy).
   const handleDeleteSelected = () => {
     const ids = Array.from(selectionDraft);
     if (ids.length === 0) return;
@@ -1495,31 +1493,6 @@ export default function ProjectDetailScreen({ route, navigation }) {
               }
             }
             cancelSelectionMode();
-          },
-        },
-      ],
-    );
-  };
-  const handleDeleteAll = () => {
-    const all = projectPhotos.map((p) => p.id);
-    if (all.length === 0) return;
-    Alert.alert(
-      t('gallery.deleteAll'),
-      t('gallery.deleteAllMessage'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: async () => {
-            for (const id of all) {
-              try {
-                await deletePhoto(id, { deleteFromStorage: false });
-              } catch (e) {
-                console.warn('[ProjectDetail] deletePhoto failed', id, e);
-              }
-            }
-            if (selectionMode) cancelSelectionMode();
           },
         },
       ],
@@ -2545,30 +2518,17 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   for the enlarged-preview overlay. Hidden once
                   selectionMode is on (the banner below takes over). */}
               {!selectionMode && projectPhotos.length > 0 && (
-                <View style={styles.photosActionRow}>
-                  <TouchableOpacity
-                    onPress={handleDeleteAll}
-                    style={[styles.timelineSelectPill, { borderColor: theme.danger || '#D9534F' }]}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Ionicons name="trash-outline" size={16} color={theme.danger || '#D9534F'} />
-                    <Text style={[styles.timelineSelectPillText, { color: theme.danger || '#D9534F' }]}>
-                      {t('gallery.deleteAll')}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={enterSelectionMode}
-                    style={[styles.timelineSelectPill, { borderColor: theme.borderStrong }]}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Ionicons name="checkbox-outline" size={16} color={theme.textPrimary} />
-                    <Text style={[styles.timelineSelectPillText, { color: theme.textPrimary }]}>
-                      {t('projectDetail.selectPhotos')}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  onPress={enterSelectionMode}
+                  style={[styles.timelineSelectPill, { borderColor: theme.borderStrong }]}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Ionicons name="checkbox-outline" size={16} color={theme.textPrimary} />
+                  <Text style={[styles.timelineSelectPillText, { color: theme.textPrimary }]}>
+                    {t('projectDetail.selectPhotos')}
+                  </Text>
+                </TouchableOpacity>
               )}
               {/* Selection-mode banner — anchors the "Select all"
                   checkbox plus a Cancel exit. Only renders while the
@@ -4822,16 +4782,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '600',
-  },
-  // Two-pill row above the photo grid when NOT in selection mode:
-  // hosts the destructive "Delete all" pill on the left and the
-  // "Select photos" pill on the right. justifyContent:flex-end pushes
-  // both to the thumb-reach side of the screen.
-  photosActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginBottom: 10,
   },
   // Right side of the selection banner — hosts Delete (shown only
   // when selection > 0) + Cancel, with a small gap so they don't
