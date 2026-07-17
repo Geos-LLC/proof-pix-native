@@ -315,7 +315,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const formatDateLabel = (ts) => formatDateLabelI18n(ts, dateLocale);
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos, clearPhotoOverrides } = usePhotos();
+  const { projects, getPhotosByProject, deleteProject, activeProjectId, setActiveProject, updatePhoto, patchProject, photos: allPhotos, clearPhotoOverrides, deletePhoto } = usePhotos();
   const { isAuthenticated, connectedAccounts, accountType, folderId: adminFolderId, saveFolderId } = useAdmin();
   const { effectivePlan, canUse } = useFeaturePermissions();
   const {
@@ -1469,6 +1469,63 @@ export default function ProjectDetailScreen({ route, navigation }) {
     setSelectionDraft(allIds);
     setSelectionMode(true);
   };
+  // Delete flows. `handleDeleteSelected` deletes the current selection
+  // draft and exits selection mode; `handleDeleteAll` wipes every photo
+  // in the project without needing selection mode. Both confirm via
+  // Alert first and default to leaving the underlying device files
+  // alone (options={deleteFromStorage:false}) so the user's Photos
+  // library stays intact — same policy as the Delete Photo Set flow.
+  const handleDeleteSelected = () => {
+    const ids = Array.from(selectionDraft);
+    if (ids.length === 0) return;
+    Alert.alert(
+      t('gallery.deleteSelected'),
+      t('gallery.deleteSelectedMessage', { count: ids.length }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: async () => {
+            for (const id of ids) {
+              try {
+                await deletePhoto(id, { deleteFromStorage: false });
+              } catch (e) {
+                console.warn('[ProjectDetail] deletePhoto failed', id, e);
+              }
+            }
+            cancelSelectionMode();
+          },
+        },
+      ],
+    );
+  };
+  const handleDeleteAll = () => {
+    const all = projectPhotos.map((p) => p.id);
+    if (all.length === 0) return;
+    Alert.alert(
+      t('gallery.deleteAll'),
+      t('gallery.deleteAllMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: async () => {
+            for (const id of all) {
+              try {
+                await deletePhoto(id, { deleteFromStorage: false });
+              } catch (e) {
+                console.warn('[ProjectDetail] deletePhoto failed', id, e);
+              }
+            }
+            if (selectionMode) cancelSelectionMode();
+          },
+        },
+      ],
+    );
+  };
+
   const cancelSelectionMode = () => {
     setSelectionMode(false);
     setSelectionDraft(new Set());
@@ -2454,6 +2511,7 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   {[
                     { key: 'timeline', labelKey: 'projectDetail.tabTimeline' },
                     { key: 'gallery', labelKey: 'projectDetail.photosSubGallery' },
+                    { key: 'rooms', labelKey: 'projectDetail.photosSubRooms' },
                   ].map((sub) => {
                     const isActive = photosSubTab === sub.key;
                     return (
@@ -2487,17 +2545,30 @@ export default function ProjectDetailScreen({ route, navigation }) {
                   for the enlarged-preview overlay. Hidden once
                   selectionMode is on (the banner below takes over). */}
               {!selectionMode && projectPhotos.length > 0 && (
-                <TouchableOpacity
-                  onPress={enterSelectionMode}
-                  style={[styles.timelineSelectPill, { borderColor: theme.borderStrong }]}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                >
-                  <Ionicons name="checkbox-outline" size={16} color={theme.textPrimary} />
-                  <Text style={[styles.timelineSelectPillText, { color: theme.textPrimary }]}>
-                    {t('projectDetail.selectPhotos')}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.photosActionRow}>
+                  <TouchableOpacity
+                    onPress={handleDeleteAll}
+                    style={[styles.timelineSelectPill, { borderColor: theme.danger || '#D9534F' }]}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={theme.danger || '#D9534F'} />
+                    <Text style={[styles.timelineSelectPillText, { color: theme.danger || '#D9534F' }]}>
+                      {t('gallery.deleteAll')}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={enterSelectionMode}
+                    style={[styles.timelineSelectPill, { borderColor: theme.borderStrong }]}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="checkbox-outline" size={16} color={theme.textPrimary} />
+                    <Text style={[styles.timelineSelectPillText, { color: theme.textPrimary }]}>
+                      {t('projectDetail.selectPhotos')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               )}
               {/* Selection-mode banner — anchors the "Select all"
                   checkbox plus a Cancel exit. Only renders while the
@@ -2528,24 +2599,37 @@ export default function ProjectDetailScreen({ route, navigation }) {
                         Select all ({selectedCount}/{projectPhotos.length})
                       </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={cancelSelectionMode} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={[styles.selectionBannerCancel, { color: theme.textSecondary }]}>Cancel</Text>
-                    </TouchableOpacity>
+                    <View style={styles.selectionBannerActions}>
+                      {selectedCount > 0 && (
+                        <TouchableOpacity
+                          onPress={handleDeleteSelected}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={[styles.selectionBannerCancel, { color: theme.danger || '#D9534F' }]}>
+                            {t('common.delete')}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity onPress={cancelSelectionMode} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Text style={[styles.selectionBannerCancel, { color: theme.textSecondary }]}>{t('common.cancel')}</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })()}
-              {/* Selection mode shows one row per capture set with the
-                  combined photo (if any) at the end of the row.
-                  Combined photos are intentionally hidden from the
-                  read-only timeline view but included here so the
-                  user can pick them when sharing. Non-selection mode
-                  keeps the existing date → room → tiles layout. */}
-              {selectionMode ? (
+              {/* Rooms sub-tab (and legacy Selection-mode flow) render
+                  one section per capture set — Before / Progress* /
+                  After / Combined in a single row. In selection mode
+                  each tile toggles the draft on tap; in read-only
+                  mode taps route to PhotoSetPreview anchored on the
+                  tapped photo. The set-level checkbox + scrim only
+                  render while selecting. */}
+              {photosSubTab === 'rooms' ? (
                 setList.length === 0 ? null : setList.map((set) => {
                   const setMembers = [set.before, ...set.progress, set.after, set.combined].filter(Boolean);
                   if (setMembers.length === 0) return null;
                   const memberIds = setMembers.map((p) => p.id);
-                  const setAllSelected = memberIds.every((id) => selectionDraft.has(id));
+                  const setAllSelected = selectionMode && memberIds.every((id) => selectionDraft.has(id));
                   const toggleSet = () => {
                     if (setAllSelected) memberIds.forEach((id) => { if (selectionDraft.has(id)) togglePhotoSelected(id); });
                     else memberIds.forEach((id) => { if (!selectionDraft.has(id)) togglePhotoSelected(id); });
@@ -2564,33 +2648,40 @@ export default function ProjectDetailScreen({ route, navigation }) {
                         <Text style={[styles.dateLabel, { color: theme.textPrimary }]} numberOfLines={1}>
                           {displayRoomName(set.room) || 'Unsorted'}
                         </Text>
-                        <TouchableOpacity
-                          onPress={toggleSet}
-                          style={styles.dateSelectBtn}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <View style={[
-                            styles.dateSelectCheck,
-                            {
-                              backgroundColor: setAllSelected ? theme.accent : 'transparent',
-                              borderColor: setAllSelected ? theme.accent : theme.borderStrong,
-                            },
-                          ]}>
-                            {setAllSelected && (
-                              <Ionicons name="checkmark" size={10} color={theme.accentText} />
-                            )}
-                          </View>
-                          <Text style={[styles.dateSelectBtnText, { color: theme.textSecondary }]}>Set</Text>
-                        </TouchableOpacity>
+                        {selectionMode && (
+                          <TouchableOpacity
+                            onPress={toggleSet}
+                            style={styles.dateSelectBtn}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <View style={[
+                              styles.dateSelectCheck,
+                              {
+                                backgroundColor: setAllSelected ? theme.accent : 'transparent',
+                                borderColor: setAllSelected ? theme.accent : theme.borderStrong,
+                              },
+                            ]}>
+                              {setAllSelected && (
+                                <Ionicons name="checkmark" size={10} color={theme.accentText} />
+                              )}
+                            </View>
+                            <Text style={[styles.dateSelectBtnText, { color: theme.textSecondary }]}>Set</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                       <View style={styles.timelineGrid}>
                         {setMembers.map((p) => {
                           const isSelected = selectionDraft.has(p.id);
+                          const pTs = tsOfPhoto(p);
+                          const pDateKey = pTs ? new Date(pTs).toLocaleDateString('en-CA') : '';
                           return (
                             <TouchableOpacity
                               key={`${set.id}-${p.id}`}
                               style={styles.timelineGridTile}
-                              onPress={() => togglePhotoSelected(p.id)}
+                              onPress={() => {
+                                if (selectionMode) togglePhotoSelected(p.id);
+                                else if (pDateKey) handleSetTap(pDateKey, set.room, p.id);
+                              }}
                               onLongPress={() => { if (p.uri) setEnlargedPreviewUri(p.uri); }}
                               onPressOut={() => { if (enlargedPreviewUri) setEnlargedPreviewUri(null); }}
                               delayLongPress={250}
@@ -2604,18 +2695,20 @@ export default function ProjectDetailScreen({ route, navigation }) {
                                     <Ionicons name="image-outline" size={28} color={theme.textMuted} />
                                   </View>
                                 )}
-                                <View style={[
-                                  styles.timelineSelectCheck,
-                                  {
-                                    backgroundColor: isSelected ? theme.accent : 'rgba(0,0,0,0.45)',
-                                    borderColor: isSelected ? theme.accent : '#FFFFFF',
-                                  },
-                                ]}>
-                                  {isSelected && (
-                                    <Ionicons name="checkmark" size={14} color={theme.accentText} />
-                                  )}
-                                </View>
-                                {!isSelected && (
+                                {selectionMode && (
+                                  <View style={[
+                                    styles.timelineSelectCheck,
+                                    {
+                                      backgroundColor: isSelected ? theme.accent : 'rgba(0,0,0,0.45)',
+                                      borderColor: isSelected ? theme.accent : '#FFFFFF',
+                                    },
+                                  ]}>
+                                    {isSelected && (
+                                      <Ionicons name="checkmark" size={14} color={theme.accentText} />
+                                    )}
+                                  </View>
+                                )}
+                                {selectionMode && !isSelected && (
                                   <View pointerEvents="none" style={styles.timelineDeselectScrim} />
                                 )}
                               </View>
@@ -2751,27 +2844,49 @@ export default function ProjectDetailScreen({ route, navigation }) {
               // the tapped photo; long-press → enlarged preview
               // overlay (same as Timeline).
               <View style={styles.timelineGrid}>
-                {galleryTiles.map((tile) => (
-                  <TouchableOpacity
-                    key={`gallery-${tile.id}`}
-                    style={styles.timelineGridTile}
-                    onPress={() => handleSetTap(tile.dateKey, tile.roomName, tile.id)}
-                    onLongPress={() => { if (tile.uri) setEnlargedPreviewUri(tile.uri); }}
-                    onPressOut={() => { if (enlargedPreviewUri) setEnlargedPreviewUri(null); }}
-                    delayLongPress={250}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.timelineGridThumbWrap}>
-                      {tile.uri ? (
-                        <Image source={{ uri: tile.uri }} style={styles.timelineGridThumb} />
-                      ) : (
-                        <View style={[styles.timelineGridThumb, styles.roomTilePlaceholder, { backgroundColor: theme.surfaceElevated }]}>
-                          <Ionicons name="image-outline" size={28} color={theme.textMuted} />
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                {galleryTiles.map((tile) => {
+                  const isSelected = selectionDraft.has(tile.id);
+                  return (
+                    <TouchableOpacity
+                      key={`gallery-${tile.id}`}
+                      style={styles.timelineGridTile}
+                      onPress={() => {
+                        if (selectionMode) togglePhotoSelected(tile.id);
+                        else handleSetTap(tile.dateKey, tile.roomName, tile.id);
+                      }}
+                      onLongPress={() => { if (tile.uri) setEnlargedPreviewUri(tile.uri); }}
+                      onPressOut={() => { if (enlargedPreviewUri) setEnlargedPreviewUri(null); }}
+                      delayLongPress={250}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.timelineGridThumbWrap}>
+                        {tile.uri ? (
+                          <Image source={{ uri: tile.uri }} style={styles.timelineGridThumb} />
+                        ) : (
+                          <View style={[styles.timelineGridThumb, styles.roomTilePlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                            <Ionicons name="image-outline" size={28} color={theme.textMuted} />
+                          </View>
+                        )}
+                        {selectionMode && (
+                          <View style={[
+                            styles.timelineSelectCheck,
+                            {
+                              backgroundColor: isSelected ? theme.accent : 'rgba(0,0,0,0.45)',
+                              borderColor: isSelected ? theme.accent : '#FFFFFF',
+                            },
+                          ]}>
+                            {isSelected && (
+                              <Ionicons name="checkmark" size={14} color={theme.accentText} />
+                            )}
+                          </View>
+                        )}
+                        {selectionMode && !isSelected && (
+                          <View pointerEvents="none" style={styles.timelineDeselectScrim} />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
               )}
             </>
@@ -4707,6 +4822,24 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 12,
     fontWeight: '600',
+  },
+  // Two-pill row above the photo grid when NOT in selection mode:
+  // hosts the destructive "Delete all" pill on the left and the
+  // "Select photos" pill on the right. justifyContent:flex-end pushes
+  // both to the thumb-reach side of the screen.
+  photosActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginBottom: 10,
+  },
+  // Right side of the selection banner — hosts Delete (shown only
+  // when selection > 0) + Cancel, with a small gap so they don't
+  // collide when both are visible.
+  selectionBannerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
   },
   scroll: { flex: 1 },
   scrollContent: {
