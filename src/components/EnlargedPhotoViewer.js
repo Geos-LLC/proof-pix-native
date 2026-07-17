@@ -22,10 +22,11 @@
 // + chevrons + N/M counter). Pool entries with no uri are filtered
 // out up-front so the user never lands on an unrenderable frame.
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, Dimensions, Switch, ScrollView, PanResponder, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, Switch, ScrollView, PanResponder, TouchableWithoutFeedback, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useTheme } from '../hooks/useTheme';
 import { FONTS } from '../constants/fonts';
 import { StudioEditOverlays } from './StudioOverlays';
@@ -161,8 +162,27 @@ export default function EnlargedPhotoViewer({
   }), [rawInsets.top, rawInsets.bottom, rawInsets.left, rawInsets.right]);
   const theme = useTheme();
   const { t } = useTranslation();
-  const screenW = Dimensions.get('window').width;
-  const screenH = Dimensions.get('window').height;
+  // useWindowDimensions() updates on device rotation, which — combined
+  // with the orientation-unlock effect below — lets the whole viewer
+  // reflow when the user turns the phone. This is deliberately
+  // permissive: landscape photos rotate to fill a landscape screen,
+  // portrait photos rotate to fill a portrait screen. Whether that's
+  // useful is arguable, but it's the "consistent" behavior — every
+  // other iOS photo viewer (Photos.app, Instagram, etc.) rotates too.
+  const { width: screenW, height: screenH } = useWindowDimensions();
+
+  // Unlock orientation for the lifetime of the viewer. App.js locks
+  // the app to PORTRAIT_UP on boot, so without this useEffect the
+  // viewer would stay portrait even when the device rotates. Cleanup
+  // re-locks so the screen the user returns to doesn't inherit our
+  // relaxed policy. CameraScreen uses the exact same pattern
+  // (useFocusEffect + unlockAsync) for the same reason.
+  useEffect(() => {
+    ScreenOrientation.unlockAsync().catch(() => {});
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    };
+  }, []);
 
   // Filter out entries with no uri up-front so the pager never lands
   // on an unrenderable frame ("photo not showing" issue). Stable order.
@@ -202,6 +222,17 @@ export default function EnlargedPhotoViewer({
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialIdx]);
+
+  // Re-align the pager after a rotation. useWindowDimensions triggers
+  // a re-render when screenW changes; each page's width is `screenW`,
+  // so the ScrollView's contentOffset (still in the old width units)
+  // lands between two pages. Scroll to `idx * newWidth` without
+  // animation so the user snaps to the same photo they were viewing.
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTo({ x: idx * screenW, animated: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screenW]);
 
   // Fullscreen zoom layer — set when the user taps the photo. Shows
   // a pinch/pan-zoomable view of the photo above the rest of the
