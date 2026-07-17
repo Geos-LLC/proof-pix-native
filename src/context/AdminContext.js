@@ -418,6 +418,54 @@ export function AdminProvider({ children }) {
     loadAdminData();
   }, []);
 
+  // Cold-start revalidation for restored team_member sessions.
+  // TEAM_MEMBER_INFO is Keychain-backed, so a removed member's device
+  // keeps replaying "connected to team" UI forever after admin revokes
+  // their invite — the server 403s their uploads but the app never
+  // knew to drop them. Re-registering with the proxy doubles as a
+  // validity check: 403/404 → tear down local team state; other errors
+  // (network, 5xx) → leave state alone so flaky connections don't
+  // kick legitimate members out.
+  const teamRevalidatedRef = useRef(false);
+  useEffect(() => {
+    if (isLoading) return;
+    if (userMode !== 'team_member') return;
+    if (!teamInfo?.token || !teamInfo?.sessionId) return;
+    if (teamRevalidatedRef.current) return;
+    teamRevalidatedRef.current = true;
+
+    (async () => {
+      try {
+        let memberName = 'Team Member';
+        try {
+          const storedSettings = await AsyncStorage.getItem('app-settings');
+          const settings = storedSettings ? JSON.parse(storedSettings) : {};
+          memberName = settings.userName || 'Team Member';
+        } catch {}
+
+        await proxyService.registerTeamMemberJoin(
+          teamInfo.sessionId,
+          teamInfo.token,
+          memberName,
+        );
+      } catch (error) {
+        if (error?.status === 403 || error?.status === 404) {
+          console.warn('[ADMIN] Team-member token revoked at cold-start — dropping team_member state');
+          try {
+            await switchToIndividualMode();
+          } catch (teardownError) {
+            console.warn('[ADMIN] switchToIndividualMode failed after revocation:', teardownError?.message);
+            try { await deleteSecure(STORAGE_KEYS.TEAM_MEMBER_INFO); } catch {}
+            try { await AsyncStorage.setItem(STORAGE_KEYS.ADMIN_USER_MODE, 'individual'); } catch {}
+            setTeamInfo(null);
+            setUserMode('individual');
+          }
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, userMode, teamInfo?.token, teamInfo?.sessionId]);
+
   // Ensure planLimit is at least the minimum for the current plan,
   // but DO NOT downscale if user has purchased additional slots.
   useEffect(() => {
