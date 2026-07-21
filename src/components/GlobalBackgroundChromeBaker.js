@@ -39,7 +39,7 @@ import {
 import { useScopedSettings } from '../hooks/useScopedSettings';
 import { useTheme } from '../hooks/useTheme';
 import { usePhotos } from '../context/PhotoContext';
-import { PHOTO_MODES } from '../constants/rooms';
+import { PHOTO_MODES, getLabelPositions } from '../constants/rooms';
 import { FORMAT_ASPECTS } from '../constants/formats';
 import {
   pickBeforeLabelPosition,
@@ -59,35 +59,6 @@ const halves = StyleSheet.create({
   right:  { position: 'absolute', top: 0, bottom: 0, right: 0, width: '50%' },
   top:    { position: 'absolute', left: 0, right: 0, top: 0, height: '50%' },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '50%' },
-});
-
-// Compute the absolute position of a label inside its half-View.
-// `offset` is the freeform { x, y } in [0,1] from settings; when set
-// it places the label proportionally inside the inset rectangle.
-// `positionKey` is the fallback 4-corner enum used when the user
-// hasn't dragged the label.
-const cornerStyle = (positionKey, marginH, marginV) => {
-  switch (positionKey) {
-    case 'right-top':    return { top: marginV, right: marginH };
-    case 'left-bottom':  return { bottom: marginV, left: marginH };
-    case 'right-bottom': return { bottom: marginV, right: marginH };
-    case 'left-top':
-    default:             return { top: marginV, left: marginH };
-  }
-};
-
-const freeformPositionStyle = (offset, marginH, marginV) => ({
-  position: 'absolute',
-  left: `${offset.x * 100}%`,
-  top: `${offset.y * 100}%`,
-  // Pull the label back by its own width/height proportional to the
-  // offset so x=0 means flush left and x=1 means flush right.
-  transform: [
-    { translateX: `${-offset.x * 100}%` },
-    { translateY: `${-offset.y * 100}%` },
-  ],
-  marginHorizontal: marginH,
-  marginVertical: marginV,
 });
 
 // Standalone label renderer for the bake. Replaces PhotoLabels here
@@ -138,9 +109,6 @@ function BakeLabel({ role, settings, photo, isCombinedHalf }) {
   const bg = settings.labelBackgroundColor || '#FFD700';
   const fg = settings.labelTextColor || '#000000';
   const useFreeform = offset && typeof offset.x === 'number' && typeof offset.y === 'number';
-  const positionStyle = useFreeform
-    ? freeformPositionStyle(offset, marginH, marginV)
-    : { position: 'absolute', ...cornerStyle(positionKey, marginH, marginV) };
 
   // Translate the label using the user's chosen label language, mirroring
   // PhotoLabel. Fall back to English on missing key so translators can
@@ -158,9 +126,60 @@ function BakeLabel({ role, settings, photo, isCombinedHalf }) {
   const isRounded = (settings.labelCornerStyle || 'rounded') !== 'square';
   const borderRadius = isRounded ? 999 : 6;
 
+  // Non-freeform: use the SAME 9-position map PhotoLabel consumes
+  // (getLabelPositions with the user's margins baked in). The previous
+  // inline `cornerStyle` only covered 4 corners; anything else (e.g.
+  // right-middle, center-top) silently fell back to left-top in the
+  // bake. Spread the position style directly so the transform key
+  // (used for center positions to translate(-50%,-50%)) survives.
+  if (!useFreeform) {
+    const positions = getLabelPositions(marginV, marginH);
+    const posStyle = positions[positionKey] || positions['left-top'];
+    // Strip the non-style metadata fields — RN warns on unknown style keys.
+    const { name: _n, horizontalAlign: _h, verticalAlign: _v, ...coords } = posStyle;
+    return (
+      <View
+        style={[bakeLabel.box, { position: 'absolute', ...coords }, { backgroundColor: bg, borderRadius }]}
+        pointerEvents="none"
+      >
+        <Text style={[bakeLabel.text, { color: fg }]}>{text}</Text>
+      </View>
+    );
+  }
+
+  // Freeform: match PhotoLabels' LabelWithMargins exactly. Wrap in a
+  // View inset by (marginH, marginV) on every edge; then place the
+  // label at (x*100%, y*100%) inside THAT inset with a translate(-x*100%,
+  // -y*100%) so offset {1,1} lands the label's right/bottom edge flush
+  // with the inset's right/bottom (i.e. marginH/V away from the photo
+  // frame). The previous implementation applied `marginHorizontal` /
+  // `marginVertical` to the absolute label directly, which does nothing
+  // in RN's abs-layout and put the label at 0/marginH from the RAW
+  // frame edge — visibly off vs. the viewer.
   return (
-    <View style={[bakeLabel.box, positionStyle, { backgroundColor: bg, borderRadius }]} pointerEvents="none">
-      <Text style={[bakeLabel.text, { color: fg }]}>{text}</Text>
+    <View
+      pointerEvents="none"
+      style={{ position: 'absolute', top: marginV, bottom: marginV, left: marginH, right: marginH }}
+    >
+      <View
+        pointerEvents="none"
+        style={[
+          bakeLabel.box,
+          {
+            position: 'absolute',
+            left: `${offset.x * 100}%`,
+            top: `${offset.y * 100}%`,
+            transform: [
+              { translateX: `${-offset.x * 100}%` },
+              { translateY: `${-offset.y * 100}%` },
+            ],
+            backgroundColor: bg,
+            borderRadius,
+          },
+        ]}
+      >
+        <Text style={[bakeLabel.text, { color: fg }]}>{text}</Text>
+      </View>
     </View>
   );
 }
@@ -419,7 +438,7 @@ const WATCHDOG_MS = 25000;
 // OTA bundle is actually running (vs. asking the user to read an
 // update ID). Bump the version literal each time you push so the log
 // is unambiguous.
-console.warn('[ChromeBaker] BUNDLE v9 — bake labels use translated text + shared position picker + corner-style toggle');
+console.warn('[ChromeBaker] BUNDLE v10 — freeform label wraps in inset (matches viewer margins) + 9-position grid');
 
 export default function GlobalBackgroundChromeBaker() {
   const [currentJob, setCurrentJob] = useState(null);
