@@ -2568,13 +2568,17 @@ export default function CameraScreen({ route, navigation }) {
         }
       }
       if (!nextTarget) {
+        // Any un-visited Before in the project — including sets
+        // EARLIER than the current one in the same room whose Afters
+        // were shot in a prior session (the room-forward loop above
+        // skipped those). This is what makes the modal wait until
+        // every Before in the project has been touched this session.
         const projectBefores = photos.filter(
           (p) => p.mode === PHOTO_MODES.BEFORE
-            && p.room !== activeBeforePhoto.room
             && (activeProjectId ? p.projectId === activeProjectId : true)
         );
         nextTarget = projectBefores.find(
-          (b) => !visitedAfterBeforeIdsRef.current.has(b.id)
+          (b) => b.id !== beforePhotoId && !visitedAfterBeforeIdsRef.current.has(b.id)
         ) || null;
       }
       const allPhotosPaired = !nextTarget;
