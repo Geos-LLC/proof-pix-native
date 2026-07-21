@@ -158,6 +158,10 @@ class ChromeBakeService {
       // stale English/square-corner bake from cache.
       settings.labelLanguage || '',
       settings.labelCornerStyle || '',
+      // labelSize drives the bake's chip font + padding + border-radius
+      // as of the proportional-scaling fix. Cache must miss when the
+      // user changes size, or the shared JPG keeps the previous scale.
+      settings.labelSize ?? '',
       settings.beforeLabelPositionLandscape || '',
       settings.afterLabelPositionLandscape || '',
       settings.singleLabelPositionLandscape || '',

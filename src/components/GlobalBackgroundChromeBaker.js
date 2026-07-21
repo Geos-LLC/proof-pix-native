@@ -66,21 +66,45 @@ const halves = StyleSheet.create({
 // (Alexandria etc.) doesn't always reach the off-screen captureRef
 // layer in time, producing invisible text. Uses system bold and
 // explicit fallback colors so the chip is always visible.
-const bakeLabel = StyleSheet.create({
+
+// Base size map mirrors PhotoLabel's LABEL_SIZE_MAP so the bake's
+// chip proportions match the viewer's before any scaling is applied.
+const BAKE_SIZE_MAP = {
+  small:  { fontSize: 12, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4, minWidth: 70 },
+  medium: { fontSize: 14, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, minWidth: 88 },
+  large:  { fontSize: 16, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, minWidth: 104 },
+};
+
+// Reference width used by PhotoLabels for its own scale calc. The
+// viewer clamps to 1x max (labels don't grow past their base size in
+// the on-screen preview), but the bake canvas is typically 800px+
+// while the base sizes above are tuned for a ~350px preview. Without
+// scaling up, chip + margin visually shrink relative to the photo in
+// the shared JPG — user complaint on 2026-07-21.
+const BAKE_REFERENCE_WIDTH = 350;
+
+// Derive PhotoLabel's numeric-size chunk (paddings/radius/minWidth
+// scale off the font size when the user picked a numeric labelSize
+// via the slider instead of one of the three named tiers).
+const numericSizeChunk = (n) => ({
+  fontSize: n,
+  paddingHorizontal: Math.max(6, Math.round(n * 0.7)),
+  paddingVertical: Math.max(2, Math.round(n * 0.35)),
+  borderRadius: Math.max(3, Math.round(n * 0.35)),
+  minWidth: Math.max(40, Math.round(n * 5)),
+});
+
+const bakeLabelBase = StyleSheet.create({
   box: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
     alignSelf: 'flex-start',
   },
   text: {
-    fontSize: 24,
     fontWeight: 'bold',
     letterSpacing: 1,
   },
 });
 
-function BakeLabel({ role, settings, photo, isCombinedHalf }) {
+function BakeLabel({ role, settings, photo, isCombinedHalf, renderW }) {
   // Use the bake-level global settings — per-photo overrides via
   // useScopedSettings(sourceBefore.id) produced inconsistent results
   // across multiple combined photos in the same report (some labels
@@ -90,15 +114,40 @@ function BakeLabel({ role, settings, photo, isCombinedHalf }) {
   // per-photo Studio drag overrides can come back as a refinement.
   const { t } = useTranslation();
   if (settings.showLabels === false) return null;
-  const marginH = settings.labelMarginHorizontal ?? 10;
-  const marginV = settings.labelMarginVertical ?? 10;
+
+  // Bake canvas is typically 800px on the long edge; the user's margin
+  // and label-size settings are tuned against a ~350px viewer preview.
+  // Without scaling, a 10px margin on 800px reads as 1.25% inset (vs
+  // 2.86% at 350px) — labels look flush with the edge in the shared
+  // JPG. Multiplying by (renderW / 350) restores the visual proportion
+  // the user set up in the viewer. No upper clamp: bigger canvas → bigger
+  // margin, matching what the eye expects.
+  const bakeScale = renderW && renderW > 0 ? renderW / BAKE_REFERENCE_WIDTH : 1;
+
+  const rawMarginH = settings.labelMarginHorizontal ?? 10;
+  const rawMarginV = settings.labelMarginVertical ?? 10;
+  const marginH = rawMarginH * bakeScale;
+  const marginV = rawMarginV * bakeScale;
+
+  // Derive the base label size the same way PhotoLabel does — numeric
+  // labelSize wins over the string tier so slider values are honored.
+  // The scaled result matches what the viewer would draw if it weren't
+  // clamped to 1x max scale.
+  const explicitNumeric = typeof settings.labelSize === 'number' ? settings.labelSize : null;
+  const rawSize = explicitNumeric != null
+    ? numericSizeChunk(explicitNumeric)
+    : (BAKE_SIZE_MAP[settings.labelSize] || BAKE_SIZE_MAP.medium);
+  const size = {
+    fontSize: Math.max(8, rawSize.fontSize * bakeScale),
+    paddingHorizontal: Math.max(3, rawSize.paddingHorizontal * bakeScale),
+    paddingVertical: Math.max(1, rawSize.paddingVertical * bakeScale),
+    minWidth: Math.max(24, rawSize.minWidth * bakeScale),
+  };
 
   // Delegate position + offset picking to the same helpers PhotoLabels
   // uses in the on-screen viewer so the shared JPG lands the label in
   // the same spot the user sees. Picker honors per-photo overrides,
-  // landscape variants, and the single/combined cascade — the previous
-  // inline resolver did none of that, which is why shared photos landed
-  // in a different corner than the preview.
+  // landscape variants, and the single/combined cascade.
   const offset = role === 'after'
     ? pickAfterLabelOffset(settings, photo, isCombinedHalf)
     : pickBeforeLabelOffset(settings, photo, isCombinedHalf);
@@ -124,14 +173,20 @@ function BakeLabel({ role, settings, photo, isCombinedHalf }) {
   // renders as a full pill (borderRadius 999 collapses to a capsule
   // regardless of label width). 'square' keeps the legacy chip look.
   const isRounded = (settings.labelCornerStyle || 'rounded') !== 'square';
-  const borderRadius = isRounded ? 999 : 6;
+  const borderRadius = isRounded ? 999 : Math.max(2, rawSize.borderRadius * bakeScale);
+
+  const boxStyle = {
+    backgroundColor: bg,
+    borderRadius,
+    paddingHorizontal: size.paddingHorizontal,
+    paddingVertical: size.paddingVertical,
+    minWidth: size.minWidth,
+  };
+  const textStyle = { color: fg, fontSize: size.fontSize };
 
   // Non-freeform: use the SAME 9-position map PhotoLabel consumes
-  // (getLabelPositions with the user's margins baked in). The previous
-  // inline `cornerStyle` only covered 4 corners; anything else (e.g.
-  // right-middle, center-top) silently fell back to left-top in the
-  // bake. Spread the position style directly so the transform key
-  // (used for center positions to translate(-50%,-50%)) survives.
+  // (getLabelPositions with the user's margins baked in). Now with
+  // scaled margins so the visual inset matches the viewer.
   if (!useFreeform) {
     const positions = getLabelPositions(marginV, marginH);
     const posStyle = positions[positionKey] || positions['left-top'];
@@ -139,23 +194,19 @@ function BakeLabel({ role, settings, photo, isCombinedHalf }) {
     const { name: _n, horizontalAlign: _h, verticalAlign: _v, ...coords } = posStyle;
     return (
       <View
-        style={[bakeLabel.box, { position: 'absolute', ...coords }, { backgroundColor: bg, borderRadius }]}
+        style={[bakeLabelBase.box, { position: 'absolute', ...coords }, boxStyle]}
         pointerEvents="none"
       >
-        <Text style={[bakeLabel.text, { color: fg }]}>{text}</Text>
+        <Text style={[bakeLabelBase.text, textStyle]}>{text}</Text>
       </View>
     );
   }
 
   // Freeform: match PhotoLabels' LabelWithMargins exactly. Wrap in a
   // View inset by (marginH, marginV) on every edge; then place the
-  // label at (x*100%, y*100%) inside THAT inset with a translate(-x*100%,
-  // -y*100%) so offset {1,1} lands the label's right/bottom edge flush
-  // with the inset's right/bottom (i.e. marginH/V away from the photo
-  // frame). The previous implementation applied `marginHorizontal` /
-  // `marginVertical` to the absolute label directly, which does nothing
-  // in RN's abs-layout and put the label at 0/marginH from the RAW
-  // frame edge — visibly off vs. the viewer.
+  // label at (x*100%, y*100%) inside THAT inset with a translate so
+  // offset {1,1} lands the label's right/bottom edge marginH/V away
+  // from the photo frame.
   return (
     <View
       pointerEvents="none"
@@ -164,7 +215,7 @@ function BakeLabel({ role, settings, photo, isCombinedHalf }) {
       <View
         pointerEvents="none"
         style={[
-          bakeLabel.box,
+          bakeLabelBase.box,
           {
             position: 'absolute',
             left: `${offset.x * 100}%`,
@@ -173,12 +224,11 @@ function BakeLabel({ role, settings, photo, isCombinedHalf }) {
               { translateX: `${-offset.x * 100}%` },
               { translateY: `${-offset.y * 100}%` },
             ],
-            backgroundColor: bg,
-            borderRadius,
           },
+          boxStyle,
         ]}
       >
-        <Text style={[bakeLabel.text, { color: fg }]}>{text}</Text>
+        <Text style={[bakeLabelBase.text, textStyle]}>{text}</Text>
       </View>
     </View>
   );
@@ -375,6 +425,7 @@ function BakeJob({ photo, onComplete }) {
               settings={settings}
               photo={sourceBefore || photo}
               isCombinedHalf
+              renderW={layout === 'stack' ? renderW : renderW / 2}
             />
           </View>
           <View pointerEvents="none" style={layout === 'stack' ? halves.bottom : halves.right}>
@@ -383,11 +434,12 @@ function BakeJob({ photo, onComplete }) {
               settings={settings}
               photo={sourceAfter || photo}
               isCombinedHalf
+              renderW={layout === 'stack' ? renderW : renderW / 2}
             />
           </View>
         </>
       ) : (
-        <BakeLabel role={photo.mode || 'before'} settings={settings} photo={photo} />
+        <BakeLabel role={photo.mode || 'before'} settings={settings} photo={photo} renderW={renderW} />
       )}
       {/* Watermark — same gate Studio uses. */}
       {settings.showWatermark && <PhotoWatermark photo={photo} />}
@@ -438,7 +490,7 @@ const WATCHDOG_MS = 25000;
 // OTA bundle is actually running (vs. asking the user to read an
 // update ID). Bump the version literal each time you push so the log
 // is unambiguous.
-console.warn('[ChromeBaker] BUNDLE v10 — freeform label wraps in inset (matches viewer margins) + 9-position grid');
+console.warn('[ChromeBaker] BUNDLE v11 — label size + margin scale with renderW/350 (WYSIWYG margins across formats)');
 
 export default function GlobalBackgroundChromeBaker() {
   const [currentJob, setCurrentJob] = useState(null);
