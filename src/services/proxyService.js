@@ -646,13 +646,19 @@ class ProxyService {
   /**
    * Validate if a proxy session is still active and valid
    * @param {string} sessionId - Proxy session ID
-   * @returns {Promise<{valid: boolean, message?: string, error?: string}>}
+   * @param {string} [userId] - Optional stable user id (@user_id in
+   *   AsyncStorage). When passed, the proxy will attempt to rehydrate
+   *   an expired/missing session from `credentials:${userId}` and
+   *   return a fresh sessionId in the response — the client should
+   *   then persist the returned sessionId in place of the old one.
+   * @returns {Promise<{valid: boolean, sessionId?: string, rehydrated?: boolean, message?: string, error?: string}>}
    */
-  async validateSession(sessionId) {
+  async validateSession(sessionId, userId = null) {
     try {
-      console.log('[PROXY] Validating session:', sessionId);
+      console.log('[PROXY] Validating session:', sessionId, 'userId:', userId || 'none');
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/validate`, {
+      const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/validate${qs}`, {
         method: 'GET',
       });
 

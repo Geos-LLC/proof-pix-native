@@ -1208,17 +1208,34 @@ export function AdminProvider({ children }) {
       }
 
     try {
+      // Stable per-install user id. Passed to validateSession so the
+      // proxy can rehydrate an expired session from stored credentials
+      // (`credentials:${userId}` on the proxy side, 1-year TTL) without
+      // making the client re-collect a serverAuthCode via interactive
+      // Google sign-in. See proof-pix-proxy /api/admin/:sessionId/validate.
+      const rehydrateUserId = await AsyncStorage.getItem('@user_id');
+
       // If we already have a session ID, validate it first
       const existingId = proxySessionId || await AsyncStorage.getItem(STORAGE_KEYS.PROXY_SESSION_ID);
       if (existingId) {
         console.log('[ADMIN] Validating existing proxy session...');
         try {
-          const validation = await proxyService.validateSession(existingId);
+          const validation = await proxyService.validateSession(existingId, rehydrateUserId);
           if (validation && validation.valid) {
+            // Proxy may have minted a fresh session from stored
+            // credentials (validation.rehydrated=true) when the old
+            // sessionId's KV entry had been purged (7-day TTL expiry,
+            // KV wipe, migration orphan). Prefer the returned sessionId
+            // so subsequent calls use the live record.
+            const activeId = validation.sessionId || existingId;
+            if (validation.rehydrated) {
+              console.log('[ADMIN] Proxy rehydrated session from stored credentials — swapping local sessionId');
+              await AsyncStorage.setItem(STORAGE_KEYS.PROXY_SESSION_ID, activeId);
+            }
             console.log('[ADMIN] Existing proxy session is valid');
-            if (!proxySessionId) setProxySessionId(existingId);
-            await updateActiveAccount({ proxySessionId: existingId });
-            return { sessionId: existingId, success: true };
+            setProxySessionId(activeId);
+            await updateActiveAccount({ proxySessionId: activeId });
+            return { sessionId: activeId, success: true };
           }
           console.warn('[ADMIN] Existing proxy session is invalid/expired, clearing...');
         } catch (valErr) {
