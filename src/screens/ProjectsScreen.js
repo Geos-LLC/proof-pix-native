@@ -345,7 +345,11 @@ export default function ProjectsScreen({ navigation, route }) {
       setActiveProject(project.id);
       // If the FAB on HomeScreen routed us here, jump to the camera
       // right after create so the user lands on the capture surface.
-      // Otherwise keep the legacy Gallery jump.
+      // Otherwise return to Home — the main dashboard for the newly
+      // active project. Previously this landed on an empty Gallery
+      // (share-heavy layout with only a floating share FAB), which
+      // looked like a "share project" screen rather than the project
+      // home.
       if (navigateToCameraAfterCreateRef.current) {
         navigateToCameraAfterCreateRef.current = false;
         const firstRoomId = (getRooms() || [])[0]?.id;
@@ -354,7 +358,7 @@ export default function ProjectsScreen({ navigation, route }) {
           routes: [{ name: 'Camera', params: { mode: 'before', room: firstRoomId } }],
         });
       } else {
-        navigation.reset({ index: 0, routes: [{ name: 'Gallery' }] });
+        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
       }
     } catch (e) {
       Alert.alert(t('common.error'), e?.message || t('projects.createError'));

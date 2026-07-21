@@ -33,6 +33,7 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-spe
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePhotos } from '../context/PhotoContext';
 import { useSettings } from '../context/SettingsContext';
+import { useUiOverlayReporter } from '../components/uiOverlayState';
 import { useTheme } from '../hooks/useTheme';
 import { savePhotoToDevice } from '../services/storage';
 import { createAlbumName } from '../services/uploadService';
@@ -251,6 +252,7 @@ export default function CameraScreen({ route, navigation }) {
     userName,
     location,
   } = useSettings();
+  const reportUiOverlay = useUiOverlayReporter();
 
   const { canUse } = useFeaturePermissions();
 
@@ -3085,10 +3087,29 @@ export default function CameraScreen({ route, navigation }) {
             {
               text: 'OK',
               onPress: () => {
-                if (navigation.canGoBack()) {
-                  navigation.goBack();
-                } else {
-                  navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                // Force-hide the PersistentBottomNav for the couple of
+                // frames it takes iOS to unmount the Camera stack after
+                // navigation. Without this the nav pill flashes on top
+                // of the still-visible Camera view (route state flips
+                // to 'Home' the moment goBack/navigate runs, but the
+                // Camera doesn't unmount until the next tick).
+                reportUiOverlay(true);
+                try {
+                  const state = navigation.getState?.();
+                  const hasHome = state?.routes?.some?.((r) => r.name === 'Home');
+                  if (hasHome) {
+                    // Mirror the Done button: pop to the existing Home
+                    // frame instead of resetting. Avoids the "folders
+                    // un-scrolled, nav missing" glitch documented in
+                    // the Done handler.
+                    navigation.navigate('Home');
+                  } else if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else {
+                    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+                  }
+                } finally {
+                  setTimeout(() => reportUiOverlay(false), 400);
                 }
               }
             }
