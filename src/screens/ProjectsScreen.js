@@ -1011,6 +1011,10 @@ export default function ProjectsScreen({ navigation, route }) {
 
   const handleConfirmUpload = async () => {
     if (!projectToUpload) return;
+    // Capture the project reference for the AUTH_CODE_UNAVAILABLE retry
+    // path — `finally` clears projectToUpload state before the alert
+    // callback fires, so state-based re-lookup would find null.
+    const projectForRetry = projectToUpload;
     lastUploadedProjectIdRef.current = projectToUpload.id;
     try {
       setUploading(true);
@@ -1119,24 +1123,61 @@ export default function ProjectsScreen({ navigation, route }) {
 
         if (!sessionId) {
           setIsPreparingUpload(false);
-          // AUTH_CODE_UNAVAILABLE is the most common cause when the
-          // account looks connected in Settings but the silent Google
-          // OAuth refresh has been revoked (Google purges refresh
-          // tokens after 6 months of inactivity, on password change,
-          // on revoke, etc.). Reconnecting from Settings only re-runs
-          // the same silent refresh; the user needs to fully sign out
-          // then back in to get a new refresh token.
+          // AUTH_CODE_UNAVAILABLE fires when the silent Google OAuth
+          // refresh returns no serverAuthCode. The account shows as
+          // connected in Settings because the sign-in record persists,
+          // but the one-time serverAuthCode the proxy needs to build
+          // an admin session has already been consumed / expired /
+          // revoked. Only an INTERACTIVE re-sign-in produces a new
+          // serverAuthCode — the "Reconnect" button in Settings runs
+          // the same silent refresh and fails identically. So the
+          // primary action here is inline "Sign In with Google" which
+          // runs signInAsAdmin() (interactive), and on success re-opens
+          // the upload sheet with the project pre-selected so the user
+          // can immediately retry.
           const isAuthCodeGone = sessionErrorCode === 'AUTH_CODE_UNAVAILABLE';
-          const title = isAuthCodeGone
-            ? 'Google Sign-In Needed'
-            : 'Upload Session Error';
-          const message = isAuthCodeGone
-            ? 'Your Google authorization has expired. Please open Settings → Cloud sync, sign out of Google, then sign back in.'
-            : `Couldn't start the upload (${sessionErrorCode || 'no session'}). Please reconnect your Google account in Settings.`;
-          Alert.alert(title, message, [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
-          ]);
+          if (isAuthCodeGone) {
+            Alert.alert(
+              'Google Sign-In Needed',
+              'Your Google authorization expired. Sign in again to continue uploading.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Sign In with Google',
+                  onPress: async () => {
+                    try {
+                      const authMod = await import('../services/googleAuthService');
+                      const result = await authMod.default.signInAsAdmin();
+                      if (result?.success || result?.userInfo) {
+                        // Fresh serverAuthCode is now in AsyncStorage.
+                        // Force google=true because the AdminContext
+                        // isAuthenticated state may not have propagated
+                        // yet from the sign-in callback.
+                        setUploadDestinations({ google: true, dropbox: dropboxAuthService.isAuthenticated() });
+                        setSelectedUploadTypes({ before: true, after: true, combined: true });
+                        setProjectToUpload(projectForRetry);
+                        setUploadOptionsVisible(true);
+                      } else {
+                        Alert.alert('Sign-In Failed', result?.error || 'Please try again from Settings → Cloud sync.');
+                      }
+                    } catch (e) {
+                      console.error('[PROJECTS] Interactive Google re-auth failed:', e);
+                      Alert.alert('Sign-In Error', e?.message || 'Unknown error. Please try again from Settings.');
+                    }
+                  },
+                },
+              ],
+            );
+          } else {
+            Alert.alert(
+              'Upload Session Error',
+              `Couldn't start the upload (${sessionErrorCode || 'no session'}). Please reconnect your Google account in Settings.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
+              ],
+            );
+          }
           return;
         }
 
