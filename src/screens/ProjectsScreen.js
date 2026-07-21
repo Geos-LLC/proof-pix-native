@@ -1018,7 +1018,15 @@ export default function ProjectsScreen({ navigation, route }) {
       setShowCompletionModal(false);
       clearCompletedUploads();
       setIsPreparingUpload(true);
-      setShowUploadDetails(true);
+      // NOTE: setShowUploadDetails(true) intentionally moved to the
+      // success path — right before startBackgroundUpload — so the
+      // "Upload Status" modal only appears when an upload is actually
+      // starting. Previously it fired here at the top and stuck around
+      // if any downstream validation failed (no photos, no cloud
+      // connected, proxy session couldn't init), leaving the user
+      // staring at an empty modal that had to be dismissed by tapping
+      // through nothing. User report 2026-07-21: modal hung after
+      // "Session expired" alert dismissed.
 
       const sourcePhotos = getPhotosByProject(projectToUpload.id);
       const photosToUpload = [];
@@ -1074,7 +1082,6 @@ export default function ProjectsScreen({ navigation, route }) {
 
       if (!googleConnected && !dropboxConnected) {
         setIsPreparingUpload(false);
-        setShowUploadDetails(false);
         Alert.alert(
           t('gallery.noConnectionTitle', { defaultValue: 'No Cloud Connected' }),
           t('gallery.noConnectionMessage', { defaultValue: 'Please connect Google Drive or Dropbox in Settings before uploading.' }),
@@ -1089,19 +1096,44 @@ export default function ProjectsScreen({ navigation, route }) {
       if (googleConnected) {
         let sessionId = null;
         let effectiveFolderId = folderId;
+        // Capture the specific failure code from initializeProxySession
+        // so the alert can tell the user *why* (previously every failure
+        // mode surfaced as "session expired" even when the real cause was
+        // AUTH_CODE_UNAVAILABLE — user is signed in per isAuthenticated
+        // but the silent Google auth refresh failed, requiring a real
+        // sign-out/sign-in, not just reconnect).
+        let sessionErrorCode = null;
         try {
           const result = await initializeProxySession(folderId, accountType || 'google');
           if (result?.success && result?.sessionId) {
             sessionId = result.sessionId;
             effectiveFolderId = result.folderId || folderId;
+          } else if (result && result.error) {
+            sessionErrorCode = result.error;
+            console.warn('[PROJECTS] Proxy session init returned failure:', result.error);
           }
         } catch (e) {
+          sessionErrorCode = e?.message || 'UNKNOWN';
           console.error('[PROJECTS] Failed to init proxy session:', e);
         }
 
         if (!sessionId) {
           setIsPreparingUpload(false);
-          Alert.alert('Session Error', 'Your upload session has expired. Please reconnect your Google account in Settings.', [
+          // AUTH_CODE_UNAVAILABLE is the most common cause when the
+          // account looks connected in Settings but the silent Google
+          // OAuth refresh has been revoked (Google purges refresh
+          // tokens after 6 months of inactivity, on password change,
+          // on revoke, etc.). Reconnecting from Settings only re-runs
+          // the same silent refresh; the user needs to fully sign out
+          // then back in to get a new refresh token.
+          const isAuthCodeGone = sessionErrorCode === 'AUTH_CODE_UNAVAILABLE';
+          const title = isAuthCodeGone
+            ? 'Google Sign-In Needed'
+            : 'Upload Session Error';
+          const message = isAuthCodeGone
+            ? 'Your Google authorization has expired. Please open Settings → Cloud sync, sign out of Google, then sign back in.'
+            : `Couldn't start the upload (${sessionErrorCode || 'no session'}). Please reconnect your Google account in Settings.`;
+          Alert.alert(title, message, [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Go to Settings', onPress: () => navigation.navigate('Settings', { scrollToCloudSync: true }) },
           ]);
@@ -1109,6 +1141,10 @@ export default function ProjectsScreen({ navigation, route }) {
         }
 
         setIsPreparingUpload(false);
+        // Only reveal the Upload Status modal once we know we're
+        // actually starting an upload — see the comment at the top of
+        // this function.
+        setShowUploadDetails(true);
         startBackgroundUpload({
           items: photosToUpload,
           albumName,
@@ -1126,6 +1162,7 @@ export default function ProjectsScreen({ navigation, route }) {
 
       if (dropboxConnected) {
         setIsPreparingUpload(false);
+        setShowUploadDetails(true);
         startBackgroundUpload({
           items: photosToUpload,
           albumName,
@@ -1141,6 +1178,8 @@ export default function ProjectsScreen({ navigation, route }) {
     } catch (error) {
       console.error('[PROJECTS] Upload error:', error);
       setIsPreparingUpload(false);
+      // Only hide the details modal if we already opened it (Google or
+      // Dropbox success path). Defensive — extra hides are cheap.
       setShowUploadDetails(false);
       Alert.alert('Upload Error', 'Failed to upload photos. Please try again.');
     } finally {
