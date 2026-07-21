@@ -370,14 +370,32 @@ function BakeJob({ photo, onComplete }) {
   // 800 px is still plenty for a PDF/HTML report; the image is embedded
   // as a data URI so smaller is better for memory.
   const TARGET_SIDE = 800;
-  // Studio format wins over the bitmap's natural aspect: if the user
-  // picked a chip in Studio (photo.pairTemplate), the bake matches that
-  // frame so downstream share / report artifacts look identical to what
-  // Studio showed. Falls back to the bitmap aspect when no format is
-  // saved so pre-Studio photos still bake at their natural shape.
+  // Aspect chain mirrors EnlargedPhotoViewer.computeFrame exactly so
+  // the shared JPG matches what the user sees in the viewer:
+  //   pairTemplate → aspectRatio (with the viewer's `||` short-circuit
+  //   quirk — a string aspectRatio is truthy so it wins over
+  //   originalW/H but then fails isValidAspect and falls to the
+  //   final fallback) → originalW/H → bitmap dims from disk.
+  //
+  // The previous bake skipped straight to bitmapAspect when
+  // pairTemplate was unset, which produced a different composition
+  // than the viewer whenever aspectRatio / originalW/H disagreed with
+  // the on-disk combined bitmap. User report 2026-07-21: viewer
+  // showed 2:1 wide combined, shared JPG came out squarish.
+  //
+  // Only difference vs viewer: the final fallback is bitmapAspect
+  // (the on-disk bitmap dims are always known here). Viewer falls to
+  // screen aspect in the same slot; bake has no screen to reference.
+  const isValidAspect = (a) => typeof a === 'number' && isFinite(a) && a > 0.05 && a < 20;
   const bitmapAspect = w / h;
-  const formatAspect = FORMAT_ASPECTS[photo?.pairTemplate];
-  const targetAspect = formatAspect || bitmapAspect;
+  const formatAspect = photo?.pairTemplate && FORMAT_ASPECTS[photo.pairTemplate];
+  const rawNative = photo?.aspectRatio
+    || (photo?.originalWidth && photo?.originalHeight
+      ? photo.originalWidth / photo.originalHeight
+      : null);
+  const targetAspect = isValidAspect(formatAspect)
+    ? formatAspect
+    : (isValidAspect(rawNative) ? rawNative : bitmapAspect);
   let renderW, renderH;
   if (targetAspect >= 1) {
     renderW = TARGET_SIDE;
@@ -490,7 +508,7 @@ const WATCHDOG_MS = 25000;
 // OTA bundle is actually running (vs. asking the user to read an
 // update ID). Bump the version literal each time you push so the log
 // is unambiguous.
-console.warn('[ChromeBaker] BUNDLE v11 — label size + margin scale with renderW/350 (WYSIWYG margins across formats)');
+console.warn('[ChromeBaker] BUNDLE v12 — aspect chain mirrors EnlargedPhotoViewer (pairTemplate → aspectRatio → originalW/H → bitmap)');
 
 export default function GlobalBackgroundChromeBaker() {
   const [currentJob, setCurrentJob] = useState(null);

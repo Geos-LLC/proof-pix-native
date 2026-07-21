@@ -188,10 +188,18 @@ class ChromeBakeService {
     const settingsHash = ChromeBakeService.labelSettingsHash(labelSettings);
     // pairTemplate is part of the cache key so a Studio format change
     // (e.g. square → 16:9) misses the cache and re-bakes the photo at
-    // the new aspect — otherwise the share / report keeps returning the
-    // previous format's baked JPG.
+    // the new aspect. As of the viewer-aspect-mirror fix, the bake's
+    // targetAspect can also change based on photo.aspectRatio /
+    // originalWidth/originalHeight when pairTemplate is unset — include
+    // those so metadata edits force a re-bake instead of serving the
+    // stale composition.
     const formatKey = photo.pairTemplate || 'auto';
-    const cacheKey = `${photo.id}_${settingsHash}_${formatKey}`;
+    const aspectKey = [
+      photo.aspectRatio ?? '',
+      photo.originalWidth ?? '',
+      photo.originalHeight ?? '',
+    ].join(':');
+    const cacheKey = `${photo.id}_${settingsHash}_${formatKey}_${aspectKey}`;
 
     return new Promise((resolve) => {
       // Cache hit short-circuits the entire queue/render path.
