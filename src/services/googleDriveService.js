@@ -246,9 +246,17 @@ class GoogleDriveService {
    * @param {string} mimeType - MIME type (default: image/jpeg)
    * @returns {Promise<Object>} Upload result with fileId
    */
-  async uploadFileFromUri(fileUri, filename, parentFolderId, mimeType = 'image/jpeg') {
+  async uploadFileFromUri(fileUri, filename, parentFolderId, mimeType = 'image/jpeg', abortSignal = null) {
     try {
       console.log('[GoogleDrive] 📤 Starting direct upload from URI:', { filename, fileUri: fileUri?.substring(0, 80) });
+      // Bail early if the batch was already cancelled before this
+      // photo's fetch even started. Also throw during long base64 reads
+      // by re-checking after the read completes below.
+      if (abortSignal?.aborted) {
+        const err = new Error('Upload aborted before fetch');
+        err.name = 'AbortError';
+        throw err;
+      }
 
       // Verify file exists before attempting to read
       const fileInfo = await FileSystem.getInfoAsync(fileUri);
@@ -303,6 +311,16 @@ class GoogleDriveService {
       console.log('[GoogleDrive] 🚀 Uploading to Drive API...');
       const uploadUrl = `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
 
+      // Second abort check — the base64 read + Uint8Array build above
+      // can take seconds for a large photo, giving the user time to tap
+      // Cancel. Without this, an aborted upload would still fire the
+      // network request and finish silently.
+      if (abortSignal?.aborted) {
+        const err = new Error('Upload aborted before fetch');
+        err.name = 'AbortError';
+        throw err;
+      }
+
       const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
@@ -310,6 +328,10 @@ class GoogleDriveService {
           'Content-Type': `multipart/related; boundary=${boundary}`,
         },
         body: body,
+        // Native fetch honors AbortSignal on iOS and Android — the
+        // in-flight upload aborts immediately when the user taps
+        // Cancel on the Upload Status modal.
+        signal: abortSignal || undefined,
       });
 
       if (!response.ok) {

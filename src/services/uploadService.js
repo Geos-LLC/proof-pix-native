@@ -184,7 +184,8 @@ try {
           folderId, // For Dropbox, this is actually a folder path
           flat,
           sessionId,
-          accountType: 'dropbox'
+          accountType: 'dropbox',
+          abortSignal,
         });
       } else {
         // Direct Dropbox upload for admin (no team setup)
@@ -223,7 +224,8 @@ try {
       folderId,
       flat,
       sessionId,
-      accountType: 'google'
+      accountType: 'google',
+      abortSignal,
     });
   } catch (error) {
     const name = (error && error.name) || '';
@@ -264,8 +266,20 @@ async function uploadPhotoToDriveDirect({
   folderId,
   flat = false,
   sessionId,
-  accountType = 'google'
+  accountType = 'google',
+  // Thread the AbortSignal from backgroundUploadService.processUpload
+  // through so a Cancel tap on the Upload Status modal actually stops
+  // the in-flight fetch instead of letting it complete silently.
+  abortSignal = null,
 }) {
+  // Fail fast if the user tapped Cancel before we even started reading
+  // the file — cheaper than letting the download+base64 chain run to
+  // completion just to discard the result.
+  if (abortSignal?.aborted) {
+    const err = new Error('Upload cancelled');
+    err.name = 'AbortError';
+    throw err;
+  }
   console.log('[UPLOAD_DIRECT] 🚀 uploadPhotoToDriveDirect called');
   console.log('[UPLOAD_DIRECT] 📄 Filename:', filename);
   console.log('[UPLOAD_DIRECT] 🎯 Account type:', accountType);
@@ -328,7 +342,7 @@ async function uploadPhotoToDriveDirect({
 
           console.log('[UPLOAD] 📤 Uploading directly from file URI (no compression, no Vercel limit)...');
           console.log('[UPLOAD] Source URI:', sourceUri?.substring(0, 80));
-          const result = await googleDriveService.uploadFileFromUri(sourceUri, filename, targetFolderId);
+          const result = await googleDriveService.uploadFileFromUri(sourceUri, filename, targetFolderId, 'image/jpeg', abortSignal);
 
           console.log('[UPLOAD] ✅ Direct upload successful:', result.fileId);
 
