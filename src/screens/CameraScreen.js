@@ -2543,18 +2543,41 @@ export default function CameraScreen({ route, navigation }) {
       logAfterPhotoCompleted(activeProjectId, timeSinceBefore);
       onAfterPhotoCompleted(beforePhotoId).catch(() => {}); // cancel job reminder (non-blocking)
 
-      // Sequential auto-advance: next Before in the CURRENT ROOM's
-      // capture order, regardless of pair state. "Unpaired-first" used
-      // to skip Set 4 → Set 6 if Set 4 already had an After from a
-      // previous session — surprising when the user just expects
-      // Set N → Set N+1. The modal fires only when the just-captured
-      // set is the last one in the row (no nextSequential).
+      // Mark this set as visited in the current After-mode session.
+      // Drives both the cross-room advance below and the "already
+      // walked every set" popup gate so re-shoot passes on a fully
+      // paired project don't fire the modal on the very first frame.
+      visitedAfterBeforeIdsRef.current.add(beforePhotoId);
+
+      // Sequential auto-advance across the WHOLE PROJECT. First try
+      // the next un-visited Before in the CURRENT ROOM's capture
+      // order (preserves Set N → Set N+1 within a room). If the row
+      // is done, fall through to the next un-visited Before in any
+      // other room so a one-set room (Kitchen with a single Before)
+      // doesn't fire the "All Photos Taken" modal while Bathroom /
+      // LivingRoom still have unshot Afters. The modal only fires
+      // once every Before in the project has been visited this
+      // session.
       const roomBefores = getBeforePhotos(activeBeforePhoto.room) || [];
       const currentRoomIdx = roomBefores.findIndex((b) => b.id === beforePhotoId);
-      const nextSequential = currentRoomIdx >= 0 && currentRoomIdx < roomBefores.length - 1
-        ? roomBefores[currentRoomIdx + 1]
-        : null;
-      const allPhotosPaired = !nextSequential;
+      let nextTarget = null;
+      for (let i = currentRoomIdx + 1; i < roomBefores.length; i++) {
+        if (!visitedAfterBeforeIdsRef.current.has(roomBefores[i].id)) {
+          nextTarget = roomBefores[i];
+          break;
+        }
+      }
+      if (!nextTarget) {
+        const projectBefores = photos.filter(
+          (p) => p.mode === PHOTO_MODES.BEFORE
+            && p.room !== activeBeforePhoto.room
+            && (activeProjectId ? p.projectId === activeProjectId : true)
+        );
+        nextTarget = projectBefores.find(
+          (b) => !visitedAfterBeforeIdsRef.current.has(b.id)
+        ) || null;
+      }
+      const allPhotosPaired = !nextTarget;
 
       // Mark that we're processing after photo (for visual feedback)
       // Button is now active, but we show different visual state to indicate background processing
@@ -3068,10 +3091,15 @@ export default function CameraScreen({ route, navigation }) {
           ]
         );
       } else {
-        // Auto-advance to the next sequential Before in this room.
-        // The strip-init useEffect re-fires on selectedBeforePhoto?.id
-        // change and lands the strip on the new set's last item.
-        setSelectedBeforePhoto(nextSequential);
+        // Auto-advance to the next un-visited Before. When it lives
+        // in a different room, switch the room too so the strip and
+        // room indicator follow. The strip-init useEffect re-fires
+        // on selectedBeforePhoto?.id and lands the strip on the new
+        // set's last item.
+        if (nextTarget.room && nextTarget.room !== activeBeforePhoto.room) {
+          setRoom(nextTarget.room);
+        }
+        setSelectedBeforePhoto(nextTarget);
       }
       console.log('[DEBUG] [OK] handleAfterPhoto completed');
     } catch (error) {
