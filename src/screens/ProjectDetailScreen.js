@@ -3974,6 +3974,34 @@ export default function ProjectDetailScreen({ route, navigation }) {
               <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
             </TouchableOpacity>
 
+            {/* Upload Photos to Cloud — mirrors the "Upload" action
+                in the project's 3-dot menu on the Projects list. Routes
+                to Projects with `openUploadForProjectId` so it reuses
+                the existing Upload Photos bottom sheet + auth + folder
+                logic instead of duplicating ~140 lines of upload state
+                here on the detail screen. */}
+            <TouchableOpacity
+              style={[shareTabStyles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={() => {
+                if (!project?.id) return;
+                navigation.navigate('Projects', { openUploadForProjectId: project.id });
+              }}
+              activeOpacity={0.85}
+            >
+              <View style={[shareTabStyles.actionIconWrap, { backgroundColor: COLORS.PRIMARY }]}>
+                <Ionicons name="cloud-upload-outline" size={26} color="#000" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[shareTabStyles.actionTitle, { color: theme.textPrimary }]}>
+                  {t('projectDetail.uploadPhotosTitle', { defaultValue: 'Upload Photos to Cloud' })}
+                </Text>
+                <Text style={[shareTabStyles.actionSubtitle, { color: theme.textSecondary }]}>
+                  {t('projectDetail.uploadPhotosSubtitle', { defaultValue: 'Send this project to Google Drive or Dropbox' })}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+            </TouchableOpacity>
+
             {project?.crmJobId && project?.crmProvider && (
               <TouchableOpacity
                 style={[shareTabStyles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: crmBulkUploading ? 0.6 : 1 }]}

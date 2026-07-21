@@ -225,6 +225,23 @@ export default function ProjectsScreen({ navigation, route }) {
     }
   }, [route?.params?.openNewProject, route?.params?.navigateToCameraAfter, navigation]);
 
+  // Route-param auto-open: ProjectDetail's Share tab sends us here with
+  // `{ openUploadForProjectId: <id> }` when the user taps the "Upload
+  // Photos to Cloud" card. We look up the project and reuse the same
+  // handleUploadProject entry point the projects-list action sheet
+  // uses — user lands on Projects with the sheet already open, no code
+  // duplication vs. porting the whole upload flow into ProjectDetail.
+  // Clear the param after consuming so re-entering Projects doesn't
+  // re-open the sheet.
+  useEffect(() => {
+    const params = route?.params || {};
+    const id = params.openUploadForProjectId;
+    if (!id) return;
+    const project = projects.find((p) => p.id === id);
+    if (project) handleUploadProject(project);
+    try { navigation.setParams({ openUploadForProjectId: undefined }); } catch {}
+  }, [route?.params?.openUploadForProjectId, projects, navigation]);
+
   // Whenever the modal opens, seed the name with the "Project N"
   // default. If the user has the "always use current location"
   // checkbox on, kick off a silent location fill — that effect

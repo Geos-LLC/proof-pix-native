@@ -181,6 +181,8 @@
     "shareReportEmpty": "Build a polished PDF report from this project",
     "sharePhotosTitle": "Share Project Photos",
     "sharePhotosSubtitle": "Pick photos from the gallery, then send as Files, ZIP, PDF, or a Drive/Dropbox link",
+    "uploadPhotosTitle": "Upload Photos to Cloud",
+    "uploadPhotosSubtitle": "Send this project to Google Drive or Dropbox",
     "openDriveFolderTitle": "Open Google Drive Folder",
     "openDriveFolderSubtitle": "Jump to this project's photos on Drive",
     "openDriveFolderResolving": "Opening Google Drive…",
