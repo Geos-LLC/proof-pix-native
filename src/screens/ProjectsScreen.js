@@ -1038,19 +1038,21 @@ export default function ProjectsScreen({ navigation, route }) {
       console.log('[PROJECTS_UPLOAD] Selected types:', JSON.stringify(selectedUploadTypes));
       console.log('[PROJECTS_UPLOAD] Source photos in project:', sourcePhotos.length, 'modes:', sourcePhotos.map(p => p.mode));
 
+      // NOTE: `flat: true` is forced at both startBackgroundUpload call
+      // sites below, so the per-photo `flatOverride` wrapping that used
+      // to gate before/after/combined into their own subfolders is
+      // now dead — every photo goes to the project album root. User
+      // request 2026-07-21: "remove folders before after and combined
+      // - allow all the photos are upload under the project name".
       if (selectedUploadTypes.before) {
         const beforePhotos = sourcePhotos.filter(p => p.mode === 'before' && p.uri);
         console.log('[PROJECTS_UPLOAD] Before photos found:', beforePhotos.length);
-        beforePhotos.forEach(p => photosToUpload.push(
-          useFolderStructure && !enabledFolders.before ? { ...p, flatOverride: true } : p
-        ));
+        beforePhotos.forEach(p => photosToUpload.push(p));
       }
       if (selectedUploadTypes.after) {
         const afterPhotos = sourcePhotos.filter(p => p.mode === 'after' && p.uri);
         console.log('[PROJECTS_UPLOAD] After photos found:', afterPhotos.length);
-        afterPhotos.forEach(p => photosToUpload.push(
-          useFolderStructure && !enabledFolders.after ? { ...p, flatOverride: true } : p
-        ));
+        afterPhotos.forEach(p => photosToUpload.push(p));
       }
 
       // Add combined photos directly from PhotoContext (already generated at capture time)
@@ -1064,9 +1066,7 @@ export default function ProjectsScreen({ navigation, route }) {
           const combinedPhoto = photos.find(p => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === beforePhoto.id);
           console.log('[PROJECTS_UPLOAD] Before photo', beforePhoto.id, '→ combined:', combinedPhoto ? combinedPhoto.id : 'NOT FOUND');
           if (combinedPhoto) {
-            photosToUpload.push(
-              useFolderStructure && !enabledFolders.combined ? { ...combinedPhoto, flatOverride: true } : combinedPhoto
-            );
+            photosToUpload.push(combinedPhoto);
           }
         }
       }
@@ -1191,7 +1191,7 @@ export default function ProjectsScreen({ navigation, route }) {
           albumName,
           location: location || '',
           userName: userName || 'User',
-          flat: !useFolderStructure,
+          flat: true, // Always upload flat under the project album — no before/after/combined subfolders (user request 2026-07-21).
           config: {
             folderId: effectiveFolderId,
             sessionId,
@@ -1209,7 +1209,7 @@ export default function ProjectsScreen({ navigation, route }) {
           albumName,
           location: location || '',
           userName: userName || 'User',
-          flat: !useFolderStructure,
+          flat: true, // Always upload flat under the project album — no before/after/combined subfolders (user request 2026-07-21).
           config: {
             accountType: 'dropbox',
           },
