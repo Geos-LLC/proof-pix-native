@@ -1120,15 +1120,28 @@ export default function ProjectDetailScreen({ route, navigation }) {
       // ensureLabelForPhoto path (labels only) so users who want raw
       // captures aren't forced into the heavier bake.
       if (shareWithOverlays) {
-        for (let i = 0; i < sharePhotos.length; i++) {
-          try {
-            const photo = sharePhotos[i];
+        setShareStatus(`Applying overlays (0/${sharePhotos.length})...`);
+        // Enqueue every bake at once so chromeBakeService reports the
+        // real N pending — GlobalBakeProgressBanner reads
+        // service.getJobs() and shows "X of N" progress. The baker
+        // still processes serially (single BakeJob mount), so total
+        // wall time is the same as the previous for-await loop; only
+        // the queue depth changes. Cached photos short-circuit and
+        // resolve without pushing to the queue.
+        const bakedResults = await Promise.all(
+          sharePhotos.map((photo) => {
             const fullPhoto = source.find((p) => p.id === photo.id) || photo;
-            setShareStatus(`Applying overlays (${i + 1}/${sharePhotos.length})...`);
-            const bakedUri = await chromeBakeService.bakeChrome(fullPhoto, reportLabelSettings);
-            if (bakedUri && bakedUri !== photo.uri) sharePhotos[i] = { ...photo, uri: bakedUri };
-          } catch (e) {
-            console.warn('[ProjectDetail] Chrome bake failed for share photo:', e?.message);
+            return chromeBakeService.bakeChrome(fullPhoto, reportLabelSettings)
+              .catch((e) => {
+                console.warn('[ProjectDetail] Chrome bake failed for share photo:', e?.message);
+                return null;
+              });
+          })
+        );
+        for (let i = 0; i < sharePhotos.length; i++) {
+          const bakedUri = bakedResults[i];
+          if (bakedUri && bakedUri !== sharePhotos[i].uri) {
+            sharePhotos[i] = { ...sharePhotos[i], uri: bakedUri };
           }
         }
       } else if (showLabels) {

@@ -1300,7 +1300,9 @@
     "sharePhoto": "Share photo",
     "advancedFormatsTitle": "Paid feature",
     "advancedFormatsMessage": "Advanced templates are available on the Pro plan. Upgrade to unlock all formats and side-by-side layouts.",
-    "upgradeCTA": "Upgrade to Pro"
+    "upgradeCTA": "Upgrade to Pro",
+    "preparingPhoto": "Preparing photo…",
+    "preparingPhotos": "Preparing {{current}} of {{total}} photos…"
   },
   "photoSetPreview": {
     "photosTitle": "Photos",

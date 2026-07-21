@@ -148,6 +148,7 @@ import PermissionsSetupScreen from './src/screens/PermissionsSetupScreen';
 import GlobalBackgroundLabelPreparation from './src/components/GlobalBackgroundLabelPreparation';
 import GlobalBackgroundCombinedPhotoCreator from './src/components/GlobalBackgroundCombinedPhotoCreator';
 import GlobalBackgroundChromeBaker from './src/components/GlobalBackgroundChromeBaker';
+import GlobalBakeProgressBanner from './src/components/GlobalBakeProgressBanner';
 import UploadIndicatorLine from './src/components/UploadIndicatorLine';
 import { useBackgroundUpload } from './src/hooks/useBackgroundUpload';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1304,6 +1305,11 @@ export default function App() {
               <GlobalBackgroundChromeBaker />
               {/* Global upload progress indicator - shows on ALL screens */}
               <GlobalUploadIndicator navigationRef={navigationRef} />
+              {/* Global bake progress banner — shows a non-blocking
+                  "Preparing X / N photos…" pill while chrome bakes
+                  are in flight (share flows). pointerEvents="none"
+                  so the user can keep using the app. */}
+              <GlobalBakeProgressBanner />
               {/* Trial Notification Modal — must render INSIDE
                   SettingsProvider so useTheme() sees the real theme
                   (falls back to lightTheme when outside → always
