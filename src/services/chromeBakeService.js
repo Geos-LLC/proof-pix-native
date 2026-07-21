@@ -151,6 +151,19 @@ class ChromeBakeService {
       // corner would not invalidate the previous single-photo bakes.
       settings.singleLabelPosition || '',
       off(settings.singleLabelOffset),
+      // Language + corner-style + landscape variants — the bake reads
+      // these directly since the label-render fix routes through the
+      // shared PhotoLabel logic. Without them in the hash, changing
+      // labelLanguage or the pill/square toggle would keep serving the
+      // stale English/square-corner bake from cache.
+      settings.labelLanguage || '',
+      settings.labelCornerStyle || '',
+      settings.beforeLabelPositionLandscape || '',
+      settings.afterLabelPositionLandscape || '',
+      settings.singleLabelPositionLandscape || '',
+      off(settings.beforeLabelOffsetLandscape),
+      off(settings.afterLabelOffsetLandscape),
+      off(settings.singleLabelOffsetLandscape),
     ];
     // djb2-ish hash → 8-char hex.
     let h = 5381;

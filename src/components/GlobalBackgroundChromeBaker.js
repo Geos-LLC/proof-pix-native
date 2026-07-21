@@ -27,6 +27,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { View, Image, Text, Dimensions, StyleSheet } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useTranslation } from 'react-i18next';
 import chromeBakeService from '../services/chromeBakeService';
 import PhotoLabels from './PhotoLabels';
 import PhotoWatermark from './PhotoWatermark';
@@ -40,6 +41,12 @@ import { useTheme } from '../hooks/useTheme';
 import { usePhotos } from '../context/PhotoContext';
 import { PHOTO_MODES } from '../constants/rooms';
 import { FORMAT_ASPECTS } from '../constants/formats';
+import {
+  pickBeforeLabelPosition,
+  pickAfterLabelPosition,
+  pickBeforeLabelOffset,
+  pickAfterLabelOffset,
+} from '../utils/labelPosition';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -102,7 +109,7 @@ const bakeLabel = StyleSheet.create({
   },
 });
 
-function BakeLabel({ role, settings, isCombinedHalf }) {
+function BakeLabel({ role, settings, photo, isCombinedHalf }) {
   // Use the bake-level global settings — per-photo overrides via
   // useScopedSettings(sourceBefore.id) produced inconsistent results
   // across multiple combined photos in the same report (some labels
@@ -110,29 +117,23 @@ function BakeLabel({ role, settings, isCombinedHalf }) {
   // override cascade happened to leave a color/font/visibility key
   // in an invisible state at bake time). Global-only is predictable;
   // per-photo Studio drag overrides can come back as a refinement.
+  const { t } = useTranslation();
   if (settings.showLabels === false) return null;
   const marginH = settings.labelMarginHorizontal ?? 10;
   const marginV = settings.labelMarginVertical ?? 10;
 
-  // Single photos draw from singleLabel* (configured independently
-  // from the combined halves). Combined halves stay on the legacy
-  // before/afterLabel* pair so the user's existing combined-photo
-  // positions still land where they did before this change.
-  let offset;
-  let positionKey;
-  if (isCombinedHalf) {
-    offset = role === 'before' ? settings.beforeLabelOffset : settings.afterLabelOffset;
-    positionKey = role === 'before'
-      ? (settings.beforeLabelPosition || 'left-top')
-      : (settings.afterLabelPosition || 'right-top');
-  } else {
-    const legacyOff = role === 'after' ? settings.afterLabelOffset : settings.beforeLabelOffset;
-    const legacyPos = role === 'after' ? settings.afterLabelPosition : settings.beforeLabelPosition;
-    offset = settings.singleLabelOffset || legacyOff;
-    positionKey = settings.singleLabelPosition
-      || legacyPos
-      || (role === 'after' ? 'right-top' : 'left-top');
-  }
+  // Delegate position + offset picking to the same helpers PhotoLabels
+  // uses in the on-screen viewer so the shared JPG lands the label in
+  // the same spot the user sees. Picker honors per-photo overrides,
+  // landscape variants, and the single/combined cascade — the previous
+  // inline resolver did none of that, which is why shared photos landed
+  // in a different corner than the preview.
+  const offset = role === 'after'
+    ? pickAfterLabelOffset(settings, photo, isCombinedHalf)
+    : pickBeforeLabelOffset(settings, photo, isCombinedHalf);
+  const positionKey = role === 'after'
+    ? pickAfterLabelPosition(settings, photo, isCombinedHalf)
+    : pickBeforeLabelPosition(settings, photo, isCombinedHalf);
 
   const bg = settings.labelBackgroundColor || '#FFD700';
   const fg = settings.labelTextColor || '#000000';
@@ -141,12 +142,24 @@ function BakeLabel({ role, settings, isCombinedHalf }) {
     ? freeformPositionStyle(offset, marginH, marginV)
     : { position: 'absolute', ...cornerStyle(positionKey, marginH, marginV) };
 
-  const text = role === 'after' ? 'AFTER'
-    : role === 'progress' ? 'PROGRESS'
-    : 'BEFORE';
+  // Translate the label using the user's chosen label language, mirroring
+  // PhotoLabel. Fall back to English on missing key so translators can
+  // ship incrementally without breaking the bake. labelLanguage defaults
+  // to 'en' in SettingsContext, so unset users keep English.
+  const labelKey = role === 'after' ? 'common.after'
+    : role === 'progress' ? 'common.progress'
+    : 'common.before';
+  const fallback = role === 'after' ? 'AFTER' : role === 'progress' ? 'PROGRESS' : 'BEFORE';
+  const text = t(labelKey, { lng: settings.labelLanguage || 'en', defaultValue: fallback });
+
+  // Honor the corner-style toggle. 'rounded' is the app default and
+  // renders as a full pill (borderRadius 999 collapses to a capsule
+  // regardless of label width). 'square' keeps the legacy chip look.
+  const isRounded = (settings.labelCornerStyle || 'rounded') !== 'square';
+  const borderRadius = isRounded ? 999 : 6;
 
   return (
-    <View style={[bakeLabel.box, positionStyle, { backgroundColor: bg }]} pointerEvents="none">
+    <View style={[bakeLabel.box, positionStyle, { backgroundColor: bg, borderRadius }]} pointerEvents="none">
       <Text style={[bakeLabel.text, { color: fg }]}>{text}</Text>
     </View>
   );
@@ -338,14 +351,24 @@ function BakeJob({ photo, onComplete }) {
       {isCombined ? (
         <>
           <View pointerEvents="none" style={layout === 'stack' ? halves.top : halves.left}>
-            <BakeLabel role="before" settings={settings} isCombinedHalf />
+            <BakeLabel
+              role="before"
+              settings={settings}
+              photo={sourceBefore || photo}
+              isCombinedHalf
+            />
           </View>
           <View pointerEvents="none" style={layout === 'stack' ? halves.bottom : halves.right}>
-            <BakeLabel role="after" settings={settings} isCombinedHalf />
+            <BakeLabel
+              role="after"
+              settings={settings}
+              photo={sourceAfter || photo}
+              isCombinedHalf
+            />
           </View>
         </>
       ) : (
-        <BakeLabel role={photo.mode || 'before'} settings={settings} />
+        <BakeLabel role={photo.mode || 'before'} settings={settings} photo={photo} />
       )}
       {/* Watermark — same gate Studio uses. */}
       {settings.showWatermark && <PhotoWatermark photo={photo} />}
@@ -396,7 +419,7 @@ const WATCHDOG_MS = 25000;
 // OTA bundle is actually running (vs. asking the user to read an
 // update ID). Bump the version literal each time you push so the log
 // is unambiguous.
-console.warn('[ChromeBaker] BUNDLE v8 — lazy-on-report + 90s/25s timeouts + log cleanup');
+console.warn('[ChromeBaker] BUNDLE v9 — bake labels use translated text + shared position picker + corner-style toggle');
 
 export default function GlobalBackgroundChromeBaker() {
   const [currentJob, setCurrentJob] = useState(null);
