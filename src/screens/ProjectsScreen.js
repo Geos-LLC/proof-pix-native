@@ -38,6 +38,7 @@ import UploadCompletionModal from '../components/UploadCompletionModal';
 import { LOCATIONS, getLocationName } from '../config/locations';
 import { createAlbumName, ensureLabelForPhoto } from '../services/uploadService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
+import { isTeamUploadEnabled } from '../config/teamUpload';
 import * as ExpoLocation from 'expo-location';
 import { logProjectCreated } from '../utils/analytics';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -169,7 +170,7 @@ export default function ProjectsScreen({ navigation, route }) {
     }
     return map;
   }, [photos]);
-  const { userMode, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType, connectedAccounts } = useAdmin();
+  const { userMode, teamInfo, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType, connectedAccounts } = useAdmin();
   const { exceedsLimit, canUse, effectivePlan } = useFeaturePermissions();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
   const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
@@ -1080,6 +1081,36 @@ export default function ProjectsScreen({ navigation, route }) {
       }
 
       const albumName = projectToUpload.name || createAlbumName(userName || 'User', new Date(), null, location);
+
+      // Slice A: team_member branch — routes uploads through the
+      // existing dormant team pipeline (backgroundUploadService.
+      // processTeamUpload). Gated by isTeamUploadEnabled which
+      // checks the master flag + admin-sessionId canary list. Team
+      // members don't have their own Google/Dropbox connected, so
+      // this must run before the connectivity check below; otherwise
+      // the "No Cloud Connected" alert would fire.
+      //
+      // Admin-storage guard (Slice A.5 pending): the client can't yet
+      // tell if the admin uses Google/Dropbox/iCloud. Canary is
+      // enabled per-sessionId, so we know out-of-band that canary
+      // admins are on Google Drive. Do NOT enable globally until
+      // getSessionInfo exposes accountType.
+      if (userMode === 'team_member' && isTeamUploadEnabled(teamInfo)) {
+        setIsPreparingUpload(false);
+        startBackgroundUpload({
+          uploadType: 'team',
+          teamInfo,
+          items: photosToUpload,
+          albumName,
+          location: location || '',
+          userName: userName || 'User',
+          flat: true, // Always upload flat under the project album — matches google/dropbox branches (user request 2026-07-21).
+          config: {
+            accountType: teamInfo?.accountType || 'google',
+          },
+        });
+        return;
+      }
 
       const googleConnected = uploadDestinations.google && isAuthenticated;
       const dropboxConnected = uploadDestinations.dropbox && dropboxAuthService.isAuthenticated();

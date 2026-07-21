@@ -283,6 +283,26 @@ class BackgroundUploadService {
   }
 
   async processTeamUpload(upload) {
+    // Defensive guard: processTeamUpload requires teamInfo at the top
+    // level of the queued object. Missing teamInfo means a caller
+    // mis-shaped the enqueue and would crash on the destructure below.
+    // Fail explicitly instead — makes the wiring bug visible during
+    // Slice A canary rather than a silent NPE.
+    if (!upload?.teamInfo?.sessionId || !upload?.teamInfo?.token) {
+      upload.status = 'failed';
+      upload.endTime = Date.now();
+      upload.error = 'Team upload missing session/token — check enqueue call.';
+      this.completedUploads.set(upload.id, upload);
+      this.activeUploads.delete(upload.id);
+      this.notifyListeners();
+      console.warn('[TEAM_UPLOAD] enqueue misshaped', {
+        has_teamInfo: !!upload?.teamInfo,
+        has_session: !!upload?.teamInfo?.sessionId,
+        has_token: !!upload?.teamInfo?.token,
+      });
+      return;
+    }
+
     // Check network connectivity before starting
     const isOnline = await checkNetworkConnectivity();
     if (!isOnline) {
@@ -294,6 +314,7 @@ class BackgroundUploadService {
       return;
     }
 
+    const batchT0 = Date.now();
     try {
       upload.status = 'uploading';
       upload.startTime = Date.now();
@@ -333,14 +354,14 @@ class BackgroundUploadService {
 
       // Use batch upload (same as Pro/Business/Enterprise tiers)
       const result = await uploadPhotoBatch(items, uploadOptions);
-      
+
       // Mark photos as uploaded in tracker (only successful ones)
       // Team members now support albums, so we can track uploads
       if (result.successful && result.successful.length > 0) {
         const successfulPhotos = result.successful.map(item => item.photo);
         await markPhotosAsUploaded(successfulPhotos, upload.albumName);
       }
-      
+
       upload.status = 'completed';
       upload.endTime = Date.now();
       upload.result = result;
@@ -348,6 +369,14 @@ class BackgroundUploadService {
       this.activeUploads.delete(upload.id);
       this.abortControllers.delete(upload.id);
       this.notifyListeners();
+
+      console.warn('[TEAM_UPLOAD] batch ok', {
+        upload_id: upload.id,
+        photos: items.length,
+        successful: result?.successful?.length || 0,
+        failed: result?.failed?.length || 0,
+        total_ms: Date.now() - batchT0,
+      });
 
     } catch (error) {
       upload.status = 'failed';
@@ -357,6 +386,13 @@ class BackgroundUploadService {
       this.activeUploads.delete(upload.id);
       this.abortControllers.delete(upload.id);
       this.notifyListeners();
+
+      console.warn('[TEAM_UPLOAD] batch fail', {
+        upload_id: upload.id,
+        photos: upload.items?.length || 0,
+        total_ms: Date.now() - batchT0,
+        msg: error?.message,
+      });
     }
   }
 

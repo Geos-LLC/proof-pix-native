@@ -474,6 +474,15 @@ export async function uploadPhotoAsTeamMember({
   cleanerName,
   flat = false,
 }) {
+  // Per-photo telemetry: original file size, base64 payload size (iOS
+  // path only), request duration, success. Emitted under
+  // [TEAM_UPLOAD] so FixPrompt patchConsoleWarn streams it to Loki
+  // without extra plumbing. Kept intentionally lightweight — no
+  // behavior change, just observability while the canary runs.
+  const t0 = Date.now();
+  let originalBytes = null;
+  let base64Bytes = null;
+  let transport = null;
   try {
     if (!sessionId || !token) {
       throw new Error('Missing session ID or invite token.');
@@ -482,7 +491,7 @@ export async function uploadPhotoAsTeamMember({
     // Determine upload method: Multipart (Android/Efficient) vs Base64 (Legacy/iOS)
     // Use multipart for Android to avoid 4.5MB serverless limit issues
     const useMultipart = Platform.OS === 'android' && !imageDataUrl.startsWith('data:');
-    
+
     let base64String = null;
     let uploadUri = null;
 
@@ -492,23 +501,34 @@ export async function uploadPhotoAsTeamMember({
        if (Platform.OS === 'android') {
           uploadUri = await compressImageIfNeeded(uploadUri);
        }
+       transport = 'multipart';
+       try {
+         const info = await FileSystem.getInfoAsync(uploadUri);
+         if (info?.size) originalBytes = info.size;
+       } catch {}
     } else {
        // Legacy Base64 Path
        if (imageDataUrl.startsWith('data:')) {
          base64String = imageDataUrl.split('base64,')[1];
        } else {
          let normalized = normalizeFileUri(imageDataUrl);
+         try {
+           const info = await FileSystem.getInfoAsync(normalized);
+           if (info?.size) originalBytes = info.size;
+         } catch {}
          // No compression needed here if using multipart, but if falling back to Base64 on Android we might need it
          // However, we are prioritizing multipart for Android now.
          const base64DataUrl = await fileUriToBase64(normalized);
-         base64String = base64DataUrl.includes('base64,') 
-           ? base64DataUrl.split('base64,')[1] 
+         base64String = base64DataUrl.includes('base64,')
+           ? base64DataUrl.split('base64,')[1]
            : base64DataUrl;
        }
+       transport = 'base64';
+       base64Bytes = base64String?.length || 0;
     }
 
     // Upload via proxy server with full upload structure (same as Pro/Business/Enterprise)
-    return await proxyService.uploadPhoto(sessionId, token, filename, base64String, uploadUri, {
+    const result = await proxyService.uploadPhoto(sessionId, token, filename, base64String, uploadUri, {
       albumName,
       room,
       type,
@@ -517,7 +537,29 @@ export async function uploadPhotoAsTeamMember({
       cleanerName,
       flat
     });
+    console.warn('[TEAM_UPLOAD] photo ok', {
+      platform: Platform.OS,
+      transport,
+      original_bytes: originalBytes,
+      base64_bytes: base64Bytes,
+      upload_ms: Date.now() - t0,
+      filename,
+      type,
+      format,
+    });
+    return result;
   } catch (error) {
+    console.warn('[TEAM_UPLOAD] photo fail', {
+      platform: Platform.OS,
+      transport,
+      original_bytes: originalBytes,
+      base64_bytes: base64Bytes,
+      upload_ms: Date.now() - t0,
+      filename,
+      type,
+      format,
+      msg: error?.message,
+    });
     throw error;
   }
 }

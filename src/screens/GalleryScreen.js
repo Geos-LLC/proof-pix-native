@@ -42,6 +42,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
 import { ensureLabelForPhoto } from '../services/labelService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
+import { isTeamUploadEnabled } from '../config/teamUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadCompletionModal from '../components/UploadCompletionModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
@@ -1138,6 +1139,33 @@ export default function GalleryScreen({ navigation, route }) {
 
       // Create album name
       const albumName = createAlbumName(userName || 'User', new Date(), null, location);
+
+      // Slice A: team_member branch — routes uploads through the
+      // existing dormant team pipeline. Gated by isTeamUploadEnabled
+      // (master flag + admin-sessionId canary list). Team members
+      // don't have their own Google/Dropbox connected, so this must
+      // run before the connectivity check below.
+      //
+      // Admin-storage guard (Slice A.5 pending): canary is enabled
+      // per-sessionId, so we know out-of-band that canary admins are
+      // on Google Drive. Do NOT enable globally until getSessionInfo
+      // exposes accountType.
+      if (userMode === 'team_member' && isTeamUploadEnabled(teamInfo)) {
+        setIsPreparingUpload(false);
+        startBackgroundUpload({
+          uploadType: 'team',
+          teamInfo,
+          items: photosToUpload,
+          albumName,
+          location: location || '',
+          userName: userName || 'User',
+          flat: true, // Always upload flat under the project album — matches google/dropbox branches (user request 2026-07-21).
+          config: {
+            accountType: teamInfo?.accountType || 'google',
+          },
+        });
+        return;
+      }
 
       // Upload to selected destinations
       const googleConnected = uploadDestinations.google && isAuthenticated;
