@@ -2349,21 +2349,28 @@ export default function ProjectsScreen({ navigation, route }) {
         <TouchableWithoutFeedback onPress={() => setUploadOptionsVisible(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
-              <View style={styles.shareModalContent}>
+              {/* Sheet — inline theme overrides so the sheet reads on
+                  both light and dark. Module-scope `styles` (line ~2989)
+                  hardcodes white bg / dark text and MUST NOT reference
+                  theme.X directly (theme is undefined at module load,
+                  crash → memory feedback_settingsscreen_module_scope).
+                  The overrides land as later entries in the style array
+                  so they take precedence. */}
+              <View style={[styles.shareModalContent, { backgroundColor: theme.surfaceElevated }]}>
                 {/* Grabber */}
                 <View style={styles.grabberContainer}>
-                  <View style={styles.modalGrabber} />
+                  <View style={[styles.modalGrabber, { backgroundColor: theme.borderStrong }]} />
                 </View>
 
                 {/* Header */}
                 <View style={styles.shareModalHeader}>
                   <TouchableOpacity
                     onPress={() => setUploadOptionsVisible(false)}
-                    style={styles.shareCloseButton}
+                    style={[styles.shareCloseButton, { backgroundColor: theme.surface }]}
                   >
-                    <Ionicons name="close" size={20} color="#999999" />
+                    <Ionicons name="close" size={20} color={theme.textMuted} />
                   </TouchableOpacity>
-                  <Text style={styles.shareModalTitle}>Upload Photos</Text>
+                  <Text style={[styles.shareModalTitle, { color: theme.textPrimary }]}>Upload Photos</Text>
                 </View>
 
                 <ScrollView
@@ -2372,69 +2379,69 @@ export default function ProjectsScreen({ navigation, route }) {
                   showsVerticalScrollIndicator={false}
                 >
                   {/* Photo Types Section */}
-                  <Text style={styles.shareSectionLabel}>Photo types to upload</Text>
+                  <Text style={[styles.shareSectionLabel, { color: theme.textSecondary }]}>Photo types to upload</Text>
                   <View style={styles.shareTypeButtons}>
                     <TouchableOpacity
-                      style={[styles.shareTypeButton, selectedUploadTypes.before && styles.shareTypeButtonActive]}
+                      style={[styles.shareTypeButton, { borderColor: theme.border }, selectedUploadTypes.before && styles.shareTypeButtonActive]}
                       onPress={() => setSelectedUploadTypes(prev => ({ ...prev, before: !prev.before }))}
                     >
-                      <Text style={[styles.shareTypeButtonText, selectedUploadTypes.before && styles.shareTypeButtonTextActive]}>
+                      <Text style={[styles.shareTypeButtonText, { color: selectedUploadTypes.before ? '#000' : theme.textPrimary }]}>
                         Before
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.shareTypeButton, selectedUploadTypes.after && styles.shareTypeButtonActive]}
+                      style={[styles.shareTypeButton, { borderColor: theme.border }, selectedUploadTypes.after && styles.shareTypeButtonActive]}
                       onPress={() => setSelectedUploadTypes(prev => ({ ...prev, after: !prev.after }))}
                     >
-                      <Text style={[styles.shareTypeButtonText, selectedUploadTypes.after && styles.shareTypeButtonTextActive]}>
+                      <Text style={[styles.shareTypeButtonText, { color: selectedUploadTypes.after ? '#000' : theme.textPrimary }]}>
                         After
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.shareTypeButton, selectedUploadTypes.combined && styles.shareTypeButtonActive]}
+                      style={[styles.shareTypeButton, { borderColor: theme.border }, selectedUploadTypes.combined && styles.shareTypeButtonActive]}
                       onPress={() => setSelectedUploadTypes(prev => ({ ...prev, combined: !prev.combined }))}
                     >
-                      <Text style={[styles.shareTypeButtonText, selectedUploadTypes.combined && styles.shareTypeButtonTextActive]}>
+                      <Text style={[styles.shareTypeButtonText, { color: selectedUploadTypes.combined ? '#000' : theme.textPrimary }]}>
                         Combined
                       </Text>
                     </TouchableOpacity>
                   </View>
 
                   {/* Divider */}
-                  <View style={styles.shareDivider} />
+                  <View style={[styles.shareDivider, { backgroundColor: theme.divider, opacity: 1 }]} />
 
                   {/* Upload Destinations */}
-                  <Text style={styles.shareSectionLabel}>Upload to</Text>
+                  <Text style={[styles.shareSectionLabel, { color: theme.textSecondary }]}>Upload to</Text>
 
                   <TouchableOpacity
-                    style={[styles.uploadDestRow, uploadDestinations.google && styles.uploadDestRowActive]}
+                    style={[styles.uploadDestRow, { backgroundColor: theme.surface }, uploadDestinations.google && { backgroundColor: theme.surfaceAccent, borderWidth: 1, borderColor: theme.accent }]}
                     onPress={() => setUploadDestinations(prev => ({ ...prev, google: !prev.google }))}
                   >
-                    <Ionicons name="logo-google" size={20} color={uploadDestinations.google ? '#000' : '#999'} />
-                    <Text style={[styles.uploadDestText, uploadDestinations.google && styles.uploadDestTextActive]}>
+                    <Ionicons name="logo-google" size={20} color={uploadDestinations.google ? theme.accent : theme.textMuted} />
+                    <Text style={[styles.uploadDestText, { color: uploadDestinations.google ? theme.textPrimary : theme.textMuted }]}>
                       Google Drive
                     </Text>
                     {!isAuthenticated && (
                       <Text style={styles.uploadDestHint}>Not connected</Text>
                     )}
                     {uploadDestinations.google && (
-                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                      <Ionicons name="checkmark-circle" size={22} color={theme.accent} style={{ marginLeft: 'auto' }} />
                     )}
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.uploadDestRow, uploadDestinations.dropbox && styles.uploadDestRowActive]}
+                    style={[styles.uploadDestRow, { backgroundColor: theme.surface }, uploadDestinations.dropbox && { backgroundColor: theme.surfaceAccent, borderWidth: 1, borderColor: theme.accent }]}
                     onPress={() => setUploadDestinations(prev => ({ ...prev, dropbox: !prev.dropbox }))}
                   >
-                    <Ionicons name="cloud-outline" size={20} color={uploadDestinations.dropbox ? '#000' : '#999'} />
-                    <Text style={[styles.uploadDestText, uploadDestinations.dropbox && styles.uploadDestTextActive]}>
+                    <Ionicons name="cloud-outline" size={20} color={uploadDestinations.dropbox ? theme.accent : theme.textMuted} />
+                    <Text style={[styles.uploadDestText, { color: uploadDestinations.dropbox ? theme.textPrimary : theme.textMuted }]}>
                       Dropbox
                     </Text>
                     {!dropboxAuthService.isAuthenticated() && (
                       <Text style={styles.uploadDestHint}>Not connected</Text>
                     )}
                     {uploadDestinations.dropbox && (
-                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                      <Ionicons name="checkmark-circle" size={22} color={theme.accent} style={{ marginLeft: 'auto' }} />
                     )}
                   </TouchableOpacity>
                 </ScrollView>
@@ -2442,11 +2449,11 @@ export default function ProjectsScreen({ navigation, route }) {
                 {/* Upload Now Button */}
                 <View style={[styles.shareButtonContainer, { paddingBottom: Math.max(34, insets.bottom + 16) }]}>
                   <TouchableOpacity
-                    style={[styles.shareNowButton, uploading && { opacity: 0.6 }]}
+                    style={[styles.shareNowButton, { backgroundColor: theme.accent }, uploading && { opacity: 0.6 }]}
                     onPress={handleConfirmUpload}
                     disabled={uploading}
                   >
-                    <Text style={styles.shareNowButtonText}>{uploading ? 'Uploading...' : 'Upload Now'}</Text>
+                    <Text style={[styles.shareNowButtonText, { color: '#000' }]}>{uploading ? 'Uploading...' : 'Upload Now'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>

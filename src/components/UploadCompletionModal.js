@@ -114,7 +114,7 @@ const UploadCompletionModal = ({ visible, completedUploads, onClose, onClearComp
             {/* Close Button - Top Left */}
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
               <View style={styles.closeButtonCircle}>
-                <Ionicons name="close" size={20} color="#666666" />
+                <Ionicons name="close" size={20} color={theme.textMuted} />
               </View>
             </TouchableOpacity>
             
@@ -260,7 +260,7 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   message: {
     fontSize: 16,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 22,
@@ -288,12 +288,12 @@ const makeStyles = (theme) => StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginBottom: 8,
   },
   sectionText: {
     fontSize: 12,
-    color: COLORS.GRAY,
+    color: theme.textSecondary,
     lineHeight: 16,
   },
   footer: {
