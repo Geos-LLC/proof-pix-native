@@ -811,10 +811,24 @@ export default function ProjectDetailScreen({ route, navigation }) {
       }
       await openUrl(albumId);
     } catch (e) {
-      console.warn('[ProjectDetail] open drive folder failed:', e?.message);
+      // console.error routes through FixPrompt → Loki (console.warn does
+      // not), so failed opens actually show up in {service_name="proofpix-native"}.
+      console.error('[ProjectDetail] open drive folder failed:', e?.message, e?.stack);
+      const reason = e?.message || 'unknown';
+      // Map internal throw codes to human-readable copy; unknown errors
+      // fall through to the raw message so the user has enough context
+      // to describe the problem (previously they only saw "Could not
+      // open the Drive folder." with no reason).
+      const detail = reason === 'no-root'
+        ? 'ProofPix folder not found on Drive and could not be created.'
+        : reason === 'no-album'
+        ? 'Project folder not found on Drive and could not be created.'
+        : reason === 'cannot-open'
+        ? 'The Google Drive app or web link could not be opened on this device.'
+        : reason;
       Alert.alert(
         t('common.error', { defaultValue: 'Error' }),
-        t('projectDetail.openDriveFolderError', { defaultValue: 'Could not open the Drive folder.' }),
+        `${t('projectDetail.openDriveFolderError', { defaultValue: 'Could not open the Drive folder.' })}\n\n${detail}`,
       );
     } finally {
       setDriveOpening(false);
