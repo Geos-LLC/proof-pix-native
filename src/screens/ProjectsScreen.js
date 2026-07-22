@@ -1623,9 +1623,24 @@ export default function ProjectsScreen({ navigation, route }) {
                     ]}
                   >
                     <View style={styles.cardRow}>
-                      <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
-                        <Ionicons name="folder-outline" size={26} color={theme.textMuted} />
-                      </View>
+                      {/* Slice C: latest-photo thumbnail (Drive-signed
+                          URL from the proxy). Falls back to the
+                          folder icon when the project has no uploads
+                          yet OR when the proxy couldn't fetch a
+                          thumbnail (auth failed, folder empty, etc.). */}
+                      {tp.latestPhotoThumbnail ? (
+                        <View style={[styles.cardThumb, { backgroundColor: theme.surfaceElevated, overflow: 'hidden' }]}>
+                          <Image
+                            source={{ uri: tp.latestPhotoThumbnail }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="cover"
+                          />
+                        </View>
+                      ) : (
+                        <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                          <Ionicons name="folder-outline" size={26} color={theme.textMuted} />
+                        </View>
+                      )}
 
                       <View style={styles.cardBody}>
                         <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>
