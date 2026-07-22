@@ -10,6 +10,11 @@ import {
   ActivityIndicator,
   Platform,
   Linking,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,6 +59,18 @@ export default function CloudSyncScreen({ navigation }) {
   const [serviceFlowConnected, setServiceFlowConnected] = useState(false);
   const [serviceFlowWorkspace, setServiceFlowWorkspace] = useState(null);
   const [isWorkingServiceFlow, setIsWorkingServiceFlow] = useState(false);
+
+  // Paste-in connect-code flow. The SF backend's PR 4 authorize URL
+  // path isn't reliably live on staging (returns INVALID_TOKEN mid-
+  // flow), so the primary supported connect UX is the code exchange
+  // documented in docs/SERVICE_FLOW_INTEGRATION.md §3:
+  //   1. Admin generates a code in SF web (Integrations → ProofPix)
+  //   2. Pastes it here
+  //   3. Adapter POSTs to /connect/code/redeem → refresh token
+  const [sfCodeModalVisible, setSfCodeModalVisible] = useState(false);
+  const [sfCodeInput, setSfCodeInput] = useState('');
+  const [sfCodeSubmitting, setSfCodeSubmitting] = useState(false);
+  const [sfCodeError, setSfCodeError] = useState(null);
   const [bgUploadEnabled, setBgUploadEnabled] = useState(true);
   const [isWorkingGoogle, setIsWorkingGoogle] = useState(false);
   const [isWorkingDropbox, setIsWorkingDropbox] = useState(false);
@@ -266,42 +283,65 @@ export default function CloudSyncScreen({ navigation }) {
       return;
     }
 
+    // Not connected → open the paste-in code sheet. The former
+    // openAuthSessionAsync flow is disabled until SF backend PR 4
+    // ships their /authorize state-token fix; that path stayed on
+    // proofpix://connect via the deep-link handler in CRMRedeemScreen
+    // so it will start working again as soon as SF re-enables the
+    // authorize endpoint without changes on our side.
+    setSfCodeInput('');
+    setSfCodeError(null);
+    setSfCodeModalVisible(true);
+  };
+
+  // Normalise pasted codes. SF's spec: 16 Crockford base32 chars
+  // (excluding I L O U) grouped as XXXX-XXXX-XXXX-XXXX. Accept with
+  // or without dashes, strip whitespace, uppercase.
+  const normaliseSfCode = (raw) => {
+    if (!raw) return '';
+    const cleaned = raw.replace(/\s+/g, '').toUpperCase();
+    // Strip dashes for validation; add them back for the wire format.
+    const bare = cleaned.replace(/-/g, '');
+    return bare;
+  };
+
+  const formatSfCodeForDisplay = (bare) => {
+    // Render as XXXX-XXXX-XXXX-XXXX while the user types.
+    const s = bare.slice(0, 16);
+    return s.replace(/(.{4})/g, '$1-').replace(/-$/, '');
+  };
+
+  const handleSubmitSfCode = async () => {
+    if (sfCodeSubmitting) return;
+    const bare = normaliseSfCode(sfCodeInput);
+    if (bare.length !== 16) {
+      setSfCodeError(
+        t('cloudSync.sfCodeFormat', {
+          defaultValue: 'Code should be 16 characters (e.g. AJEF-VVCT-P6Y3-PP9Z).',
+        }),
+      );
+      return;
+    }
+    const wireCode = formatSfCodeForDisplay(bare); // hyphenated form for the SF API
+    setSfCodeError(null);
+    setSfCodeSubmitting(true);
     setIsWorkingServiceFlow(true);
     try {
-      // openAuthSessionAsync opens the system in-app browser, watches
-      // for a redirect to the deep-link URL, returns the captured URL
-      // (or a dismissed/locked status). Cleaner than Linking +
-      // listener for OAuth-style flows.
-      const result = await WebBrowser.openAuthSessionAsync(SF_AUTHORIZE_URL, 'proofpix://connect');
-      if (result?.type !== 'success' || !result.url) {
-        // User dismissed, or no redirect captured. Silent — no
-        // toast, since they explicitly closed the browser.
-        return;
-      }
-      // Parse token from the redirect URL.
-      const u = new URL(result.url);
-      const token = u.searchParams.get('token');
-      if (!token) {
-        Alert.alert(
-          t('common.error', { defaultValue: 'Error' }),
-          t('cloudSync.sfNoToken', { defaultValue: 'Service Flow returned an unexpected response. Try again.' }),
-        );
-        return;
-      }
-      const redeem = await crmService.connect('serviceflow', { token });
+      const redeem = await crmService.connect('serviceflow', { code: wireCode });
       if (!redeem?.success) {
-        Alert.alert(
-          t('common.error', { defaultValue: 'Error' }),
-          redeem?.error || t('cloudSync.sfFailed', { defaultValue: 'Could not finish connecting.' }),
+        setSfCodeError(
+          redeem?.error ||
+            t('cloudSync.sfCodeInvalid', {
+              defaultValue: 'That code did not work. Codes expire after 10 minutes and can only be used once — get a fresh one from Service Flow → Integrations → ProofPix.',
+            }),
         );
         return;
       }
+      setSfCodeModalVisible(false);
       await refreshServiceFlow();
-      // Fire an immediate sync so the user sees their SF jobs appear in
-      // the Projects list right after connect, without waiting for the
-      // next background→foreground transition (which is what otherwise
-      // triggers ServiceFlowSyncTrigger). Best-effort — sync errors are
-      // surfaced via console and don't break the UI connected state.
+      // Fire an immediate sync so the user sees their SF jobs in
+      // Projects right after connect. Best-effort — sync errors are
+      // logged but don't break the connected state.
       try {
         const result = await syncServiceFlowJobs({ projects, createProject: ctxCreateProject, patchProject });
         console.warn('[ServiceFlow] post-connect sync', result);
@@ -309,9 +349,10 @@ export default function CloudSyncScreen({ navigation }) {
         console.warn('[ServiceFlow] post-connect sync threw:', syncErr?.message);
       }
     } catch (e) {
-      console.warn('[CloudSync] SF connect failed:', e?.message);
-      Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Connection failed.');
+      console.warn('[CloudSync] SF code connect failed:', e?.message);
+      setSfCodeError(e?.message || t('cloudSync.sfCodeGeneric', { defaultValue: 'Connection failed. Please try again.' }));
     } finally {
+      setSfCodeSubmitting(false);
       setIsWorkingServiceFlow(false);
     }
   };
@@ -493,9 +534,174 @@ export default function CloudSyncScreen({ navigation }) {
           </View>
         </View>
       </ScrollView>
+
+      {/* Service Flow paste-in connect-code modal. Documented flow
+          in docs/SERVICE_FLOW_INTEGRATION.md §3 — user generates a
+          code in SF web (Integrations → ProofPix), pastes it here,
+          adapter POSTs to /connect/code/redeem, and the resulting
+          refresh token gets stored locally + pushed to the proxy so
+          team members can list SF jobs and have uploads fanned out. */}
+      <Modal
+        visible={sfCodeModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => !sfCodeSubmitting && setSfCodeModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => !sfCodeSubmitting && setSfCodeModalVisible(false)}>
+          <View style={sfCodeStyles.overlay}>
+            <TouchableWithoutFeedback>
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={{ width: '100%' }}
+              >
+                <View style={[sfCodeStyles.sheet, { backgroundColor: theme.surface }]}>
+                  <View style={sfCodeStyles.grabberWrap}>
+                    <View style={[sfCodeStyles.grabber, { backgroundColor: theme.borderStrong }]} />
+                  </View>
+                  <View style={sfCodeStyles.header}>
+                    <Text style={[sfCodeStyles.title, { color: theme.textPrimary }]}>
+                      {t('cloudSync.sfConnectTitle', { defaultValue: 'Connect Service Flow' })}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => !sfCodeSubmitting && setSfCodeModalVisible(false)}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
+                      <Ionicons name="close" size={22} color={theme.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={[sfCodeStyles.body, { color: theme.textSecondary }]}>
+                    {t('cloudSync.sfConnectInstructions', {
+                      defaultValue: 'In Service Flow, open Integrations → ProofPix and tap Generate connect code. Paste the 16-character code below.',
+                    })}
+                  </Text>
+
+                  <TextInput
+                    style={[
+                      sfCodeStyles.input,
+                      {
+                        backgroundColor: theme.surfaceElevated,
+                        color: theme.textPrimary,
+                        borderColor: sfCodeError ? '#E24A4A' : theme.border,
+                      },
+                    ]}
+                    placeholder="AJEF-VVCT-P6Y3-PP9Z"
+                    placeholderTextColor={theme.textMuted}
+                    value={sfCodeInput}
+                    onChangeText={(txt) => {
+                      // Auto-format as XXXX-XXXX-XXXX-XXXX while typing.
+                      const bare = normaliseSfCode(txt);
+                      setSfCodeInput(formatSfCodeForDisplay(bare));
+                      if (sfCodeError) setSfCodeError(null);
+                    }}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={19}
+                    editable={!sfCodeSubmitting}
+                    returnKeyType="go"
+                    onSubmitEditing={handleSubmitSfCode}
+                  />
+
+                  {sfCodeError ? (
+                    <Text style={sfCodeStyles.errorText}>{sfCodeError}</Text>
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={[
+                      sfCodeStyles.submitButton,
+                      { backgroundColor: theme.accent },
+                      sfCodeSubmitting && { opacity: 0.7 },
+                    ]}
+                    onPress={handleSubmitSfCode}
+                    disabled={sfCodeSubmitting}
+                  >
+                    {sfCodeSubmitting ? (
+                      <ActivityIndicator size="small" color="#000" />
+                    ) : (
+                      <Text style={sfCodeStyles.submitButtonText}>
+                        {t('cloudSync.sfConnectButton', { defaultValue: 'Connect' })}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <Text style={[sfCodeStyles.helper, { color: theme.textMuted }]}>
+                    {t('cloudSync.sfConnectHelper', {
+                      defaultValue: 'Codes expire after 10 minutes and can only be used once.',
+                    })}
+                  </Text>
+                </View>
+              </KeyboardAvoidingView>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const sfCodeStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  sheet: {
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 34,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  grabberWrap: { alignItems: 'center', paddingBottom: 6 },
+  grabber: { width: 40, height: 4, borderRadius: 2 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  title: { fontSize: 18, fontFamily: FONTS.ALEXANDRIA, fontWeight: '700' },
+  body: { fontSize: 14, fontFamily: FONTS.ALEXANDRIA, lineHeight: 20, marginBottom: 14 },
+  input: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 17,
+    fontFamily: FONTS.ALEXANDRIA,
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  errorText: {
+    color: '#E24A4A',
+    fontSize: 13,
+    fontFamily: FONTS.ALEXANDRIA,
+    marginBottom: 6,
+  },
+  submitButton: {
+    marginTop: 10,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontWeight: '600',
+  },
+  helper: {
+    marginTop: 12,
+    fontSize: 12,
+    fontFamily: FONTS.ALEXANDRIA,
+    textAlign: 'center',
+  },
+});
 
 const makeStyles = (theme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.surfaceElevated },
