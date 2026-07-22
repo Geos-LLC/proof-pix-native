@@ -473,6 +473,12 @@ export async function uploadPhotoAsTeamMember({
   location,
   cleanerName,
   flat = false,
+  // Optional Service Flow fanout — when the linked project has a
+  // crmJobId, pass it through so the proxy attaches the same photo
+  // to the SF job after the Drive write. `photoId` is the ProofPix
+  // stable id used as SF's dedup key. Both fields are optional.
+  crmJobId,
+  photoId,
 }) {
   // Per-photo telemetry: original file size, base64 payload size (iOS
   // path only), request duration, success. Emitted under
@@ -535,7 +541,9 @@ export async function uploadPhotoAsTeamMember({
       format,
       location,
       cleanerName,
-      flat
+      flat,
+      crmJobId,
+      photoId,
     });
     console.warn('[TEAM_UPLOAD] photo ok', {
       platform: Platform.OS,
@@ -814,6 +822,12 @@ export async function uploadPhotoBatch(photos, config) {
             location,
             cleanerName,
             flat: isFlat,
+            // SF fanout: crmJobId is stamped per-item by
+            // processTeamUpload when the project is linked to an SF
+            // job. photoId is the ProofPix stable id — used as SF's
+            // dedup key.
+            crmJobId: photo.crmJobId || null,
+            photoId: photo.id ? String(photo.id) : null,
           })
         : uploadPhoto({
             imageDataUrl: photoUri, // Use the potentially labeled URI

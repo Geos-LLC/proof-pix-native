@@ -16,7 +16,10 @@
  * the proxy support lands. This sync code doesn't change.
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import crmService from './index';
+import proxyService from '../proxyService';
+import { readSecureJSON } from '../secureStorageService';
 import { loadProjects } from '../storage';
 
 const formatProjectName = (job) => {
@@ -48,23 +51,58 @@ const formatProjectName = (job) => {
  * @returns {Promise<{ created: number, matched: number, error?: string }>}
  */
 export async function syncServiceFlowJobs({ createProject, patchProject }) {
-  // Cheap exit if no CRM connected — adapter returns [] from listJobs
-  // and we'd loop over nothing, but skip the call entirely to avoid
-  // a needless network round-trip when SF isn't wired up.
-  const provider = await crmService.getActiveProviderId();
-  if (provider !== 'serviceflow') {
-    return { created: 0, matched: 0 };
-  }
-
+  // Two entry points converge here:
+  //   admin / individual  → adapter's crmService.listJobs (SF-direct
+  //                          with locally-stored SF creds)
+  //   team_member         → proxyService.listServiceFlowJobs (proxy
+  //                          uses admin's SF refresh token; team
+  //                          member device never holds SF creds)
+  // Same trust model as the Google Drive upload path.
+  const mode = await AsyncStorage.getItem('@admin_user_mode');
   let jobs = [];
-  try {
-    // 'active' is the right default — completed/cancelled jobs
-    // shouldn't keep cluttering the ProofPix project list. The
-    // adapter handles the bucket mapping (12 SF statuses → 4 buckets).
-    const result = await crmService.listJobs({ status: 'active', limit: 100 });
-    jobs = Array.isArray(result?.jobs) ? result.jobs : Array.isArray(result) ? result : [];
-  } catch (e) {
-    return { created: 0, matched: 0, error: e?.message || 'listJobs failed' };
+  if (mode === 'team_member') {
+    const teamInfo = await readSecureJSON('@team_member_info');
+    if (!teamInfo?.sessionId || !teamInfo?.token) {
+      return { created: 0, matched: 0 };
+    }
+    try {
+      const result = await proxyService.listServiceFlowJobs(teamInfo.sessionId, teamInfo.token, {
+        status: 'active',
+        limit: 100,
+      });
+      if (result?.notConnected) {
+        // Admin hasn't linked SF yet — silent no-op, same as when
+        // an admin device has no SF connection.
+        return { created: 0, matched: 0 };
+      }
+      // Proxy passes through SF's response as-is. SF returns snake_case
+      // fields; normalise to the adapter's camelCase shape so the
+      // downstream merge / dedup logic stays identical.
+      const raw = Array.isArray(result?.jobs) ? result.jobs : [];
+      jobs = raw.map((row) => ({
+        id: row.id,
+        title: row.title || '',
+        customerName: row.customer_name || null,
+        address: row.address || null,
+        status: row.status || null,
+        scheduledAt: typeof row.scheduled_at === 'number' ? row.scheduled_at : null,
+        photoCount: typeof row.photo_count === 'number' ? row.photo_count : 0,
+      }));
+    } catch (e) {
+      return { created: 0, matched: 0, error: e?.message || 'proxy listJobs failed' };
+    }
+  } else {
+    // Admin / individual path — adapter with locally-stored SF creds.
+    const provider = await crmService.getActiveProviderId();
+    if (provider !== 'serviceflow') {
+      return { created: 0, matched: 0 };
+    }
+    try {
+      const result = await crmService.listJobs({ status: 'active', limit: 100 });
+      jobs = Array.isArray(result?.jobs) ? result.jobs : Array.isArray(result) ? result : [];
+    } catch (e) {
+      return { created: 0, matched: 0, error: e?.message || 'listJobs failed' };
+    }
   }
 
   if (jobs.length === 0) return { created: 0, matched: 0 };

@@ -327,7 +327,30 @@ class BackgroundUploadService {
 
       this.notifyListeners();
 
-      const { items, teamInfo } = upload;
+      const { items: rawItems, teamInfo } = upload;
+
+      // Stamp each item with its project's crmJobId (if any) so the
+      // downstream proxy upload can fan the photo out to Service
+      // Flow after the Drive write succeeds. Mirrors the pattern
+      // attachSuccessfulPhotosToCrm uses for the admin/individual
+      // upload path — same source of truth (projects storage), just
+      // read up-front and stamped per-item so uploadPhotoBatch can
+      // include it in the per-photo params.
+      let projectJobMap = null;
+      try {
+        const projects = await loadProjects();
+        projectJobMap = new Map();
+        for (const proj of (projects || [])) {
+          if (proj?.id && proj?.crmJobId) projectJobMap.set(proj.id, String(proj.crmJobId));
+        }
+      } catch (e) {
+        console.warn('[BG_UPLOAD] team-upload CRM enrichment: could not load projects:', e?.message);
+        projectJobMap = new Map();
+      }
+      const items = rawItems.map((it) => {
+        const jobId = it?.projectId ? projectJobMap.get(it.projectId) : null;
+        return jobId ? { ...it, crmJobId: jobId } : it;
+      });
 
       // Prepare upload options for team member batch upload (same as Pro/Business/Enterprise)
       const uploadOptions = {

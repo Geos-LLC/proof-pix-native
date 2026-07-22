@@ -253,7 +253,15 @@ class ProxyService {
         format = 'default',
         location,
         cleanerName,
-        flat = false
+        flat = false,
+        // Optional Service Flow fanout — when the linked project has
+        // a crmJobId, pass it here and the proxy will additionally
+        // attach the same photo to the SF job after the Drive write.
+        // photoId is the ProofPix-side stable id used as SF's dedup
+        // key. Both fields are optional; upload works exactly as
+        // before when they're absent.
+        crmJobId,
+        photoId,
       } = uploadParams;
 
       console.log('[PROXY] Uploading photo as team member:', { 
@@ -288,6 +296,8 @@ class ProxyService {
         formData.append('flat', String(flat));
         formData.append('accountType', 'google');
         formData.append('filename', filename);
+        if (crmJobId) formData.append('crmJobId', String(crmJobId));
+        if (photoId) formData.append('photoId', String(photoId));
 
         response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
           method: 'POST',
@@ -315,7 +325,9 @@ class ProxyService {
             location,
             cleanerName,
             flat,
-            accountType: 'google'
+            accountType: 'google',
+            ...(crmJobId ? { crmJobId: String(crmJobId) } : {}),
+            ...(photoId ? { photoId: String(photoId) } : {}),
           }),
         });
       }
@@ -608,6 +620,94 @@ class ProxyService {
       return await response.json();
     } catch (error) {
       console.warn('[PROXY] Error getting team projects:', error?.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Push admin's Service Flow refresh token to the proxy session so
+   * team members can list SF jobs + have uploads fanned out to SF
+   * without ever holding SF credentials on their device. Same trust
+   * model as Google Drive: proxy is the sole party holding the
+   * OAuth credentials.
+   *
+   * Called by the admin's client after a successful
+   * `crmService.connect('serviceflow', ...)`.
+   */
+  async setServiceFlowCredentials(sessionId, refreshToken, workspaceId, workspaceName) {
+    try {
+      if (!sessionId || !refreshToken) return { success: false, error: 'MISSING_ARGS' };
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          refresh_token: refreshToken,
+          workspace_id: workspaceId || null,
+          workspace_name: workspaceName || null,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        console.warn('[PROXY] setServiceFlowCredentials failed:', response.status, text.slice(0, 200));
+        throw new Error(`SF credentials push failed: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error pushing SF credentials:', error?.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear admin's Service Flow refresh token from the proxy session.
+   * Called from the admin's client on SF disconnect.
+   */
+  async clearServiceFlowCredentials(sessionId) {
+    try {
+      if (!sessionId) return { success: false };
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-credentials`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        console.warn('[PROXY] clearServiceFlowCredentials failed:', response.status);
+        return { success: false };
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error clearing SF credentials:', error?.message);
+      return { success: false };
+    }
+  }
+
+  /**
+   * List Service Flow jobs on behalf of a team member. Proxy uses
+   * the admin's stored SF refresh token to fetch jobs from SF and
+   * returns them straight; team member device never sees SF creds.
+   *
+   * Returns { jobs: [...], nextCursor }. On 424 (admin hasn't linked
+   * SF), returns { jobs: [], notConnected: true } so callers can
+   * render a clean "not connected" state instead of an error.
+   */
+  async listServiceFlowJobs(sessionId, token, { status = 'active', search, limit = 100, cursor } = {}) {
+    try {
+      if (!sessionId || !token) return { jobs: [], nextCursor: null };
+      const params = new URLSearchParams({ token });
+      if (status) params.set('status', status);
+      if (search) params.set('search', search);
+      if (limit) params.set('limit', String(limit));
+      if (cursor) params.set('cursor', cursor);
+      const response = await fetch(`${PROXY_SERVER_URL}/api/team/${sessionId}/serviceflow-jobs?${params.toString()}`);
+      if (response.status === 424) {
+        return { jobs: [], nextCursor: null, notConnected: true };
+      }
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        console.warn('[PROXY] listServiceFlowJobs failed:', response.status, text.slice(0, 200));
+        throw new Error(`SF jobs list failed: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error listing SF jobs:', error?.message);
       throw error;
     }
   }

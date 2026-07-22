@@ -135,6 +135,32 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
       token: body.access_token,
       expiresAt: Date.now() + (body.expires_in - 60) * 1000,
     };
+
+    // Push the SF refresh token to the proxy so team members can
+    // list SF jobs + have uploads fanned out to SF without ever
+    // holding SF credentials on their device. Best-effort — a failed
+    // push leaves the local connection working; team-member sync
+    // just stays "not connected" until admin reconnects.
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      const proxySessionId = await AsyncStorage.getItem('@proxy_session_id');
+      if (proxySessionId && body.refresh_token) {
+        const proxyService = require('../proxyService').default;
+        await proxyService.setServiceFlowCredentials(
+          proxySessionId,
+          body.refresh_token,
+          body.workspace_id,
+          body.workspace_name,
+        );
+        console.warn('[SF-Adapter] pushed refresh token to proxy', {
+          proxySessionId,
+          workspaceId: body.workspace_id,
+        });
+      }
+    } catch (proxyErr) {
+      console.warn('[SF-Adapter] proxy credential push failed (continuing):', proxyErr?.message);
+    }
+
     return { success: true, connection: workspace };
   }
 
@@ -198,6 +224,21 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
     _accessTokenCache = { token: null, expiresAt: 0 };
     try { await deleteSecure(SECURE_KEYS.refreshToken); } catch {}
     try { await deleteSecure(SECURE_KEYS.workspace); } catch {}
+
+    // Mirror the connect flow: also clear SF credentials on the
+    // proxy so team members stop seeing SF jobs after admin
+    // disconnects. Best-effort — proxy-only cleanup failure doesn't
+    // block the local disconnect.
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      const proxySessionId = await AsyncStorage.getItem('@proxy_session_id');
+      if (proxySessionId) {
+        const proxyService = require('../proxyService').default;
+        await proxyService.clearServiceFlowCredentials(proxySessionId);
+      }
+    } catch (proxyErr) {
+      console.warn('[SF-Adapter] proxy credential clear failed (continuing):', proxyErr?.message);
+    }
   }
 
   /**
