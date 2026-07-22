@@ -38,7 +38,7 @@ import UploadCompletionModal from '../components/UploadCompletionModal';
 import { LOCATIONS, getLocationName } from '../config/locations';
 import { createAlbumName, ensureLabelForPhoto } from '../services/uploadService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
-import { isTeamUploadEnabled } from '../config/teamUpload';
+import { isTeamUploadEnabled, getTeamUploadBlockedReason, adminStorageLabel } from '../config/teamUpload';
 import * as ExpoLocation from 'expo-location';
 import { logProjectCreated } from '../utils/analytics';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -1096,6 +1096,25 @@ export default function ProjectsScreen({ navigation, route }) {
       // admins are on Google Drive. Do NOT enable globally until
       // getSessionInfo exposes accountType.
       if (userMode === 'team_member' && isTeamUploadEnabled(teamInfo)) {
+        // Slice A.5: capability gate. Even with the canary flag on,
+        // only Google-backed admins have a working end-to-end path.
+        // Dropbox and iCloud admins get a "coming soon" instead of
+        // an upload that would fail on the proxy side. Unknown
+        // accountType falls through as "allow" for pre-A.5 members
+        // who haven't cold-started to refresh their teamInfo shape.
+        const blocked = getTeamUploadBlockedReason(teamInfo);
+        if (blocked === 'ADMIN_STORAGE_UNSUPPORTED') {
+          setIsPreparingUpload(false);
+          setShowUploadDetails(false);
+          Alert.alert(
+            t('team.upload.comingSoonTitle', { defaultValue: 'Coming soon' }),
+            t('team.upload.comingSoonMessage', {
+              defaultValue: `Team uploads to ${adminStorageLabel(teamInfo?.adminAccountType)} admins aren't supported yet. Ask your admin to connect Google Drive, or check back soon.`,
+              storage: adminStorageLabel(teamInfo?.adminAccountType),
+            }),
+          );
+          return;
+        }
         setIsPreparingUpload(false);
         startBackgroundUpload({
           uploadType: 'team',

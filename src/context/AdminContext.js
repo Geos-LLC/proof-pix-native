@@ -448,6 +448,23 @@ export function AdminProvider({ children }) {
           teamInfo.token,
           memberName,
         );
+
+        // Slice A.5: refresh admin's accountType on cold-start so it
+        // stays current if the admin ever changes storage backends.
+        // Also self-heals teamInfo shape for members who joined before
+        // A.5 landed (their stored teamInfo has no adminAccountType).
+        // Best-effort — failure leaves the last-known value in place.
+        try {
+          const info = await proxyService.getSessionInfo(teamInfo.sessionId);
+          const nextAccountType = info?.accountType || null;
+          if (nextAccountType !== teamInfo.adminAccountType) {
+            const updated = { ...teamInfo, adminAccountType: nextAccountType };
+            await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, updated);
+            setTeamInfo(updated);
+          }
+        } catch (infoError) {
+          console.warn('[ADMIN] Failed to refresh admin accountType at cold-start:', infoError?.message);
+        }
       } catch (error) {
         if (error?.status === 403 || error?.status === 404) {
           console.warn('[ADMIN] Team-member token revoked at cold-start — dropping team_member state');
@@ -873,7 +890,21 @@ export function AdminProvider({ children }) {
         console.warn('[ADMIN] Failed to register team member (network error, continuing):', registerError.message);
       }
 
-      const newTeamInfo = { token, sessionId, useProxy: true };
+      // Slice A.5: pull the admin's storage backend so the client can
+      // gate the team upload path (only 'google' is wired end-to-end
+      // today). Best-effort — a failure here leaves adminAccountType
+      // undefined, which the upload branch treats as "unknown → allow"
+      // to match pre-A.5 behavior. Cold-start revalidation refreshes
+      // this value on every subsequent launch.
+      let adminAccountType = null;
+      try {
+        const info = await proxyService.getSessionInfo(sessionId);
+        adminAccountType = info?.accountType || null;
+      } catch (infoError) {
+        console.warn('[ADMIN] Failed to fetch admin accountType at join (continuing):', infoError?.message);
+      }
+
+      const newTeamInfo = { token, sessionId, useProxy: true, adminAccountType };
 
       await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, newTeamInfo);
       await AsyncStorage.setItem(STORAGE_KEYS.ADMIN_USER_MODE, 'team_member');

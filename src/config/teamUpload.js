@@ -32,6 +32,12 @@ export const TEAM_UPLOAD_CANARY_SESSION_IDS = [
 ];
 
 /**
+ * Rollout gate: is the caller's team session opted into the team
+ * upload pipeline? Answers "yes" for the master flag or when the
+ * admin's sessionId is on the canary allow-list. Does NOT check
+ * whether the pipeline can actually deliver bytes to the admin's
+ * storage — see `getTeamUploadBlockedReason` for that.
+ *
  * @param {{ sessionId?: string|null } | null | undefined} teamInfo
  * @returns {boolean}
  */
@@ -40,4 +46,43 @@ export function isTeamUploadEnabled(teamInfo) {
   const sessionId = teamInfo?.sessionId;
   if (!sessionId) return false;
   return TEAM_UPLOAD_CANARY_SESSION_IDS.includes(sessionId);
+}
+
+/**
+ * Slice A.5: capability gate. Even when the rollout flag says yes,
+ * the pipeline only knows how to deliver to Google-backed admins
+ * today. Dropbox and iCloud admins get a clear "coming soon" from
+ * the caller instead of a broken upload.
+ *
+ * Returns a specific reason string when the team upload is blocked,
+ * or null when it can proceed. Callers should treat `null` as
+ * "green light, enqueue team upload" and any non-null value as
+ * "surface a user-facing message and do NOT enqueue."
+ *
+ * Default when admin's accountType is unknown (undefined/null): we
+ * allow the upload to proceed. This preserves pre-A.5 canary
+ * behavior for team members who joined before A.5 shipped and
+ * haven't cold-started to self-heal their teamInfo shape yet.
+ *
+ * @param {{ sessionId?: string|null, adminAccountType?: string|null } | null | undefined} teamInfo
+ * @returns {'ADMIN_STORAGE_UNSUPPORTED' | null}
+ */
+export function getTeamUploadBlockedReason(teamInfo) {
+  const at = teamInfo?.adminAccountType;
+  if (!at) return null; // unknown → allow (pre-A.5 behavior)
+  if (at === 'google') return null;
+  return 'ADMIN_STORAGE_UNSUPPORTED';
+}
+
+/**
+ * Human-readable label for the admin's storage backend, used in
+ * user-facing "coming soon" copy.
+ * @param {string|null|undefined} accountType
+ * @returns {string}
+ */
+export function adminStorageLabel(accountType) {
+  if (accountType === 'dropbox') return 'Dropbox';
+  if (accountType === 'apple' || accountType === 'icloud') return 'iCloud';
+  if (accountType === 'google') return 'Google Drive';
+  return 'this cloud storage';
 }

@@ -42,7 +42,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
 import { ensureLabelForPhoto } from '../services/labelService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
-import { isTeamUploadEnabled } from '../config/teamUpload';
+import { isTeamUploadEnabled, getTeamUploadBlockedReason, adminStorageLabel } from '../config/teamUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadCompletionModal from '../components/UploadCompletionModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
@@ -1151,6 +1151,20 @@ export default function GalleryScreen({ navigation, route }) {
       // on Google Drive. Do NOT enable globally until getSessionInfo
       // exposes accountType.
       if (userMode === 'team_member' && isTeamUploadEnabled(teamInfo)) {
+        // Slice A.5: capability gate — see ProjectsScreen for the full rationale.
+        const blocked = getTeamUploadBlockedReason(teamInfo);
+        if (blocked === 'ADMIN_STORAGE_UNSUPPORTED') {
+          setIsPreparingUpload(false);
+          setShowUploadDetails(false);
+          Alert.alert(
+            t('team.upload.comingSoonTitle', { defaultValue: 'Coming soon' }),
+            t('team.upload.comingSoonMessage', {
+              defaultValue: `Team uploads to ${adminStorageLabel(teamInfo?.adminAccountType)} admins aren't supported yet. Ask your admin to connect Google Drive, or check back soon.`,
+              storage: adminStorageLabel(teamInfo?.adminAccountType),
+            }),
+          );
+          return;
+        }
         setIsPreparingUpload(false);
         startBackgroundUpload({
           uploadType: 'team',
