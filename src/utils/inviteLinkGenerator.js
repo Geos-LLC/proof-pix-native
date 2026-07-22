@@ -10,8 +10,13 @@
 
 import { Platform } from 'react-native';
 
-// Base URL for the invite landing page (hosted on your proxy server or a separate page)
-const INVITE_BASE_URL = process.env.EXPO_PUBLIC_PROXY_URL || 'https://steadfast-blessing-production.up.railway.app';
+// Base URL for the invite landing page. www.proofpix.app hosts static join +
+// connect redirect pages under /join and /connect and serves the AASA +
+// assetlinks that make these Universal Links / App Links. The apex domain
+// proofpix.app cannot be used — GoDaddy DNS points it at an empty S3 bucket,
+// not the CloudFront distribution. EXPO_PUBLIC_INVITE_BASE_URL exists for QA
+// against Railway's older /join handler; production defaults to www.
+const INVITE_BASE_URL = process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://www.proofpix.app';
 
 // App Store URLs
 const IOS_APP_STORE_URL = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/us/app/proofpix-before-after/id6754261444';

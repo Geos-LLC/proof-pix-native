@@ -673,6 +673,8 @@ function AppNavigator() {
 const linking = {
   prefixes: [
     'proofpix://',
+    'https://proofpix.app',
+    'https://www.proofpix.app',
     'https://steadfast-blessing-production.up.railway.app',
   ],
   config: {

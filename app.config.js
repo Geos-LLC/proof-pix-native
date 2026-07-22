@@ -35,7 +35,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "91",
+      buildNumber: "92",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -66,6 +66,8 @@ export default {
         "com.apple.developer.ubiquity-container-identifiers": ["iCloud.com.proofpix.app"],
         "com.apple.developer.icloud-services": ["CloudDocuments"],
         "com.apple.developer.associated-domains": [
+          "applinks:proofpix.app",
+          "applinks:www.proofpix.app",
           "applinks:steadfast-blessing-production.up.railway.app"
         ]
       },
@@ -78,7 +80,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 74,
+      versionCode: 75,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
@@ -101,16 +103,12 @@ export default {
           action: "VIEW",
           autoVerify: true,
           data: [
-            {
-              scheme: "https",
-              host: "steadfast-blessing-production.up.railway.app",
-              pathPrefix: "/join"
-            },
-            {
-              scheme: "https",
-              host: "steadfast-blessing-production.up.railway.app",
-              pathPrefix: "/referral"
-            }
+            { scheme: "https", host: "proofpix.app", pathPrefix: "/join" },
+            { scheme: "https", host: "proofpix.app", pathPrefix: "/connect" },
+            { scheme: "https", host: "www.proofpix.app", pathPrefix: "/join" },
+            { scheme: "https", host: "www.proofpix.app", pathPrefix: "/connect" },
+            { scheme: "https", host: "steadfast-blessing-production.up.railway.app", pathPrefix: "/join" },
+            { scheme: "https", host: "steadfast-blessing-production.up.railway.app", pathPrefix: "/referral" }
           ],
           category: ["BROWSABLE", "DEFAULT"]
         }
