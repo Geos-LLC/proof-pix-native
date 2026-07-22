@@ -16,6 +16,8 @@ import {
   Platform,
   Linking,
   Share as RNShareDialog,
+  FlatList,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -1356,6 +1358,53 @@ export default function ProjectsScreen({ navigation, route }) {
   const [teamProjectsLoading, setTeamProjectsLoading] = useState(false);
   const [teamProjectsError, setTeamProjectsError] = useState(null);
 
+  // Slice C+: photo grid + full-res viewer for a specific team
+  // project. Fetches via proxyService.getTeamProjectPhotos (which
+  // uses the admin's Drive OAuth server-side). Two modals:
+  //   1. Grid modal — 3-col FlatList of `=s220` thumbnails
+  //   2. Viewer modal — full-res `=s2000` version of a single photo,
+  //      opened by tapping a grid tile
+  const [tpPhotosProject, setTpPhotosProject] = useState(null);   // project being viewed
+  const [tpPhotos, setTpPhotos] = useState([]);
+  const [tpPhotosLoading, setTpPhotosLoading] = useState(false);
+  const [tpPhotosError, setTpPhotosError] = useState(null);
+  const [tpViewerPhoto, setTpViewerPhoto] = useState(null);       // photo shown in viewer
+
+  const openTeamProjectPhotos = async (project) => {
+    if (!project?.id || !proxySessionId) return;
+    setTpPhotosProject(project);
+    setTpPhotos([]);
+    setTpPhotosError(null);
+    setTpPhotosLoading(true);
+    try {
+      const proxyService = require('../services/proxyService').default;
+      const result = await proxyService.getTeamProjectPhotos(proxySessionId, project.id, { limit: 200 });
+      setTpPhotos(Array.isArray(result?.photos) ? result.photos : []);
+    } catch (err) {
+      console.warn('[ProjectsScreen] Failed to load team project photos:', err?.message);
+      setTpPhotosError(err?.message || 'Failed to load');
+    } finally {
+      setTpPhotosLoading(false);
+    }
+  };
+
+  const closeTeamProjectPhotos = () => {
+    setTpPhotosProject(null);
+    setTpPhotos([]);
+    setTpPhotosError(null);
+    setTpViewerPhoto(null);
+  };
+
+  // Drive thumbnailLinks look like ".../s220"; swap the suffix to
+  // get a higher-res version for the viewer without hitting Drive
+  // again (Google's user-content CDN handles the resize).
+  const swapDriveThumbSize = (url, size) => {
+    if (!url) return url;
+    // Handles both =sNNN and /sNNN patterns Google uses across
+    // account types + geo-CDN buckets.
+    return url.replace(/=s\d+(-[^&?]*)?$/, `=s${size}`).replace(/\/s\d+(\/[^?]*)?$/, `/s${size}$1`);
+  };
+
   const fetchTeamProjects = async ({ userInitiated = false } = {}) => {
     if (!proxySessionId) return;
     if (userInitiated || teamProjects.length === 0) {
@@ -1615,8 +1664,10 @@ export default function ProjectsScreen({ navigation, route }) {
                 const industry = tp.industry ? getIndustryById(tp.industry) : null;
                 const updatedTs = tp.updatedAt ? Date.parse(tp.updatedAt) : 0;
                 return (
-                  <View
+                  <TouchableOpacity
                     key={tp.id}
+                    activeOpacity={0.85}
+                    onPress={() => openTeamProjectPhotos(tp)}
                     style={[
                       styles.cardNew,
                       { backgroundColor: theme.surface, borderColor: 'transparent' },
@@ -1688,7 +1739,7 @@ export default function ProjectsScreen({ navigation, route }) {
                         </TouchableOpacity>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </>
@@ -2578,9 +2629,223 @@ export default function ProjectsScreen({ navigation, route }) {
         </View>
       )}
 
+      {/* Slice C+ — Team Project photos grid modal. Opens when admin
+          taps a Team Projects card. Renders a 3-column grid of Drive
+          thumbnails fetched from the proxy. Tapping a tile opens the
+          full-res viewer below. */}
+      <Modal
+        visible={!!tpPhotosProject}
+        transparent
+        animationType="slide"
+        onRequestClose={closeTeamProjectPhotos}
+      >
+        <View style={teamPhotosStyles.overlay}>
+          <View style={[teamPhotosStyles.sheet, { backgroundColor: theme.surface, paddingBottom: Math.max(insets.bottom, 20) }]}>
+            <View style={teamPhotosStyles.grabberWrap}>
+              <View style={[teamPhotosStyles.grabber, { backgroundColor: theme.borderStrong }]} />
+            </View>
+            <View style={teamPhotosStyles.header}>
+              <TouchableOpacity onPress={closeTeamProjectPhotos} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={22} color={theme.textMuted} />
+              </TouchableOpacity>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[teamPhotosStyles.title, { color: theme.textPrimary }]} numberOfLines={1}>
+                  {tpPhotosProject?.name || ''}
+                </Text>
+                <Text style={[teamPhotosStyles.subtitle, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {(tpPhotosProject?.ownerName || 'Team member')} · {(tpPhotosProject?.photoCount || tpPhotos.length || 0)} photo{(tpPhotosProject?.photoCount || tpPhotos.length) === 1 ? '' : 's'}
+                </Text>
+              </View>
+              {tpPhotosProject?.folderUrl ? (
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(tpPhotosProject.folderUrl)}
+                  style={[teamPhotosStyles.driveBtn, { borderColor: theme.border, backgroundColor: theme.surfaceElevated }]}
+                >
+                  <Ionicons name="folder-open-outline" size={14} color={theme.textPrimary} />
+                  <Text style={[teamPhotosStyles.driveBtnText, { color: theme.textPrimary }]}>Drive</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {tpPhotosLoading ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={theme.textMuted} />
+                <Text style={{ color: theme.textSecondary, marginTop: 10, fontFamily: FONTS.ALEXANDRIA }}>
+                  Loading photos…
+                </Text>
+              </View>
+            ) : tpPhotosError ? (
+              <View style={{ paddingVertical: 24, paddingHorizontal: 20, alignItems: 'center' }}>
+                <Ionicons name="alert-circle-outline" size={28} color={theme.textMuted} />
+                <Text style={{ color: theme.textPrimary, marginTop: 10, fontFamily: FONTS.ALEXANDRIA, textAlign: 'center' }}>
+                  {tpPhotosError}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => openTeamProjectPhotos(tpPhotosProject)}
+                  style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: COLORS.PRIMARY }}
+                >
+                  <Text style={{ color: '#000', fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : tpPhotos.length === 0 ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <Ionicons name="images-outline" size={28} color={theme.textMuted} />
+                <Text style={{ color: theme.textPrimary, marginTop: 10, fontFamily: FONTS.ALEXANDRIA }}>
+                  No photos in this project yet.
+                </Text>
+              </View>
+            ) : (
+              (() => {
+                // 3-column grid — recompute tile size from the current
+                // screen width so it stays crisp on tablets + rotation.
+                const screenW = Dimensions.get('window').width;
+                const cols = 3;
+                const gutter = 4;
+                const padH = 12;
+                const tile = Math.floor((screenW - padH * 2 - gutter * (cols - 1)) / cols);
+                return (
+                  <FlatList
+                    data={tpPhotos}
+                    keyExtractor={(item) => item.id}
+                    numColumns={cols}
+                    contentContainerStyle={{ paddingHorizontal: padH, paddingBottom: 20 }}
+                    columnWrapperStyle={{ gap: gutter }}
+                    ItemSeparatorComponent={() => <View style={{ height: gutter }} />}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => setTpViewerPhoto(item)}
+                        style={{ width: tile, height: tile, backgroundColor: theme.surfaceElevated, borderRadius: 6, overflow: 'hidden' }}
+                      >
+                        {item.thumbnailLink ? (
+                          <Image
+                            source={{ uri: item.thumbnailLink }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="image-outline" size={20} color={theme.textMuted} />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  />
+                );
+              })()
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Full-res viewer — full-screen overlay, tap to close. Uses
+          the =s2000 variant of Drive's thumbnailLink to lazy-load a
+          high-res version without an extra Drive round-trip. */}
+      <Modal
+        visible={!!tpViewerPhoto}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTpViewerPhoto(null)}
+      >
+        <TouchableWithoutFeedback onPress={() => setTpViewerPhoto(null)}>
+          <View style={teamPhotosStyles.viewerOverlay}>
+            <TouchableOpacity
+              onPress={() => setTpViewerPhoto(null)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={[teamPhotosStyles.viewerCloseBtn, { top: Math.max(insets.top + 8, 40) }]}
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+            {tpViewerPhoto?.thumbnailLink ? (
+              <Image
+                source={{ uri: swapDriveThumbSize(tpViewerPhoto.thumbnailLink, 2000) }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="contain"
+              />
+            ) : null}
+            {tpViewerPhoto?.name ? (
+              <View style={[teamPhotosStyles.viewerCaption, { bottom: Math.max(insets.bottom + 16, 32) }]}>
+                <Text style={teamPhotosStyles.viewerCaptionText} numberOfLines={1}>
+                  {tpViewerPhoto.name}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
     </SafeAreaView>
   );
 }
+
+// Slice C+ — team project photos grid + full-res viewer styles.
+// Kept in its own StyleSheet block so this feature can be cleanly
+// extracted into a dedicated component/screen in the future.
+const teamPhotosStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  sheet: {
+    width: '100%',
+    maxHeight: '92%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  grabberWrap: { alignItems: 'center', paddingTop: 8, paddingBottom: 6 },
+  grabber: { width: 40, height: 4, borderRadius: 2 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  title: { fontSize: 16, fontFamily: FONTS.ALEXANDRIA, fontWeight: '700' },
+  subtitle: { fontSize: 12, fontFamily: FONTS.ALEXANDRIA, marginTop: 2 },
+  driveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  driveBtnText: { fontSize: 12, fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' },
+  viewerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerCloseBtn: {
+    position: 'absolute',
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    zIndex: 10,
+  },
+  viewerCaption: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  viewerCaptionText: {
+    color: '#fff',
+    fontSize: 13,
+    fontFamily: FONTS.ALEXANDRIA,
+    textAlign: 'center',
+  },
+});
 
 const styles = StyleSheet.create({
   // Refresh: page background now plain white (was tinted #F6F8FA) per the

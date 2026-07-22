@@ -607,6 +607,38 @@ class ProxyService {
    * @param {string} sessionId - Proxy session ID
    * @returns {Promise<{success: boolean, projects: Array}>}
    */
+  /**
+   * List every photo in a specific team project's Drive folder.
+   * Used by the admin's Team Projects tab to open a project into a
+   * thumbnail grid and lazy-load full-res on tap. Complements the
+   * single-latest-thumbnail Slice C already returns from
+   * getTeamProjects.
+   *
+   * @param sessionId — admin proxy session
+   * @param projectId — project id from getTeamProjects
+   * @param opts — { limit, cursor } (both optional)
+   * @returns { success, photos: [...], nextCursor }
+   */
+  async getTeamProjectPhotos(sessionId, projectId, { limit, cursor } = {}) {
+    try {
+      const params = new URLSearchParams();
+      if (limit) params.set('limit', String(limit));
+      if (cursor) params.set('cursor', cursor);
+      const q = params.toString();
+      const url = `${PROXY_SERVER_URL}/api/admin/${sessionId}/projects/${encodeURIComponent(projectId)}/photos${q ? `?${q}` : ''}`;
+      const response = await fetch(url, { method: 'GET' });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        console.warn('[PROXY] getTeamProjectPhotos error:', response.status, text.slice(0, 200));
+        throw new Error(`Failed to load project photos: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error loading team project photos:', error?.message);
+      throw error;
+    }
+  }
+
   async getTeamProjects(sessionId) {
     try {
       const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/projects`, {
