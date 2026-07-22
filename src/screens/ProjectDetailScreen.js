@@ -528,6 +528,92 @@ export default function ProjectDetailScreen({ route, navigation }) {
   const [reportShareTargetId, setReportShareTargetId] = useState(null);
   const [reportShareFormat, setReportShareFormat] = useState('files');
 
+  // Slice E: manual Service Flow job linking. Opens a picker modal
+  // seeded from crmService.listJobs({status:'active'}) so the admin
+  // can link an existing project to an SF job without having to
+  // delete the project and wait for the auto-sync trigger to fire.
+  // Complements serviceFlowSync.js (which auto-creates a project
+  // per SF job on a today-forward window).
+  const [sfLinkModalVisible, setSfLinkModalVisible] = useState(false);
+  const [sfLinkJobs, setSfLinkJobs] = useState([]);
+  const [sfLinkLoading, setSfLinkLoading] = useState(false);
+  const [sfLinkError, setSfLinkError] = useState(null);
+  const [sfLinkSearch, setSfLinkSearch] = useState('');
+  const [sfLinkPatching, setSfLinkPatching] = useState(false);
+
+  const openSfLinkPicker = async () => {
+    setSfLinkSearch('');
+    setSfLinkError(null);
+    setSfLinkJobs([]);
+    setSfLinkModalVisible(true);
+    setSfLinkLoading(true);
+    try {
+      const providerId = await crmService.getActiveProviderId();
+      if (providerId !== 'serviceflow') {
+        setSfLinkError('Connect Service Flow in Settings first to link jobs.');
+        return;
+      }
+      // Adapter returns { jobs, nextCursor } — grab the first page.
+      // Users can filter client-side via the search input for now;
+      // wiring the search param would add per-keystroke API calls
+      // that SF's list endpoint doesn't need at MVP volumes.
+      const result = await crmService.listJobs({ status: 'active', limit: 100 });
+      const jobs = Array.isArray(result?.jobs)
+        ? result.jobs
+        : Array.isArray(result)
+          ? result
+          : [];
+      setSfLinkJobs(jobs);
+    } catch (e) {
+      console.warn('[SF-LINK] listJobs failed:', e?.message);
+      setSfLinkError(e?.message || 'Could not load Service Flow jobs.');
+    } finally {
+      setSfLinkLoading(false);
+    }
+  };
+
+  const handlePickSfJob = async (job) => {
+    if (!project?.id || sfLinkPatching) return;
+    setSfLinkPatching(true);
+    try {
+      await patchProject(project.id, {
+        crmJobId: String(job.id),
+        crmProvider: 'serviceflow',
+        crmJobMeta: {
+          customerName: job.customerName || null,
+          address: job.address || null,
+          status: job.status || null,
+          scheduledAt: job.scheduledAt || null,
+          linkedAt: Date.now(),
+          linkedManually: true,
+        },
+      });
+      setSfLinkModalVisible(false);
+      Alert.alert(
+        'Linked',
+        `This project is now linked to Service Flow job "${job.title || job.id}".`,
+      );
+    } catch (e) {
+      console.warn('[SF-LINK] patchProject failed:', e?.message);
+      Alert.alert('Link failed', e?.message || 'Could not link the project. Please try again.');
+    } finally {
+      setSfLinkPatching(false);
+    }
+  };
+
+  const filteredSfLinkJobs = useMemo(() => {
+    const q = sfLinkSearch.trim().toLowerCase();
+    if (!q) return sfLinkJobs;
+    return sfLinkJobs.filter((j) => {
+      const hay = [
+        j?.title,
+        j?.customerName,
+        j?.address,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }, [sfLinkJobs, sfLinkSearch]);
+
   // PDF: lazy-require expo-print so older binaries (build 76 etc.)
   // can still load this JS bundle without crashing. See note at the
   // top of this file about why the top-level import is intentionally
@@ -4023,8 +4109,152 @@ export default function ProjectDetailScreen({ route, navigation }) {
                 <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
               </TouchableOpacity>
             )}
+
+            {/* Slice E: manual Service Flow job linking. Shows only
+                when the project isn't already linked. Opens a picker
+                sourced from the SF adapter's listJobs — surfacing the
+                same active-status buckets serviceFlowSync uses so the
+                picker feels consistent with the auto-created projects. */}
+            {!project?.crmJobId && (
+              <TouchableOpacity
+                style={[shareTabStyles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                onPress={openSfLinkPicker}
+                activeOpacity={0.85}
+              >
+                <View style={[shareTabStyles.actionIconWrap, { backgroundColor: theme.surfaceElevated, borderWidth: 1, borderColor: theme.border }]}>
+                  <Ionicons name="link-outline" size={26} color={theme.textPrimary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[shareTabStyles.actionTitle, { color: theme.textPrimary }]}>
+                    Link to Service Flow job
+                  </Text>
+                  <Text style={[shareTabStyles.actionSubtitle, { color: theme.textSecondary }]}>
+                    Attach this project to an existing SF job so future photos flow to that job automatically.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+              </TouchableOpacity>
+            )}
           </View>
         )}
+
+        {/* Slice E: Service Flow job picker modal. Slides up over
+            ProjectDetail, shows active SF jobs filterable by title /
+            customer / address. Tap a job → patchProject links this
+            project to it, which makes the "Upload to Service Flow"
+            card appear (and enables the CRM auto-attach path in
+            backgroundUploadService for any future uploads). */}
+        <Modal
+          visible={sfLinkModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSfLinkModalVisible(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setSfLinkModalVisible(false)}>
+            <View style={shareTabStyles.modalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={[shareTabStyles.modalContent, { backgroundColor: theme.surface, maxHeight: '80%' }]}>
+                  <View style={shareTabStyles.modalGrabberWrap}>
+                    <View style={[shareTabStyles.modalGrabber, { backgroundColor: theme.borderStrong }]} />
+                  </View>
+                  <View style={shareTabStyles.modalHeader}>
+                    <TouchableOpacity onPress={() => setSfLinkModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="close" size={22} color={theme.textMuted} />
+                    </TouchableOpacity>
+                    <Text style={[shareTabStyles.modalTitle, { color: theme.textPrimary }]}>
+                      Link to Service Flow job
+                    </Text>
+                  </View>
+
+                  <TextInput
+                    style={{
+                      backgroundColor: theme.surfaceElevated,
+                      color: theme.textPrimary,
+                      borderRadius: 10,
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      marginHorizontal: 16,
+                      marginBottom: 10,
+                      fontFamily: FONTS.ALEXANDRIA,
+                      fontSize: 15,
+                    }}
+                    placeholder="Search jobs by title, customer, or address"
+                    placeholderTextColor={theme.textMuted}
+                    value={sfLinkSearch}
+                    onChangeText={setSfLinkSearch}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+
+                  {sfLinkLoading ? (
+                    <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color={theme.textMuted} />
+                      <Text style={{ color: theme.textSecondary, marginTop: 10, fontFamily: FONTS.ALEXANDRIA }}>
+                        Loading Service Flow jobs…
+                      </Text>
+                    </View>
+                  ) : sfLinkError ? (
+                    <View style={{ paddingVertical: 24, paddingHorizontal: 20, alignItems: 'center' }}>
+                      <Ionicons name="alert-circle-outline" size={28} color={theme.textMuted} />
+                      <Text style={{ color: theme.textPrimary, marginTop: 10, fontFamily: FONTS.ALEXANDRIA, textAlign: 'center' }}>
+                        {sfLinkError}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={openSfLinkPicker}
+                        style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: COLORS.PRIMARY }}
+                      >
+                        <Text style={{ color: '#000', fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' }}>
+                          Retry
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : filteredSfLinkJobs.length === 0 ? (
+                    <View style={{ paddingVertical: 40, paddingHorizontal: 20, alignItems: 'center' }}>
+                      <Ionicons name="briefcase-outline" size={28} color={theme.textMuted} />
+                      <Text style={{ color: theme.textPrimary, marginTop: 10, fontFamily: FONTS.ALEXANDRIA }}>
+                        {sfLinkSearch.trim() ? 'No jobs match your search.' : 'No active Service Flow jobs.'}
+                      </Text>
+                    </View>
+                  ) : (
+                    <ScrollView style={{ paddingHorizontal: 16 }} contentContainerStyle={{ paddingBottom: 24 }}>
+                      {filteredSfLinkJobs.map((j) => (
+                        <TouchableOpacity
+                          key={String(j.id)}
+                          onPress={() => handlePickSfJob(j)}
+                          disabled={sfLinkPatching}
+                          activeOpacity={0.85}
+                          style={{
+                            backgroundColor: theme.surfaceElevated,
+                            borderRadius: 10,
+                            padding: 12,
+                            marginBottom: 8,
+                            borderWidth: 1,
+                            borderColor: theme.border,
+                            opacity: sfLinkPatching ? 0.6 : 1,
+                          }}
+                        >
+                          <Text style={{ color: theme.textPrimary, fontFamily: FONTS.ALEXANDRIA, fontWeight: '600', fontSize: 15 }} numberOfLines={1}>
+                            {j.title || `Job ${j.id}`}
+                          </Text>
+                          {(j.customerName || j.address) && (
+                            <Text style={{ color: theme.textSecondary, fontFamily: FONTS.ALEXANDRIA, fontSize: 13, marginTop: 2 }} numberOfLines={1}>
+                              {[j.customerName, j.address].filter(Boolean).join(' · ')}
+                            </Text>
+                          )}
+                          {typeof j.photoCount === 'number' && j.photoCount > 0 && (
+                            <Text style={{ color: theme.textMuted, fontFamily: FONTS.ALEXANDRIA, fontSize: 12, marginTop: 4 }}>
+                              {j.photoCount} photo{j.photoCount === 1 ? '' : 's'} already on this job
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
 
         {/* Report-share format chooser — same UX as the photos
             share modal but operates on the generated report HTML
