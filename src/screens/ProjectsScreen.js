@@ -2463,37 +2463,78 @@ export default function ProjectsScreen({ navigation, route }) {
                   {/* Upload Destinations */}
                   <Text style={[styles.shareSectionLabel, { color: theme.textSecondary }]}>Upload to</Text>
 
-                  <TouchableOpacity
-                    style={[styles.uploadDestRow, { backgroundColor: theme.surface }, uploadDestinations.google && { backgroundColor: theme.surfaceAccent, borderWidth: 1, borderColor: theme.accent }]}
-                    onPress={() => setUploadDestinations(prev => ({ ...prev, google: !prev.google }))}
-                  >
-                    <Ionicons name="logo-google" size={20} color={uploadDestinations.google ? theme.accent : theme.textMuted} />
-                    <Text style={[styles.uploadDestText, { color: uploadDestinations.google ? theme.textPrimary : theme.textMuted }]}>
-                      Google Drive
-                    </Text>
-                    {!isAuthenticated && (
-                      <Text style={styles.uploadDestHint}>Not connected</Text>
-                    )}
-                    {uploadDestinations.google && (
-                      <Ionicons name="checkmark-circle" size={22} color={theme.accent} style={{ marginLeft: 'auto' }} />
-                    )}
-                  </TouchableOpacity>
+                  {userMode === 'team_member' && isTeamUploadEnabled(teamInfo) ? (
+                    // Slice A follow-up: team-upload mode overrides the
+                    // destination picker in handleConfirmUpload, so
+                    // showing the Google/Dropbox toggles here is
+                    // misleading (user picks Dropbox, upload goes to
+                    // admin's Google Drive). Render a read-only info
+                    // row that reflects what will actually happen.
+                    (() => {
+                      const at = teamInfo?.adminAccountType;
+                      const isComingSoon = at && at !== 'google';
+                      return (
+                        <View
+                          style={[
+                            styles.uploadDestRow,
+                            { backgroundColor: theme.surface, borderWidth: 1, borderColor: isComingSoon ? theme.border : theme.accent },
+                          ]}
+                        >
+                          <Ionicons
+                            name={isComingSoon ? 'time-outline' : 'cloud-upload'}
+                            size={20}
+                            color={isComingSoon ? theme.textMuted : theme.accent}
+                          />
+                          <View style={{ flex: 1, marginLeft: 8 }}>
+                            <Text style={[styles.uploadDestText, { color: theme.textPrimary, marginLeft: 0 }]}>
+                              {isComingSoon
+                                ? `${adminStorageLabel(at)} — coming soon`
+                                : "Your team admin's Google Drive"}
+                            </Text>
+                            <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 2 }}>
+                              {isComingSoon
+                                ? `Team uploads to ${adminStorageLabel(at)} admins aren't supported yet.`
+                                : 'Photos sync to your admin automatically.'}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })()
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.uploadDestRow, { backgroundColor: theme.surface }, uploadDestinations.google && { backgroundColor: theme.surfaceAccent, borderWidth: 1, borderColor: theme.accent }]}
+                        onPress={() => setUploadDestinations(prev => ({ ...prev, google: !prev.google }))}
+                      >
+                        <Ionicons name="logo-google" size={20} color={uploadDestinations.google ? theme.accent : theme.textMuted} />
+                        <Text style={[styles.uploadDestText, { color: uploadDestinations.google ? theme.textPrimary : theme.textMuted }]}>
+                          Google Drive
+                        </Text>
+                        {!isAuthenticated && (
+                          <Text style={styles.uploadDestHint}>Not connected</Text>
+                        )}
+                        {uploadDestinations.google && (
+                          <Ionicons name="checkmark-circle" size={22} color={theme.accent} style={{ marginLeft: 'auto' }} />
+                        )}
+                      </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[styles.uploadDestRow, { backgroundColor: theme.surface }, uploadDestinations.dropbox && { backgroundColor: theme.surfaceAccent, borderWidth: 1, borderColor: theme.accent }]}
-                    onPress={() => setUploadDestinations(prev => ({ ...prev, dropbox: !prev.dropbox }))}
-                  >
-                    <Ionicons name="cloud-outline" size={20} color={uploadDestinations.dropbox ? theme.accent : theme.textMuted} />
-                    <Text style={[styles.uploadDestText, { color: uploadDestinations.dropbox ? theme.textPrimary : theme.textMuted }]}>
-                      Dropbox
-                    </Text>
-                    {!dropboxAuthService.isAuthenticated() && (
-                      <Text style={styles.uploadDestHint}>Not connected</Text>
-                    )}
-                    {uploadDestinations.dropbox && (
-                      <Ionicons name="checkmark-circle" size={22} color={theme.accent} style={{ marginLeft: 'auto' }} />
-                    )}
-                  </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.uploadDestRow, { backgroundColor: theme.surface }, uploadDestinations.dropbox && { backgroundColor: theme.surfaceAccent, borderWidth: 1, borderColor: theme.accent }]}
+                        onPress={() => setUploadDestinations(prev => ({ ...prev, dropbox: !prev.dropbox }))}
+                      >
+                        <Ionicons name="cloud-outline" size={20} color={uploadDestinations.dropbox ? theme.accent : theme.textMuted} />
+                        <Text style={[styles.uploadDestText, { color: uploadDestinations.dropbox ? theme.textPrimary : theme.textMuted }]}>
+                          Dropbox
+                        </Text>
+                        {!dropboxAuthService.isAuthenticated() && (
+                          <Text style={styles.uploadDestHint}>Not connected</Text>
+                        )}
+                        {uploadDestinations.dropbox && (
+                          <Ionicons name="checkmark-circle" size={22} color={theme.accent} style={{ marginLeft: 'auto' }} />
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </ScrollView>
 
                 {/* Upload Now Button */}

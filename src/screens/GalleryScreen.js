@@ -2718,49 +2718,100 @@ export default function GalleryScreen({ navigation, route }) {
                   {/* Upload Destinations */}
                   <Text style={styles.shareSectionLabel}>Upload to</Text>
 
-                  <TouchableOpacity
-                    style={[styles.uploadDestRow, uploadDestinations.google && styles.uploadDestRowActive]}
-                    onPress={() => setUploadDestinations(prev => ({ ...prev, google: !prev.google }))}
-                  >
-                    <Ionicons name="logo-google" size={20} color={uploadDestinations.google ? '#000' : '#999'} />
-                    <Text style={[styles.uploadDestText, uploadDestinations.google && styles.uploadDestTextActive]}>
-                      Google Drive
-                    </Text>
-                    {!isAuthenticated && (
-                      <Text style={styles.uploadDestHint}>Not connected</Text>
-                    )}
-                    {uploadDestinations.google && (
-                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
-                    )}
-                  </TouchableOpacity>
+                  {userMode === 'team_member' && isTeamUploadEnabled(teamInfo) ? (
+                    // Slice A follow-up: team-upload mode overrides the
+                    // destination picker in handleConfirmUpload, so
+                    // hide the Google/Dropbox toggles and show what
+                    // will actually happen. See ProjectsScreen for the
+                    // matching block + full rationale.
+                    (() => {
+                      const at = teamInfo?.adminAccountType;
+                      const isComingSoon = at && at !== 'google';
+                      return (
+                        <View
+                          style={[
+                            styles.uploadDestRow,
+                            !isComingSoon && styles.uploadDestRowActive,
+                          ]}
+                        >
+                          <Ionicons
+                            name={isComingSoon ? 'time-outline' : 'cloud-upload'}
+                            size={20}
+                            color={isComingSoon ? '#999' : '#000'}
+                          />
+                          <View style={{ flex: 1, marginLeft: 8 }}>
+                            <Text style={[styles.uploadDestText, !isComingSoon && styles.uploadDestTextActive, { marginLeft: 0 }]}>
+                              {isComingSoon
+                                ? `${adminStorageLabel(at)} — coming soon`
+                                : "Your team admin's Google Drive"}
+                            </Text>
+                            <Text style={{ color: '#666', fontSize: 12, marginTop: 2 }}>
+                              {isComingSoon
+                                ? `Team uploads to ${adminStorageLabel(at)} admins aren't supported yet.`
+                                : 'Photos sync to your admin automatically.'}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })()
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.uploadDestRow, uploadDestinations.google && styles.uploadDestRowActive]}
+                        onPress={() => setUploadDestinations(prev => ({ ...prev, google: !prev.google }))}
+                      >
+                        <Ionicons name="logo-google" size={20} color={uploadDestinations.google ? '#000' : '#999'} />
+                        <Text style={[styles.uploadDestText, uploadDestinations.google && styles.uploadDestTextActive]}>
+                          Google Drive
+                        </Text>
+                        {!isAuthenticated && (
+                          <Text style={styles.uploadDestHint}>Not connected</Text>
+                        )}
+                        {uploadDestinations.google && (
+                          <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                        )}
+                      </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[styles.uploadDestRow, uploadDestinations.dropbox && styles.uploadDestRowActive]}
-                    onPress={() => setUploadDestinations(prev => ({ ...prev, dropbox: !prev.dropbox }))}
-                  >
-                    <Ionicons name="cloud-outline" size={20} color={uploadDestinations.dropbox ? '#000' : '#999'} />
-                    <Text style={[styles.uploadDestText, uploadDestinations.dropbox && styles.uploadDestTextActive]}>
-                      Dropbox
-                    </Text>
-                    {!isDropboxConnected && (
-                      <Text style={styles.uploadDestHint}>Not connected</Text>
-                    )}
-                    {uploadDestinations.dropbox && (
-                      <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
-                    )}
-                  </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.uploadDestRow, uploadDestinations.dropbox && styles.uploadDestRowActive]}
+                        onPress={() => setUploadDestinations(prev => ({ ...prev, dropbox: !prev.dropbox }))}
+                      >
+                        <Ionicons name="cloud-outline" size={20} color={uploadDestinations.dropbox ? '#000' : '#999'} />
+                        <Text style={[styles.uploadDestText, uploadDestinations.dropbox && styles.uploadDestTextActive]}>
+                          Dropbox
+                        </Text>
+                        {!isDropboxConnected && (
+                          <Text style={styles.uploadDestHint}>Not connected</Text>
+                        )}
+                        {uploadDestinations.dropbox && (
+                          <Ionicons name="checkmark-circle" size={22} color={COLORS.PRIMARY} style={{ marginLeft: 'auto' }} />
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </ScrollView>
 
                 {/* Upload Now Button */}
                 <View style={[styles.shareButtonContainer, { paddingBottom: Math.max(34, insets.bottom + 16) }]}>
+                  {(() => {
+                    // Team-upload mode ignores uploadDestinations; the
+                    // team branch in handleConfirmUpload routes bytes
+                    // to admin's Drive regardless of what's checked.
+                    // Keep the button enabled so users can proceed
+                    // (or hit the "coming soon" alert for non-Google admins).
+                    const isTeamUploadMode = userMode === 'team_member' && isTeamUploadEnabled(teamInfo);
+                    const noDestPicked = !isTeamUploadMode && !uploadDestinations.google && !uploadDestinations.dropbox;
+                    return (
                   <TouchableOpacity
-                    style={[styles.shareNowButton, (!uploadDestinations.google && !uploadDestinations.dropbox) && { opacity: 0.5 }]}
+                    style={[styles.shareNowButton, noDestPicked && { opacity: 0.5 }]}
                     onPress={handleConfirmUpload}
-                    disabled={!uploadDestinations.google && !uploadDestinations.dropbox}
+                    disabled={noDestPicked}
                   >
                     <Ionicons name="cloud-upload" size={20} color="#000" style={{ marginRight: 8 }} />
                     <Text style={styles.shareNowButtonText}>Upload Now</Text>
                   </TouchableOpacity>
+                    );
+                  })()}
                 </View>
               </View>
             </TouchableWithoutFeedback>
