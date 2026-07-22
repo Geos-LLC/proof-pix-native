@@ -625,9 +625,42 @@ export const PhotoProvider = ({ children }) => {
         }
       }
       const currentPhotos = photosRef.current;
-      const stamped = { ...photo, projectId: photo.projectId ?? activeProjectId ?? null };
+
+      // Slice D: attribution stamp at capture time. Cheap audit
+      // trail — `capturedBy` is read by the SF adapter, the CRM
+      // bulk button, and the proxy upload path today but was never
+      // written (all callers passed `null`). Populating it makes
+      // team-uploaded photos identifiable on the admin side (who
+      // captured what, when) without introducing any new UI or
+      // persistence. Preserves any pre-existing `capturedBy` on
+      // the photo object so callers that already stamp attribution
+      // (imports, seed data) aren't overwritten.
+      let capturedBy = photo.capturedBy || null;
+      if (!capturedBy) {
+        try {
+          const storedSettings = await AsyncStorage.getItem('app-settings');
+          const settings = storedSettings ? JSON.parse(storedSettings) : {};
+          const name = (settings?.userName || '').trim();
+          if (name) {
+            capturedBy = { name, capturedAt: new Date().toISOString() };
+          }
+        } catch {}
+      }
+
+      const stamped = {
+        ...photo,
+        projectId: photo.projectId ?? activeProjectId ?? null,
+        capturedBy,
+      };
       const newPhotos = [...currentPhotos, stamped];
       await savePhotos(newPhotos);
+
+      // Slice B: fire-and-forget team auto-sync. No await — the
+      // capture flow must not block on network. Guards inside the
+      // helper ensure this is a no-op for individual / admin
+      // devices, and for team_members whose canary flag isn't on
+      // or whose admin's storage backend isn't yet supported.
+      autoQueueTeamUploadIfNeeded(stamped);
 
       // CRM auto-attach. When a photo is captured in a project that's
       // linked to a CRM job (e.g. SF), forward it straight to the CRM
@@ -836,6 +869,74 @@ export const PhotoProvider = ({ children }) => {
 
   const deleteAllPhotos = async () => {
     await savePhotos([]);
+  };
+
+  // Slice B: fire-and-forget auto-enqueue of a single-photo team
+  // upload right after capture. No-op unless the device is in
+  // team_member mode with team upload enabled (canary or master
+  // flag) AND the admin's storage is one we can deliver to today
+  // (Google). Guards mirror the manual upload branch in the two
+  // screens' handleConfirmUpload so behavior stays consistent.
+  //
+  // Any failure is swallowed — the manual "Upload" button remains
+  // available as a fallback for team members to retry a whole
+  // project at once. The backgroundUploadService queue already
+  // dedupes by photo id via uploadTracker, so a manual re-upload
+  // of an auto-synced photo is a no-op.
+  const autoQueueTeamUploadIfNeeded = async (photo) => {
+    try {
+      // Cheap flag check first — avoids any AsyncStorage / Keychain
+      // reads for individual / admin devices, which is the majority
+      // path.
+      const { isTeamUploadEnabled, getTeamUploadBlockedReason, TEAM_AUTO_SYNC_ENABLED } = require('../config/teamUpload');
+      if (!TEAM_AUTO_SYNC_ENABLED) return;
+
+      const mode = await AsyncStorage.getItem('@admin_user_mode');
+      if (mode !== 'team_member') return;
+
+      const info = await readSecureJSON('@team_member_info');
+      if (!info?.sessionId || !info?.token) return;
+      if (!isTeamUploadEnabled(info)) return;
+      if (getTeamUploadBlockedReason(info)) return; // e.g. non-Google admin
+
+      // Need the project record for its display name (album name on
+      // Drive) and to skip photos that aren't project-scoped yet.
+      if (!photo?.projectId) return;
+      const project = (projectsRef.current || []).find(p => p?.id === photo.projectId);
+      if (!project) return;
+
+      let memberName = 'Team Member';
+      try {
+        const stored = await AsyncStorage.getItem('app-settings');
+        const parsed = stored ? JSON.parse(stored) : {};
+        memberName = parsed?.userName || memberName;
+      } catch {}
+
+      // Lazy-require backgroundUploadService — same pattern as the
+      // proxyService lazy-require below. Keeps the auto-upload
+      // module off the top-level load path so any future OTA that
+      // touches the upload service can't brick an older binary
+      // via a module-load-time crash.
+      const bg = require('../services/backgroundUploadService').default;
+      bg.queueUpload({
+        uploadType: 'team',
+        teamInfo: info,
+        items: [photo],
+        albumName: project.name,
+        location: '',
+        userName: memberName,
+        flat: true, // Matches manual team branch + admin-authored flat contract
+        config: { accountType: info?.accountType || 'google' },
+      });
+      console.warn('[TEAM_AUTO_SYNC] enqueue', {
+        photoId: photo.id,
+        projectId: photo.projectId,
+        albumName: project.name,
+        mode: photo.mode,
+      });
+    } catch (err) {
+      console.warn('[PhotoContext] autoQueueTeamUploadIfNeeded failed:', err?.message);
+    }
   };
 
   // Fire-and-forget sync of a project's metadata to the proxy so the

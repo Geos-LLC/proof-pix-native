@@ -31,6 +31,19 @@ export const TEAM_UPLOAD_CANARY_SESSION_IDS = [
   'e700f98f528391993f26a7b64a838ffb', // canary 2026-07-22 — internal admin
 ];
 
+// Slice B: when true, PhotoContext.addPhoto auto-enqueues a team
+// upload immediately after capture for team_member accounts that
+// already satisfy `isTeamUploadEnabled` (canary or master flag) AND
+// whose admin is Google-backed. Photos land on the admin's Drive
+// without the team member having to open the Upload sheet.
+//
+// Defaults to true because auto-sync is the point of team mode: if
+// a team_member is on the canary at all, they should get the live
+// experience. Guarded downstream by `isTeamUploadEnabled` and
+// `getTeamUploadBlockedReason`, so this flag being on with the
+// canary flag off is a safe no-op.
+export const TEAM_AUTO_SYNC_ENABLED = true;
+
 /**
  * Rollout gate: is the caller's team session opted into the team
  * upload pipeline? Answers "yes" for the master flag or when the
