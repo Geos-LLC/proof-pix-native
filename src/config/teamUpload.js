@@ -28,7 +28,7 @@ export const TEAM_UPLOAD_ENABLED = false;
 // opted in to the team upload pipeline. Add a sessionId here to
 // enable it for that admin's whole team.
 export const TEAM_UPLOAD_CANARY_SESSION_IDS = [
-  // 'session_...',
+  'e700f98f528391993f26a7b64a838ffb', // canary 2026-07-22 — internal admin
 ];
 
 /**
