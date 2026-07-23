@@ -27,8 +27,13 @@ import {
 // SF backend base URL. Staging today; swap to prod once PR 1 is live
 // in prod. Env-overridable so QA / future builds can point at any
 // SF environment without a code change.
+// SF backend base URL. Flipped from staging (303f) to prod (4568) on
+// 2026-07-23 — SF unified backend deploys on `main` branch and the
+// staging URL fell behind (missing new endpoints, e.g. /connect/token
+// /status). Env-overridable so QA can point at staging or a preview
+// deployment when needed.
 const SF_BASE = process.env.EXPO_PUBLIC_SERVICEFLOW_URL
-  || 'https://service-flow-backend-staging-303f.up.railway.app';
+  || 'https://service-flow-backend-production-4568.up.railway.app';
 
 const SECURE_KEYS = {
   refreshToken: 'serviceflow.refresh_token',
