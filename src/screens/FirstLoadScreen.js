@@ -294,17 +294,10 @@ export default function FirstLoadScreen({ navigation, route }) {
     setInputYPosition(y);
   };
 
-  const themeIcon =
-    themeMode === 'dark'
-      ? 'moon'
-      : themeMode === 'system'
-        ? 'phone-portrait-outline'
-        : 'sunny';
+  const themeIcon = themeMode === 'dark' ? 'moon' : 'sunny';
 
   const cycleTheme = () => {
-    const next =
-      themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light';
-    setThemeMode(next);
+    setThemeMode(themeMode === 'dark' ? 'light' : 'dark');
   };
 
   const handleNameInputFocus = () => {

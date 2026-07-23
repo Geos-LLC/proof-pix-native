@@ -15,9 +15,9 @@ import { useTheme } from '../hooks/useTheme';
 
 // AppearanceScreen — dedicated route.
 //
-// Three radio rows (Light / Dark / System). Each row is a hairline
-// card with a leading icon tile + label + a check on the active row.
-// 'system' resolves via useColorScheme() in useTheme.
+// Two radio rows (Light / Dark). Each row is a hairline card with a
+// leading icon tile + label + a check on the active row. Light is the
+// default; there is no System option.
 
 export default function AppearanceScreen({ navigation }) {
   const { t } = useTranslation();
@@ -42,13 +42,6 @@ export default function AppearanceScreen({ navigation }) {
       label: t('appearance.dark', { defaultValue: 'Dark' }),
       sub: t('appearance.darkSub', { defaultValue: 'Easier on the eyes in low light' }),
       active: themeMode === 'dark',
-    },
-    {
-      key: 'system',
-      icon: 'phone-portrait-outline',
-      label: t('appearance.system', { defaultValue: 'System' }),
-      sub: t('appearance.systemSub', { defaultValue: 'Match the device setting' }),
-      active: themeMode === 'system',
     },
   ];
 
