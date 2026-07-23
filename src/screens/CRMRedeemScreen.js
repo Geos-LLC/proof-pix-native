@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
 import crmService from '../services/crm';
+import { syncServiceFlowJobs } from '../services/crm/serviceFlowSync';
+import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 
 /**
@@ -41,6 +43,12 @@ export default function CRMRedeemScreen({ route, navigation }) {
   const token = params.token;
   const workspaceFromUrl = params.workspace || null;
 
+  // PhotoContext handles for the immediate post-connect sync so SF
+  // jobs materialise into the Projects list without waiting for the
+  // ServiceFlowSyncTrigger's next foreground pass (which requires the
+  // user to background + reopen the app).
+  const { projects, createProject: ctxCreateProject, patchProject } = usePhotos();
+
   const [state, setState] = useState('redeeming'); // redeeming | success | error
   const [errorMessage, setErrorMessage] = useState(null);
   const [workspace, setWorkspace] = useState(null);
@@ -59,6 +67,16 @@ export default function CRMRedeemScreen({ route, navigation }) {
         if (result?.success) {
           setWorkspace(result.connection || null);
           setState('success');
+          // Fire an immediate sync so the admin's Projects list
+          // populates with SF jobs right away — mirrors the same
+          // post-connect behaviour in CloudSyncScreen's paste-in
+          // path. Best-effort; sync errors are logged only.
+          try {
+            const syncResult = await syncServiceFlowJobs({ projects, createProject: ctxCreateProject, patchProject });
+            console.warn('[ServiceFlow] post-connect sync (deep link)', syncResult);
+          } catch (syncErr) {
+            console.warn('[ServiceFlow] post-connect sync threw:', syncErr?.message);
+          }
         } else {
           setErrorMessage(result?.error || t('crmRedeem.failedGeneric', { defaultValue: 'Could not connect.' }));
           setState('error');
