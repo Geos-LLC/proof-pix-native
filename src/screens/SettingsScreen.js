@@ -3025,17 +3025,34 @@ export default function SettingsScreen({ navigation, route }) {
         <TouchableOpacity onPress={handleTitleTap} activeOpacity={1} style={styles.titleTouchable} hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}>
           <Text style={styles.title}>{t('settings.title')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.headerLanguageSelector}
-          onPress={() => setLanguageModalVisible(true)}
-        >
-          <Image
-            source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
-            style={styles.headerLanguageFlagImage}
-            resizeMode="cover"
-          />
-          <Ionicons name="chevron-down" size={18} color="#200E32" style={{ padding: 2 }} />
-        </TouchableOpacity>
+        <View style={styles.headerRightCluster}>
+          <TouchableOpacity
+            style={styles.headerThemeToggle}
+            onPress={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('appearance.title', { defaultValue: 'Appearance' })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name={themeMode === 'dark' ? 'moon' : 'sunny'}
+              size={20}
+              color={theme.textPrimary}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.headerLanguageSelector}
+            onPress={() => setLanguageModalVisible(true)}
+          >
+            <Image
+              source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
+              style={styles.headerLanguageFlagImage}
+              resizeMode="cover"
+            />
+            <Ionicons name="chevron-down" size={18} color={theme.textPrimary} style={{ padding: 2 }} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView 
@@ -3272,28 +3289,6 @@ export default function SettingsScreen({ navigation, route }) {
             <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
 
-          {/* Appearance — opens the standalone Appearance screen with
-              Light / Dark / System radio rows. */}
-          <TouchableOpacity
-            style={styles.ppRow}
-            onPress={() => navigation.navigate('Appearance')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.ppRowIc}>
-              <Ionicons name="contrast-outline" size={19} color={theme.textPrimary} />
-            </View>
-            <View style={styles.ppRowMeta}>
-              <Text style={styles.ppRowTitle}>
-                {t('settings.appearance', { defaultValue: 'Appearance' })}
-              </Text>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
-                {themeMode === 'dark'
-                  ? t('settings.themeDark', { defaultValue: 'Dark' })
-                  : t('settings.themeLight', { defaultValue: 'Light' })}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-          </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionEyebrow}>
@@ -5807,6 +5802,21 @@ const makeStyles = (theme) => StyleSheet.create({
     },
     titleTouchable: {
       alignSelf: 'flex-start',
+    },
+    headerRightCluster: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    headerThemeToggle: {
+      width: 36,
+      height: 36,
+      borderRadius: 999,
+      backgroundColor: theme.surface,
+      borderWidth: 1,
+      borderColor: theme.border,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     headerLanguageSelector: {
       flexDirection: 'row',
