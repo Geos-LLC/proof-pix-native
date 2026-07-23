@@ -570,18 +570,35 @@ export default function PlanSelectionScreen({ navigation, route }) {
   const currentRank = tierRank[currentTier] ?? 0;
   const labelForTier = (tier) => {
     const rank = tierRank[tier] ?? 0;
+    const titleCase = tier.charAt(0).toUpperCase() + tier.slice(1);
     if (tier === currentTier) return 'Current plan';
     if (rank > currentRank) {
       return trialAvailable && currentRank === 0
         ? `Start ${trialDays}-day free trial`
-        : `Upgrade to ${tier.charAt(0).toUpperCase()}${tier.slice(1)}`;
+        : `Upgrade to ${titleCase}`;
     }
-    return `Switch to ${tier.charAt(0).toUpperCase()}${tier.slice(1)}`;
+    return `Downgrade to ${titleCase}`;
   };
   const proCTAText = labelForTier('pro');
   const businessCTAText = labelForTier('business');
   const enterpriseCTAText =
     currentTier === 'enterprise' ? 'Current plan' : 'Contact sales';
+
+  // Bottom-anchored CTA follows the user's card tap (pendingSelection),
+  // defaulting to Pro when nothing is selected yet. Without this the CTA
+  // stayed hardcoded to Pro even after tapping Business.
+  const selectedTier = pendingSelection || 'pro';
+  const bottomCTAText =
+    selectedTier === 'enterprise' ? enterpriseCTAText : labelForTier(selectedTier);
+  const bottomCTADisabled = selectedTier === currentTier;
+  const handleBottomCTA = () => {
+    if (bottomCTADisabled) return;
+    if (selectedTier === 'enterprise') {
+      setShowEnterpriseModal(true);
+      return;
+    }
+    handleSelectPlan(selectedTier);
+  };
 
   // One feature bullet line — round check + text. `tint` lets the Pro
   // card's bullets render in accent-ink for the soft-yellow surface,
@@ -1031,12 +1048,12 @@ export default function PlanSelectionScreen({ navigation, route }) {
           length) and mirrors the store's intro-offer metadata. */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <TouchableOpacity
-          style={[styles.ctaButton, currentTier === 'pro' && styles.ctaButtonDisabled]}
-          onPress={currentTier === 'pro' ? undefined : () => handleSelectPlan('pro')}
-          disabled={currentTier === 'pro'}
+          style={[styles.ctaButton, bottomCTADisabled && styles.ctaButtonDisabled]}
+          onPress={handleBottomCTA}
+          disabled={bottomCTADisabled}
           activeOpacity={0.85}
         >
-          <Text style={styles.ctaButtonText}>{proCTAText}</Text>
+          <Text style={styles.ctaButtonText}>{bottomCTAText}</Text>
         </TouchableOpacity>
 
         <View style={styles.finePrintRow}>
