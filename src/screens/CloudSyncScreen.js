@@ -426,8 +426,8 @@ export default function CloudSyncScreen({ navigation }) {
             activeOpacity={0.85}
             disabled={!isPro}
           >
-            <View style={[styles.rowIc, googleConnected && styles.rowIcConnected]}>
-              <Ionicons name="logo-google" size={19} color={googleConnected ? '#7A5B00' : theme.textPrimary} />
+            <View style={styles.rowIc}>
+              <Ionicons name="logo-google" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>{t('cloudSync.googleDrive', { defaultValue: 'Google Drive' })}</Text>
@@ -455,8 +455,8 @@ export default function CloudSyncScreen({ navigation }) {
             activeOpacity={0.85}
             disabled={!isPro}
           >
-            <View style={[styles.rowIc, dropboxConnected && styles.rowIcConnected]}>
-              <Ionicons name="cloud-outline" size={19} color={dropboxConnected ? '#7A5B00' : theme.textPrimary} />
+            <View style={styles.rowIc}>
+              <Ionicons name="cloud-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>{t('cloudSync.dropbox', { defaultValue: 'Dropbox' })}</Text>
@@ -487,8 +487,8 @@ export default function CloudSyncScreen({ navigation }) {
             disabled={isWorkingServiceFlow}
             activeOpacity={0.85}
           >
-            <View style={[styles.rowIc, serviceFlowConnected && styles.rowIcConnected]}>
-              <Ionicons name="briefcase-outline" size={19} color={serviceFlowConnected ? '#7A5B00' : theme.textPrimary} />
+            <View style={styles.rowIc}>
+              <Ionicons name="briefcase-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>
@@ -518,8 +518,8 @@ export default function CloudSyncScreen({ navigation }) {
               shows an info alert + opens iOS Settings → iCloud. */}
           {iCloudAvailable ? (
             <TouchableOpacity style={styles.row} onPress={handleICloud} activeOpacity={0.85}>
-              <View style={[styles.rowIc, styles.rowIcConnected]}>
-                <Ionicons name="cloud-done-outline" size={19} color="#7A5B00" />
+              <View style={styles.rowIc}>
+                <Ionicons name="cloud-done-outline" size={19} color={theme.textPrimary} />
               </View>
               <View style={styles.rowMeta}>
                 <Text style={styles.rowTitle}>{t('cloudSync.iCloudDrive', { defaultValue: 'iCloud Drive' })}</Text>
@@ -812,7 +812,6 @@ const makeStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowIcConnected: { backgroundColor: '#FFF4C2' },
   rowMeta: { flex: 1, minWidth: 0 },
   rowTitle: {
     fontFamily: FONTS.ALEXANDRIA,
