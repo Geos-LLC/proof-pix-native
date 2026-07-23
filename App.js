@@ -1209,6 +1209,17 @@ export default function App() {
                   const initial = navigationRef.current.getCurrentRoute().name;
                   routeNameRef.current = initial;
                   setCurrentRouteName(initial);
+
+                  // Universal Links launched directly into JoinTeam /
+                  // Invite / Referral / CRMRedeem bypass AuthLoadingScreen's
+                  // splash-hide code, leaving the yellow native splash
+                  // visible forever. Hide unconditionally here — this
+                  // fires once when navigation is ready regardless of
+                  // which route resolved. AuthLoadingScreen's own
+                  // hideAsync calls become no-ops (idempotent).
+                  if (initial !== 'AuthLoading') {
+                    SplashScreen.hideAsync().catch(() => {});
+                  }
                 }}
                 onStateChange={async () => {
                   const previousRouteName = routeNameRef.current;
