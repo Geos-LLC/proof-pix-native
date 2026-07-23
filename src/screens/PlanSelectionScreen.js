@@ -63,6 +63,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
   const trigger = route?.params?.trigger || null;
 
   const [showEnterpriseModal, setShowEnterpriseModal] = useState(false);
+  // Optimistic tap feedback for tiers that trigger a native IAP sheet
+  // (Pro/Business). The iOS paywall takes ~2s to appear, and without this
+  // the user sees zero response to their tap. Flipping the radio dot
+  // immediately signals "we got your tap". Cleared in proceedWithPlanSelection's
+  // finally so cancel/error reverts. Never affects "Current plan" pill or
+  // CTA labels — those stay driven by real currentTier.
+  const [pendingSelection, setPendingSelection] = useState(null);
   // Default to false so returning/expired/active-trial users never see a flash
   // of "Free Trial" UI before canStartTrial() resolves. Eligible new users will
   // briefly see "Subscribe" before the trial UI appears — acceptable.
@@ -230,6 +237,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
   };
 
   const handleSelectPlan = async (plan) => {
+    // Immediate visual feedback for paid tiers — iOS paywall takes ~2s to
+    // appear so users need to see their tap was received. Starter is
+    // instant (no store sheet) so it doesn't need the optimistic flip.
+    if (plan !== 'starter') setPendingSelection(plan);
     // Real trial eligibility from store metadata. Starter (free tier) is
     // never a trial; for paid plans the store-side intro offer flag is the
     // source of truth. Hardcoding `false` here was hiding most trial starts
@@ -433,6 +444,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
       );
     } finally {
       isPurchasing.current = false;
+      // Clear optimistic radio-dot state. On success the currentTier update
+      // from updateUserPlan carries the visual through until navigation.reset
+      // unmounts the screen; on cancel/error this reverts the dot.
+      setPendingSelection(null);
     }
   };
 
@@ -737,11 +752,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
           ) : null}
 
           <View style={styles.proCardHeader}>
-            {/* Radio dot reflects the user's current plan. Filled green +
-                white checkmark when Pro is active; empty circle otherwise.
-                Keeps a single visual language with the compact rows below
-                so "filled dot = your plan" reads consistently. */}
-            {currentTier === 'pro' ? (
+            {/* Radio dot reflects the user's current plan OR pending
+                tap selection. Filled green + white checkmark when Pro is
+                active or the user just tapped it (optimistic feedback while
+                the iOS paywall loads); empty circle otherwise. Keeps a
+                single visual language with the compact rows below so
+                "filled dot = your plan" reads consistently. */}
+            {(currentTier === 'pro' || pendingSelection === 'pro') ? (
               <View style={[styles.radioDotCurrent, { marginRight: 0 }]}>
                 <Ionicons name="checkmark" size={12} color="#FFFFFF" />
               </View>
@@ -832,7 +849,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
           disabled={currentTier === 'business'}
           activeOpacity={currentTier === 'business' ? 1 : 0.85}
         >
-          {currentTier === 'business' ? (
+          {(currentTier === 'business' || pendingSelection === 'business') ? (
             <View style={styles.radioDotCurrent}>
               <Ionicons name="checkmark" size={12} color="#FFFFFF" />
             </View>
