@@ -99,7 +99,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
               onPress={handleClose}
               style={styles.backButton}
             >
-              <Ionicons name="arrow-back" size={24} color={COLORS.TEXT} />
+              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Contact us</Text>
             <View style={{ width: 40 }} />
@@ -132,7 +132,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
                 <TextInput
                   style={styles.input}
                   placeholder="Your Name"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={theme.textMuted}
                   value={formData.name}
                   onChangeText={(text) => setFormData({ ...formData, name: text })}
                   autoCapitalize="words"
@@ -144,7 +144,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
                 <TextInput
                   style={styles.input}
                   placeholder="Email Address"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={theme.textMuted}
                   value={formData.email}
                   onChangeText={(text) => setFormData({ ...formData, email: text })}
                   keyboardType="email-address"
@@ -157,7 +157,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
                 <TextInput
                   style={styles.input}
                   placeholder="Phone number (Optional)"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={theme.textMuted}
                   value={formData.phone}
                   onChangeText={(text) => setFormData({ ...formData, phone: text })}
                   keyboardType="phone-pad"
@@ -169,7 +169,7 @@ export default function EnterpriseContactModal({ visible, onClose, title, subtit
                 <TextInput
                   style={[styles.input, styles.textArea]}
                   placeholder="Tell us about your needs"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={theme.textMuted}
                   value={formData.description}
                   onChangeText={(text) => setFormData({ ...formData, description: text })}
                   multiline={true}
@@ -212,7 +212,7 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingVertical: 16,
     backgroundColor: theme.surfaceElevated,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: theme.border,
   },
   backButton: {
     width: 40,
@@ -299,7 +299,7 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingTop: 14,
   },
   sendButton: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.textPrimary,
     borderRadius: 20,
     paddingVertical: 18,
     paddingHorizontal: 20,
@@ -315,7 +315,7 @@ const makeStyles = (theme) => StyleSheet.create({
     elevation: 5,
   },
   sendButtonText: {
-    color: '#FFFFFF',
+    color: theme.background,
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.5,
