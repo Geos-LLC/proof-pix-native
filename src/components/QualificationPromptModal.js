@@ -147,7 +147,7 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
               onPress={onClose}
               accessibilityLabel="Close"
             >
-              <Ionicons name="close" size={20} color="#1E1E1E" />
+              <Ionicons name="close" size={20} color={theme.textPrimary} />
             </TouchableOpacity>
           )}
 
@@ -181,7 +181,7 @@ export default function QualificationPromptModal({ visible, onClose, mandatory =
                     <Ionicons
                       name={industry.icon}
                       size={18}
-                      color={isSelected ? '#1E1E1E' : '#666666'}
+                      color={isSelected ? theme.accentText : theme.textPrimary}
                     />
                   </View>
                   <Text
@@ -327,7 +327,7 @@ const makeStyles = (theme) => StyleSheet.create({
     letterSpacing: -0.1,
   },
   cardLabelSelected: {
-    color: theme.textPrimary,
+    color: theme.accentText,
   },
   continueButton: {
     backgroundColor: '#F2C31B',
@@ -350,7 +350,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '700',
-    color: theme.textPrimary,
+    color: theme.accentText,
     letterSpacing: -0.1,
   },
 });
