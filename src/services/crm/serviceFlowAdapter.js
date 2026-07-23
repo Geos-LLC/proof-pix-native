@@ -15,6 +15,9 @@
  * the access-token refresh logic moves into the proxy.
  */
 
+import { Platform } from 'react-native';
+import * as Device from 'expo-device';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BaseCRMAdapter } from './crmAdapter';
 import {
   readSecure,
@@ -115,10 +118,41 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
   async connect({ code, token, deviceLabel = 'ProofPix mobile' } = {}) {
     const credential = code || token;
     if (!credential) return { success: false, error: 'INVALID_PAYLOAD' };
+
+    // Enrich the redemption payload with device + role metadata so the
+    // SF dashboard can surface "who paired what, from where" without
+    // relying on the free-text device_label. SF backend picks these up
+    // additively — legacy pairs stay label-only until they re-pair.
+    // Every lookup is best-effort; a missing field just omits it from
+    // the body rather than blocking the connect.
+    let device_model = null;
+    let os_name = null;
+    let os_version = null;
+    let role = null;
+    try { device_model = Device.modelName || null; } catch {}
+    try { os_name = Device.osName || (Platform.OS === 'ios' ? 'iOS' : Platform.OS === 'android' ? 'Android' : Platform.OS); } catch {}
+    try {
+      os_version = Device.osVersion || (Platform.Version != null ? String(Platform.Version) : null);
+    } catch {}
+    try {
+      const mode = await AsyncStorage.getItem('@admin_user_mode');
+      // Normalise for SF: 'admin' | 'team_member' | 'individual' | null
+      role = mode || null;
+    } catch {}
+
+    const payload = {
+      code: credential,
+      device_label: deviceLabel,
+    };
+    if (device_model) payload.device_model = device_model;
+    if (os_name) payload.os_name = os_name;
+    if (os_version) payload.os_version = os_version;
+    if (role) payload.role = role;
+
     const response = await fetch(apiUrl('/connect/redeem'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: credential, device_label: deviceLabel }),
+      body: JSON.stringify(payload),
     });
     if (!response.ok) {
       const err = await parseErrorEnvelope(response);
