@@ -1403,20 +1403,51 @@ export const restorePurchases = async () => {
     // down. Do that here, then read entitlements. Android's Play Billing already
     // rehydrates on getAvailablePurchases, so RNIap.restorePurchases() is a no-op
     // pass-through there (still safe to call).
+    // AppStore.sync() can fail for many reasons other than a user
+    // password-prompt cancel: sandbox/prod mismatch, Apple-ID not signed
+    // into Media & Purchases (vs iCloud), transient network, or Apple
+    // throttling after repeated sync calls (users tap Restore multiple
+    // times when it doesn't work → guaranteed throttle). Don't rethrow
+    // any sync failure here — fall through to getAvailablePurchases()
+    // which reads the local StoreKit entitlement cache and often
+    // succeeds even when the network sync doesn't. Only USER_CANCELLED
+    // from the native password prompt actually means the user bailed;
+    // OpenIAP's "Request Canceled" serviceError does NOT mean that.
     console.log('[IAP] Forcing App Store sync via RNIap.restorePurchases()...');
+    let syncFailed = false;
+    let syncErrMsg = '';
     try {
       await RNIap.restorePurchases();
       console.log('[IAP] Sync complete');
     } catch (syncErr) {
       const msg = syncErr?.message || '';
-      if (msg.includes('Request Canceled') || msg.includes('USER_CANCELLED') || msg.includes('canceled')) {
-        throw syncErr; // user cancelled the Apple-ID password prompt
+      // Only a genuine user cancel of the Apple-ID password sheet should
+      // bail — that's an explicit user intent. Everything else (including
+      // OpenIAP's ambiguous "Request Canceled" serviceError) is treated
+      // as a sync problem worth trying to recover from via cached
+      // entitlements.
+      const isRealUserCancel = msg.includes('USER_CANCELLED')
+        || syncErr?.code === 'E_USER_CANCELLED'
+        || syncErr?.code === 'user-cancelled';
+      if (isRealUserCancel) {
+        throw syncErr;
       }
-      console.warn('[IAP] AppStore.sync() failed, falling back to cached entitlements:', msg);
+      syncFailed = true;
+      syncErrMsg = msg || String(syncErr);
+      console.warn('[IAP] AppStore.sync() failed, falling back to cached entitlements:', syncErrMsg);
     }
 
     console.log('[IAP] Calling RNIap.getAvailablePurchases()...');
     const purchases = await RNIap.getAvailablePurchases();
+    // If sync failed AND entitlements are also empty, surface a specific
+    // error so the caller can show useful guidance ("Check your Apple ID
+    // sign-in and try again") instead of the misleading "no active
+    // subscriptions" message.
+    if (syncFailed && (!purchases || purchases.length === 0)) {
+      const err = new Error('SYNC_FAILED_NO_CACHED_ENTITLEMENTS');
+      err.underlyingMessage = syncErrMsg;
+      throw err;
+    }
     console.log('[IAP] Restore successful, found', purchases?.length || 0, 'purchase(s)');
 
     if (purchases && purchases.length > 0) {

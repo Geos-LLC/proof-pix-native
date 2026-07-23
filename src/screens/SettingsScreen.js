@@ -1919,11 +1919,26 @@ export default function SettingsScreen({ navigation, route }) {
     } catch (error) {
       console.error('[Settings] Error restoring purchases:', error);
 
-      // Check if user cancelled the restore
       const errorMessage = error?.message || '';
-      if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED')) {
-        // User cancelled - don't show error alert
+      // Only a genuine password-sheet cancel should bail silently.
+      // OpenIAP's "Request Canceled" serviceError is NOT that — it means
+      // StoreKit sync failed for another reason (throttling, sandbox/prod
+      // mismatch, network). Fall through to the actionable alert below.
+      if (errorMessage.includes('USER_CANCELLED') || error?.code === 'E_USER_CANCELLED' || error?.code === 'user-cancelled') {
         console.log('[Settings] User cancelled restore purchases');
+        return;
+      }
+
+      // Sync failed AND no cached entitlements — surface actionable
+      // guidance instead of the generic "failed to restore" alert.
+      if (errorMessage === 'SYNC_FAILED_NO_CACHED_ENTITLEMENTS') {
+        Alert.alert(
+          t('paywall.restoreSyncTitle', { defaultValue: 'Couldn\'t reach the App Store' }),
+          t('paywall.restoreSyncBody', {
+            defaultValue:
+              'Your subscription is safe, but we couldn\'t sync with the App Store just now. Wait a minute and try again. If the issue persists, sign out and back into your Apple ID in Settings → [your name] → Media & Purchases.',
+          })
+        );
         return;
       }
 

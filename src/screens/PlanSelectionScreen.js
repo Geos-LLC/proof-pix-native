@@ -520,8 +520,29 @@ export default function PlanSelectionScreen({ navigation, route }) {
       console.error('[PlanSelection] Error restoring purchases:', error);
 
       const errorMessage = error?.message || '';
-      if (errorMessage.includes('Request Canceled') || errorMessage.includes('USER_CANCELLED') || errorMessage.includes('canceled')) {
+      // Only bail silently on a REAL user cancel of Apple's password
+      // sheet. OpenIAP's "Request Canceled" serviceError is NOT that —
+      // it means StoreKit itself couldn't complete the sync (sandbox/prod
+      // mismatch, throttling from repeated taps, network glitch).
+      if (errorMessage.includes('USER_CANCELLED') || error?.code === 'E_USER_CANCELLED' || error?.code === 'user-cancelled') {
         console.log('[PlanSelection] User cancelled restore purchases');
+        setIsRestoringPurchases(false);
+        return;
+      }
+
+      // Sync failed AND no cached entitlements — show actionable guidance
+      // instead of the misleading "no active subscriptions" alert. This
+      // is the state your active App Store subscription lands in when
+      // StoreKit throttles after repeated Restore taps or when the app is
+      // in a different environment (sandbox vs prod) than the sub.
+      if (errorMessage === 'SYNC_FAILED_NO_CACHED_ENTITLEMENTS') {
+        Alert.alert(
+          t('paywall.restoreSyncTitle', { defaultValue: 'Couldn\'t reach the App Store' }),
+          t('paywall.restoreSyncBody', {
+            defaultValue:
+              'Your subscription is safe, but we couldn\'t sync with the App Store just now. Wait a minute and try again. If the issue persists, sign out and back into your Apple ID in Settings → [your name] → Media & Purchases.',
+          })
+        );
         setIsRestoringPurchases(false);
         return;
       }
