@@ -399,7 +399,7 @@ export default function CloudSyncScreen({ navigation }) {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="chevron-back" size={20} color="#1E1E1E" />
+          <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('cloudSync.title', { defaultValue: 'Cloud sync' })}</Text>
         <View style={styles.headerIconBtn} />
@@ -427,7 +427,7 @@ export default function CloudSyncScreen({ navigation }) {
             disabled={!isPro}
           >
             <View style={[styles.rowIc, googleConnected && styles.rowIcConnected]}>
-              <Ionicons name="logo-google" size={19} color={googleConnected ? '#7A5B00' : '#1E1E1E'} />
+              <Ionicons name="logo-google" size={19} color={googleConnected ? '#7A5B00' : theme.textPrimary} />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>{t('cloudSync.googleDrive', { defaultValue: 'Google Drive' })}</Text>
@@ -437,7 +437,7 @@ export default function CloudSyncScreen({ navigation }) {
             </View>
             <View style={[styles.actionPill, googleConnected ? styles.actionPillGhost : styles.actionPillAccent]}>
               {isWorkingGoogle ? (
-                <ActivityIndicator size="small" color="#1E1E1E" />
+                <ActivityIndicator size="small" color={googleConnected ? theme.textPrimary : theme.accentText} />
               ) : (
                 <Text style={[styles.actionPillText, googleConnected ? styles.actionPillTextGhost : styles.actionPillTextAccent]}>
                   {googleConnected
@@ -456,7 +456,7 @@ export default function CloudSyncScreen({ navigation }) {
             disabled={!isPro}
           >
             <View style={[styles.rowIc, dropboxConnected && styles.rowIcConnected]}>
-              <Ionicons name="cloud-outline" size={19} color={dropboxConnected ? '#7A5B00' : '#1E1E1E'} />
+              <Ionicons name="cloud-outline" size={19} color={dropboxConnected ? '#7A5B00' : theme.textPrimary} />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>{t('cloudSync.dropbox', { defaultValue: 'Dropbox' })}</Text>
@@ -466,7 +466,7 @@ export default function CloudSyncScreen({ navigation }) {
             </View>
             <View style={[styles.actionPill, dropboxConnected ? styles.actionPillGhost : styles.actionPillAccent]}>
               {isWorkingDropbox ? (
-                <ActivityIndicator size="small" color="#1E1E1E" />
+                <ActivityIndicator size="small" color={dropboxConnected ? theme.textPrimary : theme.accentText} />
               ) : (
                 <Text style={[styles.actionPillText, dropboxConnected ? styles.actionPillTextGhost : styles.actionPillTextAccent]}>
                   {dropboxConnected
@@ -488,7 +488,7 @@ export default function CloudSyncScreen({ navigation }) {
             activeOpacity={0.85}
           >
             <View style={[styles.rowIc, serviceFlowConnected && styles.rowIcConnected]}>
-              <Ionicons name="briefcase-outline" size={19} color={serviceFlowConnected ? '#7A5B00' : '#1E1E1E'} />
+              <Ionicons name="briefcase-outline" size={19} color={serviceFlowConnected ? '#7A5B00' : theme.textPrimary} />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>
@@ -501,11 +501,11 @@ export default function CloudSyncScreen({ navigation }) {
                 {sfLabel}
               </Text>
             </View>
-            <View style={[styles.actionPill, serviceFlowConnected && styles.actionPillDestructive]}>
+            <View style={[styles.actionPill, serviceFlowConnected ? styles.actionPillGhost : styles.actionPillAccent]}>
               {isWorkingServiceFlow ? (
-                <ActivityIndicator size="small" color="#1E1E1E" />
+                <ActivityIndicator size="small" color={serviceFlowConnected ? theme.textPrimary : theme.accentText} />
               ) : (
-                <Text style={[styles.actionPillText, serviceFlowConnected && styles.actionPillTextDestructive]}>
+                <Text style={[styles.actionPillText, serviceFlowConnected ? styles.actionPillTextGhost : styles.actionPillTextAccent]}>
                   {serviceFlowConnected
                     ? t('cloudSync.disconnect', { defaultValue: 'Disconnect' })
                     : t('cloudSync.connect', { defaultValue: 'Connect' })}
@@ -538,7 +538,7 @@ export default function CloudSyncScreen({ navigation }) {
           {/* Background upload toggle */}
           <View style={styles.row}>
             <View style={styles.rowIc}>
-              <Ionicons name="cloud-upload-outline" size={19} color="#1E1E1E" />
+              <Ionicons name="cloud-upload-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.rowMeta}>
               <Text style={styles.rowTitle}>
@@ -849,6 +849,6 @@ const makeStyles = (theme) => StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.1,
   },
-  actionPillTextAccent: { color: theme.textPrimary },
+  actionPillTextAccent: { color: theme.accentText },
   actionPillTextGhost: { color: theme.textPrimary },
 });
