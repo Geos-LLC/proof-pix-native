@@ -68,7 +68,7 @@ export default function FirstLoadScreen({ navigation, route }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { individualSignIn } = useAdmin();
-  const { updateUserInfo, updateUserPlan, userPlan, updateLabelLanguage, updateSectionLanguage } = useSettings();
+  const { updateUserInfo, updateUserPlan, userPlan, updateLabelLanguage, updateSectionLanguage, themeMode, setThemeMode } = useSettings();
   const [userName, setUserName] = useState('');
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [referralCodeModalVisible, setReferralCodeModalVisible] = useState(false);
@@ -294,6 +294,19 @@ export default function FirstLoadScreen({ navigation, route }) {
     setInputYPosition(y);
   };
 
+  const themeIcon =
+    themeMode === 'dark'
+      ? 'moon'
+      : themeMode === 'system'
+        ? 'phone-portrait-outline'
+        : 'sunny';
+
+  const cycleTheme = () => {
+    const next =
+      themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light';
+    setThemeMode(next);
+  };
+
   const handleNameInputFocus = () => {
     const totalY = formYPosition + inputYPosition;
     setTimeout(() => {
@@ -321,17 +334,30 @@ export default function FirstLoadScreen({ navigation, route }) {
           <Text style={styles.headerTitle}>ProofPix</Text>
         </View>
         
-        <TouchableOpacity
-          style={styles.languageSelector}
-          onPress={() => setLanguageModalVisible(true)}
-        >
-          <Image
-            source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
-            style={styles.languageFlagImage}
-            resizeMode="cover"
-          />
-          <Ionicons name="chevron-down" style={{padding:2}} size={18} color={theme.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.headerRightCluster}>
+          <TouchableOpacity
+            style={styles.themeToggle}
+            onPress={cycleTheme}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('appearance.title', { defaultValue: 'Appearance' })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name={themeIcon} size={20} color={theme.textPrimary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.languageSelector}
+            onPress={() => setLanguageModalVisible(true)}
+          >
+            <Image
+              source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
+              style={styles.languageFlagImage}
+              resizeMode="cover"
+            />
+            <Ionicons name="chevron-down" style={{padding:2}} size={18} color={theme.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -599,6 +625,21 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.textPrimary,
     letterSpacing: -0.11,
   },
+  headerRightCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  themeToggle: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   languageSelector: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -672,6 +713,7 @@ const makeStyles = (theme) => StyleSheet.create({
     letterSpacing: -0.2,
     textAlign: 'center',
     marginBottom: 18,
+    color: theme.textPrimary,
   },
   inputContainer: {
     marginBottom: 18,
