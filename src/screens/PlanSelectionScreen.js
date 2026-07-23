@@ -708,15 +708,19 @@ export default function PlanSelectionScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        {/* ===== Pro — emphasized expanded card. This is the recommended
-            plan on both cadences; the bottom-anchored CTA below drives its
-            purchase. Radio dot on the left indicates it's the selected
+        {/* ===== Pro — emphasized expanded card. Tapping the card itself
+            enters the purchase flow (matches Business/Enterprise/Starter
+            row behavior below); the bottom-anchored CTA is a secondary
+            entry point. Radio dot on the left indicates it's the selected
             plan by default (Pro is always the emphasized row per design). */}
-        <View
+        <TouchableOpacity
           style={[
             styles.proCard,
             currentTier === 'pro' && styles.proCardCurrent,
           ]}
+          onPress={currentTier === 'pro' ? undefined : () => handleSelectPlan('pro')}
+          disabled={currentTier === 'pro'}
+          activeOpacity={currentTier === 'pro' ? 1 : 0.85}
         >
           {/* MOST POPULAR pill — shown on annual cadence only, per spec.
               Sits at the top-right corner of the Pro card. */}
@@ -808,7 +812,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
               <Bullet text="Watermark, logo, voice notes & markup" tint="#7A5B00" />
             </View>
           )}
-        </View>
+        </TouchableOpacity>
 
         {/* ===== Business — compact single-row selectable per design.
             Empty radio circle + title/subtitle on the left, price on
