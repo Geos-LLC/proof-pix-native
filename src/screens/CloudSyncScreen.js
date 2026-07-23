@@ -246,14 +246,58 @@ export default function CloudSyncScreen({ navigation }) {
     );
   };
 
-  // Service Flow: connect via openAuthSessionAsync against the
-  // SF web/PWA /integrations/proofpix/authorize page. The auth
-  // session primitive intercepts the proofpix://connect redirect
-  // and hands back the URL — we extract the token client-side and
-  // pass it through the same adapter.connect() the deep-link
-  // handler uses, so both surfaces converge on one redemption path.
+  // Service Flow authorize URL — prod frontend by default (SF unified
+  // deploys on `main`). Env-overridable for QA against staging or a
+  // Vercel preview. Same-device flow: SF page mints token, launches
+  // proofpix://connect?token=… which openAuthSessionAsync intercepts.
   const SF_AUTHORIZE_URL = (process.env.EXPO_PUBLIC_SERVICEFLOW_AUTHORIZE_URL)
-    || 'https://staging.service-flow.pro/integrations/proofpix/authorize?return_to=proofpix://connect';
+    || 'https://service-flow.pro/integrations/proofpix/authorize?return_to=proofpix://connect';
+
+  // Fires the /authorize web flow inside an in-app browser. Primary
+  // path for phone-only users who don't have a desktop to scan a QR
+  // from. On success, SF's page attempts proofpix://connect?token=…
+  // which openAuthSessionAsync catches, and we redeem the token
+  // client-side via the same adapter path CRMRedeemScreen uses.
+  const runServiceFlowSignInWeb = async () => {
+    setIsWorkingServiceFlow(true);
+    try {
+      const result = await WebBrowser.openAuthSessionAsync(SF_AUTHORIZE_URL, 'proofpix://connect');
+      if (result?.type !== 'success' || !result.url) {
+        // User dismissed, or browser closed without a redirect. Fall
+        // through to offer the paste-in modal so they still have a way
+        // to complete the connection.
+        return { completed: false, reason: 'dismissed' };
+      }
+      // Parse token from the returned URL.
+      let token = null;
+      try {
+        const u = new URL(result.url);
+        token = u.searchParams.get('token');
+      } catch {}
+      if (!token) {
+        return { completed: false, reason: 'no_token' };
+      }
+      const redeem = await crmService.connect('serviceflow', { token });
+      if (!redeem?.success) {
+        return { completed: false, reason: 'redeem_failed', error: redeem?.error };
+      }
+      await refreshServiceFlow();
+      // Kick an immediate SF sync so admin's Projects list populates.
+      try {
+        const syncResult = await syncServiceFlowJobs({ projects, createProject: ctxCreateProject, patchProject });
+        console.warn('[ServiceFlow] post-signin sync', syncResult);
+      } catch (syncErr) {
+        console.warn('[ServiceFlow] post-signin sync threw:', syncErr?.message);
+      }
+      return { completed: true };
+    } catch (e) {
+      console.warn('[CloudSync] SF web sign-in threw:', e?.message);
+      return { completed: false, reason: 'exception', error: e?.message };
+    } finally {
+      setIsWorkingServiceFlow(false);
+    }
+  };
+
   const handleServiceFlow = async () => {
     if (isWorkingServiceFlow) return;
     if (serviceFlowConnected) {
@@ -283,12 +327,21 @@ export default function CloudSyncScreen({ navigation }) {
       return;
     }
 
-    // Not connected → open the paste-in code sheet. The former
-    // openAuthSessionAsync flow is disabled until SF backend PR 4
-    // ships their /authorize state-token fix; that path stayed on
-    // proofpix://connect via the deep-link handler in CRMRedeemScreen
-    // so it will start working again as soon as SF re-enables the
-    // authorize endpoint without changes on our side.
+    // Not connected → try the web sign-in flow first (best UX for
+    // phone-only users). On dismiss / no-token / redeem failure, fall
+    // back to the paste-in modal so users can still complete the
+    // connection with a code from SF admin panel.
+    const outcome = await runServiceFlowSignInWeb();
+    if (outcome.completed) return;
+
+    if (outcome.reason === 'redeem_failed' && outcome.error) {
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        String(outcome.error),
+      );
+      return;
+    }
+
     setSfCodeInput('');
     setSfCodeError(null);
     setSfCodeModalVisible(true);
@@ -595,8 +648,32 @@ export default function CloudSyncScreen({ navigation }) {
 
                   <Text style={[sfCodeStyles.body, { color: theme.textSecondary }]}>
                     {t('cloudSync.sfConnectInstructions', {
-                      defaultValue: 'In Service Flow, open Integrations → ProofPix and tap Generate connect code. Paste the 16-character code below.',
+                      defaultValue: 'Paste a connect code or pairing token. If you have Service Flow available in a browser, you can also sign in directly instead.',
                     })}
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[sfCodeStyles.submitButton, { backgroundColor: theme.surfaceElevated, marginTop: 0, marginBottom: 14, height: 44, flexDirection: 'row' }]}
+                    onPress={async () => {
+                      setSfCodeModalVisible(false);
+                      const outcome = await runServiceFlowSignInWeb();
+                      if (!outcome.completed) {
+                        // Web dismissed / failed — reopen the paste-in modal
+                        setSfCodeInput('');
+                        setSfCodeError(outcome.reason === 'redeem_failed' ? String(outcome.error || 'Sign-in failed') : null);
+                        setSfCodeModalVisible(true);
+                      }
+                    }}
+                    disabled={sfCodeSubmitting || isWorkingServiceFlow}
+                  >
+                    <Ionicons name="globe-outline" size={18} color={theme.textPrimary} style={{ marginRight: 8 }} />
+                    <Text style={[sfCodeStyles.submitButtonText, { color: theme.textPrimary, fontSize: 15 }]}>
+                      {t('cloudSync.sfSignInWeb', { defaultValue: 'Sign in to Service Flow' })}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={{ color: theme.textMuted, fontSize: 11, fontFamily: FONTS.ALEXANDRIA, textAlign: 'center', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    {t('cloudSync.sfOr', { defaultValue: 'or paste a code' })}
                   </Text>
 
                   <TextInput
