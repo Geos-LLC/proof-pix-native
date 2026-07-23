@@ -4217,7 +4217,7 @@ export default function SettingsScreen({ navigation, route }) {
                   style={styles.modalCloseButtonTop}
                   onPress={() => setLanguageModalVisible(false)}
                 >
-                  <Ionicons name="close" size={24} color={COLORS.TEXT} />
+                  <Ionicons name="close" size={24} color={theme.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.modalTitleBottomSheet}>
                   {t('settings.language', { defaultValue: 'Change Language' })}
@@ -4249,7 +4249,7 @@ export default function SettingsScreen({ navigation, route }) {
                     </Text>
                     {i18n.language === language.code && (
                       <View style={styles.checkmarkCircle}>
-                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                        <Ionicons name="checkmark" size={16} color={theme.accentText} />
                       </View>
                     )}
                   </TouchableOpacity>
@@ -8246,7 +8246,7 @@ const makeStyles = (theme) => StyleSheet.create({
       justifyContent: 'flex-end',
     },
     languageModalContentBottomSheet: {
-      backgroundColor: 'white',
+      backgroundColor: theme.surfaceElevated,
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
       minHeight: '80%',
@@ -8257,7 +8257,7 @@ const makeStyles = (theme) => StyleSheet.create({
     modalHandle: {
       width: 40,
       height: 4,
-      backgroundColor: '#E5E5E5',
+      backgroundColor: theme.border,
       borderRadius: 2,
       alignSelf: 'center',
       marginTop: 8,
@@ -8281,7 +8281,7 @@ const makeStyles = (theme) => StyleSheet.create({
       fontSize: 18,
       fontWeight: '700',
       fontFamily: FONTS.ALEXANDRIA,
-      color: COLORS.TEXT,
+      color: theme.textPrimary,
       flex: 1,
       textAlign: 'center',
     },
@@ -8294,7 +8294,7 @@ const makeStyles = (theme) => StyleSheet.create({
       paddingVertical: 16,
       paddingHorizontal: 20,
       borderBottomWidth: 1,
-      borderBottomColor: '#F5F5F5',
+      borderBottomColor: theme.divider,
     },
     flagCircle: {
       width: 40,
@@ -8317,7 +8317,7 @@ const makeStyles = (theme) => StyleSheet.create({
       width: 24,
       height: 24,
       borderRadius: 12,
-      backgroundColor: COLORS.PRIMARY,
+      backgroundColor: theme.accent,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -8326,7 +8326,7 @@ const makeStyles = (theme) => StyleSheet.create({
       fontSize: 16,
       fontWeight: '400',
       fontFamily: FONTS.ALEXANDRIA,
-      color: COLORS.TEXT,
+      color: theme.textPrimary,
     },
     settingButton: {
       backgroundColor: theme.surfaceElevated,
