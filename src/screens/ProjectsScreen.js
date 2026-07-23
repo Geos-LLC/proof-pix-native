@@ -2637,7 +2637,13 @@ export default function ProjectsScreen({ navigation, route }) {
         visible={!!tpPhotosProject}
         transparent
         animationType="slide"
-        onRequestClose={closeTeamProjectPhotos}
+        onRequestClose={() => {
+          // Android back button: close viewer first if it's open,
+          // otherwise close the whole grid. Prevents an accidental
+          // triple-back from a full-res viewer.
+          if (tpViewerPhoto) setTpViewerPhoto(null);
+          else closeTeamProjectPhotos();
+        }}
       >
         <View style={teamPhotosStyles.overlay}>
           <View style={[teamPhotosStyles.sheet, { backgroundColor: theme.surface, paddingBottom: Math.max(insets.bottom, 20) }]}>
@@ -2735,43 +2741,40 @@ export default function ProjectsScreen({ navigation, route }) {
               })()
             )}
           </View>
-        </View>
-      </Modal>
 
-      {/* Full-res viewer — full-screen overlay, tap to close. Uses
-          the =s2000 variant of Drive's thumbnailLink to lazy-load a
-          high-res version without an extra Drive round-trip. */}
-      <Modal
-        visible={!!tpViewerPhoto}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTpViewerPhoto(null)}
-      >
-        <TouchableWithoutFeedback onPress={() => setTpViewerPhoto(null)}>
-          <View style={teamPhotosStyles.viewerOverlay}>
-            <TouchableOpacity
-              onPress={() => setTpViewerPhoto(null)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={[teamPhotosStyles.viewerCloseBtn, { top: Math.max(insets.top + 8, 40) }]}
-            >
-              <Ionicons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-            {tpViewerPhoto?.thumbnailLink ? (
-              <Image
-                source={{ uri: swapDriveThumbSize(tpViewerPhoto.thumbnailLink, 2000) }}
-                style={{ width: '100%', height: '100%' }}
-                resizeMode="contain"
-              />
-            ) : null}
-            {tpViewerPhoto?.name ? (
-              <View style={[teamPhotosStyles.viewerCaption, { bottom: Math.max(insets.bottom + 16, 32) }]}>
-                <Text style={teamPhotosStyles.viewerCaptionText} numberOfLines={1}>
-                  {tpViewerPhoto.name}
-                </Text>
+          {/* Full-res viewer overlay. Rendered INSIDE the grid Modal
+              (not as a sibling <Modal>) because RN's Modal doesn't
+              reliably stack — a second visible Modal was silently
+              dropped on Android and had tap-target confusion on iOS.
+              Absolute-positioned View is cross-platform-safe. */}
+          {tpViewerPhoto ? (
+            <TouchableWithoutFeedback onPress={() => setTpViewerPhoto(null)}>
+              <View style={[teamPhotosStyles.viewerOverlay, StyleSheet.absoluteFillObject]}>
+                <TouchableOpacity
+                  onPress={() => setTpViewerPhoto(null)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={[teamPhotosStyles.viewerCloseBtn, { top: Math.max(insets.top + 8, 40) }]}
+                >
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+                {tpViewerPhoto?.thumbnailLink ? (
+                  <Image
+                    source={{ uri: swapDriveThumbSize(tpViewerPhoto.thumbnailLink, 2000) }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="contain"
+                  />
+                ) : null}
+                {tpViewerPhoto?.name ? (
+                  <View style={[teamPhotosStyles.viewerCaption, { bottom: Math.max(insets.bottom + 16, 32) }]}>
+                    <Text style={teamPhotosStyles.viewerCaptionText} numberOfLines={1}>
+                      {tpViewerPhoto.name}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
-            ) : null}
-          </View>
-        </TouchableWithoutFeedback>
+            </TouchableWithoutFeedback>
+          ) : null}
+        </View>
       </Modal>
 
     </SafeAreaView>
