@@ -57,7 +57,7 @@ const YELLOW = '#F2C31B';
 
 export default function JoinTeamScreen({ navigation, route }) {
   const { t, i18n } = useTranslation();
-  const { updateUserInfo, updateLabelLanguage, updateSectionLanguage } = useSettings();
+  const { updateUserInfo, updateLabelLanguage, updateSectionLanguage, themeMode, setThemeMode } = useSettings();
   const { isAuthenticated } = useAdmin();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -165,6 +165,12 @@ export default function JoinTeamScreen({ navigation, route }) {
     navigation.replace('FirstLoad', { skipClipboardCheck: true });
   };
 
+  const themeIcon = themeMode === 'dark' ? 'moon' : 'sunny';
+
+  const cycleTheme = () => {
+    setThemeMode(themeMode === 'dark' ? 'light' : 'dark');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -180,17 +186,30 @@ export default function JoinTeamScreen({ navigation, route }) {
           <Text style={styles.headerTitle}>ProofPix</Text>
         </View>
         
-        <TouchableOpacity
-          style={styles.languageSelector}
-          onPress={() => setLanguageModalVisible(true)}
-        >
-          <Image
-            source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
-            style={styles.languageFlagImage}
-            resizeMode="contain"
-          />
-          <Ionicons name="chevron-down" style={{ padding: 2 }} size={18} color="#200E32" />
-        </TouchableOpacity>
+        <View style={styles.headerRightCluster}>
+          <TouchableOpacity
+            style={styles.themeToggle}
+            onPress={cycleTheme}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={t('appearance.title', { defaultValue: 'Appearance' })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name={themeIcon} size={20} color={theme.textPrimary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.languageSelector}
+            onPress={() => setLanguageModalVisible(true)}
+          >
+            <Image
+              source={FLAG_IMAGES[getCurrentLanguage().code] || FLAG_IMAGES.en}
+              style={styles.languageFlagImage}
+              resizeMode="contain"
+            />
+            <Ionicons name="chevron-down" style={{ padding: 2 }} size={18} color={theme.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -205,10 +224,10 @@ export default function JoinTeamScreen({ navigation, route }) {
         >
           {/* Team Avatar Icon */}
           <View style={styles.avatarContainer}>
-          <Image
+            <Image
               source={require('../../assets/jointeam.png')}
               resizeMode="contain"
-              style={{width: 97, height: 97}}
+              style={{ width: 97, height: 97, tintColor: theme.textPrimary }}
             />
           </View>
 
@@ -331,7 +350,7 @@ export default function JoinTeamScreen({ navigation, route }) {
                 style={styles.modalCloseButtonTop}
                 onPress={() => setLanguageModalVisible(false)}
               >
-                <Ionicons name="close" size={24} color={COLORS.TEXT} />
+                <Ionicons name="close" size={24} color={theme.textPrimary} />
               </TouchableOpacity>
               <Text style={styles.modalTitleBottomSheet}>
                 {t('firstLoad.changeLanguage', { defaultValue: 'Change Language' })}
@@ -359,7 +378,7 @@ export default function JoinTeamScreen({ navigation, route }) {
                   </Text>
                   {i18n.language === language.code && (
                     <View style={styles.checkmarkCircle}>
-                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      <Ionicons name="checkmark" size={16} color={theme.accentText} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -439,8 +458,23 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 25,
     fontWeight: 'bold',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     letterSpacing: -0.11,
+  },
+  headerRightCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  themeToggle: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   languageSelector: {
     flexDirection: 'row',
@@ -543,7 +577,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 23,
     fontWeight: '700',
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 7,
     letterSpacing: -0.2,
@@ -553,7 +587,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textAlign: 'center',
     marginBottom: 18,
     letterSpacing: -0.2,
@@ -566,7 +600,7 @@ const makeStyles = (theme) => StyleSheet.create({
   inputBox: {
     backgroundColor: theme.surfaceElevated,
     borderWidth: 1,
-    borderColor: '#D5D5D5',
+    borderColor: theme.borderStrong,
     borderRadius: 11,
     paddingHorizontal: 12,
     paddingTop: 7,
@@ -576,15 +610,15 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '400',
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
-    opacity: 0.4,
+    color: theme.textPrimary,
+    opacity: 0.55,
     marginBottom: 4,
   },
   textInput: {
     fontSize: 15,
     fontWeight: 'bold',
     fontFamily: FONTS.ALEXANDRIA,
-    color: '#000000',
+    color: theme.textPrimary,
     padding: 0,
     margin: 0,
   },
@@ -595,12 +629,12 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     fontFamily: FONTS.ALEXANDRIA,
-    color: 'rgba(0,0,0,0.35)',
+    color: theme.textMuted,
     zIndex: 1,
     lineHeight: 20,
   },
   joinButton: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.textPrimary,
     borderRadius: 100,
     paddingVertical: 14,
     alignItems: 'center',
@@ -610,7 +644,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     fontFamily: 'Alexandria_400Regular',
-    color: '#FFFFFF',
+    color: theme.background,
   },
   orContainer: {
     flexDirection: 'row',
@@ -623,14 +657,14 @@ const makeStyles = (theme) => StyleSheet.create({
   orLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#000000',
-    opacity: 0.1,
+    backgroundColor: theme.textPrimary,
+    opacity: 0.2,
   },
   orText: {
     fontSize: 13,
     fontWeight: '300',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     marginHorizontal: 8,
     textTransform: 'uppercase',
   },
@@ -642,7 +676,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     fontFamily: 'Alexandria_400Regular',
-    color: '#000000',
+    color: theme.textPrimary,
     textDecorationLine: 'underline',
     letterSpacing: 0.3,
   },
@@ -663,7 +697,7 @@ const makeStyles = (theme) => StyleSheet.create({
   modalHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#E5E5E5',
+    backgroundColor: theme.border,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 8,
@@ -687,7 +721,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     flex: 1,
     textAlign: 'center',
   },
@@ -700,7 +734,7 @@ const makeStyles = (theme) => StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
+    borderBottomColor: theme.divider,
   },
   flagCircle: {
     width: 40,
@@ -723,7 +757,7 @@ const makeStyles = (theme) => StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: COLORS.PRIMARY,
+    backgroundColor: theme.accent,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -732,6 +766,6 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '400',
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
   },
 });

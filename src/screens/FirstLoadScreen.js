@@ -366,11 +366,13 @@ export default function FirstLoadScreen({ navigation, route }) {
         >
           {/* User Avatar Icon */}
           <View style={styles.avatarContainer}>
-          <Image
-              source={require('../../assets/joinuser.png')}
-              resizeMode="contain"
-              style={{width: 97, height: 97}}
-            />
+            <View style={styles.avatarBackdrop}>
+              <Image
+                source={require('../../assets/joinuser.png')}
+                resizeMode="contain"
+                style={{ width: 97, height: 97 }}
+              />
+            </View>
           </View>
 
           {/* Title */}
@@ -674,6 +676,14 @@ const makeStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
     marginTop: 20,
     marginBottom: 24,
+  },
+  avatarBackdrop: {
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.mode === 'dark' ? '#FFF3D9' : 'transparent',
   },
   avatarIcon: {
     width: 97,
