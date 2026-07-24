@@ -409,6 +409,15 @@ export default function HomeScreen({ navigation, route }) {
       if (cancelled) return;
       if (done) return;
 
+      // Team members inherit rooms/labels from their admin's setup —
+      // the trade-selection prompt would clobber that seed AND ask
+      // them a question they can't meaningfully answer. Silently mark
+      // qualification complete for team-member accounts.
+      if (userMode === 'team_member') {
+        await AsyncStorage.setItem('@user_qualification', 'team_member');
+        return;
+      }
+
       // Returning user: projects survived reinstall via Keychain.
       // Pick the industry whose folder set best matches the rooms
       // the user's existing photos sit in. If we can match, we set
@@ -465,7 +474,7 @@ export default function HomeScreen({ navigation, route }) {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects?.length]);
+  }, [projects?.length, userMode]);
 
   // Refresh banner when screen focuses (user may have completed a job)
   useEffect(() => {

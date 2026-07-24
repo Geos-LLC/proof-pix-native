@@ -49,7 +49,8 @@ const BG_UPLOAD_KEY = '@cloud_team_bg_upload_pref';
 export default function CloudSyncScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, userInfo, accountType, individualSignIn, adminSignIn, signOut } = useAdmin();
+  const { isAuthenticated, userInfo, accountType, individualSignIn, adminSignIn, signOut, userMode, teamInfo } = useAdmin();
+  const isTeamMember = userMode === 'team_member';
   const { projects, createProject: ctxCreateProject, patchProject } = usePhotos();
   const { userPlan } = useSettings();
   const theme = useTheme();
@@ -474,6 +475,29 @@ export default function CloudSyncScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 32 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
+        {isTeamMember ? (
+          // Team members don't manage their own storage — every capture
+          // uploads through the admin's proxy session. Personal
+          // Google/Dropbox/iCloud/SF rows would be confusing at best
+          // (they look connectable but do nothing for team uploads) and
+          // actively wrong at worst (a lingering personal Dropbox login
+          // shows "Connected" here even though team uploads bypass it).
+          <View style={styles.teamMemberNoticeCard}>
+            <View style={styles.teamMemberNoticeIcon}>
+              <Ionicons name="cloud-done-outline" size={22} color={theme.textPrimary} />
+            </View>
+            <Text style={styles.teamMemberNoticeTitle}>
+              {t('cloudSync.teamMemberTitle', { defaultValue: 'Storage managed by your team' })}
+            </Text>
+            <Text style={styles.teamMemberNoticeBody}>
+              {t('cloudSync.teamMemberBody', {
+                admin: teamInfo?.adminName || teamInfo?.adminEmail || 'your admin',
+                defaultValue: `Every photo you capture uploads straight to your team's storage. No personal cloud setup needed.`,
+              })}
+            </Text>
+          </View>
+        ) : (
+        <>
         <View style={styles.eyebrowRow}>
           <Text style={styles.eyebrow}>
             {t('cloudSync.connectedStorage', { defaultValue: 'Connected storage' })}
@@ -621,6 +645,8 @@ export default function CloudSyncScreen({ navigation }) {
             />
           </View>
         </View>
+        </>
+        )}
       </ScrollView>
 
       {/* Service Flow paste-in connect-code modal. Documented flow
@@ -823,6 +849,42 @@ const sfCodeStyles = StyleSheet.create({
 
 const makeStyles = (theme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.surfaceElevated },
+  teamMemberNoticeCard: {
+    marginHorizontal: 22,
+    marginTop: 24,
+    padding: 20,
+    borderRadius: 16,
+    backgroundColor: theme.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    alignItems: 'center',
+  },
+  teamMemberNoticeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: theme.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  teamMemberNoticeTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.textPrimary,
+    textAlign: 'center',
+    letterSpacing: -0.2,
+    marginBottom: 6,
+  },
+  teamMemberNoticeBody: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '500',
+    color: theme.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
