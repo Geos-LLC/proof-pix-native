@@ -464,7 +464,13 @@ export default function TeamMembersScreen({ navigation }) {
   };
 
   const inviteCount = Array.isArray(inviteTokens) ? inviteTokens.length : 0;
-  const memberCount = Array.isArray(teamMembers) ? teamMembers.length : 0;
+  // Exclude revoked members from the headline count — the admin cares
+  // about who's still active, not the historical total. Revoked rows
+  // still render below (muted + labelled) so the admin can see who
+  // was removed without inflating the "3 Members" chip.
+  const memberCount = Array.isArray(teamMembers)
+    ? teamMembers.filter((m) => m?.status !== 'revoked').length
+    : 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -608,16 +614,34 @@ export default function TeamMembersScreen({ navigation }) {
                     longer than 7d but is wiped on iOS reinstall)
                 Dedupe by token. */}
             {(() => {
+              // Threshold for the "Inactive" pill: a member counts as
+              // inactive if the proxy hasn't seen them (join ping or
+              // upload) in this many minutes. Chosen to comfortably
+              // exceed the mobile client's cold-start revalidation
+              // cadence + a foreground bounce so a legit member on
+              // a paused device doesn't flicker to inactive.
+              const INACTIVE_THRESHOLD_MS = 15 * 60 * 1000;
+              const nowMs = Date.now();
+              const statusOf = (m) => {
+                if (m?.status === 'revoked') return 'revoked';
+                const hasJoined = !!(m?.name || m?.userName || m?.email);
+                if (!hasJoined) return 'pending';
+                const lastSeen = m?.lastSeenAt ? new Date(m.lastSeenAt).getTime() : null;
+                if (lastSeen && (nowMs - lastSeen) > INACTIVE_THRESHOLD_MS) return 'inactive';
+                return 'connected';
+              };
               const proxyItems = (teamMembers || []).map(m => ({
                 token: m?.token || null,
                 name: m?.name || m?.userName || null,
                 email: m?.email || null,
-                hasJoined: !!(m?.name || m?.userName || m?.email),
+                lastSeenAt: m?.lastSeenAt || null,
+                lastUploadAt: m?.lastUploadAt || null,
+                status: statusOf(m),
               }));
               const proxyTokens = new Set(proxyItems.map(p => p.token).filter(Boolean));
               const localOnly = (inviteTokens || [])
                 .filter(tok => tok && !proxyTokens.has(tok))
-                .map(tok => ({ token: tok, name: null, email: null, hasJoined: false }));
+                .map(tok => ({ token: tok, name: null, email: null, lastSeenAt: null, lastUploadAt: null, status: 'pending' }));
               const all = [...proxyItems, ...localOnly];
               return (
                 <>
@@ -657,40 +681,63 @@ export default function TeamMembersScreen({ navigation }) {
                   ) : null}
                   {all.length > 0 ? (
                   <View style={styles.rowGroup}>
-                    {all.map((m, i) => (
-                      <View key={`${m.token || 'no-token'}-${i}`} style={styles.row}>
-                        <View style={styles.rowIc}>
-                          <Ionicons
-                            name={m.hasJoined ? 'person-outline' : 'mail-outline'}
-                            size={19}
-                            color={theme.textPrimary}
-                          />
-                        </View>
-                        <View style={styles.rowMeta}>
-                          <Text style={styles.rowTitle} numberOfLines={1}>
-                            {m.name || t('teamMembers.pendingInvite', { defaultValue: 'Pending invite' })}
-                          </Text>
-                          <View style={m.hasJoined ? styles.statusPillConnected : styles.statusPillPending}>
-                            <Ionicons
-                              name={m.hasJoined ? 'checkmark-circle' : 'time-outline'}
-                              size={11}
-                              color={m.hasJoined ? '#1E7A3C' : '#7A5B00'}
-                            />
-                            <Text style={m.hasJoined ? styles.statusPillTextConnected : styles.statusPillTextPending}>
-                              {m.hasJoined
-                                ? t('teamMembers.statusConnected', { defaultValue: 'Connected' })
-                                : t('teamMembers.statusPending', { defaultValue: 'Pending invite' })}
-                            </Text>
+                    {all.map((m, i) => {
+                      const pillStyle = ({
+                        connected: styles.statusPillConnected,
+                        pending: styles.statusPillPending,
+                        inactive: styles.statusPillInactive,
+                        revoked: styles.statusPillRevoked,
+                      })[m.status] || styles.statusPillPending;
+                      const pillTextStyle = ({
+                        connected: styles.statusPillTextConnected,
+                        pending: styles.statusPillTextPending,
+                        inactive: styles.statusPillTextInactive,
+                        revoked: styles.statusPillTextRevoked,
+                      })[m.status] || styles.statusPillTextPending;
+                      const pillIconName = ({
+                        connected: 'checkmark-circle',
+                        pending: 'time-outline',
+                        inactive: 'moon-outline',
+                        revoked: 'close-circle',
+                      })[m.status] || 'time-outline';
+                      const pillIconColor = ({
+                        connected: '#1E7A3C',
+                        pending: '#7A5B00',
+                        inactive: theme.textMuted,
+                        revoked: '#C0392B',
+                      })[m.status] || '#7A5B00';
+                      const pillLabel = ({
+                        connected: t('teamMembers.statusConnected', { defaultValue: 'Connected' }),
+                        pending: t('teamMembers.statusPending', { defaultValue: 'Pending invite' }),
+                        inactive: t('teamMembers.statusInactive', { defaultValue: 'Inactive' }),
+                        revoked: t('teamMembers.statusRevoked', { defaultValue: 'Revoked' }),
+                      })[m.status] || t('teamMembers.statusPending', { defaultValue: 'Pending invite' });
+                      const isRevoked = m.status === 'revoked';
+                      const iconName = m.status === 'pending'
+                        ? 'mail-outline'
+                        : isRevoked ? 'person-remove-outline' : 'person-outline';
+
+                      return (
+                        <View key={`${m.token || 'no-token'}-${i}`} style={[styles.row, isRevoked && styles.rowMuted]}>
+                          <View style={styles.rowIc}>
+                            <Ionicons name={iconName} size={19} color={theme.textPrimary} />
                           </View>
-                          {m.email && m.email !== m.name ? (
-                            <Text style={styles.rowSub} numberOfLines={1}>{m.email}</Text>
-                          ) : null}
-                          {m.token ? (
-                            <Text style={styles.inviteCodeText} numberOfLines={1} selectable>
-                              {t('teamMembers.codeLabel', { defaultValue: 'Code:' })} {m.token}
+                          <View style={styles.rowMeta}>
+                            <Text style={[styles.rowTitle, isRevoked && styles.rowTitleMuted]} numberOfLines={1}>
+                              {m.name || t('teamMembers.pendingInvite', { defaultValue: 'Pending invite' })}
                             </Text>
-                          ) : null}
-                          <View style={styles.rowActions}>
+                            <View style={pillStyle}>
+                              <Ionicons name={pillIconName} size={11} color={pillIconColor} />
+                              <Text style={pillTextStyle}>{pillLabel}</Text>
+                            </View>
+                            {m.email && m.email !== m.name ? (
+                              <Text style={styles.rowSub} numberOfLines={1}>{m.email}</Text>
+                            ) : null}
+                            {m.token ? (
+                              <Text style={styles.inviteCodeText} numberOfLines={1} selectable>
+                                {t('teamMembers.codeLabel', { defaultValue: 'Code:' })} {m.token}
+                              </Text>
+                            ) : null}
                             {folderId ? (
                               <TouchableOpacity
                                 onPress={handleOpenTeamFolder}
@@ -704,34 +751,34 @@ export default function TeamMembersScreen({ navigation }) {
                                 <Ionicons name="arrow-forward" size={11} color="#7A5B00" />
                               </TouchableOpacity>
                             ) : null}
-                            {m.token ? (
-                              <>
+                            {m.token && !isRevoked ? (
+                              <View style={styles.rowActionsButtons}>
                                 <TouchableOpacity
                                   onPress={() => handleReshare(m.token)}
-                                  style={styles.rowActionLink}
-                                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
+                                  style={styles.rowActionButton}
+                                  activeOpacity={0.85}
                                 >
-                                  <Ionicons name="share-outline" size={13} color="#7A5B00" />
-                                  <Text style={styles.rowActionLinkText}>
+                                  <Ionicons name="share-outline" size={16} color={theme.textPrimary} />
+                                  <Text style={styles.rowActionButtonText}>
                                     {t('teamMembers.share', { defaultValue: 'Share' })}
                                   </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                   onPress={() => handleRevoke(m.token)}
-                                  style={styles.rowActionLink}
-                                  hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+                                  style={styles.rowActionButtonDanger}
+                                  activeOpacity={0.85}
                                 >
-                                  <Ionicons name="close-circle-outline" size={13} color="#C0392B" />
-                                  <Text style={[styles.rowActionLinkText, { color: '#C0392B' }]}>
+                                  <Ionicons name="close-circle-outline" size={16} color="#C0392B" />
+                                  <Text style={styles.rowActionButtonDangerText}>
                                     {t('teamMembers.revoke', { defaultValue: 'Revoke' })}
                                   </Text>
                                 </TouchableOpacity>
-                              </>
+                              </View>
                             ) : null}
                           </View>
                         </View>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                   ) : null}
                 </>
@@ -965,6 +1012,7 @@ const makeStyles = (theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
+    marginTop: 8,
   },
   rowActionLinkText: {
     fontFamily: FONTS.ALEXANDRIA,
@@ -972,6 +1020,62 @@ const makeStyles = (theme) => StyleSheet.create({
     fontWeight: '700',
     color: '#7A5B00',
     letterSpacing: -0.1,
+  },
+  // Prominent Share / Revoke buttons per member. Previous UI used
+  // 12px text links with barely any hit target — testers repeatedly
+  // missed them. Real buttons with a pill background make the
+  // primary actions unmissable and hittable.
+  rowActionsButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+    flexWrap: 'wrap',
+  },
+  rowActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: theme.surfaceElevated,
+    borderWidth: 1,
+    borderColor: theme.border,
+    minHeight: 36,
+  },
+  rowActionButtonText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.textPrimary,
+    letterSpacing: -0.1,
+  },
+  rowActionButtonDanger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#FDECEA',
+    borderWidth: 1,
+    borderColor: '#F5C6CD',
+    minHeight: 36,
+  },
+  rowActionButtonDangerText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#C0392B',
+    letterSpacing: -0.1,
+  },
+  // Revoked members render at half-opacity so admins can scan the
+  // list and immediately see who's still active without reading pills.
+  rowMuted: {
+    opacity: 0.55,
+  },
+  rowTitleMuted: {
+    color: theme.textMuted,
   },
   // Status pill under the member name. "Connected" is greenish, matches
   // the ✓ intent in the design; "Pending" reuses the invite-code amber
@@ -1010,6 +1114,44 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '700',
     color: '#7A5B00',
+    letterSpacing: 0.1,
+  },
+  statusPillInactive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: theme.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    marginTop: 4,
+  },
+  statusPillTextInactive: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: theme.textMuted,
+    letterSpacing: 0.1,
+  },
+  statusPillRevoked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: '#FDECEA',
+    marginTop: 4,
+  },
+  statusPillTextRevoked: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#C0392B',
     letterSpacing: 0.1,
   },
   // Refresh action next to the "Members & invites" eyebrow — pulls
