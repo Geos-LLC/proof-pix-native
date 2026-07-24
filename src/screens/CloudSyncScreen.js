@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAdmin } from '../context/AdminContext';
 import { useSettings } from '../context/SettingsContext';
 import { FONTS } from '../constants/fonts';
@@ -87,6 +88,17 @@ export default function CloudSyncScreen({ navigation }) {
       await refreshServiceFlow();
     })();
   }, []);
+
+  // Re-read SF + Dropbox state every time the screen regains focus.
+  // The QR-code / deep-link connect path lands on CRMRedeemScreen, and
+  // the user pops back here with navigation.goBack — without this the
+  // "Connected" pill wouldn't update until a full screen remount.
+  useFocusEffect(
+    useCallback(() => {
+      refreshServiceFlow();
+      refreshDropbox();
+    }, [])
+  );
 
   // Read SF connection state from local Keychain (no network call —
   // serviceFlowAdapter persists workspace metadata at connect time
