@@ -22,6 +22,8 @@ import { FONTS } from '../constants/fonts';
 import proxyService from '../services/proxyService';
 import googleDriveService from '../services/googleDriveService';
 import googleAuthService from '../services/googleAuthService';
+import crmService from '../services/crm';
+import serviceFlowAdapter from '../services/crm/serviceFlowAdapter';
 import { generateInviteToken } from '../utils/tokens';
 import { generateInviteLink, generateShareContent } from '../utils/inviteLinkGenerator';
 import { logTeamInvitesCreated } from '../utils/analytics';
@@ -64,6 +66,36 @@ export default function TeamMembersScreen({ navigation }) {
   const [isWorkingSetup, setIsWorkingSetup] = useState(false);
   const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
   const [teamMembers, setTeamMembers] = useState([]);
+  const [sfConnected, setSfConnected] = useState(false);
+  const [sfWorkspace, setSfWorkspace] = useState(null);
+
+  // Poll SF connection state so the setup card can pick the SF path
+  // over the Google path without waiting for a full remount. Cheap —
+  // just a Keychain read.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const providerId = await crmService.getActiveProviderId();
+        if (providerId !== 'serviceflow') {
+          if (!cancelled) { setSfConnected(false); setSfWorkspace(null); }
+          return;
+        }
+        const workspace = await serviceFlowAdapter.getStoredWorkspace();
+        if (cancelled) return;
+        if (workspace?.workspaceId) {
+          setSfConnected(true);
+          setSfWorkspace(workspace);
+        } else {
+          setSfConnected(false);
+          setSfWorkspace(null);
+        }
+      } catch {
+        if (!cancelled) { setSfConnected(false); setSfWorkspace(null); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [proxySessionId]);
 
   // Gate: use the feature-permission system (trial-aware + tier-aware
   // via effectivePlan) instead of literal string compare on userPlan.
@@ -207,11 +239,56 @@ export default function TeamMembersScreen({ navigation }) {
   //      Earlier versions only did step 1 and then waited forever for
   //      proxySessionId to appear, which is why the screen looped back
   //      to "Set up your team" after the Google consent sheet closed.
+  // SF-primary setup — admin already connected Service Flow, so we
+  // stand up a proxy team session backed by their stored SF refresh
+  // token. No Google sign-in, no Drive folder. Team members' uploads
+  // land as SF job attachments (proxy calls attachToServiceFlow).
+  const handleSetupTeamWithServiceFlow = async () => {
+    setIsWorkingSetup(true);
+    try {
+      const refreshToken = await serviceFlowAdapter.getRefreshTokenForProxy();
+      if (!refreshToken) {
+        Alert.alert(
+          t('common.error', { defaultValue: 'Error' }),
+          t('teamMembers.sfMissingToken', {
+            defaultValue: 'Service Flow connection lost. Reconnect from Cloud Sync and try again.',
+          }),
+        );
+        return;
+      }
+      const result = await initializeProxySession(null, 'serviceflow', {
+        sfRefreshToken: refreshToken,
+        sfWorkspaceId: sfWorkspace?.workspaceId || null,
+        sfWorkspaceName: sfWorkspace?.workspaceName || null,
+      });
+      if (!result?.sessionId) {
+        throw new Error(result?.error || 'Could not create team session');
+      }
+      const defaultName = sfWorkspace?.workspaceName || adminUserInfo?.name || '';
+      if (!teamName && defaultName) {
+        try { await updateTeamName(defaultName); } catch {}
+        try { await AsyncStorage.setItem('@team_name', defaultName); } catch {}
+      }
+    } catch (e) {
+      const errMsg = e?.message || '';
+      if (errMsg && !/cancel/i.test(errMsg)) {
+        Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
+      }
+    } finally {
+      setIsWorkingSetup(false);
+    }
+  };
+
   const handleSetupTeam = async () => {
     if (isWorkingSetup) return;
     if (!hasTeamFeature) {
       promptUpgrade();
       return;
+    }
+    // SF-connected admins skip the entire Google path — SF acts as
+    // the storage backend for team-member uploads.
+    if (sfConnected) {
+      return handleSetupTeamWithServiceFlow();
     }
     setIsWorkingSetup(true);
     try {
@@ -440,10 +517,15 @@ export default function TeamMembersScreen({ navigation }) {
               {t('teamMembers.setupTitle', { defaultValue: 'Set up your team' })}
             </Text>
             <Text style={styles.heroSub}>
-              {t('teamMembers.setupSub', {
-                defaultValue:
-                  'Connect your admin Google account so members capture into a shared Drive. We\'ll create a "ProofPix Team" folder you control.',
-              })}
+              {sfConnected
+                ? t('teamMembers.setupSubSF', {
+                    workspace: sfWorkspace?.workspaceName || 'Service Flow',
+                    defaultValue: `Members' photos will attach directly to jobs in ${sfWorkspace?.workspaceName || 'Service Flow'}. No extra storage setup needed.`,
+                  })
+                : t('teamMembers.setupSub', {
+                    defaultValue:
+                      'Connect your admin Google account so members capture into a shared Drive. We\'ll create a "ProofPix Team" folder you control.',
+                  })}
             </Text>
             <TouchableOpacity
               style={styles.primaryButton}
@@ -455,9 +537,11 @@ export default function TeamMembersScreen({ navigation }) {
                 <ActivityIndicator size="small" color="#1E1E1E" />
               ) : (
                 <Text style={styles.primaryButtonText}>
-                  {googleAdminConnected
-                    ? t('teamMembers.continueSetup', { defaultValue: 'Continue team setup' })
-                    : t('teamMembers.setupCTA', { defaultValue: 'Set up team' })}
+                  {sfConnected
+                    ? t('teamMembers.setupCTASF', { defaultValue: 'Set up team with Service Flow' })
+                    : googleAdminConnected
+                      ? t('teamMembers.continueSetup', { defaultValue: 'Continue team setup' })
+                      : t('teamMembers.setupCTA', { defaultValue: 'Set up team' })}
                 </Text>
               )}
             </TouchableOpacity>

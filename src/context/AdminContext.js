@@ -1220,7 +1220,7 @@ export function AdminProvider({ children }) {
    * @param {string} accountType - Account type: 'google' or 'dropbox' (default: 'google')
    * @returns {Promise<{sessionId: string, success: boolean}|{success: false, error: string}>} - Proxy session result
    */
-  const initializeProxySession = async (folderId, accountType = 'google') => {
+  const initializeProxySession = async (folderId, accountType = 'google', extra = {}) => {
     // Apple/iCloud uses direct file system uploads, no proxy session needed
     if (accountType === 'apple') {
       console.log('[ADMIN] Apple/iCloud account - using direct upload, no proxy session needed');
@@ -1329,7 +1329,7 @@ export function AdminProvider({ children }) {
 
       // Initialize new session via proxy service
       console.log('[ADMIN] Initializing new proxy session for account type:', accountType);
-      const result = await proxyService.initializeAdminSession(effectiveFolderId, accountType, userId);
+      const result = await proxyService.initializeAdminSession(effectiveFolderId, accountType, userId, extra);
 
       if (result && result.sessionId) {
         await AsyncStorage.setItem(STORAGE_KEYS.PROXY_SESSION_ID, result.sessionId);

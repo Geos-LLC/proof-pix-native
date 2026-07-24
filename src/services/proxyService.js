@@ -16,18 +16,31 @@ console.log('[PROXY] 🌐 PROXY_SERVER_URL:', PROXY_SERVER_URL);
 class ProxyService {
   /**
    * Initialize an admin session on the proxy server
-   * @param {string} folderId - Google Drive folder ID, Dropbox folder path, or iCloud container ID
-   * @param {string} accountType - Account type: 'google', 'dropbox', or 'apple' (default: 'google')
+   * @param {string} folderId - Google Drive folder ID, Dropbox folder path, or iCloud container ID (ignored for 'serviceflow')
+   * @param {string} accountType - Account type: 'google' | 'dropbox' | 'apple' | 'serviceflow' (default: 'google')
    * @param {string} userId - User ID for global team tracking across accounts
+   * @param {object} [extra] - Extra fields for provider-specific init (e.g. { sfRefreshToken, sfWorkspaceId, sfWorkspaceName })
    * @returns {Promise<{sessionId: string}>}
    */
-  async initializeAdminSession(folderId, accountType = 'google', userId = null) {
+  async initializeAdminSession(folderId, accountType = 'google', userId = null, extra = {}) {
     try {
       let authData = {
         userId, // Include userId for global team tracking
       };
 
-      if (accountType === 'apple') {
+      if (accountType === 'serviceflow') {
+        const { sfRefreshToken, sfWorkspaceId, sfWorkspaceName } = extra || {};
+        if (!sfRefreshToken) {
+          throw new Error('Service Flow refresh token missing — reconnect Service Flow in Settings.');
+        }
+        authData = {
+          ...authData,
+          accountType: 'serviceflow',
+          refresh_token: sfRefreshToken,
+          workspace_id: sfWorkspaceId || null,
+          workspace_name: sfWorkspaceName || null,
+        };
+      } else if (accountType === 'apple') {
         // For Apple/iCloud, get authorization code and identity token
         const authorizationCode = await appleAuthService.getAuthorizationCode();
         const identityToken = await appleAuthService.getIdentityToken();

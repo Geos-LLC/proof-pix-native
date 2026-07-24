@@ -334,6 +334,16 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
   }
 
   /**
+   * Return the raw refresh token so the proxy can be handed SF creds
+   * when the admin sets up an SF-primary team session (no Google
+   * required). Only used by AdminContext.initializeProxySession; UI
+   * code should keep going through crmService.
+   */
+  async getRefreshTokenForProxy() {
+    return readSecure(SECURE_KEYS.refreshToken);
+  }
+
+  /**
    * List jobs the admin can attach photos to. Used by the
    * project-create job picker.
    *
