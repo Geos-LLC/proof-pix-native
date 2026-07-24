@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { AppState, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import googleAuthService from '../services/googleAuthService';
 import appleAuthService from '../services/appleAuthService';
@@ -418,70 +419,137 @@ export function AdminProvider({ children }) {
     loadAdminData();
   }, []);
 
-  // Cold-start revalidation for restored team_member sessions.
-  // TEAM_MEMBER_INFO is Keychain-backed, so a removed member's device
-  // keeps replaying "connected to team" UI forever after admin revokes
-  // their invite — the server 403s their uploads but the app never
-  // knew to drop them. Re-registering with the proxy doubles as a
-  // validity check: 403/404 → tear down local team state; other errors
-  // (network, 5xx) → leave state alone so flaky connections don't
-  // kick legitimate members out.
-  const teamRevalidatedRef = useRef(false);
-  useEffect(() => {
+  // Team_member session revalidation. Two triggers:
+  //   1. Cold-start (once the mount pass has team state loaded)
+  //   2. AppState → 'active' (foreground) — so a revoke that happened
+  //      while the app was suspended is caught on the next resume
+  //      instead of waiting for a full JS bundle reload.
+  //
+  // Re-registering with the proxy doubles as a validity check:
+  //   403/404 → tear down local team state AND clear synced projects
+  //   other errors (network, 5xx) → leave state alone (flaky network
+  //   must not kick legitimate members out).
+  //
+  // teamRevokedRef prevents the "you've been removed" alert from
+  // firing repeatedly if AppState bounces between active/background
+  // during teardown.
+  const teamRevalidateInFlightRef = useRef(false);
+  const teamRevokedRef = useRef(false);
+
+  const handleTeamMemberRevoked = async () => {
+    if (teamRevokedRef.current) return;
+    teamRevokedRef.current = true;
+    console.warn('[ADMIN] Team-member token revoked — tearing down local state');
+
+    // Wipe synced-from-admin projects (any project carrying a crmJobId
+    // came from the admin's SF workspace via serviceFlowSync — it's
+    // no longer authoritative on this device). Local-only projects
+    // without a crmJobId belong to the member and stay put.
+    try {
+      const { loadProjects, saveProjects } = require('../services/storage');
+      const current = (await loadProjects()) || [];
+      const kept = current.filter(p => !p?.crmJobId);
+      if (kept.length !== current.length) {
+        await saveProjects(kept);
+        console.warn('[ADMIN] Revoke cleanup: removed synced projects', {
+          before: current.length,
+          after: kept.length,
+        });
+      }
+    } catch (wipeErr) {
+      console.warn('[ADMIN] Revoke project-wipe failed:', wipeErr?.message);
+    }
+
+    try {
+      await switchToIndividualMode();
+    } catch (teardownError) {
+      console.warn('[ADMIN] switchToIndividualMode failed after revocation:', teardownError?.message);
+      try { await deleteSecure(STORAGE_KEYS.TEAM_MEMBER_INFO); } catch {}
+      try { await AsyncStorage.setItem(STORAGE_KEYS.ADMIN_USER_MODE, 'individual'); } catch {}
+      setTeamInfo(null);
+      setUserMode('individual');
+    }
+
+    // Force a JS bundle reload so PhotoContext re-reads projects
+    // from storage and the UI actually reflects the wipe. Without
+    // this, in-memory `projects` state stays populated even though
+    // the storage layer is empty.
+    Alert.alert(
+      'Removed from team',
+      'Your admin has revoked your access. Projects synced from the team have been cleared.',
+      [{
+        text: 'OK',
+        onPress: async () => {
+          try {
+            const Updates = require('expo-updates');
+            await Updates.reloadAsync();
+          } catch (reloadErr) {
+            console.warn('[ADMIN] Updates.reloadAsync failed:', reloadErr?.message);
+          }
+        },
+      }],
+      { cancelable: false },
+    );
+  };
+
+  const revalidateTeamMember = async () => {
     if (isLoading) return;
     if (userMode !== 'team_member') return;
     if (!teamInfo?.token || !teamInfo?.sessionId) return;
-    if (teamRevalidatedRef.current) return;
-    teamRevalidatedRef.current = true;
-
-    (async () => {
+    if (teamRevalidateInFlightRef.current) return;
+    teamRevalidateInFlightRef.current = true;
+    try {
+      let memberName = 'Team Member';
       try {
-        let memberName = 'Team Member';
-        try {
-          const storedSettings = await AsyncStorage.getItem('app-settings');
-          const settings = storedSettings ? JSON.parse(storedSettings) : {};
-          memberName = settings.userName || 'Team Member';
-        } catch {}
+        const storedSettings = await AsyncStorage.getItem('app-settings');
+        const settings = storedSettings ? JSON.parse(storedSettings) : {};
+        memberName = settings.userName || 'Team Member';
+      } catch {}
 
-        await proxyService.registerTeamMemberJoin(
-          teamInfo.sessionId,
-          teamInfo.token,
-          memberName,
-        );
+      await proxyService.registerTeamMemberJoin(
+        teamInfo.sessionId,
+        teamInfo.token,
+        memberName,
+      );
 
-        // Slice A.5: refresh admin's accountType on cold-start so it
-        // stays current if the admin ever changes storage backends.
-        // Also self-heals teamInfo shape for members who joined before
-        // A.5 landed (their stored teamInfo has no adminAccountType).
-        // Best-effort — failure leaves the last-known value in place.
-        try {
-          const info = await proxyService.getSessionInfo(teamInfo.sessionId);
-          const nextAccountType = info?.accountType || null;
-          if (nextAccountType !== teamInfo.adminAccountType) {
-            const updated = { ...teamInfo, adminAccountType: nextAccountType };
-            await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, updated);
-            setTeamInfo(updated);
-          }
-        } catch (infoError) {
-          console.warn('[ADMIN] Failed to refresh admin accountType at cold-start:', infoError?.message);
+      // Refresh admin's accountType so it stays current if the admin
+      // ever changes storage backends. Best-effort.
+      try {
+        const info = await proxyService.getSessionInfo(teamInfo.sessionId);
+        const nextAccountType = info?.accountType || null;
+        if (nextAccountType !== teamInfo.adminAccountType) {
+          const updated = { ...teamInfo, adminAccountType: nextAccountType };
+          await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, updated);
+          setTeamInfo(updated);
         }
-      } catch (error) {
-        if (error?.status === 403 || error?.status === 404) {
-          console.warn('[ADMIN] Team-member token revoked at cold-start — dropping team_member state');
-          try {
-            await switchToIndividualMode();
-          } catch (teardownError) {
-            console.warn('[ADMIN] switchToIndividualMode failed after revocation:', teardownError?.message);
-            try { await deleteSecure(STORAGE_KEYS.TEAM_MEMBER_INFO); } catch {}
-            try { await AsyncStorage.setItem(STORAGE_KEYS.ADMIN_USER_MODE, 'individual'); } catch {}
-            setTeamInfo(null);
-            setUserMode('individual');
-          }
-        }
+      } catch (infoError) {
+        console.warn('[ADMIN] Failed to refresh admin accountType:', infoError?.message);
       }
-    })();
+    } catch (error) {
+      if (error?.status === 403 || error?.status === 404) {
+        await handleTeamMemberRevoked();
+      }
+    } finally {
+      teamRevalidateInFlightRef.current = false;
+    }
+  };
+
+  // Cold-start revalidation.
+  useEffect(() => {
+    revalidateTeamMember();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, userMode, teamInfo?.token, teamInfo?.sessionId]);
+
+  // Foreground revalidation. Handles the "revoked while app was
+  // backgrounded" case — the user's most common expectation is that
+  // reopening the app reflects the current state.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') revalidateTeamMember();
+    });
+    return () => sub?.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userMode, teamInfo?.token, teamInfo?.sessionId]);
 
   // Ensure planLimit is at least the minimum for the current plan,
   // but DO NOT downscale if user has purchased additional slots.
