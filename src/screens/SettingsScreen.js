@@ -3105,6 +3105,19 @@ export default function SettingsScreen({ navigation, route }) {
           </View>
           {(() => {
             const plan = (userPlan || 'starter');
+            // Team members are covered by the admin's plan — hide the
+            // upgrade-tappable tier pill, show a static "TEAM" chip
+            // instead so they still see their plan level without
+            // being routed to a paywall they can't complete.
+            if (isTeamMember) {
+              return (
+                <View style={[styles.userTierPill, styles.userTierPillBusiness]}>
+                  <Text style={[styles.userTierPillText, styles.userTierPillTextBusiness]}>
+                    TEAM
+                  </Text>
+                </View>
+              );
+            }
             const tierStyle =
               plan === 'pro' ? styles.userTierPillPro
               : plan === 'business' ? styles.userTierPillBusiness
@@ -3134,8 +3147,10 @@ export default function SettingsScreen({ navigation, route }) {
             - Starter (or no plan)        → "Upgrade to Pro" + Pro pitch
             - Pro                         → "Upgrade to Business" + team/branding pitch
             - Business / Enterprise       → hidden (already at top tier)
+            - Team member                 → hidden (admin owns billing)
             Same destination (PlanSelection upgrade mode). */}
         {(() => {
+          if (isTeamMember) return null;
           const plan = (userPlan || 'starter').toLowerCase();
           if (plan === 'business' || plan === 'enterprise') return null;
           const isPro = plan === 'pro';
@@ -3168,8 +3183,10 @@ export default function SettingsScreen({ navigation, route }) {
         })()}
 
         {/* Trial progress bar — full-width strip directly under the user
-            card when a trial is active. Hidden once a paid sub kicks in. */}
-        {trialActive && trialDaysRemaining > 0 ? (
+            card when a trial is active. Hidden once a paid sub kicks in.
+            Also hidden for team_member accounts — trial concept doesn't
+            apply since admin owns the plan. */}
+        {!isTeamMember && trialActive && trialDaysRemaining > 0 ? (
           <View style={styles.trialBar}>
             <View style={styles.trialProgressBar}>
               <View
@@ -3185,66 +3202,71 @@ export default function SettingsScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        {/* Subscription & billing — always visible. Tap navigates to
-            the in-app paywall (PlanSelection upgrade mode) for tier
-            changes; the in-store link below routes to Apple/Google's
-            subscription page where users can cancel, update payment
-            method, and see receipts/invoices that mobile SDKs don't
-            expose in-app. */}
-        <TouchableOpacity
-          style={styles.manageSubscriptionRow}
-          onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
-          activeOpacity={0.85}
-        >
-          <View style={styles.manageSubscriptionIc}>
-            <Ionicons name="card-outline" size={19} color={theme.textPrimary} />
-          </View>
-          <View style={styles.manageSubscriptionMeta}>
-            <Text style={styles.manageSubscriptionTitle}>
-              {hasActiveSub
-                ? t('settings.manageSubscription', { defaultValue: 'Change plan' })
-                : t('settings.subscriptionAndBilling', { defaultValue: 'Subscription & billing' })}
-            </Text>
-            <Text style={styles.manageSubscriptionSub} numberOfLines={1}>
-              {t('settings.changePlanSub', {
-                defaultValue: 'See all tiers and upgrade or downgrade',
-              })}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.manageInAppStoreLink}
-          onPress={() => { try { openManageSubscriptions(); } catch {} }}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.manageInAppStoreLinkText}>
-            {Platform.OS === 'ios'
-              ? t('settings.manageInAppStore', {
-                  defaultValue: 'Cancel, update billing & view receipts in the App Store',
-                })
-              : t('settings.manageInPlayStore', {
-                  defaultValue: 'Cancel, update billing & view receipts in Play Store',
+        {/* Subscription & billing block — Change plan row + manage-in-
+            store link + redeem code link. All three hidden for
+            team_member accounts: admin owns billing, team member can't
+            change plan, can't cancel, can't redeem codes on the shared
+            subscription. Showing these rows just leads to dead-end
+            paywalls or actions that would confuse the admin's billing.
+            Non-team_member users see the full billing surface as before. */}
+        {!isTeamMember && (
+          <>
+            <TouchableOpacity
+              style={styles.manageSubscriptionRow}
+              onPress={() => navigation.navigate('PlanSelection', { mode: 'upgrade' })}
+              activeOpacity={0.85}
+            >
+              <View style={styles.manageSubscriptionIc}>
+                <Ionicons name="card-outline" size={19} color={theme.textPrimary} />
+              </View>
+              <View style={styles.manageSubscriptionMeta}>
+                <Text style={styles.manageSubscriptionTitle}>
+                  {hasActiveSub
+                    ? t('settings.manageSubscription', { defaultValue: 'Change plan' })
+                    : t('settings.subscriptionAndBilling', { defaultValue: 'Subscription & billing' })}
+                </Text>
+                <Text style={styles.manageSubscriptionSub} numberOfLines={1}>
+                  {t('settings.changePlanSub', {
+                    defaultValue: 'See all tiers and upgrade or downgrade',
+                  })}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.manageInAppStoreLink}
+              onPress={() => { try { openManageSubscriptions(); } catch {} }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.manageInAppStoreLinkText}>
+                {Platform.OS === 'ios'
+                  ? t('settings.manageInAppStore', {
+                      defaultValue: 'Cancel, update billing & view receipts in the App Store',
+                    })
+                  : t('settings.manageInPlayStore', {
+                      defaultValue: 'Cancel, update billing & view receipts in Play Store',
+                    })}
+              </Text>
+            </TouchableOpacity>
+            {/* Redeem code — pops the platform's native code-redemption UI.
+                iOS 14+ shows an in-app StoreKit sheet; older iOS + Android
+                open the store's Redeem page. Handled in iapService so all
+                store-side UX stays in one place. Kept as a secondary link
+                (same look as the manage-store link above) instead of a full
+                row so free / non-subscribed users don't over-index on it. */}
+            <TouchableOpacity
+              style={styles.manageInAppStoreLink}
+              onPress={() => { try { presentRedeemCode(); } catch {} }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.manageInAppStoreLinkText}>
+                {t('settings.redeemCode', {
+                  defaultValue: 'Redeem a code',
                 })}
-          </Text>
-        </TouchableOpacity>
-        {/* Redeem code — pops the platform's native code-redemption UI.
-            iOS 14+ shows an in-app StoreKit sheet; older iOS + Android
-            open the store's Redeem page. Handled in iapService so all
-            store-side UX stays in one place. Kept as a secondary link
-            (same look as the manage-store link above) instead of a full
-            row so free / non-subscribed users don't over-index on it. */}
-        <TouchableOpacity
-          style={styles.manageInAppStoreLink}
-          onPress={() => { try { presentRedeemCode(); } catch {} }}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.manageInAppStoreLinkText}>
-            {t('settings.redeemCode', {
-              defaultValue: 'Redeem a code',
-            })}
-          </Text>
-        </TouchableOpacity>
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
 
         {/* ====================================================== */}
         {/* Design 34 / pp-settings.jsx — WORKSPACE + CLOUD & TEAM */}
