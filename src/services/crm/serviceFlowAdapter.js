@@ -129,6 +129,9 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
     let os_name = null;
     let os_version = null;
     let role = null;
+    let paired_by_proofpix_user_id = null;
+    let paired_by_name = null;
+    let paired_by_email = null;
     try { device_model = Device.modelName || null; } catch {}
     try { os_name = Device.osName || (Platform.OS === 'ios' ? 'iOS' : Platform.OS === 'android' ? 'Android' : Platform.OS); } catch {}
     try {
@@ -140,6 +143,45 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
       role = mode || null;
     } catch {}
 
+    // Identity of the ProofPix user completing the pair. SF renders this
+    // as the owner label next to each paired device row. Admin/individual
+    // paths carry a Google/Apple sign-in blob at @admin_user_info; team
+    // members joined via invite code and only have a session id + local
+    // display name from app-settings. Every field is optional — SF stores
+    // null when absent, so a partial lookup never blocks the connect.
+    try {
+      const raw = await AsyncStorage.getItem('@admin_user_info');
+      if (raw) {
+        const info = JSON.parse(raw);
+        if (info?.id != null) paired_by_proofpix_user_id = String(info.id);
+        if (info?.name) paired_by_name = String(info.name);
+        if (info?.email) paired_by_email = String(info.email);
+      }
+    } catch {}
+    if (role === 'team_member') {
+      // Team members: no Google identity on device. Fall back to the
+      // proxy session id (stable per join) and the name the member
+      // typed during setup.
+      if (!paired_by_proofpix_user_id) {
+        try {
+          const teamInfo = await readSecureJSON('@team_member_info');
+          if (teamInfo?.sessionId) paired_by_proofpix_user_id = String(teamInfo.sessionId);
+        } catch {}
+      }
+      if (!paired_by_name) {
+        try {
+          const stored = await AsyncStorage.getItem('app-settings');
+          const settings = stored ? JSON.parse(stored) : null;
+          if (settings?.userName) paired_by_name = String(settings.userName);
+        } catch {}
+      }
+    }
+    // Enforce spec max lengths (64 / 200 / 200) defensively so a stray
+    // long value never trips SF's payload validation.
+    if (paired_by_proofpix_user_id) paired_by_proofpix_user_id = paired_by_proofpix_user_id.slice(0, 64);
+    if (paired_by_name) paired_by_name = paired_by_name.slice(0, 200);
+    if (paired_by_email) paired_by_email = paired_by_email.slice(0, 200);
+
     const payload = {
       code: credential,
       device_label: deviceLabel,
@@ -148,6 +190,9 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
     if (os_name) payload.os_name = os_name;
     if (os_version) payload.os_version = os_version;
     if (role) payload.role = role;
+    if (paired_by_proofpix_user_id) payload.paired_by_proofpix_user_id = paired_by_proofpix_user_id;
+    if (paired_by_name) payload.paired_by_name = paired_by_name;
+    if (paired_by_email) payload.paired_by_email = paired_by_email;
 
     const response = await fetch(apiUrl('/connect/redeem'), {
       method: 'POST',
