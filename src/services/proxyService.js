@@ -760,6 +760,37 @@ class ProxyService {
   }
 
   /**
+   * Patch admin team-info on an existing proxy session. Used to
+   * backfill industry / customRooms for admins whose SF-primary
+   * session was created before the proxy learned those fields —
+   * without this they'd have to re-run team setup (which invalidates
+   * existing team-member tokens).
+   */
+  async patchTeamInfo(sessionId, { adminIndustry, adminCustomRooms } = {}) {
+    try {
+      const body = {};
+      if (adminIndustry) body.admin_industry = adminIndustry;
+      if (Array.isArray(adminCustomRooms) && adminCustomRooms.length > 0) body.admin_custom_rooms = adminCustomRooms;
+      if (Object.keys(body).length === 0) return { success: false, skipped: true };
+
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-info`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        console.warn('[PROXY] patchTeamInfo failed:', response.status, text.slice(0, 200));
+        return { success: false, error: `${response.status}` };
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] patchTeamInfo threw:', error?.message);
+      return { success: false, error: error?.message };
+    }
+  }
+
+  /**
    * Get session info including admin user info
    * @param {string} sessionId - Proxy session ID
    * @returns {Promise<{adminUserInfo: {name, email, picture}, folderId: string}>}

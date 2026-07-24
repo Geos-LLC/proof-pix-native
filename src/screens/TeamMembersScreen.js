@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -95,6 +95,30 @@ export default function TeamMembersScreen({ navigation }) {
       }
     })();
     return () => { cancelled = true; };
+  }, [proxySessionId]);
+
+  // Backfill admin industry + customRooms on any existing proxy
+  // session that predates the field. Idempotent on the proxy (only
+  // writes when a value is present), so re-mount is cheap. Uses a
+  // ref-guard so it fires exactly once per proxySessionId.
+  const teamInfoBackfilledRef = useRef(null);
+  useEffect(() => {
+    if (!proxySessionId) return;
+    if (teamInfoBackfilledRef.current === proxySessionId) return;
+    teamInfoBackfilledRef.current = proxySessionId;
+    (async () => {
+      try {
+        const adminIndustry = await AsyncStorage.getItem('@user_qualification');
+        if (!adminIndustry && !(Array.isArray(customRooms) && customRooms.length > 0)) return;
+        await proxyService.patchTeamInfo(proxySessionId, {
+          adminIndustry: adminIndustry || null,
+          adminCustomRooms: Array.isArray(customRooms) ? customRooms : null,
+        });
+      } catch (e) {
+        console.warn('[TeamMembers] patchTeamInfo backfill failed:', e?.message);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proxySessionId]);
 
   // Gate: use the feature-permission system (trial-aware + tier-aware
