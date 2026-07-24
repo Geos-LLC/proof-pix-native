@@ -60,7 +60,7 @@ export default function TeamMembersScreen({ navigation }) {
     userInfo: adminUserInfo,
     folderId,
   } = useAdmin();
-  const { userPlan } = useSettings();
+  const { userPlan, customRooms } = useSettings();
   const { canUse } = useFeaturePermissions();
 
   const [isWorkingSetup, setIsWorkingSetup] = useState(false);
@@ -256,10 +256,18 @@ export default function TeamMembersScreen({ navigation }) {
         );
         return;
       }
+      // Admin's trade + folder set — sent so team members inherit the
+      // right industry on join instead of the generic Section 1–5
+      // fallback. Read from AsyncStorage for the qualification id
+      // since SettingsContext doesn't expose it directly.
+      let adminIndustry = null;
+      try { adminIndustry = await AsyncStorage.getItem('@user_qualification'); } catch {}
       const result = await initializeProxySession(null, 'serviceflow', {
         sfRefreshToken: refreshToken,
         sfWorkspaceId: sfWorkspace?.workspaceId || null,
         sfWorkspaceName: sfWorkspace?.workspaceName || null,
+        adminIndustry,
+        adminCustomRooms: Array.isArray(customRooms) ? customRooms : null,
       });
       if (!result?.sessionId) {
         throw new Error(result?.error || 'Could not create team session');

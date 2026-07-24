@@ -29,7 +29,7 @@ class ProxyService {
       };
 
       if (accountType === 'serviceflow') {
-        const { sfRefreshToken, sfWorkspaceId, sfWorkspaceName } = extra || {};
+        const { sfRefreshToken, sfWorkspaceId, sfWorkspaceName, adminIndustry, adminCustomRooms } = extra || {};
         if (!sfRefreshToken) {
           throw new Error('Service Flow refresh token missing — reconnect Service Flow in Settings.');
         }
@@ -39,6 +39,8 @@ class ProxyService {
           refresh_token: sfRefreshToken,
           workspace_id: sfWorkspaceId || null,
           workspace_name: sfWorkspaceName || null,
+          admin_industry: adminIndustry || null,
+          admin_custom_rooms: Array.isArray(adminCustomRooms) ? adminCustomRooms : null,
         };
       } else if (accountType === 'apple') {
         // For Apple/iCloud, get authorization code and identity token

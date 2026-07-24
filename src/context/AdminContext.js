@@ -522,6 +522,40 @@ export function AdminProvider({ children }) {
           await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, updated);
           setTeamInfo(updated);
         }
+
+        // Inherit admin's industry + custom rooms on first sync so
+        // the team member's Home screen shows the right folder set
+        // instead of the generic Section 1–5 fallback. Only seed
+        // when the local device hasn't already been set up (empty
+        // qualification key) — never clobber a member who picked
+        // their own trade before joining.
+        try {
+          const localQualification = await AsyncStorage.getItem('@user_qualification');
+          if (!localQualification && info?.adminIndustry) {
+            await AsyncStorage.setItem('@user_qualification', String(info.adminIndustry));
+            console.log('[ADMIN] Team-member seeded @user_qualification from admin:', info.adminIndustry);
+          }
+          if (Array.isArray(info?.adminCustomRooms) && info.adminCustomRooms.length > 0) {
+            const CUSTOM_ROOMS_KEY = 'custom-rooms'; // matches SettingsContext.js
+            const localRooms = await AsyncStorage.getItem(CUSTOM_ROOMS_KEY);
+            if (!localRooms) {
+              // Route through SettingsContext.saveCustomRooms (not raw
+              // AsyncStorage) so its in-memory `customRooms` state
+              // updates too. Raw AsyncStorage.setItem would only take
+              // effect on next SettingsProvider mount, leaving the
+              // Home screen showing default Section 1–5 for one full
+              // app-launch cycle after join.
+              if (settingsContext?.saveCustomRooms) {
+                await settingsContext.saveCustomRooms(info.adminCustomRooms);
+              } else {
+                await AsyncStorage.setItem(CUSTOM_ROOMS_KEY, JSON.stringify(info.adminCustomRooms));
+              }
+              console.log('[ADMIN] Team-member seeded custom-rooms from admin (count:', info.adminCustomRooms.length, ')');
+            }
+          }
+        } catch (seedErr) {
+          console.warn('[ADMIN] Failed to seed admin industry/rooms on team member:', seedErr?.message);
+        }
       } catch (infoError) {
         console.warn('[ADMIN] Failed to refresh admin accountType:', infoError?.message);
       }
