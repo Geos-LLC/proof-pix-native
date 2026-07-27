@@ -493,18 +493,21 @@ export function AdminProvider({ children }) {
       setUserMode('individual');
     }
 
-    // Kickstart a fresh 7-day starter trial so the ex-team-member
-    // lands on real ProofPix functionality instead of the free-tier
-    // wall. `canStartTrial` guards against re-starting for anyone
-    // who already used their trial before joining the team — those
-    // users just get the plain starter plan.
+    // Kickstart a fresh 7-day Business trial so the ex-team-member
+    // keeps the full functionality they had on the team — reports,
+    // branding, unlimited projects — for a week to give them a
+    // real chance to convert instead of dropping to the free-tier
+    // wall the moment they lose team access. `canStartTrial` guards
+    // against re-starting for anyone who already used their trial
+    // before joining the team; those users stay on the plain
+    // starter plan (getEffectivePlan handles the graceful fallback).
     try {
       const { canStartTrial, startTrial } = require('../services/trialService');
       if (await canStartTrial()) {
-        await startTrial('starter');
-        console.log('[ADMIN] Started 7-day starter trial post-revoke');
+        await startTrial('business');
+        console.warn('[ADMIN] Started 7-day business trial post-revoke');
       } else {
-        console.log('[ADMIN] Trial already used — post-revoke user stays on starter without new trial');
+        console.warn('[ADMIN] Trial already used — post-revoke user stays on starter without new trial');
       }
     } catch (trialErr) {
       console.warn('[ADMIN] Failed to start post-revoke trial:', trialErr?.message);

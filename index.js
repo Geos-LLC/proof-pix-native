@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-member-uxfix-v8-' + Date.now() + ' — Post-revoke marker uses top-level AsyncStorage import (dynamic import was unreliable on Android), logs at warn so Loki shows the routing decision. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-member-uxfix-v9-' + Date.now() + ' — Post-revoke trial is Business (not Starter) so ex-members keep the tier they were used to for the trial window. Modal copy updated. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
