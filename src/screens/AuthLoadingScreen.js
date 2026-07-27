@@ -195,6 +195,28 @@ export default function AuthLoadingScreen({ navigation }) {
 
   useEffect(() => {
     const navigate = async () => {
+      // Post-revoke exit path — MUST run before the deep-link branch
+      // below. `Linking.getInitialURL()` returns the URL that
+      // originally launched the app (e.g. proofpix://join?invite=...
+      // from the admin's Share), and that URL persists across
+      // Updates.reloadAsync(). Without this early check, an
+      // ex-team-member who tapped "Start 7-day trial" would hit
+      // the deep-link fallback and get routed back to JoinTeam by
+      // React Navigation's linking config — the exact regression
+      // the marker was supposed to prevent.
+      try {
+        const postRevokeMarker = await AsyncStorage.getItem('@revoke_post_ack');
+        if (postRevokeMarker) {
+          await AsyncStorage.removeItem('@revoke_post_ack');
+          console.warn('[AuthLoading] Post-revoke marker present — skipping deep-link + clipboard, routing to Home');
+          await SplashScreen.hideAsync().catch(() => {});
+          navigation.replace('Home');
+          return;
+        }
+      } catch (e) {
+        console.warn('[AuthLoading] Post-revoke marker check failed:', e?.message);
+      }
+
       // Check if the app was opened via a deep link (invite or join)
       // If so, let React Navigation handle routing — don't override with replace
       try {
@@ -230,24 +252,6 @@ export default function AuthLoadingScreen({ navigation }) {
       // Hide the native splash screen right before navigating so the user
       // sees one continuous splash instead of native-splash → AuthLoading → destination.
       await SplashScreen.hideAsync().catch(() => {});
-
-      // Post-revoke exit path — set by AdminContext.acknowledgeTeamRevoked
-      // right before its Updates.reloadAsync(). Without this bypass the
-      // else-branch below would find the admin's just-shared invite code
-      // still on the clipboard and route the ex-member straight back
-      // to JoinTeamScreen. Consumed once (removed) so a normal fresh
-      // launch after the next uninstall picks up clipboard invites again.
-      try {
-        const postRevokeMarker = await AsyncStorage.getItem('@revoke_post_ack');
-        if (postRevokeMarker) {
-          await AsyncStorage.removeItem('@revoke_post_ack');
-          console.warn('[AuthLoading] Post-revoke marker present — skipping clipboard, routing to Home');
-          navigation.replace('Home');
-          return;
-        }
-      } catch (e) {
-        console.warn('[AuthLoading] Post-revoke marker check failed:', e?.message);
-      }
 
       // If userName is set, user has completed initial setup
       if (userName && userName.trim() !== '') {
