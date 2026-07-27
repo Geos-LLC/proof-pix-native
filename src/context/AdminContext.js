@@ -430,17 +430,40 @@ export function AdminProvider({ children }) {
   //   other errors (network, 5xx) → leave state alone (flaky network
   //   must not kick legitimate members out).
   //
-  // teamRevokedRef prevents the "you've been removed" alert from
-  // firing repeatedly if AppState bounces between active/background
-  // during teardown.
+  // teamRevokedRef prevents the "you've been removed" modal from
+  // being requested repeatedly if AppState bounces between
+  // active/background before the user acknowledges.
   const teamRevalidateInFlightRef = useRef(false);
   const teamRevokedRef = useRef(false);
+  const [teamRevokedInfo, setTeamRevokedInfo] = useState(null);
 
   const handleTeamMemberRevoked = async () => {
     if (teamRevokedRef.current) return;
     teamRevokedRef.current = true;
-    console.warn('[ADMIN] Team-member token revoked — tearing down local state');
+    console.warn('[ADMIN] Team-member token revoked — surfacing revoked modal');
 
+    // Snapshot the admin's contact info BEFORE we tear anything down
+    // so the modal can offer a "Contact admin" link. teamInfo is
+    // populated at join time and refreshed by revalidateTeamMember.
+    setTeamRevokedInfo({
+      adminName: teamInfo?.adminName || null,
+      adminEmail: teamInfo?.adminEmail || null,
+      teamName: teamInfo?.teamName || null,
+      revokedAt: new Date().toISOString(),
+    });
+    // Teardown deferred until the user acknowledges via
+    // acknowledgeTeamRevoked() — see below. If we cleared state now,
+    // the modal (rendered inside AdminProvider) would flash a
+    // login/onboarding UI behind it before the user has any context.
+  };
+
+  /**
+   * Called from the TeamAccessRevokedModal when the user chooses to
+   * continue on their own. Wipes SF-synced projects, switches to
+   * individual mode, and reloads so PhotoContext re-reads storage.
+   */
+  const acknowledgeTeamRevoked = async () => {
+    console.warn('[ADMIN] Team-member acknowledged revoke — tearing down + reloading');
     // Wipe synced-from-admin projects (any project carrying a crmJobId
     // came from the admin's SF workspace via serviceFlowSync — it's
     // no longer authoritative on this device). Local-only projects
@@ -470,26 +493,18 @@ export function AdminProvider({ children }) {
       setUserMode('individual');
     }
 
+    setTeamRevokedInfo(null);
+
     // Force a JS bundle reload so PhotoContext re-reads projects
     // from storage and the UI actually reflects the wipe. Without
     // this, in-memory `projects` state stays populated even though
     // the storage layer is empty.
-    Alert.alert(
-      'Removed from team',
-      'Your admin has revoked your access. Projects synced from the team have been cleared.',
-      [{
-        text: 'OK',
-        onPress: async () => {
-          try {
-            const Updates = require('expo-updates');
-            await Updates.reloadAsync();
-          } catch (reloadErr) {
-            console.warn('[ADMIN] Updates.reloadAsync failed:', reloadErr?.message);
-          }
-        },
-      }],
-      { cancelable: false },
-    );
+    try {
+      const Updates = require('expo-updates');
+      await Updates.reloadAsync();
+    } catch (reloadErr) {
+      console.warn('[ADMIN] Updates.reloadAsync failed:', reloadErr?.message);
+    }
   };
 
   const revalidateTeamMember = async () => {
@@ -513,12 +528,29 @@ export function AdminProvider({ children }) {
       );
 
       // Refresh admin's accountType so it stays current if the admin
-      // ever changes storage backends. Best-effort.
+      // ever changes storage backends. Also stash admin's contact
+      // info on teamInfo so the revoked modal can render a real
+      // "Contact admin" mailto: — no other cold path collects it.
+      // Best-effort.
       try {
         const info = await proxyService.getSessionInfo(teamInfo.sessionId);
         const nextAccountType = info?.accountType || null;
-        if (nextAccountType !== teamInfo.adminAccountType) {
-          const updated = { ...teamInfo, adminAccountType: nextAccountType };
+        const nextAdminName = info?.adminUserInfo?.name || teamInfo?.adminName || null;
+        const nextAdminEmail = info?.adminUserInfo?.email || teamInfo?.adminEmail || null;
+        const nextTeamName = info?.serviceFlowWorkspaceName || teamInfo?.teamName || null;
+        if (
+          nextAccountType !== teamInfo.adminAccountType ||
+          nextAdminName !== teamInfo.adminName ||
+          nextAdminEmail !== teamInfo.adminEmail ||
+          nextTeamName !== teamInfo.teamName
+        ) {
+          const updated = {
+            ...teamInfo,
+            adminAccountType: nextAccountType,
+            adminName: nextAdminName,
+            adminEmail: nextAdminEmail,
+            teamName: nextTeamName,
+          };
           await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, updated);
           setTeamInfo(updated);
         }
@@ -1530,6 +1562,8 @@ export function AdminProvider({ children }) {
     signOutFromTeam,
     joinTeam,
     switchToIndividualMode,
+    teamRevokedInfo,
+    acknowledgeTeamRevoked,
     saveFolderId,
     addInviteToken,
     removeInviteToken,

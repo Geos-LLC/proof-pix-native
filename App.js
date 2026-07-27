@@ -20,6 +20,7 @@ import { SettingsProvider } from './src/context/SettingsContext';
 import { AdminProvider } from './src/context/AdminContext';
 import TrialNotificationModal from './src/components/TrialNotificationModal';
 import ReferralPromptModal from './src/components/ReferralPromptModal';
+import TeamAccessRevokedModal from './src/components/TeamAccessRevokedModal';
 import {
   registerReferralPromptTrigger,
   unregisterReferralPromptTrigger,
@@ -1344,6 +1345,13 @@ export default function App() {
                 onPrimary={handleReferralPromptPrimary}
                 onSecondary={handleReferralPromptSecondary}
               />
+
+              {/* Team access revoked — full-screen blocking modal shown
+                  when the proxy tells us this team_member token is
+                  no longer valid (403 on the revalidation ping). Must
+                  live inside AdminProvider so it can read
+                  teamRevokedInfo. */}
+              <TeamAccessRevokedModal />
             </PhotoProvider>
           </AdminProvider>
         </SettingsProvider>
