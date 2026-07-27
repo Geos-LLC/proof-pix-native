@@ -760,6 +760,41 @@ class ProxyService {
   }
 
   /**
+   * Long-poll waiting for the admin to revoke this team-member's
+   * token. Server holds the connection open until a revoke event
+   * fires or the server-side timeout (25s) hits, whichever comes
+   * first. Client is expected to re-open immediately on a
+   * `{ revoked: false }` response.
+   *
+   * Uses an AbortController-aware fetch so unmounting the effect
+   * cancels the in-flight request cleanly.
+   *
+   * @param {string} sessionId - Proxy session ID
+   * @param {string} token - Team-member invite token
+   * @param {object} opts
+   * @param {AbortSignal} [opts.signal] - Optional abort signal
+   * @returns {Promise<{ revoked: boolean }>} — always resolves
+   *   { revoked: true } or { revoked: false }. Errors propagate.
+   */
+  async waitForRevoke(sessionId, token, { signal } = {}) {
+    if (!sessionId || !token) return { revoked: false };
+    const params = new URLSearchParams({ token });
+    const response = await fetch(
+      `${PROXY_SERVER_URL}/api/team/${sessionId}/wait-for-revoke?${params.toString()}`,
+      { method: 'GET', signal },
+    );
+    if (response.status === 403 || response.status === 404) {
+      // Server already considers this token revoked / session gone —
+      // treat both as revoked so the client tears down.
+      return { revoked: true };
+    }
+    if (!response.ok) {
+      throw new Error(`wait-for-revoke failed: ${response.status}`);
+    }
+    return await response.json();
+  }
+
+  /**
    * Patch admin team-info on an existing proxy session. Used to
    * backfill industry / customRooms for admins whose SF-primary
    * session was created before the proxy learned those fields —

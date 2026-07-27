@@ -665,28 +665,62 @@ export function AdminProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userMode, teamInfo?.token, teamInfo?.sessionId]);
 
-  // Active-state polling. Without this, a revoke fired by the admin
-  // while the team-member's app is open and idle wouldn't be seen
-  // until the member next backgrounded/foregrounded (or cold-started).
-  // 30-second interval feels near-immediate to the user without
-  // hammering the proxy — the request is a cheap KV read + token
-  // check on the server side, and the mobile client's in-flight guard
-  // in revalidateTeamMember dedupes overlapping polls.
-  //
-  // Only runs when userMode === 'team_member' with valid team info.
-  // AppState check inside the interval callback so we don't burn a
-  // proxy call every 30s while the app is backgrounded (AppState
-  // 'change' → 'active' handles that resume path).
+  // Server-push revocation. Long-poll loop that opens a request to
+  // the proxy's /wait-for-revoke endpoint; the proxy holds the
+  // connection open until either the admin revokes this token (200
+  // { revoked: true } → fire handleTeamMemberRevoked) or the poll
+  // hits its 25s server-side timeout (200 { revoked: false } →
+  // client immediately re-opens). One in-flight connection per
+  // device, no periodic client polling. Suspended while backgrounded
+  // (AppState 'active' listener above handles resume).
   useEffect(() => {
     if (userMode !== 'team_member') return;
     if (!teamInfo?.token || !teamInfo?.sessionId) return;
-    const POLL_INTERVAL_MS = 30_000;
-    const timer = setInterval(() => {
-      if (AppState.currentState === 'active') {
-        revalidateTeamMember();
+
+    let cancelled = false;
+    let currentController = null;
+
+    const loop = async () => {
+      while (!cancelled) {
+        if (AppState.currentState !== 'active') {
+          // Pause while backgrounded — resume via AppState listener,
+          // which triggers a foreground revalidation that repopulates
+          // this effect's deps if state was cleared. A short sleep
+          // avoids a busy loop before that state change lands.
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        currentController = new AbortController();
+        try {
+          const result = await proxyService.waitForRevoke(
+            teamInfo.sessionId,
+            teamInfo.token,
+            { signal: currentController.signal },
+          );
+          if (cancelled) return;
+          if (result?.revoked) {
+            handleTeamMemberRevoked();
+            return;
+          }
+          // 200 { revoked: false } → immediately re-open. Small yield
+          // so React can process any pending state before the next
+          // network cycle.
+          await new Promise((r) => setTimeout(r, 100));
+        } catch (err) {
+          if (cancelled) return;
+          if (err?.name === 'AbortError') return;
+          // Network / server hiccup — back off briefly before retry.
+          console.warn('[ADMIN] wait-for-revoke failed, retrying:', err?.message);
+          await new Promise((r) => setTimeout(r, 5000));
+        }
       }
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
+    };
+
+    loop();
+    return () => {
+      cancelled = true;
+      try { currentController?.abort(); } catch {}
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userMode, teamInfo?.token, teamInfo?.sessionId]);
 
