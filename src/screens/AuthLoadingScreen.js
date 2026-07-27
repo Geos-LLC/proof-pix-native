@@ -230,6 +230,23 @@ export default function AuthLoadingScreen({ navigation }) {
       // sees one continuous splash instead of native-splash → AuthLoading → destination.
       await SplashScreen.hideAsync().catch(() => {});
 
+      // Post-revoke exit path — set by AdminContext.acknowledgeTeamRevoked
+      // right before its Updates.reloadAsync(). Without this bypass the
+      // else-branch below would find the admin's just-shared invite code
+      // still on the clipboard and route the ex-member straight back
+      // to JoinTeamScreen. Consumed once (removed) so a normal fresh
+      // launch after the next uninstall picks up clipboard invites again.
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const postRevokeMarker = await AsyncStorage.getItem('@revoke_post_ack');
+        if (postRevokeMarker) {
+          await AsyncStorage.removeItem('@revoke_post_ack');
+          console.log('[AuthLoading] Post-revoke marker present — skipping clipboard, routing to Home');
+          navigation.replace('Home');
+          return;
+        }
+      } catch {}
+
       // If userName is set, user has completed initial setup
       if (userName && userName.trim() !== '') {
         navigation.replace('Home');

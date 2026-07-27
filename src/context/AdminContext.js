@@ -521,9 +521,18 @@ export function AdminProvider({ children }) {
     try {
       // 'app-settings' matches SettingsContext.SETTINGS_KEY — kept as a
       // literal here so we don't have to plumb the constant through.
-      const settingsBlob = (await readSecureJSON('app-settings')) || {};
-      if (settingsBlob.userPlan !== 'starter') {
-        await writeSecureJSON('app-settings', { ...settingsBlob, userPlan: 'starter' });
+      // ONLY overwrite if we successfully read an existing settings
+      // blob — a null/undefined read (transient Keychain race, first
+      // launch, etc.) would otherwise cause us to write { userPlan:
+      // 'starter' } and wipe every other setting including userName,
+      // which broke the AuthLoadingScreen post-reload routing (empty
+      // userName → clipboard hits an old invite code → back to
+      // JoinTeamScreen).
+      const settingsBlob = await readSecureJSON('app-settings');
+      if (settingsBlob && typeof settingsBlob === 'object' && Object.keys(settingsBlob).length > 0) {
+        if (settingsBlob.userPlan !== 'starter') {
+          await writeSecureJSON('app-settings', { ...settingsBlob, userPlan: 'starter' });
+        }
       }
     } catch (planWriteErr) {
       console.warn('[ADMIN] Direct settings userPlan reset failed:', planWriteErr?.message);
@@ -542,6 +551,15 @@ export function AdminProvider({ children }) {
     }
 
     setTeamRevokedInfo(null);
+
+    // Post-revoke marker read by AuthLoadingScreen so it skips the
+    // "check clipboard for invite code" fallback branch — the admin's
+    // last Share.share() often left the invite token on the device
+    // clipboard, which would otherwise route the ex-member straight
+    // back to JoinTeamScreen after reload.
+    try {
+      await AsyncStorage.setItem('@revoke_post_ack', String(Date.now()));
+    } catch {}
 
     // Force a JS bundle reload so PhotoContext re-reads projects
     // from storage and the UI actually reflects the wipe. Without

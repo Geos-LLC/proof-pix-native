@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-member-uxfix-v6-' + Date.now() + ' — Server-push revocation via long-poll (GET /wait-for-revoke). Admin revoke fires the modal within ms while the app is open — no client polling. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-member-uxfix-v7-' + Date.now() + ' — Post-revoke routing fix: no longer wipe userName via defensive settings write, and skip clipboard-invite check on the reload triggered by acknowledgeTeamRevoked so ex-members land on Home not JoinTeam. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
