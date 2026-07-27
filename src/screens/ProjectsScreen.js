@@ -41,6 +41,7 @@ import { LOCATIONS, getLocationName } from '../config/locations';
 import { createAlbumName, ensureLabelForPhoto } from '../services/uploadService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { isTeamUploadEnabled, getTeamUploadBlockedReason, adminStorageLabel } from '../config/teamUpload';
+import { getConnectedClouds } from '../utils/cloudConnectivity';
 import * as ExpoLocation from 'expo-location';
 import { logProjectCreated } from '../utils/analytics';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -92,12 +93,22 @@ export default function ProjectsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
+  // Date-range chip filter above the project list. 'all' shows every
+  // project; the other buckets narrow by crmJobMeta.scheduledAt (SF-
+  // linked jobs) or project.createdAt (local-only). SF sync itself
+  // pulls a wider window (-30d..+30d) so switching chips reveals the
+  // slice we already have in memory instead of re-fetching.
+  const [dateFilter, setDateFilter] = useState('all');
   const [actionSheetProject, setActionSheetProject] = useState(null);
   // Multi-select mode for bulk delete / share. Long-press a card to
   // enter; tap-toggle, then act via the toolbar that replaces the
   // search row.
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState(new Set());
+  // Action-sheet opened by the search-row menu button (three-dot on
+  // the right of the search bar). Hosts bulk actions that used to be
+  // long-press-only: enter multi-select, delete every project.
+  const [menuSheetVisible, setMenuSheetVisible] = useState(false);
   const {
     projects,
     getPhotosByProject,
@@ -172,7 +183,7 @@ export default function ProjectsScreen({ navigation, route }) {
     }
     return map;
   }, [photos]);
-  const { userMode, teamInfo, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType, connectedAccounts } = useAdmin();
+  const { userMode, teamInfo, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType, connectedAccounts, inviteTokens } = useAdmin();
   const { exceedsLimit, canUse, effectivePlan } = useFeaturePermissions();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
   const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
@@ -527,6 +538,43 @@ export default function ProjectsScreen({ navigation, route }) {
       ],
     );
   };
+  // Nuke every local project. Only wired to the search-row menu on
+  // the My-projects tab — team projects live on the proxy KV and are
+  // out of scope here. Photos stay in iOS Photos (deleteFromStorage:
+  // false), matching the bulk-delete flow.
+  const handleDeleteAllProjects = () => {
+    if (projects.length === 0) return;
+    const total = projects.length;
+    Alert.alert(
+      t('projects.deleteAllTitle', {
+        count: total,
+        defaultValue: `Delete all ${total} project${total === 1 ? '' : 's'}?`,
+      }),
+      t('projects.deleteAllBody', {
+        defaultValue:
+          'This removes every project on this device. Photos stay in your iOS Photos library. This cannot be undone.',
+      }),
+      [
+        { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        {
+          text: t('common.deleteAll', { defaultValue: 'Delete all' }),
+          style: 'destructive',
+          onPress: async () => {
+            for (const p of projects) {
+              try {
+                await deleteProject(p.id, { deleteFromStorage: false });
+              } catch (e) {
+                console.warn('[ProjectsScreen] delete-all failed for', p.id, e?.message);
+              }
+            }
+            setActiveProject(null);
+            if (isMultiSelectMode) exitMultiSelect();
+          },
+        },
+      ],
+    );
+  };
+
   const handleShareSelected = () => {
     const ids = Array.from(selectedProjects);
     if (ids.length === 0) return;
@@ -1336,23 +1384,113 @@ export default function ProjectsScreen({ navigation, route }) {
     return { count: arr.length, sets, counters, rooms: Array.from(rooms), latestTs, thumbUri };
   };
 
-  const filteredProjects = searchQuery.trim()
-    ? projects.filter((p) => p.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-    : projects;
+  // Date-range window for the active chip filter, or null when 'all'.
+  // `from` is inclusive, `to` is exclusive. Week starts on Sunday to
+  // match the default JS getDay() convention.
+  const dateFilterRange = useMemo(() => {
+    if (dateFilter === 'all') return null;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayMs = 86_400_000;
+    switch (dateFilter) {
+      case 'today':
+        return { from: todayStart, to: todayStart + dayMs };
+      case 'week': {
+        const dow = now.getDay();
+        return { from: todayStart - dow * dayMs, to: todayStart + (7 - dow) * dayMs };
+      }
+      case 'month': {
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+        return { from: monthStart, to: nextMonthStart };
+      }
+      case 'last30':
+        return { from: todayStart - 30 * dayMs, to: todayStart + dayMs };
+      default:
+        return null;
+    }
+  }, [dateFilter]);
+
+  // "When this project matters" timestamp. SF-linked projects prefer
+  // the SF scheduled time so a job scheduled for tomorrow lands in
+  // the "This Week" bucket even if it was locally created weeks ago.
+  const projectFilterTs = (p) => {
+    const scheduled = p?.crmJobMeta?.scheduledAt;
+    if (typeof scheduled === 'number' && scheduled > 0) return scheduled;
+    const created = p?.createdAt;
+    if (typeof created === 'number' && created > 0) return created;
+    if (typeof created === 'string') {
+      const parsed = Date.parse(created);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  };
+
+  const filteredProjects = useMemo(() => {
+    let list = projects;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) list = list.filter((p) => (p.name || '').toLowerCase().includes(q));
+    if (dateFilterRange) {
+      list = list.filter((p) => {
+        const ts = projectFilterTs(p);
+        if (!ts) return false;
+        return ts >= dateFilterRange.from && ts < dateFilterRange.to;
+      });
+    }
+    return list;
+  }, [projects, searchQuery, dateFilterRange]);
 
   const getProjectPhotoCount = (projectId) => {
     return getPhotosByProject(projectId).length;
   };
 
   // ===== Team Projects (admin-only) =====
-  // Admins with an active proxy session get a "Team Projects" sub-tab
-  // that surfaces the projects team members have created / uploaded to.
-  // Data lives in Vercel KV on the proxy — populated by
-  // syncTeamProject on create/rename AND by the upload endpoint as a
-  // backstop (so counts still show up for older member builds that
-  // don't publish on create). No photo blobs are fetched — the admin
-  // taps "Open in Drive" to inspect the actual folder.
-  const showTeamTab = userMode === 'admin' && !!proxySessionId;
+  // Every admin sees the "Team Projects" tab so the surface is
+  // discoverable even before they sign into the team proxy. The tab
+  // renders a connect-CTA empty state when there is no proxy session
+  // (falls through to fetch + list once one exists). Data lives in
+  // Vercel KV on the proxy — populated by syncTeamProject on
+  // create/rename AND by the upload endpoint as a backstop (so counts
+  // still show up for older member builds that don't publish on
+  // create). No photo blobs are fetched — the admin taps
+  // "Open in Drive" to inspect the actual folder.
+  // Tabs render for EVERYONE. Team projects fetch is still gated on
+  // proxySessionId inside fetchTeamProjects, so no wasted network
+  // for accounts without a live proxy. The tab bar itself is a
+  // free-cost UI element and shipping it unconditionally kills a
+  // whole class of "why aren't tabs showing" debugging.
+  const showTeamTab = true;
+  // Broken-state detector: admin has invited team members but has
+  // no cloud backend connected → their photos silently fail to
+  // upload. Renders a banner near the top of the Projects screen
+  // with a "Fix" CTA that jumps to Cloud Sync. Re-checks on any
+  // change to admin state so reconnecting instantly clears it.
+  const [teamCloudBroken, setTeamCloudBroken] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (userMode !== 'admin') { setTeamCloudBroken(false); return; }
+      if ((inviteTokens?.length || 0) === 0) { setTeamCloudBroken(false); return; }
+      try {
+        const clouds = await getConnectedClouds({ isAuthenticated, accountType });
+        const any = clouds.google || clouds.dropbox || clouds.serviceflow;
+        if (!cancelled) setTeamCloudBroken(!any);
+      } catch {
+        if (!cancelled) setTeamCloudBroken(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userMode, inviteTokens, isAuthenticated, accountType]);
+
+  // Diagnostic: fires on every mount + whenever mode/session change.
+  // Includes an OTA tag (bump per push) so we can tell which bundle
+  // produced the log in Loki:
+  //   {service_name="proofpix-native"} |~ "\[PROJTAB\]"
+  useEffect(() => {
+    console.warn(
+      `[PROJTAB ota=v14-force] mode=${userMode === null ? 'null' : userMode} showTeamTab=${showTeamTab} proxySession=${!!proxySessionId}`,
+    );
+  }, [userMode, showTeamTab, proxySessionId]);
   const [projectsTab, setProjectsTab] = useState('mine'); // 'mine' | 'team'
   const [teamProjects, setTeamProjects] = useState([]);
   const [teamProjectsLoading, setTeamProjectsLoading] = useState(false);
@@ -1414,7 +1552,17 @@ export default function ProjectsScreen({ navigation, route }) {
       setTeamProjectsError(null);
       const proxyService = require('../services/proxyService').default;
       const result = await proxyService.getTeamProjects(proxySessionId);
-      setTeamProjects(Array.isArray(result?.projects) ? result.projects : []);
+      const list = Array.isArray(result?.projects) ? result.projects : [];
+      setTeamProjects(list);
+      // One-shot diagnostic (v15): dump sessionId + full project ID
+      // list so we can force-purge stale ghost KV entries from the
+      // server side. Grep Loki:
+      //   {service_name="proofpix-native"} |~ "\[TEAMDUMP\]"
+      try {
+        console.warn(
+          `[TEAMDUMP v15] session=${proxySessionId} count=${list.length} ids=${JSON.stringify(list.map(p => ({ id: p?.id, name: p?.name, owner: p?.ownerName })))}`,
+        );
+      } catch {}
     } catch (err) {
       console.warn('[ProjectsScreen] Failed to load team projects:', err?.message);
       setTeamProjectsError(err?.message || 'Failed to load');
@@ -1439,11 +1587,31 @@ export default function ProjectsScreen({ navigation, route }) {
     if (!showTeamTab && projectsTab === 'team') setProjectsTab('mine');
   }, [showTeamTab, projectsTab]);
 
-  const filteredTeamProjects = searchQuery.trim()
-    ? teamProjects.filter((p) =>
-        (p.name || '').toLowerCase().includes(searchQuery.trim().toLowerCase())
-      )
-    : teamProjects;
+  // Team projects come from the proxy KV store. They carry `updatedAt`
+  // as an ISO string (set on create + upload) but no crmJobMeta —
+  // fall back to updatedAt for the date-chip filter.
+  const teamProjectFilterTs = (p) => {
+    if (typeof p?.updatedAt === 'string') {
+      const parsed = Date.parse(p.updatedAt);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    if (typeof p?.updatedAt === 'number') return p.updatedAt;
+    return 0;
+  };
+
+  const filteredTeamProjects = useMemo(() => {
+    let list = teamProjects;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) list = list.filter((p) => (p.name || '').toLowerCase().includes(q));
+    if (dateFilterRange) {
+      list = list.filter((p) => {
+        const ts = teamProjectFilterTs(p);
+        if (!ts) return false;
+        return ts >= dateFilterRange.from && ts < dateFilterRange.to;
+      });
+    }
+    return list;
+  }, [teamProjects, searchQuery, dateFilterRange]);
 
   const handleOpenTeamProjectFolder = async (proj) => {
     const url = proj?.folderUrl
@@ -1476,6 +1644,38 @@ export default function ProjectsScreen({ navigation, route }) {
           {t('projects.title')}
         </Text>
       </View>
+
+      {teamCloudBroken && (
+        <TouchableOpacity
+          onPress={() => navigation.navigate('CloudSync')}
+          activeOpacity={0.85}
+          style={{
+            marginHorizontal: 19,
+            marginBottom: 10,
+            padding: 12,
+            borderRadius: 10,
+            backgroundColor: '#FBECEC',
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: '#E53935',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <Ionicons name="warning-outline" size={20} color="#C62828" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: FONTS.ALEXANDRIA, fontSize: 13, fontWeight: '700', color: '#C62828' }}>
+              {t('projects.teamCloudBrokenTitle', { defaultValue: 'Team uploads are failing' })}
+            </Text>
+            <Text style={{ fontFamily: FONTS.ALEXANDRIA, fontSize: 12, color: '#8A1F1F', marginTop: 2 }}>
+              {t('projects.teamCloudBrokenBody', {
+                defaultValue: 'No cloud is connected. Tap to open Cloud Sync and reconnect Drive, Dropbox, or Service Flow.',
+              })}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#C62828" />
+        </TouchableOpacity>
+      )}
 
       {showTeamTab && (
         <View style={styles.tabsRow}>
@@ -1581,10 +1781,52 @@ export default function ProjectsScreen({ navigation, route }) {
           <TouchableOpacity
             style={[styles.filterBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            onPress={() => setMenuSheetVisible(true)}
           >
-            <Ionicons name="options-outline" size={18} color={theme.textPrimary} />
+            <Ionicons name="ellipsis-horizontal" size={18} color={theme.textPrimary} />
           </TouchableOpacity>
         </View>
+      )}
+
+      {!isMultiSelectMode && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dateChipRow}
+        >
+          {[
+            { key: 'all', label: t('projects.dateFilter.all', { defaultValue: 'All' }) },
+            { key: 'today', label: t('projects.dateFilter.today', { defaultValue: 'Today' }) },
+            { key: 'week', label: t('projects.dateFilter.week', { defaultValue: 'This Week' }) },
+            { key: 'month', label: t('projects.dateFilter.month', { defaultValue: 'This Month' }) },
+            { key: 'last30', label: t('projects.dateFilter.last30', { defaultValue: 'Last 30d' }) },
+          ].map((chip) => {
+            const active = dateFilter === chip.key;
+            return (
+              <TouchableOpacity
+                key={chip.key}
+                onPress={() => setDateFilter(chip.key)}
+                activeOpacity={0.8}
+                style={[
+                  styles.dateChip,
+                  {
+                    backgroundColor: active ? theme.accent : theme.surface,
+                    borderColor: active ? theme.accent : theme.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.dateChipText,
+                    { color: active ? theme.accentText : theme.textPrimary },
+                  ]}
+                >
+                  {chip.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       )}
 
       <ScrollView
@@ -1592,7 +1834,39 @@ export default function ProjectsScreen({ navigation, route }) {
         contentContainerStyle={[styles.content, { paddingBottom: 20 + insets.bottom + 50 + 24 }]}
       >
         {projectsTab === 'team' && showTeamTab ? (
-          teamProjectsLoading && teamProjects.length === 0 ? (
+          !proxySessionId ? (
+            <View style={styles.emptyState}>
+              <Ionicons
+                name="people-outline"
+                size={40}
+                color={theme.textMuted}
+                style={{ marginBottom: 8 }}
+              />
+              <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
+                {t('projects.teamConnectTitle', { defaultValue: 'Connect your team' })}
+              </Text>
+              <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary }]}>
+                {t('projects.teamConnectBody', {
+                  defaultValue:
+                    'Sign in to your team account to see projects your team members create and upload to.',
+                })}
+              </Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('TeamMembers')}
+                style={{
+                  marginTop: 12,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 20,
+                  backgroundColor: theme.accent,
+                }}
+              >
+                <Text style={{ color: theme.accentText, fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' }}>
+                  {t('projects.teamConnectCta', { defaultValue: 'Open team settings' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : teamProjectsLoading && teamProjects.length === 0 ? (
             <View style={styles.emptyState}>
               <ActivityIndicator size="small" color={theme.textMuted} />
               <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary, marginTop: 10 }]}>
@@ -1621,14 +1895,27 @@ export default function ProjectsScreen({ navigation, route }) {
               <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
                 {searchQuery.trim()
                   ? t('projects.noMatch', { defaultValue: 'No projects match your search' })
-                  : t('projects.teamEmptyTitle', { defaultValue: 'No team projects yet' })}
+                  : dateFilter !== 'all'
+                    ? t('projects.noInRange', { defaultValue: 'No projects in this date range' })
+                    : t('projects.teamEmptyTitle', { defaultValue: 'No team projects yet' })}
               </Text>
-              {!searchQuery.trim() && (
+              {!searchQuery.trim() && dateFilter === 'all' && (
                 <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary }]}>
                   {t('projects.teamEmptyBody', {
                     defaultValue: 'Projects created by your team members will appear here.',
                   })}
                 </Text>
+              )}
+              {!searchQuery.trim() && dateFilter !== 'all' && (
+                <TouchableOpacity
+                  onPress={() => setDateFilter('all')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ marginTop: 10 }}
+                >
+                  <Text style={{ color: theme.accent, fontFamily: FONTS.ALEXANDRIA, fontSize: 13, fontWeight: '600' }}>
+                    {t('projects.dateFilter.clear', { defaultValue: 'Show all projects' })}
+                  </Text>
+                </TouchableOpacity>
               )}
               <TouchableOpacity
                 onPress={() => fetchTeamProjects({ userInitiated: true })}
@@ -1648,17 +1935,61 @@ export default function ProjectsScreen({ navigation, route }) {
                     defaultValue: '{{count}} project(s)',
                   })}
                 </Text>
-                <TouchableOpacity
-                  onPress={() => fetchTeamProjects({ userInitiated: true })}
-                  disabled={teamProjectsLoading}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  {teamProjectsLoading ? (
-                    <ActivityIndicator size="small" color={theme.textMuted} />
-                  ) : (
-                    <Ionicons name="refresh" size={18} color={theme.textSecondary} />
-                  )}
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (!proxySessionId || teamProjects.length === 0) return;
+                      Alert.alert(
+                        t('projects.teamClearAllTitle', { defaultValue: 'Clear all team projects?' }),
+                        t('projects.teamClearAllBody', {
+                          defaultValue:
+                            'Wipes every project from the shared team list on the server. Live members will re-sync their projects on next create or upload. Use this to purge ghost entries from removed members.',
+                        }),
+                        [
+                          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                          {
+                            text: t('common.clear', { defaultValue: 'Clear' }),
+                            style: 'destructive',
+                            onPress: async () => {
+                              const proxyService = require('../services/proxyService').default;
+                              setTeamProjectsLoading(true);
+                              try {
+                                for (const tp of teamProjects) {
+                                  try {
+                                    await proxyService.adminDeleteTeamProject(proxySessionId, tp.id);
+                                  } catch (e) {
+                                    console.warn('[ProjectsScreen] adminDeleteTeamProject failed for', tp.id, e?.message);
+                                  }
+                                }
+                              } finally {
+                                await fetchTeamProjects({ userInitiated: true });
+                              }
+                            },
+                          },
+                        ],
+                      );
+                    }}
+                    disabled={teamProjectsLoading || teamProjects.length === 0}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={18}
+                      color={teamProjects.length === 0 ? theme.textMuted : '#E53935'}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => fetchTeamProjects({ userInitiated: true })}
+                    disabled={teamProjectsLoading}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    {teamProjectsLoading ? (
+                      <ActivityIndicator size="small" color={theme.textMuted} />
+                    ) : (
+                      <Ionicons name="refresh" size={18} color={theme.textSecondary} />
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
               {filteredTeamProjects.map((tp) => {
                 const industry = tp.industry ? getIndustryById(tp.industry) : null;
@@ -1754,8 +2085,21 @@ export default function ProjectsScreen({ navigation, route }) {
         ) : filteredProjects.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
-              {t('projects.noMatch', { defaultValue: 'No projects match your search' })}
+              {searchQuery.trim()
+                ? t('projects.noMatch', { defaultValue: 'No projects match your search' })
+                : t('projects.noInRange', { defaultValue: 'No projects in this date range' })}
             </Text>
+            {!searchQuery.trim() && dateFilter !== 'all' && (
+              <TouchableOpacity
+                onPress={() => setDateFilter('all')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ marginTop: 10 }}
+              >
+                <Text style={{ color: theme.accent, fontFamily: FONTS.ALEXANDRIA, fontSize: 13, fontWeight: '600' }}>
+                  {t('projects.dateFilter.clear', { defaultValue: 'Show all projects' })}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           filteredProjects.map((project) => {
@@ -1892,6 +2236,74 @@ export default function ProjectsScreen({ navigation, route }) {
           <Ionicons name="add" size={40} color={theme.accentText} />
         </TouchableOpacity>
       )}
+
+      {/* Search-row menu (three-dot icon on the right of the search
+          bar). Only bulk-op entry point outside of long-press. Team
+          projects live on the proxy KV and are read-only from here, so
+          both actions are gated to the My-projects tab. */}
+      <Modal
+        visible={menuSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMenuSheetVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setMenuSheetVisible(false)}>
+          <View style={styles.sheetBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={[styles.sheetContainer, { backgroundColor: theme.surface, paddingBottom: 12 + insets.bottom }]}>
+          <View style={[styles.sheetHandle, { backgroundColor: theme.borderStrong }]} />
+          {(() => {
+            const onTeamTab = projectsTab === 'team';
+            const disabled = onTeamTab || projects.length === 0;
+            const selectColor = disabled ? theme.textMuted : theme.textPrimary;
+            const deleteColor = disabled ? theme.textMuted : theme.danger;
+            return (
+              <>
+                <TouchableOpacity
+                  style={[styles.sheetAction, { borderBottomColor: theme.divider }]}
+                  disabled={disabled}
+                  onPress={() => {
+                    setMenuSheetVisible(false);
+                    if (disabled) return;
+                    setIsMultiSelectMode(true);
+                    setSelectedProjects(new Set());
+                  }}
+                >
+                  <Ionicons name="checkmark-done-outline" size={20} color={selectColor} />
+                  <Text style={[styles.sheetActionText, { color: selectColor }]}>
+                    {t('projects.menuSelect', { defaultValue: 'Select projects' })}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.sheetAction}
+                  disabled={disabled}
+                  onPress={() => {
+                    setMenuSheetVisible(false);
+                    if (disabled) return;
+                    // Let the sheet slide-out finish before the
+                    // Alert opens — iOS misroutes taps when an
+                    // Alert lands on top of a still-animating Modal.
+                    setTimeout(handleDeleteAllProjects, 250);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={20} color={deleteColor} />
+                  <Text style={[styles.sheetActionText, { color: deleteColor }]}>
+                    {t('projects.menuDeleteAll', { defaultValue: 'Delete all projects' })}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            );
+          })()}
+          <TouchableOpacity
+            style={[styles.sheetCancel, { backgroundColor: theme.surfaceElevated }]}
+            onPress={() => setMenuSheetVisible(false)}
+          >
+            <Text style={[styles.sheetCancelText, { color: theme.textPrimary }]}>
+              {t('common.cancel', { defaultValue: 'Cancel' })}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       <Modal
         visible={!!actionSheetProject}
@@ -2954,6 +3366,23 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dateChipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 19,
+    paddingBottom: 10,
+  },
+  dateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  dateChipText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '600',
   },
   cardNew: {
     borderRadius: 14,

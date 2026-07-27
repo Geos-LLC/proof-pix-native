@@ -9,6 +9,10 @@ import {
   ActivityIndicator,
   Dimensions,
   Platform,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  PixelRatio,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -22,6 +26,7 @@ import { savePhotoToDevice } from '../services/storage';
 import { logEvent } from '../utils/analytics';
 import { useTheme } from '../hooks/useTheme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { compositeImages } from '../utils/imageCompositor';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const PREVIEW_SIZE = (SCREEN_W - 48) / 2;
@@ -29,7 +34,7 @@ const FIRST_USE_KEY = '@upload_2_photos_seen';
 
 export default function UploadPhotosScreen({ route, navigation }) {
   const { t } = useTranslation();
-  const { addPhoto, activeProjectId } = usePhotos();
+  const { addPhoto, activeProjectId, projects, createProject, setActiveProject } = usePhotos();
   const room = route.params?.room || 'General';
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -38,6 +43,8 @@ export default function UploadPhotosScreen({ route, navigation }) {
   const [photo2, setPhoto2] = useState(null); // after
   const [loading, setLoading] = useState(false);
   const [showFirstUse, setShowFirstUse] = useState(false);
+  const [projectPromptVisible, setProjectPromptVisible] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
 
   useEffect(() => {
     logEvent('upload_2_photos_tapped');
@@ -137,6 +144,53 @@ export default function UploadPhotosScreen({ route, navigation }) {
 
   const handleCreateCollage = async () => {
     if (!photo1 || !photo2) return;
+    // No active project? Prompt for a name first — the collage save waits.
+    if (!activeProjectId) {
+      logEvent('upload_project_prompt_shown');
+      setNewProjectName(`Project ${(projects?.length || 0) + 1}`);
+      setProjectPromptVisible(true);
+      return;
+    }
+    await runCollageSave(activeProjectId);
+  };
+
+  const handleConfirmProjectAndContinue = async () => {
+    const namePart = (newProjectName || '').trim();
+    if (!namePart) {
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('projects.enterProjectName', { defaultValue: 'Please enter a project name.' })
+      );
+      return;
+    }
+    setLoading(true);
+    try {
+      const normalize = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[^a-z0-9_\- ]/gi, '_');
+      const existingNorm = new Set((projects || []).map((p) => normalize(p.name)));
+      let finalName = namePart;
+      if (existingNorm.has(normalize(namePart))) {
+        let i = 2;
+        while (existingNorm.has(normalize(`${i} ${namePart}`))) i++;
+        finalName = `${i} ${namePart}`;
+      }
+      const safeName = finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
+      const proj = await createProject(safeName);
+      await setActiveProject(proj.id);
+      setProjectPromptVisible(false);
+      setNewProjectName('');
+      logEvent('upload_project_created_inline', { project_id: proj.id });
+      await runCollageSave(proj.id);
+    } catch (error) {
+      console.error('[Upload] Create project error:', error);
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        t('projects.createError', { defaultValue: 'Could not create the project. Please try again.' })
+      );
+      setLoading(false);
+    }
+  };
+
+  const runCollageSave = async (projectIdToUse) => {
     setLoading(true);
     logEvent('upload_review_opened');
 
@@ -153,8 +207,8 @@ export default function UploadPhotosScreen({ route, navigation }) {
       const beforeFilename = `upload_before_${timestamp}.jpg`;
       const afterFilename = `upload_after_${timestamp}.jpg`;
 
-      const beforeSavedUri = await savePhotoToDevice(photo1.uri, beforeFilename, activeProjectId);
-      const afterSavedUri = await savePhotoToDevice(photo2.uri, afterFilename, activeProjectId);
+      const beforeSavedUri = await savePhotoToDevice(photo1.uri, beforeFilename, projectIdToUse);
+      const afterSavedUri = await savePhotoToDevice(photo2.uri, afterFilename, projectIdToUse);
 
       if (!beforeSavedUri || !afterSavedUri) {
         throw new Error('Failed to save photos');
@@ -170,7 +224,7 @@ export default function UploadPhotosScreen({ route, navigation }) {
         aspectRatio,
         orientation,
         cameraViewMode: orientation,
-        projectId: activeProjectId,
+        projectId: projectIdToUse,
         sourceType: 'upload',
       };
 
@@ -185,7 +239,7 @@ export default function UploadPhotosScreen({ route, navigation }) {
         aspectRatio,
         orientation,
         cameraViewMode: orientation,
-        projectId: activeProjectId,
+        projectId: projectIdToUse,
         sourceType: 'upload',
       };
 
@@ -193,7 +247,61 @@ export default function UploadPhotosScreen({ route, navigation }) {
       await addPhoto(beforePhoto);
       await addPhoto(afterPhoto);
 
-      logEvent('upload_collage_created', { source_type: 'upload', project_id: activeProjectId || null });
+      // Composite the pair into a COMBINED photo so the Home grid thumbnail
+      // and Studio have something to render. Mirrors CameraScreen's
+      // handleAfterPhoto: force 1:1 square output, SIDE for portrait pairs
+      // and STACK for landscape pairs. Failure is non-fatal — the Home grid
+      // can re-composite on the fly from the before/after uris.
+      try {
+        const pixelRatio = Platform.OS === 'android' ? PixelRatio.get() : 1;
+        const getSize = (u) => new Promise((resolve) => {
+          Image.getSize(
+            u,
+            (w, h) => resolve({ w: Math.round(w * pixelRatio), h: Math.round(h * pixelRatio) }),
+            () => resolve({ w: 1080, h: 1920 })
+          );
+        });
+        const aSize = await getSize(beforeSavedUri);
+        const bSize = await getSize(afterSavedUri);
+
+        const layout = isLandscape ? 'STACK' : 'SIDE';
+        const sourceMaxWidth = Math.max(aSize.w, bSize.w);
+        const totalW = Math.min(Math.max(sourceMaxWidth, 2048), 4096);
+        const totalH = totalW; // 1:1 square
+
+        const dims = layout === 'STACK'
+          ? { width: totalW, height: totalH, topH: Math.round(totalH / 2), bottomH: totalH - Math.round(totalH / 2) }
+          : { width: totalW, height: totalH, leftW: Math.round(totalW / 2), rightW: totalW - Math.round(totalW / 2) };
+
+        const compositedUri = await compositeImages(beforeSavedUri, afterSavedUri, layout, dims);
+
+        const safeName = name.replace(/\s+/g, '_');
+        const projectIdSuffix = projectIdToUse ? `_P${projectIdToUse}` : '';
+        const combinedSavedUri = await savePhotoToDevice(
+          compositedUri,
+          `${room}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectIdSuffix}.jpg`,
+          projectIdToUse
+        );
+
+        if (combinedSavedUri) {
+          await addPhoto({
+            id: `combined_${beforePhoto.id}`,
+            mode: PHOTO_MODES.COMBINED,
+            uri: combinedSavedUri,
+            name,
+            room,
+            projectId: projectIdToUse,
+            beforePhotoId: beforePhoto.id,
+            combinedLayout: layout,
+            timestamp: Date.now(),
+            sourceType: 'upload',
+          });
+        }
+      } catch (compositeError) {
+        console.warn('[Upload] Composite step failed (non-fatal):', compositeError?.message || compositeError);
+      }
+
+      logEvent('upload_collage_created', { source_type: 'upload', project_id: projectIdToUse || null });
 
       // Navigate to editor
       navigation.replace('PhotoEditor', {
@@ -365,6 +473,74 @@ export default function UploadPhotosScreen({ route, navigation }) {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* New Project prompt — shown when user taps Create Collage without an active project */}
+      <Modal
+        visible={projectPromptVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!loading) {
+            setProjectPromptVisible(false);
+            logEvent('upload_project_prompt_dismissed');
+          }
+        }}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {t('projects.newProject', { defaultValue: 'New Project' })}
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              {t('upload.projectPromptSubtitle', {
+                defaultValue: 'Name a project for this before/after set.',
+              })}
+            </Text>
+            <TextInput
+              value={newProjectName}
+              onChangeText={setNewProjectName}
+              placeholder={t('projects.projectNamePlaceholder', { defaultValue: 'Project name' })}
+              placeholderTextColor="#888"
+              style={styles.modalInput}
+              autoFocus
+              editable={!loading}
+              returnKeyType="done"
+              onSubmitEditing={handleConfirmProjectAndContinue}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => {
+                  if (loading) return;
+                  setProjectPromptVisible(false);
+                  logEvent('upload_project_prompt_dismissed');
+                }}
+                disabled={loading}
+              >
+                <Text style={styles.modalCancelText}>
+                  {t('common.cancel', { defaultValue: 'Cancel' })}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirm, loading && styles.createButtonDisabled]}
+                onPress={handleConfirmProjectAndContinue}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>
+                    {t('common.continue', { defaultValue: 'Continue' })}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -547,5 +723,74 @@ const makeStyles = (theme) => StyleSheet.create({
     color: theme.textMuted,
     fontSize: 14,
     fontFamily: FONTS.MEDIUM,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: theme.surface || '#1E1E1E',
+    borderRadius: 18,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: FONTS.BOLD,
+    color: theme.textPrimary,
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: theme.textMuted,
+    fontFamily: FONTS.REGULAR,
+    marginBottom: 14,
+  },
+  modalInput: {
+    height: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.border || '#333',
+    backgroundColor: theme.surfaceMuted || '#111',
+    color: theme.textPrimary,
+    paddingHorizontal: 14,
+    fontFamily: FONTS.REGULAR,
+    fontSize: 15,
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalButton: {
+    minWidth: 96,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  modalCancel: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: theme.border || '#333',
+  },
+  modalCancelText: {
+    color: theme.textPrimary,
+    fontFamily: FONTS.MEDIUM,
+    fontSize: 15,
+  },
+  modalConfirm: {
+    backgroundColor: COLORS.PRIMARY,
+  },
+  modalConfirmText: {
+    color: '#000',
+    fontFamily: FONTS.BOLD,
+    fontSize: 15,
   },
 });

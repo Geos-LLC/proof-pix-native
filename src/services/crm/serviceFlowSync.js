@@ -67,7 +67,7 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
     }
     try {
       const result = await proxyService.listServiceFlowJobs(teamInfo.sessionId, teamInfo.token, {
-        status: 'active',
+        status: 'all',
         limit: 100,
       });
       if (result?.notConnected) {
@@ -98,7 +98,7 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
       return { created: 0, matched: 0 };
     }
     try {
-      const result = await crmService.listJobs({ status: 'active', limit: 100 });
+      const result = await crmService.listJobs({ status: 'all', limit: 100 });
       jobs = Array.isArray(result?.jobs) ? result.jobs : Array.isArray(result) ? result : [];
     } catch (e) {
       return { created: 0, matched: 0, error: e?.message || 'listJobs failed' };
@@ -107,25 +107,31 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
 
   if (jobs.length === 0) return { created: 0, matched: 0 };
 
-  // Narrow to a today-forward window so the Projects list reflects
-  // "what I'm working on right now" instead of every active-status
-  // job ever opened. Default window: from start-of-today through
-  // SYNC_LOOKAHEAD_DAYS in the future. Jobs scheduled before today
-  // (forgotten "pending" rows that never closed out) are filtered
-  // out — they still exist on SF, they just don't clutter ProofPix.
-  // Jobs without scheduledAt fall through (we can't date-filter them,
-  // so we err on the side of including).
-  const SYNC_LOOKAHEAD_DAYS = 7;
+  // Bound the sync window on both sides so the Projects list stays
+  // scoped to "recent + near-future" instead of pulling every job SF
+  // has ever seen. Local UI now has a date-range chip filter, so we
+  // pull a wider slice than we display: -30d to +30d. The chip filter
+  // (Today / Week / Month / Last 30d / All) narrows what the user
+  // actually sees. Jobs without scheduledAt fall through — we can't
+  // date-filter them, so we err on the side of including.
+  const SYNC_LOOKBACK_DAYS = 30;
+  const SYNC_LOOKAHEAD_DAYS = 30;
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const windowStart = todayStart - SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
   const windowEnd = todayStart + SYNC_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000;
   const before = jobs.length;
   jobs = jobs.filter((j) => {
     if (typeof j?.scheduledAt !== 'number') return true;
-    return j.scheduledAt >= todayStart && j.scheduledAt < windowEnd;
+    return j.scheduledAt >= windowStart && j.scheduledAt < windowEnd;
   });
   if (jobs.length !== before) {
-    console.warn('[ServiceFlow] sync window filter', { before, after: jobs.length, windowDays: SYNC_LOOKAHEAD_DAYS });
+    console.warn('[ServiceFlow] sync window filter', {
+      before,
+      after: jobs.length,
+      lookbackDays: SYNC_LOOKBACK_DAYS,
+      lookaheadDays: SYNC_LOOKAHEAD_DAYS,
+    });
   }
 
   if (jobs.length === 0) return { created: 0, matched: 0 };

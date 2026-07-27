@@ -886,6 +886,11 @@ export function AdminProvider({ children }) {
       }
 
       setUserMode(storedMode);
+      // Startup diagnostic so we can filter Loki by mode when
+      // debugging multi-device (admin vs team-member) sessions:
+      //   {service_name="proofpix-native"} |~ "\[BOOTMODE\]"
+      // warn level to survive breadcrumb filtering.
+      console.warn(`[BOOTMODE] mode=${storedMode || 'null'} authed=${!!storedUser}`);
 
       if (storedMode === 'admin' && storedUser) {
         const [

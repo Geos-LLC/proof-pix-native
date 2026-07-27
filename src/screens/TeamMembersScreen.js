@@ -27,6 +27,7 @@ import serviceFlowAdapter from '../services/crm/serviceFlowAdapter';
 import { generateInviteToken } from '../utils/tokens';
 import { generateInviteLink, generateShareContent } from '../utils/inviteLinkGenerator';
 import { logTeamInvitesCreated } from '../utils/analytics';
+import { getConnectedClouds } from '../utils/cloudConnectivity';
 import { useTheme } from '../hooks/useTheme';
 
 // TeamMembersScreen — dedicated route for team setup + member
@@ -436,6 +437,39 @@ export default function TeamMembersScreen({ navigation }) {
         }),
       );
       return;
+    }
+    // Storage-connected gate: without an active cloud backend the
+    // proxy has nowhere to put team-member uploads, so blocking
+    // invite creation here prevents the "invited team member but
+    // photos vanish" state (which the admin can't easily
+    // self-diagnose). Apple sign-in alone doesn't count — Apple is
+    // auth only, not a shared storage backend. Sends the admin to
+    // CloudSync to fix.
+    try {
+      const clouds = await getConnectedClouds({ isAuthenticated, accountType });
+      if (!clouds.google && !clouds.dropbox && !clouds.serviceflow) {
+        Alert.alert(
+          t('teamMembers.needCloudTitle', { defaultValue: 'Connect a cloud first' }),
+          t('teamMembers.needCloudMessage', {
+            defaultValue:
+              'Team members need somewhere to upload photos. Connect Google Drive, Dropbox, or Service Flow, then invite members.',
+          }),
+          [
+            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+            {
+              text: t('teamMembers.openCloudSync', { defaultValue: 'Open Cloud Sync' }),
+              onPress: () => navigation.navigate('CloudSync'),
+            },
+          ],
+        );
+        return;
+      }
+    } catch (probeErr) {
+      console.warn('[TeamMembers] cloud-connect probe failed:', probeErr?.message);
+      // Fall through — worst case is the invite fires without a
+      // cloud backend, but that state is already recoverable
+      // (banner + reconnect). Blocking on probe failure would
+      // punish users on flaky networks.
     }
     setIsGeneratingInvite(true);
     const newToken = generateInviteToken();

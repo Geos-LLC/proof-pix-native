@@ -31,6 +31,7 @@ import crmService from '../services/crm';
 import { syncServiceFlowJobs } from '../services/crm/serviceFlowSync';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
+import { getConnectedClouds } from '../utils/cloudConnectivity';
 
 // CloudSyncScreen — dedicated route for cloud storage connections.
 // Split out of the prior combined CloudTeamScreen so the team flow
@@ -49,7 +50,7 @@ const BG_UPLOAD_KEY = '@cloud_team_bg_upload_pref';
 export default function CloudSyncScreen({ navigation }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, userInfo, accountType, individualSignIn, adminSignIn, signOut, userMode, teamInfo } = useAdmin();
+  const { isAuthenticated, userInfo, accountType, individualSignIn, adminSignIn, signOut, userMode, teamInfo, inviteTokens } = useAdmin();
   const isTeamMember = userMode === 'team_member';
   const { projects, createProject: ctxCreateProject, patchProject } = usePhotos();
   const { userPlan } = useSettings();
@@ -146,9 +147,48 @@ export default function CloudSyncScreen({ navigation }) {
   const isBusinessOrEnterprise = userPlan === 'business' || userPlan === 'enterprise';
   const isPro = userPlan === 'pro' || isBusinessOrEnterprise;
 
+  // Pre-disconnect guard: an admin with active team invites who
+  // drops their last cloud backend will silently break every team
+  // member's uploads. This warns them first. `which` names the
+  // cloud they're disconnecting; the check confirms none of the
+  // OTHER two are connected. Returns true if user confirms to
+  // proceed (or if there's no team problem), false if cancelled.
+  const confirmDisconnectWithTeamCheck = async (which) => {
+    const hasTeam = (inviteTokens?.length || 0) > 0;
+    if (!hasTeam) return true;
+    let clouds;
+    try {
+      clouds = await getConnectedClouds({ isAuthenticated, accountType });
+    } catch {
+      return true; // probe failed — don't block the disconnect
+    }
+    const remaining = { ...clouds, [which]: false };
+    const anyLeft = remaining.google || remaining.dropbox || remaining.serviceflow;
+    if (anyLeft) return true;
+    return await new Promise((resolve) => {
+      Alert.alert(
+        t('cloudSync.lastCloudTitle', { defaultValue: 'This will break your team' }),
+        t('cloudSync.lastCloudMessage', {
+          count: inviteTokens.length,
+          defaultValue:
+            'You have {{count}} team member invite(s). Disconnecting your only cloud storage means their photos will fail to upload. Continue anyway?',
+        }),
+        [
+          { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel', onPress: () => resolve(false) },
+          {
+            text: t('cloudSync.disconnectAnyway', { defaultValue: 'Disconnect anyway' }),
+            style: 'destructive',
+            onPress: () => resolve(true),
+          },
+        ],
+      );
+    });
+  };
+
   const handleGoogleDrive = async () => {
     if (isWorkingGoogle) return;
     if (googleConnected) {
+      if (!(await confirmDisconnectWithTeamCheck('google'))) return;
       Alert.alert(
         t('cloudSync.disconnectGoogleTitle', { defaultValue: 'Disconnect Google Drive?' }),
         t('cloudSync.disconnectGoogleMessage', {
@@ -192,6 +232,7 @@ export default function CloudSyncScreen({ navigation }) {
   const handleDropbox = async () => {
     if (isWorkingDropbox) return;
     if (dropboxConnected) {
+      if (!(await confirmDisconnectWithTeamCheck('dropbox'))) return;
       Alert.alert(
         t('cloudSync.disconnectDropboxTitle', { defaultValue: 'Disconnect Dropbox?' }),
         t('cloudSync.disconnectDropboxMessage', {
@@ -314,6 +355,7 @@ export default function CloudSyncScreen({ navigation }) {
   const handleServiceFlow = async () => {
     if (isWorkingServiceFlow) return;
     if (serviceFlowConnected) {
+      if (!(await confirmDisconnectWithTeamCheck('serviceflow'))) return;
       Alert.alert(
         t('cloudSync.disconnectSFTitle', { defaultValue: 'Disconnect Service Flow?' }),
         t('cloudSync.disconnectSFMessage', {
@@ -329,8 +371,29 @@ export default function CloudSyncScreen({ navigation }) {
               setIsWorkingServiceFlow(true);
               try { await crmService.disconnect(); }
               catch (e) { console.warn('[CloudSync] SF disconnect failed:', e?.message); }
-              finally {
+              // Wipe SF-sourced projects on disconnect. Mirrors the
+              // acknowledgeTeamRevoked cleanup in AdminContext — any
+              // project carrying a crmJobId came from the SF workspace
+              // via serviceFlowSync, so it's no longer authoritative
+              // once the SF link is severed. Local-only projects
+              // (no crmJobId) belong to the user and stay put.
+              try {
+                const { loadProjects, saveProjects } = require('../services/storage');
+                const current = (await loadProjects()) || [];
+                const kept = current.filter(p => !p?.crmJobId);
+                if (kept.length !== current.length) {
+                  await saveProjects(kept);
+                  console.warn('[CloudSync] SF disconnect: removed synced projects', {
+                    before: current.length,
+                    after: kept.length,
+                  });
+                }
+              } catch (wipeErr) {
+                console.warn('[CloudSync] SF disconnect project-wipe failed:', wipeErr?.message);
+              }
+              try {
                 await refreshServiceFlow();
+              } finally {
                 setIsWorkingServiceFlow(false);
               }
             },

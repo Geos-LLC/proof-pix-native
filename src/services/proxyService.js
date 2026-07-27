@@ -618,6 +618,72 @@ class ProxyService {
   }
 
   /**
+   * Delete a team member's project from the shared KV list on the
+   * proxy. Mirror of syncTeamProject — called by team_member
+   * accounts from PhotoContext.deleteProject as fire-and-forget so
+   * the admin's Team Projects tab doesn't accumulate ghost entries
+   * from projects the member deleted locally. The proxy authorizes
+   * via ownerToken match, so this is a no-op for anyone but the
+   * project's owner.
+   *
+   * @param {string} sessionId
+   * @param {string} token — team member's invite token
+   * @param {string} projectId
+   * @returns {Promise<{success: boolean, removed?: number}>}
+   */
+  async deleteTeamProject(sessionId, token, projectId) {
+    try {
+      if (!sessionId || !token || !projectId) {
+        return { success: false, error: 'MISSING_ARGS' };
+      }
+      const response = await fetch(
+        `${PROXY_SERVER_URL}/api/team/${sessionId}/projects/${encodeURIComponent(projectId)}`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        },
+      );
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn('[PROXY] deleteTeamProject error:', response.status, errorText);
+        return { success: false, error: `HTTP ${response.status}` };
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error deleting team project:', error?.message);
+      return { success: false, error: error?.message };
+    }
+  }
+
+  /**
+   * Admin-side force-purge of a team project (no ownerToken check).
+   * Used by the Team tab's "Clear team projects" cleanup button so
+   * the admin can wipe ghost entries left behind by members on old
+   * builds / offline deletes / pre-fix state.
+   */
+  async adminDeleteTeamProject(sessionId, projectId) {
+    try {
+      if (!sessionId || !projectId) {
+        return { success: false, error: 'MISSING_ARGS' };
+      }
+      const response = await fetch(
+        `${PROXY_SERVER_URL}/api/admin/${sessionId}/projects/${encodeURIComponent(projectId)}`,
+        { method: 'DELETE' },
+      );
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn('[PROXY] adminDeleteTeamProject error:', response.status, errorText);
+        return { success: false, error: `HTTP ${response.status}` };
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error admin-deleting team project:', error?.message);
+      return { success: false, error: error?.message };
+    }
+  }
+
+  /**
    * List team-member projects for an admin (sorted by updatedAt desc).
    * @param {string} sessionId - Proxy session ID
    * @returns {Promise<{success: boolean, projects: Array}>}

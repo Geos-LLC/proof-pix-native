@@ -85,6 +85,41 @@ export const PhotoProvider = ({ children }) => {
       let projectsList = await loadProjects();
       console.warn('[PhotoContext] cold-start loadProjects', { count: projectsList?.length || 0, ids: (projectsList || []).map(p => p?.id).slice(0, 10) });
 
+      // Self-heal ghost SF projects. Any project carrying a crmJobId
+      // came from a Service Flow sync. If SF is currently disconnected
+      // (no workspace stored), those projects are stale — the source
+      // of truth is gone. Wipe them here so users who disconnected SF
+      // BEFORE the CloudSyncScreen wipe was wired (or on an older
+      // build) get cleanup on next cold start. One-shot per boot.
+      try {
+        const hasSFSynced = (projectsList || []).some((p) => p?.crmJobId);
+        if (hasSFSynced) {
+          const crmService = require('../services/crm').default;
+          let sfConnected = false;
+          try {
+            const adapter = await crmService.getActiveAdapter();
+            if (adapter && typeof adapter.getStoredWorkspace === 'function') {
+              const stored = await adapter.getStoredWorkspace();
+              sfConnected = !!stored?.workspaceId;
+            }
+          } catch {}
+          if (!sfConnected) {
+            const before = projectsList.length;
+            const kept = projectsList.filter((p) => !p?.crmJobId);
+            if (kept.length !== before) {
+              await saveProjects(kept);
+              projectsList = kept;
+              console.warn('[PhotoContext] cold-start SF-ghost cleanup', {
+                before,
+                after: kept.length,
+              });
+            }
+          }
+        }
+      } catch (sfCleanupErr) {
+        console.warn('[PhotoContext] cold-start SF-ghost cleanup failed:', sfCleanupErr?.message);
+      }
+
       // Recovery — rooms. Photo `room` IDs reference custom-rooms
       // entries; if custom-rooms got wiped alongside tracked-projects,
       // the photos' room IDs no longer match anything in the room list,
@@ -979,6 +1014,25 @@ export const PhotoProvider = ({ children }) => {
     }
   };
 
+  // Fire-and-forget delete of a team-member project from the proxy
+  // KV. Mirror of syncProjectToProxyIfTeamMember — keeps the admin's
+  // Team Projects tab in sync when the member deletes locally.
+  // No-op for admins/individuals; failure is swallowed (worst case
+  // is a ghost KV entry which the admin can purge manually).
+  const deleteProjectFromProxyIfTeamMember = async (projectId) => {
+    try {
+      const mode = await AsyncStorage.getItem('@admin_user_mode');
+      if (mode !== 'team_member') return;
+      const { readSecureJSON } = require('../services/secureStorageService');
+      const info = await readSecureJSON('@team_member_info');
+      if (!info?.sessionId || !info?.token) return;
+      const proxyService = require('../services/proxyService').default;
+      await proxyService.deleteTeamProject(info.sessionId, info.token, projectId);
+    } catch (err) {
+      console.warn('[PhotoContext] deleteProjectFromProxyIfTeamMember failed:', err?.message);
+    }
+  };
+
   // ===== Project operations =====
   const createProject = async (name, opts = {}) => {
     try {
@@ -1179,6 +1233,11 @@ export const PhotoProvider = ({ children }) => {
     // Delete the project entry itself
     await deleteProjectEntry(projectId);
     await loadProjectsList();
+    // Fire-and-forget proxy cleanup for team members so the admin
+    // stops seeing this project in Team Projects. Doesn't await —
+    // local delete is already committed and this shouldn't block
+    // the UI on a network round-trip.
+    deleteProjectFromProxyIfTeamMember(projectId);
   };
 
   const getPhotosByRoom = (room) => {

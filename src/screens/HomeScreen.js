@@ -1778,21 +1778,19 @@ export default function HomeScreen({ navigation, route }) {
               {!activeProjectId ? t('home.selectProject') : t('camera.takePhoto')}
             </Text>
           </TouchableOpacity>
-          {activeProjectId && (
-            <TouchableOpacity
-              style={styles.uploadPhotosButton}
-              delayPressIn={50}
-              onPress={() => {
-                if (isSwiping.current) return;
-                navigation.navigate('UploadPhotos', { room: currentRoom });
-              }}
-            >
-              <Ionicons name="images-outline" size={22} color={COLORS.PRIMARY} />
-              <Text style={styles.uploadPhotosText}>
-                {t('home.uploadPhotos', { defaultValue: 'Upload 2 Photos' })}
-              </Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.uploadPhotosButton}
+            delayPressIn={50}
+            onPress={() => {
+              if (isSwiping.current) return;
+              navigation.navigate('UploadPhotos', { room: currentRoom });
+            }}
+          >
+            <Ionicons name="images-outline" size={22} color={COLORS.PRIMARY} />
+            <Text style={styles.uploadPhotosText}>
+              {t('home.uploadPhotos', { defaultValue: 'Upload 2 Photos' })}
+            </Text>
+          </TouchableOpacity>
         </View>
       );
     }
