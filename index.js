@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-member-uxfix-v2-' + Date.now() + ' — Adds TeamAccessRevokedModal: full-screen blocking modal on revoke with admin contact + Continue-on-my-own. Also stashes admin name/email/team on teamInfo at revalidation. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-member-uxfix-v3-' + Date.now() + ' — TeamAccessRevokedModal now starts a fresh 7-day starter trial in acknowledgeTeamRevoked (if trial not used). Button copy: "Start 7-day trial". Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

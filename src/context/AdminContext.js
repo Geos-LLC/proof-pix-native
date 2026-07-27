@@ -493,6 +493,23 @@ export function AdminProvider({ children }) {
       setUserMode('individual');
     }
 
+    // Kickstart a fresh 7-day starter trial so the ex-team-member
+    // lands on real ProofPix functionality instead of the free-tier
+    // wall. `canStartTrial` guards against re-starting for anyone
+    // who already used their trial before joining the team — those
+    // users just get the plain starter plan.
+    try {
+      const { canStartTrial, startTrial } = require('../services/trialService');
+      if (await canStartTrial()) {
+        await startTrial('starter');
+        console.log('[ADMIN] Started 7-day starter trial post-revoke');
+      } else {
+        console.log('[ADMIN] Trial already used — post-revoke user stays on starter without new trial');
+      }
+    } catch (trialErr) {
+      console.warn('[ADMIN] Failed to start post-revoke trial:', trialErr?.message);
+    }
+
     setTeamRevokedInfo(null);
 
     // Force a JS bundle reload so PhotoContext re-reads projects

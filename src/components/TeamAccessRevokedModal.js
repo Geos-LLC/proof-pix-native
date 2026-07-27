@@ -96,10 +96,10 @@ export default function TeamAccessRevokedModal() {
             {teamName
               ? t('teamRevoked.bodyWithTeam', {
                   team: teamName,
-                  defaultValue: `Your admin has removed you from ${teamName}. Projects synced from the team will be cleared. You can contact your admin to be re-invited, or continue using ProofPix on your own.`,
+                  defaultValue: `Your admin has removed you from ${teamName}. Projects synced from the team will be cleared. You can contact your admin to be re-invited, or continue on your own with a 7-day free trial.`,
                 })
               : t('teamRevoked.body', {
-                  defaultValue: 'Your admin has removed you from the team. Projects synced from the team will be cleared. You can contact your admin to be re-invited, or continue using ProofPix on your own.',
+                  defaultValue: 'Your admin has removed you from the team. Projects synced from the team will be cleared. You can contact your admin to be re-invited, or continue on your own with a 7-day free trial.',
                 })}
           </Text>
 
@@ -132,7 +132,7 @@ export default function TeamAccessRevokedModal() {
             activeOpacity={0.85}
           >
             <Text style={styles.primaryButtonText}>
-              {t('teamRevoked.continueOnMyOwn', { defaultValue: 'Continue on my own' })}
+              {t('teamRevoked.continueOnMyOwn', { defaultValue: 'Start 7-day trial' })}
             </Text>
           </TouchableOpacity>
         </View>
