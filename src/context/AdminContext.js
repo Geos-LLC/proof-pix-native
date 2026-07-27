@@ -510,6 +510,37 @@ export function AdminProvider({ children }) {
       console.warn('[ADMIN] Failed to start post-revoke trial:', trialErr?.message);
     }
 
+    // Belt-and-suspenders reset. joinTeam() sets userPlan='Team Member'
+    // as a signal for the isTeamMember checks in HomeScreen /
+    // ProjectsScreen (`userPlan === 'Team Member'`). switchToIndividualMode
+    // above SHOULD restore userPlan to 'starter' via updateUserPlan, but
+    // if that write races the reload for any reason the ex-member lands
+    // back on the app with plan.toUpperCase() showing 'TEAM MEMBER'.
+    // Direct-write both the Keychain settings blob and AsyncStorage keys
+    // so nothing survives.
+    try {
+      // 'app-settings' matches SettingsContext.SETTINGS_KEY — kept as a
+      // literal here so we don't have to plumb the constant through.
+      const settingsBlob = (await readSecureJSON('app-settings')) || {};
+      if (settingsBlob.userPlan !== 'starter') {
+        await writeSecureJSON('app-settings', { ...settingsBlob, userPlan: 'starter' });
+      }
+    } catch (planWriteErr) {
+      console.warn('[ADMIN] Direct settings userPlan reset failed:', planWriteErr?.message);
+    }
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.ADMIN_USER_MODE, 'individual');
+      // If STORED_INDIVIDUAL_PLAN was somehow contaminated with the team
+      // sentinel, scrub it so a re-join → re-revoke cycle doesn't
+      // recycle 'Team Member' back through switchToIndividualMode.
+      const storedIndividualPlan = await AsyncStorage.getItem(STORAGE_KEYS.STORED_INDIVIDUAL_PLAN);
+      if (storedIndividualPlan === 'Team Member' || storedIndividualPlan === 'team') {
+        await AsyncStorage.setItem(STORAGE_KEYS.STORED_INDIVIDUAL_PLAN, 'starter');
+      }
+    } catch (asyncResetErr) {
+      console.warn('[ADMIN] Direct AsyncStorage reset failed:', asyncResetErr?.message);
+    }
+
     setTeamRevokedInfo(null);
 
     // Force a JS bundle reload so PhotoContext re-reads projects
