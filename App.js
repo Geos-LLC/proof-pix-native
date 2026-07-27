@@ -678,6 +678,31 @@ const linking = {
     'https://www.proofpix.app',
     'https://steadfast-blessing-production.up.railway.app',
   ],
+  // Override the default getInitialURL so we can suppress the
+  // cached invite/join URL after acknowledgeTeamRevoked. Without
+  // this, Linking.getInitialURL() still returns the original
+  // proofpix://join?invite=... that launched the app days ago,
+  // and React Navigation auto-routes to JoinTeamScreen before
+  // AuthLoadingScreen even mounts — bypassing our marker check
+  // entirely. On any launch where '@revoke_post_ack' is present,
+  // return null so React Navigation falls back to
+  // initialRouteName='AuthLoading' and our marker consumer runs.
+  async getInitialURL() {
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      const marker = await AsyncStorage.getItem('@revoke_post_ack');
+      if (marker) {
+        console.warn('[Linking] Post-revoke marker present — suppressing initial URL so AuthLoading handles routing');
+        return null;
+      }
+    } catch {}
+    try {
+      const { Linking } = require('react-native');
+      return await Linking.getInitialURL();
+    } catch {
+      return null;
+    }
+  },
   config: {
     screens: {
       Invite: 'invite/:token',
