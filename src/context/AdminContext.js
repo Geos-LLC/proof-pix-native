@@ -665,6 +665,31 @@ export function AdminProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userMode, teamInfo?.token, teamInfo?.sessionId]);
 
+  // Active-state polling. Without this, a revoke fired by the admin
+  // while the team-member's app is open and idle wouldn't be seen
+  // until the member next backgrounded/foregrounded (or cold-started).
+  // 30-second interval feels near-immediate to the user without
+  // hammering the proxy — the request is a cheap KV read + token
+  // check on the server side, and the mobile client's in-flight guard
+  // in revalidateTeamMember dedupes overlapping polls.
+  //
+  // Only runs when userMode === 'team_member' with valid team info.
+  // AppState check inside the interval callback so we don't burn a
+  // proxy call every 30s while the app is backgrounded (AppState
+  // 'change' → 'active' handles that resume path).
+  useEffect(() => {
+    if (userMode !== 'team_member') return;
+    if (!teamInfo?.token || !teamInfo?.sessionId) return;
+    const POLL_INTERVAL_MS = 30_000;
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') {
+        revalidateTeamMember();
+      }
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userMode, teamInfo?.token, teamInfo?.sessionId]);
+
   // Ensure planLimit is at least the minimum for the current plan,
   // but DO NOT downscale if user has purchased additional slots.
   useEffect(() => {
