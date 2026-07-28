@@ -200,6 +200,9 @@ class ProxyService {
       if (opts?.sfTeamMemberId != null && String(opts.sfTeamMemberId).trim() !== '') {
         body.sf_team_member_id = String(opts.sfTeamMemberId);
       }
+      if (opts?.displayName != null && String(opts.displayName).trim() !== '') {
+        body.display_name = String(opts.displayName).trim().slice(0, 200);
+      }
       const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens`, {
         method: 'POST',
         headers: {

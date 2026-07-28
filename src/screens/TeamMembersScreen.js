@@ -10,6 +10,9 @@ import {
   Share,
   Linking,
   Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -88,6 +91,14 @@ export default function TeamMembersScreen({ navigation }) {
   // first connecting Google.
   const [setupPickerVisible, setSetupPickerVisible] = useState(false);
   const [connectedClouds, setConnectedClouds] = useState({ google: false, dropbox: false, serviceflow: false });
+
+  // Name-your-invite modal — shown when admin taps Generate Invite
+  // without an SF-cleaner picker (Google/Dropbox backends). Admin
+  // types the target team member's name; that name is bound to the
+  // invite token proxy-side so admin's pending-invites list shows
+  // "Invite pending: Sarah K" instead of a bare "Invite #abc123".
+  const [inviteNameModalVisible, setInviteNameModalVisible] = useState(false);
+  const [inviteNameInput, setInviteNameInput] = useState('');
 
   // Poll SF connection state so the setup card can pick the SF path
   // over the Google path without waiting for a full remount. Cheap —
@@ -594,8 +605,9 @@ export default function TeamMembersScreen({ navigation }) {
     // SF connected → show cleaner picker so admin can bind this
     // invite to a specific SF team_member. Team member's /jobs pull
     // will then be scoped to that cleaner's assignments only.
-    // Not connected → skip the picker and go straight to the legacy
-    // unscoped invite path.
+    // Not connected but cloud is → prompt admin for the invitee's
+    // display name so the pending-invites list is human-readable and
+    // so the joined member starts off named.
     if (sfConnected) {
       setCleanersError(null);
       setSfCleaners([]);
@@ -611,20 +623,24 @@ export default function TeamMembersScreen({ navigation }) {
       }
       return;
     }
-    await performInvite(null, null);
+    setInviteNameInput('');
+    setInviteNameModalVisible(true);
   };
 
-  // Actual invite work. Called from either the direct legacy path
-  // (no SF) or from the cleaner picker's row tap. `sfCleanerId` is
-  // null for workspace-wide invites, or an SF team_member id when
-  // scoped.
-  const performInvite = async (sfCleanerId, sfCleanerName) => {
+  // Actual invite work. Called from the SF cleaner picker (with an
+  // sf_team_member_id + the cleaner's name) or from the name-input
+  // modal (with just a name, no SF id). `displayName` is stored on
+  // the proxy invite so admin's pending list shows a real name and
+  // the member starts off named on join.
+  const performInvite = async (sfCleanerId, displayName) => {
     setIsGeneratingInvite(true);
     setCleanerPickerVisible(false);
+    setInviteNameModalVisible(false);
     const newToken = generateInviteToken();
     try {
       await proxyService.addInviteToken(proxySessionId, newToken, {
         sfTeamMemberId: sfCleanerId,
+        displayName: displayName || null,
       });
       await addInviteToken(newToken);
       try {
@@ -1047,6 +1063,84 @@ export default function TeamMembersScreen({ navigation }) {
             ))}
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={inviteNameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInviteNameModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.pickerBackdrop}>
+            <View style={styles.pickerCard}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>
+                  {t('teamMembers.inviteNameTitle', { defaultValue: 'Who are you inviting?' })}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setInviteNameModalVisible(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close" size={22} color={theme.textPrimary} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.pickerSubtitle}>
+                {t('teamMembers.inviteNameSubtitle', {
+                  defaultValue: 'Their name shows up in your team members list once they join.',
+                })}
+              </Text>
+              <TextInput
+                style={styles.inviteNameInput}
+                placeholder={t('teamMembers.inviteNamePlaceholder', { defaultValue: 'Team member name' })}
+                placeholderTextColor={theme.textMuted}
+                value={inviteNameInput}
+                onChangeText={setInviteNameInput}
+                autoFocus
+                autoCapitalize="words"
+                returnKeyType="done"
+                onSubmitEditing={() => {
+                  const trimmed = inviteNameInput.trim();
+                  if (trimmed) performInvite(null, trimmed);
+                }}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.inviteNameCta,
+                  { backgroundColor: inviteNameInput.trim() ? theme.accent : theme.surfaceElevated },
+                ]}
+                onPress={() => {
+                  const trimmed = inviteNameInput.trim();
+                  if (trimmed) performInvite(null, trimmed);
+                }}
+                disabled={!inviteNameInput.trim() || isGeneratingInvite}
+              >
+                <Text
+                  style={[
+                    styles.inviteNameCtaText,
+                    { color: inviteNameInput.trim() ? theme.accentText : theme.textMuted },
+                  ]}
+                >
+                  {t('teamMembers.inviteNameCta', { defaultValue: 'Generate invite' })}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pickerSkipBtn}
+                onPress={() => performInvite(null, null)}
+                disabled={isGeneratingInvite}
+              >
+                <Text style={styles.pickerSkipText}>
+                  {t('teamMembers.inviteNameSkip', {
+                    defaultValue: 'Skip — send an unnamed invite',
+                  })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -1617,5 +1711,28 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: theme.textMuted,
+  },
+  inviteNameInput: {
+    marginTop: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceElevated,
+    color: theme.textPrimary,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 15,
+  },
+  inviteNameCta: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 24,
+    alignItems: 'center',
+  },
+  inviteNameCtaText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
