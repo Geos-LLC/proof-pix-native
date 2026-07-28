@@ -204,6 +204,24 @@ export async function syncServiceFlowJobs({
     console.warn('[ServiceFlow] sync response scope', sfResponseScope);
   }
 
+  // Drop cancelled jobs client-side. SF web's day view shows
+  // active + scheduled + completed but hides cancelled. `status=all`
+  // is the only bucket that returns completed (needed for finished
+  // work on the Yesterday chip), so we take everything and filter
+  // out cancelled here to match SF web exactly.
+  const beforeCancelFilter = jobs.length;
+  jobs = jobs.filter((j) => {
+    const s = typeof j?.status === 'string' ? j.status.toLowerCase() : null;
+    return s !== 'cancelled' && s !== 'canceled';
+  });
+  if (jobs.length !== beforeCancelFilter) {
+    console.warn('[ServiceFlow] cancelled filter', {
+      before: beforeCancelFilter,
+      after: jobs.length,
+      dropped: beforeCancelFilter - jobs.length,
+    });
+  }
+
   if (jobs.length === 0) return { created: 0, matched: 0 };
 
   // Two windows on purpose:
