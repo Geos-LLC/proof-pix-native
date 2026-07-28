@@ -23,6 +23,8 @@ import { FONTS } from '../constants/fonts';
 import proxyService from '../services/proxyService';
 import googleDriveService from '../services/googleDriveService';
 import googleAuthService from '../services/googleAuthService';
+import dropboxService from '../services/dropboxService';
+import dropboxAuthService from '../services/dropboxAuthService';
 import crmService from '../services/crm';
 import serviceFlowAdapter from '../services/crm/serviceFlowAdapter';
 import { generateInviteToken } from '../utils/tokens';
@@ -78,6 +80,14 @@ export default function TeamMembersScreen({ navigation }) {
   const [sfCleaners, setSfCleaners] = useState([]);
   const [loadingCleaners, setLoadingCleaners] = useState(false);
   const [cleanersError, setCleanersError] = useState(null);
+
+  // Team-setup cloud picker — shown when admin taps "Set up team"
+  // so they can choose which cloud backend the team's shared storage
+  // lives on. Prior versions hard-forced Google Drive; admins with
+  // Dropbox or SF connected couldn't reach team setup without
+  // first connecting Google.
+  const [setupPickerVisible, setSetupPickerVisible] = useState(false);
+  const [connectedClouds, setConnectedClouds] = useState({ google: false, dropbox: false, serviceflow: false });
 
   // Poll SF connection state so the setup card can pick the SF path
   // over the Google path without waiting for a full remount. Cheap —
@@ -321,17 +331,118 @@ export default function TeamMembersScreen({ navigation }) {
     }
   };
 
+  // Entry point for the "Set up team" button. Opens a cloud picker
+  // so admin can choose Google / Dropbox / Service Flow — previously
+  // this was hard-forced to Google, blocking Dropbox-only admins.
   const handleSetupTeam = async () => {
     if (isWorkingSetup) return;
     if (!hasTeamFeature) {
       promptUpgrade();
       return;
     }
-    // SF-connected admins skip the entire Google path — SF acts as
-    // the storage backend for team-member uploads.
-    if (sfConnected) {
+    let clouds = { google: false, dropbox: false, serviceflow: false };
+    try {
+      clouds = await getConnectedClouds({ isAuthenticated, accountType });
+    } catch (e) {
+      console.warn('[TeamMembers] getConnectedClouds threw:', e?.message);
+    }
+    setConnectedClouds(clouds);
+    setSetupPickerVisible(true);
+  };
+
+  // Route to the specific setup flow based on admin's picker choice.
+  // Called from the setup picker modal (below).
+  const handleSetupWith = async (provider) => {
+    setSetupPickerVisible(false);
+    // Small delay so the modal dismiss animation completes before
+    // we potentially open another modal (auth sheet, share sheet).
+    await new Promise((r) => setTimeout(r, 150));
+    if (provider === 'serviceflow') {
+      if (!connectedClouds.serviceflow) {
+        Alert.alert(
+          t('teamMembers.needConnectTitle', { defaultValue: 'Connect first' }),
+          t('teamMembers.needConnectSF', {
+            defaultValue: 'Connect Service Flow in Cloud Sync, then come back to set up your team.',
+          }),
+          [
+            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+            { text: t('teamMembers.openCloudSync', { defaultValue: 'Open Cloud Sync' }), onPress: () => navigation.navigate('CloudSync') },
+          ],
+        );
+        return;
+      }
       return handleSetupTeamWithServiceFlow();
     }
+    if (provider === 'dropbox') {
+      if (!connectedClouds.dropbox) {
+        Alert.alert(
+          t('teamMembers.needConnectTitle', { defaultValue: 'Connect first' }),
+          t('teamMembers.needConnectDropbox', {
+            defaultValue: 'Connect Dropbox in Cloud Sync, then come back to set up your team.',
+          }),
+          [
+            { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+            { text: t('teamMembers.openCloudSync', { defaultValue: 'Open Cloud Sync' }), onPress: () => navigation.navigate('CloudSync') },
+          ],
+        );
+        return;
+      }
+      return handleSetupTeamWithDropbox();
+    }
+    // default: google
+    return handleSetupTeamWithGoogle();
+  };
+
+  // Dropbox setup — mirror of the Google path but uses the Dropbox
+  // service to find/create the shared folder. Path (not id) is what
+  // Dropbox stores.
+  const handleSetupTeamWithDropbox = async () => {
+    setIsWorkingSetup(true);
+    try {
+      await dropboxAuthService.loadStoredTokens();
+      if (!dropboxAuthService.isAuthenticated()) {
+        Alert.alert(
+          t('teamMembers.needConnectTitle', { defaultValue: 'Connect first' }),
+          t('teamMembers.needConnectDropbox', {
+            defaultValue: 'Connect Dropbox in Cloud Sync, then come back to set up your team.',
+          }),
+        );
+        return;
+      }
+      let folderPath = null;
+      try {
+        folderPath = await dropboxService.findOrCreateProofPixFolder();
+      } catch (e) {
+        console.error('[SETUP-DROPBOX] folder create failed:', e?.message || String(e));
+        Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Could not create the shared Dropbox folder.');
+        return;
+      }
+      if (!folderPath) {
+        Alert.alert(t('common.error', { defaultValue: 'Error' }), 'Could not create the shared Dropbox folder.');
+        return;
+      }
+      try { await saveFolderId(folderPath); } catch {}
+      const sessionResult = await initializeProxySession(folderPath, 'dropbox');
+      if (!sessionResult || !sessionResult.sessionId) {
+        throw new Error(sessionResult?.error || 'Failed to initialize proxy session');
+      }
+      const dbxUser = dropboxAuthService.getUserInfo?.();
+      const defaultName = dbxUser?.name || dbxUser?.email || adminUserInfo?.name || '';
+      if (!teamName && defaultName) {
+        try { await updateTeamName(defaultName); } catch {}
+        try { await AsyncStorage.setItem('@team_name', defaultName); } catch {}
+      }
+    } catch (e) {
+      const errMsg = e?.message || '';
+      if (errMsg && !/cancel/i.test(errMsg)) {
+        Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
+      }
+    } finally {
+      setIsWorkingSetup(false);
+    }
+  };
+
+  const handleSetupTeamWithGoogle = async () => {
     setIsWorkingSetup(true);
     try {
       // Step 1 — admin Google sign-in (only if not already signed in
@@ -886,6 +997,57 @@ export default function TeamMembersScreen({ navigation }) {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={setupPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSetupPickerVisible(false)}
+      >
+        <View style={styles.pickerBackdrop}>
+          <View style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>
+                {t('teamMembers.setupPickerTitle', { defaultValue: 'Where should team photos land?' })}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setSetupPickerVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={22} color={theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.pickerSubtitle}>
+              {t('teamMembers.setupPickerSubtitle', {
+                defaultValue: 'Pick the cloud where your team’s uploads will land. You can change this later.',
+              })}
+            </Text>
+            {[
+              { key: 'google', label: 'Google Drive', connected: connectedClouds.google, icon: 'logo-google' },
+              { key: 'dropbox', label: 'Dropbox', connected: connectedClouds.dropbox, icon: 'cloud-outline' },
+              { key: 'serviceflow', label: 'Service Flow', connected: connectedClouds.serviceflow, icon: 'briefcase-outline' },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.key}
+                style={styles.pickerRow}
+                onPress={() => handleSetupWith(opt.key)}
+                disabled={isWorkingSetup}
+              >
+                <Ionicons name={opt.icon} size={20} color={opt.connected ? theme.textPrimary : theme.textMuted} style={{ marginRight: 12 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pickerRowName}>{opt.label}</Text>
+                  <Text style={[styles.pickerRowMeta, opt.connected ? { color: '#2E7D32' } : null]}>
+                    {opt.connected
+                      ? t('teamMembers.setupPickerConnected', { defaultValue: 'Connected' })
+                      : t('teamMembers.setupPickerNotConnected', { defaultValue: 'Not connected — connect in Cloud Sync' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={cleanerPickerVisible}
