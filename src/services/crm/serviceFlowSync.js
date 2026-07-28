@@ -145,7 +145,7 @@ export async function syncServiceFlowJobs({
             customerName: row.customer_name || null,
             address: row.address || null,
             status: row.status || null,
-            scheduledAt: coerceScheduledAt(row.scheduled_date ?? row.scheduled_at),
+            scheduledAt: coerceScheduledAt(row.scheduled_at ?? row.scheduled_date),
             photoCount: typeof row.photo_count === 'number' ? row.photo_count : 0,
           });
         }
