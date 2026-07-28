@@ -550,8 +550,19 @@ export default function ProjectsScreen({ navigation, route }) {
   // out of scope here. Photos stay in iOS Photos (deleteFromStorage:
   // false), matching the bulk-delete flow.
   const handleDeleteAllProjects = () => {
-    if (projects.length === 0) return;
-    const total = projects.length;
+    // Scope delete-all to the tab the user is looking at. Before, this
+    // ran across `projects` (every local project regardless of tab),
+    // which meant Team-tab admins had no way to purge just their SF
+    // projects — the button either did nothing (disabled) or would
+    // have nuked My-tab manual projects too. Now:
+    //   My tab   → delete manual (non-SF) local projects
+    //   Team tab → delete local SF-linked projects (Team tab also has
+    //              the separate "trash" icon that clears proxy-KV team
+    //              projects; kept independent so SF vs KV can be
+    //              wiped separately).
+    const targets = projectsTab === 'team' ? localSfProjects : localMineProjects;
+    if (targets.length === 0) return;
+    const total = targets.length;
     Alert.alert(
       t('projects.deleteAllTitle', {
         count: total,
@@ -567,7 +578,7 @@ export default function ProjectsScreen({ navigation, route }) {
           text: t('common.deleteAll', { defaultValue: 'Delete all' }),
           style: 'destructive',
           onPress: async () => {
-            for (const p of projects) {
+            for (const p of targets) {
               try {
                 await deleteProject(p.id, { deleteFromStorage: false });
               } catch (e) {
@@ -2473,17 +2484,23 @@ export default function ProjectsScreen({ navigation, route }) {
           <View style={[styles.sheetHandle, { backgroundColor: theme.borderStrong }]} />
           {(() => {
             const onTeamTab = projectsTab === 'team';
-            const disabled = onTeamTab || projects.length === 0;
-            const selectColor = disabled ? theme.textMuted : theme.textPrimary;
-            const deleteColor = disabled ? theme.textMuted : theme.danger;
+            // Delete-all now targets the current tab's projects
+            // (SF-linked on Team, non-SF on My). Multi-select mode
+            // still assumes filteredProjects (My) — keep gated to My
+            // for now until Team-tab multi-select is properly wired.
+            const targetLen = onTeamTab ? localSfProjects.length : localMineProjects.length;
+            const deleteDisabled = targetLen === 0;
+            const selectDisabled = onTeamTab || projects.length === 0;
+            const selectColor = selectDisabled ? theme.textMuted : theme.textPrimary;
+            const deleteColor = deleteDisabled ? theme.textMuted : theme.danger;
             return (
               <>
                 <TouchableOpacity
                   style={[styles.sheetAction, { borderBottomColor: theme.divider }]}
-                  disabled={disabled}
+                  disabled={selectDisabled}
                   onPress={() => {
                     setMenuSheetVisible(false);
-                    if (disabled) return;
+                    if (selectDisabled) return;
                     setIsMultiSelectMode(true);
                     setSelectedProjects(new Set());
                   }}
@@ -2495,10 +2512,10 @@ export default function ProjectsScreen({ navigation, route }) {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.sheetAction}
-                  disabled={disabled}
+                  disabled={deleteDisabled}
                   onPress={() => {
                     setMenuSheetVisible(false);
-                    if (disabled) return;
+                    if (deleteDisabled) return;
                     // Let the sheet slide-out finish before the
                     // Alert opens — iOS misroutes taps when an
                     // Alert lands on top of a still-animating Modal.
