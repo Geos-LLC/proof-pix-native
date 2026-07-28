@@ -1782,7 +1782,12 @@ export default function CameraScreen({ route, navigation }) {
       }
 
       const takePhotoOnce = () => cameraRef.current.takePhoto({
-        qualityPrioritization: 'quality',
+        // Android's 'quality' disables ZSL and runs a multi-frame HDR/NR
+        // pass per shot → 400–900ms shutter latency. 'speed' keeps ZSL
+        // on for a near-instant capture with negligible visible quality
+        // loss on modern Androids. iOS runs ZSL either way, so we keep
+        // 'quality' there to preserve the max-detail JPEG path.
+        qualityPrioritization: Platform.OS === 'android' ? 'speed' : 'quality',
         // Only request flash if the current device reports flash support
         flash: enableTorch && supportsFlash ? 'on' : 'off',
         enableShutterSound: shutterSoundEnabled
