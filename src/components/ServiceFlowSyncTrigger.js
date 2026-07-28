@@ -22,7 +22,14 @@ import { syncServiceFlowJobs } from '../services/crm/serviceFlowSync';
 const MIN_SYNC_INTERVAL_MS = 30_000;
 
 export default function ServiceFlowSyncTrigger() {
-  const { projects, createProject, patchProject, loading } = usePhotos();
+  const {
+    projects,
+    createProject,
+    patchProject,
+    deleteProject,
+    getPhotosByProject,
+    loading,
+  } = usePhotos();
   const lastSyncAtRef = useRef(0);
   const inFlightRef = useRef(false);
 
@@ -34,8 +41,25 @@ export default function ServiceFlowSyncTrigger() {
     inFlightRef.current = true;
     lastSyncAtRef.current = now;
     try {
-      const result = await syncServiceFlowJobs({ projects, createProject, patchProject });
-      if (result?.created > 0 || result?.error) {
+      // Wrap getPhotosByProject as a photo-count getter so the sync
+      // module doesn't need to know about the photo shape — it just
+      // asks "does this project have user work?".
+      const getProjectPhotoCount = (projectId) => {
+        try {
+          const arr = getPhotosByProject(projectId);
+          return Array.isArray(arr) ? arr.length : 0;
+        } catch (_) {
+          return 0;
+        }
+      };
+      const result = await syncServiceFlowJobs({
+        projects,
+        createProject,
+        patchProject,
+        deleteProject,
+        getProjectPhotoCount,
+      });
+      if (result?.created > 0 || result?.deleted > 0 || result?.error) {
         console.log('[ServiceFlowSync]', reason, result);
       }
     } catch (e) {

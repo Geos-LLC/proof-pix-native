@@ -1141,14 +1141,21 @@ export const PhotoProvider = ({ children }) => {
     // down. Sync consults this set on the next foreground and skips
     // recreation — without it, deleting a SF-linked project just
     // pops back on the next auto-sync.
-    try {
-      const doomed = (projectsRef.current || []).find((p) => p?.id === projectId);
-      if (doomed?.crmJobId && doomed?.crmProvider === 'serviceflow') {
-        const { addDeletedJobId } = require('../services/crm/deletedJobsTombstone');
-        await addDeletedJobId(doomed.crmJobId);
+    //
+    // `skipTombstone` is set by the sync's own cleanup pass when it
+    // deletes stale SF-linked projects. We don't want to tombstone
+    // in that case because a future SF reappearance (rescheduled
+    // back into range, un-completed) should be free to re-create.
+    if (!options.skipTombstone) {
+      try {
+        const doomed = (projectsRef.current || []).find((p) => p?.id === projectId);
+        if (doomed?.crmJobId && doomed?.crmProvider === 'serviceflow') {
+          const { addDeletedJobId } = require('../services/crm/deletedJobsTombstone');
+          await addDeletedJobId(doomed.crmJobId);
+        }
+      } catch (err) {
+        console.warn('[PhotoContext] deleteProject tombstone failed:', err?.message);
       }
-    } catch (err) {
-      console.warn('[PhotoContext] deleteProject tombstone failed:', err?.message);
     }
 
     // Delete all photos for this project from device and metadata

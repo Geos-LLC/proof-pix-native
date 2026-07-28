@@ -73,9 +73,23 @@ const formatProjectName = (job) => {
  *   dedup matched nothing.
  * @param {Function} ctx.createProject — async (name) => project
  * @param {Function} ctx.patchProject — async (id, patch) => void
- * @returns {Promise<{ created: number, matched: number, error?: string }>}
+ * @param {Function} [ctx.deleteProject] — async (id, opts) => void.
+ *   When provided, enables the authoritative cleanup pass — any
+ *   SF-linked local project whose scheduledAt is inside the pull
+ *   window but whose crmJobId is NOT in SF's response gets deleted
+ *   locally (unless it has photos). Skips tombstoning so a future
+ *   SF reappearance can re-create it.
+ * @param {Function} [ctx.getProjectPhotoCount] — (projectId) => number.
+ *   Required alongside deleteProject to protect projects with user
+ *   work (photos) from being auto-deleted.
+ * @returns {Promise<{ created: number, matched: number, deleted?: number, error?: string }>}
  */
-export async function syncServiceFlowJobs({ createProject, patchProject }) {
+export async function syncServiceFlowJobs({
+  createProject,
+  patchProject,
+  deleteProject,
+  getProjectPhotoCount,
+}) {
   // Two entry points converge here:
   //   admin / individual  → adapter's crmService.listJobs (SF-direct
   //                          with locally-stored SF creds)
@@ -281,5 +295,48 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
     }
   }
 
-  return { created, matched };
+  // Authoritative cleanup pass. Any SF-linked local project whose
+  // scheduledAt is inside the pull window but whose crmJobId is NOT
+  // in SF's response is either stale (job was rescheduled/completed/
+  // deleted on SF) or genuinely gone. Delete it locally so the list
+  // mirrors SF exactly.
+  //
+  // Safety rails:
+  //   - Only touches crmProvider === 'serviceflow' projects (leaves
+  //     manually-created ones alone).
+  //   - Requires scheduledAt inside pullStart..pullEnd — projects
+  //     outside the window are ignored because SF wouldn't have
+  //     returned them anyway.
+  //   - Skips projects with photos (user's work stays put even if
+  //     the SF row disappeared or the photo count drifted from
+  //     upload-race issues).
+  //   - Calls deleteProject with skipTombstone so a future SF
+  //     reappearance (job un-completed, rescheduled back into the
+  //     window) can re-create the project cleanly.
+  let deleted = 0;
+  if (typeof deleteProject === 'function' && typeof getProjectPhotoCount === 'function') {
+    const seenJobIds = new Set(jobs.map((j) => (j?.id != null ? String(j.id) : null)).filter(Boolean));
+    for (const p of currentProjects) {
+      if (p?.crmProvider !== 'serviceflow') continue;
+      if (!p?.crmJobId) continue;
+      if (seenJobIds.has(String(p.crmJobId))) continue;
+      const ts = p?.crmJobMeta?.scheduledAt;
+      if (typeof ts !== 'number') continue;
+      if (ts < pullStart || ts >= pullEnd) continue;
+      let photoCount = 0;
+      try { photoCount = getProjectPhotoCount(p.id) || 0; } catch (_) {}
+      if (photoCount > 0) continue;
+      try {
+        await deleteProject(p.id, { skipTombstone: true });
+        deleted += 1;
+      } catch (e) {
+        console.warn('[serviceFlowSync] cleanup delete failed', p.id, e?.message);
+      }
+    }
+    if (deleted > 0) {
+      console.warn('[ServiceFlow] cleanup pass', { deleted, kept: currentProjects.length - deleted });
+    }
+  }
+
+  return { created, matched, deleted };
 }

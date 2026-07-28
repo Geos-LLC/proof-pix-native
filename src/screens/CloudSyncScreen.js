@@ -52,7 +52,22 @@ export default function CloudSyncScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, userInfo, accountType, individualSignIn, adminSignIn, signOut, userMode, teamInfo, inviteTokens } = useAdmin();
   const isTeamMember = userMode === 'team_member';
-  const { projects, createProject: ctxCreateProject, patchProject } = usePhotos();
+  const {
+    projects,
+    createProject: ctxCreateProject,
+    patchProject,
+    deleteProject: ctxDeleteProject,
+    getPhotosByProject,
+  } = usePhotos();
+  // Photo-count getter for sync's authoritative cleanup pass —
+  // protects projects with user work from being auto-deleted when
+  // SF stops returning them.
+  const sfGetProjectPhotoCount = (projectId) => {
+    try {
+      const arr = getPhotosByProject(projectId);
+      return Array.isArray(arr) ? arr.length : 0;
+    } catch (_) { return 0; }
+  };
   const { userPlan } = useSettings();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -338,7 +353,13 @@ export default function CloudSyncScreen({ navigation }) {
       await refreshServiceFlow();
       // Kick an immediate SF sync so admin's Projects list populates.
       try {
-        const syncResult = await syncServiceFlowJobs({ projects, createProject: ctxCreateProject, patchProject });
+        const syncResult = await syncServiceFlowJobs({
+          projects,
+          createProject: ctxCreateProject,
+          patchProject,
+          deleteProject: ctxDeleteProject,
+          getProjectPhotoCount: sfGetProjectPhotoCount,
+        });
         console.warn('[ServiceFlow] post-signin sync', syncResult);
       } catch (syncErr) {
         console.warn('[ServiceFlow] post-signin sync threw:', syncErr?.message);
@@ -495,7 +516,13 @@ export default function CloudSyncScreen({ navigation }) {
       // Projects right after connect. Best-effort — sync errors are
       // logged but don't break the connected state.
       try {
-        const result = await syncServiceFlowJobs({ projects, createProject: ctxCreateProject, patchProject });
+        const result = await syncServiceFlowJobs({
+          projects,
+          createProject: ctxCreateProject,
+          patchProject,
+          deleteProject: ctxDeleteProject,
+          getProjectPhotoCount: sfGetProjectPhotoCount,
+        });
         console.warn('[ServiceFlow] post-connect sync', result);
       } catch (syncErr) {
         console.warn('[ServiceFlow] post-connect sync threw:', syncErr?.message);

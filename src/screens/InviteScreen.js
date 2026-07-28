@@ -10,7 +10,7 @@ import { useTheme } from '../hooks/useTheme';
 export default function InviteScreen({ route, navigation }) {
   const { token, sessionId } = route.params || {};
   const { joinTeam } = useAdmin();
-  const { projects, createProject, patchProject } = usePhotos();
+  const { projects, createProject, patchProject, deleteProject, getPhotosByProject } = usePhotos();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,7 +34,18 @@ export default function InviteScreen({ route, navigation }) {
           // the next foreground pass, so members saw an empty list
           // until they backgrounded the app.
           try {
-            const syncResult = await syncServiceFlowJobs({ projects, createProject, patchProject });
+            const syncResult = await syncServiceFlowJobs({
+              projects,
+              createProject,
+              patchProject,
+              deleteProject,
+              getProjectPhotoCount: (id) => {
+                try {
+                  const arr = getPhotosByProject(id);
+                  return Array.isArray(arr) ? arr.length : 0;
+                } catch (_) { return 0; }
+              },
+            });
             console.warn('[Invite] post-join SF sync', syncResult);
           } catch (syncErr) {
             console.warn('[Invite] post-join SF sync threw:', syncErr?.message);

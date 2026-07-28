@@ -47,7 +47,13 @@ export default function CRMRedeemScreen({ route, navigation }) {
   // jobs materialise into the Projects list without waiting for the
   // ServiceFlowSyncTrigger's next foreground pass (which requires the
   // user to background + reopen the app).
-  const { projects, createProject: ctxCreateProject, patchProject } = usePhotos();
+  const {
+    projects,
+    createProject: ctxCreateProject,
+    patchProject,
+    deleteProject: ctxDeleteProject,
+    getPhotosByProject,
+  } = usePhotos();
 
   const [state, setState] = useState('redeeming'); // redeeming | success | error
   const [errorMessage, setErrorMessage] = useState(null);
@@ -72,7 +78,18 @@ export default function CRMRedeemScreen({ route, navigation }) {
           // post-connect behaviour in CloudSyncScreen's paste-in
           // path. Best-effort; sync errors are logged only.
           try {
-            const syncResult = await syncServiceFlowJobs({ projects, createProject: ctxCreateProject, patchProject });
+            const syncResult = await syncServiceFlowJobs({
+              projects,
+              createProject: ctxCreateProject,
+              patchProject,
+              deleteProject: ctxDeleteProject,
+              getProjectPhotoCount: (id) => {
+                try {
+                  const arr = getPhotosByProject(id);
+                  return Array.isArray(arr) ? arr.length : 0;
+                } catch (_) { return 0; }
+              },
+            });
             console.warn('[ServiceFlow] post-connect sync (deep link)', syncResult);
           } catch (syncErr) {
             console.warn('[ServiceFlow] post-connect sync threw:', syncErr?.message);
