@@ -1432,8 +1432,21 @@ export default function ProjectsScreen({ navigation, route }) {
     return (a?.name || '').localeCompare(b?.name || '');
   };
 
+  // Split local projects: SF-linked → Team tab, everything else → My tab.
+  // Before, SF-synced jobs cluttered My projects even though they're
+  // shared workspace work. Admin's manually-created projects stay in
+  // My; SF-sourced work moves to Team.
+  const localMineProjects = useMemo(
+    () => projects.filter((p) => p?.crmProvider !== 'serviceflow'),
+    [projects]
+  );
+  const localSfProjects = useMemo(
+    () => projects.filter((p) => p?.crmProvider === 'serviceflow'),
+    [projects]
+  );
+
   const filteredProjects = useMemo(() => {
-    let list = projects;
+    let list = localMineProjects;
     const q = searchQuery.trim().toLowerCase();
     if (q) list = list.filter((p) => (p.name || '').toLowerCase().includes(q));
     if (dateFilterRange) {
@@ -1444,7 +1457,7 @@ export default function ProjectsScreen({ navigation, route }) {
       });
     }
     return [...list].sort(compareByTimeThenName);
-  }, [projects, searchQuery, dateFilterRange]);
+  }, [localMineProjects, searchQuery, dateFilterRange]);
 
   const getProjectPhotoCount = (projectId) => {
     return getPhotosByProject(projectId).length;
@@ -1612,6 +1625,27 @@ export default function ProjectsScreen({ navigation, route }) {
     return (a?.name || '').localeCompare(b?.name || '');
   };
 
+  // Team tab shows both:
+  //   (a) local SF-linked projects (admin's sync of the workspace's
+  //       SF jobs) — rendered like My-tab cards, tap opens the project
+  //   (b) team-created projects from the proxy KV (what other team
+  //       members created + uploaded) — Drive-folder shortcut cards
+  // Kept as two separate arrays so the render loop can pick the
+  // right card style per source without a discriminator prop.
+  const filteredTeamSfProjects = useMemo(() => {
+    let list = localSfProjects;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) list = list.filter((p) => (p.name || '').toLowerCase().includes(q));
+    if (dateFilterRange) {
+      list = list.filter((p) => {
+        const ts = projectFilterTs(p);
+        if (!ts) return false;
+        return ts >= dateFilterRange.from && ts < dateFilterRange.to;
+      });
+    }
+    return [...list].sort(compareByTimeThenName);
+  }, [localSfProjects, searchQuery, dateFilterRange]);
+
   const filteredTeamProjects = useMemo(() => {
     let list = teamProjects;
     const q = searchQuery.trim().toLowerCase();
@@ -1632,8 +1666,19 @@ export default function ProjectsScreen({ navigation, route }) {
   // chip is obvious when the user expected 10 — makes sync-vs-filter
   // discrepancies visible without cracking open logs.
   const chipCounts = useMemo(() => {
-    const list = projectsTab === 'team' ? teamProjects : projects;
-    const tsFn = projectsTab === 'team' ? teamProjectFilterTs : projectFilterTs;
+    // Team tab pools the local SF-linked projects + proxy-KV team
+    // projects. My tab is only local non-SF projects (SF-linked moved
+    // to Team). Timestamp helper differs per source but we don't need
+    // to tag the row — SF rows have crmProvider === 'serviceflow' and
+    // proxy rows have updatedAt, so we branch on that.
+    const list = projectsTab === 'team'
+      ? [...localSfProjects, ...teamProjects]
+      : localMineProjects;
+    const tsFn = (p) => {
+      if (p?.crmProvider === 'serviceflow') return projectFilterTs(p);
+      if (projectsTab === 'team') return teamProjectFilterTs(p);
+      return projectFilterTs(p);
+    };
     const q = searchQuery.trim().toLowerCase();
     const pool = q ? list.filter((p) => (p.name || '').toLowerCase().includes(q)) : list;
     const now = new Date();
@@ -1654,7 +1699,7 @@ export default function ProjectsScreen({ navigation, route }) {
       }
     }
     return counts;
-  }, [projects, teamProjects, projectsTab, searchQuery]);
+  }, [localMineProjects, localSfProjects, teamProjects, projectsTab, searchQuery]);
 
   const handleOpenTeamProjectFolder = async (proj) => {
     const url = proj?.folderUrl
@@ -1933,7 +1978,7 @@ export default function ProjectsScreen({ navigation, route }) {
                 </Text>
               </TouchableOpacity>
             </View>
-          ) : filteredTeamProjects.length === 0 ? (
+          ) : filteredTeamProjects.length === 0 && filteredTeamSfProjects.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
                 {searchQuery.trim()
@@ -1974,7 +2019,7 @@ export default function ProjectsScreen({ navigation, route }) {
               <View style={styles.teamRefreshRow}>
                 <Text style={[styles.teamRefreshHint, { color: theme.textMuted }]} numberOfLines={1}>
                   {t('projects.teamCount', {
-                    count: filteredTeamProjects.length,
+                    count: filteredTeamSfProjects.length + filteredTeamProjects.length,
                     defaultValue: '{{count}} project(s)',
                   })}
                 </Text>
@@ -2034,6 +2079,43 @@ export default function ProjectsScreen({ navigation, route }) {
                   </TouchableOpacity>
                 </View>
               </View>
+              {filteredTeamSfProjects.map((project) => {
+                const stats = projectStats(project.id);
+                const scheduledAt = project?.crmJobMeta?.scheduledAt;
+                const timeStr = (typeof scheduledAt === 'number' && scheduledAt > 0)
+                  ? new Date(scheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                  : '';
+                const isActive = activeProjectId === project.id;
+                const cleanerName = project?.crmJobMeta?.customerName || '';
+                return (
+                  <TouchableOpacity
+                    key={project.id}
+                    activeOpacity={0.7}
+                    onPress={() => handleSelectProject(project)}
+                    style={[
+                      styles.cardNew,
+                      { backgroundColor: theme.surface, borderColor: isActive ? theme.cardSelectedBorder : 'transparent' },
+                    ]}
+                  >
+                    <View style={styles.cardRow}>
+                      {stats.thumbUri ? (
+                        <Image source={{ uri: stats.thumbUri }} style={styles.cardThumb} />
+                      ) : (
+                        <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                          <Ionicons name="briefcase-outline" size={26} color={theme.textMuted} />
+                        </View>
+                      )}
+                      <View style={styles.cardBody}>
+                        <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>{project.name}</Text>
+                        <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {[timeStr, cleanerName, `${stats.count} photo(s)`].filter(Boolean).join(' · ')}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
               {filteredTeamProjects.map((tp) => {
                 const industry = tp.industry ? getIndustryById(tp.industry) : null;
                 const updatedTs = tp.updatedAt ? Date.parse(tp.updatedAt) : 0;
