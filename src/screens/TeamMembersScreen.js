@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Share,
   Linking,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -69,6 +70,14 @@ export default function TeamMembersScreen({ navigation }) {
   const [teamMembers, setTeamMembers] = useState([]);
   const [sfConnected, setSfConnected] = useState(false);
   const [sfWorkspace, setSfWorkspace] = useState(null);
+  // SF cleaner picker — shown when admin taps "Generate invite" while
+  // SF is connected. Admin picks which SF cleaner this invite is for,
+  // and the resulting invite is bound to that person's SF id so their
+  // /jobs pull is scoped to just their assignments.
+  const [cleanerPickerVisible, setCleanerPickerVisible] = useState(false);
+  const [sfCleaners, setSfCleaners] = useState([]);
+  const [loadingCleaners, setLoadingCleaners] = useState(false);
+  const [cleanersError, setCleanersError] = useState(null);
 
   // Poll SF connection state so the setup card can pick the SF path
   // over the Google path without waiting for a full remount. Cheap —
@@ -471,16 +480,48 @@ export default function TeamMembersScreen({ navigation }) {
       // (banner + reconnect). Blocking on probe failure would
       // punish users on flaky networks.
     }
+    // SF connected → show cleaner picker so admin can bind this
+    // invite to a specific SF team_member. Team member's /jobs pull
+    // will then be scoped to that cleaner's assignments only.
+    // Not connected → skip the picker and go straight to the legacy
+    // unscoped invite path.
+    if (sfConnected) {
+      setCleanersError(null);
+      setSfCleaners([]);
+      setCleanerPickerVisible(true);
+      setLoadingCleaners(true);
+      try {
+        const result = await proxyService.listServiceFlowCleaners(proxySessionId);
+        setSfCleaners(Array.isArray(result?.cleaners) ? result.cleaners : []);
+      } catch (e) {
+        setCleanersError(e?.message || 'Failed to load SF cleaners');
+      } finally {
+        setLoadingCleaners(false);
+      }
+      return;
+    }
+    await performInvite(null, null);
+  };
+
+  // Actual invite work. Called from either the direct legacy path
+  // (no SF) or from the cleaner picker's row tap. `sfCleanerId` is
+  // null for workspace-wide invites, or an SF team_member id when
+  // scoped.
+  const performInvite = async (sfCleanerId, sfCleanerName) => {
     setIsGeneratingInvite(true);
+    setCleanerPickerVisible(false);
     const newToken = generateInviteToken();
     try {
-      await proxyService.addInviteToken(proxySessionId, newToken);
+      await proxyService.addInviteToken(proxySessionId, newToken, {
+        sfTeamMemberId: sfCleanerId,
+      });
       await addInviteToken(newToken);
       try {
         logTeamInvitesCreated(1, {
           plan: userPlan,
           team_size_before: teamMembers?.length || 0,
           team_size_after: teamMembers?.length || 0,
+          sf_scoped: !!sfCleanerId,
         });
       } catch {}
       // Use the shared util that includes greeting + manual invite
@@ -845,6 +886,85 @@ export default function TeamMembersScreen({ navigation }) {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={cleanerPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCleanerPickerVisible(false)}
+      >
+        <View style={styles.pickerBackdrop}>
+          <View style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>
+                {t('teamMembers.pickCleanerTitle', { defaultValue: 'Invite for which cleaner?' })}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setCleanerPickerVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={22} color={theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.pickerSubtitle}>
+              {t('teamMembers.pickCleanerSubtitle', {
+                defaultValue: 'Their invite will only see jobs assigned to them on Service Flow.',
+              })}
+            </Text>
+            {loadingCleaners ? (
+              <View style={styles.pickerLoadingWrap}>
+                <ActivityIndicator size="small" color={theme.textMuted} />
+              </View>
+            ) : cleanersError ? (
+              <View style={styles.pickerErrorWrap}>
+                <Text style={styles.pickerErrorText}>{cleanersError}</Text>
+              </View>
+            ) : sfCleaners.length === 0 ? (
+              <View style={styles.pickerErrorWrap}>
+                <Text style={styles.pickerErrorText}>
+                  {t('teamMembers.pickCleanerEmpty', {
+                    defaultValue:
+                      'No cleaners found on Service Flow. You can still send an unscoped invite below (they will see all workspace jobs).',
+                  })}
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.pickerList}>
+                {sfCleaners.map((c) => {
+                  const name = [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim() || `Cleaner ${c?.id}`;
+                  return (
+                    <TouchableOpacity
+                      key={String(c.id)}
+                      style={styles.pickerRow}
+                      onPress={() => performInvite(c.id, name)}
+                      disabled={isGeneratingInvite}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.pickerRowName}>{name}</Text>
+                        {c?.role ? (
+                          <Text style={styles.pickerRowMeta}>{String(c.role)}</Text>
+                        ) : null}
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+            <TouchableOpacity
+              style={styles.pickerSkipBtn}
+              onPress={() => performInvite(null, null)}
+              disabled={isGeneratingInvite}
+            >
+              <Text style={styles.pickerSkipText}>
+                {t('teamMembers.pickCleanerSkip', {
+                  defaultValue: 'Invite without linking to a cleaner',
+                })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1250,5 +1370,90 @@ const makeStyles = (theme) => StyleSheet.create({
     color: '#7A5B00',
     lineHeight: 17,
     letterSpacing: -0.1,
+  },
+  // SF cleaner picker modal (shown before generating an invite when
+  // SF is connected). Bottom-sheet style, translucent scrim.
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  pickerCard: {
+    backgroundColor: theme.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 22,
+    maxHeight: '75%',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  pickerTitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 17,
+    fontWeight: '700',
+    color: theme.textPrimary,
+  },
+  pickerSubtitle: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '500',
+    color: theme.textSecondary,
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  pickerLoadingWrap: {
+    paddingVertical: 30,
+    alignItems: 'center',
+  },
+  pickerErrorWrap: {
+    paddingVertical: 18,
+  },
+  pickerErrorText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    color: theme.textSecondary,
+    lineHeight: 18,
+  },
+  pickerList: {
+    maxHeight: 380,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.border,
+  },
+  pickerRowName: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 15,
+    fontWeight: '600',
+    color: theme.textPrimary,
+  },
+  pickerRowMeta: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 12,
+    fontWeight: '500',
+    color: theme.textMuted,
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+  pickerSkipBtn: {
+    marginTop: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  pickerSkipText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.textMuted,
   },
 });

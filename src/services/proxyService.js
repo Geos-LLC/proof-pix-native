@@ -185,17 +185,27 @@ class ProxyService {
    * Add an invite token to the admin session
    * @param {string} sessionId - Proxy session ID
    * @param {string} token - Invite token
+   * @param {object} [opts]
+   * @param {string|number} [opts.sfTeamMemberId] — SF team_member id
+   *   the admin picked for this invite. When present, the proxy binds
+   *   this token to that SF cleaner so their /jobs pull is filtered
+   *   to that person's assignments only. Optional — invites without
+   *   it fall back to workspace-wide (legacy behaviour).
    */
-  async addInviteToken(sessionId, token) {
+  async addInviteToken(sessionId, token, opts = {}) {
     try {
       console.log('[PROXY] Adding invite token to session:', sessionId);
 
+      const body = { token };
+      if (opts?.sfTeamMemberId != null && String(opts.sfTeamMemberId).trim() !== '') {
+        body.sf_team_member_id = String(opts.sfTeamMemberId);
+      }
       const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -801,6 +811,41 @@ class ProxyService {
    * SF), returns { jobs: [], notConnected: true } so callers can
    * render a clean "not connected" state instead of an error.
    */
+  /**
+   * List SF cleaners (SF's `team_members`) for the admin's workspace.
+   * Used by the admin invite modal to pick who a new invite is for
+   * so the resulting invite is scoped to that specific cleaner's
+   * SF assignments.
+   *
+   * Returns `{ cleaners: [{ id, first_name, last_name, role, status }] }`
+   * on success. When SF hasn't shipped the underlying endpoint yet,
+   * the proxy returns `{ cleaners: [], not_deployed: true }` — same
+   * shape, empty list, so the caller can render an empty picker
+   * gracefully.
+   *
+   * 424 (SF not connected on admin session) → returns
+   * `{ cleaners: [], notConnected: true }` for a graceful empty
+   * state instead of a thrown error.
+   */
+  async listServiceFlowCleaners(sessionId) {
+    try {
+      if (!sessionId) return { cleaners: [] };
+      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-cleaners`);
+      if (response.status === 424) {
+        return { cleaners: [], notConnected: true };
+      }
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        console.warn('[PROXY] listServiceFlowCleaners failed:', response.status, text.slice(0, 200));
+        throw new Error(`SF cleaners list failed: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error listing SF cleaners:', error?.message);
+      throw error;
+    }
+  }
+
   async listServiceFlowJobs(sessionId, token, { status = 'active', search, limit = 100, cursor } = {}) {
     try {
       if (!sessionId || !token) return { jobs: [], nextCursor: null };
