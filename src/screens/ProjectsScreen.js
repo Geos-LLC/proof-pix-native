@@ -1384,28 +1384,43 @@ export default function ProjectsScreen({ navigation, route }) {
     return { count: arr.length, sets, counters, rooms: Array.from(rooms), latestTs, thumbUri };
   };
 
+  // Week boundaries follow the business's SF pay period. Real value
+  // will come from a future GET /api/integrations/proofpix/pay-period
+  // endpoint on SF (not yet built); until then hard-code Monday-start
+  // which matches the SF default (`pay_period_start_day = 1`).
+  // 0=Sunday .. 6=Saturday.
+  const PAY_PERIOD_START_DAY = 1;
+
   // Date-range window for the active chip filter, or null when 'all'.
-  // `from` is inclusive, `to` is exclusive. Week starts on Sunday to
-  // match the default JS getDay() convention.
+  // `from` is inclusive, `to` is exclusive.
+  //   yesterday / today / tomorrow — single-day buckets
+  //   prevWeek / currentWeek / nextWeek — 7-day buckets anchored on
+  //     the pay-period start day (Mon by default)
   const dateFilterRange = useMemo(() => {
     if (dateFilter === 'all') return null;
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const dayMs = 86_400_000;
+    const weekMs = 7 * dayMs;
+    // Days elapsed since the most recent pay-period start (0 if today
+    // IS the start day). Formula handles wrap-around cleanly:
+    //   dow=Tue(2), startDay=Mon(1) → 1 day since start
+    //   dow=Sun(0), startDay=Mon(1) → 6 days since start (last Mon)
+    const daysSincePeriodStart = (now.getDay() - PAY_PERIOD_START_DAY + 7) % 7;
+    const currentWeekStart = todayStart - daysSincePeriodStart * dayMs;
     switch (dateFilter) {
+      case 'yesterday':
+        return { from: todayStart - dayMs, to: todayStart };
       case 'today':
         return { from: todayStart, to: todayStart + dayMs };
-      case 'week': {
-        const dow = now.getDay();
-        return { from: todayStart - dow * dayMs, to: todayStart + (7 - dow) * dayMs };
-      }
-      case 'month': {
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-        const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
-        return { from: monthStart, to: nextMonthStart };
-      }
-      case 'last30':
-        return { from: todayStart - 30 * dayMs, to: todayStart + dayMs };
+      case 'tomorrow':
+        return { from: todayStart + dayMs, to: todayStart + 2 * dayMs };
+      case 'prevWeek':
+        return { from: currentWeekStart - weekMs, to: currentWeekStart };
+      case 'currentWeek':
+        return { from: currentWeekStart, to: currentWeekStart + weekMs };
+      case 'nextWeek':
+        return { from: currentWeekStart + weekMs, to: currentWeekStart + 2 * weekMs };
       default:
         return null;
     }
@@ -1413,7 +1428,7 @@ export default function ProjectsScreen({ navigation, route }) {
 
   // "When this project matters" timestamp. SF-linked projects prefer
   // the SF scheduled time so a job scheduled for tomorrow lands in
-  // the "This Week" bucket even if it was locally created weeks ago.
+  // the "Tomorrow" bucket even if it was locally created weeks ago.
   const projectFilterTs = (p) => {
     const scheduled = p?.crmJobMeta?.scheduledAt;
     if (typeof scheduled === 'number' && scheduled > 0) return scheduled;
@@ -1424,6 +1439,17 @@ export default function ProjectsScreen({ navigation, route }) {
       return Number.isFinite(parsed) ? parsed : 0;
     }
     return 0;
+  };
+
+  // Compare helper for the "time asc, then name A→Z" sort applied to
+  // both filtered lists. Undated projects fall to the bottom (Infinity
+  // keeps them out of scheduled work) — deliberate so cleaners see
+  // real appointments at the top.
+  const compareByTimeThenName = (a, b) => {
+    const tsA = projectFilterTs(a) || Number.POSITIVE_INFINITY;
+    const tsB = projectFilterTs(b) || Number.POSITIVE_INFINITY;
+    if (tsA !== tsB) return tsA - tsB;
+    return (a?.name || '').localeCompare(b?.name || '');
   };
 
   const filteredProjects = useMemo(() => {
@@ -1437,7 +1463,7 @@ export default function ProjectsScreen({ navigation, route }) {
         return ts >= dateFilterRange.from && ts < dateFilterRange.to;
       });
     }
-    return list;
+    return [...list].sort(compareByTimeThenName);
   }, [projects, searchQuery, dateFilterRange]);
 
   const getProjectPhotoCount = (projectId) => {
@@ -1599,6 +1625,13 @@ export default function ProjectsScreen({ navigation, route }) {
     return 0;
   };
 
+  const compareByTimeThenNameTeam = (a, b) => {
+    const tsA = teamProjectFilterTs(a) || Number.POSITIVE_INFINITY;
+    const tsB = teamProjectFilterTs(b) || Number.POSITIVE_INFINITY;
+    if (tsA !== tsB) return tsA - tsB;
+    return (a?.name || '').localeCompare(b?.name || '');
+  };
+
   const filteredTeamProjects = useMemo(() => {
     let list = teamProjects;
     const q = searchQuery.trim().toLowerCase();
@@ -1610,14 +1643,14 @@ export default function ProjectsScreen({ navigation, route }) {
         return ts >= dateFilterRange.from && ts < dateFilterRange.to;
       });
     }
-    return list;
+    return [...list].sort(compareByTimeThenNameTeam);
   }, [teamProjects, searchQuery, dateFilterRange]);
 
-  // Per-chip counts for the currently visible tab. Search narrows the
-  // pool first, then each chip counts what would land in its range.
-  // Surfaced next to each chip label so a "Today: 3" chip is obvious
-  // when the user expected 10 — makes sync-vs-filter issues visible
-  // without cracking open logs.
+  // Per-chip counts for the currently visible tab. Same range math as
+  // dateFilterRange so counts always match what a tap on the chip
+  // would surface. Surfaced next to each chip label so a "Today: 3"
+  // chip is obvious when the user expected 10 — makes sync-vs-filter
+  // discrepancies visible without cracking open logs.
   const chipCounts = useMemo(() => {
     const list = projectsTab === 'team' ? teamProjects : projects;
     const tsFn = projectsTab === 'team' ? teamProjectFilterTs : projectFilterTs;
@@ -1626,23 +1659,33 @@ export default function ProjectsScreen({ navigation, route }) {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const dayMs = 86_400_000;
-    const dow = now.getDay();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+    const weekMs = 7 * dayMs;
+    const daysSincePeriodStart = (now.getDay() - PAY_PERIOD_START_DAY + 7) % 7;
+    const currentWeekStart = todayStart - daysSincePeriodStart * dayMs;
     const ranges = {
+      yesterday: { from: todayStart - dayMs, to: todayStart },
       today: { from: todayStart, to: todayStart + dayMs },
-      week: { from: todayStart - dow * dayMs, to: todayStart + (7 - dow) * dayMs },
-      month: { from: monthStart, to: nextMonthStart },
-      last30: { from: todayStart - 30 * dayMs, to: todayStart + dayMs },
+      tomorrow: { from: todayStart + dayMs, to: todayStart + 2 * dayMs },
+      prevWeek: { from: currentWeekStart - weekMs, to: currentWeekStart },
+      currentWeek: { from: currentWeekStart, to: currentWeekStart + weekMs },
+      nextWeek: { from: currentWeekStart + weekMs, to: currentWeekStart + 2 * weekMs },
     };
-    const counts = { all: pool.length, today: 0, week: 0, month: 0, last30: 0 };
+    const counts = {
+      all: pool.length,
+      yesterday: 0,
+      today: 0,
+      tomorrow: 0,
+      prevWeek: 0,
+      currentWeek: 0,
+      nextWeek: 0,
+    };
     for (const p of pool) {
       const ts = tsFn(p);
       if (!ts) continue;
-      if (ts >= ranges.today.from && ts < ranges.today.to) counts.today += 1;
-      if (ts >= ranges.week.from && ts < ranges.week.to) counts.week += 1;
-      if (ts >= ranges.month.from && ts < ranges.month.to) counts.month += 1;
-      if (ts >= ranges.last30.from && ts < ranges.last30.to) counts.last30 += 1;
+      for (const key of ['yesterday', 'today', 'tomorrow', 'prevWeek', 'currentWeek', 'nextWeek']) {
+        const r = ranges[key];
+        if (ts >= r.from && ts < r.to) counts[key] += 1;
+      }
     }
     return counts;
   }, [projects, teamProjects, projectsTab, searchQuery]);
@@ -1831,10 +1874,12 @@ export default function ProjectsScreen({ navigation, route }) {
         >
           {[
             { key: 'all', label: t('projects.dateFilter.all', { defaultValue: 'All' }) },
+            { key: 'yesterday', label: t('projects.dateFilter.yesterday', { defaultValue: 'Yesterday' }) },
             { key: 'today', label: t('projects.dateFilter.today', { defaultValue: 'Today' }) },
-            { key: 'week', label: t('projects.dateFilter.week', { defaultValue: 'This Week' }) },
-            { key: 'month', label: t('projects.dateFilter.month', { defaultValue: 'This Month' }) },
-            { key: 'last30', label: t('projects.dateFilter.last30', { defaultValue: 'Last 30d' }) },
+            { key: 'tomorrow', label: t('projects.dateFilter.tomorrow', { defaultValue: 'Tomorrow' }) },
+            { key: 'prevWeek', label: t('projects.dateFilter.prevWeek', { defaultValue: 'Prev Week' }) },
+            { key: 'currentWeek', label: t('projects.dateFilter.currentWeek', { defaultValue: 'Current Week' }) },
+            { key: 'nextWeek', label: t('projects.dateFilter.nextWeek', { defaultValue: 'Next Week' }) },
           ].map((chip) => {
             const active = dateFilter === chip.key;
             return (
