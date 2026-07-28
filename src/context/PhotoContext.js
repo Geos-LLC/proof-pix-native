@@ -920,25 +920,22 @@ export const PhotoProvider = ({ children }) => {
   // of an auto-synced photo is a no-op.
   const autoQueueTeamUploadIfNeeded = async (photo) => {
     try {
-      // Cheap flag check first — avoids any AsyncStorage / Keychain
-      // reads for individual / admin devices, which is the majority
-      // path.
+      console.warn('[TEAM_AUTO_SYNC pre] entered', { photoId: photo?.id, projectId: photo?.projectId });
       const { isTeamUploadEnabled, getTeamUploadBlockedReason, TEAM_AUTO_SYNC_ENABLED } = require('../config/teamUpload');
-      if (!TEAM_AUTO_SYNC_ENABLED) return;
+      if (!TEAM_AUTO_SYNC_ENABLED) { console.warn('[TEAM_AUTO_SYNC skip] TEAM_AUTO_SYNC_ENABLED=false'); return; }
 
       const mode = await AsyncStorage.getItem('@admin_user_mode');
-      if (mode !== 'team_member') return;
+      if (mode !== 'team_member') { console.warn('[TEAM_AUTO_SYNC skip] mode', { mode }); return; }
 
       const info = await readSecureJSON('@team_member_info');
-      if (!info?.sessionId || !info?.token) return;
-      if (!isTeamUploadEnabled(info)) return;
-      if (getTeamUploadBlockedReason(info)) return; // e.g. non-Google admin
+      if (!info?.sessionId || !info?.token) { console.warn('[TEAM_AUTO_SYNC skip] no teamInfo', { hasInfo: !!info, hasSession: !!info?.sessionId, hasToken: !!info?.token }); return; }
+      if (!isTeamUploadEnabled(info)) { console.warn('[TEAM_AUTO_SYNC skip] isTeamUploadEnabled=false', { sessionId: info.sessionId }); return; }
+      const blockedReason = getTeamUploadBlockedReason(info);
+      if (blockedReason) { console.warn('[TEAM_AUTO_SYNC skip] blocked', { reason: blockedReason, adminAccountType: info.adminAccountType }); return; }
 
-      // Need the project record for its display name (album name on
-      // Drive) and to skip photos that aren't project-scoped yet.
-      if (!photo?.projectId) return;
+      if (!photo?.projectId) { console.warn('[TEAM_AUTO_SYNC skip] no photo.projectId'); return; }
       const project = (projectsRef.current || []).find(p => p?.id === photo.projectId);
-      if (!project) return;
+      if (!project) { console.warn('[TEAM_AUTO_SYNC skip] project not in projectsRef', { projectId: photo.projectId, refCount: (projectsRef.current || []).length }); return; }
 
       let memberName = 'Team Member';
       try {

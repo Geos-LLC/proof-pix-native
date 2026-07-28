@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-member-uxfix-v11-' + Date.now() + ' — Linking.getInitialURL is now overridden to return null when the post-revoke marker is present. Fixes React Navigation auto-routing to JoinTeam based on the cached invite URL before AuthLoadingScreen can consume the marker. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-upload-master-v12-' + Date.now() + ' — TEAM_UPLOAD_ENABLED flipped to true; auto-sync gate lifted for all Google-backed admins. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
