@@ -2178,6 +2178,8 @@ export default function ProjectsScreen({ navigation, route }) {
                     key={project.id}
                     activeOpacity={0.7}
                     onPress={() => handleSelectProject(project)}
+                    onLongPress={() => openProjectActions(project)}
+                    delayLongPress={300}
                     style={[
                       styles.cardNew,
                       { backgroundColor: theme.surface, borderColor: isActive ? theme.cardSelectedBorder : 'transparent' },
@@ -2197,7 +2199,13 @@ export default function ProjectsScreen({ navigation, route }) {
                           {[timeStr, cleanerName, `${stats.count} photo(s)`].filter(Boolean).join(' · ')}
                         </Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+                      <TouchableOpacity
+                        style={styles.kebabBtn}
+                        onPress={() => openProjectActions(project)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Ionicons name="ellipsis-vertical" size={18} color={theme.textSecondary} />
+                      </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
                 );
