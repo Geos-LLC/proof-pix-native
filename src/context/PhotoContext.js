@@ -1137,6 +1137,20 @@ export const PhotoProvider = ({ children }) => {
     const { deleteFromStorage = true } = options;
     const related = photos.filter(p => p.projectId === projectId);
 
+    // Tombstone the SF job id (if any) BEFORE we tear the project
+    // down. Sync consults this set on the next foreground and skips
+    // recreation — without it, deleting a SF-linked project just
+    // pops back on the next auto-sync.
+    try {
+      const doomed = (projectsRef.current || []).find((p) => p?.id === projectId);
+      if (doomed?.crmJobId && doomed?.crmProvider === 'serviceflow') {
+        const { addDeletedJobId } = require('../services/crm/deletedJobsTombstone');
+        await addDeletedJobId(doomed.crmJobId);
+      }
+    } catch (err) {
+      console.warn('[PhotoContext] deleteProject tombstone failed:', err?.message);
+    }
+
     // Delete all photos for this project from device and metadata
     if (deleteFromStorage) {
       // 1) Delete local files directly (no media calls here to avoid per-asset prompts)

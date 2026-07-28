@@ -21,6 +21,7 @@ import crmService from './index';
 import proxyService from '../proxyService';
 import { readSecureJSON } from '../secureStorageService';
 import { loadProjects } from '../storage';
+import { getDeletedJobIds } from './deletedJobsTombstone';
 
 // SF's /jobs endpoint pages at 100 rows. Loop through the cursor so
 // large accounts (>100 total jobs) don't get truncated. Capped so a
@@ -208,6 +209,10 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
     if (p?.crmJobId) existingByJobId.set(String(p.crmJobId), p);
   }
 
+  // Tombstones for jobs the user explicitly deleted locally. Skip
+  // recreation on the next sync so manual cleanup sticks.
+  const deletedJobIds = await getDeletedJobIds();
+
   let created = 0;
   let matched = 0;
 
@@ -240,6 +245,10 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
       matched += 1;
       continue;
     }
+    // Skip jobs the user has explicitly deleted locally. Without
+    // this, sync happily recreates them on the next foreground and
+    // the user's cleanup evaporates.
+    if (deletedJobIds.has(jobId)) continue;
     // Gate NEW-project creation on the tighter create window. A job
     // scheduled 10 days out shows up in the pull (so we can refresh
     // existing matches) but shouldn't spawn a fresh local project —
