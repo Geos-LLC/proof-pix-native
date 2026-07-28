@@ -94,7 +94,7 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
       let cursor = null;
       for (let page = 0; page < MAX_PAGES; page++) {
         const result = await proxyService.listServiceFlowJobs(teamInfo.sessionId, teamInfo.token, {
-          status: 'all',
+          status: 'active',
           limit: PAGE_LIMIT,
           cursor,
         });
@@ -133,7 +133,7 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
     try {
       let cursor = null;
       for (let page = 0; page < MAX_PAGES; page++) {
-        const result = await crmService.listJobs({ status: 'all', limit: PAGE_LIMIT, cursor });
+        const result = await crmService.listJobs({ status: 'active', limit: PAGE_LIMIT, cursor });
         const raw = Array.isArray(result?.jobs) ? result.jobs : Array.isArray(result) ? result : [];
         for (const row of raw) {
           // adapter.listJobs already returns camelCase Job shape with
