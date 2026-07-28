@@ -154,29 +154,41 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
 
   if (jobs.length === 0) return { created: 0, matched: 0 };
 
-  // Bound the sync window tight — Projects UI only surfaces
-  // Yesterday / Today / Tomorrow, so anything outside ±1..+2 days
-  // is dead weight. Widening this to 30d on 2026-07-28 created
-  // 256 auto-projects on one account; scope walked back the same
-  // day. Jobs without scheduledAt still fall through since we can't
-  // date-filter them locally.
-  const SYNC_LOOKBACK_DAYS = 1;
-  const SYNC_LOOKAHEAD_DAYS = 2;
+  // Two windows on purpose:
+  //  - PULL window (wide, ±14d): jobs SF still shows in here can
+  //    refresh their local crmJobMeta. Without this, a job that gets
+  //    rescheduled from Tue → Sat leaves a stale Tuesday entry in
+  //    the local list forever, because sync-refresh only fires on
+  //    match and the tight create window would exclude Saturday.
+  //  - CREATE window (tight, ±1..+2d): matches the Projects chip UI
+  //    (Yesterday / Today / Tomorrow). Only auto-create local
+  //    projects for jobs in this range. Anything wider re-creates
+  //    the "256 auto-projects" mess from 2026-07-28.
+  //
+  // Jobs without scheduledAt fall through both filters — we can't
+  // date-classify them, so we err on the side of processing.
+  const PULL_LOOKBACK_DAYS = 14;
+  const PULL_LOOKAHEAD_DAYS = 14;
+  const CREATE_LOOKBACK_DAYS = 1;
+  const CREATE_LOOKAHEAD_DAYS = 2;
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const windowStart = todayStart - SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
-  const windowEnd = todayStart + SYNC_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const pullStart = todayStart - PULL_LOOKBACK_DAYS * dayMs;
+  const pullEnd = todayStart + PULL_LOOKAHEAD_DAYS * dayMs;
+  const createStart = todayStart - CREATE_LOOKBACK_DAYS * dayMs;
+  const createEnd = todayStart + CREATE_LOOKAHEAD_DAYS * dayMs;
   const before = jobs.length;
   jobs = jobs.filter((j) => {
     if (typeof j?.scheduledAt !== 'number') return true;
-    return j.scheduledAt >= windowStart && j.scheduledAt < windowEnd;
+    return j.scheduledAt >= pullStart && j.scheduledAt < pullEnd;
   });
   if (jobs.length !== before) {
     console.warn('[ServiceFlow] sync window filter', {
       before,
       after: jobs.length,
-      lookbackDays: SYNC_LOOKBACK_DAYS,
-      lookaheadDays: SYNC_LOOKAHEAD_DAYS,
+      pullLookbackDays: PULL_LOOKBACK_DAYS,
+      pullLookaheadDays: PULL_LOOKAHEAD_DAYS,
     });
   }
 
@@ -227,6 +239,13 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
       }
       matched += 1;
       continue;
+    }
+    // Gate NEW-project creation on the tighter create window. A job
+    // scheduled 10 days out shows up in the pull (so we can refresh
+    // existing matches) but shouldn't spawn a fresh local project —
+    // that's what caused the 256-orphan mess on 2026-07-28.
+    if (typeof job.scheduledAt === 'number') {
+      if (job.scheduledAt < createStart || job.scheduledAt >= createEnd) continue;
     }
     // Create new local project + patch on the CRM linkage. Done
     // as two steps because createProject doesn't accept extra
