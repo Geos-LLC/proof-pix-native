@@ -147,6 +147,12 @@ export async function syncServiceFlowJobs({
             status: row.status || null,
             scheduledAt: coerceScheduledAt(row.scheduled_at ?? row.scheduled_date),
             photoCount: typeof row.photo_count === 'number' ? row.photo_count : 0,
+            teamMemberId: (typeof row.team_member_id === 'number' && Number.isFinite(row.team_member_id))
+              ? row.team_member_id
+              : null,
+            teamMemberIds: Array.isArray(row.team_member_ids)
+              ? row.team_member_ids.filter((v) => typeof v === 'number' && Number.isFinite(v))
+              : [],
           });
         }
         cursor = result?.nextCursor || null;
@@ -296,18 +302,27 @@ export async function syncServiceFlowJobs({
       // changed to avoid a write on every sync.
       const existing = existingByJobId.get(jobId);
       const prev = existing?.crmJobMeta || {};
+      const nextTeamMemberIds = Array.isArray(job.teamMemberIds) ? job.teamMemberIds : [];
       const nextMeta = {
         customerName: job.customerName || null,
         address: job.address || null,
         status: job.status || null,
         scheduledAt: job.scheduledAt || null,
+        teamMemberId: job.teamMemberId ?? null,
+        teamMemberIds: nextTeamMemberIds,
         syncedAt: Date.now(),
       };
+      const prevIds = Array.isArray(prev.teamMemberIds) ? prev.teamMemberIds : [];
+      const idsChanged =
+        prevIds.length !== nextTeamMemberIds.length ||
+        prevIds.some((v, i) => v !== nextTeamMemberIds[i]);
       const changed =
         prev.scheduledAt !== nextMeta.scheduledAt ||
         prev.status !== nextMeta.status ||
         prev.customerName !== nextMeta.customerName ||
-        prev.address !== nextMeta.address;
+        prev.address !== nextMeta.address ||
+        prev.teamMemberId !== nextMeta.teamMemberId ||
+        idsChanged;
       if (changed) {
         try { await patchProject(existing.id, { crmJobMeta: nextMeta }); } catch (_) {}
       }
@@ -340,6 +355,8 @@ export async function syncServiceFlowJobs({
             address: job.address || null,
             status: job.status || null,
             scheduledAt: job.scheduledAt || null,
+            teamMemberId: job.teamMemberId ?? null,
+            teamMemberIds: Array.isArray(job.teamMemberIds) ? job.teamMemberIds : [],
             syncedAt: Date.now(),
           },
         });

@@ -421,6 +421,18 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
         return null;
       })(),
       photoCount: typeof row.photo_count === 'number' ? row.photo_count : 0,
+      // SF cleaner assignment (added SF-side 2026-07-28 for per-
+      // cleaner filtering on the admin's Team Projects tab).
+      // teamMemberId  = primary assignee (jobs.team_member_id column)
+      // teamMemberIds = additional assignees via job_team_assignments
+      // Both nullable/empty when unassigned. Older SF builds don't
+      // send these → we get undefined → treated as unassigned.
+      teamMemberId: (typeof row.team_member_id === 'number' && Number.isFinite(row.team_member_id))
+        ? row.team_member_id
+        : null,
+      teamMemberIds: Array.isArray(row.team_member_ids)
+        ? row.team_member_ids.filter((v) => typeof v === 'number' && Number.isFinite(v))
+        : [],
     }));
     return { jobs, nextCursor: body.next_cursor || null };
   }

@@ -99,6 +99,13 @@ export default function ProjectsScreen({ navigation, route }) {
   // pulls a wider window (-30d..+30d) so switching chips reveals the
   // slice we already have in memory instead of re-fetching.
   const [dateFilter, setDateFilter] = useState('all');
+  // Cleaner filter on Team tab. `null` = show all SF projects,
+  // otherwise the SF team_member_id — filters local SF projects
+  // where crmJobMeta.teamMemberId matches OR the id appears in
+  // crmJobMeta.teamMemberIds. Cleaners loaded from the proxy's
+  // passthrough to SF's /sf-team-members on Team tab mount.
+  const [cleanerFilter, setCleanerFilter] = useState(null);
+  const [sfCleanerList, setSfCleanerList] = useState([]);
   const [actionSheetProject, setActionSheetProject] = useState(null);
   // Multi-select mode for bulk delete / share. Long-press a card to
   // enter; tap-toggle, then act via the toolbar that replaces the
@@ -1595,6 +1602,20 @@ export default function ProjectsScreen({ navigation, route }) {
   useEffect(() => {
     if (projectsTab === 'team' && showTeamTab) {
       fetchTeamProjects();
+      // Also pull the SF cleaner list so the cleaner-filter chip row
+      // on Team tab can render real names instead of raw ids.
+      // Cached in local state; refreshed on each Team-tab visit.
+      (async () => {
+        try {
+          if (!proxySessionId) return;
+          const proxyService = require('../services/proxyService').default;
+          const result = await proxyService.listServiceFlowCleaners(proxySessionId);
+          const cleaners = Array.isArray(result?.cleaners) ? result.cleaners : [];
+          setSfCleanerList(cleaners);
+        } catch (e) {
+          console.warn('[ProjectsScreen] listServiceFlowCleaners failed:', e?.message);
+        }
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectsTab, showTeamTab, proxySessionId]);
@@ -1643,8 +1664,18 @@ export default function ProjectsScreen({ navigation, route }) {
         return ts >= dateFilterRange.from && ts < dateFilterRange.to;
       });
     }
+    if (cleanerFilter != null) {
+      const target = Number(cleanerFilter);
+      list = list.filter((p) => {
+        const primary = p?.crmJobMeta?.teamMemberId;
+        if (primary != null && Number(primary) === target) return true;
+        const extras = p?.crmJobMeta?.teamMemberIds;
+        if (Array.isArray(extras) && extras.some((v) => Number(v) === target)) return true;
+        return false;
+      });
+    }
     return [...list].sort(compareByTimeThenName);
-  }, [localSfProjects, searchQuery, dateFilterRange]);
+  }, [localSfProjects, searchQuery, dateFilterRange, cleanerFilter]);
 
   const filteredTeamProjects = useMemo(() => {
     let list = teamProjects;
@@ -1914,6 +1945,48 @@ export default function ProjectsScreen({ navigation, route }) {
               </TouchableOpacity>
             );
           })}
+        </ScrollView>
+      )}
+
+      {!isMultiSelectMode && projectsTab === 'team' && sfCleanerList.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.dateChipScroll}
+          contentContainerStyle={styles.dateChipRow}
+        >
+          {[{ id: null, label: t('projects.cleanerFilter.all', { defaultValue: 'All cleaners' }) }]
+            .concat(sfCleanerList.map((c) => ({
+              id: c.id,
+              label: [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim() || `Cleaner ${c?.id}`,
+            })))
+            .map((chip) => {
+              const active = (cleanerFilter == null && chip.id == null)
+                || (cleanerFilter != null && Number(cleanerFilter) === Number(chip.id));
+              return (
+                <TouchableOpacity
+                  key={chip.id == null ? 'all' : String(chip.id)}
+                  onPress={() => setCleanerFilter(chip.id)}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.dateChip,
+                    {
+                      backgroundColor: active ? theme.accent : theme.surface,
+                      borderColor: active ? theme.accent : theme.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dateChipText,
+                      { color: active ? theme.accentText : theme.textPrimary },
+                    ]}
+                  >
+                    {chip.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
         </ScrollView>
       )}
 
