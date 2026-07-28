@@ -1447,10 +1447,23 @@ export default function ProjectsScreen({ navigation, route }) {
     () => projects.filter((p) => p?.crmProvider !== 'serviceflow'),
     [projects]
   );
-  const localSfProjects = useMemo(
-    () => projects.filter((p) => p?.crmProvider === 'serviceflow'),
-    [projects]
-  );
+  const localSfProjects = useMemo(() => {
+    // Dedupe by crmJobId — a stale duplicate can slip in when SF
+    // returns the same row twice in one paginated /jobs response;
+    // sync-side dedupe was added 2026-07-28 but this is the
+    // defensive belt-and-suspenders in case dupes are already
+    // sitting in local storage from previous syncs.
+    const seen = new Set();
+    const out = [];
+    for (const p of projects) {
+      if (p?.crmProvider !== 'serviceflow') continue;
+      const key = p?.crmJobId != null ? String(p.crmJobId) : null;
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      out.push(p);
+    }
+    return out;
+  }, [projects]);
 
   const filteredProjects = useMemo(() => {
     let list = localMineProjects;

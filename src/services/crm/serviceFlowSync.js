@@ -288,6 +288,14 @@ export async function syncServiceFlowJobs({
   // recreation on the next sync so manual cleanup sticks.
   const deletedJobIds = await getDeletedJobIds();
 
+  // Track jobIds we've created in THIS sync run. `existingByJobId` is
+  // built from a pre-loop storage snapshot, so if SF returns the same
+  // jobId twice in one response (cursor page overlap, join-dedup miss),
+  // the second iteration would miss the map and create a duplicate.
+  // Bit us on 2026-07-28: "Katrina Holt shows twice on ProofPix but
+  // only once on SF." — that's SF returning the row twice.
+  const createdInThisRunJobIds = new Set();
+
   let created = 0;
   let matched = 0;
 
@@ -333,6 +341,9 @@ export async function syncServiceFlowJobs({
     // this, sync happily recreates them on the next foreground and
     // the user's cleanup evaporates.
     if (deletedJobIds.has(jobId)) continue;
+    // Skip if we already created it in this same sync run (SF sent
+    // the row twice — see createdInThisRunJobIds JSDoc above).
+    if (createdInThisRunJobIds.has(jobId)) continue;
     // Gate NEW-project creation on the tighter create window. A job
     // scheduled 10 days out shows up in the pull (so we can refresh
     // existing matches) but shouldn't spawn a fresh local project —
@@ -360,6 +371,7 @@ export async function syncServiceFlowJobs({
             syncedAt: Date.now(),
           },
         });
+        createdInThisRunJobIds.add(jobId);
         created += 1;
       }
     } catch (e) {
