@@ -406,10 +406,15 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
       address: dedupAddress(row.address),
       status: row.status || null,
       scheduledAt: (() => {
-        // Accept unix-ms number OR ISO string. Older builds dropped
-        // any non-number to null, which broke the local date-chip
-        // filter downstream when SF returned ISO timestamps.
-        const v = row.scheduled_at;
+        // SF's actual field is `scheduled_date` (per SF backend cursor
+        // shape). Older builds only read `scheduled_at` and got null
+        // for every job, which broke the local date-chip filter AND
+        // made project sort fall back to createdAt (= SF response
+        // order = latest first, opposite of what the UI needs).
+        // Try `scheduled_date` first, fall back to `scheduled_at`
+        // for defensive compat.
+        // Accept unix-ms number OR ISO string.
+        const v = row.scheduled_date ?? row.scheduled_at;
         if (typeof v === 'number' && Number.isFinite(v)) return v;
         if (typeof v === 'string' && v) {
           const parsed = Date.parse(v);
