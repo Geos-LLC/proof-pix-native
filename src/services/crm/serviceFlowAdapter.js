@@ -393,7 +393,18 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
       // server-side.
       address: dedupAddress(row.address),
       status: row.status || null,
-      scheduledAt: typeof row.scheduled_at === 'number' ? row.scheduled_at : null,
+      scheduledAt: (() => {
+        // Accept unix-ms number OR ISO string. Older builds dropped
+        // any non-number to null, which broke the local date-chip
+        // filter downstream when SF returned ISO timestamps.
+        const v = row.scheduled_at;
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'string' && v) {
+          const parsed = Date.parse(v);
+          return Number.isFinite(parsed) ? parsed : null;
+        }
+        return null;
+      })(),
       photoCount: typeof row.photo_count === 'number' ? row.photo_count : 0,
     }));
     return { jobs, nextCursor: body.next_cursor || null };

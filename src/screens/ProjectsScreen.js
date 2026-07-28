@@ -1613,6 +1613,40 @@ export default function ProjectsScreen({ navigation, route }) {
     return list;
   }, [teamProjects, searchQuery, dateFilterRange]);
 
+  // Per-chip counts for the currently visible tab. Search narrows the
+  // pool first, then each chip counts what would land in its range.
+  // Surfaced next to each chip label so a "Today: 3" chip is obvious
+  // when the user expected 10 — makes sync-vs-filter issues visible
+  // without cracking open logs.
+  const chipCounts = useMemo(() => {
+    const list = projectsTab === 'team' ? teamProjects : projects;
+    const tsFn = projectsTab === 'team' ? teamProjectFilterTs : projectFilterTs;
+    const q = searchQuery.trim().toLowerCase();
+    const pool = q ? list.filter((p) => (p.name || '').toLowerCase().includes(q)) : list;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayMs = 86_400_000;
+    const dow = now.getDay();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+    const ranges = {
+      today: { from: todayStart, to: todayStart + dayMs },
+      week: { from: todayStart - dow * dayMs, to: todayStart + (7 - dow) * dayMs },
+      month: { from: monthStart, to: nextMonthStart },
+      last30: { from: todayStart - 30 * dayMs, to: todayStart + dayMs },
+    };
+    const counts = { all: pool.length, today: 0, week: 0, month: 0, last30: 0 };
+    for (const p of pool) {
+      const ts = tsFn(p);
+      if (!ts) continue;
+      if (ts >= ranges.today.from && ts < ranges.today.to) counts.today += 1;
+      if (ts >= ranges.week.from && ts < ranges.week.to) counts.week += 1;
+      if (ts >= ranges.month.from && ts < ranges.month.to) counts.month += 1;
+      if (ts >= ranges.last30.from && ts < ranges.last30.to) counts.last30 += 1;
+    }
+    return counts;
+  }, [projects, teamProjects, projectsTab, searchQuery]);
+
   const handleOpenTeamProjectFolder = async (proj) => {
     const url = proj?.folderUrl
       || (proj?.folderId ? `https://drive.google.com/drive/folders/${proj.folderId}` : null);
@@ -1822,7 +1856,7 @@ export default function ProjectsScreen({ navigation, route }) {
                     { color: active ? theme.accentText : theme.textPrimary },
                   ]}
                 >
-                  {chip.label}
+                  {chip.label} {chipCounts[chip.key] ?? 0}
                 </Text>
               </TouchableOpacity>
             );
