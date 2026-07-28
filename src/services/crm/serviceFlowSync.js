@@ -99,11 +99,22 @@ export async function syncServiceFlowJobs({
   // Same trust model as the Google Drive upload path.
   const mode = await AsyncStorage.getItem('@admin_user_mode');
   let jobs = [];
+  // Diagnostic scope logging — pin down the "SF returned 200 rows one
+  // session, 30 the next" mystery on 2026-07-28. If the workspace_id
+  // or admin_user_id drift across syncs (because the browser had a
+  // stale SF cookie on the last reconnect), we'll see it here.
+  // Forward-compat: if SF adds workspace_id / linked_sf_team_member_id
+  // to /jobs response body, capture from the first page too.
+  let sfResponseScope = null;
   if (mode === 'team_member') {
     const teamInfo = await readSecureJSON('@team_member_info');
     if (!teamInfo?.sessionId || !teamInfo?.token) {
       return { created: 0, matched: 0 };
     }
+    console.warn('[ServiceFlow] sync scope', {
+      mode: 'team_member',
+      sessionId: teamInfo.sessionId,
+    });
     try {
       let cursor = null;
       for (let page = 0; page < MAX_PAGES; page++) {
@@ -121,6 +132,12 @@ export async function syncServiceFlowJobs({
         // fields; normalise to the adapter's camelCase shape so the
         // downstream merge / dedup logic stays identical.
         const raw = Array.isArray(result?.jobs) ? result.jobs : [];
+        if (page === 0 && (result?.workspace_id || result?.linked_sf_team_member_id != null)) {
+          sfResponseScope = {
+            workspace_id: result.workspace_id ?? null,
+            linked_sf_team_member_id: result.linked_sf_team_member_id ?? null,
+          };
+        }
         for (const row of raw) {
           jobs.push({
             id: row.id,
@@ -145,10 +162,27 @@ export async function syncServiceFlowJobs({
       return { created: 0, matched: 0 };
     }
     try {
+      const adapter = await crmService.getActiveAdapter();
+      const ws = await adapter?.getStoredWorkspace?.();
+      console.warn('[ServiceFlow] sync scope', {
+        mode: 'admin',
+        workspaceId: ws?.workspaceId || null,
+        workspaceName: ws?.workspaceName || null,
+        adminUserId: ws?.adminUserId || null,
+        connectedAt: ws?.connectedAt || null,
+      });
+    } catch (_) {}
+    try {
       let cursor = null;
       for (let page = 0; page < MAX_PAGES; page++) {
         const result = await crmService.listJobs({ status: 'active', limit: PAGE_LIMIT, cursor });
         const raw = Array.isArray(result?.jobs) ? result.jobs : Array.isArray(result) ? result : [];
+        if (page === 0 && (result?.workspace_id || result?.linked_sf_team_member_id != null)) {
+          sfResponseScope = {
+            workspace_id: result.workspace_id ?? null,
+            linked_sf_team_member_id: result.linked_sf_team_member_id ?? null,
+          };
+        }
         for (const row of raw) {
           // adapter.listJobs already returns camelCase Job shape with
           // its own scheduled_at coercion, but re-run through the
@@ -165,6 +199,9 @@ export async function syncServiceFlowJobs({
     } catch (e) {
       return { created: 0, matched: 0, error: e?.message || 'listJobs failed' };
     }
+  }
+  if (sfResponseScope) {
+    console.warn('[ServiceFlow] sync response scope', sfResponseScope);
   }
 
   if (jobs.length === 0) return { created: 0, matched: 0 };
