@@ -22,7 +22,7 @@
 
 // Master switch. When true, every team_member account uploads via
 // the team pipeline regardless of the canary list below.
-export const TEAM_UPLOAD_ENABLED = false;
+export const TEAM_UPLOAD_ENABLED = true;
 
 // Canary allow-list: admin proxy sessionIds whose team members are
 // opted in to the team upload pipeline. Add a sessionId here to
