@@ -1792,6 +1792,7 @@ export default function ProjectsScreen({ navigation, route }) {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.dateChipScroll}
           contentContainerStyle={styles.dateChipRow}
         >
           {[
@@ -3367,13 +3368,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  dateChipScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   dateChipRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     paddingHorizontal: 19,
     paddingBottom: 10,
   },
   dateChip: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 100,
