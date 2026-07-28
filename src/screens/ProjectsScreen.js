@@ -1384,30 +1384,16 @@ export default function ProjectsScreen({ navigation, route }) {
     return { count: arr.length, sets, counters, rooms: Array.from(rooms), latestTs, thumbUri };
   };
 
-  // Week boundaries follow the business's SF pay period. Real value
-  // will come from a future GET /api/integrations/proofpix/pay-period
-  // endpoint on SF (not yet built); until then hard-code Monday-start
-  // which matches the SF default (`pay_period_start_day = 1`).
-  // 0=Sunday .. 6=Saturday.
-  const PAY_PERIOD_START_DAY = 1;
-
   // Date-range window for the active chip filter, or null when 'all'.
   // `from` is inclusive, `to` is exclusive.
-  //   yesterday / today / tomorrow — single-day buckets
-  //   prevWeek / currentWeek / nextWeek — 7-day buckets anchored on
-  //     the pay-period start day (Mon by default)
+  // Scope is intentionally day-only (yesterday / today / tomorrow) —
+  // the sync itself only pulls jobs in that ±1..+2 day range so
+  // week-scope chips would show mostly zeros.
   const dateFilterRange = useMemo(() => {
     if (dateFilter === 'all') return null;
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const dayMs = 86_400_000;
-    const weekMs = 7 * dayMs;
-    // Days elapsed since the most recent pay-period start (0 if today
-    // IS the start day). Formula handles wrap-around cleanly:
-    //   dow=Tue(2), startDay=Mon(1) → 1 day since start
-    //   dow=Sun(0), startDay=Mon(1) → 6 days since start (last Mon)
-    const daysSincePeriodStart = (now.getDay() - PAY_PERIOD_START_DAY + 7) % 7;
-    const currentWeekStart = todayStart - daysSincePeriodStart * dayMs;
     switch (dateFilter) {
       case 'yesterday':
         return { from: todayStart - dayMs, to: todayStart };
@@ -1415,12 +1401,6 @@ export default function ProjectsScreen({ navigation, route }) {
         return { from: todayStart, to: todayStart + dayMs };
       case 'tomorrow':
         return { from: todayStart + dayMs, to: todayStart + 2 * dayMs };
-      case 'prevWeek':
-        return { from: currentWeekStart - weekMs, to: currentWeekStart };
-      case 'currentWeek':
-        return { from: currentWeekStart, to: currentWeekStart + weekMs };
-      case 'nextWeek':
-        return { from: currentWeekStart + weekMs, to: currentWeekStart + 2 * weekMs };
       default:
         return null;
     }
@@ -1659,30 +1639,16 @@ export default function ProjectsScreen({ navigation, route }) {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const dayMs = 86_400_000;
-    const weekMs = 7 * dayMs;
-    const daysSincePeriodStart = (now.getDay() - PAY_PERIOD_START_DAY + 7) % 7;
-    const currentWeekStart = todayStart - daysSincePeriodStart * dayMs;
     const ranges = {
       yesterday: { from: todayStart - dayMs, to: todayStart },
       today: { from: todayStart, to: todayStart + dayMs },
       tomorrow: { from: todayStart + dayMs, to: todayStart + 2 * dayMs },
-      prevWeek: { from: currentWeekStart - weekMs, to: currentWeekStart },
-      currentWeek: { from: currentWeekStart, to: currentWeekStart + weekMs },
-      nextWeek: { from: currentWeekStart + weekMs, to: currentWeekStart + 2 * weekMs },
     };
-    const counts = {
-      all: pool.length,
-      yesterday: 0,
-      today: 0,
-      tomorrow: 0,
-      prevWeek: 0,
-      currentWeek: 0,
-      nextWeek: 0,
-    };
+    const counts = { all: pool.length, yesterday: 0, today: 0, tomorrow: 0 };
     for (const p of pool) {
       const ts = tsFn(p);
       if (!ts) continue;
-      for (const key of ['yesterday', 'today', 'tomorrow', 'prevWeek', 'currentWeek', 'nextWeek']) {
+      for (const key of ['yesterday', 'today', 'tomorrow']) {
         const r = ranges[key];
         if (ts >= r.from && ts < r.to) counts[key] += 1;
       }
@@ -1877,9 +1843,6 @@ export default function ProjectsScreen({ navigation, route }) {
             { key: 'yesterday', label: t('projects.dateFilter.yesterday', { defaultValue: 'Yesterday' }) },
             { key: 'today', label: t('projects.dateFilter.today', { defaultValue: 'Today' }) },
             { key: 'tomorrow', label: t('projects.dateFilter.tomorrow', { defaultValue: 'Tomorrow' }) },
-            { key: 'prevWeek', label: t('projects.dateFilter.prevWeek', { defaultValue: 'Prev Week' }) },
-            { key: 'currentWeek', label: t('projects.dateFilter.currentWeek', { defaultValue: 'Current Week' }) },
-            { key: 'nextWeek', label: t('projects.dateFilter.nextWeek', { defaultValue: 'Next Week' }) },
           ].map((chip) => {
             const active = dateFilter === chip.key;
             return (

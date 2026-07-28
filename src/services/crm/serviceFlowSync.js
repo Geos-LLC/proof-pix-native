@@ -24,9 +24,12 @@ import { loadProjects } from '../storage';
 
 // SF's /jobs endpoint pages at 100 rows. Loop through the cursor so
 // large accounts (>100 total jobs) don't get truncated. Capped so a
-// runaway sync can't stall the app.
+// runaway sync can't stall the app. Two pages (200 rows) is plenty
+// for the ±1-day sync window below — anything beyond that got
+// filtered out anyway and just wasted network + created project
+// clutter (bit us on 2026-07-28 with 256 auto-created projects).
 const PAGE_LIMIT = 100;
-const MAX_PAGES = 5;
+const MAX_PAGES = 2;
 
 // SF may send scheduled_at as either a unix-ms number or an ISO
 // string depending on how the row was persisted. Older sync builds
@@ -151,15 +154,14 @@ export async function syncServiceFlowJobs({ createProject, patchProject }) {
 
   if (jobs.length === 0) return { created: 0, matched: 0 };
 
-  // Bound the sync window on both sides so the Projects list stays
-  // scoped to "recent + near-future" instead of pulling every job SF
-  // has ever seen. Local UI now has a date-range chip filter, so we
-  // pull a wider slice than we display: -30d to +30d. The chip filter
-  // (Today / Week / Month / Last 30d / All) narrows what the user
-  // actually sees. Jobs without scheduledAt fall through — we can't
-  // date-filter them, so we err on the side of including.
-  const SYNC_LOOKBACK_DAYS = 30;
-  const SYNC_LOOKAHEAD_DAYS = 30;
+  // Bound the sync window tight — Projects UI only surfaces
+  // Yesterday / Today / Tomorrow, so anything outside ±1..+2 days
+  // is dead weight. Widening this to 30d on 2026-07-28 created
+  // 256 auto-projects on one account; scope walked back the same
+  // day. Jobs without scheduledAt still fall through since we can't
+  // date-filter them locally.
+  const SYNC_LOOKBACK_DAYS = 1;
+  const SYNC_LOOKAHEAD_DAYS = 2;
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const windowStart = todayStart - SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
