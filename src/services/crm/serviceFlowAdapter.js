@@ -220,6 +220,18 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
       expiresAt: Date.now() + (body.expires_in - 60) * 1000,
     };
 
+    // Reset the deleted-jobs tombstone set on a fresh SF connect.
+    // Otherwise a user who mass-deleted projects earlier can never
+    // re-see any of those SF jobs, because every crmJobId sync
+    // fetches from SF would be permanently blacklisted. Reconnecting
+    // implies a "start over" intent.
+    try {
+      const { clearAllDeletedJobIds } = require('./deletedJobsTombstone');
+      await clearAllDeletedJobIds();
+    } catch (tombErr) {
+      console.warn('[SF-Adapter] tombstone clear failed (continuing):', tombErr?.message);
+    }
+
     // Push the SF refresh token to the proxy so team members can
     // list SF jobs + have uploads fanned out to SF without ever
     // holding SF credentials on their device. Best-effort — a failed

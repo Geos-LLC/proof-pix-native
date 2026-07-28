@@ -55,3 +55,17 @@ export async function addDeletedJobId(jobId) {
   }
   await persist();
 }
+
+/**
+ * Wipe the tombstone set. Called from the SF connect flow so
+ * reconnecting is a clean slate — otherwise a user who mass-deleted
+ * their projects can never see any of those job ids again, even
+ * after signing back in. Also good escape hatch for "why can't I
+ * see anything from SF" support cases.
+ */
+export async function clearAllDeletedJobIds() {
+  cachedSet = new Set();
+  try {
+    await AsyncStorage.removeItem(KEY);
+  } catch (_) {}
+}
