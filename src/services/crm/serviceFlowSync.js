@@ -119,7 +119,7 @@ export async function syncServiceFlowJobs({
       let cursor = null;
       for (let page = 0; page < MAX_PAGES; page++) {
         const result = await proxyService.listServiceFlowJobs(teamInfo.sessionId, teamInfo.token, {
-          status: 'open',
+          status: 'all',
           limit: PAGE_LIMIT,
           cursor,
         });
@@ -175,7 +175,7 @@ export async function syncServiceFlowJobs({
     try {
       let cursor = null;
       for (let page = 0; page < MAX_PAGES; page++) {
-        const result = await crmService.listJobs({ status: 'open', limit: PAGE_LIMIT, cursor });
+        const result = await crmService.listJobs({ status: 'all', limit: PAGE_LIMIT, cursor });
         const raw = Array.isArray(result?.jobs) ? result.jobs : Array.isArray(result) ? result : [];
         if (page === 0 && (result?.workspace_id || result?.linked_sf_team_member_id != null)) {
           sfResponseScope = {
