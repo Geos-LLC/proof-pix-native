@@ -2,6 +2,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PROXY_SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL || 'https://steadfast-blessing-production.up.railway.app';
 
+// Shared secret for the 5 admin referral-link management endpoints. Baked in
+// at bundle time via EAS env var; the proxy's requireAdminSecret middleware
+// checks it against PROOFPIX_ADMIN_SECRET on Railway. Stops drive-by curl
+// attacks on the mint/list/edit/deactivate endpoints. NOT used for
+// /api/referrals/redeem — that stays public so end users can redeem codes.
+const ADMIN_SECRET = process.env.EXPO_PUBLIC_PROOFPIX_ADMIN_SECRET;
+
+const adminHeaders = (extra = {}) => ({
+  ...(ADMIN_SECRET ? { 'X-ProofPix-Admin-Secret': ADMIN_SECRET } : {}),
+  ...extra,
+});
+
 const STORAGE_KEYS = {
   PENDING_ADMIN_REFERRAL: '@pending_admin_referral_code',
   ADMIN_REFERRAL_REDEEMED: '@admin_referral_redeemed',
@@ -25,7 +37,9 @@ export const getReferralLinkUrl = (code) =>
 
 export const fetchAdminReferralLinks = async () => {
   try {
-    const response = await fetch(`${PROXY_SERVER_URL}/api/admin/referral-links`);
+    const response = await fetch(`${PROXY_SERVER_URL}/api/admin/referral-links`, {
+      headers: adminHeaders(),
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -38,7 +52,7 @@ export const createAdminReferralLink = async (payload) => {
   try {
     const response = await fetch(`${PROXY_SERVER_URL}/api/admin/referral-links`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         code: payload.code?.toUpperCase() || generateCode(),
         label: payload.label || null,
@@ -68,7 +82,7 @@ export const updateAdminReferralLink = async (id, payload) => {
   try {
     const response = await fetch(`${PROXY_SERVER_URL}/api/admin/referral-links/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -83,6 +97,7 @@ export const deactivateAdminReferralLink = async (id) => {
   try {
     const response = await fetch(`${PROXY_SERVER_URL}/api/admin/referral-links/${id}/deactivate`, {
       method: 'POST',
+      headers: adminHeaders(),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
@@ -96,6 +111,7 @@ export const activateAdminReferralLink = async (id) => {
   try {
     const response = await fetch(`${PROXY_SERVER_URL}/api/admin/referral-links/${id}/activate`, {
       method: 'POST',
+      headers: adminHeaders(),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
