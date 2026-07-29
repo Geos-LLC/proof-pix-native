@@ -77,18 +77,6 @@ try {
   console.warn('[App] This usually means the app needs to be rebuilt with: npx expo run:android');
 }
 
-// Meta (Facebook) SDK
-let FBSettings = null;
-try {
-  if (Constants?.appOwnership !== 'expo') {
-    const fbsdk = require('react-native-fbsdk-next');
-    FBSettings = fbsdk.Settings;
-    console.log('[App] Meta SDK imported successfully');
-  }
-} catch (error) {
-  console.warn('[App] Meta SDK not available:', error.message);
-}
-
 console.log('[App] Initializing i18n...');
 import './src/i18n/i18n'; // Initialize i18n
 console.log('[App] i18n initialized');
@@ -896,30 +884,6 @@ export default function App() {
         setFirebaseInitialized(true);
       }
 
-      // Initialize Meta SDK
-      try {
-        if (FBSettings) {
-          FBSettings.setAutoLogAppEventsEnabled(true);
-          FBSettings.setAdvertiserTrackingEnabled(true);
-          console.log('[Meta] SDK initialized');
-        }
-      } catch (metaError) {
-        console.warn('[Meta] Init error (non-critical):', metaError.message);
-      }
-
-      // Request App Tracking Transparency (iOS 14+)
-      try {
-        if (Platform.OS === 'ios') {
-          const { requestTrackingPermissionsAsync } = require('expo-tracking-transparency');
-          const { status } = await requestTrackingPermissionsAsync();
-          console.log('[ATT] Tracking permission status:', status);
-          if (FBSettings) {
-            FBSettings.setAdvertiserTrackingEnabled(status === 'granted');
-          }
-        }
-      } catch (attError) {
-        console.log('[ATT] Permission request error (non-critical):', attError.message);
-      }
     };
 
     // Listen for notification interactions (job reminders)

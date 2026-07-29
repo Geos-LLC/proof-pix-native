@@ -35,7 +35,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "93",
+      buildNumber: "94",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -54,11 +54,6 @@ export default {
         ITSAppUsesNonExemptEncryption: false,
         UIFileSharingEnabled: true,
         LSSupportsOpeningDocumentsInPlace: true,
-        NSUserTrackingUsageDescription: "This identifier will be used to deliver personalized ads and measure campaign performance.",
-        SKAdNetworkItems: [
-          { SKAdNetworkIdentifier: "v9wttpbfk9.skadnetwork" },
-          { SKAdNetworkIdentifier: "n38lu8286q.skadnetwork" },
-        ]
       },
       entitlements: {
         "com.apple.developer.applesignin": ["Default"],
@@ -80,7 +75,7 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 76,
+      versionCode: 77,
       permissions: [
         "CAMERA",
         "WRITE_EXTERNAL_STORAGE",
@@ -173,19 +168,6 @@ export default {
       "./plugins/withImageCompositor.js",
       "./plugins/withMediaStoreSaver.js",
       "react-native-iap",
-      [
-        "react-native-fbsdk-next",
-        {
-          "appID": process.env.EXPO_PUBLIC_FACEBOOK_APP_ID || "1650098936170722",
-          "clientToken": process.env.EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN || "2310b5dd834d666acdfbe3d7182f7d1e",
-          "displayName": "ProofPix",
-          "autoLogAppEventsEnabled": true,
-          "advertiserIDCollectionEnabled": true,
-          "isAutoInitEnabled": true,
-          "iosUserTrackingPermission": "This identifier will be used to deliver personalized ads and measure campaign performance."
-        }
-      ],
-      "expo-tracking-transparency",
       // Strip aps-environment last so any earlier autolinked module that
       // re-injected it gets cleared before Xcode codesigns.
       "./plugins/withStripPushEntitlement.js"

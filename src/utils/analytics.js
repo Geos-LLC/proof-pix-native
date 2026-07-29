@@ -1,4 +1,4 @@
-// Firebase imports - wrapped to handle missing native modules
+﻿// Firebase imports - wrapped to handle missing native modules
 let getApp, getApps, getAnalytics, firebaseLogEvent, firebaseSetUserId, setUserProperty, setAnalyticsCollectionEnabled;
 try {
   const appModule = require('@react-native-firebase/app');
@@ -14,20 +14,6 @@ try {
   console.warn('[Analytics] Firebase native modules not available:', error.message);
   console.warn('[Analytics] Analytics functions will be no-ops. Rebuild app to enable Firebase.');
 }
-
-// Meta (Facebook) SDK imports — note: metaLogPurchase is intentionally NOT
-// imported. Real-money `purchase` events are emitted server-side by the Apple
-// webhook (proof-pix-proxy) via GA4 Measurement Protocol; the client must not
-// fire `purchase` (Firebase) or Meta `Purchase` to avoid double-counting and
-// trial-as-paid inflation. Renewals never reach the client at all.
-import {
-  metaLogPhotoCapture, metaLogPhotoSave, metaLogPhotoExport, metaLogSignIn,
-  metaLogAccountCreated, metaLogTrialEvent, metaLogPlanChanged,
-  metaLogSubscriptionStart,
-  metaLogTeamInvitesCreated, metaLogTeamMemberJoined, metaLogReferralEvent,
-  metaLogCloudAccountConnection, metaLogPhotoUpload, metaLogFeatureGateShown,
-  metaLogInitiateCheckout, metaLogAddPaymentInfo,
-} from './metaAnalytics';
 
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -76,7 +62,7 @@ export const extractAndSaveUTMParams = async (url) => {
       if (__DEV__) console.log('[Analytics] UTM params saved:', utmData);
     }
   } catch {
-    // Non-critical — URL may not be parseable
+    // Non-critical â€” URL may not be parseable
   }
 };
 
@@ -230,7 +216,6 @@ export const logPhotoCapture = (photoType, sourceType = 'camera', projectId = nu
     project_id: projectId,
     timestamp: Date.now(),
   });
-  metaLogPhotoCapture(photoType);
 };
 
 /**
@@ -245,7 +230,6 @@ export const logPhotoSave = (hasLabels = false, labelPosition = null, sourceType
     source_type: sourceType,
     timestamp: Date.now(),
   });
-  metaLogPhotoSave(hasLabels);
 };
 
 /**
@@ -259,7 +243,6 @@ export const logPhotoExport = (exportType, sourceType = 'camera', projectId = nu
     project_id: projectId,
     timestamp: Date.now(),
   });
-  metaLogPhotoExport(exportType);
 };
 
 /**
@@ -284,7 +267,6 @@ export const logSignIn = (method) => {
     method: method,
     timestamp: Date.now(),
   });
-  metaLogSignIn(method);
 };
 
 /**
@@ -332,7 +314,7 @@ export const logLanguageChange = (language) => {
 /**
  * ===== Business / product analytics helpers =====
  * These are thin wrappers around logEvent so you can easily
- * answer high‑level questions in Firebase / BigQuery.
+ * answer highâ€‘level questions in Firebase / BigQuery.
  */
 
 // Accounts & plans ---------------------------------------------------------
@@ -354,7 +336,6 @@ export const logAccountCreated = async (payload = {}) => {
     timestamp: Date.now(),
   });
   logEvent('account_created', params);
-  metaLogAccountCreated(payload);
 };
 
 /**
@@ -371,7 +352,6 @@ export const logPlanChanged = async (fromPlan, toPlan, sourceScreen = 'unknown')
     timestamp: Date.now(),
   });
   logEvent('plan_changed', params);
-  metaLogPlanChanged(fromPlan, toPlan);
 };
 
 // Trials -------------------------------------------------------------------
@@ -393,7 +373,6 @@ export const logTrialEvent = async (action, payload = {}) => {
     timestamp: Date.now(),
   });
   logEvent('trial_event', params);
-  metaLogTrialEvent(action, payload);
 };
 
 // Teams & invites ---------------------------------------------------------
@@ -414,7 +393,6 @@ export const logTeamInvitesCreated = (count, payload = {}) => {
     team_size_after: payload.team_size_after ?? null,
     timestamp: Date.now(),
   });
-  metaLogTeamInvitesCreated(count);
 };
 
 /**
@@ -429,7 +407,6 @@ export const logTeamMemberJoined = (payload = {}) => {
     team_size_after: payload.team_size_after ?? null,
     timestamp: Date.now(),
   });
-  metaLogTeamMemberJoined(payload);
 };
 
 // Referrals ----------------------------------------------------------------
@@ -455,7 +432,6 @@ export const logReferralEvent = (action, payload = {}) => {
     days_added: payload.days_added ?? null,
     timestamp: Date.now(),
   });
-  metaLogReferralEvent(action, payload);
 };
 
 /**
@@ -494,7 +470,6 @@ export const logAdminReferralConversion = async (payload = {}) => {
     days_added: payload.days_added ?? null,
     timestamp: Date.now(),
   });
-  metaLogReferralEvent('admin_referral_conversion', payload);
 };
 
 // Connected accounts -------------------------------------------------------
@@ -512,7 +487,6 @@ export const logCloudAccountConnection = (provider, action, totalConnected) => {
     total_connected: totalConnected ?? null,
     timestamp: Date.now(),
   });
-  metaLogCloudAccountConnection(provider, action);
 };
 
 // Photos, uploads & sharing -----------------------------------------------
@@ -537,7 +511,6 @@ export const logPhotoUpload = (payload = {}) => {
     shared: !!payload.shared,
     timestamp: Date.now(),
   });
-  metaLogPhotoUpload(payload);
 };
 
 // Feature gates / paywalled features --------------------------------------
@@ -555,7 +528,6 @@ export const logFeatureGateShown = (featureKey, userPlan, screen) => {
     screen: screen || 'unknown',
     timestamp: Date.now(),
   });
-  metaLogFeatureGateShown(featureKey, userPlan);
 };
 
 /**
@@ -581,14 +553,14 @@ export const logFeatureGateAction = (featureKey, userPlan, screen, action) => {
 // revenue source of truth is the Apple App Store Server Notifications V2
 // webhook in proof-pix-proxy, which classifies paid vs trial server-side and
 // forwards confirmed paid events to GA4 via the Measurement Protocol.
-// Android Real-Time Developer Notifications (RTDN) is not yet wired — when it
+// Android Real-Time Developer Notifications (RTDN) is not yet wired â€” when it
 // lands it will follow the same model. Do not reintroduce a client-side
 // `logPurchaseCompleted` helper: free-trial starts and paid renewals are
 // indistinguishable from a StoreKit/Play Billing client perspective, and
 // renewals never fire `purchaseUpdatedListener` once the original transaction
 // is finished.
 
-// Trial-expired flag key — read by logSubscriptionStarted to emit trial_converted
+// Trial-expired flag key â€” read by logSubscriptionStarted to emit trial_converted
 const TRIAL_EXPIRED_SUBSCRIBE_FLAG = '@trial_expired_logged';
 
 /**
@@ -604,7 +576,7 @@ const _buildSubscriptionParams = async (payload = {}) => {
 
   // billing_period: prefer the caller's explicit value, otherwise derive from
   // the productId suffix (.annual / .seat). Powers the "annual selection rate"
-  // and "trial→annual conversion" metrics without a Play/ASC pricing refresh.
+  // and "trialâ†’annual conversion" metrics without a Play/ASC pricing refresh.
   const productId = payload.product_id || null;
   let billingPeriod = payload.billing_period || null;
   if (!billingPeriod && productId) {
@@ -631,7 +603,7 @@ const _buildSubscriptionParams = async (payload = {}) => {
     // trial_expiration). Helps audit funnel inflation without grepping code.
     analytics_source: payload.analytics_source || null,
     // Funnel attribution: if this subscription started after a trial expired,
-    // these tag the conversion so GA4 can build "trial → paid" funnels and
+    // these tag the conversion so GA4 can build "trial â†’ paid" funnels and
     // detect cross-tier switches (e.g. trialed Pro, converted to Business).
     was_trial: !!payload.was_trial,
     from_plan: payload.from_plan || null,
@@ -649,7 +621,7 @@ const _buildSubscriptionParams = async (payload = {}) => {
  * App Store Connect / Play Console (or, in the future, by server-side
  * receipt validation).
  *
- * @param {object} payload — see _buildSubscriptionParams
+ * @param {object} payload â€” see _buildSubscriptionParams
  */
 export const logSubscriptionStarted = async (payload = {}) => {
   if (__DEV__) console.log('[Analytics] subscription_started:', payload);
@@ -657,9 +629,8 @@ export const logSubscriptionStarted = async (payload = {}) => {
   logEvent('subscription_started', params);
 
   // Meta (Facebook) SDK: fire standard Subscribe event for ads optimization.
-  // We do NOT fire Meta `Purchase` from the client at all — see top-of-section
+  // We do NOT fire Meta `Purchase` from the client at all â€” see top-of-section
   // comment. Real revenue events come from the server webhook only.
-  metaLogSubscriptionStart(params.plan_id, params.platform);
 
   // Derived event: if trial_expired previously fired, emit trial_converted
   // when the user comes back and starts a paid subscription.
@@ -682,7 +653,7 @@ export const logSubscriptionStarted = async (payload = {}) => {
 /**
  * User restored an existing subscription (manual Restore Purchases tap or
  * launch-time auto-restore that ended with an entitlement). Does NOT fire
- * `purchase` — no money changed hands.
+ * `purchase` â€” no money changed hands.
  */
 export const logSubscriptionRestored = async (payload = {}) => {
   if (__DEV__) console.log('[Analytics] subscription_restored:', payload);
@@ -706,7 +677,7 @@ export const logSubscriptionActive = async (payload = {}) => {
 
 /**
  * User changed plans (cross-tier upgrade or downgrade) on a still-active
- * subscription. Does NOT fire `purchase` — proration is handled by the store.
+ * subscription. Does NOT fire `purchase` â€” proration is handled by the store.
  */
 export const logSubscriptionUpgraded = async (payload = {}) => {
   if (__DEV__) console.log('[Analytics] subscription_upgraded:', payload);
@@ -765,7 +736,7 @@ export const logPaywallView = (extra = {}) => {
     device_id: extra.device_id || null,
     // Default billing cadence the paywall is showing on open. Null when the
     // caller doesn't have a preselected cadence to report (kept for callers
-    // that never set it — GA4 keeps the param but it just reads as `(none)`).
+    // that never set it â€” GA4 keeps the param but it just reads as `(none)`).
     billing_period: extra.billing_period || null,
     timestamp: Date.now(),
   });
@@ -826,7 +797,7 @@ export const logTrialSkipped = () => {
 
 /**
  * Canonical trial-start event. Fires when the user begins a free trial,
- * either via the store's introductory offer (Apple/Google) or — historically —
+ * either via the store's introductory offer (Apple/Google) or â€” historically â€”
  * via the legacy app-side trial. Does NOT fire `purchase` (no money charged).
  *
  * Two call shapes are supported:
@@ -848,9 +819,9 @@ export const logTrialStarted = async (planOrPayload, extra = {}) => {
     payload.provider ||
     (platform === 'ios' ? 'apple' : platform === 'android' ? 'google' : 'unknown');
 
-  // Same derivation as _buildSubscriptionParams — trial starts need the
-  // billing_period tag so GA4 can build "monthly trial → paid" vs
-  // "annual trial → paid" funnels.
+  // Same derivation as _buildSubscriptionParams â€” trial starts need the
+  // billing_period tag so GA4 can build "monthly trial â†’ paid" vs
+  // "annual trial â†’ paid" funnels.
   const productId = payload.product_id || null;
   let billingPeriod = payload.billing_period || null;
   if (!billingPeriod && productId) {
