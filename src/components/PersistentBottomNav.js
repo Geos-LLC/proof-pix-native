@@ -57,6 +57,10 @@ const HIDDEN_ON = new Set([
   // presented as a formSheet with its own X close, so the persistent
   // nav pill would just clutter the sheet body.
   'MarkupSheet',
+  // PhotoEditor is the combined-photo editor with its own Share CTA
+  // pinned to the bottom of the screen. The nav pill floated on top,
+  // covering the Share button — matches the PhotoSetPreview reasoning.
+  'PhotoEditor',
 ]);
 
 // Sub-routes that conceptually belong to the Projects tab (so the active

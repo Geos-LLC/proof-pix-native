@@ -14,6 +14,7 @@ import {
   Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -126,6 +127,11 @@ export default function PhotoEditorScreen({ route, navigation }) {
   const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms, softTrialActive, softTrialRemaining, refreshSoftTrial, userPlan } = useSettings();
   const { effectivePlan } = useFeaturePermissions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  // Local override for the header eye toggle. Seeds from the user's
+  // global showLabels preference so the first render matches the rest
+  // of the app, but toggling here only affects this preview — mirrors
+  // the Overlays switch on PhotoSetPreview / EnlargedPhotoViewer.
+  const [overlaysOn, setOverlaysOn] = useState(showLabels);
   const { width, height } = Dimensions.get('window');
   
   // Debug: Log showLabels value
@@ -732,10 +738,10 @@ export default function PhotoEditorScreen({ route, navigation }) {
             onLoad={() => {
             }}
           />
-          {/* Show labels overlay on original images if showLabels is true */}
+          {/* Show labels overlay on original images if overlays are on */}
           {/* For STACK: before is on top, after is on bottom */}
           {/* For SIDE: before is on left, after is on right */}
-          {showLabels && (() => {
+          {overlaysOn && (() => {
             // Decide which orientation's saved positions to apply by looking
             // at the per-half aspect: in STACK each half is wide-and-short
             // (landscape); in SIDE each half is narrow-and-tall (portrait).
@@ -824,8 +830,8 @@ export default function PhotoEditorScreen({ route, navigation }) {
             onLoad={() => {
             }}
           />
-          {/* Show BEFORE label only if showLabels is true */}
-          {showLabels && (
+          {/* Show BEFORE label only if overlays are on */}
+          {overlaysOn && (
             <PhotoLabel label="common.before" position={combinedLabelPosition} />
           )}
         </View>
@@ -840,8 +846,8 @@ export default function PhotoEditorScreen({ route, navigation }) {
             onLoad={() => {
             }}
           />
-          {/* Show AFTER label only if showLabels is true */}
-          {showLabels && (
+          {/* Show AFTER label only if overlays are on */}
+          {overlaysOn && (
             <PhotoLabel label="common.after" position={combinedLabelPosition} />
           )}
         </View>
@@ -877,27 +883,56 @@ export default function PhotoEditorScreen({ route, navigation }) {
       </View>
 
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => {
-            if (navigation.canGoBack()) {
-              navigation.goBack();
-            } else {
-              navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-            }
-          }}
-        >
-          <Text style={styles.backButtonText}>←</Text>
-        </TouchableOpacity>
-        
+        {/* Left cluster: back chevron + edit pencil — matches the
+            PhotoSetPreview header so the two viewers feel like the
+            same surface. Edit hands off to StudioDetail rooted on the
+            Before source (Studio edits combined labels via source). */}
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+              }
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="chevron-back" size={26} color={COLORS.PRIMARY} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('StudioDetail', { photoId: currentPhotoSet.before.id })}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="pencil-outline" size={22} color={theme.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.titleContainer}>
           <Text style={styles.title}>{currentPhotoSet.before.name}</Text>
           <Text style={[styles.subtitle, { color: '#FFC107' }]}>{t('common.combined').toUpperCase()}</Text>
         </View>
-        
-        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-          <Text style={styles.deleteButtonText}>🗑️</Text>
-        </TouchableOpacity>
+
+        {/* Right cluster: labels-on/off eye + delete trash. Eye toggles
+            the local overlays override — global setting is untouched. */}
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            onPress={() => setOverlaysOn((v) => !v)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons
+              name={overlaysOn ? 'eye-outline' : 'eye-off-outline'}
+              size={22}
+              color={theme.textPrimary}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleDelete}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="trash-outline" size={22} color={theme.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Upper part - Photo swiping area */}
@@ -1021,11 +1056,16 @@ const makeStyles = (theme) => StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold'
   },
+  headerSide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
   title: {
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.TEXT
+    color: theme.textPrimary
   },
   titleContainer: {
     flex: 1,
@@ -1140,7 +1180,7 @@ const makeStyles = (theme) => StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.TEXT,
+    color: theme.textPrimary,
     marginBottom: 12
   },
   templateScrollContent: {
@@ -1167,12 +1207,12 @@ const makeStyles = (theme) => StyleSheet.create({
   },
   templateButtonText: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.GRAY,
+    color: theme.textMuted,
     fontWeight: '600'
   },
   templateButtonTextActive: {
     fontFamily: FONTS.ALEXANDRIA,
-    color: COLORS.TEXT
+    color: theme.textPrimary
   },
   // Refresh: primary CTA per design.
   shareButton: {
