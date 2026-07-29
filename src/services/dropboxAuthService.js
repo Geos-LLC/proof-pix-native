@@ -1,6 +1,9 @@
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  readSecure, writeSecure, deleteSecure,
+  readSecureJSON, writeSecureJSON,
+} from './secureStorageService';
 
 // Complete the auth session properly
 WebBrowser.maybeCompleteAuthSession();
@@ -12,9 +15,14 @@ const STORAGE_KEYS = {
   DROPBOX_TOKEN_EXPIRY: '@dropbox_token_expiry',
 };
 
-// Dropbox OAuth configuration
-// These should be set in your .env file or app.config.js
-const DROPBOX_APP_KEY = process.env.EXPO_PUBLIC_DROPBOX_APP_KEY || '78ht1k015widero';
+// Dropbox OAuth configuration. Must be set via EAS env var
+// EXPO_PUBLIC_DROPBOX_APP_KEY (production + preview environments). No
+// fallback — a silent fallback would keep using a compromised value if the
+// env var was ever accidentally unset.
+const DROPBOX_APP_KEY = process.env.EXPO_PUBLIC_DROPBOX_APP_KEY;
+if (!DROPBOX_APP_KEY) {
+  console.warn('[DROPBOX] EXPO_PUBLIC_DROPBOX_APP_KEY not set — Dropbox sign-in will fail');
+}
 const DROPBOX_REDIRECT_URI = AuthSession.makeRedirectUri({
   scheme: 'proofpix',
   path: 'dropbox-auth',
@@ -49,21 +57,21 @@ class DropboxAuthService {
   }
 
   /**
-   * Load stored tokens from AsyncStorage
+   * Load stored tokens from secure (keychain-backed) storage.
    */
   async loadStoredTokens() {
     try {
-      const [accessToken, refreshToken, userInfoStr, expiryStr] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.DROPBOX_ACCESS_TOKEN),
-        AsyncStorage.getItem(STORAGE_KEYS.DROPBOX_REFRESH_TOKEN),
-        AsyncStorage.getItem(STORAGE_KEYS.DROPBOX_USER_INFO),
-        AsyncStorage.getItem(STORAGE_KEYS.DROPBOX_TOKEN_EXPIRY),
+      const [accessToken, refreshToken, userInfo, expiryStr] = await Promise.all([
+        readSecure(STORAGE_KEYS.DROPBOX_ACCESS_TOKEN),
+        readSecure(STORAGE_KEYS.DROPBOX_REFRESH_TOKEN),
+        readSecureJSON(STORAGE_KEYS.DROPBOX_USER_INFO),
+        readSecure(STORAGE_KEYS.DROPBOX_TOKEN_EXPIRY),
       ]);
 
       if (accessToken) {
         this.accessToken = accessToken;
         this.refreshToken = refreshToken;
-        this.userInfo = userInfoStr ? JSON.parse(userInfoStr) : null;
+        this.userInfo = userInfo;
         this.tokenExpiry = expiryStr ? parseInt(expiryStr, 10) : null;
 
         // Check if token is expired
@@ -87,17 +95,17 @@ class DropboxAuthService {
   }
 
   /**
-   * Store tokens in AsyncStorage
+   * Store tokens in secure (keychain-backed) storage.
    */
   async storeTokens(accessToken, refreshToken, userInfo, expiresIn) {
     try {
       const expiryTime = expiresIn ? Date.now() + (expiresIn * 1000) - 60000 : null; // Subtract 1 minute for safety
-      
+
       await Promise.all([
-        AsyncStorage.setItem(STORAGE_KEYS.DROPBOX_ACCESS_TOKEN, accessToken),
-        refreshToken && AsyncStorage.setItem(STORAGE_KEYS.DROPBOX_REFRESH_TOKEN, refreshToken),
-        userInfo && AsyncStorage.setItem(STORAGE_KEYS.DROPBOX_USER_INFO, JSON.stringify(userInfo)),
-        expiryTime && AsyncStorage.setItem(STORAGE_KEYS.DROPBOX_TOKEN_EXPIRY, String(expiryTime)),
+        writeSecure(STORAGE_KEYS.DROPBOX_ACCESS_TOKEN, accessToken),
+        refreshToken && writeSecure(STORAGE_KEYS.DROPBOX_REFRESH_TOKEN, refreshToken),
+        userInfo && writeSecureJSON(STORAGE_KEYS.DROPBOX_USER_INFO, userInfo),
+        expiryTime && writeSecure(STORAGE_KEYS.DROPBOX_TOKEN_EXPIRY, String(expiryTime)),
       ]);
 
       this.accessToken = accessToken;
@@ -116,10 +124,10 @@ class DropboxAuthService {
   async clearTokens() {
     try {
       await Promise.all([
-        AsyncStorage.removeItem(STORAGE_KEYS.DROPBOX_ACCESS_TOKEN),
-        AsyncStorage.removeItem(STORAGE_KEYS.DROPBOX_REFRESH_TOKEN),
-        AsyncStorage.removeItem(STORAGE_KEYS.DROPBOX_USER_INFO),
-        AsyncStorage.removeItem(STORAGE_KEYS.DROPBOX_TOKEN_EXPIRY),
+        deleteSecure(STORAGE_KEYS.DROPBOX_ACCESS_TOKEN),
+        deleteSecure(STORAGE_KEYS.DROPBOX_REFRESH_TOKEN),
+        deleteSecure(STORAGE_KEYS.DROPBOX_USER_INFO),
+        deleteSecure(STORAGE_KEYS.DROPBOX_TOKEN_EXPIRY),
       ]);
 
       this.accessToken = null;

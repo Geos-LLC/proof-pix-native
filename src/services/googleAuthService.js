@@ -1,5 +1,8 @@
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  readSecure, writeSecure, deleteSecure,
+  readSecureJSON, writeSecureJSON,
+} from './secureStorageService';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
@@ -100,13 +103,15 @@ class GoogleAuthService {
       const idToken = responseData.idToken || null;
       const serverAuthCode = responseData.serverAuthCode || null;
 
-      // Store the full response for later retrieval
+      // Store the full response in keychain-backed storage. responseData
+      // contains idToken + serverAuthCode which are bearer credentials for
+      // /api/admin/init and must not sit in plain AsyncStorage.
       this.currentUser = responseData;
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(responseData));
+      await writeSecureJSON(STORAGE_KEY, responseData);
 
       // Store server auth code if available
       if (serverAuthCode) {
-        await AsyncStorage.setItem(SERVER_AUTH_CODE_KEY, serverAuthCode);
+        await writeSecure(SERVER_AUTH_CODE_KEY, serverAuthCode);
       }
 
       console.log('[GoogleAuthService] Sign in successful:', user.email);
@@ -161,7 +166,7 @@ class GoogleAuthService {
       // v16+: signInSilently returns same format as signIn
       if (response && response.type === 'success' && response.data) {
         this.currentUser = response.data;
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(response.data));
+        await writeSecureJSON(STORAGE_KEY, response.data);
         // Return user info in the expected format
         const user = response.data.user || response.data;
         return {
@@ -195,9 +200,8 @@ class GoogleAuthService {
         };
       }
 
-      const storedInfo = await AsyncStorage.getItem(STORAGE_KEY);
-      if (storedInfo) {
-        const parsed = JSON.parse(storedInfo);
+      const parsed = await readSecureJSON(STORAGE_KEY);
+      if (parsed) {
         this.currentUser = parsed;
         const user = parsed.user || parsed;
         return {
@@ -222,8 +226,8 @@ class GoogleAuthService {
       this.configure();
       await GoogleSignin.signOut();
       this.currentUser = null;
-      await AsyncStorage.removeItem(STORAGE_KEY);
-      await AsyncStorage.removeItem(SERVER_AUTH_CODE_KEY);
+      await deleteSecure(STORAGE_KEY);
+      await deleteSecure(SERVER_AUTH_CODE_KEY);
       console.log('[GoogleAuthService] Signed out successfully');
     } catch (error) {
       console.error('[GoogleAuthService] Sign out error:', error);
@@ -319,9 +323,8 @@ class GoogleAuthService {
 
   async getStoredUserInfo() {
     try {
-      const storedInfo = await AsyncStorage.getItem(STORAGE_KEY);
-      if (storedInfo) {
-        const parsed = JSON.parse(storedInfo);
+      const parsed = await readSecureJSON(STORAGE_KEY);
+      if (parsed) {
         // Handle both old format (with nested user) and new format (flat structure)
         const user = parsed.user || parsed;
         return {
@@ -343,7 +346,7 @@ class GoogleAuthService {
   async clearUserInfo() {
     try {
       this.currentUser = null;
-      await AsyncStorage.removeItem(STORAGE_KEY);
+      await deleteSecure(STORAGE_KEY);
     } catch (error) {
       console.error('[GoogleAuthService] clearUserInfo error:', error);
     }
@@ -351,8 +354,7 @@ class GoogleAuthService {
 
   async getServerAuthCode() {
     try {
-      const code = await AsyncStorage.getItem(SERVER_AUTH_CODE_KEY);
-      return code;
+      return await readSecure(SERVER_AUTH_CODE_KEY);
     } catch (error) {
       console.error('[GoogleAuthService] getServerAuthCode error:', error);
       return null;
@@ -371,7 +373,7 @@ class GoogleAuthService {
       const silent = await GoogleSignin.signInSilently();
       if (silent?.data?.serverAuthCode) {
         console.log('[GoogleAuthService] Got fresh serverAuthCode via silent sign-in');
-        await AsyncStorage.setItem(SERVER_AUTH_CODE_KEY, silent.data.serverAuthCode);
+        await writeSecure(SERVER_AUTH_CODE_KEY, silent.data.serverAuthCode);
         return silent.data.serverAuthCode;
       }
 
@@ -379,7 +381,7 @@ class GoogleAuthService {
       // Do NOT call interactive signIn() here; the user already authorized
       // and should not be prompted again just to upload.
       console.log('[GoogleAuthService] Silent sign-in did not provide serverAuthCode, checking stored code...');
-      const storedCode = await AsyncStorage.getItem(SERVER_AUTH_CODE_KEY);
+      const storedCode = await readSecure(SERVER_AUTH_CODE_KEY);
       if (storedCode) {
         console.log('[GoogleAuthService] Using stored serverAuthCode');
         return storedCode;
@@ -391,7 +393,7 @@ class GoogleAuthService {
       console.warn('[GoogleAuthService] refreshServerAuthCode error:', error?.message);
       // Still try the stored code as last resort
       try {
-        const storedCode = await AsyncStorage.getItem(SERVER_AUTH_CODE_KEY);
+        const storedCode = await readSecure(SERVER_AUTH_CODE_KEY);
         if (storedCode) return storedCode;
       } catch (_) {}
       return null;
@@ -400,7 +402,7 @@ class GoogleAuthService {
 
   async clearServerAuthCode() {
     try {
-      await AsyncStorage.removeItem(SERVER_AUTH_CODE_KEY);
+      await deleteSecure(SERVER_AUTH_CODE_KEY);
     } catch (error) {
       console.error('[GoogleAuthService] clearServerAuthCode error:', error);
     }

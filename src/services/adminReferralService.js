@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 
 const PROXY_SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL || 'https://steadfast-blessing-production.up.railway.app';
 
@@ -19,13 +20,18 @@ const STORAGE_KEYS = {
   ADMIN_REFERRAL_REDEEMED: '@admin_referral_redeemed',
 };
 
-// Code generation — uppercase alphanumeric, no ambiguous chars (O/0/I/1)
+// Code generation — uppercase alphanumeric, no ambiguous chars (O/0/I/1).
+// Uses expo-crypto's CSPRNG; Math.random's V8 xorshift128+ state is
+// recoverable from a handful of adjacent outputs, so an attacker who
+// observed a few operator-issued codes could predict the next one and
+// redeem +bonusTrialDays before the operator did.
 const CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export const generateCode = (length = 7) => {
+  const bytes = Crypto.getRandomBytes(length);
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += CHARSET[Math.floor(Math.random() * CHARSET.length)];
+    result += CHARSET[bytes[i] % CHARSET.length];
   }
   return result;
 };

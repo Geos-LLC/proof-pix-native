@@ -1,4 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  readSecure, writeSecure, deleteSecure,
+  readSecureJSON, writeSecureJSON,
+} from './secureStorageService';
 import { Platform } from 'react-native';
 
 // Try to import AppleAuthentication, but handle gracefully if not available
@@ -81,11 +84,13 @@ class AppleAuthService {
         familyName: fullName?.familyName || null,
       };
 
-      // Store credentials
+      // Store credentials in keychain-backed storage — identityToken and
+      // authorizationCode are bearer credentials for /api/admin/init and
+      // must not sit in plain AsyncStorage.
       await this.storeUserInfo(userInfo);
-      await AsyncStorage.setItem(STORAGE_KEYS.APPLE_ID_TOKEN, identityToken);
-      await AsyncStorage.setItem(STORAGE_KEYS.APPLE_AUTH_CODE, authorizationCode);
-      await AsyncStorage.setItem(STORAGE_KEYS.APPLE_USER_ID, user);
+      await writeSecure(STORAGE_KEYS.APPLE_ID_TOKEN, identityToken);
+      await writeSecure(STORAGE_KEYS.APPLE_AUTH_CODE, authorizationCode);
+      await writeSecure(STORAGE_KEYS.APPLE_USER_ID, user);
 
       console.log('[APPLE_AUTH] ✅ Sign in successful');
 
@@ -124,11 +129,7 @@ class AppleAuthService {
    */
   async getStoredUserInfo() {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.APPLE_USER_INFO);
-      if (data) {
-        return JSON.parse(data);
-      }
-      return null;
+      return await readSecureJSON(STORAGE_KEYS.APPLE_USER_INFO);
     } catch (error) {
       return null;
     }
@@ -140,7 +141,7 @@ class AppleAuthService {
    */
   async getIdentityToken() {
     try {
-      return await AsyncStorage.getItem(STORAGE_KEYS.APPLE_ID_TOKEN);
+      return await readSecure(STORAGE_KEYS.APPLE_ID_TOKEN);
     } catch (error) {
       console.error('[APPLE_AUTH] Error getting identity token:', error);
       return null;
@@ -153,7 +154,7 @@ class AppleAuthService {
    */
   async getAuthorizationCode() {
     try {
-      return await AsyncStorage.getItem(STORAGE_KEYS.APPLE_AUTH_CODE);
+      return await readSecure(STORAGE_KEYS.APPLE_AUTH_CODE);
     } catch (error) {
       console.error('[APPLE_AUTH] Error getting authorization code:', error);
       return null;
@@ -166,7 +167,7 @@ class AppleAuthService {
    */
   async getUserId() {
     try {
-      return await AsyncStorage.getItem(STORAGE_KEYS.APPLE_USER_ID);
+      return await readSecure(STORAGE_KEYS.APPLE_USER_ID);
     } catch (error) {
       return null;
     }
@@ -177,7 +178,7 @@ class AppleAuthService {
    */
   async clearAuthorizationCode() {
     try {
-      await AsyncStorage.removeItem(STORAGE_KEYS.APPLE_AUTH_CODE);
+      await deleteSecure(STORAGE_KEYS.APPLE_AUTH_CODE);
     } catch (error) {
       console.error('[APPLE_AUTH] Error clearing authorization code:', error);
     }
@@ -206,7 +207,7 @@ class AppleAuthService {
    */
   async storeUserInfo(userInfo) {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.APPLE_USER_INFO, JSON.stringify(userInfo));
+      await writeSecureJSON(STORAGE_KEYS.APPLE_USER_INFO, userInfo);
     } catch (error) {
       console.error('[APPLE_AUTH] Error storing user info:', error);
     }
@@ -218,10 +219,12 @@ class AppleAuthService {
    */
   async clearUserInfo() {
     try {
-      await AsyncStorage.removeItem(STORAGE_KEYS.APPLE_USER_INFO);
-      await AsyncStorage.removeItem(STORAGE_KEYS.APPLE_ID_TOKEN);
-      await AsyncStorage.removeItem(STORAGE_KEYS.APPLE_AUTH_CODE);
-      await AsyncStorage.removeItem(STORAGE_KEYS.APPLE_USER_ID);
+      await Promise.all([
+        deleteSecure(STORAGE_KEYS.APPLE_USER_INFO),
+        deleteSecure(STORAGE_KEYS.APPLE_ID_TOKEN),
+        deleteSecure(STORAGE_KEYS.APPLE_AUTH_CODE),
+        deleteSecure(STORAGE_KEYS.APPLE_USER_ID),
+      ]);
     } catch (error) {
       console.error('[APPLE_AUTH] Failed to clear user info:', error);
     }
