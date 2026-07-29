@@ -341,6 +341,7 @@ class ProxyService {
         // before when they're absent.
         crmJobId,
         photoId,
+        overrides,
       } = uploadParams;
 
       console.log('[PROXY] Uploading photo as team member:', { 
@@ -377,6 +378,9 @@ class ProxyService {
         formData.append('filename', filename);
         if (crmJobId) formData.append('crmJobId', String(crmJobId));
         if (photoId) formData.append('photoId', String(photoId));
+        if (overrides && typeof overrides === 'object') {
+          try { formData.append('overrides', JSON.stringify(overrides)); } catch {}
+        }
 
         response = await authFetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
           method: 'POST',
@@ -407,6 +411,7 @@ class ProxyService {
             accountType: 'google',
             ...(crmJobId ? { crmJobId: String(crmJobId) } : {}),
             ...(photoId ? { photoId: String(photoId) } : {}),
+            ...(overrides && typeof overrides === 'object' ? { overrides } : {}),
           }),
         });
       }

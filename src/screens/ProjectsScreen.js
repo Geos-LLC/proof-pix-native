@@ -1583,6 +1583,34 @@ export default function ProjectsScreen({ navigation, route }) {
     setTpViewerPhoto(null);
   };
 
+  // Slice D: primary caption for a team-uploaded photo. Prefers the
+  // room + type pair (set at capture by the team member) and falls
+  // back to null so callers can substitute the filename. Kept
+  // display-only; the underlying `overrides` object flows through
+  // untouched for a future PhotoLabels-overlay renderer.
+  const formatTeamPhotoCaption = (photo) => {
+    if (!photo) return null;
+    const room = photo.room && photo.room !== 'general' ? String(photo.room) : null;
+    const rawType = photo.type ? String(photo.type) : null;
+    const type = rawType === 'combined' ? 'Combined' : rawType === 'before' ? 'Before' : rawType === 'after' ? 'After' : rawType;
+    const parts = [];
+    if (room) parts.push(room);
+    if (type) parts.push(type);
+    return parts.length ? parts.join(' · ') : null;
+  };
+
+  // Secondary caption line: capturedBy + "Custom labels" hint when
+  // the team member customized label position/color for this photo.
+  const formatTeamPhotoSubcaption = (photo) => {
+    if (!photo) return null;
+    const parts = [];
+    if (photo.capturedBy) parts.push(`by ${photo.capturedBy}`);
+    if (photo.overrides && typeof photo.overrides === 'object' && Object.keys(photo.overrides).length > 0) {
+      parts.push('Custom labels');
+    }
+    return parts.length ? parts.join(' · ') : null;
+  };
+
   // Drive thumbnailLinks look like ".../s220"; swap the suffix to
   // get a higher-res version for the viewer without hitting Drive
   // again (Google's user-content CDN handles the resize).
@@ -3365,25 +3393,35 @@ export default function ProjectsScreen({ navigation, route }) {
                     contentContainerStyle={{ paddingHorizontal: padH, paddingBottom: 20 }}
                     columnWrapperStyle={{ gap: gutter }}
                     ItemSeparatorComponent={() => <View style={{ height: gutter }} />}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        onPress={() => setTpViewerPhoto(item)}
-                        style={{ width: tile, height: tile, backgroundColor: theme.surfaceElevated, borderRadius: 6, overflow: 'hidden' }}
-                      >
-                        {item.thumbnailLink ? (
-                          <Image
-                            source={{ uri: item.thumbnailLink }}
-                            style={{ width: '100%', height: '100%' }}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                            <Ionicons name="image-outline" size={20} color={theme.textMuted} />
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    )}
+                    renderItem={({ item }) => {
+                      const caption = formatTeamPhotoCaption(item);
+                      return (
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          onPress={() => setTpViewerPhoto(item)}
+                          style={{ width: tile, height: tile, backgroundColor: theme.surfaceElevated, borderRadius: 6, overflow: 'hidden' }}
+                        >
+                          {item.thumbnailLink ? (
+                            <Image
+                              source={{ uri: item.thumbnailLink }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                              <Ionicons name="image-outline" size={20} color={theme.textMuted} />
+                            </View>
+                          )}
+                          {caption ? (
+                            <View style={teamPhotosStyles.gridCaption}>
+                              <Text style={teamPhotosStyles.gridCaptionText} numberOfLines={1}>
+                                {caption}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    }}
                   />
                 );
               })()
@@ -3412,13 +3450,21 @@ export default function ProjectsScreen({ navigation, route }) {
                     resizeMode="contain"
                   />
                 ) : null}
-                {tpViewerPhoto?.name ? (
-                  <View style={[teamPhotosStyles.viewerCaption, { bottom: Math.max(insets.bottom + 16, 32) }]}>
-                    <Text style={teamPhotosStyles.viewerCaptionText} numberOfLines={1}>
-                      {tpViewerPhoto.name}
-                    </Text>
-                  </View>
-                ) : null}
+                {(() => {
+                  const primary = formatTeamPhotoCaption(tpViewerPhoto) || tpViewerPhoto?.name;
+                  const secondary = formatTeamPhotoSubcaption(tpViewerPhoto);
+                  if (!primary && !secondary) return null;
+                  return (
+                    <View style={[teamPhotosStyles.viewerCaption, { bottom: Math.max(insets.bottom + 16, 32) }]}>
+                      {primary ? (
+                        <Text style={teamPhotosStyles.viewerCaptionText} numberOfLines={1}>{primary}</Text>
+                      ) : null}
+                      {secondary ? (
+                        <Text style={teamPhotosStyles.viewerSubcaptionText} numberOfLines={1}>{secondary}</Text>
+                      ) : null}
+                    </View>
+                  );
+                })()}
               </View>
             </TouchableWithoutFeedback>
           ) : null}
@@ -3495,6 +3541,28 @@ const teamPhotosStyles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FONTS.ALEXANDRIA,
     textAlign: 'center',
+  },
+  viewerSubcaptionText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 11,
+    fontFamily: FONTS.ALEXANDRIA,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  gridCaption: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  gridCaptionText: {
+    color: '#fff',
+    fontSize: 10,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontWeight: '600',
   },
 });
 

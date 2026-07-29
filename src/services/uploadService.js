@@ -554,6 +554,7 @@ export async function uploadPhotoAsTeamMember({
   // stable id used as SF's dedup key. Both fields are optional.
   crmJobId,
   photoId,
+  overrides,
 }) {
   // Per-photo telemetry: original file size, base64 payload size (iOS
   // path only), request duration, success. Emitted under
@@ -623,6 +624,7 @@ export async function uploadPhotoAsTeamMember({
       flat,
       crmJobId,
       photoId,
+      overrides,
     });
     console.warn('[TEAM_UPLOAD] photo ok', {
       platform: Platform.OS,
@@ -907,6 +909,10 @@ export async function uploadPhotoBatch(photos, config) {
             // dedup key.
             crmJobId: photo.crmJobId || null,
             photoId: photo.id ? String(photo.id) : null,
+            // Slice D: forward per-photo overrides (label position,
+            // color, room override, etc.) so admin's Team Photos view
+            // can render the same labels the team member saw.
+            overrides: photo.overrides || null,
           })
         : uploadPhoto({
             imageDataUrl: photoUri, // Use the potentially labeled URI

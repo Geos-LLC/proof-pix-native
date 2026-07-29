@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-upload-master-v12-' + Date.now() + ' — TEAM_UPLOAD_ENABLED flipped to true; auto-sync gate lifted for all Google-backed admins. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-photo-meta-v13-' + Date.now() + ' — Team-photo uploads now include per-photo overrides + room/type/capturedBy meta; admin Team Photos grid & viewer show captions from that meta. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
