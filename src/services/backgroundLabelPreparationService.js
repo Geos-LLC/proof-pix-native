@@ -7,6 +7,22 @@ class BackgroundLabelPreparationService {
   constructor() {
     this.pendingPreparations = new Map(); // Map of photoId -> preparation data
     this.listeners = new Set(); // Listeners for preparation updates
+    // Timestamp of the most recent camera shutter. Used by
+    // GlobalBackgroundLabelPreparation on Android to defer the
+    // native addLabelToImage bake while the user is actively
+    // capturing — the native decode/draw/re-encode contends with
+    // vision-camera's shared resources and stalls the next shutter
+    // by ~500-800ms per queued item.
+    this.lastCameraCaptureAt = 0;
+  }
+
+  markCameraCapture() {
+    this.lastCameraCaptureAt = Date.now();
+  }
+
+  msSinceLastCapture() {
+    if (!this.lastCameraCaptureAt) return Infinity;
+    return Date.now() - this.lastCameraCaptureAt;
   }
 
   /**

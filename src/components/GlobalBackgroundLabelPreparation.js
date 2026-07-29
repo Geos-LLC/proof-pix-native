@@ -8,6 +8,7 @@
  */
 
 import React, { useEffect, useCallback, useRef } from 'react';
+import { Platform } from 'react-native';
 import backgroundLabelPreparationService from '../services/backgroundLabelPreparationService';
 import { saveCachedLabeledPhoto } from '../services/labelCacheService';
 import { PHOTO_MODES } from '../constants/rooms';
@@ -17,6 +18,13 @@ import { useTranslation } from 'react-i18next';
 
 const DEFAULT_WATERMARK_TEXT = 'Created with ProofPix.app';
 const DEFAULT_WATERMARK_OPACITY = 0.5;
+
+// Android-only cooldown: native addLabelToImage contends with
+// vision-camera's shared resources and stalls the next shutter.
+// Defer label bakes while the user is actively capturing; drain
+// once they pause. Kept off iOS where the contention isn't observed.
+const CAMERA_COOLDOWN_MS = 2000;
+const COOLDOWN_RECHECK_MS = 500;
 
 export default function GlobalBackgroundLabelPreparation() {
   // Use refs for processing state to avoid React re-render delays
@@ -489,24 +497,34 @@ export default function GlobalBackgroundLabelPreparation() {
     }
   }, [convertLabelPosition, t]);
 
-  // Check for next item in queue and process immediately
+  // Check for next item in queue and process immediately (or defer
+  // on Android while the camera is actively firing — see
+  // CAMERA_COOLDOWN_MS above).
   const processNextInQueue = useCallback(() => {
     const state = backgroundLabelPreparationService.getState();
     const pending = state.pendingPreparations;
-    if (pending.length > 0 && !isProcessingRef.current) {
-      processPhoto(pending[0]);
+    if (pending.length === 0 || isProcessingRef.current) return;
+
+    if (Platform.OS === 'android') {
+      const since = backgroundLabelPreparationService.msSinceLastCapture();
+      if (since < CAMERA_COOLDOWN_MS) {
+        // Camera is hot — retry after a short window so a burst of
+        // shots completes before we start native bakes. Cooldown
+        // resets each time CameraScreen bumps markCameraCapture().
+        setTimeout(processNextInQueue, COOLDOWN_RECHECK_MS);
+        return;
+      }
     }
+
+    processPhoto(pending[0]);
   }, [processPhoto]);
 
   useEffect(() => {
     // Subscribe to preparation service updates
     // When new items are queued, process immediately if not already processing
-    const unsubscribe = backgroundLabelPreparationService.subscribe((state) => {
+    const unsubscribe = backgroundLabelPreparationService.subscribe(() => {
       if (!isProcessingRef.current) {
-        const pending = state.pendingPreparations;
-        if (pending.length > 0) {
-          processPhoto(pending[0]);
-        }
+        processNextInQueue();
       }
     });
 
@@ -514,7 +532,7 @@ export default function GlobalBackgroundLabelPreparation() {
     processNextInQueue();
 
     return unsubscribe;
-  }, [processPhoto, processNextInQueue]);
+  }, [processNextInQueue]);
 
   // This component doesn't render anything visible - it works in the background
   return null;

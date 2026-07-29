@@ -1745,6 +1745,10 @@ export default function CameraScreen({ route, navigation }) {
 
     try {
       setIsCapturing(true);
+      // Signal to GlobalBackgroundLabelPreparation that the camera is
+      // hot — on Android it defers native label bakes for ~2s so the
+      // next shutter isn't blocked by BitmapFactory contention.
+      backgroundLabelPreparationService.markCameraCapture();
 
       // Auto-create a project on first photo if none exists
       if (!activeProjectId && projects.length === 0) {
@@ -1861,6 +1865,7 @@ export default function CameraScreen({ route, navigation }) {
       Alert.alert('Error', `Failed to take picture: ${msg}`);
     } finally {
       setIsCapturing(false);
+      backgroundLabelPreparationService.markCameraCapture();
     }
   };
 
