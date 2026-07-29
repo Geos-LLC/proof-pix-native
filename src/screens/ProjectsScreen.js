@@ -99,11 +99,14 @@ export default function ProjectsScreen({ navigation, route }) {
   // pulls a wider window (-30d..+30d) so switching chips reveals the
   // slice we already have in memory instead of re-fetching.
   const [dateFilter, setDateFilter] = useState('all');
-  // Cleaner filter on Team tab. `null` = show all SF projects,
-  // otherwise the SF team_member_id — filters local SF projects
-  // where crmJobMeta.teamMemberId matches OR the id appears in
-  // crmJobMeta.teamMemberIds. Cleaners loaded from the proxy's
-  // passthrough to SF's /sf-team-members on Team tab mount.
+  // Cleaner filter on Team tab. `null` = show everything. Otherwise:
+  //   { kind: 'sf', id: number }    — matches local SF projects where
+  //                                    crmJobMeta.teamMemberId(s) match
+  //   { kind: 'cloud', name: string } — matches cloud team-projects where
+  //                                     ownerName equals the chip label
+  // SF cleaners come from the proxy's passthrough to SF's
+  // /sf-team-members; cloud owners are derived from teamProjects'
+  // ownerName. Both sources render as chips in the same row.
   const [cleanerFilter, setCleanerFilter] = useState(null);
   const [sfCleanerList, setSfCleanerList] = useState([]);
   const [actionSheetProject, setActionSheetProject] = useState(null);
@@ -1439,6 +1442,24 @@ export default function ProjectsScreen({ navigation, route }) {
     return 0;
   };
 
+  // TZ-safe day-bucketing helper. Prefer SF's raw scheduled_date
+  // string (YYYY-MM-DD in the workspace's TZ) so a job SF says is
+  // "tomorrow" lands in Tomorrow regardless of the device's TZ. Bit
+  // us with Katrina Holt 2026-07-28: a job at 00:30 workspace-TZ
+  // parsed to a scheduledAt whose device-local day was one day
+  // earlier. When scheduledDate is absent (older data or non-SF
+  // projects), fall back to the ts-based math projectFilterTs uses.
+  const projectDayTs = (p) => {
+    const sd = p?.crmJobMeta?.scheduledDate;
+    if (typeof sd === 'string' && /^\d{4}-\d{2}-\d{2}/.test(sd)) {
+      const [y, m, d] = sd.slice(0, 10).split('-').map(Number);
+      if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+        return new Date(y, m - 1, d).getTime();
+      }
+    }
+    return projectFilterTs(p);
+  };
+
   // Compare helper for the "time asc, then name A→Z" sort applied to
   // both filtered lists. Undated projects fall to the bottom (Infinity
   // keeps them out of scheduled work) — deliberate so cleaners see
@@ -1482,7 +1503,7 @@ export default function ProjectsScreen({ navigation, route }) {
     if (q) list = list.filter((p) => (p.name || '').toLowerCase().includes(q));
     if (dateFilterRange) {
       list = list.filter((p) => {
-        const ts = projectFilterTs(p);
+        const ts = projectDayTs(p);
         if (!ts) return false;
         return ts >= dateFilterRange.from && ts < dateFilterRange.to;
       });
@@ -1583,6 +1604,25 @@ export default function ProjectsScreen({ navigation, route }) {
     setTpViewerPhoto(null);
   };
 
+  // Slice D+: resolve the photo's type (before/after/combined) from
+  // stored meta first, then fall back to parsing the filename
+  // suffix. Legacy uploads (before the meta pipeline landed) have no
+  // photo.type but do have filenames like "seed_kitchen_12_after.jpg"
+  // — the suffix carries the type reliably because uploadService
+  // constructs filenames as `${name}_${format!=='default'?format:typeParam}.jpg`.
+  const resolveTeamPhotoType = (photo) => {
+    if (!photo) return null;
+    if (photo.type) {
+      const t = String(photo.type).toLowerCase();
+      if (t === 'before' || t === 'after' || t === 'combined') return t;
+    }
+    const name = photo?.name ? String(photo.name).toLowerCase() : '';
+    if (/_before(\.[a-z0-9]+)?$/.test(name)) return 'before';
+    if (/_after(\.[a-z0-9]+)?$/.test(name)) return 'after';
+    if (/_(combined|mix)(\.[a-z0-9]+)?$/.test(name)) return 'combined';
+    return null;
+  };
+
   // Slice D: primary caption for a team-uploaded photo. Prefers the
   // room + type pair (set at capture by the team member) and falls
   // back to null so callers can substitute the filename. Kept
@@ -1591,8 +1631,8 @@ export default function ProjectsScreen({ navigation, route }) {
   const formatTeamPhotoCaption = (photo) => {
     if (!photo) return null;
     const room = photo.room && photo.room !== 'general' ? String(photo.room) : null;
-    const rawType = photo.type ? String(photo.type) : null;
-    const type = rawType === 'combined' ? 'Combined' : rawType === 'before' ? 'Before' : rawType === 'after' ? 'After' : rawType;
+    const rawType = resolveTeamPhotoType(photo);
+    const type = rawType === 'combined' ? 'Combined' : rawType === 'before' ? 'Before' : rawType === 'after' ? 'After' : null;
     const parts = [];
     if (room) parts.push(room);
     if (type) parts.push(type);
@@ -1711,13 +1751,13 @@ export default function ProjectsScreen({ navigation, route }) {
     if (q) list = list.filter((p) => (p.name || '').toLowerCase().includes(q));
     if (dateFilterRange) {
       list = list.filter((p) => {
-        const ts = projectFilterTs(p);
+        const ts = projectDayTs(p);
         if (!ts) return false;
         return ts >= dateFilterRange.from && ts < dateFilterRange.to;
       });
     }
-    if (cleanerFilter != null) {
-      const target = Number(cleanerFilter);
+    if (cleanerFilter?.kind === 'sf' && cleanerFilter.id != null) {
+      const target = Number(cleanerFilter.id);
       list = list.filter((p) => {
         const primary = p?.crmJobMeta?.teamMemberId;
         if (primary != null && Number(primary) === target) return true;
@@ -1725,6 +1765,11 @@ export default function ProjectsScreen({ navigation, route }) {
         if (Array.isArray(extras) && extras.some((v) => Number(v) === target)) return true;
         return false;
       });
+    } else if (cleanerFilter?.kind === 'cloud') {
+      // Cloud chip active — SF projects have no cloud-owner concept
+      // (they're pulled from CRM), so scope collapses to empty rather
+      // than mixing sources into one filter result.
+      list = [];
     }
     return [...list].sort(compareByTimeThenName);
   }, [localSfProjects, searchQuery, dateFilterRange, cleanerFilter]);
@@ -1740,8 +1785,16 @@ export default function ProjectsScreen({ navigation, route }) {
         return ts >= dateFilterRange.from && ts < dateFilterRange.to;
       });
     }
+    if (cleanerFilter?.kind === 'cloud' && cleanerFilter.name) {
+      const target = String(cleanerFilter.name).trim().toLowerCase();
+      list = list.filter((p) => String(p?.ownerName || '').trim().toLowerCase() === target);
+    } else if (cleanerFilter?.kind === 'sf') {
+      // SF chip active — cloud projects have no SF team_member_id
+      // linkage, so scope collapses. Mirror of the SF branch above.
+      list = [];
+    }
     return [...list].sort(compareByTimeThenNameTeam);
-  }, [teamProjects, searchQuery, dateFilterRange]);
+  }, [teamProjects, searchQuery, dateFilterRange, cleanerFilter]);
 
   // Per-chip counts for the currently visible tab. Same range math as
   // dateFilterRange so counts always match what a tap on the chip
@@ -1758,9 +1811,9 @@ export default function ProjectsScreen({ navigation, route }) {
       ? [...localSfProjects, ...teamProjects]
       : localMineProjects;
     const tsFn = (p) => {
-      if (p?.crmProvider === 'serviceflow') return projectFilterTs(p);
+      if (p?.crmProvider === 'serviceflow') return projectDayTs(p);
       if (projectsTab === 'team') return teamProjectFilterTs(p);
-      return projectFilterTs(p);
+      return projectDayTs(p);
     };
     const q = searchQuery.trim().toLowerCase();
     const pool = q ? list.filter((p) => (p.name || '').toLowerCase().includes(q)) : list;
@@ -2000,25 +2053,44 @@ export default function ProjectsScreen({ navigation, route }) {
         </ScrollView>
       )}
 
-      {!isMultiSelectMode && projectsTab === 'team' && sfCleanerList.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.dateChipScroll}
-          contentContainerStyle={styles.dateChipRow}
-        >
-          {[{ id: null, label: t('projects.cleanerFilter.all', { defaultValue: 'All cleaners' }) }]
-            .concat(sfCleanerList.map((c) => ({
-              id: c.id,
-              label: [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim() || `Cleaner ${c?.id}`,
-            })))
-            .map((chip) => {
-              const active = (cleanerFilter == null && chip.id == null)
-                || (cleanerFilter != null && Number(cleanerFilter) === Number(chip.id));
+      {!isMultiSelectMode && projectsTab === 'team' && (() => {
+        // Chip row shows SF cleaners AND distinct cloud owners so admins
+        // can filter Team Projects by either backend from one place.
+        // Dedupe cloud owner names against SF cleaner names (case-insensitive)
+        // to avoid double-listing the same person who works both backends.
+        const sfChips = sfCleanerList.map((c) => ({
+          kind: 'sf',
+          id: c.id,
+          label: [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim() || `Cleaner ${c?.id}`,
+        }));
+        const sfLabelSet = new Set(sfChips.map((c) => c.label.toLowerCase()));
+        const cloudNames = Array.from(new Set(
+          (teamProjects || [])
+            .map((p) => (p?.ownerName || '').trim())
+            .filter((n) => n && !sfLabelSet.has(n.toLowerCase())),
+        )).sort((a, b) => a.localeCompare(b));
+        const cloudChips = cloudNames.map((name) => ({ kind: 'cloud', name, label: name }));
+        const chips = [{ kind: 'all', label: t('projects.cleanerFilter.all', { defaultValue: 'All cleaners' }) }, ...sfChips, ...cloudChips];
+        if (chips.length <= 1) return null;
+        return (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.dateChipScroll}
+            contentContainerStyle={styles.dateChipRow}
+          >
+            {chips.map((chip) => {
+              const active = chip.kind === 'all'
+                ? cleanerFilter == null
+                : chip.kind === 'sf'
+                  ? cleanerFilter?.kind === 'sf' && Number(cleanerFilter.id) === Number(chip.id)
+                  : cleanerFilter?.kind === 'cloud' && cleanerFilter.name === chip.name;
+              const key = chip.kind === 'all' ? 'all' : chip.kind === 'sf' ? `sf-${chip.id}` : `cloud-${chip.name}`;
+              const nextValue = chip.kind === 'all' ? null : chip.kind === 'sf' ? { kind: 'sf', id: chip.id } : { kind: 'cloud', name: chip.name };
               return (
                 <TouchableOpacity
-                  key={chip.id == null ? 'all' : String(chip.id)}
-                  onPress={() => setCleanerFilter(chip.id)}
+                  key={key}
+                  onPress={() => setCleanerFilter(nextValue)}
                   activeOpacity={0.8}
                   style={[
                     styles.dateChip,
@@ -2039,8 +2111,9 @@ export default function ProjectsScreen({ navigation, route }) {
                 </TouchableOpacity>
               );
             })}
-        </ScrollView>
-      )}
+          </ScrollView>
+        );
+      })()}
 
       <ScrollView
         style={styles.scrollView}
@@ -3395,6 +3468,12 @@ export default function ProjectsScreen({ navigation, route }) {
                     ItemSeparatorComponent={() => <View style={{ height: gutter }} />}
                     renderItem={({ item }) => {
                       const caption = formatTeamPhotoCaption(item);
+                      const resolvedType = resolveTeamPhotoType(item);
+                      // Combined photos already carry per-half Before/After
+                      // chips baked into the pixel by chromeBake — an extra
+                      // overlay would just clutter. Skip for combined.
+                      const showTypeChip = resolvedType === 'before' || resolvedType === 'after';
+                      const chipLabel = resolvedType === 'before' ? 'Before' : 'After';
                       return (
                         <TouchableOpacity
                           activeOpacity={0.85}
@@ -3412,6 +3491,11 @@ export default function ProjectsScreen({ navigation, route }) {
                               <Ionicons name="image-outline" size={20} color={theme.textMuted} />
                             </View>
                           )}
+                          {showTypeChip ? (
+                            <View style={teamPhotosStyles.gridTypeChip}>
+                              <Text style={teamPhotosStyles.gridTypeChipText}>{chipLabel}</Text>
+                            </View>
+                          ) : null}
                           {caption ? (
                             <View style={teamPhotosStyles.gridCaption}>
                               <Text style={teamPhotosStyles.gridCaptionText} numberOfLines={1}>
@@ -3563,6 +3647,21 @@ const teamPhotosStyles = StyleSheet.create({
     fontSize: 10,
     fontFamily: FONTS.ALEXANDRIA,
     fontWeight: '600',
+  },
+  gridTypeChip: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: '#FFD84D',
+  },
+  gridTypeChipText: {
+    color: '#1a1a1a',
+    fontSize: 10,
+    fontFamily: FONTS.ALEXANDRIA,
+    fontWeight: '700',
   },
 });
 

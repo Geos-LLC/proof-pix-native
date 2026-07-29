@@ -420,6 +420,15 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
         }
         return null;
       })(),
+      // Raw SF date string (YYYY-MM-DD in the workspace's TZ) — used
+      // for chip bucketing so a job SF says is "tomorrow" lands in
+      // Tomorrow regardless of the device's TZ. Without this, a job
+      // scheduled at 00:30 in a workspace one TZ east could show as
+      // Today on a device one TZ west (bit us with Katrina Holt
+      // 2026-07-28). scheduledAt keeps ranking within a day intact.
+      scheduledDate: (typeof row.scheduled_date === 'string' && row.scheduled_date)
+        ? row.scheduled_date
+        : null,
       photoCount: typeof row.photo_count === 'number' ? row.photo_count : 0,
       // SF cleaner assignment (added SF-side 2026-07-28 for per-
       // cleaner filtering on the admin's Team Projects tab).

@@ -316,6 +316,7 @@ export async function syncServiceFlowJobs({
         address: job.address || null,
         status: job.status || null,
         scheduledAt: job.scheduledAt || null,
+        scheduledDate: job.scheduledDate || null,
         teamMemberId: job.teamMemberId ?? null,
         teamMemberIds: nextTeamMemberIds,
         syncedAt: Date.now(),
@@ -326,6 +327,7 @@ export async function syncServiceFlowJobs({
         prevIds.some((v, i) => v !== nextTeamMemberIds[i]);
       const changed =
         prev.scheduledAt !== nextMeta.scheduledAt ||
+        prev.scheduledDate !== nextMeta.scheduledDate ||
         prev.status !== nextMeta.status ||
         prev.customerName !== nextMeta.customerName ||
         prev.address !== nextMeta.address ||

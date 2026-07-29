@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-photo-meta-v13-' + Date.now() + ' — Team-photo uploads now include per-photo overrides + room/type/capturedBy meta; admin Team Photos grid & viewer show captions from that meta. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-bundle-v14-' + Date.now() + ' — Before/After chip overlay on admin grid; cloud+SF cleaner filter chips unified; SF chip bucketing now uses scheduled_date to avoid TZ drift (Katrina Holt today/tomorrow bug). Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
