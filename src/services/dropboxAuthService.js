@@ -1,5 +1,6 @@
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as Crypto from 'expo-crypto';
 import {
   readSecure, writeSecure, deleteSecure,
   readSecureJSON, writeSecureJSON,
@@ -183,6 +184,16 @@ class DropboxAuthService {
         tokenEndpoint: 'https://api.dropbox.com/oauth2/token',
       };
 
+      // OAuth `state` parameter (finding #5). Cryptographic random string
+      // sent in the authorize URL; Dropbox echoes it back on the redirect.
+      // We verify state on return before exchanging the auth code — blocks
+      // CSRF / auth-code injection where an attacker races their own
+      // authorize URL against the victim's browser session.
+      const stateBytes = Crypto.getRandomBytes(24);
+      const state = Array.from(stateBytes)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
       const request = new AuthSession.AuthRequest({
         clientId: DROPBOX_APP_KEY,
         scopes: [
@@ -195,6 +206,7 @@ class DropboxAuthService {
         redirectUri: DROPBOX_REDIRECT_URI,
         responseType: AuthSession.ResponseType.Code,
         usePKCE: true,
+        state,
         extraParams: {
           token_access_type: 'offline', // Request refresh token
         },
@@ -215,7 +227,14 @@ class DropboxAuthService {
       }
 
       if (result.type === 'success') {
-        const { code } = result.params;
+        const { code, state: returnedState } = result.params;
+
+        // Verify state matches what we sent — rejects redirects from
+        // authorize URLs we did not initiate.
+        if (returnedState !== state) {
+          console.warn('[DROPBOX] OAuth state mismatch — rejecting redirect');
+          throw new Error('OAuth state mismatch. Please try signing in again.');
+        }
 
         // Exchange authorization code for access token
         const tokenResponse = await fetch(discovery.tokenEndpoint, {
