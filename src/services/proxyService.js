@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Proxy Service
  * Handles communication with the ProofPix proxy server
  */
@@ -29,8 +29,22 @@ async function getBindingSecret() {
   }
 }
 
+// fetch wrapper that auto-injects X-Session-Binding on every proxy request
+// (finding #7). Team endpoints ignore the header server-side, so it's safe
+// to send universally. Keeps admin sessionId in URL path but demotes it to
+// a lookup key â€” the actual bearer is the header value, which never lands
+// in URL logs / Referer / Vercel edge cache.
+async function authFetch(url, options = {}) {
+  const bindingSecret = await getBindingSecret();
+  const headers = {
+    ...(options.headers || {}),
+    ...(bindingSecret ? { 'X-Session-Binding': bindingSecret } : {}),
+  };
+  return fetch(url, { ...options, headers });
+}
+
 // DEBUG: Log the proxy URL being used
-console.log('[PROXY] 🌐 PROXY_SERVER_URL:', PROXY_SERVER_URL);
+console.log('[PROXY] ðŸŒ PROXY_SERVER_URL:', PROXY_SERVER_URL);
 
 class ProxyService {
   /**
@@ -50,7 +64,7 @@ class ProxyService {
       if (accountType === 'serviceflow') {
         const { sfRefreshToken, sfWorkspaceId, sfWorkspaceName, adminIndustry, adminCustomRooms } = extra || {};
         if (!sfRefreshToken) {
-          throw new Error('Service Flow refresh token missing — reconnect Service Flow in Settings.');
+          throw new Error('Service Flow refresh token missing â€” reconnect Service Flow in Settings.');
         }
         authData = {
           ...authData,
@@ -78,7 +92,7 @@ class ProxyService {
           authorizationCode,
           identityToken,
           appleUserId,
-          // Finding #4 — server checks SHA256(rawNonce) === identityToken.nonce.
+          // Finding #4 â€” server checks SHA256(rawNonce) === identityToken.nonce.
           // If sign-in ran without a nonce (pre-fix path), rawNonce is null
           // and server logs a warning but accepts the token during rollout.
           rawNonce,
@@ -146,7 +160,7 @@ class ProxyService {
       // Add cache-busting parameter to ensure we hit the latest deployment
       const url = `${PROXY_SERVER_URL}/api/admin/init?v=${Date.now()}`;
       
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -198,7 +212,7 @@ class ProxyService {
       if (data.bindingSecret) {
         await writeSecureStorage(BINDING_SECRET_KEY, data.bindingSecret);
       } else {
-        console.warn('[PROXY] init response missing bindingSecret — old server or unusual account type');
+        console.warn('[PROXY] init response missing bindingSecret â€” old server or unusual account type');
         await deleteSecureStorage(BINDING_SECRET_KEY);
       }
 
@@ -223,10 +237,10 @@ class ProxyService {
    * @param {string} sessionId - Proxy session ID
    * @param {string} token - Invite token
    * @param {object} [opts]
-   * @param {string|number} [opts.sfTeamMemberId] — SF team_member id
+   * @param {string|number} [opts.sfTeamMemberId] â€” SF team_member id
    *   the admin picked for this invite. When present, the proxy binds
    *   this token to that SF cleaner so their /jobs pull is filtered
-   *   to that person's assignments only. Optional — invites without
+   *   to that person's assignments only. Optional â€” invites without
    *   it fall back to workspace-wide (legacy behaviour).
    */
   async addInviteToken(sessionId, token, opts = {}) {
@@ -240,7 +254,7 @@ class ProxyService {
       if (opts?.displayName != null && String(opts.displayName).trim() !== '') {
         body.display_name = String(opts.displayName).trim().slice(0, 200);
       }
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -273,7 +287,7 @@ class ProxyService {
     try {
       console.log('[PROXY] Removing invite token from session:', sessionId);
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens/${encodeURIComponent(token)}`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens/${encodeURIComponent(token)}`, {
         method: 'DELETE',
       });
 
@@ -319,7 +333,7 @@ class ProxyService {
         location,
         cleanerName,
         flat = false,
-        // Optional Service Flow fanout — when the linked project has
+        // Optional Service Flow fanout â€” when the linked project has
         // a crmJobId, pass it here and the proxy will additionally
         // attach the same photo to the SF job after the Drive write.
         // photoId is the ProofPix-side stable id used as SF's dedup
@@ -364,7 +378,7 @@ class ProxyService {
         if (crmJobId) formData.append('crmJobId', String(crmJobId));
         if (photoId) formData.append('photoId', String(photoId));
 
-        response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+        response = await authFetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
           method: 'POST',
           headers: {
             'Accept': 'application/json',
@@ -374,7 +388,7 @@ class ProxyService {
         });
       } else {
         // Legacy Base64 upload
-        response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+        response = await authFetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -436,7 +450,7 @@ class ProxyService {
         body.subfolders = subfolders;
       }
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/prepare/${sessionId}`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/prepare/${sessionId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -479,7 +493,7 @@ class ProxyService {
     try {
       console.log('[PROXY] Registering team member join:', { sessionId, token: token.substring(0, 10) + '...', memberName });
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/team/${sessionId}/join`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/team/${sessionId}/join`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -514,7 +528,7 @@ class ProxyService {
    */
   async getTeamMembers(sessionId) {
     try {
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-members`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-members`, {
         method: 'GET',
       });
 
@@ -539,7 +553,7 @@ class ProxyService {
    */
   async getGlobalTeamMemberCount(sessionId) {
     try {
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
         method: 'GET',
       });
 
@@ -567,7 +581,7 @@ class ProxyService {
     try {
       console.log('[PROXY] Resetting global team member count for session:', sessionId);
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/global-team-count`, {
         method: 'DELETE',
       });
 
@@ -601,7 +615,7 @@ class ProxyService {
       console.log('[PROXY] Removing team member with token:', token);
 
       // Use the tokens endpoint - it removes both the token and the associated team member
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens/${encodeURIComponent(token)}`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens/${encodeURIComponent(token)}`, {
         method: 'DELETE',
       });
 
@@ -639,7 +653,7 @@ class ProxyService {
       if (!sessionId || !token || !project?.id || !project?.name) {
         return { success: false, error: 'MISSING_ARGS' };
       }
-      const response = await fetch(`${PROXY_SERVER_URL}/api/team/${sessionId}/projects`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/team/${sessionId}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -669,7 +683,7 @@ class ProxyService {
 
   /**
    * Delete a team member's project from the shared KV list on the
-   * proxy. Mirror of syncTeamProject — called by team_member
+   * proxy. Mirror of syncTeamProject â€” called by team_member
    * accounts from PhotoContext.deleteProject as fire-and-forget so
    * the admin's Team Projects tab doesn't accumulate ghost entries
    * from projects the member deleted locally. The proxy authorizes
@@ -677,7 +691,7 @@ class ProxyService {
    * project's owner.
    *
    * @param {string} sessionId
-   * @param {string} token — team member's invite token
+   * @param {string} token â€” team member's invite token
    * @param {string} projectId
    * @returns {Promise<{success: boolean, removed?: number}>}
    */
@@ -686,7 +700,7 @@ class ProxyService {
       if (!sessionId || !token || !projectId) {
         return { success: false, error: 'MISSING_ARGS' };
       }
-      const response = await fetch(
+      const response = await authFetch(
         `${PROXY_SERVER_URL}/api/team/${sessionId}/projects/${encodeURIComponent(projectId)}`,
         {
           method: 'DELETE',
@@ -717,7 +731,7 @@ class ProxyService {
       if (!sessionId || !projectId) {
         return { success: false, error: 'MISSING_ARGS' };
       }
-      const response = await fetch(
+      const response = await authFetch(
         `${PROXY_SERVER_URL}/api/admin/${sessionId}/projects/${encodeURIComponent(projectId)}`,
         { method: 'DELETE' },
       );
@@ -745,9 +759,9 @@ class ProxyService {
    * single-latest-thumbnail Slice C already returns from
    * getTeamProjects.
    *
-   * @param sessionId — admin proxy session
-   * @param projectId — project id from getTeamProjects
-   * @param opts — { limit, cursor } (both optional)
+   * @param sessionId â€” admin proxy session
+   * @param projectId â€” project id from getTeamProjects
+   * @param opts â€” { limit, cursor } (both optional)
    * @returns { success, photos: [...], nextCursor }
    */
   async getTeamProjectPhotos(sessionId, projectId, { limit, cursor } = {}) {
@@ -757,7 +771,7 @@ class ProxyService {
       if (cursor) params.set('cursor', cursor);
       const q = params.toString();
       const url = `${PROXY_SERVER_URL}/api/admin/${sessionId}/projects/${encodeURIComponent(projectId)}/photos${q ? `?${q}` : ''}`;
-      const response = await fetch(url, { method: 'GET' });
+      const response = await authFetch(url, { method: 'GET' });
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         console.warn('[PROXY] getTeamProjectPhotos error:', response.status, text.slice(0, 200));
@@ -772,7 +786,7 @@ class ProxyService {
 
   async getTeamProjects(sessionId) {
     try {
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/projects`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/projects`, {
         method: 'GET',
       });
       if (!response.ok) {
@@ -800,7 +814,7 @@ class ProxyService {
   async setServiceFlowCredentials(sessionId, refreshToken, workspaceId, workspaceName) {
     try {
       if (!sessionId || !refreshToken) return { success: false, error: 'MISSING_ARGS' };
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-credentials`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-credentials`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -828,7 +842,7 @@ class ProxyService {
   async clearServiceFlowCredentials(sessionId) {
     try {
       if (!sessionId) return { success: false };
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-credentials`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-credentials`, {
         method: 'DELETE',
       });
       if (!response.ok) {
@@ -859,18 +873,18 @@ class ProxyService {
    *
    * Returns `{ cleaners: [{ id, first_name, last_name, role, status }] }`
    * on success. When SF hasn't shipped the underlying endpoint yet,
-   * the proxy returns `{ cleaners: [], not_deployed: true }` — same
+   * the proxy returns `{ cleaners: [], not_deployed: true }` â€” same
    * shape, empty list, so the caller can render an empty picker
    * gracefully.
    *
-   * 424 (SF not connected on admin session) → returns
+   * 424 (SF not connected on admin session) â†’ returns
    * `{ cleaners: [], notConnected: true }` for a graceful empty
    * state instead of a thrown error.
    */
   async listServiceFlowCleaners(sessionId) {
     try {
       if (!sessionId) return { cleaners: [] };
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-cleaners`);
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/serviceflow-cleaners`);
       if (response.status === 424) {
         return { cleaners: [], notConnected: true };
       }
@@ -894,7 +908,7 @@ class ProxyService {
       if (search) params.set('search', search);
       if (limit) params.set('limit', String(limit));
       if (cursor) params.set('cursor', cursor);
-      const response = await fetch(`${PROXY_SERVER_URL}/api/team/${sessionId}/serviceflow-jobs?${params.toString()}`);
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/team/${sessionId}/serviceflow-jobs?${params.toString()}`);
       if (response.status === 424) {
         return { jobs: [], nextCursor: null, notConnected: true };
       }
@@ -924,18 +938,18 @@ class ProxyService {
    * @param {string} token - Team-member invite token
    * @param {object} opts
    * @param {AbortSignal} [opts.signal] - Optional abort signal
-   * @returns {Promise<{ revoked: boolean }>} — always resolves
+   * @returns {Promise<{ revoked: boolean }>} â€” always resolves
    *   { revoked: true } or { revoked: false }. Errors propagate.
    */
   async waitForRevoke(sessionId, token, { signal } = {}) {
     if (!sessionId || !token) return { revoked: false };
     const params = new URLSearchParams({ token });
-    const response = await fetch(
+    const response = await authFetch(
       `${PROXY_SERVER_URL}/api/team/${sessionId}/wait-for-revoke?${params.toString()}`,
       { method: 'GET', signal },
     );
     if (response.status === 403 || response.status === 404) {
-      // Server already considers this token revoked / session gone —
+      // Server already considers this token revoked / session gone â€”
       // treat both as revoked so the client tears down.
       return { revoked: true };
     }
@@ -948,7 +962,7 @@ class ProxyService {
   /**
    * Patch admin team-info on an existing proxy session. Used to
    * backfill industry / customRooms for admins whose SF-primary
-   * session was created before the proxy learned those fields —
+   * session was created before the proxy learned those fields â€”
    * without this they'd have to re-run team setup (which invalidates
    * existing team-member tokens).
    */
@@ -959,7 +973,7 @@ class ProxyService {
       if (Array.isArray(adminCustomRooms) && adminCustomRooms.length > 0) body.admin_custom_rooms = adminCustomRooms;
       if (Object.keys(body).length === 0) return { success: false, skipped: true };
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-info`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/team-info`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -985,7 +999,7 @@ class ProxyService {
     try {
       console.log('[PROXY] Getting session info:', sessionId);
 
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/info`, {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/info`, {
         method: 'GET',
       });
 
@@ -1013,7 +1027,7 @@ class ProxyService {
    * @param {string} [userId] - Optional stable user id (@user_id in
    *   AsyncStorage). When passed, the proxy will attempt to rehydrate
    *   an expired/missing session from `credentials:${userId}` and
-   *   return a fresh sessionId in the response — the client should
+   *   return a fresh sessionId in the response â€” the client should
    *   then persist the returned sessionId in place of the old one.
    * @returns {Promise<{valid: boolean, sessionId?: string, rehydrated?: boolean, message?: string, error?: string}>}
    */
@@ -1022,15 +1036,9 @@ class ProxyService {
       console.log('[PROXY] Validating session:', sessionId, 'userId:', userId || 'none');
 
       const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
-      const bindingSecret = await getBindingSecret();
-      const headers = {};
-      if (bindingSecret) {
-        headers['X-Session-Binding'] = bindingSecret;
-      }
-
-      const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/validate${qs}`, {
+      // authFetch injects X-Session-Binding automatically.
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/validate${qs}`, {
         method: 'GET',
-        headers,
       });
 
       console.log('[PROXY] Validation response status:', response.status);
@@ -1109,7 +1117,7 @@ class ProxyService {
         const multipartController = new AbortController();
         const multipartTimeout = setTimeout(() => multipartController.abort(), 60000);
         try {
-          response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+          response = await authFetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
             method: 'POST',
             headers: {
               'Accept': 'application/json',
@@ -1126,7 +1134,7 @@ class ProxyService {
         const base64Controller = new AbortController();
         const base64Timeout = setTimeout(() => base64Controller.abort(), 60000);
         try {
-          response = await fetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
+          response = await authFetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
