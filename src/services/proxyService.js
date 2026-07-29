@@ -1181,6 +1181,59 @@ class ProxyService {
       throw error;
     }
   }
+
+  /**
+   * Verify an IAP receipt with the proxy (finding #8). Called after
+   * RNIap.purchaseUpdatedListener fires and BEFORE granting entitlement.
+   *
+   * Never blocks the purchase flow — on any network / server error we
+   * return an unverified-valid response so the user isn't punished for
+   * proxy downtime after they've already paid Apple/Google. The proxy's
+   * strict-mode enforcement is what closes the "modded StoreKit" bypass;
+   * the mobile caller just has to actually call this.
+   *
+   * @param {Object} params
+   * @param {'ios'|'android'} params.platform
+   * @param {string} params.productId
+   * @param {string} [params.transactionId] iOS
+   * @param {string} [params.originalTransactionId] iOS
+   * @param {string} [params.purchaseToken] Android
+   * @param {string} [params.userId] for entitlement persistence
+   * @returns {Promise<{valid: boolean, verified: boolean, productId?: string, reason?: string}>}
+   */
+  async verifyIAPPurchase({ platform, productId, transactionId, originalTransactionId, purchaseToken, userId }) {
+    try {
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/iap/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform,
+          productId,
+          transactionId,
+          originalTransactionId,
+          purchaseToken,
+          userId,
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn('[PROXY] IAP verify HTTP error:', response.status);
+        return { valid: true, verified: false, reason: `http_${response.status}` };
+      }
+
+      const data = await response.json();
+      console.log('[PROXY] IAP verify result:', {
+        valid: data.valid,
+        verified: data.verified,
+        reason: data.reason,
+        environment: data.environment,
+      });
+      return data;
+    } catch (error) {
+      console.warn('[PROXY] IAP verify network error (soft-pass):', error?.message);
+      return { valid: true, verified: false, reason: 'network_error' };
+    }
+  }
 }
 
 export default new ProxyService();

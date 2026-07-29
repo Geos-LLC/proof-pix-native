@@ -1,6 +1,7 @@
 import { Platform, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as RNIap from 'react-native-iap';
+import proxyService from './proxyService';
 import {
   logSubscriptionStarted,
   logTrialStarted,
@@ -250,6 +251,56 @@ const _cacheProductPrices = (products) => {
  * shape. Best-effort client-side classification — server-side receipt
  * validation will make this authoritative in a future pass.
  */
+/**
+ * Verify a purchase server-side before granting entitlement (finding #8).
+ *
+ * Returns:
+ *   { valid: true,  verified: true  }  → Apple/Google confirmed. Grant.
+ *   { valid: true,  verified: false }  → grace mode (server not yet
+ *                                        configured, network error, Android
+ *                                        stub). Grant with a warning log.
+ *   { valid: false, ...             }  → server rejected (e.g. product
+ *                                        mismatch on a compromised client).
+ *                                        Do NOT grant entitlement.
+ *
+ * The proxy call NEVER blocks the finishTransaction ack to Apple/Google —
+ * they've already charged, we must acknowledge. Only the local entitlement
+ * grant is conditional on valid=true.
+ */
+const _verifyPurchaseServerSide = async (purchase, productId) => {
+  try {
+    const userId = await AsyncStorage.getItem('@user_id');
+    const result = await proxyService.verifyIAPPurchase({
+      platform: Platform.OS,
+      productId,
+      transactionId: purchase?.transactionId || null,
+      originalTransactionId:
+        purchase?.originalTransactionIdentifierIOS ||
+        purchase?.originalTransactionId ||
+        null,
+      purchaseToken: purchase?.purchaseToken || null,
+      userId,
+    });
+
+    if (!result?.verified) {
+      console.warn('[IAP] server verify UNVERIFIED:', {
+        valid: result?.valid,
+        reason: result?.reason,
+        productId,
+      });
+    } else {
+      console.log('[IAP] server verify OK:', {
+        productId,
+        environment: result?.environment,
+      });
+    }
+    return result || { valid: true, verified: false, reason: 'no_response' };
+  } catch (error) {
+    console.warn('[IAP] server verify threw (soft-pass):', error?.message);
+    return { valid: true, verified: false, reason: 'client_error' };
+  }
+};
+
 const _classifyTransaction = (purchase, productId) => {
   const isSeat = (productId || '').includes('seat');
   const cached = _productHasTrialCache[productId];
@@ -720,12 +771,22 @@ export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
         // Acknowledge the purchase (required by Google Play within 3 days)
         console.log('[IAP] Android purchase validated, acknowledging...');
         finish(async () => {
+          // Server-side verify BEFORE finishTransaction so a rejected
+          // receipt still gets acknowledged to Google (they charged the
+          // user; we must ack), but a rejected verify blocks the local
+          // entitlement grant.
+          const verify = await _verifyPurchaseServerSide(purchase, productId);
           try {
             await RNIap.finishTransaction({ purchase, isConsumable: false });
             console.log('[IAP] Android transaction finished (acknowledged)');
           } catch (finishErr) {
             console.error('[IAP] Failed to acknowledge Android purchase:', finishErr);
             // Still resolve - user paid, don't block them
+          }
+          if (verify && verify.valid === false) {
+            console.error('[IAP] Server rejected receipt — refusing to grant entitlement:', verify.reason);
+            reject(new Error(`IAP_VERIFY_REJECTED:${verify.reason || 'unknown'}`));
+            return;
           }
           // Fire analytics after confirmed purchase — not on button click or checkout
           _logPurchaseAnalytics(purchase, productId, entryPoint);
@@ -738,12 +799,19 @@ export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
       // === iOS: Validate ===
       console.log('[IAP] Purchase validated successfully');
       finish(async () => {
+        // Server-side verify — same pattern as Android above.
+        const verify = await _verifyPurchaseServerSide(purchase, productId);
         try {
           console.log('[IAP] Calling finishTransaction...');
           await RNIap.finishTransaction({ purchase, isConsumable: false });
           console.log('[IAP] Transaction finished');
         } catch (finishErr) {
           console.error('[IAP] Failed to finish transaction:', finishErr);
+        }
+        if (verify && verify.valid === false) {
+          console.error('[IAP] Server rejected receipt — refusing to grant entitlement:', verify.reason);
+          reject(new Error(`IAP_VERIFY_REJECTED:${verify.reason || 'unknown'}`));
+          return;
         }
         // Fire analytics after confirmed purchase — not on button click or checkout
         _logPurchaseAnalytics(purchase, productId, entryPoint);
@@ -940,10 +1008,19 @@ const _purchaseOrUpgradeInner = async (targetProductId, entryPoint = 'paywall') 
 
           if (purchasedId === targetProductId || ids.includes(targetProductId)) {
             finish(async () => {
+              // Server-side verify — see _verifyPurchaseServerSide for
+              // policy on failures. Runs BEFORE finishTransaction so a
+              // rejected upgrade still gets ack'd to Google.
+              const verify = await _verifyPurchaseServerSide(purchase, targetProductId);
               try {
                 await RNIap.finishTransaction({ purchase, isConsumable: false });
               } catch (e) {
                 console.error('[IAP] Failed to acknowledge upgrade:', e);
+              }
+              if (verify && verify.valid === false) {
+                console.error('[IAP] Server rejected upgrade receipt:', verify.reason);
+                reject(new Error(`IAP_VERIFY_REJECTED:${verify.reason || 'unknown'}`));
+                return;
               }
               // Fire upgrade analytics after confirmed upgrade — not on button click or checkout
               _logUpgradeAnalytics(
