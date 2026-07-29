@@ -36,6 +36,7 @@ import { FONTS } from '../constants/fonts';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
+import { importTeamProject } from '../services/teamPhotoImport';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadCompletionModal from '../components/UploadCompletionModal';
 import { LOCATIONS, getLocationName } from '../config/locations';
@@ -127,6 +128,7 @@ export default function ProjectsScreen({ navigation, route }) {
     setActiveProject,
     activeProjectId,
     createProject,
+    addPhoto,
     photos,
   } = usePhotos();
   
@@ -1592,6 +1594,11 @@ export default function ProjectsScreen({ navigation, route }) {
   // supported — this is admin's view-only surface with the standard
   // viewer chrome.
   const [tpViewerOverlaysOn, setTpViewerOverlaysOn] = useState(true);
+  // Slice D.5: import-to-local state. tpImporting gates the header
+  // button; tpImportProgress drives the "Importing X/Y" label so admin
+  // can see download progress on large team projects.
+  const [tpImporting, setTpImporting] = useState(false);
+  const [tpImportProgress, setTpImportProgress] = useState({ done: 0, total: 0 });
 
   const openTeamProjectPhotos = async (project) => {
     if (!project?.id || !proxySessionId) return;
@@ -1616,6 +1623,49 @@ export default function ProjectsScreen({ navigation, route }) {
     setTpPhotos([]);
     setTpPhotosError(null);
     setTpViewerPhoto(null);
+  };
+
+  // Slice D.5: import a team project into admin's local ProofPix.
+  // From the point of import onward, the local copy is fully owned by
+  // the admin — no sync, no cascade, no re-import needed unless team
+  // uploads new photos. Confirmation is intentionally lightweight; a
+  // second import creates a fresh local project (dedup on repeat is
+  // out of scope; imports are user-initiated so accidental doubles
+  // are rare).
+  const handleImportTeamProject = async () => {
+    if (!tpPhotosProject || tpPhotos.length === 0) return;
+    if (tpImporting) return;
+    setTpImporting(true);
+    setTpImportProgress({ done: 0, total: tpPhotos.length });
+    try {
+      const result = await importTeamProject({
+        teamProject: tpPhotosProject,
+        teamPhotos: tpPhotos,
+        createProject,
+        addPhoto,
+        onProgress: (done, total) => setTpImportProgress({ done, total }),
+      });
+      // Close the team-photo modal and let the user land back on the
+      // Projects list with the fresh local project already at the
+      // top (createProject prepends). "My projects" tab is the
+      // natural destination since the imported project is admin-owned.
+      closeTeamProjectPhotos();
+      setProjectsTab('mine');
+      try {
+        Alert.alert(
+          'Imported',
+          `${result.imported} photo${result.imported === 1 ? '' : 's'} imported${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`,
+        );
+      } catch {}
+    } catch (err) {
+      console.warn('[ProjectsScreen] Import failed:', err?.message);
+      try {
+        Alert.alert('Import failed', err?.message || 'Could not import team project.');
+      } catch {}
+    } finally {
+      setTpImporting(false);
+      setTpImportProgress({ done: 0, total: 0 });
+    }
   };
 
   // Slice D+: resolve the photo's type (before/after/combined) from
@@ -3480,6 +3530,30 @@ export default function ProjectsScreen({ navigation, route }) {
                   {(tpPhotosProject?.ownerName || 'Team member')} · {(tpPhotosProject?.photoCount || tpPhotos.length || 0)} photo{(tpPhotosProject?.photoCount || tpPhotos.length) === 1 ? '' : 's'}
                 </Text>
               </View>
+              {/* Slice D.5: Import to Project — download all team photos
+                  to admin's device and create a normal local project.
+                  From that point the imported project is owned by the
+                  admin and uses the standard Studio / share / report
+                  pipelines. Team project remains untouched (staging). */}
+              {!tpPhotosLoading && !tpPhotosError && tpPhotos.length > 0 ? (
+                <TouchableOpacity
+                  onPress={handleImportTeamProject}
+                  disabled={tpImporting}
+                  style={[teamPhotosStyles.driveBtn, {
+                    borderColor: theme.accent,
+                    backgroundColor: tpImporting ? theme.surfaceElevated : theme.accent,
+                    marginRight: 8,
+                    opacity: tpImporting ? 0.7 : 1,
+                  }]}
+                >
+                  <Ionicons name="cloud-download-outline" size={14} color={tpImporting ? theme.textPrimary : (theme.accentText || '#000')} />
+                  <Text style={[teamPhotosStyles.driveBtnText, { color: tpImporting ? theme.textPrimary : (theme.accentText || '#000') }]}>
+                    {tpImporting
+                      ? `Importing ${tpImportProgress.done}/${tpImportProgress.total}`
+                      : 'Import'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
               {tpPhotosProject?.folderUrl ? (
                 <TouchableOpacity
                   onPress={() => Linking.openURL(tpPhotosProject.folderUrl)}
