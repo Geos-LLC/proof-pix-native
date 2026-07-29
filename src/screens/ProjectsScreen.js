@@ -36,7 +36,9 @@ import { FONTS } from '../constants/fonts';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
-import { importTeamProject } from '../services/teamPhotoImport';
+import { importTeamProject, localPathForTeamPhoto } from '../services/teamPhotoImport';
+import { PROXY_SERVER_URL } from '../config/proxy';
+import { readSecure as readSecureStorage } from '../services/secureStorageService';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadCompletionModal from '../components/UploadCompletionModal';
 import { LOCATIONS, getLocationName } from '../config/locations';
@@ -1625,50 +1627,93 @@ export default function ProjectsScreen({ navigation, route }) {
     setTpViewerPhoto(null);
   };
 
-  // Slice D.5: import a team project into admin's local ProofPix.
-  // From the point of import onward, the local copy is fully owned by
-  // the admin — no sync, no cascade, no re-import needed unless team
-  // uploads new photos. Confirmation is intentionally lightweight; a
-  // second import creates a fresh local project (dedup on repeat is
-  // out of scope; imports are user-initiated so accidental doubles
-  // are rare).
+  // Slice D.5: shared download helper. Returns a caller-shaped
+  // downloadPhoto function bound to a resolution choice.
+  //   'reduced'  → Drive's =s2000 thumbnail CDN. Fast, no admin OAuth
+  //                on the wire from the phone, capped at ~4 MP.
+  //   'original' → proxy passthrough that streams the byte-exact
+  //                file from Drive using admin's stored refresh token.
+  //                Slower + full quality; needs X-Session-Binding
+  //                header the same way every other proxy call does.
+  // Files are cached per-resolution (localPathForTeamPhoto handles
+  // the suffix) so re-imports at the same res don't re-download.
+  const makeDownloadPhoto = (resolution) => async (tp) => {
+    const driveFileId = tp?.id;
+    if (!driveFileId) return null;
+    const localPath = localPathForTeamPhoto(driveFileId, resolution);
+    try {
+      const info = await FileSystem.getInfoAsync(localPath);
+      if (info.exists) return localPath;
+    } catch {}
+
+    if (resolution === 'original') {
+      if (!proxySessionId || !tpPhotosProject?.id) return null;
+      const url = `${PROXY_SERVER_URL}/api/admin/${proxySessionId}/projects/${encodeURIComponent(tpPhotosProject.id)}/photos/${encodeURIComponent(driveFileId)}/download`;
+      let bindingSecret = null;
+      try { bindingSecret = await readSecureStorage('@proxy_session_binding'); } catch {}
+      const result = await FileSystem.downloadAsync(url, localPath, {
+        headers: bindingSecret ? { 'X-Session-Binding': bindingSecret } : {},
+      });
+      if (result.status !== 200) {
+        console.warn('[TEAM_IMPORT] original download non-200', { driveFileId, status: result.status });
+        return null;
+      }
+      return localPath;
+    }
+
+    // Reduced-resolution path
+    const url = swapDriveThumbSize(tp.thumbnailLink, 2000);
+    if (!url) return null;
+    const result = await FileSystem.downloadAsync(url, localPath);
+    if (result.status !== 200) {
+      console.warn('[TEAM_IMPORT] reduced download non-200', { driveFileId, status: result.status });
+      return null;
+    }
+    return localPath;
+  };
+
+  // Slice D.5: three-way confirmation before an import kicks off.
+  // Wraps the standard Alert as a promise so both bulk and per-photo
+  // handlers can share the same UX. Returns the chosen resolution
+  // ('reduced' | 'original') or null if the user cancelled.
+  const promptImportResolution = async (photoCount) => {
+    return new Promise((resolve) => {
+      const suffix = photoCount === 1 ? '' : 's';
+      Alert.alert(
+        'Import',
+        `Import ${photoCount} photo${suffix}. Choose resolution:\n\n• Reduced (~2000px) — fast, suitable for reports and on-device editing.\n• Original — full quality, larger download.\n\nOriginal files remain in Drive either way.`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+          { text: 'Reduced', onPress: () => resolve('reduced') },
+          { text: 'Original', onPress: () => resolve('original') },
+        ],
+        { onDismiss: () => resolve(null) },
+      );
+    });
+  };
+
+  // Bulk import — whole team project into a new local project. On
+  // completion the modal closes and admin lands on My Projects with
+  // the fresh project at the top.
   const handleImportTeamProject = async () => {
     if (!tpPhotosProject || tpPhotos.length === 0) return;
     if (tpImporting) return;
 
-    // Disclose the resolution trade-off before the download starts.
-    // Admin gets ~2000px versions suitable for Studio + reports, not
-    // byte-exact originals — full-res originals stay in Drive and are
-    // reachable via the "Drive" button in the same header. Confirmation
-    // is a single tap; no persistent "don't show again" — the trade-off
-    // is small enough that per-import confirmation is fine.
-    const shouldProceed = await new Promise((resolve) => {
-      Alert.alert(
-        'Import project',
-        `Downloads ${tpPhotos.length} photo${tpPhotos.length === 1 ? '' : 's'} at reduced resolution (~2000px, suitable for reports and editing). Original files remain in Drive. Continue?`,
-        [
-          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Import', onPress: () => resolve(true) },
-        ],
-        { onDismiss: () => resolve(false) },
-      );
-    });
-    if (!shouldProceed) return;
+    const resolution = await promptImportResolution(tpPhotos.length);
+    if (!resolution) return;
 
     setTpImporting(true);
     setTpImportProgress({ done: 0, total: tpPhotos.length });
     try {
+      const downloadPhoto = makeDownloadPhoto(resolution);
       const result = await importTeamProject({
         teamProject: tpPhotosProject,
         teamPhotos: tpPhotos,
+        downloadPhoto,
         createProject,
         addPhoto,
         onProgress: (done, total) => setTpImportProgress({ done, total }),
       });
-      // Close the team-photo modal and let the user land back on the
-      // Projects list with the fresh local project already at the
-      // top (createProject prepends). "My projects" tab is the
-      // natural destination since the imported project is admin-owned.
       closeTeamProjectPhotos();
       setProjectsTab('mine');
       try {
@@ -1681,6 +1726,59 @@ export default function ProjectsScreen({ navigation, route }) {
       console.warn('[ProjectsScreen] Import failed:', err?.message);
       try {
         Alert.alert('Import failed', err?.message || 'Could not import team project.');
+      } catch {}
+    } finally {
+      setTpImporting(false);
+      setTpImportProgress({ done: 0, total: 0 });
+    }
+  };
+
+  // Slice D.5: per-photo import from the EnlargedPhotoViewer's
+  // bottom action button. Creates a NEW local project named after
+  // the source team project + adds this one photo to it. Admin can
+  // rename/move afterward with the standard project actions. Kept
+  // simple: no project picker, no add-to-existing — those are
+  // reasonable follow-ups if usage warrants.
+  const handleImportSingleTeamPhoto = async (viewerPhoto) => {
+    if (!tpPhotosProject || !viewerPhoto) return;
+    if (tpImporting) return;
+
+    // The viewer photo was adapted for the viewer (thumbnailLink not
+    // preserved). Look up the raw team photo record so the download
+    // helper has thumbnailLink + type + room + capturedBy.
+    const raw = tpPhotos.find((p) => String(p.id) === String(viewerPhoto.id));
+    if (!raw) {
+      Alert.alert('Import failed', 'Could not resolve this photo. Reopen the project and try again.');
+      return;
+    }
+
+    const resolution = await promptImportResolution(1);
+    if (!resolution) return;
+
+    setTpImporting(true);
+    setTpImportProgress({ done: 0, total: 1 });
+    try {
+      const downloadPhoto = makeDownloadPhoto(resolution);
+      const result = await importTeamProject({
+        teamProject: tpPhotosProject,
+        teamPhotos: [raw],
+        downloadPhoto,
+        createProject,
+        addPhoto,
+        onProgress: (done, total) => setTpImportProgress({ done, total }),
+      });
+      closeTeamProjectPhotos();
+      setProjectsTab('mine');
+      try {
+        Alert.alert(
+          'Imported',
+          result.imported === 1 ? '1 photo imported.' : 'Photo could not be imported.',
+        );
+      } catch {}
+    } catch (err) {
+      console.warn('[ProjectsScreen] Single-photo import failed:', err?.message);
+      try {
+        Alert.alert('Import failed', err?.message || 'Could not import this photo.');
       } catch {}
     } finally {
       setTpImporting(false);
@@ -3727,11 +3825,16 @@ export default function ProjectsScreen({ navigation, route }) {
                 showOverlays
                 overlaysOn={tpViewerOverlaysOn}
                 onOverlaysChange={setTpViewerOverlaysOn}
-                // Still hidden: no edit / delete / select / share on
-                // admin's team-photo surface for now.
+                // Still hidden: no edit / delete / select on admin's
+                // team-photo surface. The bottom-action slot is
+                // repurposed for per-photo Import via shareLabel /
+                // onShare (Slice D.5) — same import service as the
+                // bulk header button, just with a one-item pool.
                 showEdit={false}
                 showDelete={false}
                 showSelect={false}
+                shareLabel={tpImporting ? `Importing…` : 'Import photo'}
+                onShare={handleImportSingleTeamPhoto}
               />
             </View>
           ) : null}
