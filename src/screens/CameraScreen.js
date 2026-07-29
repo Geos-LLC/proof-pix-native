@@ -1822,6 +1822,17 @@ export default function CameraScreen({ route, navigation }) {
       // Start capture animation (runs in parallel with photo processing)
       runCaptureAnimation(photoUri);
 
+      // Release the shutter as soon as the photo bytes are in hand.
+      // Everything after — savePhotoToDevice, GPS snapshot, AsyncStorage
+      // writes, context re-renders — is bookkeeping the user shouldn't
+      // wait on before taking the next shot. Retake-context is the
+      // exception (needs a blocking "Replace or new set?" prompt).
+      const runInBackground = (label, promise) => {
+        promise.catch((e) =>
+          console.error(`[CameraScreen] ${label} (bg) failed:`, e?.message || e),
+        );
+      };
+
       if (mode === 'before') {
         // Retake context: when the gallery strip is open and the user
         // has scrolled it back onto an existing Set, shutter ought to
@@ -1852,12 +1863,15 @@ export default function CameraScreen({ route, navigation }) {
             await handleBeforePhoto(photoUri);
           }
         } else {
-          await handleBeforePhoto(photoUri);
+          setIsCapturing(false);
+          runInBackground('handleBeforePhoto', handleBeforePhoto(photoUri));
         }
       } else if (mode === 'after') {
-        await handleAfterPhoto(photoUri);
+        setIsCapturing(false);
+        runInBackground('handleAfterPhoto', handleAfterPhoto(photoUri));
       } else if (mode === 'progress') {
-        await handleProgressPhoto(photoUri);
+        setIsCapturing(false);
+        runInBackground('handleProgressPhoto', handleProgressPhoto(photoUri));
       }
     } catch (error) {
       const msg = error?.message || String(error) || 'unknown error';
