@@ -2,6 +2,7 @@ import {
   readSecure, writeSecure, deleteSecure,
   readSecureJSON, writeSecureJSON,
 } from './secureStorageService';
+import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 
 // Try to import AppleAuthentication, but handle gracefully if not available
@@ -18,6 +19,10 @@ const STORAGE_KEYS = {
   APPLE_ID_TOKEN: '@apple_id_token',
   APPLE_AUTH_CODE: '@apple_auth_code',
   APPLE_USER_ID: '@apple_user_id',
+  // Finding #4 — raw nonce for the current signin attempt. Stored after
+  // signInAsync so proxyService can retrieve it for the /api/admin/init
+  // payload, cleared after successful init (like APPLE_AUTH_CODE).
+  APPLE_RAW_NONCE: '@apple_raw_nonce',
 };
 
 /**
@@ -65,11 +70,27 @@ class AppleAuthService {
     await this.checkAvailability();
 
     try {
+      // Finding #4 — generate a raw nonce, pass its SHA256 to Apple so the
+      // identityToken carries the hash in its `nonce` claim, and keep the
+      // raw value to send to the proxy for verification. Blocks replay of
+      // a captured identityToken since the attacker would also need this
+      // ephemeral rawNonce.
+      const rawNonceBytes = Crypto.getRandomBytes(32);
+      const rawNonce = Array.from(rawNonceBytes)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+        { encoding: Crypto.CryptoEncoding.HEX }
+      );
+
       const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
+        nonce: hashedNonce,
       });
 
       // Extract user information
@@ -86,11 +107,14 @@ class AppleAuthService {
 
       // Store credentials in keychain-backed storage — identityToken and
       // authorizationCode are bearer credentials for /api/admin/init and
-      // must not sit in plain AsyncStorage.
+      // must not sit in plain AsyncStorage. rawNonce is stored so
+      // proxyService can send it to the proxy for verification, then
+      // cleared after init (like authorizationCode).
       await this.storeUserInfo(userInfo);
       await writeSecure(STORAGE_KEYS.APPLE_ID_TOKEN, identityToken);
       await writeSecure(STORAGE_KEYS.APPLE_AUTH_CODE, authorizationCode);
       await writeSecure(STORAGE_KEYS.APPLE_USER_ID, user);
+      await writeSecure(STORAGE_KEYS.APPLE_RAW_NONCE, rawNonce);
 
       console.log('[APPLE_AUTH] ✅ Sign in successful');
 
@@ -185,6 +209,30 @@ class AppleAuthService {
   }
 
   /**
+   * Get the raw nonce generated during the current sign-in attempt (finding
+   * #4). Sent to the proxy at /api/admin/init for identityToken nonce
+   * verification.
+   */
+  async getRawNonce() {
+    try {
+      return await readSecure(STORAGE_KEYS.APPLE_RAW_NONCE);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Clear the raw nonce after successful init.
+   */
+  async clearRawNonce() {
+    try {
+      await deleteSecure(STORAGE_KEYS.APPLE_RAW_NONCE);
+    } catch (error) {
+      // non-critical
+    }
+  }
+
+  /**
    * Check credential state for a user
    * @param {string} userId - Apple user ID
    * @returns {Promise<string>} - Credential state
@@ -224,6 +272,7 @@ class AppleAuthService {
         deleteSecure(STORAGE_KEYS.APPLE_ID_TOKEN),
         deleteSecure(STORAGE_KEYS.APPLE_AUTH_CODE),
         deleteSecure(STORAGE_KEYS.APPLE_USER_ID),
+        deleteSecure(STORAGE_KEYS.APPLE_RAW_NONCE),
       ]);
     } catch (error) {
       console.error('[APPLE_AUTH] Failed to clear user info:', error);

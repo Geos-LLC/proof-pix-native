@@ -9,6 +9,25 @@ import { PROXY_SERVER_URL } from '../config/proxy';
 import googleAuthService from './googleAuthService';
 import dropboxAuthService from './dropboxAuthService';
 import appleAuthService from './appleAuthService';
+import {
+  readSecure as readSecureStorage,
+  writeSecure as writeSecureStorage,
+  deleteSecure as deleteSecureStorage,
+} from './secureStorageService';
+
+// Keychain-backed key for the session binding secret (finding #1). The
+// proxy issues this at /api/admin/init and we must present it on every
+// /validate call so an attacker who guesses a userId still can't rehydrate
+// a session on our OAuth credentials.
+const BINDING_SECRET_KEY = '@proxy_session_binding';
+
+async function getBindingSecret() {
+  try {
+    return await readSecureStorage(BINDING_SECRET_KEY);
+  } catch {
+    return null;
+  }
+}
 
 // DEBUG: Log the proxy URL being used
 console.log('[PROXY] 🌐 PROXY_SERVER_URL:', PROXY_SERVER_URL);
@@ -47,6 +66,7 @@ class ProxyService {
         const authorizationCode = await appleAuthService.getAuthorizationCode();
         const identityToken = await appleAuthService.getIdentityToken();
         const appleUserId = await appleAuthService.getUserId();
+        const rawNonce = await appleAuthService.getRawNonce();
 
         if (!authorizationCode || !identityToken) {
           throw new Error('Failed to get Apple credentials. Please sign in with Apple.');
@@ -58,6 +78,10 @@ class ProxyService {
           authorizationCode,
           identityToken,
           appleUserId,
+          // Finding #4 — server checks SHA256(rawNonce) === identityToken.nonce.
+          // If sign-in ran without a nonce (pre-fix path), rawNonce is null
+          // and server logs a warning but accepts the token during rollout.
+          rawNonce,
           folderId, // For iCloud, this is the container ID
         };
       } else if (accountType === 'dropbox') {
@@ -161,13 +185,26 @@ class ProxyService {
       } else if (accountType === 'apple') {
         try {
           await appleAuthService.clearAuthorizationCode();
+          await appleAuthService.clearRawNonce();
         } catch (clearError) {
-          console.warn('[PROXY] Failed to clear Apple authorizationCode (non-critical):', clearError.message);
+          console.warn('[PROXY] Failed to clear Apple authorizationCode / rawNonce (non-critical):', clearError.message);
         }
       }
 
+      // Persist the binding secret in keychain-backed storage so it survives
+      // reinstall on iOS. Required on every /validate call from this point
+      // forward. If the proxy didn't return one (old server, unusual path),
+      // clear any stale value so validate falls through to a re-init.
+      if (data.bindingSecret) {
+        await writeSecureStorage(BINDING_SECRET_KEY, data.bindingSecret);
+      } else {
+        console.warn('[PROXY] init response missing bindingSecret — old server or unusual account type');
+        await deleteSecureStorage(BINDING_SECRET_KEY);
+      }
+
       return {
-        sessionId: data.sessionId
+        sessionId: data.sessionId,
+        bindingSecret: data.bindingSecret || null,
       };
     } catch (error) {
       // Handle expected "not connected" errors gracefully
@@ -985,8 +1022,15 @@ class ProxyService {
       console.log('[PROXY] Validating session:', sessionId, 'userId:', userId || 'none');
 
       const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+      const bindingSecret = await getBindingSecret();
+      const headers = {};
+      if (bindingSecret) {
+        headers['X-Session-Binding'] = bindingSecret;
+      }
+
       const response = await fetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/validate${qs}`, {
         method: 'GET',
+        headers,
       });
 
       console.log('[PROXY] Validation response status:', response.status);
