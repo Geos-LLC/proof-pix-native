@@ -1574,7 +1574,17 @@ export default function ProjectsScreen({ navigation, route }) {
       `[PROJTAB ota=v14-force] mode=${userMode === null ? 'null' : userMode} showTeamTab=${showTeamTab} proxySession=${!!proxySessionId}`,
     );
   }, [userMode, showTeamTab, proxySessionId]);
-  const [projectsTab, setProjectsTab] = useState('mine'); // 'mine' | 'team'
+  const [projectsTab, setProjectsTab] = useState('mine'); // 'mine' | 'team' | 'edits'
+  // Slice D.7: "Team edits" tab — flat grid across all team projects
+  // of photos where preLabeled=true (originated as a team-member
+  // "Send edited copy to admin" bake). Fetched on tab open; each
+  // entry is augmented with _sourceProjectId + _sourceProjectName
+  // so the per-photo Import action + caption know where they came
+  // from without a second lookup.
+  const [teamEdits, setTeamEdits] = useState([]);
+  const [teamEditsLoading, setTeamEditsLoading] = useState(false);
+  const [teamEditsError, setTeamEditsError] = useState(null);
+  const [editsViewerPhoto, setEditsViewerPhoto] = useState(null);
   const [teamProjects, setTeamProjects] = useState([]);
   const [teamProjectsLoading, setTeamProjectsLoading] = useState(false);
   const [teamProjectsError, setTeamProjectsError] = useState(null);
@@ -1637,7 +1647,7 @@ export default function ProjectsScreen({ navigation, route }) {
   //                header the same way every other proxy call does.
   // Files are cached per-resolution (localPathForTeamPhoto handles
   // the suffix) so re-imports at the same res don't re-download.
-  const makeDownloadPhoto = (resolution) => async (tp) => {
+  const makeDownloadPhoto = (resolution, sourceProjectId) => async (tp) => {
     const driveFileId = tp?.id;
     if (!driveFileId) return null;
     const localPath = localPathForTeamPhoto(driveFileId, resolution);
@@ -1647,8 +1657,8 @@ export default function ProjectsScreen({ navigation, route }) {
     } catch {}
 
     if (resolution === 'original') {
-      if (!proxySessionId || !tpPhotosProject?.id) return null;
-      const url = `${PROXY_SERVER_URL}/api/admin/${proxySessionId}/projects/${encodeURIComponent(tpPhotosProject.id)}/photos/${encodeURIComponent(driveFileId)}/download`;
+      if (!proxySessionId || !sourceProjectId) return null;
+      const url = `${PROXY_SERVER_URL}/api/admin/${proxySessionId}/projects/${encodeURIComponent(sourceProjectId)}/photos/${encodeURIComponent(driveFileId)}/download`;
       let bindingSecret = null;
       try { bindingSecret = await readSecureStorage('@proxy_session_binding'); } catch {}
       const result = await FileSystem.downloadAsync(url, localPath, {
@@ -1705,7 +1715,7 @@ export default function ProjectsScreen({ navigation, route }) {
     setTpImporting(true);
     setTpImportProgress({ done: 0, total: tpPhotos.length });
     try {
-      const downloadPhoto = makeDownloadPhoto(resolution);
+      const downloadPhoto = makeDownloadPhoto(resolution, tpPhotosProject?.id);
       const result = await importTeamProject({
         teamProject: tpPhotosProject,
         teamPhotos: tpPhotos,
@@ -1758,7 +1768,7 @@ export default function ProjectsScreen({ navigation, route }) {
     setTpImporting(true);
     setTpImportProgress({ done: 0, total: 1 });
     try {
-      const downloadPhoto = makeDownloadPhoto(resolution);
+      const downloadPhoto = makeDownloadPhoto(resolution, tpPhotosProject?.id);
       const result = await importTeamProject({
         teamProject: tpPhotosProject,
         teamPhotos: [raw],
@@ -1780,6 +1790,55 @@ export default function ProjectsScreen({ navigation, route }) {
       try {
         Alert.alert('Import failed', err?.message || 'Could not import this photo.');
       } catch {}
+    } finally {
+      setTpImporting(false);
+      setTpImportProgress({ done: 0, total: 0 });
+    }
+  };
+
+  // Slice D.7: per-photo import from the Team Edits tab viewer. The
+  // photo carries its source project id/name in _sourceProjectId /
+  // _sourceProjectName from the aggregator, so we can create a
+  // local project named after the source without needing the
+  // tpPhotosProject state to be set.
+  const handleImportSingleEditPhoto = async (viewerPhoto) => {
+    if (!viewerPhoto) return;
+    if (tpImporting) return;
+    const raw = teamEdits.find((p) => String(p.id) === String(viewerPhoto.id));
+    if (!raw?._sourceProjectId) {
+      try { Alert.alert('Import failed', 'Missing source project info for this photo.'); } catch {}
+      return;
+    }
+    const teamProject = {
+      id: raw._sourceProjectId,
+      name: raw._sourceProjectName || 'Team edit',
+      industry: null,
+    };
+    const resolution = await promptImportResolution(1);
+    if (!resolution) return;
+    setTpImporting(true);
+    setTpImportProgress({ done: 0, total: 1 });
+    try {
+      const downloadPhoto = makeDownloadPhoto(resolution, teamProject.id);
+      const result = await importTeamProject({
+        teamProject,
+        teamPhotos: [raw],
+        downloadPhoto,
+        createProject,
+        addPhoto,
+        onProgress: (done, total) => setTpImportProgress({ done, total }),
+      });
+      setEditsViewerPhoto(null);
+      setProjectsTab('mine');
+      try {
+        Alert.alert(
+          'Imported',
+          result.imported === 1 ? '1 photo imported.' : 'Photo could not be imported.',
+        );
+      } catch {}
+    } catch (err) {
+      console.warn('[ProjectsScreen] Single-edit import failed:', err?.message);
+      try { Alert.alert('Import failed', err?.message || 'Could not import this photo.'); } catch {}
     } finally {
       setTpImporting(false);
       setTpImportProgress({ done: 0, total: 0 });
@@ -1926,6 +1985,53 @@ export default function ProjectsScreen({ navigation, route }) {
     }
   };
 
+  // Slice D.7: Team edits aggregator. Iterates every team project's
+  // photo list, keeps only preLabeled=true rows (edited copies from
+  // team-member Studio's "Send to admin"), and augments each with
+  // _sourceProjectId + _sourceProjectName. Client-side fan-out is
+  // acceptable while team sizes are small — swap for a dedicated
+  // proxy aggregator (`/api/admin/:s/team-edits`) if N gets large.
+  const fetchTeamEdits = async () => {
+    if (!proxySessionId) return;
+    setTeamEditsLoading(true);
+    setTeamEditsError(null);
+    try {
+      const proxyService = require('../services/proxyService').default;
+      let projectsList = teamProjects;
+      if (!projectsList || projectsList.length === 0) {
+        try {
+          const r = await proxyService.getTeamProjects(proxySessionId);
+          projectsList = Array.isArray(r?.projects) ? r.projects : [];
+        } catch (_) { projectsList = []; }
+      }
+      const results = await Promise.all(
+        projectsList.map(async (proj) => {
+          try {
+            const r = await proxyService.getTeamProjectPhotos(proxySessionId, proj.id, { limit: 200 });
+            const photos = Array.isArray(r?.photos) ? r.photos : [];
+            return photos
+              .filter((p) => p?.preLabeled === true)
+              .map((p) => ({ ...p, _sourceProjectId: proj.id, _sourceProjectName: proj.name || 'Project' }));
+          } catch (e) {
+            console.warn('[ProjectsScreen] team-edits fetch failed for project', proj?.id, e?.message);
+            return [];
+          }
+        })
+      );
+      const flat = results.flat().sort((a, b) => {
+        const ta = a?.createdTime ? Date.parse(a.createdTime) : 0;
+        const tb = b?.createdTime ? Date.parse(b.createdTime) : 0;
+        return tb - ta;
+      });
+      setTeamEdits(flat);
+    } catch (err) {
+      console.warn('[ProjectsScreen] fetchTeamEdits failed:', err?.message);
+      setTeamEditsError(err?.message || 'Failed to load edits');
+    } finally {
+      setTeamEditsLoading(false);
+    }
+  };
+
   // Fetch on tab switch / session change. Not on mount to avoid a
   // wasted request for admins who never open the Team tab.
   useEffect(() => {
@@ -1946,6 +2052,9 @@ export default function ProjectsScreen({ navigation, route }) {
         }
       })();
     }
+    if (projectsTab === 'edits' && showTeamTab) {
+      fetchTeamEdits();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectsTab, showTeamTab, proxySessionId]);
 
@@ -1953,7 +2062,7 @@ export default function ProjectsScreen({ navigation, route }) {
   // team), snap back to the local tab so the empty Team view doesn't
   // strand them.
   useEffect(() => {
-    if (!showTeamTab && projectsTab === 'team') setProjectsTab('mine');
+    if (!showTeamTab && (projectsTab === 'team' || projectsTab === 'edits')) setProjectsTab('mine');
   }, [showTeamTab, projectsTab]);
 
   // Team projects come from the proxy KV store. They carry `updatedAt`
@@ -2181,6 +2290,31 @@ export default function ProjectsScreen({ navigation, route }) {
               {teamProjects.length > 0 ? ` (${teamProjects.length})` : ''}
             </Text>
           </TouchableOpacity>
+          {/* Slice D.7: Team edits tab. Flat grid across all team
+              projects of photos with preLabeled=true (Studio "Send to
+              admin" bakes). Gives admin one-tap access to team-member
+              edits without needing to open each project. */}
+          <TouchableOpacity
+            style={[
+              styles.tabBtn,
+              projectsTab === 'edits' && { borderBottomColor: theme.accent, borderBottomWidth: 2 },
+            ]}
+            onPress={() => {
+              if (isMultiSelectMode) exitMultiSelect();
+              setProjectsTab('edits');
+            }}
+            hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+          >
+            <Text
+              style={[
+                styles.tabBtnText,
+                { color: projectsTab === 'edits' ? theme.textPrimary : theme.textMuted },
+              ]}
+            >
+              {t('projects.tabs.edits', { defaultValue: 'Edits' })}
+              {teamEdits.length > 0 ? ` (${teamEdits.length})` : ''}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -2356,7 +2490,93 @@ export default function ProjectsScreen({ navigation, route }) {
         style={styles.scrollView}
         contentContainerStyle={[styles.content, { paddingBottom: 20 + insets.bottom + 50 + 24 }]}
       >
-        {projectsTab === 'team' && showTeamTab ? (
+        {projectsTab === 'edits' && showTeamTab ? (
+          !proxySessionId ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="people-outline" size={40} color={theme.textMuted} style={{ marginBottom: 8 }} />
+              <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
+                {t('projects.teamConnectTitle', { defaultValue: 'Connect your team' })}
+              </Text>
+            </View>
+          ) : teamEditsLoading ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={theme.textMuted} />
+              <Text style={{ color: theme.textSecondary, marginTop: 10, fontFamily: FONTS.ALEXANDRIA }}>
+                {t('projects.editsLoading', { defaultValue: 'Loading edits…' })}
+              </Text>
+            </View>
+          ) : teamEditsError ? (
+            <View style={{ paddingVertical: 24, paddingHorizontal: 20, alignItems: 'center' }}>
+              <Ionicons name="alert-circle-outline" size={28} color={theme.textMuted} />
+              <Text style={{ color: theme.textPrimary, marginTop: 10, fontFamily: FONTS.ALEXANDRIA, textAlign: 'center' }}>
+                {teamEditsError}
+              </Text>
+              <TouchableOpacity
+                onPress={fetchTeamEdits}
+                style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: COLORS.PRIMARY }}
+              >
+                <Text style={{ color: '#000', fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' }}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : teamEdits.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="brush-outline" size={40} color={theme.textMuted} style={{ marginBottom: 8 }} />
+              <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
+                {t('projects.editsEmptyTitle', { defaultValue: 'No edited copies yet' })}
+              </Text>
+              <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary }]}>
+                {t('projects.editsEmptyBody', {
+                  defaultValue:
+                    'When a team member uses "Send edited copy to admin" from Studio, the edit will appear here.',
+                })}
+              </Text>
+            </View>
+          ) : (
+            (() => {
+              const screenW = Dimensions.get('window').width;
+              const cols = 3;
+              const gutter = 4;
+              const padH = 12;
+              const tile = Math.floor((screenW - padH * 2 - gutter * (cols - 1)) / cols);
+              return (
+                <FlatList
+                  data={teamEdits}
+                  keyExtractor={(item) => `${item._sourceProjectId}_${item.id}`}
+                  numColumns={cols}
+                  contentContainerStyle={{ paddingHorizontal: padH, paddingBottom: 20 }}
+                  columnWrapperStyle={{ gap: gutter }}
+                  ItemSeparatorComponent={() => <View style={{ height: gutter }} />}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => setEditsViewerPhoto(item)}
+                      style={{ width: tile, height: tile, backgroundColor: theme.surfaceElevated, borderRadius: 6, overflow: 'hidden' }}
+                    >
+                      {item.thumbnailLink ? (
+                        <Image
+                          source={{ uri: item.thumbnailLink }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                          <Ionicons name="image-outline" size={20} color={theme.textMuted} />
+                        </View>
+                      )}
+                      {item._sourceProjectName ? (
+                        <View style={teamPhotosStyles.gridCaption}>
+                          <Text style={teamPhotosStyles.gridCaptionText} numberOfLines={1}>
+                            {item._sourceProjectName}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </TouchableOpacity>
+                  )}
+                />
+              );
+            })()
+          )
+        ) : projectsTab === 'team' && showTeamTab ? (
           !proxySessionId ? (
             <View style={styles.emptyState}>
               <Ionicons
@@ -3840,6 +4060,30 @@ export default function ProjectsScreen({ navigation, route }) {
           ) : null}
         </View>
       </Modal>
+
+      {/* Slice D.7: viewer overlay for the Team Edits tab. Rendered
+          at ProjectsScreen root (not inside the team-project modal)
+          because the Edits tab has no per-project modal — the flat
+          grid lives directly in the tab content. Pool is teamEdits
+          adapted for the viewer; per-photo Import uses the source
+          project pulled from _sourceProjectId. */}
+      {editsViewerPhoto ? (
+        <View style={StyleSheet.absoluteFillObject}>
+          <EnlargedPhotoViewer
+            photos={teamEdits.map(adaptTeamPhotoForViewer)}
+            initialPhotoId={editsViewerPhoto.id}
+            onClose={() => setEditsViewerPhoto(null)}
+            showOverlays
+            overlaysOn={tpViewerOverlaysOn}
+            onOverlaysChange={setTpViewerOverlaysOn}
+            showEdit={false}
+            showDelete={false}
+            showSelect={false}
+            shareLabel={tpImporting ? 'Importing…' : 'Import photo'}
+            onShare={handleImportSingleEditPhoto}
+          />
+        </View>
+      ) : null}
 
     </SafeAreaView>
   );
