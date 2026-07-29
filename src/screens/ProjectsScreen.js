@@ -35,6 +35,7 @@ import { FEATURES } from '../constants/featurePermissions';
 import { FONTS } from '../constants/fonts';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
+import EnlargedPhotoViewer from '../components/EnlargedPhotoViewer';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadCompletionModal from '../components/UploadCompletionModal';
 import { LOCATIONS, getLocationName } from '../config/locations';
@@ -1578,6 +1579,12 @@ export default function ProjectsScreen({ navigation, route }) {
   const [tpPhotosLoading, setTpPhotosLoading] = useState(false);
   const [tpPhotosError, setTpPhotosError] = useState(null);
   const [tpViewerPhoto, setTpViewerPhoto] = useState(null);       // photo shown in viewer
+  // Slice D.2: labels-on/off toggle state for the reused EnlargedPhotoViewer
+  // when viewing team photos. Defaults to on; kept local for now (no
+  // per-photo/per-project persistence). Team-member editing not
+  // supported — this is admin's view-only surface with the standard
+  // viewer chrome.
+  const [tpViewerOverlaysOn, setTpViewerOverlaysOn] = useState(true);
 
   const openTeamProjectPhotos = async (project) => {
     if (!project?.id || !proxySessionId) return;
@@ -1659,6 +1666,28 @@ export default function ProjectsScreen({ navigation, route }) {
     // Handles both =sNNN and /sNNN patterns Google uses across
     // account types + geo-CDN buckets.
     return url.replace(/=s\d+(-[^&?]*)?$/, `=s${size}`).replace(/\/s\d+(\/[^?]*)?$/, `/s${size}$1`);
+  };
+
+  // Slice D.2: shape team-photo API objects to what EnlargedPhotoViewer
+  // expects. The viewer only requires `id` + `uri` to render a frame
+  // and reads `overrides` / `mode` / `room` for the labels overlay via
+  // StudioEditOverlays. We DO NOT import these into PhotoContext —
+  // usePhotos() inside the viewer returns admin's own live photos and
+  // falls back to the raw pool entry when there's no match, which is
+  // exactly what we want for team photos.
+  const adaptTeamPhotoForViewer = (tp) => {
+    const resolvedType = resolveTeamPhotoType(tp);
+    return {
+      id: tp.id,
+      uri: swapDriveThumbSize(tp.thumbnailLink, 2000),
+      overrides: tp.overrides || null,
+      // Viewer / StudioEditOverlays branch on `mode` for combined vs
+      // single-photo label layout; resolveTeamPhotoType normalizes
+      // filename suffixes for legacy uploads with no meta.
+      mode: resolvedType === 'combined' ? 'combined' : resolvedType || 'single',
+      room: tp.room || null,
+      capturedBy: tp.capturedBy || null,
+    };
   };
 
   const fetchTeamProjects = async ({ userInitiated = false } = {}) => {
@@ -3512,45 +3541,31 @@ export default function ProjectsScreen({ navigation, route }) {
             )}
           </View>
 
-          {/* Full-res viewer overlay. Rendered INSIDE the grid Modal
-              (not as a sibling <Modal>) because RN's Modal doesn't
-              reliably stack — a second visible Modal was silently
-              dropped on Android and had tap-target confusion on iOS.
-              Absolute-positioned View is cross-platform-safe. */}
+          {/* Slice D.2: reuse the app's standard EnlargedPhotoViewer for
+              team-uploaded photos. Team photo objects are adapted to the
+              viewer's expected shape (id, uri, overrides, mode, room).
+              We hide every destructive/editing action (delete, select,
+              edit, share) — admin's team-photo surface is view-only for
+              now with just the labels on/off toggle. The viewer is
+              layered inside the grid Modal via absoluteFill because RN's
+              Modal doesn't reliably nest another Modal cross-platform. */}
           {tpViewerPhoto ? (
-            <TouchableWithoutFeedback onPress={() => setTpViewerPhoto(null)}>
-              <View style={[teamPhotosStyles.viewerOverlay, StyleSheet.absoluteFillObject]}>
-                <TouchableOpacity
-                  onPress={() => setTpViewerPhoto(null)}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  style={[teamPhotosStyles.viewerCloseBtn, { top: Math.max(insets.top + 8, 40) }]}
-                >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-                {tpViewerPhoto?.thumbnailLink ? (
-                  <Image
-                    source={{ uri: swapDriveThumbSize(tpViewerPhoto.thumbnailLink, 2000) }}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode="contain"
-                  />
-                ) : null}
-                {(() => {
-                  const primary = formatTeamPhotoCaption(tpViewerPhoto) || tpViewerPhoto?.name;
-                  const secondary = formatTeamPhotoSubcaption(tpViewerPhoto);
-                  if (!primary && !secondary) return null;
-                  return (
-                    <View style={[teamPhotosStyles.viewerCaption, { bottom: Math.max(insets.bottom + 16, 32) }]}>
-                      {primary ? (
-                        <Text style={teamPhotosStyles.viewerCaptionText} numberOfLines={1}>{primary}</Text>
-                      ) : null}
-                      {secondary ? (
-                        <Text style={teamPhotosStyles.viewerSubcaptionText} numberOfLines={1}>{secondary}</Text>
-                      ) : null}
-                    </View>
-                  );
-                })()}
-              </View>
-            </TouchableWithoutFeedback>
+            <View style={StyleSheet.absoluteFillObject}>
+              <EnlargedPhotoViewer
+                photos={tpPhotos.map(adaptTeamPhotoForViewer)}
+                initialPhotoId={tpViewerPhoto.id}
+                onClose={() => setTpViewerPhoto(null)}
+                showOverlays
+                overlaysOn={tpViewerOverlaysOn}
+                onOverlaysChange={setTpViewerOverlaysOn}
+                // Explicitly hidden: no edit / delete / select / share.
+                // Label editing + delete + share + report are the
+                // "unsupported actions" per current admin-side scope.
+                showEdit={false}
+                showDelete={false}
+                showSelect={false}
+              />
+            </View>
           ) : null}
         </View>
       </Modal>
