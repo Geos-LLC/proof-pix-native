@@ -86,8 +86,13 @@ class GoogleAuthService {
 
       const responseData = response.data;
 
-      // Log the response to understand the structure
-      console.log('[GoogleAuthService] Raw response data:', JSON.stringify(responseData, null, 2));
+      // Do NOT stringify responseData — it contains idToken + serverAuthCode
+      // which land in Grafana Loki via FixPrompt breadcrumbs. Log shape only.
+      console.log('[GoogleAuthService] Response received:', {
+        hasIdToken: !!(responseData.idToken || responseData.user?.idToken),
+        hasServerAuthCode: !!(responseData.serverAuthCode || responseData.user?.serverAuthCode),
+        hasUser: !!responseData.user,
+      });
 
       // Handle both old format (with nested user) and new format (flat structure)
       // v16+ of @react-native-google-signin returns flat structure in data

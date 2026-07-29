@@ -280,7 +280,13 @@ class DropboxAuthService {
         }
 
         const userInfo = await userInfoResponse.json();
-        console.log('[DROPBOX] User info received:', userInfo);
+        // Do NOT log the full userInfo blob — contains account_id, email,
+        // profile_photo_url which land in Grafana Loki via FixPrompt.
+        console.log('[DROPBOX] User info received:', {
+          hasAccountId: !!userInfo.account_id,
+          hasEmail: !!userInfo.email,
+          hasName: !!userInfo.name,
+        });
 
         // Store tokens
         await this.storeTokens(
