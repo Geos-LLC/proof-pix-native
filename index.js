@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-import-v23-' + Date.now() + ' — New "Import" action on team-photo viewer downloads photos to admin device + creates a normal local project. Existing Studio/report/share/branding all work without special-casing. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-import-disclosure-v24-' + Date.now() + ' — Import surfaces reduced-resolution disclosure in modal header + confirm dialog before download. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

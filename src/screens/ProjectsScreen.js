@@ -1635,6 +1635,26 @@ export default function ProjectsScreen({ navigation, route }) {
   const handleImportTeamProject = async () => {
     if (!tpPhotosProject || tpPhotos.length === 0) return;
     if (tpImporting) return;
+
+    // Disclose the resolution trade-off before the download starts.
+    // Admin gets ~2000px versions suitable for Studio + reports, not
+    // byte-exact originals — full-res originals stay in Drive and are
+    // reachable via the "Drive" button in the same header. Confirmation
+    // is a single tap; no persistent "don't show again" — the trade-off
+    // is small enough that per-import confirmation is fine.
+    const shouldProceed = await new Promise((resolve) => {
+      Alert.alert(
+        'Import project',
+        `Downloads ${tpPhotos.length} photo${tpPhotos.length === 1 ? '' : 's'} at reduced resolution (~2000px, suitable for reports and editing). Original files remain in Drive. Continue?`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Import', onPress: () => resolve(true) },
+        ],
+        { onDismiss: () => resolve(false) },
+      );
+    });
+    if (!shouldProceed) return;
+
     setTpImporting(true);
     setTpImportProgress({ done: 0, total: tpPhotos.length });
     try {
@@ -3529,6 +3549,17 @@ export default function ProjectsScreen({ navigation, route }) {
                 <Text style={[teamPhotosStyles.subtitle, { color: theme.textSecondary }]} numberOfLines={1}>
                   {(tpPhotosProject?.ownerName || 'Team member')} · {(tpPhotosProject?.photoCount || tpPhotos.length || 0)} photo{(tpPhotosProject?.photoCount || tpPhotos.length) === 1 ? '' : 's'}
                 </Text>
+                {/* Slice D.5: always-visible resolution disclosure.
+                    Import downloads at ~2000px from Drive's thumbnail
+                    CDN — plenty for on-device editing + report render,
+                    but not byte-exact originals. Making this visible
+                    up-front prevents a "why are my imports smaller
+                    than what I shot?" support ticket. */}
+                {tpPhotos.length > 0 && !tpPhotosLoading ? (
+                  <Text style={[teamPhotosStyles.subtitle, { color: theme.textMuted, marginTop: 2, fontSize: 11 }]} numberOfLines={2}>
+                    Import saves reduced-resolution copies (~2000px). Originals stay in Drive.
+                  </Text>
+                ) : null}
               </View>
               {/* Slice D.5: Import to Project — download all team photos
                   to admin's device and create a normal local project.
