@@ -143,6 +143,13 @@ export default function ProjectsScreen({ navigation, route }) {
     saveCustomRooms,
     autoUseCurrentLocationForProjects,
     updateAutoUseCurrentLocationForProjects,
+    // Slice D.3.2: read admin's global label positions so the grid
+    // chip overlay matches wherever the enlarged view's PhotoLabels
+    // renders. Photo-level overrides from team-member snapshot win
+    // when present.
+    singleLabelPosition: adminSingleLabelPosition,
+    beforeLabelPosition: adminBeforeLabelPosition,
+    afterLabelPosition: adminAfterLabelPosition,
   } = useSettings();
   const roomDataMap = useMemo(() => {
     const map = new Map();
@@ -1656,6 +1663,33 @@ export default function ProjectsScreen({ navigation, route }) {
       parts.push('Custom labels');
     }
     return parts.length ? parts.join(' · ') : null;
+  };
+
+  // Slice D.3.2: translate a PhotoLabels position key (e.g. 'top-left',
+  // 'bottom-right', 'top-center') into an absolute-positioning style
+  // object for grid chip overlays. `combinedHalf` narrows a combined
+  // photo's chip to the correct half — the "before" chip's -left/-right
+  // key is anchored inside the LEFT half, "after" inside the RIGHT
+  // half — matching how the pixel labels sit in a side-by-side layout.
+  // Falls back to top-left when the key is unrecognized.
+  const chipCornerStyle = (positionKey, combinedHalf = null) => {
+    const V = 4;
+    const H = 4;
+    const s = {};
+    const key = String(positionKey || 'top-left').toLowerCase();
+    // Vertical anchor
+    if (key.startsWith('bottom')) s.bottom = V; else s.top = V;
+    // Horizontal anchor. For combined halves, force left of the left
+    // half or right of the right half regardless of key's horizontal
+    // component (grid tile is only 3-col; a "before-half bottom-right"
+    // would visually overlap the "after-half bottom-left" and read as
+    // a single chip).
+    if (combinedHalf === 'left') s.left = H;
+    else if (combinedHalf === 'right') s.right = H;
+    else if (key.endsWith('right')) s.right = H;
+    else if (key.endsWith('center')) { s.left = 0; s.right = 0; s.alignItems = 'center'; }
+    else s.left = H;
+    return s;
   };
 
   // Drive thumbnailLinks look like ".../s220"; swap the suffix to
@@ -3504,14 +3538,16 @@ export default function ProjectsScreen({ navigation, route }) {
                     renderItem={({ item }) => {
                       const caption = formatTeamPhotoCaption(item);
                       const resolvedType = resolveTeamPhotoType(item);
-                      // Single-chip overlay for before/after; combined
-                      // tiles get TWO chips (Before over left half,
-                      // After over right half) to mirror the baked
-                      // layout the team member saw. Simpler than trying
-                      // to differentiate stacked vs side layout at grid
-                      // resolution — side-by-side is by far the common
-                      // case, and even for stacked, top-left/top-right
-                      // reads clearly as "before/after" from the tile.
+                      // Slice D.3.2: derive chip position from the same
+                      // source PhotoLabels uses in the enlarged view.
+                      // Photo-level override (from team-member snapshot
+                      // sent via proxy meta) wins; falls back to admin's
+                      // global label position; final fallback is
+                      // top-left. Combined uses separate before/after
+                      // positions per half.
+                      const singlePos = item.overrides?.singleLabelPosition || adminSingleLabelPosition || 'top-left';
+                      const beforePos = item.overrides?.beforeLabelPosition || adminBeforeLabelPosition || 'top-left';
+                      const afterPos = item.overrides?.afterLabelPosition || adminAfterLabelPosition || 'top-right';
                       const isBeforeOrAfter = resolvedType === 'before' || resolvedType === 'after';
                       const chipLabel = resolvedType === 'before' ? 'Before' : 'After';
                       return (
@@ -3532,16 +3568,16 @@ export default function ProjectsScreen({ navigation, route }) {
                             </View>
                           )}
                           {isBeforeOrAfter ? (
-                            <View style={teamPhotosStyles.gridTypeChip}>
+                            <View style={[teamPhotosStyles.gridTypeChipBase, chipCornerStyle(singlePos)]}>
                               <Text style={teamPhotosStyles.gridTypeChipText}>{chipLabel}</Text>
                             </View>
                           ) : null}
                           {resolvedType === 'combined' ? (
                             <>
-                              <View style={teamPhotosStyles.gridTypeChip}>
+                              <View style={[teamPhotosStyles.gridTypeChipBase, chipCornerStyle(beforePos, 'left')]}>
                                 <Text style={teamPhotosStyles.gridTypeChipText}>Before</Text>
                               </View>
-                              <View style={teamPhotosStyles.gridTypeChipRight}>
+                              <View style={[teamPhotosStyles.gridTypeChipBase, chipCornerStyle(afterPos, 'right')]}>
                                 <Text style={teamPhotosStyles.gridTypeChipText}>After</Text>
                               </View>
                             </>
@@ -3690,22 +3726,11 @@ const teamPhotosStyles = StyleSheet.create({
     fontFamily: FONTS.ALEXANDRIA,
     fontWeight: '600',
   },
-  gridTypeChip: {
+  // Base style for grid label chips — corner placement is applied
+  // separately via chipCornerStyle() so a single style can serve
+  // top-left / top-right / bottom-left / bottom-right variants.
+  gridTypeChipBase: {
     position: 'absolute',
-    top: 4,
-    left: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: '#FFD84D',
-  },
-  // Second chip position for combined tiles — mirrors gridTypeChip
-  // but anchored top-right so it lands over the After half of a
-  // side-by-side composite.
-  gridTypeChipRight: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
