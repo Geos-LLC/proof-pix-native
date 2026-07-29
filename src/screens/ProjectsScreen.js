@@ -3555,9 +3555,15 @@ export default function ProjectsScreen({ navigation, route }) {
                 photos={tpPhotos.map(adaptTeamPhotoForViewer)}
                 initialPhotoId={tpViewerPhoto.id}
                 onClose={() => setTpViewerPhoto(null)}
-                showOverlays
-                overlaysOn={tpViewerOverlaysOn}
-                onOverlaysChange={setTpViewerOverlaysOn}
+                // Overlays toggle DISABLED for team photos: the pixel
+                // already has labels baked in by the team member's
+                // chromeBake pipeline before upload. Rendering our
+                // PhotoLabels overlay on top produces doubled chips
+                // (screenshot bug 2026-07-29). The toggle would only
+                // ever be able to hide our overlay — never the baked
+                // pixel labels — so surfacing it is misleading.
+                showOverlays={false}
+                overlaysOn={false}
                 // Explicitly hidden: no edit / delete / select / share.
                 // Label editing + delete + share + report are the
                 // "unsupported actions" per current admin-side scope.
