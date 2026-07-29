@@ -4,6 +4,7 @@
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import googleDriveService from './googleDriveService';
@@ -12,6 +13,75 @@ import proxyService from './proxyService';
 import { uploadPhotoToDropbox } from './dropboxUploadService';
 import { ensureLabelForPhoto, ensureLabelsForPhotoBatch } from './labelService';
 import iCloudService from './iCloudService';
+
+/**
+ * Strip EXIF metadata (including GPS coordinates) by re-encoding the image
+ * via expo-image-manipulator. The manipulator does not preserve EXIF, so a
+ * no-op transform is enough to scrub it.
+ *
+ * ProofPix is used on job sites — camera photos routinely contain GPS
+ * coordinates in EXIF. Uploading those to cloud storage / CRM leaks the
+ * cleaner's home base and customer addresses to anyone who later downloads
+ * the file. Users' explicit `gps` metadata field (opt-in map display in
+ * reports) is separate and untouched.
+ *
+ * Accepts either a file:// URI or a data: URL, returns a data: URL suitable
+ * for the existing upload pipeline. On any failure, returns the original
+ * input — better to ship with EXIF than to fail the upload.
+ */
+export async function stripExifToDataUrl(imageInput) {
+  try {
+    let inputUri = imageInput;
+    let tempFileToDelete = null;
+
+    if (typeof imageInput === 'string' && imageInput.startsWith('data:')) {
+      const match = imageInput.match(/^data:[^;]+;base64,(.+)$/);
+      if (!match) return imageInput;
+      const base64 = match[1];
+      const tempPath = `${FileSystem.cacheDirectory}exif_strip_in_${Date.now()}.jpg`;
+      await FileSystem.writeAsStringAsync(tempPath, base64, { encoding: 'base64' });
+      inputUri = tempPath;
+      tempFileToDelete = tempPath;
+    }
+
+    const result = await ImageManipulator.manipulateAsync(
+      inputUri,
+      [],  // no transforms — re-encode only
+      { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+    );
+
+    const strippedBase64 = await FileSystem.readAsStringAsync(result.uri, { encoding: 'base64' });
+
+    if (tempFileToDelete) {
+      try { await FileSystem.deleteAsync(tempFileToDelete, { idempotent: true }); } catch {}
+    }
+    try { await FileSystem.deleteAsync(result.uri, { idempotent: true }); } catch {}
+
+    return `data:image/jpeg;base64,${strippedBase64}`;
+  } catch (error) {
+    console.warn('[EXIF_STRIP] failed, using original:', error?.message);
+    return imageInput;
+  }
+}
+
+/**
+ * File-URI variant: returns a new cache-directory file URI with EXIF
+ * stripped. Used by the CRM-attach path in backgroundUploadService where
+ * the downstream API wants a file URI, not a base64 data URL.
+ */
+export async function stripExifToFileUri(fileUri) {
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      fileUri,
+      [],
+      { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    return result.uri;
+  } catch (error) {
+    console.warn('[EXIF_STRIP] file-uri strip failed, using original:', error?.message);
+    return fileUri;
+  }
+}
 
 /**
  * Compress image if needed - NO LONGER NEEDED with Railway (no body size limits)
@@ -128,7 +198,12 @@ try {
     console.log('[UPLOAD_PHOTO] 🎯 Account type:', accountType);
     console.log('[UPLOAD_PHOTO] 🔑 Session ID:', sessionId);
     console.log('[UPLOAD_PHOTO] 📁 Folder ID:', folderId);
-    
+
+    // Strip EXIF (including GPS) before any upload path. Cheap re-encode via
+    // native ImageManipulator; on failure, falls through with the original
+    // payload rather than blocking the upload.
+    imageDataUrl = await stripExifToDataUrl(imageDataUrl);
+
     // Route based on account type and session availability
     // If sessionId is provided, use proxy server (for both Google and Dropbox team uploads)
     // If no sessionId and Dropbox, use direct Dropbox upload
@@ -493,6 +568,10 @@ export async function uploadPhotoAsTeamMember({
     if (!sessionId || !token) {
       throw new Error('Missing session ID or invite token.');
     }
+
+    // Strip EXIF/GPS before uploading. Same rationale as uploadPhoto — job-
+    // site photos routinely carry embedded GPS coordinates.
+    imageDataUrl = await stripExifToDataUrl(imageDataUrl);
 
     // Determine upload method: Multipart (Android/Efficient) vs Base64 (Legacy/iOS)
     // Use multipart for Android to avoid 4.5MB serverless limit issues

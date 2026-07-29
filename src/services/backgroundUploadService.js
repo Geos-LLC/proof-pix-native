@@ -1,4 +1,4 @@
-import { uploadPhotoBatch, uploadPhotoAsTeamMember } from './uploadService';
+import { uploadPhotoBatch, uploadPhotoAsTeamMember, stripExifToFileUri } from './uploadService';
 import { markPhotosAsUploaded } from './uploadTracker';
 import { loadProjects } from './storage';
 import crmService from './crm';
@@ -46,10 +46,14 @@ async function attachSuccessfulPhotosToCrm(photos) {
 
   for (const photo of photosWithJob) {
     try {
+      // Strip embedded EXIF (including GPS) before shipping bytes to the CRM.
+      // The explicit `gps` metadata field below is user-visible and preserved
+      // — only the JPEG's own EXIF block is scrubbed.
+      const strippedUri = photo.uri ? await stripExifToFileUri(photo.uri) : photo.uri;
       await crmService.attachPhoto(String(photo.crmJobId), {
         id: photo.id,
         projectId: photo.projectId,
-        localUri: photo.uri,
+        localUri: strippedUri,
         filename: photo.filename || (photo.uri ? photo.uri.split('/').pop() : `${photo.id}.jpg`),
         mimeType: photo.mimeType || 'image/jpeg',
         mode: photo.mode,
