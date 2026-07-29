@@ -555,6 +555,7 @@ export async function uploadPhotoAsTeamMember({
   crmJobId,
   photoId,
   overrides,
+  projectId,
 }) {
   // Per-photo telemetry: original file size, base64 payload size (iOS
   // path only), request duration, success. Emitted under
@@ -625,6 +626,7 @@ export async function uploadPhotoAsTeamMember({
       crmJobId,
       photoId,
       overrides,
+      projectId,
     });
     console.warn('[TEAM_UPLOAD] photo ok', {
       platform: Platform.OS,
@@ -913,6 +915,13 @@ export async function uploadPhotoBatch(photos, config) {
             // color, room override, etc.) so admin's Team Photos view
             // can render the same labels the team member saw.
             overrides: photo.overrides || null,
+            // Slice D.1: forward the team-member-local projectId so
+            // the proxy can scope the photos endpoint by projectId.
+            // Two projects sharing a name (e.g. "Project 1") upload
+            // to the same Drive folder — without this scope, admin
+            // sees mixed photos from every project that ever used
+            // that album name.
+            projectId: photo.projectId ? String(photo.projectId) : null,
           })
         : uploadPhoto({
             imageDataUrl: photoUri, // Use the potentially labeled URI
