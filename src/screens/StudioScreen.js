@@ -226,7 +226,22 @@ export default function StudioScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { canUse } = useFeaturePermissions();
-  const { photos, updatePhoto, setPhotoOverride } = usePhotos();
+  const { photos, addPhoto, updatePhoto, setPhotoOverride } = usePhotos();
+  // Slice D.6: gate the "Send to admin" save option to team_member
+  // mode. Read once on mount — mode doesn't change during a Studio
+  // session. Kept lazy-read to avoid pulling AdminContext into
+  // StudioScreen (would widen the render surface unnecessarily).
+  const [isTeamMemberMode, setIsTeamMemberMode] = useState(false);
+  const [sendingToAdmin, setSendingToAdmin] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const mode = await AsyncStorage.getItem('@admin_user_mode');
+        setIsTeamMemberMode(mode === 'team_member');
+      } catch {}
+    })();
+  }, []);
   // Lifted above the settings destructure so useScopedSettings sees
   // the photoId — every read here cascades photo.overrides over global,
   // and the writers passed to the brand/watermark tile toggles route
@@ -1695,6 +1710,76 @@ export default function StudioScreen({ route, navigation }) {
               <Ionicons name="bookmark-outline" size={18} color={theme.textSecondary} />
             </TouchableOpacity>
           ) : null}
+          {/* Slice D.6: Send edited copy to admin. Team-member only —
+              bakes the current photo (image + labels + markup +
+              drawings + watermark + brand logo + metadata) into a
+              flat pixel via chromeBakeService, then creates a new
+              local photo record which the auto-team-upload picks up
+              and ships to admin's Drive alongside the original.
+              Admin sees a new photo in the Team Projects grid; they
+              can import it via the standard Import flow. Original
+              upload stays intact. */}
+          {isTeamMemberMode && photo?.id && photo?.uri && (
+            <TouchableOpacity
+              style={[
+                styles.saveMenuOption,
+                { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.divider },
+              ]}
+              disabled={sendingToAdmin}
+              onPress={async () => {
+                if (sendingToAdmin) return;
+                setSendingToAdmin(true);
+                setSaveMenuVisible(false);
+                try {
+                  const { default: chromeBakeService } = await import('../services/chromeBakeService');
+                  const bakedUri = await chromeBakeService.bakeChrome(photo, settings);
+                  if (!bakedUri || bakedUri === photo.uri) {
+                    throw new Error('Bake did not produce a labeled image.');
+                  }
+                  await addPhoto({
+                    id: `team_share_${photo.id}_${Date.now()}`,
+                    uri: bakedUri,
+                    projectId: photo.projectId ?? null,
+                    // Preserve mode so downstream (labels renderer,
+                    // report grid) treats this like an ordinary
+                    // photo of its class.
+                    mode: photo.mode || photo.type || 'single',
+                    type: photo.type || photo.mode || null,
+                    room: photo.room || null,
+                    timestamp: Date.now(),
+                    // capturedBy is stamped inside addPhoto from
+                    // app-settings.userName. Preserve original
+                    // capturedBy if present — attribution should
+                    // stay with the person who shot the photo.
+                    capturedBy: photo.capturedBy || null,
+                    // Slice D.6 signal for the team-upload branch:
+                    // the pixel is already baked with labels; the
+                    // proxy meta should carry preLabeled=true so
+                    // admin's PhotoLabels overlay skips (no double
+                    // render).
+                    _bakedForShare: true,
+                  });
+                  try {
+                    Alert.alert(t('studio.sentToAdminTitle', { defaultValue: 'Sent to admin' }), t('studio.sentToAdminBody', { defaultValue: 'A copy with your edits was sent to the admin.' }));
+                  } catch {}
+                } catch (err) {
+                  console.warn('[Studio] send-to-admin failed:', err?.message);
+                  try {
+                    Alert.alert(t('studio.sentToAdminErrTitle', { defaultValue: 'Send failed' }), err?.message || t('studio.sentToAdminErrBody', { defaultValue: 'Could not send the edited copy. Try again.' }));
+                  } catch {}
+                } finally {
+                  setSendingToAdmin(false);
+                }
+              }}
+            >
+              <Text style={[styles.saveMenuOptionText, { color: theme.textPrimary }]}>
+                {sendingToAdmin
+                  ? t('studio.sendingToAdmin', { defaultValue: 'Sending to admin…' })
+                  : t('studio.sendToAdmin', { defaultValue: 'Send edited copy to admin' })}
+              </Text>
+              <Ionicons name="cloud-upload-outline" size={18} color={theme.textSecondary} />
+            </TouchableOpacity>
+          )}
           {/* Reset action — drops this photo's overrides so it follows
               global Settings again. Hidden when the photo has nothing
               custom to reset. */}

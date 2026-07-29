@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-import-resolution-v25-' + Date.now() + ' — Import dialog offers Reduced or Original resolution (proxy passthrough streams originals via admin OAuth); per-photo Import action in EnlargedPhotoViewer. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-send-edit-v26-' + Date.now() + ' — Team member Studio save menu now offers "Send edited copy to admin"; bakes labels/markup/drawings + auto-uploads as new photo. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

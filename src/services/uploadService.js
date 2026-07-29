@@ -939,11 +939,18 @@ export async function uploadPhotoBatch(photos, config) {
             // that album name.
             projectId: photo.projectId ? String(photo.projectId) : null,
             // Slice D.3: preLabeled = false means the pixel is raw
-            // (no baked labels/watermark). Team uploads always run
-            // with skipLabelBake=true so this is always false on
-            // the team path. Admin's viewer uses this flag to decide
-            // whether to render PhotoLabels overlay on top.
-            preLabeled: skipLabelBake ? false : true,
+            // (no baked labels/watermark). Team uploads normally run
+            // with skipLabelBake=true so this is false — admin's
+            // overlay renders labels on top.
+            //
+            // Slice D.6 exception: team member's "Send to admin"
+            // Studio action bakes the current photo (image + labels
+            // + markup + drawings) into a flat pixel BEFORE calling
+            // addPhoto. That pixel is already labeled; we must send
+            // preLabeled=true so admin's overlay skips its own
+            // rendering and doesn't double the chips. The photo
+            // record carries `_bakedForShare: true` to signal this.
+            preLabeled: photo._bakedForShare ? true : (skipLabelBake ? false : true),
           })
         : uploadPhoto({
             imageDataUrl: photoUri, // Use the potentially labeled URI
