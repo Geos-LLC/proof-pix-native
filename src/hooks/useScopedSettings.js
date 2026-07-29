@@ -28,7 +28,7 @@ import { usePhotos } from '../context/PhotoContext';
 //
 // Naming convention: SettingsContext exposes `update<PascalKey>` for
 // most state. The auto-wrap below looks up the writer by that name.
-const OVERRIDE_KEYS = [
+export const OVERRIDE_KEYS = [
   // Labels
   'showLabels',
   'labelBackgroundColor',

@@ -944,6 +944,34 @@ export const PhotoProvider = ({ children }) => {
         memberName = parsed?.userName || memberName;
       } catch {}
 
+      // Slice D.3.1: snapshot team member's effective label settings
+      // into a per-photo overrides object at upload time. Without
+      // this, admin's PhotoLabels overlay renders using ADMIN's
+      // global label position/color — which may differ from what
+      // the team member set — and labels end up in the "wrong"
+      // place from the team member's perspective. Snapshot happens
+      // once at capture time so it's stable regardless of later
+      // Settings drift on either side.
+      let overridesForUpload = photo.overrides || null;
+      try {
+        const { OVERRIDE_KEYS } = require('../hooks/useScopedSettings');
+        const stored = await readSecureJSON('app-settings');
+        if (stored && typeof stored === 'object') {
+          const snapshot = {};
+          for (const key of OVERRIDE_KEYS) {
+            if (stored[key] !== undefined) snapshot[key] = stored[key];
+          }
+          // Photo's own overrides (from explicit Studio customization)
+          // win over the snapshot — they represent an intentional
+          // per-photo choice while snapshot is just team member's
+          // resolved defaults.
+          overridesForUpload = { ...snapshot, ...(photo.overrides || {}) };
+        }
+      } catch (snapErr) {
+        console.warn('[PhotoContext] label-settings snapshot failed (proceeding without):', snapErr?.message);
+      }
+      const enrichedPhoto = overridesForUpload ? { ...photo, overrides: overridesForUpload } : photo;
+
       // Lazy-require backgroundUploadService — same pattern as the
       // proxyService lazy-require below. Keeps the auto-upload
       // module off the top-level load path so any future OTA that
@@ -953,7 +981,7 @@ export const PhotoProvider = ({ children }) => {
       bg.queueUpload({
         uploadType: 'team',
         teamInfo: info,
-        items: [photo],
+        items: [enrichedPhoto],
         albumName: project.name,
         location: '',
         userName: memberName,

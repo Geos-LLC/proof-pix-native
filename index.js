@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-raw-upload-v18-' + Date.now() + ' — Team uploads skip label bake (raw pixels); admin overlay renders labels + toggle works; preLabeled flag gates overlay per-photo to protect legacy uploads. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-label-snapshot-v19-' + Date.now() + ' — Team upload snapshots team-member label settings into per-photo overrides so admin overlay renders at team-member positions; combined grid tiles get B/A chip. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

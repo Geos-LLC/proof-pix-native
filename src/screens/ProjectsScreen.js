@@ -3504,11 +3504,13 @@ export default function ProjectsScreen({ navigation, route }) {
                     renderItem={({ item }) => {
                       const caption = formatTeamPhotoCaption(item);
                       const resolvedType = resolveTeamPhotoType(item);
-                      // Combined photos already carry per-half Before/After
-                      // chips baked into the pixel by chromeBake — an extra
-                      // overlay would just clutter. Skip for combined.
-                      const showTypeChip = resolvedType === 'before' || resolvedType === 'after';
-                      const chipLabel = resolvedType === 'before' ? 'Before' : 'After';
+                      // Show a small yellow chip overlay for all three
+                      // types so combined tiles get the same visual
+                      // signal as before/after (previous version skipped
+                      // combined; user pointed out that the pixel-baked
+                      // half-chips are too small to see at grid resolution).
+                      const showTypeChip = resolvedType === 'before' || resolvedType === 'after' || resolvedType === 'combined';
+                      const chipLabel = resolvedType === 'before' ? 'Before' : resolvedType === 'after' ? 'After' : 'B/A';
                       return (
                         <TouchableOpacity
                           activeOpacity={0.85}
