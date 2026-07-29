@@ -3504,13 +3504,16 @@ export default function ProjectsScreen({ navigation, route }) {
                     renderItem={({ item }) => {
                       const caption = formatTeamPhotoCaption(item);
                       const resolvedType = resolveTeamPhotoType(item);
-                      // Show a small yellow chip overlay for all three
-                      // types so combined tiles get the same visual
-                      // signal as before/after (previous version skipped
-                      // combined; user pointed out that the pixel-baked
-                      // half-chips are too small to see at grid resolution).
-                      const showTypeChip = resolvedType === 'before' || resolvedType === 'after' || resolvedType === 'combined';
-                      const chipLabel = resolvedType === 'before' ? 'Before' : resolvedType === 'after' ? 'After' : 'B/A';
+                      // Single-chip overlay for before/after; combined
+                      // tiles get TWO chips (Before over left half,
+                      // After over right half) to mirror the baked
+                      // layout the team member saw. Simpler than trying
+                      // to differentiate stacked vs side layout at grid
+                      // resolution — side-by-side is by far the common
+                      // case, and even for stacked, top-left/top-right
+                      // reads clearly as "before/after" from the tile.
+                      const isBeforeOrAfter = resolvedType === 'before' || resolvedType === 'after';
+                      const chipLabel = resolvedType === 'before' ? 'Before' : 'After';
                       return (
                         <TouchableOpacity
                           activeOpacity={0.85}
@@ -3528,10 +3531,20 @@ export default function ProjectsScreen({ navigation, route }) {
                               <Ionicons name="image-outline" size={20} color={theme.textMuted} />
                             </View>
                           )}
-                          {showTypeChip ? (
+                          {isBeforeOrAfter ? (
                             <View style={teamPhotosStyles.gridTypeChip}>
                               <Text style={teamPhotosStyles.gridTypeChipText}>{chipLabel}</Text>
                             </View>
+                          ) : null}
+                          {resolvedType === 'combined' ? (
+                            <>
+                              <View style={teamPhotosStyles.gridTypeChip}>
+                                <Text style={teamPhotosStyles.gridTypeChipText}>Before</Text>
+                              </View>
+                              <View style={teamPhotosStyles.gridTypeChipRight}>
+                                <Text style={teamPhotosStyles.gridTypeChipText}>After</Text>
+                              </View>
+                            </>
                           ) : null}
                           {caption ? (
                             <View style={teamPhotosStyles.gridCaption}>
@@ -3681,6 +3694,18 @@ const teamPhotosStyles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     left: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: '#FFD84D',
+  },
+  // Second chip position for combined tiles — mirrors gridTypeChip
+  // but anchored top-right so it lands over the After half of a
+  // side-by-side composite.
+  gridTypeChipRight: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
