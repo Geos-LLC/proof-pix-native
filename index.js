@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-send-edit-v26-' + Date.now() + ' — Team member Studio save menu now offers "Send edited copy to admin"; bakes labels/markup/drawings + auto-uploads as new photo. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-send-edit-fix-v27-' + Date.now() + ' — Fix v26 crash: Studio bakeChrome call was referencing undefined settings var; now passes a per-tap cache-key stub so bake always fires fresh. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

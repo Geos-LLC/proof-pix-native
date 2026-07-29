@@ -1732,7 +1732,14 @@ export default function StudioScreen({ route, navigation }) {
                 setSaveMenuVisible(false);
                 try {
                   const { default: chromeBakeService } = await import('../services/chromeBakeService');
-                  const bakedUri = await chromeBakeService.bakeChrome(photo, settings);
+                  // bakeChrome's second arg is only used to build the
+                  // cache key — the actual render inside BakeJob calls
+                  // useScopedSettings(photo.id) which reads live
+                  // settings + photo.overrides directly. Passing a
+                  // per-tap timestamp guarantees cache miss so a
+                  // repeated "Send" after further edits re-renders
+                  // instead of serving a stale bake.
+                  const bakedUri = await chromeBakeService.bakeChrome(photo, { _sendToAdminAt: Date.now() });
                   if (!bakedUri || bakedUri === photo.uri) {
                     throw new Error('Bake did not produce a labeled image.');
                   }
