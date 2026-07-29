@@ -6,6 +6,41 @@ import { INDUSTRIES } from '../constants/industries';
 import { isSoftTrialActive, getRemainingExports } from '../services/softTrialService';
 import { SOFT_TRIAL_EXPORT_LIMIT } from '../constants/softTrial';
 import { readSecureJSON, writeSecureJSON, deleteSecure } from '../services/secureStorageService';
+import { OVERRIDE_KEYS } from '../hooks/useScopedSettings';
+
+// Slice D.4: debounce ref for admin's team-label-settings push. Kept
+// module-scoped because SettingsProvider is a singleton in this app;
+// multiple providers would share the timer, which is fine (last push
+// wins). 500ms is enough to swallow slider-scrub bursts without adding
+// noticeable latency to the "save and see it reflect on team members"
+// loop.
+let teamLabelPushTimer = null;
+
+const scheduleTeamLabelPush = (mergedSettings) => {
+  if (teamLabelPushTimer) clearTimeout(teamLabelPushTimer);
+  teamLabelPushTimer = setTimeout(async () => {
+    teamLabelPushTimer = null;
+    try {
+      const mode = await AsyncStorage.getItem('@admin_user_mode');
+      if (mode === 'team_member') return; // team members receive, don't send
+      const sid = await AsyncStorage.getItem('@proxy_session_id');
+      if (!sid) return; // no team backend attached yet
+      const snapshot = {};
+      for (const key of OVERRIDE_KEYS) {
+        if (mergedSettings[key] !== undefined) snapshot[key] = mergedSettings[key];
+      }
+      if (Object.keys(snapshot).length === 0) return;
+      const proxyService = require('../services/proxyService').default;
+      const result = await proxyService.putTeamLabelSettings(sid, snapshot);
+      console.warn('[TEAM_LABEL] push', {
+        ok: !!result?.success,
+        fields: Object.keys(snapshot).length,
+      });
+    } catch (e) {
+      console.warn('[TEAM_LABEL] push failed:', e?.message);
+    }
+  }, 500);
+};
 
 const SETTINGS_KEY = 'app-settings';
 const CUSTOM_ROOMS_KEY = 'custom-rooms';
@@ -226,6 +261,48 @@ export const SettingsProvider = ({ children }) => {
     // Pull initial soft trial state (initSoftTrial() runs in AuthLoadingScreen)
     refreshSoftTrial();
   }, [refreshSoftTrial]);
+
+  // Slice D.4: on team_member devices, pull the admin's team-label
+  // settings from proxy (populated by admin's SettingsContext push
+  // via scheduleTeamLabelPush). Fetches on cold-start + every
+  // foreground so admin edits propagate within one app-return cycle.
+  // Merges fetched values into local settings via saveSettings, then
+  // re-runs loadSettings to update React state (so the team member's
+  // own view + snapshot-at-capture both see the new values).
+  useEffect(() => {
+    const fetchAndApply = async () => {
+      try {
+        const mode = await AsyncStorage.getItem('@admin_user_mode');
+        if (mode !== 'team_member') return;
+        const info = await readSecureJSON('@team_member_info');
+        if (!info?.sessionId || !info?.token) return;
+        const proxyService = require('../services/proxyService').default;
+        const result = await proxyService.getTeamLabelSettings(info.sessionId, info.token);
+        if (!result?.success || !result?.settings || typeof result.settings !== 'object') return;
+        const filtered = {};
+        for (const key of OVERRIDE_KEYS) {
+          if (result.settings[key] !== undefined) filtered[key] = result.settings[key];
+        }
+        if (Object.keys(filtered).length === 0) return;
+        // Persist to AsyncStorage, then re-hydrate React state. Skips
+        // the OVERRIDE_KEYS-change push since scheduleTeamLabelPush
+        // itself no-ops on team_member mode.
+        await saveSettings(filtered);
+        await loadSettings();
+        console.warn('[TEAM_LABEL] fetched + applied', { fields: Object.keys(filtered).length });
+      } catch (e) {
+        console.warn('[TEAM_LABEL] fetch failed:', e?.message);
+      }
+    };
+
+    fetchAndApply();
+    const { AppState } = require('react-native');
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') fetchAndApply();
+    });
+    return () => sub?.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Detect trial expiry by comparing previous-session state against current
   // entitlement. We fire `trial_expired` only when:
@@ -560,6 +637,18 @@ export const SettingsProvider = ({ children }) => {
         : { ...existingSettings, ...stateSnapshot, ...newSettings };
 
       await writeSecureJSON(SETTINGS_KEY, settings);
+
+      // Slice D.4: when the admin device changes any label/watermark/
+      // logo/metadata setting (OVERRIDE_KEYS), push to proxy so team
+      // members' next foreground sync adopts the new defaults. Their
+      // subsequent captures then snapshot the admin-controlled values
+      // into per-photo overrides at upload time, so admin sees photos
+      // in the format they chose. No-op for team-member devices and
+      // for admins without a team backend connected.
+      const changedKeys = Object.keys(newSettings || {});
+      if (changedKeys.some((k) => OVERRIDE_KEYS.includes(k))) {
+        scheduleTeamLabelPush(settings);
+      }
     } catch (error) {
 
     }

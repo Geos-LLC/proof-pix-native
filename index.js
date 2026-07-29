@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-grid-chip-honors-position-v21-' + Date.now() + ' — Grid label chip position now derives from photo.overrides → admin global settings, so grid + enlarged view match. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-label-settings-sync-v22-' + Date.now() + ' — Admin label/watermark/logo/metadata Settings push to proxy; team members fetch on cold-start + foreground so captures land on admin already in admin-chosen format. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

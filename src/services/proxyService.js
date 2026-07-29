@@ -829,6 +829,67 @@ class ProxyService {
     }
   }
 
+  /**
+   * Slice D.4: admin pushes their label/watermark/logo/metadata
+   * settings so team members' devices adopt them as effective
+   * defaults. Called from SettingsContext (debounced) whenever an
+   * OVERRIDE_KEY value changes on the admin device.
+   *
+   * @param {string} sessionId - Admin session ID
+   * @param {Object} settings - Sparse map of OVERRIDE_KEYS values to enforce
+   * @returns {Promise<{success: boolean}>}
+   */
+  async putTeamLabelSettings(sessionId, settings) {
+    try {
+      if (!sessionId || !settings || typeof settings !== 'object') {
+        return { success: false, error: 'MISSING_ARGS' };
+      }
+      const response = await authFetch(
+        `${PROXY_SERVER_URL}/api/admin/${sessionId}/team-label-settings`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings),
+        },
+      );
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        console.warn('[PROXY] putTeamLabelSettings error:', response.status, errorText.slice(0, 200));
+        return { success: false, error: `HTTP ${response.status}` };
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error putting team label settings:', error?.message);
+      return { success: false, error: error?.message };
+    }
+  }
+
+  /**
+   * Team-member-side fetch of the admin's team-label-settings.
+   * Called on cold-start / foreground refresh so the local Settings
+   * cascade can pick up admin's authoritative values.
+   *
+   * @param {string} sessionId - Admin session ID
+   * @param {string} token - Team member's invite token
+   * @returns {Promise<{success: boolean, settings: Object|null, updatedAt: string|null}>}
+   */
+  async getTeamLabelSettings(sessionId, token) {
+    try {
+      if (!sessionId || !token) return { success: false, error: 'MISSING_ARGS' };
+      const url = `${PROXY_SERVER_URL}/api/team/${sessionId}/team-label-settings?token=${encodeURIComponent(token)}`;
+      const response = await authFetch(url, { method: 'GET' });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        console.warn('[PROXY] getTeamLabelSettings error:', response.status, errorText.slice(0, 200));
+        return { success: false, error: `HTTP ${response.status}` };
+      }
+      return await response.json();
+    } catch (error) {
+      console.warn('[PROXY] Error getting team label settings:', error?.message);
+      return { success: false, error: error?.message };
+    }
+  }
+
   async getTeamProjects(sessionId) {
     try {
       const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/projects`, {
