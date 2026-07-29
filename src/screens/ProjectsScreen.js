@@ -1687,6 +1687,12 @@ export default function ProjectsScreen({ navigation, route }) {
       mode: resolvedType === 'combined' ? 'combined' : resolvedType || 'single',
       room: tp.room || null,
       capturedBy: tp.capturedBy || null,
+      // Slice D.3: preLabeled = true → pixel already has baked labels
+      // (chromeBake path or legacy team upload). false → raw pixel;
+      // admin viewer's PhotoLabels overlay should render labels on
+      // top. null (legacy pre-D.3 upload) → assume baked so the
+      // overlay doesn't double-render on top of existing chips.
+      preLabeled: tp.preLabeled == null ? true : !!tp.preLabeled,
     };
   };
 
@@ -3555,18 +3561,18 @@ export default function ProjectsScreen({ navigation, route }) {
                 photos={tpPhotos.map(adaptTeamPhotoForViewer)}
                 initialPhotoId={tpViewerPhoto.id}
                 onClose={() => setTpViewerPhoto(null)}
-                // Overlays toggle DISABLED for team photos: the pixel
-                // already has labels baked in by the team member's
-                // chromeBake pipeline before upload. Rendering our
-                // PhotoLabels overlay on top produces doubled chips
-                // (screenshot bug 2026-07-29). The toggle would only
-                // ever be able to hide our overlay — never the baked
-                // pixel labels — so surfacing it is misleading.
-                showOverlays={false}
-                overlaysOn={false}
-                // Explicitly hidden: no edit / delete / select / share.
-                // Label editing + delete + share + report are the
-                // "unsupported actions" per current admin-side scope.
+                // Overlays toggle re-enabled with Slice D.3: team uploads
+                // now send raw pixels (skipLabelBake), so PhotoLabels
+                // overlay is the authoritative renderer and the toggle
+                // actually hides labels. Legacy pre-D.3 photos carry
+                // preLabeled=true in their adapter output — PhotoFrame
+                // skips the overlay for those specifically so they don't
+                // double-render.
+                showOverlays
+                overlaysOn={tpViewerOverlaysOn}
+                onOverlaysChange={setTpViewerOverlaysOn}
+                // Still hidden: no edit / delete / select / share on
+                // admin's team-photo surface for now.
                 showEdit={false}
                 showDelete={false}
                 showSelect={false}

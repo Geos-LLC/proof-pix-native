@@ -150,8 +150,11 @@ export default function PhotoLabels({
   sizeScale: sizeScaleProp,
 }) {
   // Scoped — when `photo.overrides` is present, those win over global
-  // Settings for this photo only.
-  const settings = useScopedSettings(photo?.id);
+  // Settings for this photo only. Passing `photo` as fallback lets
+  // team-uploaded photos (which live outside PhotoContext) still
+  // render with team-member-authored per-photo customizations synced
+  // through proxy meta. Slice D.3.
+  const settings = useScopedSettings(photo?.id, photo);
   const { photos } = usePhotos();
   // Measure the container so labels can scale down on small thumbnails
   // (report pair cards, timeline grids) instead of stamping the same

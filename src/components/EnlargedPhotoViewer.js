@@ -104,7 +104,12 @@ const PhotoFrame = ({ photo, overlayMode, frameW, frameH, theme }) => {
           </Text>
         </View>
       )}
-      {overlayMode && photo.uri && !loadFailed && loaded && (
+      {/* Slice D.3: photos flagged preLabeled=true already have chips
+          burned into the pixel (team-member chromeBake path or admin
+          pre-labeling). Skip the PhotoLabels overlay for those so the
+          on/off toggle can only affect photos whose labels are
+          actually renderable at view time. */}
+      {overlayMode && !photo.preLabeled && photo.uri && !loadFailed && loaded && (
         <StudioEditOverlays photo={photo} theme={theme} renderLabels combinedLayout={combinedLayoutFor(photo)} />
       )}
     </View>

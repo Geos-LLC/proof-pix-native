@@ -99,18 +99,28 @@ export function mergeSettings(globalSettings, overrides) {
  * @param {string|null|undefined} photoId — when set, writes route to
  *   that photo's overrides and reads cascade overrides over global.
  *   When null/undefined, behaves identically to `useSettings()`.
+ * @param {Object|null} [fallbackPhoto] — optional photo object whose
+ *   `.overrides` are used when photoId isn't present in PhotoContext.
+ *   Slice D.3: lets EnlargedPhotoViewer render team-uploaded photos
+ *   (which live outside PhotoContext) with their team-member-authored
+ *   per-photo customizations synced through proxy meta. Writes still
+ *   route through setPhotoOverride and are no-ops for photos absent
+ *   from PhotoContext — read-only cascade for the team-photo case.
  */
-export function useScopedSettings(photoId) {
+export function useScopedSettings(photoId, fallbackPhoto = null) {
   const settings = useSettings();
   const { photos, setPhotoOverride } = usePhotos();
 
   // Find the active photo's overrides without holding a reference to
-  // the whole photo (it churns on every PhotoContext update).
+  // the whole photo (it churns on every PhotoContext update). Fall
+  // back to the caller-provided photo when PhotoContext doesn't hold
+  // this id (team-uploaded photos on admin's viewer).
   const overrides = useMemo(() => {
     if (!photoId) return null;
     const p = photos.find((x) => String(x.id) === String(photoId));
-    return p?.overrides || null;
-  }, [photoId, photos]);
+    if (p?.overrides) return p.overrides;
+    return fallbackPhoto?.overrides || null;
+  }, [photoId, photos, fallbackPhoto]);
 
   return useMemo(() => {
     if (!photoId) return settings;

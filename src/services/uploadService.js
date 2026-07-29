@@ -556,6 +556,7 @@ export async function uploadPhotoAsTeamMember({
   photoId,
   overrides,
   projectId,
+  preLabeled,
 }) {
   // Per-photo telemetry: original file size, base64 payload size (iOS
   // path only), request duration, success. Emitted under
@@ -627,6 +628,7 @@ export async function uploadPhotoAsTeamMember({
       photoId,
       overrides,
       projectId,
+      preLabeled,
     });
     console.warn('[TEAM_UPLOAD] photo ok', {
       platform: Platform.OS,
@@ -696,7 +698,14 @@ export async function uploadPhotoBatch(photos, config) {
     useDirectDrive = true, // Always use proxy server (legacy Apps Script removed)
     sessionId = null, // Proxy server session ID (required for Google)
     token = null, // Invite token (required for team member uploads)
-    accountType = 'google' // Account type: 'google' or 'dropbox'
+    accountType = 'google', // Account type: 'google' or 'dropbox'
+    // Slice D.3: when true, skip ensureLabelsForPhotoBatch entirely and
+    // upload raw photo URIs. Set by processTeamUpload so admin's
+    // team-photo viewer can render labels via PhotoLabels overlay and
+    // support a working labels-on/off toggle. Non-team upload paths
+    // (admin's own Drive/Dropbox uploads) keep the pre-labeling
+    // behavior for backwards compatibility.
+    skipLabelBake = false,
   } = config;
 
   console.log('[UPLOAD_BATCH] 🎯 Account type:', accountType);
@@ -814,29 +823,36 @@ export async function uploadPhotoBatch(photos, config) {
   // PRE-PROCESS: Batch-optimized label check (reads settings + cache metadata ONCE)
   // Labels should already be cached from background preparation (done right after photo capture).
   // Wait for all labels to be prepared - UI shows "Preparing labels X/Y" progress.
-  console.log('[UPLOAD] Pre-processing labels (batch-optimized)...');
+  // Team upload path bypasses this entirely (skipLabelBake=true): admin's viewer
+  // renders labels via PhotoLabels overlay so the toggle can hide them at will.
   let labeledPhotos;
-  try {
-    const batchResults = await ensureLabelsForPhotoBatch(validPhotos, { onProgress: onLabelProgress });
-    let labeledCount = 0;
-    let originalCount = 0;
-    labeledPhotos = batchResults.map(({ photo, labeledUri }) => {
-      if (labeledUri && labeledUri !== photo.uri) {
-        labeledCount++;
-        return { ...photo, uri: labeledUri, _preLabeledUri: labeledUri };
-      }
-      originalCount++;
-      return photo;
-    });
-    if (originalCount > 0) {
-      console.warn(`[UPLOAD] ${originalCount}/${validPhotos.length} photos using original (unlabeled) URI`);
-    }
-    console.log(`[UPLOAD] ${labeledCount}/${validPhotos.length} photos labeled successfully`);
-  } catch (e) {
-    console.warn('[UPLOAD] Label batch prep failed, using originals:', e.message);
+  if (skipLabelBake) {
+    console.log('[UPLOAD] skipLabelBake=true → uploading raw URIs (team upload path)');
     labeledPhotos = validPhotos;
+  } else {
+    console.log('[UPLOAD] Pre-processing labels (batch-optimized)...');
+    try {
+      const batchResults = await ensureLabelsForPhotoBatch(validPhotos, { onProgress: onLabelProgress });
+      let labeledCount = 0;
+      let originalCount = 0;
+      labeledPhotos = batchResults.map(({ photo, labeledUri }) => {
+        if (labeledUri && labeledUri !== photo.uri) {
+          labeledCount++;
+          return { ...photo, uri: labeledUri, _preLabeledUri: labeledUri };
+        }
+        originalCount++;
+        return photo;
+      });
+      if (originalCount > 0) {
+        console.warn(`[UPLOAD] ${originalCount}/${validPhotos.length} photos using original (unlabeled) URI`);
+      }
+      console.log(`[UPLOAD] ${labeledCount}/${validPhotos.length} photos labeled successfully`);
+    } catch (e) {
+      console.warn('[UPLOAD] Label batch prep failed, using originals:', e.message);
+      labeledPhotos = validPhotos;
+    }
+    console.log('[UPLOAD] All labels pre-processed');
   }
-  console.log('[UPLOAD] All labels pre-processed');
 
   // Split photos into batches (using pre-labeled photos)
   const batches = [];
@@ -922,6 +938,12 @@ export async function uploadPhotoBatch(photos, config) {
             // sees mixed photos from every project that ever used
             // that album name.
             projectId: photo.projectId ? String(photo.projectId) : null,
+            // Slice D.3: preLabeled = false means the pixel is raw
+            // (no baked labels/watermark). Team uploads always run
+            // with skipLabelBake=true so this is always false on
+            // the team path. Admin's viewer uses this flag to decide
+            // whether to render PhotoLabels overlay on top.
+            preLabeled: skipLabelBake ? false : true,
           })
         : uploadPhoto({
             imageDataUrl: photoUri, // Use the potentially labeled URI

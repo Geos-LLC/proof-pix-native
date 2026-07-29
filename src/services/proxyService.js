@@ -279,6 +279,40 @@ class ProxyService {
   }
 
   /**
+   * Rename a team member (or pending invite) by its invite token.
+   * Server updates the token→name map, the joined-member record, and
+   * every team project's ownerName in one shot so the new name shows
+   * up on the admin's members list AND the ProjectsScreen cleaner
+   * chips after a single refresh.
+   * @param {string} sessionId - Proxy session ID
+   * @param {string} token - Invite token identifying the member
+   * @param {string} displayName - New display name (server trims + caps at 200 chars)
+   */
+  async updateInviteTokenDisplayName(sessionId, token, displayName) {
+    try {
+      const trimmed = String(displayName || '').trim();
+      if (!trimmed) throw new Error('display_name is required');
+
+      const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/tokens/${encodeURIComponent(token)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: trimmed.slice(0, 200) }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PROXY] Update token name error:', errorText);
+        throw new Error(`Failed to update team member name: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[PROXY] Error updating team member name:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Remove an invite token from the admin session
    * @param {string} sessionId - Proxy session ID
    * @param {string} token - Invite token
@@ -343,6 +377,7 @@ class ProxyService {
         photoId,
         overrides,
         projectId,
+        preLabeled,
       } = uploadParams;
 
       console.log('[PROXY] Uploading photo as team member:', { 
@@ -383,6 +418,7 @@ class ProxyService {
           try { formData.append('overrides', JSON.stringify(overrides)); } catch {}
         }
         if (projectId) formData.append('projectId', String(projectId));
+        if (typeof preLabeled === 'boolean') formData.append('preLabeled', String(preLabeled));
 
         response = await authFetch(`${PROXY_SERVER_URL}/api/upload/${sessionId}`, {
           method: 'POST',
@@ -415,6 +451,7 @@ class ProxyService {
             ...(photoId ? { photoId: String(photoId) } : {}),
             ...(overrides && typeof overrides === 'object' ? { overrides } : {}),
             ...(projectId ? { projectId: String(projectId) } : {}),
+            ...(typeof preLabeled === 'boolean' ? { preLabeled } : {}),
           }),
         });
       }

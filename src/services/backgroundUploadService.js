@@ -368,6 +368,13 @@ class BackgroundUploadService {
         sessionId: teamInfo.sessionId,
         token: teamInfo.token, // Required for team member uploads
         accountType: upload.config?.accountType || teamInfo.accountType || 'google', // Pass account type
+        // Slice D.3: team uploads always send raw pixels. Admin's
+        // Team Photos viewer renders labels via the PhotoLabels
+        // overlay so the labels-on/off toggle can actually hide them.
+        // If we baked labels into the pixel here, admin's toggle
+        // could only ever hide the overlay — never the baked chip —
+        // and turning it ON would produce doubled labels.
+        skipLabelBake: true,
         abortSignal: abortController.signal,
         onProgress: (current, total) => {
           upload.progress = { current, total };
