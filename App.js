@@ -93,6 +93,10 @@ import CloudTeamScreen from './src/screens/CloudTeamScreen';
 import CloudSyncScreen from './src/screens/CloudSyncScreen';
 import TeamMembersScreen from './src/screens/TeamMembersScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
+import FeedbackScreen from './src/screens/FeedbackScreen';
+import BugReportScreen from './src/screens/BugReportScreen';
+import FeatureRequestScreen from './src/screens/FeatureRequestScreen';
+import { recordRoute as recordFeedbackRoute } from './src/services/screenTracker';
 import IndustrySectionsScreen from './src/screens/IndustrySectionsScreen';
 import LabelsLanguageScreen from './src/screens/LabelsLanguageScreen';
 import AppearanceScreen from './src/screens/AppearanceScreen';
@@ -459,6 +463,21 @@ function AppNavigator() {
       <Stack.Screen
         name="HelpSupport"
         component={HelpSupportScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="Feedback"
+        component={FeedbackScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="BugReport"
+        component={BugReportScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="FeatureRequest"
+        component={FeatureRequestScreen}
         options={{ animation: 'slide_from_right' }}
       />
       <Stack.Screen
@@ -1215,6 +1234,12 @@ export default function App() {
                   const previousRouteName = routeNameRef.current;
                   const currentRouteName = navigationRef.current.getCurrentRoute().name;
                   setCurrentRouteName(currentRouteName);
+
+                  // Feed the screenTracker so the Feedback bug form's
+                  // auto-collected `currentScreen` metadata reflects the
+                  // last real screen the user was on, not Settings / the
+                  // feedback tree itself. See src/services/screenTracker.js.
+                  recordFeedbackRoute(currentRouteName);
 
                   if (previousRouteName !== currentRouteName && firebaseInitialized) {
                     // Manual screen tracking with clean snake_case names

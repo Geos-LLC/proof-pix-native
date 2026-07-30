@@ -3436,6 +3436,29 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
             <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
+
+          {/* Send feedback — structured bug reports + feature requests
+              land in the /api/feedback KV table for manual triage. Kept
+              separate from Help & support because those are 1:1 email
+              threads, whereas feedback is a queue we act on in batch. */}
+          <TouchableOpacity
+            style={styles.ppRow}
+            onPress={() => navigation.navigate('Feedback')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ppRowIc}>
+              <Ionicons name="megaphone-outline" size={19} color={theme.textPrimary} />
+            </View>
+            <View style={styles.ppRowMeta}>
+              <Text style={styles.ppRowTitle}>
+                {t('settings.sendFeedback', { defaultValue: 'Send feedback' })}
+              </Text>
+              <Text style={styles.ppRowSub} numberOfLines={1}>
+                {t('settings.sendFeedbackSub', { defaultValue: 'Report a bug or suggest a feature' })}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+          </TouchableOpacity>
         </View>
 
         {/* End design rows. Existing legacy sections continue below for
