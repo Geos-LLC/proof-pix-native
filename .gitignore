@@ -56,3 +56,6 @@ yarn-error.*
 # Claude Code runtime artifacts (not source)
 .claude/scheduled_tasks.lock
 design-screens/
+
+# Local test plans (not source)
+TEST_PLAN_*.md
