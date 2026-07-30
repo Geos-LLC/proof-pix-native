@@ -4961,6 +4961,21 @@ export default function SettingsScreen({ navigation, route }) {
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Clear All Team Members</Text>
                       </TouchableOpacity>
 
+                      {/* Feedback flow shortcut — jumps straight into the
+                          Bug / Feature-request chooser so QA can exercise
+                          the /api/feedback submission path without hunting
+                          through Settings. Same destination as
+                          Settings → "Send feedback"; just skips the row. */}
+                      <TouchableOpacity
+                        style={[styles.testButton, { backgroundColor: '#0B5FBF' }]}
+                        onPress={() => {
+                          setShowTestToolsModal(false);
+                          navigation.navigate('Feedback');
+                        }}
+                      >
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>💬 Open Feedback Flow</Text>
+                      </TouchableOpacity>
+
                       {/* Heals Before/After/Progress photos whose `uri`
                           was overwritten with a side-by-side composite
                           by the pre-fix Source Photos picker. Looks up

@@ -277,6 +277,16 @@
 | 12.10 | Watermark customization link | Settings → Watermark Customization | Opens Watermark Customization screen. |
 | 12.11 | Cloud accounts section | View cloud section | Shows connected accounts (if any). Connect/Manage buttons appropriate to plan. |
 | 12.12 | Restore purchases | Settings → Restore Purchases | Purchases restored from App Store / Play Store. |
+| 12.13 | Send feedback — entry | Settings → "Send feedback" | Feedback chooser opens with two tiles: **Report a bug or UX issue** and **Suggest a feature**. |
+| 12.14 | Send feedback — via Test Tools shortcut | Settings → tap title 8× to unlock dev tools → **🧪 Test Tools** → **💬 Open Feedback Flow** | Same Feedback chooser opens. Confirms the QA shortcut reaches the same screen as 12.13. |
+| 12.15 | Bug report — text-only submission | Feedback → "Report a bug" → type description → Submit | Success toast/alert shown. Server accepts submission (`POST /api/feedback`). Auto-metadata (app version, build number, platform, OS, device, current screen, locale, plan) sent with payload. |
+| 12.16 | Bug report — with screenshot | Feedback → "Report a bug" → attach screenshot from camera roll → Submit | Screenshot uploads (downscaled to 1600px, JPEG q=0.7). Submission succeeds. No 413 error. |
+| 12.17 | Bug report — oversized screenshot rejection | Feedback → "Report a bug" → try to attach a > 5MB image (fake by disabling downscale) | Clear "screenshot too large" error surfaced (proxy 413). App doesn't crash. |
+| 12.18 | Feature request — required fields | Feedback → "Suggest a feature" → leave title blank → Submit | Validation error: title required. No submission fires. |
+| 12.19 | Feature request — valid submission | Feedback → "Suggest a feature" → fill title + description + (optional) email → Submit | Success alert shown. Server accepts (`POST /api/feedback` with `type=feature`). |
+| 12.20 | Feedback — email persistence | Submit feedback with email `x@y.com` → reopen Bug Report | Previously typed email is pre-filled in the email field (persisted to `@proofpix_owner_email`). |
+| 12.21 | Feedback — rate limit | Submit >10 feedbacks in rapid succession | Proxy returns 429. In-app "please wait" message shown. |
+| 12.22 | Feedback — offline | Disable internet → try to submit | Clear network error. Form retains typed content so user can retry. |
 
 ---
 
