@@ -59,7 +59,7 @@ Suggested fields:
 * `channel` string, optional
 * `source` string, optional
 * `notes` text, optional
-* `bonusTrialDays` integer, default `15`
+* `bonusTrialDays` integer, default `7`
 * `maxUses` integer nullable
 * `usedCount` integer default `0`
 * `isActive` boolean default `true`

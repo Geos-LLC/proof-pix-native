@@ -32,7 +32,7 @@ import {
 const EMPTY_FORM = {
   label: '',
   code: '',
-  bonusDays: '15',
+  bonusDays: '7',
   maxUses: '',
   channel: '',
   source: '',
@@ -138,7 +138,7 @@ export default function AdminReferralScreen({ navigation }) {
         placement: editForm.placement || null,
         notes: editForm.notes || null,
         maxUses: editForm.maxUses ? parseInt(editForm.maxUses, 10) : null,
-        bonusTrialDays: parseInt(editForm.bonusDays, 10) || 15,
+        bonusTrialDays: parseInt(editForm.bonusDays, 10) || 7,
         expiresAt: editForm.expiresAt || null,
       });
       setLinks(prev => prev.map(l => l.id === editingLink.id ? { ...l, ...result } : l));
@@ -157,7 +157,7 @@ export default function AdminReferralScreen({ navigation }) {
       placement: link.placement || '',
       notes: link.notes || '',
       maxUses: link.maxUses ? String(link.maxUses) : '',
-      bonusDays: String(link.bonusTrialDays || 15),
+      bonusDays: String(link.bonusTrialDays || 7),
       expiresAt: link.expiresAt || '',
     });
     setEditingLink(link);
@@ -215,7 +215,7 @@ export default function AdminReferralScreen({ navigation }) {
             <Text style={styles.metaText}>Campaign: {link.campaign}</Text>
           ) : null}
           <Text style={styles.metaText}>
-            Bonus: {link.bonusTrialDays || 15} days
+            Bonus: {link.bonusTrialDays || 7} days
           </Text>
           <Text style={styles.metaText}>
             Uses: {link.usedCount || 0}{link.maxUses ? ` / ${link.maxUses}` : ''}
@@ -313,7 +313,7 @@ export default function AdminReferralScreen({ navigation }) {
               </View>
             </View>
 
-            {renderField('Bonus Trial Days', 'bonusDays', formState, setFormState, { keyboardType: 'numeric', placeholder: '15' })}
+            {renderField('Bonus Trial Days', 'bonusDays', formState, setFormState, { keyboardType: 'numeric', placeholder: '7' })}
             {renderField('Max Uses', 'maxUses', formState, setFormState, { keyboardType: 'numeric', placeholder: 'Unlimited' })}
             {renderField('Channel', 'channel', formState, setFormState, { placeholder: 'e.g. instagram, email, sms' })}
             {renderField('Source', 'source', formState, setFormState, { placeholder: 'e.g. cold outreach, warm lead' })}
