@@ -59,7 +59,23 @@ import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { onBeforePhotoTaken, onAfterPhotoCompleted } from '../services/jobReminderService';
-import { logBeforePhotoStarted, logAfterPhotoCompleted, logPhotoCapture } from '../utils/analytics';
+import { logBeforePhotoStarted, logAfterPhotoCompleted, logPhotoCapture, logFirstPhotoTaken } from '../utils/analytics';
+
+// Session-scoped dedup so a rapid double-tap in a single render cycle
+// (where `photos` hasn't re-rendered yet) doesn't fire first_photo_taken
+// twice. Cross-session dedup is handled naturally by the photo-count
+// check itself — on cold start `photos` is rehydrated from AsyncStorage,
+// so a project with any persisted photo won't trigger the event again.
+const _firstPhotoLoggedProjects = new Set();
+const _maybeLogFirstPhoto = (projectId, photosList, sourceType) => {
+  if (!projectId) return;
+  if (_firstPhotoLoggedProjects.has(projectId)) return;
+  const priorCount = (photosList || []).filter((p) => p.projectId === projectId).length;
+  if (priorCount === 0) {
+    _firstPhotoLoggedProjects.add(projectId);
+    try { logFirstPhotoTaken({ project_id: projectId, source_type: sourceType }); } catch {}
+  }
+};
 
 const initialDimensions = Dimensions.get('window');
 const initialWidth = initialDimensions.width;
@@ -2284,6 +2300,7 @@ export default function CameraScreen({ route, navigation }) {
         ...(gps ? { lat: gps.lat, lng: gps.lng } : null),
       };
 
+      _maybeLogFirstPhoto(activeProjectId, photos, 'camera');
       await addPhoto(newPhoto);
       // Pre-note flow: if the user queued a note/audio while the
       // placeholder was centered, flush it onto this Before now.
@@ -2406,6 +2423,7 @@ export default function CameraScreen({ route, navigation }) {
           : null),
       };
 
+      _maybeLogFirstPhoto(activeProjectId, photos, 'camera');
       await addPhoto(newPhoto);
       await applyPendingNoteToNewPhoto(newPhoto.id);
       logPhotoCapture('progress', 'camera', activeProjectId);
@@ -2562,6 +2580,7 @@ export default function CameraScreen({ route, navigation }) {
           ? { lat: activeBeforePhoto.lat, lng: activeBeforePhoto.lng }
           : null),
       };
+      _maybeLogFirstPhoto(activeProjectId, photos, 'camera');
       await addPhoto(newAfterPhoto);
       await applyPendingNoteToNewPhoto(newAfterPhoto.id);
       logPhotoCapture('after', 'camera', activeProjectId);

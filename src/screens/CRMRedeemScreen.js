@@ -8,6 +8,9 @@ import crmService from '../services/crm';
 import { syncServiceFlowJobs } from '../services/crm/serviceFlowSync';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
+import { logServiceFlowConnected, logCloudAccountConnection } from '../utils/analytics';
+import { getConnectedClouds } from '../utils/cloudConnectivity';
+import { useAdmin } from '../context/AdminContext';
 
 /**
  * CRMRedeemScreen — landing for the `proofpix://connect?token=...&workspace=...`
@@ -35,6 +38,7 @@ export default function CRMRedeemScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { isAuthenticated, accountType } = useAdmin();
   const params = route?.params || {};
   // Deep-link query params land here (token, workspace, …). Provider
   // defaults to serviceflow since that's the only CRM today, but the
@@ -73,6 +77,20 @@ export default function CRMRedeemScreen({ route, navigation }) {
         if (result?.success) {
           setWorkspace(result.connection || null);
           setState('success');
+          try {
+            logServiceFlowConnected({
+              workspace_id: result?.connection?.workspaceId || null,
+              workspace_name: result?.connection?.workspaceName || null,
+              entry_point: 'deep_link',
+            });
+          } catch {}
+          try {
+            const clouds = await getConnectedClouds({ isAuthenticated, accountType });
+            if (clouds.serviceflow) {
+              const total = Object.values(clouds).filter(Boolean).length;
+              logCloudAccountConnection('service_flow', 'connect', total);
+            }
+          } catch {}
           // Fire an immediate sync so the admin's Projects list
           // populates with SF jobs right away — mirrors the same
           // post-connect behaviour in CloudSyncScreen's paste-in

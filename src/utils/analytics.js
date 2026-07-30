@@ -41,31 +41,6 @@ export const setGlobalUserId = (userId) => {
   _globalContext.user_id = userId || null;
 };
 
-/**
- * Extract and persist UTM params from a deep link URL.
- * Call once on first open when initial URL is available.
- */
-export const extractAndSaveUTMParams = async (url) => {
-  if (!url) return;
-  try {
-    const parsed = new URL(url);
-    const utmSource = parsed.searchParams.get('utm_source');
-    const utmCampaign = parsed.searchParams.get('utm_campaign');
-    const utmMedium = parsed.searchParams.get('utm_medium');
-    if (utmSource || utmCampaign || utmMedium) {
-      const utmData = {
-        utm_source: utmSource || null,
-        utm_campaign: utmCampaign || null,
-        utm_medium: utmMedium || null,
-      };
-      await AsyncStorage.setItem('@utm_params', JSON.stringify(utmData));
-      if (__DEV__) console.log('[Analytics] UTM params saved:', utmData);
-    }
-  } catch {
-    // Non-critical â€” URL may not be parseable
-  }
-};
-
 /** Read stored UTM params (cached after first read) */
 let _cachedUTM = undefined;
 const _getUTMParams = async () => {
@@ -77,6 +52,51 @@ const _getUTMParams = async () => {
     _cachedUTM = null;
   }
   return _cachedUTM;
+};
+
+/**
+ * Extract and persist UTM params from a deep link URL.
+ * Safe to call from both the initial-URL handler AND runtime `Linking`
+ * events — idempotent by design:
+ *   - No URL / unparseable URL → no-op.
+ *   - URL with no utm_* params → no-op (a bare deep link or the App
+ *     Store deferred-link callback must NOT blank out earlier attribution).
+ *   - URL with UTMs, but @utm_params is already stored → no-op
+ *     (first-touch preservation — a returning user tapping a fresh
+ *     campaign link months later never overwrites the original
+ *     acquisition source).
+ * Also refreshes `_cachedUTM` on save so events fired later in the
+ * same cold-start pick up the newly-stored attribution instead of the
+ * null value `logAppOpen` cached before UTM extraction ran.
+ */
+export const extractAndSaveUTMParams = async (url) => {
+  if (!url) return;
+  try {
+    const existing = await AsyncStorage.getItem('@utm_params');
+    if (existing) {
+      if (__DEV__) console.log('[Analytics] UTM already stored, keeping first-touch');
+      return;
+    }
+    const parsed = new URL(url);
+    const utmSource = parsed.searchParams.get('utm_source');
+    const utmMedium = parsed.searchParams.get('utm_medium');
+    const utmCampaign = parsed.searchParams.get('utm_campaign');
+    const utmTerm = parsed.searchParams.get('utm_term');
+    const utmContent = parsed.searchParams.get('utm_content');
+    if (!utmSource && !utmMedium && !utmCampaign && !utmTerm && !utmContent) return;
+    const utmData = {
+      utm_source: utmSource || null,
+      utm_medium: utmMedium || null,
+      utm_campaign: utmCampaign || null,
+      utm_term: utmTerm || null,
+      utm_content: utmContent || null,
+    };
+    await AsyncStorage.setItem('@utm_params', JSON.stringify(utmData));
+    _cachedUTM = utmData;
+    if (__DEV__) console.log('[Analytics] UTM params saved (first-touch):', utmData);
+  } catch {
+    // Non-critical — URL may not be parseable
+  }
 };
 
 // Get analytics instance
@@ -930,6 +950,127 @@ export const logJobReminderOpened = () => {
   logEvent('job_reminder_opened');
 };
 
+// Purchase funnel (client-side taps, NOT the GA4 `purchase` revenue event) ----
+// `subscription_started` still fires post-finishTransaction from iapService and
+// remains the source of truth for successful conversions. These wrap the
+// user-visible steps that come BEFORE the store confirms the transaction.
+
+export const logPurchaseStarted = (payload = {}) => {
+  logEvent('purchase_started', {
+    product_id: payload.product_id || null,
+    plan_id: payload.plan_id || null,
+    entry_point: payload.entry_point || 'paywall',
+    billing_period: payload.billing_period || null,
+    platform: payload.platform || Platform.OS,
+    timestamp: Date.now(),
+  });
+};
+
+export const logPurchaseCancelled = (payload = {}) => {
+  logEvent('purchase_cancelled', {
+    product_id: payload.product_id || null,
+    plan_id: payload.plan_id || null,
+    entry_point: payload.entry_point || 'paywall',
+    platform: payload.platform || Platform.OS,
+    timestamp: Date.now(),
+  });
+};
+
+export const logPurchaseFailed = (payload = {}) => {
+  logEvent('purchase_failed', {
+    product_id: payload.product_id || null,
+    plan_id: payload.plan_id || null,
+    entry_point: payload.entry_point || 'paywall',
+    error_code: payload.error_code || null,
+    error_message: payload.error_message || null,
+    platform: payload.platform || Platform.OS,
+    timestamp: Date.now(),
+  });
+};
+
+// Restore funnel ---------------------------------------------------------------
+// `subscription_restored` fires from PlanSelectionScreen / SettingsScreen when a
+// restore call surfaces an active entitlement. `restore_purchase` is the tap,
+// `restore_failed` is the failure — the two edges the success event can't cover.
+
+export const logRestoreTapped = (payload = {}) => {
+  logEvent('restore_purchase', {
+    entry_point: payload.entry_point || 'settings',
+    platform: payload.platform || Platform.OS,
+    timestamp: Date.now(),
+  });
+};
+
+export const logRestoreFailed = (payload = {}) => {
+  logEvent('restore_failed', {
+    entry_point: payload.entry_point || 'settings',
+    error_code: payload.error_code || null,
+    error_message: payload.error_message || null,
+    empty: !!payload.empty,
+    platform: payload.platform || Platform.OS,
+    timestamp: Date.now(),
+  });
+};
+
+// First photo of a project ----------------------------------------------------
+// Distinct from `before_photo_started` (fires every capture) — this only fires
+// on the 0→1 transition, so it measures activation ("did the user actually
+// start the job they created?").
+
+export const logFirstPhotoTaken = (payload = {}) => {
+  logEvent('first_photo_taken', {
+    project_id: payload.project_id || null,
+    source_type: payload.source_type || 'camera',
+    timestamp: Date.now(),
+  });
+};
+
+// Reports ---------------------------------------------------------------------
+
+export const logReportCreated = (payload = {}) => {
+  logEvent('report_created', {
+    report_id: payload.report_id || null,
+    project_id: payload.project_id || null,
+    layout: payload.layout || null,
+    photos: payload.photos ?? null,
+    has_pdf: !!payload.has_pdf,
+    timestamp: Date.now(),
+  });
+};
+
+export const logReportShared = (payload = {}) => {
+  logEvent('report_shared', {
+    report_id: payload.report_id || null,
+    project_id: payload.project_id || null,
+    layout: payload.layout || null,
+    // 'files' | 'pdf' | 'zip' | 'link' | 'quick_share'
+    share_target: payload.share_target || 'files',
+    format: payload.format || null,
+    timestamp: Date.now(),
+  });
+};
+
+// Voice notes ----------------------------------------------------------------
+
+export const logVoiceNoteUsed = (payload = {}) => {
+  logEvent('voice_note_used', {
+    photo_id: payload.photo_id || null,
+    project_id: payload.project_id || null,
+    timestamp: Date.now(),
+  });
+};
+
+// Service Flow connection ----------------------------------------------------
+
+export const logServiceFlowConnected = (payload = {}) => {
+  logEvent('serviceflow_connected', {
+    workspace_id: payload.workspace_id || null,
+    workspace_name: payload.workspace_name || null,
+    entry_point: payload.entry_point || 'settings',
+    timestamp: Date.now(),
+  });
+};
+
 export default {
   logEvent,
   logScreenView,
@@ -988,4 +1129,16 @@ export default {
   logPhotoUpload,
   logFeatureGateShown,
   logFeatureGateAction,
+  // Purchase / restore funnel
+  logPurchaseStarted,
+  logPurchaseCancelled,
+  logPurchaseFailed,
+  logRestoreTapped,
+  logRestoreFailed,
+  // Activation + product signals
+  logFirstPhotoTaken,
+  logReportCreated,
+  logReportShared,
+  logVoiceNoteUsed,
+  logServiceFlowConnected,
 };

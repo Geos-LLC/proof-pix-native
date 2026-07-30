@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-edits-tab-v28-' + Date.now() + ' — New "Edits" tab on Projects screen; flat grid of team-member Studio bakes across all team projects; per-photo Import from viewer. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] analytics-v30-' + Date.now() + ' — Purchase/restore funnel + first_photo_taken + report/voice/serviceflow + cloud_connected (WIRED). Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

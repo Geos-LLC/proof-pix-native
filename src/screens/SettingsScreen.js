@@ -73,6 +73,8 @@ import {
   logFeatureGateAction,
   logAdminReferralConversion,
   logSubscriptionRestored,
+  logRestoreTapped,
+  logRestoreFailed,
   logEvent,
 } from '../utils/analytics';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, clearPendingTransactions, productIdToPlan, hasActiveIAPSubscription, openManageSubscriptions, getAvailablePurchases, computeEntitlements, diagnoseIAPState, presentRedeemCode } from '../services/iapService';
@@ -1890,6 +1892,7 @@ export default function SettingsScreen({ navigation, route }) {
       return;
     }
 
+    logRestoreTapped({ entry_point: 'settings' });
     setIsRestoringPurchases(true);
     try {
       const purchases = await restorePurchases();
@@ -1911,6 +1914,8 @@ export default function SettingsScreen({ navigation, route }) {
             analytics_source: 'restore',
           });
         } catch {}
+      } else {
+        logRestoreFailed({ entry_point: 'settings', empty: true, error_code: 'NO_PURCHASES' });
       }
       Alert.alert(
         t('common.success', { defaultValue: 'Success' }),
@@ -1928,6 +1933,12 @@ export default function SettingsScreen({ navigation, route }) {
         console.log('[Settings] User cancelled restore purchases');
         return;
       }
+
+      logRestoreFailed({
+        entry_point: 'settings',
+        error_code: error?.code || errorMessage || 'RESTORE_ERROR',
+        error_message: errorMessage || null,
+      });
 
       // Sync failed AND no cached entitlements — surface actionable
       // guidance instead of the generic "failed to restore" alert.

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox, Platform, Image, StatusBar } from 'react-native';
+import { View, StyleSheet, Text, ActivityIndicator, AppState, LogBox, Platform, Image, StatusBar, Linking } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
@@ -929,6 +929,22 @@ export default function App() {
       // expo-notifications not available
     }
 
+    // Runtime deep-link → UTM capture. React Navigation's `linking` config
+    // handles routing on url events but does not extract attribution; this
+    // listener's only job is to feed every warm-app url tap through
+    // extractAndSaveUTMParams. That helper is idempotent (first-touch
+    // preserved, bare urls no-op) so co-existing with React Navigation's
+    // own url listener is safe.
+    let utmUrlSub = null;
+    try {
+      const { extractAndSaveUTMParams } = require('./src/utils/analytics');
+      utmUrlSub = Linking.addEventListener('url', ({ url }) => {
+        extractAndSaveUTMParams(url).catch(() => {});
+      });
+    } catch (_) {
+      // analytics module missing shouldn't crash the app
+    }
+
     // Validate and clear old label cache if version changed
     const initializeLabelCache = async () => {
       try {
@@ -994,6 +1010,7 @@ export default function App() {
       subscription?.remove();
       notificationResponseSub?.remove();
       notificationReceivedSub?.remove();
+      utmUrlSub?.remove?.();
     };
   }, []);
 

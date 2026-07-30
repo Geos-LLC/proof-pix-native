@@ -6,6 +6,9 @@ import {
   logSubscriptionStarted,
   logTrialStarted,
   logSubscriptionUpgraded,
+  logPurchaseStarted,
+  logPurchaseCancelled,
+  logPurchaseFailed,
 } from '../utils/analytics';
 
 // Persistent deduplication: prevent duplicate analytics for the same store
@@ -685,6 +688,20 @@ export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
     throw new Error('IAP_NOT_SUPPORTED');
   }
 
+  // Funnel event — user tapped a paid plan; store sheet is about to appear.
+  try {
+    logPurchaseStarted({
+      product_id: productId,
+      plan_id: productIdToPlan(productId),
+      entry_point: entryPoint,
+      billing_period: productId?.includes('.annual')
+        ? 'annual'
+        : productId?.includes('.seat')
+          ? 'seat'
+          : 'monthly',
+    });
+  } catch {}
+
   console.log('[IAP] Initializing IAP connection...');
   await initIAPIfNeeded();
 
@@ -828,6 +845,13 @@ export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
       // Check if user cancelled - handle silently
       if (errorCode === 'E_USER_CANCELLED' || errorCode === 'user-cancelled' || errorMsg.includes('cancelled') || errorMsg.includes('canceled')) {
         console.log('[IAP] User cancelled purchase');
+        try {
+          logPurchaseCancelled({
+            product_id: productId,
+            plan_id: productIdToPlan(productId),
+            entry_point: entryPoint,
+          });
+        } catch {}
         finish(() => reject(new Error('user-cancelled')));
         return;
       }
@@ -855,6 +879,16 @@ export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
       console.error('[IAP] purchaseErrorListener triggered');
       console.error('[IAP] Error code:', errorCode);
       console.error('[IAP] Error message:', errorMsg);
+
+      try {
+        logPurchaseFailed({
+          product_id: productId,
+          plan_id: productIdToPlan(productId),
+          entry_point: entryPoint,
+          error_code: errorCode || 'IAP_ERROR',
+          error_message: errorMsg || null,
+        });
+      } catch {}
 
       finish(() => {
         console.error('[IAP] Purchase error:', errorCode || 'IAP_ERROR');
@@ -927,6 +961,15 @@ export const purchaseProduct = async (productId, entryPoint = 'paywall') => {
     } catch (err) {
       console.error('[IAP] Error during purchase flow:', err);
       console.error('[IAP] Error details:', JSON.stringify({ message: err?.message, code: err?.code, name: err?.name, stack: err?.stack?.slice(0, 400), debugMessage: err?.debugMessage, responseCode: err?.responseCode }, null, 2));
+      try {
+        logPurchaseFailed({
+          product_id: productId,
+          plan_id: productIdToPlan(productId),
+          entry_point: entryPoint,
+          error_code: err?.code || err?.message || 'IAP_FLOW_ERROR',
+          error_message: err?.message || null,
+        });
+      } catch {}
       finish(() => reject(err));
     }
   });

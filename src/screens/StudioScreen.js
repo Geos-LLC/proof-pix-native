@@ -35,6 +35,7 @@ import { useTheme } from '../hooks/useTheme';
 import { useFeaturePermissions, FEATURES } from '../hooks/useFeaturePermissions';
 import ColorGridPicker from '../components/ColorGridPicker';
 import { PAYWALL_TRIGGERS } from '../constants/softTrial';
+import { logVoiceNoteUsed } from '../utils/analytics';
 import PhotoLabels from '../components/PhotoLabels';
 import DraggableLabelOverlay from '../components/DraggableLabelOverlay';
 import PhotoWatermark from '../components/PhotoWatermark';
@@ -2714,6 +2715,7 @@ function VoiceTab({ theme, photo, updatePhoto }) {
       setRecording(r);
       setIsRecording(true);
       setDurationMs(0);
+      try { logVoiceNoteUsed({ photo_id: photo?.id || null, project_id: photo?.projectId || null }); } catch {}
       tickRef.current = setInterval(async () => {
         try {
           const st = await r.getStatusAsync();

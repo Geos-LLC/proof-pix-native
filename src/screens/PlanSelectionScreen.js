@@ -44,7 +44,7 @@ import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
 import { canStartTrial, isTrialExpired } from '../services/trialService';
 import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan, productIdToBillingPeriod, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
-import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted, logSubscriptionRestored } from '../utils/analytics';
+import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted, logSubscriptionRestored, logRestoreTapped, logRestoreFailed } from '../utils/analytics';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
 import { getSoftTrialState, ensureDeviceId } from '../services/softTrialService';
 import { PAYWALL_TRIGGERS } from '../constants/softTrial';
@@ -456,6 +456,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
       return;
     }
 
+    logRestoreTapped({ entry_point: 'paywall' });
     setIsRestoringPurchases(true);
     try {
       console.log('[PlanSelection] Restoring purchases...');
@@ -463,6 +464,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
       const purchases = await restorePurchases();
 
       if (!purchases || purchases.length === 0) {
+        logRestoreFailed({ entry_point: 'paywall', empty: true, error_code: 'NO_PURCHASES' });
         Alert.alert(
           t('common.info', { defaultValue: 'No Purchases Found' }),
           t('settings.noPurchasesFound', { defaultValue: 'No active subscriptions found. If you recently purchased, please wait a moment and try again.' })
@@ -529,6 +531,12 @@ export default function PlanSelectionScreen({ navigation, route }) {
         setIsRestoringPurchases(false);
         return;
       }
+
+      logRestoreFailed({
+        entry_point: 'paywall',
+        error_code: error?.code || errorMessage || 'RESTORE_ERROR',
+        error_message: errorMessage || null,
+      });
 
       // Sync failed AND no cached entitlements — show actionable guidance
       // instead of the misleading "no active subscriptions" alert. This

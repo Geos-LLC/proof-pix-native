@@ -77,6 +77,7 @@ import {
   saveReportTemplate,
   deleteReportTemplate,
 } from '../services/reportTemplateService';
+import { logReportCreated, logReportShared } from '../utils/analytics';
 
 // Group keys for the report editor sheet. Section "Report" carries
 // the knobs that change WHAT lands in the report (branding, location
@@ -2043,6 +2044,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
         generatedAt: Date.now(),
       });
     }
+    try {
+      logReportCreated({
+        report_id: report.id,
+        project_id: project?.id || null,
+        layout: report.layoutType || DEFAULT_LAYOUT_ID,
+        photos: chosen.length,
+        has_pdf: !!pdfTarget,
+      });
+    } catch {}
     return { html: target, pdf: pdfTarget, generatedAt: Date.now() };
   };
 
@@ -2090,6 +2100,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
           UTI: isPdf ? 'com.adobe.pdf' : 'public.html',
           dialogTitle: 'Share report',
         });
+        try {
+          logReportShared({
+            report_id: r.id,
+            project_id: project?.id || null,
+            layout: r.layoutType || DEFAULT_LAYOUT_ID,
+            share_target: 'quick_share',
+            format: isPdf ? 'pdf' : 'html',
+          });
+        } catch {}
         // Value-moment nudge — service handles all eligibility (only
         // fires once, never if user already saw the Referral screen).
         setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
@@ -2150,6 +2169,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
             mimeType: 'text/html', UTI: 'public.html',
             dialogTitle: `Share ${safeName}`,
           });
+          try {
+            logReportShared({
+              report_id: r.id,
+              project_id: project?.id || null,
+              layout: r.layoutType || DEFAULT_LAYOUT_ID,
+              share_target: 'files',
+              format: 'html',
+            });
+          } catch {}
           setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
         } else {
           Alert.alert('Saved', `Report saved to ${htmlTarget}`);
@@ -2177,6 +2205,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
             mimeType: 'application/pdf', UTI: 'com.adobe.pdf',
             dialogTitle: `Share ${safeName}`,
           });
+          try {
+            logReportShared({
+              report_id: r.id,
+              project_id: project?.id || null,
+              layout: r.layoutType || DEFAULT_LAYOUT_ID,
+              share_target: 'pdf',
+              format: 'pdf',
+            });
+          } catch {}
           setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
         } catch (_) {
           Alert.alert(
@@ -2209,6 +2246,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
           mimeType: 'application/zip',
           dialogTitle: zipFileName,
         });
+        try {
+          logReportShared({
+            report_id: r.id,
+            project_id: project?.id || null,
+            layout: r.layoutType || DEFAULT_LAYOUT_ID,
+            share_target: 'zip',
+            format: 'zip',
+          });
+        } catch {}
         try { await FileSystem.deleteAsync(zipPath, { idempotent: true }); } catch {}
         setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
         return;
@@ -2218,6 +2264,15 @@ export default function ProjectDetailScreen({ route, navigation }) {
         // Reuse sharePhotosAsLink with the HTML file as the single
         // upload target. Provider picked via shareLinkProvider state.
         await sharePhotosAsLink([htmlTarget]);
+        try {
+          logReportShared({
+            report_id: r.id,
+            project_id: project?.id || null,
+            layout: r.layoutType || DEFAULT_LAYOUT_ID,
+            share_target: 'link',
+            format: 'link',
+          });
+        } catch {}
         setTimeout(() => { maybeShowFirstReportReferralPrompt().catch(() => {}); }, 700);
         return;
       }

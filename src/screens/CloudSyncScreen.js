@@ -32,6 +32,7 @@ import { syncServiceFlowJobs } from '../services/crm/serviceFlowSync';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import { getConnectedClouds } from '../utils/cloudConnectivity';
+import { logServiceFlowConnected, logCloudAccountConnection } from '../utils/analytics';
 
 // CloudSyncScreen — dedicated route for cloud storage connections.
 // Split out of the prior combined CloudTeamScreen so the team flow
@@ -234,6 +235,25 @@ export default function CloudSyncScreen({ navigation }) {
         if (!/cancel/i.test(String(errMsg))) {
           Alert.alert(t('common.error', { defaultValue: 'Error' }), errMsg);
         }
+      } else {
+        // Confirm connection before logging. `result.success` from
+        // individualSignIn/adminSignIn resolves only after
+        // googleAuthService stored a valid userInfo + token, so it IS
+        // the live confirmation for the Google leg. AdminContext state
+        // may still be updating in this closure, so pass an assertive
+        // {isAuthenticated:true, accountType:'google'} to
+        // getConnectedClouds — the Dropbox + SF results are live probes
+        // and give us an accurate total_connected count.
+        // Only enters this branch when the user came in via the
+        // sign-in path (googleConnected was false), so this
+        // represents a NEW connection intent, not a token refresh.
+        try {
+          const clouds = await getConnectedClouds({ isAuthenticated: true, accountType: 'google' });
+          if (clouds.google) {
+            const total = Object.values(clouds).filter(Boolean).length;
+            logCloudAccountConnection('google_drive', 'connect', total);
+          }
+        } catch {}
       }
     } catch (e) {
       if (!/cancel/i.test(String(e?.message || ''))) {
@@ -284,6 +304,19 @@ export default function CloudSyncScreen({ navigation }) {
         }
       }
       await refreshDropbox();
+      // Post-refresh live probe. dropboxAuthService.isAuthenticated()
+      // returns true only when a valid access token is actually stored,
+      // so it's a stronger signal than result.success alone. Only
+      // reachable via the sign-in branch (dropboxConnected was false
+      // when handleDropbox was called), so this always represents a
+      // NEW connection intent, not a session resume.
+      try {
+        if (dropboxAuthService.isAuthenticated?.()) {
+          const clouds = await getConnectedClouds({ isAuthenticated, accountType });
+          const total = Object.values(clouds).filter(Boolean).length;
+          logCloudAccountConnection('dropbox', 'connect', total);
+        }
+      } catch {}
     } catch (e) {
       const errMsg = e?.message || '';
       if (errMsg && !/cancel/i.test(errMsg)) {
@@ -350,6 +383,24 @@ export default function CloudSyncScreen({ navigation }) {
       if (!redeem?.success) {
         return { completed: false, reason: 'redeem_failed', error: redeem?.error };
       }
+      try {
+        logServiceFlowConnected({
+          workspace_id: redeem?.connection?.workspaceId || null,
+          workspace_name: redeem?.connection?.workspaceName || null,
+          entry_point: 'oauth',
+        });
+      } catch {}
+      try {
+        // Post-redeem live probe — adapter.getStoredWorkspace() (via
+        // getConnectedClouds) returns the workspaceId only when the
+        // token was actually persisted, so this confirms the connect
+        // before logging cloud_account_connection.
+        const clouds = await getConnectedClouds({ isAuthenticated, accountType });
+        if (clouds.serviceflow) {
+          const total = Object.values(clouds).filter(Boolean).length;
+          logCloudAccountConnection('service_flow', 'connect', total);
+        }
+      } catch {}
       await refreshServiceFlow();
       // Kick an immediate SF sync so admin's Projects list populates.
       try {
@@ -510,6 +561,20 @@ export default function CloudSyncScreen({ navigation }) {
         );
         return;
       }
+      try {
+        logServiceFlowConnected({
+          workspace_id: redeem?.connection?.workspaceId || null,
+          workspace_name: redeem?.connection?.workspaceName || null,
+          entry_point: 'paste_code',
+        });
+      } catch {}
+      try {
+        const clouds = await getConnectedClouds({ isAuthenticated, accountType });
+        if (clouds.serviceflow) {
+          const total = Object.values(clouds).filter(Boolean).length;
+          logCloudAccountConnection('service_flow', 'connect', total);
+        }
+      } catch {}
       setSfCodeModalVisible(false);
       await refreshServiceFlow();
       // Fire an immediate sync so the user sees their SF jobs in
