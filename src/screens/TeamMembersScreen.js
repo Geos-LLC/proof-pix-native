@@ -100,6 +100,17 @@ export default function TeamMembersScreen({ navigation }) {
   const [inviteNameModalVisible, setInviteNameModalVisible] = useState(false);
   const [inviteNameInput, setInviteNameInput] = useState('');
 
+  // Rename-member modal — reuses the invite-name modal styling. Admin
+  // taps the pencil on any row (pending or joined) to change the
+  // display name proxy-side. The proxy cascades the rename to every
+  // team project's ownerName so the ProjectsScreen cleaner-filter
+  // chips show the new label without waiting for a team-member
+  // re-sync.
+  const [editNameModalVisible, setEditNameModalVisible] = useState(false);
+  const [editingToken, setEditingToken] = useState(null);
+  const [editNameInput, setEditNameInput] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+
   // Poll SF connection state so the setup card can pick the SF path
   // over the Google path without waiting for a full remount. Cheap —
   // just a Keychain read.
@@ -242,6 +253,35 @@ export default function TeamMembersScreen({ navigation }) {
         },
       ],
     );
+  };
+
+  // Open the rename modal for a specific member/invite row. Prefills
+  // the current name so the admin can tweak instead of retype.
+  const openEditName = (token, currentName) => {
+    if (!token) return;
+    setEditingToken(token);
+    setEditNameInput(currentName || '');
+    setEditNameModalVisible(true);
+  };
+
+  const handleSaveEditName = async () => {
+    const trimmed = editNameInput.trim();
+    if (!trimmed || !editingToken || !proxySessionId) return;
+    setIsSavingName(true);
+    try {
+      await proxyService.updateInviteTokenDisplayName(proxySessionId, editingToken, trimmed);
+      setEditNameModalVisible(false);
+      setEditingToken(null);
+      setEditNameInput('');
+      await fetchMembers();
+    } catch (e) {
+      Alert.alert(
+        t('common.error', { defaultValue: 'Error' }),
+        e?.message || 'Failed to update team member name',
+      );
+    } finally {
+      setIsSavingName(false);
+    }
   };
 
   // Open the shared team Google Drive folder in the Drive app / browser.
@@ -980,6 +1020,16 @@ export default function TeamMembersScreen({ navigation }) {
                             {m.token && !isRevoked ? (
                               <View style={styles.rowActionsButtons}>
                                 <TouchableOpacity
+                                  onPress={() => openEditName(m.token, m.name)}
+                                  style={styles.rowActionButton}
+                                  activeOpacity={0.85}
+                                >
+                                  <Ionicons name="pencil-outline" size={16} color={theme.textPrimary} />
+                                  <Text style={styles.rowActionButtonText}>
+                                    {t('teamMembers.editName', { defaultValue: 'Edit name' })}
+                                  </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
                                   onPress={() => handleReshare(m.token)}
                                   style={styles.rowActionButton}
                                   activeOpacity={0.85}
@@ -1137,6 +1187,81 @@ export default function TeamMembersScreen({ navigation }) {
                     defaultValue: 'Skip — send an unnamed invite',
                   })}
                 </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={editNameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (isSavingName) return;
+          setEditNameModalVisible(false);
+          setEditingToken(null);
+          setEditNameInput('');
+        }}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.pickerBackdrop}>
+            <View style={styles.pickerCard}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>
+                  {t('teamMembers.editNameTitle', { defaultValue: 'Edit team member name' })}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (isSavingName) return;
+                    setEditNameModalVisible(false);
+                    setEditingToken(null);
+                    setEditNameInput('');
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close" size={22} color={theme.textPrimary} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.pickerSubtitle}>
+                {t('teamMembers.editNameSubtitle', {
+                  defaultValue: 'Updates their name here and on your Team Projects filter chips.',
+                })}
+              </Text>
+              <TextInput
+                style={styles.inviteNameInput}
+                placeholder={t('teamMembers.inviteNamePlaceholder', { defaultValue: 'Team member name' })}
+                placeholderTextColor={theme.textMuted}
+                value={editNameInput}
+                onChangeText={setEditNameInput}
+                autoFocus
+                autoCapitalize="words"
+                returnKeyType="done"
+                onSubmitEditing={handleSaveEditName}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.inviteNameCta,
+                  { backgroundColor: editNameInput.trim() ? theme.accent : theme.surfaceElevated },
+                ]}
+                onPress={handleSaveEditName}
+                disabled={!editNameInput.trim() || isSavingName}
+              >
+                {isSavingName ? (
+                  <ActivityIndicator size="small" color={theme.textPrimary} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.inviteNameCtaText,
+                      { color: editNameInput.trim() ? theme.accentText : theme.textMuted },
+                    ]}
+                  >
+                    {t('teamMembers.saveName', { defaultValue: 'Save' })}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
