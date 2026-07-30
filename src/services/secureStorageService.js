@@ -19,6 +19,14 @@ const _options = {
   requireAuthentication: false,
 };
 
+// expo-secure-store rejects any key outside [A-Za-z0-9._-]. Our call sites use
+// AsyncStorage-style '@' prefixes, which used to make every SecureStore call
+// throw silently ("Invalid key provided to SecureStore") — values then only
+// hit the AsyncStorage fallback, breaking the "survives reinstall on iOS"
+// contract. Sanitize only the SecureStore key; keep the AsyncStorage key as-is
+// so existing installs still find their data on the fallback path.
+const _secureKey = (k) => k.replace(/[^A-Za-z0-9._-]/g, '_');
+
 /**
  * Read a value, preferring secure storage and falling back to AsyncStorage.
  * Survives reinstall on iOS (Keychain). Best-effort on Android — Android may
@@ -28,7 +36,7 @@ export const readSecure = async (key) => {
   const SecureStore = await _loadSecureStore();
   if (SecureStore && SecureStore.getItemAsync) {
     try {
-      const v = await SecureStore.getItemAsync(key, _options);
+      const v = await SecureStore.getItemAsync(_secureKey(key), _options);
       if (v != null) return v;
     } catch (e) {
       console.warn('[secureStorage] read failed for', key, e?.message);
@@ -50,7 +58,7 @@ export const writeSecure = async (key, value) => {
   const SecureStore = await _loadSecureStore();
   if (SecureStore && SecureStore.setItemAsync) {
     try {
-      await SecureStore.setItemAsync(key, value, _options);
+      await SecureStore.setItemAsync(_secureKey(key), value, _options);
     } catch (e) {
       console.warn('[secureStorage] secure write failed for', key, e?.message);
     }
@@ -66,7 +74,7 @@ export const deleteSecure = async (key) => {
   const SecureStore = await _loadSecureStore();
   if (SecureStore && SecureStore.deleteItemAsync) {
     try {
-      await SecureStore.deleteItemAsync(key, _options);
+      await SecureStore.deleteItemAsync(_secureKey(key), _options);
     } catch {}
   }
   try {
