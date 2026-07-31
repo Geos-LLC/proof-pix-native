@@ -84,4 +84,27 @@ export const deleteImagesByProjectIdNative = async (projectId) => {
   }
 };
 
-export default { saveImageToGalleryNative, deleteImagesFromGalleryNative, deleteImagesByProjectIdNative };
+/**
+ * Delete images from the ProofPix gallery folder whose DISPLAY_NAME starts
+ * with any of the given prefixes. Used for combined-photo cleanup where
+ * the exact filename isn't known at delete time.
+ */
+export const deleteImagesByPrefixesNative = async (prefixes) => {
+  if (Platform.OS !== 'android') {
+    throw new Error('MediaStoreSaver is only available on Android');
+  }
+  if (!MediaStoreSaver) {
+    throw new Error('MediaStoreSaver native module not found');
+  }
+  try {
+    console.log('[MediaStoreSaver] Deleting images by prefixes:', prefixes);
+    const result = await MediaStoreSaver.deleteImagesByPrefixes(prefixes);
+    console.log('[MediaStoreSaver] ✅ Delete-by-prefix result:', result);
+    return result;
+  } catch (error) {
+    console.error('[MediaStoreSaver] ❌ Failed to delete images by prefixes:', error);
+    throw error;
+  }
+};
+
+export default { saveImageToGalleryNative, deleteImagesFromGalleryNative, deleteImagesByProjectIdNative, deleteImagesByPrefixesNative };

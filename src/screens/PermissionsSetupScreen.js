@@ -7,6 +7,7 @@ import {
   Alert,
   Linking,
   Animated,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'expo-camera';
@@ -62,7 +63,10 @@ export default function PermissionsSetupScreen({ navigation }) {
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const [cameraGranted, setCameraGranted] = useState(false);
-  const [photoGranted, setPhotoGranted] = useState(false);
+  // Android uses the system photo picker (no permission) — treat Photos as
+  // always-granted so the "Import existing shots" flow is available without
+  // requesting READ_MEDIA_IMAGES (Play Store policy).
+  const [photoGranted, setPhotoGranted] = useState(Platform.OS === 'android');
   const [locationGranted, setLocationGranted] = useState(false);
   const [micGranted, setMicGranted] = useState(false);
 
@@ -82,8 +86,10 @@ export default function PermissionsSetupScreen({ navigation }) {
         const camera = await Camera.getCameraPermissionsAsync();
         setCameraGranted(!!(camera.granted || camera.status === 'granted'));
 
-        const photo = await MediaLibrary.getPermissionsAsync();
-        setPhotoGranted(photo.status === 'granted' || photo.status === 'limited');
+        if (Platform.OS === 'ios') {
+          const photo = await MediaLibrary.getPermissionsAsync();
+          setPhotoGranted(photo.status === 'granted' || photo.status === 'limited');
+        }
 
         const location = await Location.getForegroundPermissionsAsync();
         setLocationGranted(location.status === 'granted');
@@ -109,6 +115,11 @@ export default function PermissionsSetupScreen({ navigation }) {
   };
 
   const requestPhoto = async () => {
+    // Android: no permission required — system photo picker handles access.
+    if (Platform.OS === 'android') {
+      setPhotoGranted(true);
+      return true;
+    }
     try {
       const result = await MediaLibrary.requestPermissionsAsync();
       const granted = result.status === 'granted' || result.status === 'limited';
@@ -168,7 +179,9 @@ export default function PermissionsSetupScreen({ navigation }) {
     // Re-read state guard — useState updates are async so use returned
     // values from this round to decide whether to advance.
     const cam = cameraGranted || (await Camera.getCameraPermissionsAsync()).granted;
-    const ph = photoGranted || ['granted', 'limited'].includes((await MediaLibrary.getPermissionsAsync()).status);
+    const ph = Platform.OS === 'android'
+      ? true
+      : (photoGranted || ['granted', 'limited'].includes((await MediaLibrary.getPermissionsAsync()).status));
     if (cam && ph) {
       logOnboardingStepCompleted('permissions');
       navigation.navigate('LabelLanguageSetup');
@@ -230,16 +243,18 @@ export default function PermissionsSetupScreen({ navigation }) {
             granted={cameraGranted}
             onAllow={requestCamera}
           />
-          <PermissionRow
-            styles={styles}
-            icon="image-outline"
-            title={t('permissions.photosTitle', { defaultValue: 'Photos' })}
-            description={t('permissions.photosDescription', {
-              defaultValue: 'Import existing shots into a set',
-            })}
-            granted={photoGranted}
-            onAllow={requestPhoto}
-          />
+          {Platform.OS === 'ios' && (
+            <PermissionRow
+              styles={styles}
+              icon="image-outline"
+              title={t('permissions.photosTitle', { defaultValue: 'Photos' })}
+              description={t('permissions.photosDescription', {
+                defaultValue: 'Import existing shots into a set',
+              })}
+              granted={photoGranted}
+              onAllow={requestPhoto}
+            />
+          )}
           <PermissionRow
             styles={styles}
             icon="location-outline"

@@ -156,6 +156,57 @@ class MediaStoreSaverModule(reactContext: ReactApplicationContext) : ReactContex
     }
 
     @ReactMethod
+    fun deleteImagesByPrefixes(prefixes: ReadableArray, promise: Promise) {
+        try {
+            val context: Context = reactApplicationContext
+            val contentResolver = context.contentResolver
+            var deletedCount = 0
+            val deletedFiles = mutableListOf<String>()
+
+            for (i in 0 until prefixes.size()) {
+                val prefix = prefixes.getString(i) ?: continue
+                val projection = arrayOf(
+                    MediaStore.Images.Media._ID,
+                    MediaStore.Images.Media.DISPLAY_NAME
+                )
+                val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?"
+                val selectionArgs = arrayOf("%Pictures/ProofPix%", "$prefix%")
+
+                var cursor: Cursor? = null
+                try {
+                    cursor = contentResolver.query(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        projection,
+                        selection,
+                        selectionArgs,
+                        null
+                    )
+                    if (cursor != null) {
+                        val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                        val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                        while (cursor.moveToNext()) {
+                            val id = cursor.getLong(idColumn)
+                            val fileName = cursor.getString(nameColumn)
+                            val imageUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+                            val deleted = contentResolver.delete(imageUri, null, null)
+                            if (deleted > 0) {
+                                deletedCount++
+                                deletedFiles.add(fileName)
+                            }
+                        }
+                    }
+                } finally {
+                    cursor?.close()
+                }
+            }
+
+            promise.resolve("Deleted $deletedCount images by prefix: ${deletedFiles.joinToString(", ")}")
+        } catch (e: Exception) {
+            promise.reject("DELETE_ERROR", "Failed to delete images by prefix: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
     fun deleteImagesByProjectId(projectId: String, promise: Promise) {
         try {
             val context: Context = reactApplicationContext

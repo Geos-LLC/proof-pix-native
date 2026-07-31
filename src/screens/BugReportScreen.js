@@ -69,15 +69,19 @@ export default function BugReportScreen({ navigation }) {
 
   const pickScreenshot = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert(
-          t('feedback.photosPermTitle', { defaultValue: 'Photo access needed' }),
-          t('feedback.photosPermBody', {
-            defaultValue: 'Grant Photos permission to attach a screenshot.',
-          }),
-        );
-        return;
+      // Android uses the system photo picker (no permission required); iOS
+      // still needs Photos permission before launching the library.
+      if (Platform.OS === 'ios') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert(
+            t('feedback.photosPermTitle', { defaultValue: 'Photo access needed' }),
+            t('feedback.photosPermBody', {
+              defaultValue: 'Grant Photos permission to attach a screenshot.',
+            }),
+          );
+          return;
+        }
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],

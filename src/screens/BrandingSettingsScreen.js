@@ -68,10 +68,14 @@ export default function BrandingSettingsScreen({ navigation }) {
   const pickLogo = async () => {
     try {
       const ImagePicker = require('expo-image-picker');
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert(t('branding.permissionNeededTitle'), t('branding.permissionNeededMessage'));
-        return;
+      // Android uses the system photo picker (no permission required); iOS
+      // still needs Photos permission before launching the library.
+      if (Platform.OS === 'ios') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert(t('branding.permissionNeededTitle'), t('branding.permissionNeededMessage'));
+          return;
+        }
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions?.Images || 'images',

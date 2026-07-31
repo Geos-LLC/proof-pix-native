@@ -9,6 +9,7 @@ import {
   Modal,
   Pressable,
   Alert,
+  Platform,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -88,10 +89,14 @@ export default function LogoCustomizationScreen({ navigation, route }) {
   const pickLogo = async () => {
     try {
       const ImagePicker = require('expo-image-picker');
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert(t('logoCustomization.permissionNeededTitle'), t('logoCustomization.permissionNeededMessage'));
-        return;
+      // Android uses the system photo picker (no permission required); iOS
+      // still needs Photos permission before launching the library.
+      if (Platform.OS === 'ios') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert(t('logoCustomization.permissionNeededTitle'), t('logoCustomization.permissionNeededMessage'));
+          return;
+        }
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions?.Images || 'images',

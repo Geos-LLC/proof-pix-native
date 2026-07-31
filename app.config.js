@@ -75,21 +75,31 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 78,
+      versionCode: 79,
+      // Google Play Photo/Video Permissions policy (rejection 2026-07-31):
+      // apps without a "browse the whole gallery" core use case must use the
+      // Android system photo picker (expo-image-picker does this on API 33+,
+      // no permission needed) and MUST NOT declare READ_MEDIA_IMAGES /
+      // READ_MEDIA_VIDEO / READ_MEDIA_AUDIO / READ_EXTERNAL_STORAGE. Own-app
+      // gallery writes go through the native MediaStoreSaver module using
+      // scoped-storage MediaStore APIs, which don't need READ_MEDIA_* either.
       permissions: [
         "CAMERA",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_EXTERNAL_STORAGE",
-        "READ_MEDIA_IMAGES",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_MEDIA_LOCATION"
+      ],
+      // Strip any READ_MEDIA_* permission that expo-media-library or
+      // expo-image-picker might re-inject via manifest merge. Play Console's
+      // scanner reads the merged manifest, so blocking here is what actually
+      // clears the rejection.
+      blockedPermissions: [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.ACCESS_MEDIA_LOCATION",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO"
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
       ],
       edgeToEdgeEnabled: true,
       googleServicesFile: "./google-services.json",
@@ -141,9 +151,9 @@ export default {
             ]
           },
           "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-            "buildToolsVersion": "35.0.0"
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0"
           }
         }
       ],
