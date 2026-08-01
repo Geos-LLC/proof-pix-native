@@ -18,9 +18,15 @@ import { Platform } from 'react-native';
 // against Railway's older /join handler; production defaults to www.
 const INVITE_BASE_URL = process.env.EXPO_PUBLIC_INVITE_BASE_URL || 'https://www.proofpix.app';
 
-// App Store URLs
-const IOS_APP_STORE_URL = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/us/app/proofpix-before-after/id6754261444';
+// App Store URLs. Apple auto-fills the region + slug from the numeric
+// id so `/app/id<n>` is the shortest canonical form that still works
+// globally — saves ~40 chars in the share message.
+const IOS_APP_STORE_URL = process.env.EXPO_PUBLIC_IOS_APP_STORE_URL || 'https://apps.apple.com/app/id6754261444';
 const ANDROID_PLAY_STORE_URL = process.env.EXPO_PUBLIC_ANDROID_PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.proofpix.app';
+// Single short download URL that platform-detects and hops to the
+// correct store — served by proofpix-landing-page /get. Collapses the
+// two-line iOS+Android block below into one line.
+const DOWNLOAD_URL = 'https://www.proofpix.app/get';
 
 // Deep link scheme
 const APP_SCHEME = 'proofpix';
@@ -84,15 +90,12 @@ export function generateShareContent(token, sessionId, teamName = '') {
 
   const message = `You're invited to join ${teamText}! 🎉
 
-Tap this link to join:
-${inviteLink}
+Tap to join: ${inviteLink}
 
-Or enter this invite code manually in the app:
+Or enter this code in the app:
 ${inviteCode}
 
-Download ProofPix:
-iOS: https://apps.apple.com/us/app/proofpix-before-after/id6754261444
-Android: https://play.google.com/store/apps/details?id=com.proofpix.app`;
+Don't have ProofPix? ${DOWNLOAD_URL}`;
 
   return {
     title: 'ProofPix Team Invite',

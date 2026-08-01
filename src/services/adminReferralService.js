@@ -36,8 +36,13 @@ export const generateCode = (length = 7) => {
   return result;
 };
 
+// Branded referral URL on the ProofPix domain. Backed by
+// proofpix-landing-page /r/:code (ReferralLanding.js) which hits the
+// proxy's /api/referrals/public/{validate,click} endpoints and
+// deep-links into the app if installed. Shorter, on-brand, and
+// doesn't leak the Railway service URL in shared invites.
 export const getReferralLinkUrl = (code) =>
-  `https://steadfast-blessing-production.up.railway.app/referral/${code}`;
+  `https://www.proofpix.app/r/${code}`;
 
 // ─── Admin CRUD ───
 

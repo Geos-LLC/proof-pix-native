@@ -59,3 +59,5 @@ design-screens/
 
 # Local test plans (not source)
 TEST_PLAN_*.md
+TEST_PLAN_*.yaml
+TEST_PLAN_*.yml

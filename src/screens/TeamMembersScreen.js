@@ -318,10 +318,13 @@ export default function TeamMembersScreen({ navigation }) {
     if (!token || !proxySessionId) return;
     try {
       const shareContent = generateShareContent(token, proxySessionId, teamName);
+      // Pass message only — it already embeds the invite link. Passing
+      // `url` too makes iOS Share treat both as separate activityItems,
+      // which Messages renders as two bubbles (text + URL). User then
+      // had to hit send twice and both went through as duplicates.
       await Share.share({
         title: shareContent.title,
         message: shareContent.message,
-        url: shareContent.inviteLink,
       });
     } catch {}
   };
@@ -697,10 +700,12 @@ export default function TeamMembersScreen({ navigation }) {
       // recipients without the deep-link working had no fallback.
       const shareContent = generateShareContent(newToken, proxySessionId, teamName);
       try {
+        // Message already embeds the invite link — don't pass `url`
+        // separately or iOS Share fans it out as a second activityItem
+        // (Messages → two bubbles → double-send).
         await Share.share({
           title: shareContent.title,
           message: shareContent.message,
-          url: shareContent.inviteLink,
         });
       } catch {}
       // Refresh the proxy list so the new invite shows up in the
@@ -890,7 +895,14 @@ export default function TeamMembersScreen({ navigation }) {
               const nowMs = Date.now();
               const statusOf = (m) => {
                 if (m?.status === 'revoked') return 'revoked';
-                const hasJoined = !!(m?.name || m?.userName || m?.email);
+                // Server-authoritative: /team-members returns
+                // status:'pending' for un-joined invites even when the
+                // row already carries a name (from inviteTokenNameMap —
+                // SF cleaner binding or admin-typed rename). The old
+                // "hasJoined = !!name" heuristic ignored that and
+                // flipped every pre-named invite to 'connected'.
+                if (m?.status === 'pending') return 'pending';
+                const hasJoined = m?.status === 'joined' || !!(m?.name || m?.userName || m?.email);
                 if (!hasJoined) return 'pending';
                 const lastSeen = m?.lastSeenAt ? new Date(m.lastSeenAt).getTime() : null;
                 if (lastSeen && (nowMs - lastSeen) > INACTIVE_THRESHOLD_MS) return 'inactive';

@@ -2120,8 +2120,38 @@ export default function ProjectsScreen({ navigation, route }) {
     return [...list].sort(compareByTimeThenName);
   }, [localSfProjects, searchQuery, dateFilterRange, cleanerFilter]);
 
+  // Cross-source dedupe. Proxy /team/:sessionId/projects keys entries
+  // by mobile `id`, so two team members syncing the same SF job land
+  // as two distinct KV rows. The admin also has that job as a local
+  // SF sync (localSfProjects). Result before this pass: same job
+  // renders up to 3× on Team tab. Dedupe strategy:
+  //   1) Drop teamProjects whose normalized name matches a local SF
+  //      sync — the SF card is the interactive one, admin should see
+  //      that, not a redundant Drive-folder shortcut.
+  //   2) Within teamProjects, keep the newest row per normalized name.
+  // Name is imperfect (mutable, collisions possible) but the proxy
+  // doesn't carry crmJobId, so it's the strongest signal we have
+  // without a schema change.
+  const dedupedTeamProjects = useMemo(() => {
+    const sfNames = new Set(
+      (localSfProjects || [])
+        .map((p) => (p?.name || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const bestByName = new Map();
+    for (const p of teamProjects || []) {
+      const key = (p?.name || '').trim().toLowerCase();
+      if (!key || sfNames.has(key)) continue;
+      const prior = bestByName.get(key);
+      const currTs = teamProjectFilterTs(p);
+      const priorTs = prior ? teamProjectFilterTs(prior) : -Infinity;
+      if (!prior || currTs > priorTs) bestByName.set(key, p);
+    }
+    return Array.from(bestByName.values());
+  }, [teamProjects, localSfProjects]);
+
   const filteredTeamProjects = useMemo(() => {
-    let list = teamProjects;
+    let list = dedupedTeamProjects;
     const q = searchQuery.trim().toLowerCase();
     if (q) list = list.filter((p) => (p.name || '').toLowerCase().includes(q));
     if (dateFilterRange) {
@@ -2140,7 +2170,7 @@ export default function ProjectsScreen({ navigation, route }) {
       list = [];
     }
     return [...list].sort(compareByTimeThenNameTeam);
-  }, [teamProjects, searchQuery, dateFilterRange, cleanerFilter]);
+  }, [dedupedTeamProjects, searchQuery, dateFilterRange, cleanerFilter]);
 
   // Per-chip counts for the currently visible tab. Same range math as
   // dateFilterRange so counts always match what a tap on the chip
@@ -2154,7 +2184,7 @@ export default function ProjectsScreen({ navigation, route }) {
     // to tag the row — SF rows have crmProvider === 'serviceflow' and
     // proxy rows have updatedAt, so we branch on that.
     const list = projectsTab === 'team'
-      ? [...localSfProjects, ...teamProjects]
+      ? [...localSfProjects, ...dedupedTeamProjects]
       : localMineProjects;
     const tsFn = (p) => {
       if (p?.crmProvider === 'serviceflow') return projectDayTs(p);
@@ -2181,7 +2211,7 @@ export default function ProjectsScreen({ navigation, route }) {
       }
     }
     return counts;
-  }, [localMineProjects, localSfProjects, teamProjects, projectsTab, searchQuery]);
+  }, [localMineProjects, localSfProjects, dedupedTeamProjects, projectsTab, searchQuery]);
 
   const handleOpenTeamProjectFolder = async (proj) => {
     const url = proj?.folderUrl
@@ -2267,6 +2297,7 @@ export default function ProjectsScreen({ navigation, route }) {
               ]}
             >
               {t('projects.tabs.mine', { defaultValue: 'My projects' })}
+              {` ${localMineProjects.length}`}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -2287,7 +2318,7 @@ export default function ProjectsScreen({ navigation, route }) {
               ]}
             >
               {t('projects.tabs.team', { defaultValue: 'Team projects' })}
-              {teamProjects.length > 0 ? ` (${teamProjects.length})` : ''}
+              {` ${localSfProjects.length + dedupedTeamProjects.length}`}
             </Text>
           </TouchableOpacity>
           {/* Slice D.7: Team edits tab. Flat grid across all team
@@ -2312,7 +2343,7 @@ export default function ProjectsScreen({ navigation, route }) {
               ]}
             >
               {t('projects.tabs.edits', { defaultValue: 'Edits' })}
-              {teamEdits.length > 0 ? ` (${teamEdits.length})` : ''}
+              {` ${teamEdits.length}`}
             </Text>
           </TouchableOpacity>
         </View>

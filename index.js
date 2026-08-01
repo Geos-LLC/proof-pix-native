@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] analytics-v30-' + Date.now() + ' — Purchase/restore funnel + first_photo_taken + report/voice/serviceflow + cloud_connected (WIRED). Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-tab-dedupe-v35-' + Date.now() + ' — Team tab count = localSf + deduped teamProjects; drop team dupes matching local SF names. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
