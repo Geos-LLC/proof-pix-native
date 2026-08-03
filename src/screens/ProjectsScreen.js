@@ -2150,6 +2150,54 @@ export default function ProjectsScreen({ navigation, route }) {
     return Array.from(bestByName.values());
   }, [teamProjects, localSfProjects]);
 
+  // SF card sidecar: for every local SF project on Team tab, find any
+  // team-member-uploaded proxy project that represents the same job so
+  // the SF card can surface a "Team photos" chip. Two match paths:
+  //   - crmJobId (new uploads/syncs after the crmJobId fix land the
+  //     field on the proxy KV row + photoMeta)
+  //   - name (legacy rows synced before the fix that never got
+  //     crmJobId — kept as a fallback so pre-fix uploads don't stay
+  //     hidden after the admin ships the OTA)
+  // Falls back to the SF project's own crmJobId as the tap-target id
+  // when no proxy row exists yet — proxy /photos accepts either id or
+  // crmJobId and returns [] when there are no uploads.
+  const teamProjectsForSf = useMemo(() => {
+    const byCrmJobId = new Map();
+    const byName = new Map();
+    for (const tp of teamProjects || []) {
+      if (tp?.crmJobId != null) {
+        const key = String(tp.crmJobId);
+        const prior = byCrmJobId.get(key);
+        const currTs = teamProjectFilterTs(tp);
+        const priorTs = prior ? teamProjectFilterTs(prior) : -Infinity;
+        if (!prior || currTs > priorTs) byCrmJobId.set(key, tp);
+      }
+      const nameKey = (tp?.name || '').trim().toLowerCase();
+      if (nameKey) {
+        const prior = byName.get(nameKey);
+        const currTs = teamProjectFilterTs(tp);
+        const priorTs = prior ? teamProjectFilterTs(prior) : -Infinity;
+        if (!prior || currTs > priorTs) byName.set(nameKey, tp);
+      }
+    }
+    const out = new Map();
+    for (const sf of localSfProjects || []) {
+      if (!sf?.id) continue;
+      const jobKey = sf?.crmJobId != null ? String(sf.crmJobId) : null;
+      const nameKey = (sf?.name || '').trim().toLowerCase();
+      const match = (jobKey && byCrmJobId.get(jobKey)) || (nameKey && byName.get(nameKey)) || null;
+      if (match) {
+        out.set(sf.id, match);
+      } else if (jobKey) {
+        // No proxy row yet — synthesize one so the chip can still open
+        // the viewer against crmJobId (which the proxy resolves to the
+        // Drive folder created on the first team upload).
+        out.set(sf.id, { id: jobKey, name: sf.name || 'Project', photoCount: 0, _synthetic: true });
+      }
+    }
+    return out;
+  }, [teamProjects, localSfProjects]);
+
   const filteredTeamProjects = useMemo(() => {
     let list = dedupedTeamProjects;
     const q = searchQuery.trim().toLowerCase();
@@ -2773,6 +2821,14 @@ export default function ProjectsScreen({ navigation, route }) {
                   : '';
                 const isActive = activeProjectId === project.id;
                 const cleanerName = project?.crmJobMeta?.customerName || '';
+                const teamMirror = teamProjectsForSf.get(project.id);
+                // Only show the chip when we have positive evidence of
+                // team uploads. `_synthetic` rows are stub placeholders
+                // in the map with photoCount=0 — a `Team: 0` chip would
+                // clutter every SF card and mislead the admin.
+                const teamPhotoCount = teamMirror && !teamMirror._synthetic
+                  ? (teamMirror.photoCount || 0)
+                  : 0;
                 return (
                   <TouchableOpacity
                     key={project.id}
@@ -2798,6 +2854,22 @@ export default function ProjectsScreen({ navigation, route }) {
                         <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
                           {[timeStr, cleanerName, `${stats.count} photo(s)`].filter(Boolean).join(' · ')}
                         </Text>
+                        {teamPhotoCount > 0 ? (
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => openTeamProjectPhotos(teamMirror)}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            style={[teamPhotosStyles.sfTeamChip, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
+                          >
+                            <Ionicons name="people-outline" size={12} color={theme.textSecondary} />
+                            <Text style={[teamPhotosStyles.sfTeamChipText, { color: theme.textSecondary }]}>
+                              {t('projects.teamPhotosChip', {
+                                count: teamPhotoCount,
+                                defaultValue: `Team: ${teamPhotoCount} photo(s)`,
+                              })}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : null}
                       </View>
                       <TouchableOpacity
                         style={styles.kebabBtn}
@@ -4155,6 +4227,18 @@ const teamPhotosStyles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   driveBtnText: { fontSize: 12, fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' },
+  sfTeamChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  sfTeamChipText: { fontSize: 11, fontFamily: FONTS.ALEXANDRIA, fontWeight: '600' },
   viewerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.95)',

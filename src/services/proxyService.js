@@ -690,7 +690,7 @@ class ProxyService {
    *
    * @param {string} sessionId - Proxy session ID
    * @param {string} token - The team member's invite token
-   * @param {Object} project - { id, name, industry?, createdAt?, memberName? }
+   * @param {Object} project - { id, name, industry?, createdAt?, memberName?, crmJobId? }
    * @returns {Promise<{success: boolean, project?: Object}>}
    */
   async syncTeamProject(sessionId, token, project) {
@@ -708,6 +708,7 @@ class ProxyService {
           industry: project.industry ?? null,
           createdAt: project.createdAt ?? null,
           memberName: project.memberName ?? null,
+          crmJobId: project.crmJobId != null ? String(project.crmJobId) : null,
         }),
       });
 

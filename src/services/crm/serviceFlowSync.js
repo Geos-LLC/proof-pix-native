@@ -424,5 +424,53 @@ export async function syncServiceFlowJobs({
     }
   }
 
+  // One-shot backfill for team_member accounts: pre-fix SF projects
+  // were synced to the proxy KV without crmJobId, so the admin's SF
+  // Team-tab card can't query team photos by crmJobId. Republish
+  // every SF-linked local project to the proxy so the KV row gains
+  // the field. Gated by an AsyncStorage flag so we don't hammer the
+  // proxy on every foreground sync.
+  //
+  // Cheap: one POST per SF-linked project on the member's device
+  // (typically <30). Failures are swallowed — a re-run on next
+  // foreground retries because we don't set the flag until every
+  // publish resolves without throwing.
+  if (mode === 'team_member') {
+    try {
+      const BACKFILL_FLAG = '@proxy_sf_crmJobId_backfill_v1';
+      const done = await AsyncStorage.getItem(BACKFILL_FLAG);
+      if (done !== 'true') {
+        const teamInfo = await readSecureJSON('@team_member_info');
+        if (teamInfo?.sessionId && teamInfo.token) {
+          const sfProjects = (currentProjects || []).filter(
+            (p) => p?.crmProvider === 'serviceflow' && p?.crmJobId && p?.id && p?.name,
+          );
+          let ok = true;
+          for (const p of sfProjects) {
+            try {
+              await proxyService.syncTeamProject(teamInfo.sessionId, teamInfo.token, {
+                id: p.id,
+                name: p.name,
+                industry: p.industry ?? null,
+                createdAt: p.createdAt ?? null,
+                memberName: null,
+                crmJobId: String(p.crmJobId),
+              });
+            } catch (e) {
+              ok = false;
+              console.warn('[ServiceFlow] backfill publish failed', p.id, e?.message);
+            }
+          }
+          if (ok) {
+            try { await AsyncStorage.setItem(BACKFILL_FLAG, 'true'); } catch {}
+            console.warn('[ServiceFlow] crmJobId backfill complete', { count: sfProjects.length });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[ServiceFlow] crmJobId backfill skipped', e?.message);
+    }
+  }
+
   return { created, matched, deleted };
 }

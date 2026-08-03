@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] support-form-v36-' + Date.now() + ' — Empty description rejected server-side; from_name/version aliases for EmailJS template; localized restoreSync + descriptionRequired alerts across 13 locales. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-sf-crmJobId-v37-' + Date.now() + ' — Admin SF card surfaces team-uploaded photos via crmJobId; proxy KV backfill on next SF sync. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

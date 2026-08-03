@@ -1033,6 +1033,11 @@ export const PhotoProvider = ({ children }) => {
         industry: project.industry ?? null,
         createdAt: project.createdAt ?? null,
         memberName,
+        // SF-linked projects carry crmJobId — forwarding it lets the
+        // admin's local SF card fetch team photos by their crmJobId
+        // (the admin's proj id doesn't match the team member's local
+        // proj_TS id, but the crmJobId is the same on both sides).
+        crmJobId: project.crmJobId != null ? String(project.crmJobId) : null,
       });
     } catch (err) {
       console.warn('[PhotoContext] syncProjectToProxyIfTeamMember failed:', err?.message);
@@ -1144,6 +1149,7 @@ export const PhotoProvider = ({ children }) => {
     // patchProject in a loop without yielding; closure-based patch
     // wipes each create back to [] before the next iteration.
     const baseList = projectsRef.current || [];
+    const prior = baseList.find(p => p.id === projectId) || null;
     const updated = baseList.map(p =>
       p.id === projectId ? { ...p, ...patch } : p
     );
@@ -1152,6 +1158,18 @@ export const PhotoProvider = ({ children }) => {
     try {
       await saveProjects(updated);
     } catch (_) { /* persistence best-effort; state still reflects patch */ }
+
+    // Re-publish to the proxy when SF linkage or the project name
+    // changes. serviceFlowSync creates the project first (initial sync
+    // fires with no crmJobId) and patches crmJobId on the next line;
+    // without this the proxy row never learns the SF id, and admin's
+    // SF card can't fetch team photos by crmJobId.
+    const crmChanged = 'crmJobId' in patch && String(prior?.crmJobId || '') !== String(patch.crmJobId || '');
+    const nameChanged = 'name' in patch && (prior?.name || '') !== (patch.name || '');
+    if (crmChanged || nameChanged) {
+      const nextRow = updated.find(p => p.id === projectId);
+      if (nextRow) syncProjectToProxyIfTeamMember(nextRow);
+    }
   };
 
   const getPhotosByProject = (projectId) => {
