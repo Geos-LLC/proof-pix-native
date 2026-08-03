@@ -1726,6 +1726,7 @@
     "nameRequired": "Please enter your name",
     "emailRequired": "Please enter your email address",
     "invalidEmail": "Please enter a valid email address",
+    "descriptionRequired": "Please describe your issue before sending.",
     "emailNotConfigured": "Email service is not configured. Please contact support directly at {{email}}"
   },
   "industrySections": {
@@ -1753,7 +1754,9 @@
     "cancelFirstTitle": "Cancel your subscription first",
     "cancelFirstBody": "You currently have an active subscription. To switch to the Free plan, cancel your subscription in Settings. You'll keep your paid features until your current period ends, then move to Free automatically.",
     "cancelSubscriptionCTA": "Cancel Subscription",
-    "keepSubscriptionCTA": "Keep Subscription"
+    "keepSubscriptionCTA": "Keep Subscription",
+    "restoreSyncTitle": "Couldn't reach the App Store",
+    "restoreSyncBody": "Your subscription is safe, but we couldn't sync with the App Store just now. Wait a minute and try again. If the issue persists, sign out and back into your Apple ID in Settings → [your name] → Media & Purchases."
   },
   "teamMembers": {
     "revokeTitle": "Revoke access?",

@@ -80,6 +80,13 @@ class EnterpriseContactService {
     if (!email || !email.trim()) {
       throw new Error('EMAIL_REQUIRED');
     }
+    // Reject empty descriptions server-side. Older binaries used to send
+    // empty bodies through, producing useless "No description provided"
+    // emails support couldn't act on. Fail fast so the client alert
+    // prompts the user to actually describe the issue.
+    if (!description || !description.trim()) {
+      throw new Error('DESCRIPTION_REQUIRED');
+    }
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -99,14 +106,21 @@ class EnterpriseContactService {
       || '';
 
     try {
+      const trimmedName = name.trim();
+      const trimmedEmail = email.trim();
+      const trimmedDescription = description.trim();
       const templateParams = {
-        from_name: name.trim(),
-        from_email: email.trim(),
+        from_name: trimmedName,
+        // Alias — some EmailJS templates read {{name}} in the greeting
+        // instead of {{from_name}}. Send both so the greeting never
+        // renders blank regardless of which variable the template uses.
+        name: trimmedName,
+        from_email: trimmedEmail,
         // Alias for the template's client-context table — same value as
         // from_email, cleaner var name for the metadata row.
-        email: email.trim(),
+        email: trimmedEmail,
         phone: phone?.trim() || '—',
-        message: description?.trim() || 'No description provided',
+        message: trimmedDescription,
         to_email: 'info@geos-ai.com',
         // Client-context vars for the metadata table in the HTML
         // template. Every var falls back to '—' when unset so the
@@ -115,7 +129,11 @@ class EnterpriseContactService {
         plan: (plan && String(plan).trim()) || '—',
         country: (country && String(country).trim()) || '—',
         version: (version && String(version).trim()) || '—',
+        // Aliases so a template rename to {{app_version}}/{{build_number}}
+        // doesn't silently render blank.
+        app_version: (version && String(version).trim()) || '—',
         build: (build && String(build).trim()) || '—',
+        build_number: (build && String(build).trim()) || '—',
         platform: (platform && String(platform).trim()) || '—',
         device_id: resolvedDeviceId || '—',
       };

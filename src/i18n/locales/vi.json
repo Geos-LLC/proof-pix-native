@@ -1681,6 +1681,7 @@
     "nameRequired": "Vui lòng nhập tên của bạn",
     "emailRequired": "Vui lòng nhập địa chỉ email của bạn",
     "invalidEmail": "Vui lòng nhập địa chỉ email hợp lệ",
+    "descriptionRequired": "Vui lòng mô tả vấn đề trước khi gửi.",
     "emailNotConfigured": "Dịch vụ email chưa được cấu hình. Vui lòng liên hệ hỗ trợ trực tiếp tại {{email}}"
   },
   "industrySections": {
@@ -1708,7 +1709,9 @@
     "cancelFirstTitle": "Hủy đăng ký của bạn trước",
     "cancelFirstBody": "Bạn hiện có đăng ký đang hoạt động. Để chuyển sang gói Miễn phí, hãy hủy đăng ký trong Cài đặt. Bạn sẽ giữ các tính năng trả phí cho đến hết kỳ hiện tại, sau đó tự động chuyển sang gói Miễn phí.",
     "cancelSubscriptionCTA": "Hủy Đăng ký",
-    "keepSubscriptionCTA": "Giữ Đăng ký"
+    "keepSubscriptionCTA": "Giữ Đăng ký",
+    "restoreSyncTitle": "Không thể kết nối tới App Store",
+    "restoreSyncBody": "Gói đăng ký của bạn vẫn an toàn, nhưng hiện tại không thể đồng bộ với App Store. Vui lòng chờ một phút rồi thử lại. Nếu vấn đề vẫn tiếp diễn, hãy đăng xuất và đăng nhập lại Apple ID trong Cài đặt → [tên của bạn] → Phương tiện & Mua hàng."
   },
   "teamMembers": {
     "revokeTitle": "Thu hồi quyền truy cập?",

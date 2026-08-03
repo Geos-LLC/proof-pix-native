@@ -1667,6 +1667,7 @@
     "nameRequired": "请输入您的姓名",
     "emailRequired": "请输入您的电子邮箱地址",
     "invalidEmail": "请输入有效的电子邮箱地址",
+    "descriptionRequired": "请在发送前描述您的问题。",
     "emailNotConfigured": "邮件服务未配置。请直接联系支持：{{email}}"
   },
   "industrySections": {
@@ -1694,7 +1695,9 @@
     "cancelFirstTitle": "请先取消您的订阅",
     "cancelFirstBody": "您当前有一个有效的订阅。要切换到免费计划，请在设置中取消您的订阅。在当前订阅周期结束前，您将保留付费功能，之后将自动转为免费版。",
     "cancelSubscriptionCTA": "取消订阅",
-    "keepSubscriptionCTA": "保留订阅"
+    "keepSubscriptionCTA": "保留订阅",
+    "restoreSyncTitle": "无法连接到 App Store",
+    "restoreSyncBody": "您的订阅是安全的，但目前无法与 App Store 同步。请稍等片刻后重试。如果问题仍然存在，请前往 设置 → [您的姓名] → 媒体与购买项目，退出并重新登录您的 Apple ID。"
   },
   "teamMembers": {
     "revokeTitle": "撤销访问权限？",

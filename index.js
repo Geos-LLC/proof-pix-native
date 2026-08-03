@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-tab-dedupe-v35-' + Date.now() + ' — Team tab count = localSf + deduped teamProjects; drop team dupes matching local SF names. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] support-form-v36-' + Date.now() + ' — Empty description rejected server-side; from_name/version aliases for EmailJS template; localized restoreSync + descriptionRequired alerts across 13 locales. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

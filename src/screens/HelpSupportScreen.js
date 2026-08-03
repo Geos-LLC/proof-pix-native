@@ -254,6 +254,8 @@ export default function HelpSupportScreen({ navigation }) {
         errorMessage = t('helpSupport.emailRequired', { defaultValue: 'Please enter your email address' });
       } else if (error?.message === 'INVALID_EMAIL') {
         errorMessage = t('helpSupport.invalidEmail', { defaultValue: 'Please enter a valid email address' });
+      } else if (error?.message === 'DESCRIPTION_REQUIRED') {
+        errorMessage = t('helpSupport.descriptionRequired', { defaultValue: 'Please describe your issue before sending.' });
       } else if (error?.message === 'EMAIL_NOT_CONFIGURED') {
         errorMessage = t('helpSupport.emailNotConfigured', {
           defaultValue: `Email service is not configured. Please contact support directly at ${SUPPORT_EMAIL}`,

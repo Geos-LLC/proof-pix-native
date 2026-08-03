@@ -1713,6 +1713,7 @@
     "nameRequired": "Veuillez entrer votre nom",
     "emailRequired": "Veuillez entrer votre adresse e-mail",
     "invalidEmail": "Veuillez entrer une adresse e-mail valide",
+    "descriptionRequired": "Veuillez décrire votre problème avant l'envoi.",
     "emailNotConfigured": "Le service e-mail n'est pas configuré. Veuillez contacter le support directement à {{email}}"
   },
   "industrySections": {
@@ -1740,7 +1741,9 @@
     "cancelFirstTitle": "Annulez d'abord votre abonnement",
     "cancelFirstBody": "Vous avez actuellement un abonnement actif. Pour passer au plan Gratuit, annulez votre abonnement dans les Paramètres. Vous conserverez vos fonctionnalités payantes jusqu'à la fin de votre période en cours, puis passerez automatiquement au plan Gratuit.",
     "cancelSubscriptionCTA": "Annuler l'abonnement",
-    "keepSubscriptionCTA": "Conserver l'abonnement"
+    "keepSubscriptionCTA": "Conserver l'abonnement",
+    "restoreSyncTitle": "Impossible de contacter l'App Store",
+    "restoreSyncBody": "Votre abonnement est en sécurité, mais nous n'avons pas pu synchroniser avec l'App Store pour l'instant. Attendez une minute et réessayez. Si le problème persiste, déconnectez-vous puis reconnectez-vous à votre identifiant Apple dans Réglages → [votre nom] → Médias et achats."
   },
   "teamMembers": {
     "revokeTitle": "Révoquer l'accès ?",

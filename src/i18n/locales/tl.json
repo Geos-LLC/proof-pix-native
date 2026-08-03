@@ -1669,6 +1669,7 @@
     "nameRequired": "Mangyaring ilagay ang iyong pangalan",
     "emailRequired": "Mangyaring ilagay ang iyong email address",
     "invalidEmail": "Mangyaring maglagay ng wastong email address",
+    "descriptionRequired": "Mangyaring ilarawan ang iyong problema bago mag-send.",
     "emailNotConfigured": "Hindi naka-configure ang email service. Mangyaring direktang makipag-ugnayan sa support sa {{email}}"
   },
   "industrySections": {
@@ -1696,7 +1697,9 @@
     "cancelFirstTitle": "Kanselahin muna ang iyong subscription",
     "cancelFirstBody": "Mayroon kang aktibong subscription sa ngayon. Para lumipat sa Free plan, kanselahin ang iyong subscription sa Settings. Mananatili ang iyong mga bayad na feature hanggang matapos ang kasalukuyang panahon, pagkatapos ay awtomatiko kang lilipat sa Free.",
     "cancelSubscriptionCTA": "Kanselahin ang Subscription",
-    "keepSubscriptionCTA": "Itago ang Subscription"
+    "keepSubscriptionCTA": "Itago ang Subscription",
+    "restoreSyncTitle": "Hindi makakonekta sa App Store",
+    "restoreSyncBody": "Ligtas ang iyong subscription, ngunit hindi kami maka-sync sa App Store ngayon. Maghintay ng ilang sandali at subukan muli. Kung magpapatuloy ang problema, mag-sign out at mag-sign in muli sa iyong Apple ID sa Settings → [iyong pangalan] → Media & Purchases."
   },
   "teamMembers": {
     "revokeTitle": "Bawiin ang access?",

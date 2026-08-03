@@ -1713,6 +1713,7 @@
     "nameRequired": "Por favor, introduce tu nombre",
     "emailRequired": "Por favor, introduce tu dirección de correo electrónico",
     "invalidEmail": "Por favor, introduce una dirección de correo electrónico válida",
+    "descriptionRequired": "Por favor, describe tu problema antes de enviar.",
     "emailNotConfigured": "El servicio de correo no está configurado. Por favor, contacta directamente con soporte en {{email}}"
   },
   "industrySections": {
@@ -1740,7 +1741,9 @@
     "cancelFirstTitle": "Cancela primero tu suscripción",
     "cancelFirstBody": "Actualmente tienes una suscripción activa. Para cambiar al plan Gratis, cancela tu suscripción en Ajustes. Conservarás tus funciones de pago hasta que termine tu periodo actual, y luego pasarás a Gratis automáticamente.",
     "cancelSubscriptionCTA": "Cancelar suscripción",
-    "keepSubscriptionCTA": "Mantener suscripción"
+    "keepSubscriptionCTA": "Mantener suscripción",
+    "restoreSyncTitle": "No se pudo conectar con la App Store",
+    "restoreSyncBody": "Tu suscripción está a salvo, pero no pudimos sincronizar con la App Store en este momento. Espera un minuto y vuelve a intentarlo. Si el problema persiste, cierra sesión y vuelve a iniciar sesión con tu ID de Apple en Ajustes → [tu nombre] → Multimedia y compras."
   },
   "teamMembers": {
     "revokeTitle": "¿Revocar acceso?",

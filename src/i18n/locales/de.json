@@ -1669,6 +1669,7 @@
     "nameRequired": "Bitte geben Sie Ihren Namen ein",
     "emailRequired": "Bitte geben Sie Ihre E-Mail-Adresse ein",
     "invalidEmail": "Bitte geben Sie eine gültige E-Mail-Adresse ein",
+    "descriptionRequired": "Bitte beschreiben Sie Ihr Anliegen vor dem Senden.",
     "emailNotConfigured": "E-Mail-Dienst ist nicht konfiguriert. Bitte kontaktieren Sie den Support direkt unter {{email}}"
   },
   "industrySections": {
@@ -1696,7 +1697,9 @@
     "cancelFirstTitle": "Kündigen Sie zuerst Ihr Abonnement",
     "cancelFirstBody": "Sie haben derzeit ein aktives Abonnement. Um zum kostenlosen Plan zu wechseln, kündigen Sie Ihr Abonnement in den Einstellungen. Sie behalten Ihre kostenpflichtigen Funktionen bis zum Ende Ihrer aktuellen Periode und werden dann automatisch auf den kostenlosen Plan umgestellt.",
     "cancelSubscriptionCTA": "Abonnement kündigen",
-    "keepSubscriptionCTA": "Abonnement behalten"
+    "keepSubscriptionCTA": "Abonnement behalten",
+    "restoreSyncTitle": "App Store nicht erreichbar",
+    "restoreSyncBody": "Ihr Abonnement ist sicher, aber wir konnten uns gerade nicht mit dem App Store synchronisieren. Warten Sie eine Minute und versuchen Sie es erneut. Wenn das Problem weiterhin besteht, melden Sie sich von Ihrer Apple-ID unter Einstellungen → [Ihr Name] → Medien & Käufe ab und wieder an."
   },
   "teamMembers": {
     "revokeTitle": "Zugang widerrufen?",
