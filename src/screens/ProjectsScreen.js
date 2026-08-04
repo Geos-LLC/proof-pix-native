@@ -359,6 +359,58 @@ export default function ProjectsScreen({ navigation, route }) {
       return;
     }
 
+    // Soft guard: team members whose admin uses Service Flow as the
+    // proxy backend can only sync photos that attach to an SF job.
+    // The proxy hard-rejects uploads without a crmJobId, so a locally
+    // created project silently fails to reach admin. Show a heads-up
+    // pointing at the Team tab (which lists synced SF jobs) and let
+    // the member either switch tabs or proceed knowing photos stay
+    // on-device. Only fires for SF-primary admins — Google/Dropbox
+    // sessions accept any album name so no guard needed.
+    if (isTeamMember && teamInfo?.adminAccountType === 'serviceflow') {
+      const sfSyncedCount = (projects || []).filter(
+        (p) => p?.crmProvider === 'serviceflow' && p?.crmJobId,
+      ).length;
+      const proceed = await new Promise((resolve) => {
+        const buttons = [];
+        if (sfSyncedCount > 0) {
+          buttons.push({
+            text: t('projects.sfGuardOpenTeamTab', { defaultValue: 'Open Team tab' }),
+            onPress: () => {
+              setNewProjectVisible(false);
+              setProjectsTab('team');
+              resolve(false);
+            },
+          });
+        }
+        buttons.push({
+          text: t('projects.sfGuardCreateAnyway', { defaultValue: 'Create anyway' }),
+          style: 'destructive',
+          onPress: () => resolve(true),
+        });
+        buttons.push({
+          text: t('common.cancel', { defaultValue: 'Cancel' }),
+          style: 'cancel',
+          onPress: () => resolve(false),
+        });
+        const message = sfSyncedCount > 0
+          ? t('projects.sfGuardMessage', {
+              count: sfSyncedCount,
+              defaultValue: `Your admin uses Service Flow. Photos in a new local project won't sync to admin.\n\n${sfSyncedCount} Service Flow job(s) are on your Team tab — pick one to send photos to admin.`,
+            })
+          : t('projects.sfGuardMessageNoJobs', {
+              defaultValue: 'Your admin uses Service Flow. Photos in a new local project won\'t sync to admin. No Service Flow jobs are synced yet — create anyway to work locally, or cancel and check back after admin schedules a job.',
+            });
+        Alert.alert(
+          t('projects.sfGuardTitle', { defaultValue: "Won't sync with admin" }),
+          message,
+          buttons,
+          { cancelable: false },
+        );
+      });
+      if (!proceed) return;
+    }
+
     // Single field: the user's input IS the folder name (location-derived
      // by default). Skip the legacy "Name - Date - Location" composition.
     const fullName = namePart;
