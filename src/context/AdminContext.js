@@ -638,8 +638,26 @@ export function AdminProvider({ children }) {
           }
           if (Array.isArray(info?.adminCustomRooms) && info.adminCustomRooms.length > 0) {
             const CUSTOM_ROOMS_KEY = 'custom-rooms'; // matches SettingsContext.js
-            const localRooms = await AsyncStorage.getItem(CUSTOM_ROOMS_KEY);
-            if (!localRooms) {
+            const localRoomsRaw = await AsyncStorage.getItem(CUSTOM_ROOMS_KEY);
+            // Team members follow admin's section set — the workspace's
+            // structure is authoritative for anything a team member
+            // captures. Previous behavior only seeded when local rooms
+            // were empty, so a member whose pre-join onboarding had
+            // already saved the generic Section 1-5 defaults never
+            // inherited admin's real sections (Kitchen/Bathroom/etc)
+            // and their Home screen showed "Section 1, Section 2..."
+            // forever. Only skip the overwrite when local matches the
+            // admin's set (idempotent no-op) so we don't churn on
+            // every revalidation.
+            let localRooms = null;
+            try { localRooms = localRoomsRaw ? JSON.parse(localRoomsRaw) : null; } catch {}
+            const same = Array.isArray(localRooms)
+              && localRooms.length === info.adminCustomRooms.length
+              && localRooms.every((r, i) => {
+                const a = info.adminCustomRooms[i];
+                return r?.id === a?.id && r?.name === a?.name;
+              });
+            if (!same) {
               // Route through SettingsContext.saveCustomRooms (not raw
               // AsyncStorage) so its in-memory `customRooms` state
               // updates too. Raw AsyncStorage.setItem would only take
@@ -651,7 +669,7 @@ export function AdminProvider({ children }) {
               } else {
                 await AsyncStorage.setItem(CUSTOM_ROOMS_KEY, JSON.stringify(info.adminCustomRooms));
               }
-              console.log('[ADMIN] Team-member seeded custom-rooms from admin (count:', info.adminCustomRooms.length, ')');
+              console.log('[ADMIN] Team-member overwrote custom-rooms from admin (count:', info.adminCustomRooms.length, ')');
             }
           }
         } catch (seedErr) {

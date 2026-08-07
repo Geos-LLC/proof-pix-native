@@ -2,6 +2,43 @@ import { uploadPhotoBatch, uploadPhotoAsTeamMember, stripExifToFileUri } from '.
 import { markPhotosAsUploaded } from './uploadTracker';
 import { loadProjects } from './storage';
 import crmService from './crm';
+import * as ImageManipulator from 'expo-image-manipulator';
+
+/**
+ * Shrink a photo to a thumbnail-quality version so an upload that
+ * fails on bad internet can retry with something small enough to
+ * survive a marginal connection. ~1200px longest side @ q60 is
+ * ~100–200KB — order of magnitude smaller than a 4K full-res JPEG,
+ * still readable enough for the admin to see what happened without
+ * pulling the original.
+ *
+ * Returns null on failure so the caller can skip the retry.
+ */
+async function shrinkForThumbnailRetry(uri) {
+  if (!uri) return null;
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG },
+    );
+    return result?.uri || null;
+  } catch (e) {
+    console.warn('[TEAM_UPLOAD] thumbnail shrink failed:', e?.message);
+    return null;
+  }
+}
+
+/**
+ * Best-effort classifier: is this error the kind that a smaller
+ * payload might survive? Network / timeout / abort → yes. Auth /
+ * permission / 4xx → no (retry won't help; a bigger payload isn't
+ * the problem).
+ */
+function isNetworkLikeError(msg) {
+  if (!msg || typeof msg !== 'string') return false;
+  return /Network request failed|timeout|timed out|abort|ECONNRESET|ETIMEDOUT|upstream|502|503|504/i.test(msg);
+}
 
 /**
  * Forward each successfully-uploaded photo to the connected CRM
@@ -387,7 +424,59 @@ class BackgroundUploadService {
       };
 
       // Use batch upload (same as Pro/Business/Enterprise tiers)
-      const result = await uploadPhotoBatch(items, uploadOptions);
+      let result = await uploadPhotoBatch(items, uploadOptions);
+
+      // Thumbnail-fallback retry: if any items failed on what looks
+      // like a network problem, shrink each failed photo to a
+      // ~1200px @ q60 JPEG and try once more. Bad-internet users
+      // get at least a readable preview to the admin instead of a
+      // silent no-upload. Auth / 4xx failures skip the retry
+      // (compressing them won't help). Skips entirely on abort
+      // (user cancelled the upload) to avoid a delayed request
+      // firing after cancel.
+      const failedItems = Array.isArray(result?.failed) ? result.failed : [];
+      const networkFailed = failedItems.filter((f) => isNetworkLikeError(f?.error || f?.message));
+      if (
+        networkFailed.length > 0
+        && !abortController.signal.aborted
+      ) {
+        console.warn('[TEAM_UPLOAD] thumbnail retry starting', {
+          upload_id: upload.id,
+          candidates: networkFailed.length,
+        });
+        const retryItems = [];
+        for (const f of networkFailed) {
+          const original = f?.photo || f?.item || null;
+          const uri = original?.uri;
+          if (!uri) continue;
+          const smallUri = await shrinkForThumbnailRetry(uri);
+          if (!smallUri) continue;
+          retryItems.push({ ...original, uri: smallUri });
+        }
+        if (retryItems.length > 0) {
+          try {
+            const retryResult = await uploadPhotoBatch(retryItems, uploadOptions);
+            const priorSuccessful = Array.isArray(result?.successful) ? result.successful : [];
+            const retrySuccessful = Array.isArray(retryResult?.successful) ? retryResult.successful : [];
+            // Any item that succeeded on the retry is no longer failed.
+            const retrySuccessIds = new Set(retrySuccessful.map((s) => String(s?.photo?.id ?? '')));
+            const remainingFailed = failedItems.filter((f) => !retrySuccessIds.has(String(f?.photo?.id ?? '')));
+            result = {
+              ...result,
+              successful: [...priorSuccessful, ...retrySuccessful],
+              failed: remainingFailed,
+            };
+            console.warn('[TEAM_UPLOAD] thumbnail retry done', {
+              upload_id: upload.id,
+              retried: retryItems.length,
+              recovered: retrySuccessful.length,
+              still_failed: remainingFailed.length,
+            });
+          } catch (retryErr) {
+            console.warn('[TEAM_UPLOAD] thumbnail retry batch threw:', retryErr?.message);
+          }
+        }
+      }
 
       // Mark photos as uploaded in tracker (only successful ones)
       // Team members now support albums, so we can track uploads

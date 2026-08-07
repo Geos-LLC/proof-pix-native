@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] camera-rotate-bridge-v39-' + Date.now() + ' — Camera pauses 200ms on rotation so AVCaptureSession releases cleanly (fixes iPhone landscape-rotation hang). Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-fixes-v40-' + Date.now() + ' — Team-tab focus refetch, sync retry, admin-rooms overwrite on join, thumbnail fallback on upload failure. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

@@ -1027,7 +1027,7 @@ export const PhotoProvider = ({ children }) => {
       // import off the module-load path so older binaries that
       // predate any proxyService change won't brick an OTA.
       const proxyService = require('../services/proxyService').default;
-      await proxyService.syncTeamProject(info.sessionId, info.token, {
+      const payload = {
         id: project.id,
         name: project.name,
         industry: project.industry ?? null,
@@ -1038,7 +1038,27 @@ export const PhotoProvider = ({ children }) => {
         // (the admin's proj id doesn't match the team member's local
         // proj_TS id, but the crmJobId is the same on both sides).
         crmJobId: project.crmJobId != null ? String(project.crmJobId) : null,
-      });
+      };
+      // Retry once on failure. Without a retry, a single 5xx or
+      // network blip silently drops the project from the admin's
+      // Team-tab view forever (proxy row never gets created, admin
+      // sees nothing). Cheap belt-and-suspenders: 3s delay, one
+      // attempt, then give up (upload endpoint's project-bump path
+      // creates a stub row on first capture as a final backstop).
+      try {
+        await proxyService.syncTeamProject(info.sessionId, info.token, payload);
+        console.warn('[PhotoContext] syncProjectToProxyIfTeamMember ok', { projectId: project.id });
+      } catch (firstErr) {
+        console.warn('[PhotoContext] syncProjectToProxyIfTeamMember retry after', firstErr?.message);
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          await proxyService.syncTeamProject(info.sessionId, info.token, payload);
+          console.warn('[PhotoContext] syncProjectToProxyIfTeamMember ok after retry', { projectId: project.id });
+        } catch (retryErr) {
+          console.warn('[PhotoContext] syncProjectToProxyIfTeamMember still failing:', retryErr?.message);
+          throw retryErr;
+        }
+      }
     } catch (err) {
       console.warn('[PhotoContext] syncProjectToProxyIfTeamMember failed:', err?.message);
     }

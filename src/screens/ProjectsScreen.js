@@ -2084,6 +2084,22 @@ export default function ProjectsScreen({ navigation, route }) {
     }
   };
 
+  // Refetch team projects when this screen regains focus while the
+  // Team tab is active. Without this, an admin who leaves Projects
+  // (Home / Settings / etc.) and comes back sees stale data — team
+  // members who created a project meanwhile don't appear until the
+  // admin manually pulls to refresh or switches tabs.
+  useEffect(() => {
+    if (!navigation?.addListener) return;
+    const unsub = navigation.addListener('focus', () => {
+      if (projectsTab === 'team' && showTeamTab) {
+        fetchTeamProjects();
+      }
+    });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation, projectsTab, showTeamTab, proxySessionId]);
+
   // Fetch on tab switch / session change. Not on mount to avoid a
   // wasted request for admins who never open the Team tab.
   useEffect(() => {
