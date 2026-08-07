@@ -141,6 +141,15 @@ export default function CameraScreen({ route, navigation }) {
   const aspectTransitionTimerRef = useRef(null);
   const [deviceOrientation, setDeviceOrientation] = useState(initialOrientation);
   const [specificOrientation, setSpecificOrientation] = useState(getInitialSpecificOrientation()); // 1=PORTRAIT, 3=LANDSCAPE_LEFT, 4=LANDSCAPE_RIGHT
+  // Bridge state for rotation: on any Dimensions change we flip this
+  // to true for ~200ms so <Camera isActive={false}> lets iOS release
+  // the previous AVCaptureSession before the key-driven remount below
+  // configures a fresh one on the same device/format. Without this
+  // bridge the two sessions overlap and the AVFoundation layer hangs
+  // (observed as -11803 in prior fix commit 7fd02e8 and as full app
+  // freeze on rotation for team members on some iPhones).
+  const [isRotating, setIsRotating] = useState(false);
+  const rotatingResumeTimerRef = useRef(null);
   const [isGalleryAnimating, setIsGalleryAnimating] = useState(false);
   const [tempPhotoUri, setTempPhotoUri] = useState(null);
   const [tempPhotoLabel, setTempPhotoLabel] = useState(null);
@@ -1448,10 +1457,24 @@ export default function CameraScreen({ route, navigation }) {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       const newOrientation = window.width > window.height ? 'landscape' : 'portrait';
       console.warn(`[CAMDIAG] DIMS change w=${window.width} h=${window.height} -> ${newOrientation} at ${Date.now()}`);
+      // Rotation bridge: pause the Camera before the key-driven remount
+      // downstream tears down the native session. iOS AVCaptureSession
+      // needs a beat to release; if we let the new session configure
+      // while the old one is still shutting down on the same device we
+      // hang. 200ms is empirically enough for release without a
+      // visible black-frame that feels like a stall.
+      console.warn(`[CAMDIAG] ROTATE pause at ${Date.now()}`);
+      setIsRotating(true);
+      if (rotatingResumeTimerRef.current) clearTimeout(rotatingResumeTimerRef.current);
+      rotatingResumeTimerRef.current = setTimeout(() => {
+        console.warn(`[CAMDIAG] ROTATE resume at ${Date.now()}`);
+        setIsRotating(false);
+        rotatingResumeTimerRef.current = null;
+      }, 200);
       // Update dimensions immediately for instant response
       setDimensions({ width: window.width, height: window.height });
       setDeviceOrientation(newOrientation);
-      
+
       // Also update specificOrientation to match if there's a clear portrait/landscape change
       if (newOrientation === 'portrait') {
         setSpecificOrientation(1); // Force to portrait
@@ -1494,6 +1517,10 @@ export default function CameraScreen({ route, navigation }) {
     return () => {
       subscription?.remove();
       ScreenOrientation.removeOrientationChangeListener(orientationSubscription);
+      if (rotatingResumeTimerRef.current) {
+        clearTimeout(rotatingResumeTimerRef.current);
+        rotatingResumeTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -3282,7 +3309,11 @@ export default function CameraScreen({ route, navigation }) {
                     style={styles.camera}
                     device={device}
                     format={format}
-                    isActive={isFocused}
+                    // Rotation bridge: keep the session inactive while
+                    // the orientation-key remount is settling so the old
+                    // AVCaptureSession has time to release before the
+                    // fresh one is configured on the same device.
+                    isActive={isFocused && !isRotating}
                     photo={true}
                     zoom={zoom}
                     // Pinch-to-zoom disabled — vision-camera doesn't
