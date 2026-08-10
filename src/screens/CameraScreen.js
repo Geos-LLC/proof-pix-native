@@ -3291,16 +3291,17 @@ export default function CameraScreen({ route, navigation }) {
                 <View style={deviceOrientation === 'landscape' ? styles.letterboxBarHorizontal : styles.letterboxBar} />
               )}
               <View
-                // Key on orientation ONLY — not on cameraViewMode.
-                // Previously this also flipped on 9:16⇄3:4 toggle
-                // (`cam-fill` ⇄ `cam-letterbox-*`), which remounted
-                // the Camera and tore down the native capture session
-                // on every toggle. That was the ~1s perceived delay.
-                // Keeping the key stable across cameraViewMode lets
-                // the Camera component reshape via style change only
-                // (no native re-init). Rotation still remounts so the
-                // letterbox box rebuilds with the correct aspect.
-                key={`cam-${deviceOrientation}`}
+                // NO orientation key — Camera stays mounted through
+                // every rotation. Previously the key remount tore down
+                // AVCaptureSession on every rotation; on slower iPhones
+                // (see Alina 2026-08-10) the release couldn't finish
+                // before the fresh session tried to configure, so the
+                // second rotation left a permanently-black preview.
+                // The isRotating bridge below alone doesn't help those
+                // devices because the remount itself is the problem.
+                // Letterbox rebuild works via style props changing
+                // (innerCameraStyle/outerStyle both depend on
+                // deviceOrientation), so no remount is needed.
                 style={innerCameraStyle}
               >
                 {layout && device && (

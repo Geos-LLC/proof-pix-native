@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-fixes-v40-' + Date.now() + ' — Team-tab focus refetch, sync retry, admin-rooms overwrite on join, thumbnail fallback on upload failure. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] camera-key-drop-v41-' + Date.now() + ' — Camera key removed to fix Alina black-second-rotation + team-member sends X-Team-Token so getSessionInfo stops 401ing (fixes sections). Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

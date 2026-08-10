@@ -1101,13 +1101,31 @@ class ProxyService {
    * Get session info including admin user info
    * @param {string} sessionId - Proxy session ID
    * @returns {Promise<{adminUserInfo: {name, email, picture}, folderId: string}>}
+   *
+   * Team members can call this too — they need admin's accountType +
+   * customRooms to seed their own device. They don't hold the admin's
+   * bindingSecret, so authFetch's X-Session-Binding would 401. Read
+   * their invite token from @team_member_info and forward it as
+   * X-Team-Token; the proxy accepts that as an alternative auth path
+   * for this endpoint (see requireAdminOrTeamAuth in proof-pix-proxy).
    */
   async getSessionInfo(sessionId) {
     try {
       console.log('[PROXY] Getting session info:', sessionId);
 
+      // Best-effort read of the team-member invite token. On admin
+      // devices this returns null and the request falls through to
+      // the standard X-Session-Binding path via authFetch.
+      let teamToken = null;
+      try {
+        const { readSecureJSON } = require('./secureStorageService');
+        const info = await readSecureJSON('@team_member_info');
+        if (info?.sessionId === sessionId && info?.token) teamToken = info.token;
+      } catch {}
+
       const response = await authFetch(`${PROXY_SERVER_URL}/api/admin/${sessionId}/info`, {
         method: 'GET',
+        headers: teamToken ? { 'X-Team-Token': teamToken } : {},
       });
 
       console.log('[PROXY] Session info response status:', response.status);
