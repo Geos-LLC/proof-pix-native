@@ -42,11 +42,13 @@ import { useTheme } from '../hooks/useTheme';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
-import { canStartTrial, isTrialExpired } from '../services/trialService';
-import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan, productIdToBillingPeriod, hasActiveIAPSubscription, openManageSubscriptions } from '../services/iapService';
+// trialService (app-managed 7-day timer) removed as part of the store-managed
+// trial migration. Trial eligibility now comes exclusively from the store's
+// intro-offer metadata surfaced via useSubscriptionPrices → trialInfo.hasTrial.
+import { IAP_PRODUCTS, purchaseProduct, purchaseOrUpgrade, restorePurchases, getAvailablePurchases, diagnoseIAPState, productIdToPlan, productIdToBillingPeriod, hasActiveIAPSubscription, openManageSubscriptions, getStorefrontMeta } from '../services/iapService';
 import { logPaywallView, logPlanSelected, logTrialSkipped, logSubscriptionStarted, logSubscriptionRestored, logRestoreTapped, logRestoreFailed } from '../utils/analytics';
 import useSubscriptionPrices from '../hooks/useSubscriptionPrices';
-import { getSoftTrialState, ensureDeviceId } from '../services/softTrialService';
+import { getStarterExportsState, ensureDeviceId } from '../services/starterExportService';
 import { PAYWALL_TRIGGERS } from '../constants/softTrial';
 
 const { width } = Dimensions.get('window');
@@ -70,8 +72,8 @@ export default function PlanSelectionScreen({ navigation, route }) {
   // finally so cancel/error reverts. Never affects "Current plan" pill or
   // CTA labels — those stay driven by real currentTier.
   const [pendingSelection, setPendingSelection] = useState(null);
-  // Default to false so returning/expired/active-trial users never see a flash
-  // of "Free Trial" UI before canStartTrial() resolves. Eligible new users will
+  // Default to false so returning users / active subscribers never see a flash
+  // of "Free Trial" UI before store metadata resolves. Eligible new users will
   // briefly see "Subscribe" before the trial UI appears — acceptable.
   const [trialAvailable, setTrialAvailable] = useState(false);
   // Billing toggle — Annual is preselected by design since it's the primary
@@ -82,17 +84,16 @@ export default function PlanSelectionScreen({ navigation, route }) {
   // month equivalent so we never show broken math.
   const [billingCycle, setBillingCycle] = useState('annual');
   // Fallback when store metadata hasn't loaded yet. Actual duration is read
-  // from the store's intro offer below (iOS: 14 days / 2 weeks, Android: 15)
-  // so paywall copy always matches what the store's sheet will show.
-  // Matches TRIAL_DURATION_DAYS in trialService — base trial is 7 days.
-  // The live `trialInfo?.pro?.trialDays` from the store (App Store / Play)
-  // takes precedence below; this only shows during the brief window
-  // before store metadata loads.
+  // from the store's intro offer below so paywall copy always matches the
+  // store sheet. The live `trialInfo?.pro?.trialDays` from App Store / Play
+  // is authoritative; this only shows during the brief window before store
+  // metadata loads. Base trial is 7 days per the ProofPix product spec.
+  //
+  // Referral bonus days are NOT added on top of the store trial — the store
+  // owns intro-offer duration. Referral rewards are granted as a separate
+  // ProofPix bonus premium entitlement (see bonusEntitlementService) that
+  // runs alongside / after the store trial.
   const FALLBACK_TRIAL_DAYS = 7;
-  // When the user has applied a referral code, both they and the
-  // referrer get +7 days, so the receiver's trial is base + 7 = 14
-  // days when base is 7.
-  const REFERRAL_BONUS_DAYS = 7;
   const [trialDays, setTrialDays] = useState(FALLBACK_TRIAL_DAYS);
   const isMounted = useRef(true);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
@@ -131,7 +132,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
     (async () => {
       try {
         const [s, deviceId] = await Promise.all([
-          getSoftTrialState(),
+          getStarterExportsState(),
           ensureDeviceId(),
         ]);
         logPaywallView({
@@ -151,43 +152,29 @@ export default function PlanSelectionScreen({ navigation, route }) {
         if (forceUpgradeMode) {
           if (isMounted.current) setTrialAvailable(false);
         } else {
-          // Three-layer gate: the legacy in-app trial flag alone misses users
-          // who started a trial via StoreKit (Apple writes that to the Apple
-          // ID, not AsyncStorage), and users restored from a prior install on
-          // a paid plan. Without all three signals, the paywall lit up
-          // "Start Free Trial" for users Apple won't actually grant a trial.
-          const [legacyAvailable, hasActive] = await Promise.all([
-            canStartTrial(),
-            hasActiveIAPSubscription().catch(() => false),
-          ]);
-          const trialOK = legacyAvailable && !hasActive && userPlan === 'starter';
+          // Store-driven eligibility: `trialInfo.pro.hasTrial` reflects what
+          // Apple/Play told us about the current storefront + user. Combined
+          // with "not already subscribed" and "not already paid tier locally"
+          // to prevent an active subscriber from being pitched a trial.
+          const hasActive = await hasActiveIAPSubscription().catch(() => false);
+          const storeHasTrial =
+            (billingCycle === 'annual' && trialInfo?.proAnnual?.hasTrial) ||
+            trialInfo?.pro?.hasTrial ||
+            false;
+          const trialOK = storeHasTrial && !hasActive && userPlan === 'starter';
           if (isMounted.current) setTrialAvailable(trialOK);
         }
 
-        try {
-          const AsyncStorage = await import('@react-native-async-storage/async-storage');
-          const referralData = await AsyncStorage.default.getItem('@referral_accepted');
-          if (isMounted.current) {
-            // Prefer the cadence-specific trial length from the store (annual
-            // and monthly can carry different intro-offer durations in ASC /
-            // Play Console). If annual metadata hasn't landed yet, fall through
-            // to the monthly value. Final fallback is the 7-day base per
-            // ProofPix's actual product config (NOT 15 — see session memory).
-            const storeDays =
-              (billingCycle === 'annual' && trialInfo?.proAnnual?.trialDays) ||
-              trialInfo?.pro?.trialDays ||
-              FALLBACK_TRIAL_DAYS;
-            // Friend (referral on file) gets base + 7 = 14 days (additive).
-            setTrialDays(referralData !== null ? storeDays + REFERRAL_BONUS_DAYS : storeDays);
-          }
-        } catch (error) {
-          if (isMounted.current) {
-            const storeDays =
-              (billingCycle === 'annual' && trialInfo?.proAnnual?.trialDays) ||
-              trialInfo?.pro?.trialDays ||
-              FALLBACK_TRIAL_DAYS;
-            setTrialDays(storeDays);
-          }
+        // Trial length comes from the store — no local referral bonus is
+        // added on top. Referral rewards live in the ProofPix bonus
+        // entitlement (see bonusEntitlementService), separate from the
+        // Apple/Google intro offer.
+        if (isMounted.current) {
+          const storeDays =
+            (billingCycle === 'annual' && trialInfo?.proAnnual?.trialDays) ||
+            trialInfo?.pro?.trialDays ||
+            FALLBACK_TRIAL_DAYS;
+          setTrialDays(storeDays);
         }
       } catch (error) {
         console.error('[PlanSelection] Error checking trial availability:', error);
@@ -220,11 +207,11 @@ export default function PlanSelectionScreen({ navigation, route }) {
     if (!storeDays || !isMounted.current) return;
     (async () => {
       try {
-        const AsyncStorage = await import('@react-native-async-storage/async-storage');
-        const referralData = await AsyncStorage.default.getItem('@referral_accepted');
         if (isMounted.current) {
-          // Friend (referral on file) gets storeDays + 7 (additive).
-          setTrialDays(referralData !== null ? storeDays + REFERRAL_BONUS_DAYS : storeDays);
+          // Store owns intro-offer duration. Referral bonus days no longer
+          // stack on top — they're granted as bonus premium entitlement
+          // (see bonusEntitlementService) after the store trial.
+          setTrialDays(storeDays);
         }
       } catch {
         if (isMounted.current) setTrialDays(storeDays);
@@ -255,6 +242,12 @@ export default function PlanSelectionScreen({ navigation, route }) {
       plan !== 'starter' && !!trialInfo?.[trialInfoKey]?.hasTrial;
     const isTrial = productHasTrialFromCache;
     const billingPeriod = plan === 'starter' ? null : billingCycle;
+    // Storefront + currency of the current App Store / Play account. Awaited
+    // before logPlanSelected so the event itself carries the fields, which is
+    // what makes per-region questions ("did Canadian users ever tap annual?")
+    // answerable from GA4 / Loki alone.
+    let storefrontMeta = { storefront_country: null, currency: null };
+    try { storefrontMeta = await getStorefrontMeta(); } catch {}
     console.log('[analytics-debug] plan_selected source data', {
       plan,
       billingPeriod,
@@ -262,8 +255,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
       productHasTrialFromCache,
       trialInfoForPlan: trialInfo?.[trialInfoKey] || null,
       isTrial,
+      storefront_country: storefrontMeta.storefront_country,
+      currency: storefrontMeta.currency,
     });
-    logPlanSelected(plan, isTrial, billingPeriod);
+    logPlanSelected(plan, isTrial, billingPeriod, storefrontMeta);
 
     if (plan === 'starter') {
       // If the user already has an active Apple/Google subscription, tapping
@@ -297,16 +292,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
       } catch {}
 
       logTrialSkipped();
-      // Canonical free-tier subscription event (no store purchase involved)
-      try {
-        logSubscriptionStarted({
-          subscription_type: 'free',
-          plan_id: 'starter',
-          platform: Platform.OS,
-          entry_point: 'paywall',
-          analytics_source: 'free_plan',
-        });
-      } catch {}
+      // Free-tier selection intentionally does NOT fire subscription_started.
+      // subscription_started is a paid/trial-conversion signal; overloading it
+      // with subscription_type:'free' meant every Starter tap looked like a
+      // subscription event in Firebase and risked being imported as a Google
+      // Ads conversion. `plan_selected(plan:'starter')` + `trial_skipped`
+      // cover the funnel step; a `free_plan_selected` custom event could be
+      // added later if we need finer-grained free-tier reporting.
       await proceedWithPlanSelection(plan);
       return;
     }
@@ -365,10 +357,14 @@ export default function PlanSelectionScreen({ navigation, route }) {
 
         if (productId) {
           try {
+            // entryPoint used to flip to 'trial_expired' via the old
+            // trialService when the app-managed trial had expired. With the
+            // store-managed trial migration we don't track expiry client-side
+            // anymore — the store owns eligibility. Keep 'paywall' as the
+            // default; SettingsContext still fires `trial_expired` (from
+            // @last_trial_state) which powers the trial_converted derivation
+            // if the user later subscribes.
             let entryPoint = 'paywall';
-            try {
-              if (await isTrialExpired()) entryPoint = 'trial_expired';
-            } catch {}
 
             console.log('[PlanSelection] Starting purchase for:', productId, 'entryPoint:', entryPoint);
             console.log('[iap-debug] starting purchase flow', {

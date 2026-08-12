@@ -73,20 +73,20 @@ export default function ReferralScreen({ navigation, route }) {
     if (loading) return;
     (async () => {
       try {
-        const { TRIAL_DURATION_DAYS, REFERRAL_BONUS_DAYS, MAX_REFERRALS } = await import('../services/trialService');
+        // Referral spec constants: 7 bonus premium days per successful
+        // referral, max 3 referrals (21 days). Kept inline now that the
+        // legacy trialService has been removed.
+        const REFERRAL_BONUS_DAYS = 7;
+        const MAX_REFERRALS = 3;
         const completed = serverStats?.completedInvites || 0;
-        const remaining = Math.max(0, (MAX_REFERRALS || 3) - completed);
-        const bonusDays = completed * (REFERRAL_BONUS_DAYS || 7);
+        const remaining = Math.max(0, MAX_REFERRALS - completed);
+        const bonusDays = completed * REFERRAL_BONUS_DAYS;
         const referralData = await AsyncStorage.getItem('@referral_accepted');
         const referredSignup = referralData !== null;
-        const trialLength = referredSignup
-          ? (TRIAL_DURATION_DAYS || 7) + (REFERRAL_BONUS_DAYS || 7)
-          : (TRIAL_DURATION_DAYS || 7);
         logReferralEvent('screen_opened', {
           code: referralCode || null,
           bonus_days_awarded: bonusDays,
           remaining_referral_rewards: remaining,
-          trial_length_days: trialLength,
           referred_signup: referredSignup,
         });
       } catch (e) {
@@ -127,14 +127,18 @@ export default function ReferralScreen({ navigation, route }) {
             const userId = await getUserId();
             const adminResult = await redeemAdminReferralCode(incomingCode, userId);
             if (adminResult?.success && adminResult?.grantedDays > 0) {
-              const { extendTrial } = await import('../services/trialService');
-              await extendTrial(adminResult.grantedDays);
+              // Proxy granted the bonus entitlement server-side; refresh
+              // the local cache and mark the admin redemption complete.
               await markAdminReferralRedeemed();
+              try {
+                const { refreshBonusEntitlement } = await import('../services/bonusEntitlementService');
+                await refreshBonusEntitlement();
+              } catch {}
               logReferralEvent('admin_link_redeemed', { code: incomingCode, link_type: 'admin', channel: adminResult.channel, source: adminResult.source, campaign: adminResult.campaign, days_added: adminResult.grantedDays });
               logAdminReferralConversion({ code: incomingCode, link_type: 'admin', channel: adminResult.channel, source: adminResult.source, campaign: adminResult.campaign, placement: adminResult.placement, label: adminResult.label, days_added: adminResult.grantedDays });
               Alert.alert(
-                t('referral.appliedTitle', { defaultValue: '14-Day Trial Activated' }),
-                t('referral.appliedMessage', { defaultValue: `You've received ${adminResult.grantedDays} extra days free!` })
+                t('referral.appliedTitle', { defaultValue: 'Referral Applied' }),
+                t('referral.appliedMessage', { defaultValue: `You've received ${adminResult.grantedDays} extra premium days!` })
               );
             }
           }
@@ -217,9 +221,12 @@ export default function ReferralScreen({ navigation, route }) {
         const userId = await getUserId();
         const adminResult = await redeemAdminReferralCode(code, userId);
         if (adminResult?.success && adminResult?.grantedDays > 0) {
-          const { extendTrial } = await import('../services/trialService');
-          await extendTrial(adminResult.grantedDays);
+          // Proxy granted the bonus entitlement server-side; refresh cache.
           await markAdminReferralRedeemed();
+          try {
+            const { refreshBonusEntitlement } = await import('../services/bonusEntitlementService');
+            await refreshBonusEntitlement();
+          } catch {}
           logReferralEvent('admin_link_redeemed', {
             code,
             link_type: 'admin',
@@ -242,9 +249,9 @@ export default function ReferralScreen({ navigation, route }) {
           setEnteredCode('');
           setHasAcceptedReferral(true);
           Alert.alert(
-            t('referral.appliedTitle', { defaultValue: '14-Day Trial Activated' }),
+            t('referral.appliedTitle', { defaultValue: 'Referral Applied' }),
             t('referral.appliedMessage', {
-              defaultValue: `You've received ${adminResult.grantedDays} extra days free!`,
+              defaultValue: `You've received ${adminResult.grantedDays} extra premium days!`,
             }),
           );
           return;

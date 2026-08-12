@@ -18,17 +18,13 @@ import Constants from 'expo-constants';
 import { PhotoProvider } from './src/context/PhotoContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import { AdminProvider } from './src/context/AdminContext';
-import TrialNotificationModal from './src/components/TrialNotificationModal';
 import ReferralPromptModal from './src/components/ReferralPromptModal';
 import TeamAccessRevokedModal from './src/components/TeamAccessRevokedModal';
 import {
   registerReferralPromptTrigger,
   unregisterReferralPromptTrigger,
-  maybeShowExpiringTrialReferralPrompt,
   markFirstReportPromptDismissed,
   markFirstReportPromptOpened,
-  markExpiringTrialInviteClicked,
-  markExpiringTrialUpgradeClicked,
 } from './src/services/referralPromptService';
 import { useFonts } from 'expo-font';
 import { Montserrat_700Bold } from '@expo-google-fonts/montserrat';
@@ -763,9 +759,6 @@ function GlobalUploadIndicator({ navigationRef }) {
   );
 }
 
-// Global function to trigger trial notification check (for use after plan selection)
-let globalCheckTrialNotifications = null;
-
 // Stream errors / rejections / tagged console.error to FixPrompt → Loki.
 // Skipped if no key — no-op in dev / on profiles without the secret set.
 //
@@ -823,8 +816,6 @@ export default function App() {
   const routeNameRef = useRef();
   const [currentRouteName, setCurrentRouteName] = useState(null);
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
-  const [trialNotification, setTrialNotification] = useState(null);
-  const [showTrialModal, setShowTrialModal] = useState(false);
   const [referralPrompt, setReferralPrompt] = useState(null);
   const [showReferralPrompt, setShowReferralPrompt] = useState(false);
 
@@ -958,108 +949,21 @@ export default function App() {
     initializeFirebase();
     initializeLabelCache();
 
-    // Check trial expiration on app startup
-    checkTrialExpiration();
-
-    // Check trial expiration when app comes to foreground
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        checkTrialExpiration();
-        // Skip Day 0 on foreground check too (only show after plan selection)
-        checkTrialNotifications(true);
-        // Quietly probe whether the user should see the expiring-trial
-        // referral nudge today. Service handles all gating (daily cap,
-        // not subscribed, rewards available, days_remaining <= 2).
-        maybeShowExpiringTrialReferralPrompt().catch(() => {});
-      }
+    // Trial notification scheduling + expiry banners were part of the app-
+    // managed trial system removed by the store-managed trial migration. The
+    // App Store / Play Store owns intro-offer duration + expiry now; we don't
+    // schedule N-days-remaining reminders. (Server-side `trial_expired` still
+    // fires from SettingsContext when store entitlement drops off.)
+    const subscription = AppState.addEventListener('change', () => {
+      // no-op — trial banner check removed; leave the listener in place so
+      // callers below (notification handlers) can still be wired if needed.
     });
-
-    // Check for trial notifications on startup (only if trial is already active, not for new trials)
-    // New trial welcome messages will be triggered after plan selection
-    // Skip Day 0 welcome on startup - it should only show after user selects a plan
-    setTimeout(async () => {
-      try {
-        // Check for pending notification first (set after plan selection)
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        const pendingNotification = await AsyncStorage.getItem('@pending_trial_notification');
-        if (pendingNotification) {
-          await AsyncStorage.removeItem('@pending_trial_notification');
-          const notification = JSON.parse(pendingNotification);
-          setTrialNotification(notification);
-          setShowTrialModal(true);
-          return;
-        }
-
-        const { isTrialActive } = await import('./src/services/trialService');
-        const active = await isTrialActive();
-        // Only check notifications if trial is already active (not a brand new trial)
-        // Skip Day 0 welcome message on startup
-        if (active) {
-          checkTrialNotifications(true); // Skip Day 0 on startup
-          // Trial-ending referral nudge (gated by service; once/day max)
-          maybeShowExpiringTrialReferralPrompt().catch(() => {});
-        }
-      } catch (error) {
-        // Silent fail - trial status check is not critical for app functionality
-        // Common error: LoadBundleFromServerRequestError (Firebase bundle not available)
-        console.warn('[App] Could not check trial status:', error?.message || error);
-      }
-    }, 2000);
 
     return () => {
       subscription?.remove();
       notificationResponseSub?.remove();
       notificationReceivedSub?.remove();
       utmUrlSub?.remove?.();
-    };
-  }, []);
-
-  // Check if trial has expired
-  const checkTrialExpiration = async () => {
-    try {
-      const { isTrialActive, getTrialInfo } = await import('./src/services/trialService');
-      const trialInfo = await getTrialInfo();
-      const wasActive = trialInfo?.active === true;
-      
-      // This will automatically mark trial as inactive if expired
-      const isActive = await isTrialActive();
-      
-      // If trial just expired (was active but now inactive), check for Day 30 notification
-      if (wasActive && !isActive && trialInfo && trialInfo.plan) {
-        // Trial just expired, check for Day 30 notification
-        console.log('[App] Trial expired, checking for Day 30 notification');
-        setTimeout(() => {
-          checkTrialNotifications(true);
-        }, 500);
-      } else if (!isActive && trialInfo && trialInfo.plan) {
-        // Trial is already expired, check if Day 30 notification should show
-        console.log('[App] Trial already expired, checking for Day 30 notification');
-        checkTrialNotifications(true);
-      }
-    } catch (error) {
-      console.error('[App] Error checking trial expiration:', error);
-    }
-  };
-
-  // Check for trial notifications to show
-  const checkTrialNotifications = async (skipDay0 = false) => {
-    try {
-      const { getNotificationToShow } = await import('./src/services/trialNotificationService');
-      const notification = await getNotificationToShow(skipDay0);
-      if (notification) {
-        setTrialNotification(notification);
-        setShowTrialModal(true);
-      }
-    } catch (error) {
-      console.error('[App] Error checking trial notifications:', error);
-    }
-  };
-
-  // Expose function globally so other screens can trigger notification check
-  useEffect(() => {
-    globalCheckTrialNotifications = checkTrialNotifications;
-    return () => {
-      globalCheckTrialNotifications = null;
     };
   }, []);
 
@@ -1091,8 +995,6 @@ export default function App() {
     setReferralPrompt(null);
     if (current?.variant === 'first_report') {
       await markFirstReportPromptOpened();
-    } else if (current?.variant === 'expiring_trial') {
-      markExpiringTrialInviteClicked(current?.daysRemaining);
     }
     if (navigationRef.current) {
       navigationRef.current.navigate('Referral');
@@ -1100,102 +1002,11 @@ export default function App() {
   };
 
   const handleReferralPromptSecondary = async () => {
-    const current = referralPrompt;
     setShowReferralPrompt(false);
     setReferralPrompt(null);
-    if (current?.variant === 'expiring_trial') {
-      markExpiringTrialUpgradeClicked(current?.daysRemaining);
-      if (navigationRef.current) {
-        navigationRef.current.navigate('PlanSelection', { mode: 'upgrade', trigger: 'expiring_trial' });
-      }
-    } else {
-      // first_report — "Maybe Later" just dismisses
-      await markFirstReportPromptDismissed();
-    }
-  };
-
-  const handleTrialModalClose = () => {
-    setShowTrialModal(false);
-    setTrialNotification(null);
-  };
-
-  const handleTrialUpgrade = () => {
-    setShowTrialModal(false);
-    setTrialNotification(null);
-    // Navigate to Settings screen for upgrade with plan modal
-    if (navigationRef.current) {
-      navigationRef.current.navigate('Settings', { showPlanModal: true });
-    }
-  };
-
-  const handleTrialRefer = () => {
-    setShowTrialModal(false);
-    setTrialNotification(null);
-    // Navigate to Referral screen
-    if (navigationRef.current) {
-      navigationRef.current.navigate('Referral');
-    }
-  };
-
-  const handleTrialCTA = async (notification) => {
-    setShowTrialModal(false);
-    setTrialNotification(null);
-    const nav = navigationRef.current;
-    if (!nav) return;
-
-    // New schema — notification carries a specific action key. Route to the
-    // matching destination. Fall back to legacy key-based scroll for any
-    // pre-migration entries that don't carry an `action`.
-    const action = notification?.action;
-
-    switch (action) {
-      case 'create_project':
-        // Day 0 — Welcome → land on Projects so user can tap "+ New Project".
-        nav.navigate('Projects', { openCreate: true });
-        return;
-      case 'camera':
-        // Day 1 — Capture
-        nav.navigate('Camera');
-        return;
-      case 'create_report':
-        // Day 2 — First Report → Projects (user picks a project to add a report to)
-        nav.navigate('Projects', { openCreateReport: true });
-        return;
-      case 'branding':
-        // Day 3 — Branding → Settings, scroll to watermark/brand section
-        nav.navigate('Settings', { scrollToWatermark: true });
-        return;
-      case 'cloud':
-        // Day 4 — Cloud Storage → Settings, scroll to cloud sync section
-        nav.navigate('Settings', { scrollToCloudSync: true });
-        return;
-      case 'referral':
-        // Day 5 / Day 6 — referral
-        nav.navigate('Referral');
-        return;
-      case 'paywall':
-        // Day 5 / Day 6 / Day 7+ — upgrade
-        nav.navigate('PlanSelection', { mode: 'upgrade', trigger: 'trial_notification' });
-        return;
-      case 'restore':
-        // Day 7+ — Restore Purchase. Routes to PlanSelection so the user
-        // can tap the existing Restore Purchases button there.
-        nav.navigate('PlanSelection', { mode: 'upgrade', trigger: 'restore_purchase' });
-        return;
-      default:
-        // Legacy fallback for any unmigrated notifications.
-        // eslint-disable-next-line no-case-declarations
-        const scrollParam = {};
-        if (notification?.key === 'day7_10') {
-          scrollParam.scrollToWatermark = true;
-        } else if (notification?.key === 'day15') {
-          scrollParam.scrollToCloudSync = true;
-        } else if (notification?.key === 'day22_24') {
-          scrollParam.scrollToAccountData = true;
-        }
-        nav.navigate('Settings', scrollParam);
-        return;
-    }
+    // first_report is the only remaining variant — "Maybe Later" just dismisses.
+    // The `expiring_trial` variant was removed alongside the app-managed trial.
+    await markFirstReportPromptDismissed();
   };
 
   // Keep the native splash screen visible until AuthLoadingScreen signals it's
@@ -1294,42 +1105,9 @@ export default function App() {
                       console.error('[Analytics] Error logging screen view:', error);
                     }
 
-                    // Check for trial welcome notification when navigating to screens after plan selection
-                    if (currentRouteName === 'LabelLanguageSetup' || currentRouteName === 'GoogleSignUp') {
-                      // Check for pending notification first
-                      setTimeout(async () => {
-                        try {
-                          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-                          const pendingNotification = await AsyncStorage.getItem('@pending_trial_notification');
-                          if (pendingNotification) {
-                            await AsyncStorage.removeItem('@pending_trial_notification');
-                            const notification = JSON.parse(pendingNotification);
-                            setTrialNotification(notification);
-                            setShowTrialModal(true);
-                            return;
-                          }
-
-                          // Fallback: Check if trial was just started (within last 5 minutes)
-                          const { getTrialInfo, isTrialActive } = await import('./src/services/trialService');
-                          const trialActive = await isTrialActive();
-                          if (trialActive) {
-                            const trialInfo = await getTrialInfo();
-                            if (trialInfo) {
-                              const startDate = new Date(trialInfo.startDate).getTime();
-                              const now = new Date().getTime();
-                              const minutesSinceStart = (now - startDate) / (1000 * 60);
-                              
-                              // If trial started within last 5 minutes, show welcome notification
-                              if (minutesSinceStart < 5) {
-                                checkTrialNotifications(false); // Don't skip Day 0
-                              }
-                            }
-                          }
-                        } catch (error) {
-                          console.error('[App] Error checking trial welcome:', error);
-                        }
-                      }, 1500);
-                    }
+                    // Trial welcome-notification recovery block removed alongside
+                    // the trialNotificationService — no client-side trial welcome
+                    // banner in the store-managed trial model.
                   }
 
                   // Save the current route name for next comparison
@@ -1355,20 +1133,14 @@ export default function App() {
                   are in flight (share flows). pointerEvents="none"
                   so the user can keep using the app. */}
               <GlobalBakeProgressBanner />
-              {/* Trial Notification Modal — must render INSIDE
-                  SettingsProvider so useTheme() sees the real theme
-                  (falls back to lightTheme when outside → always
-                  white regardless of dark mode). */}
-              <TrialNotificationModal
-                visible={showTrialModal}
-                notification={trialNotification}
-                onClose={handleTrialModalClose}
-                onUpgrade={handleTrialUpgrade}
-                onRefer={handleTrialRefer}
-                onCTA={handleTrialCTA}
-              />
+              {/* TrialNotificationModal removed — the app-managed trial
+                  notification system was replaced by store-managed intro
+                  offers. No client-side day-N-before-renewal reminders in
+                  this build. */}
 
-              {/* Referral Prompt Modal — same reason, inside provider. */}
+              {/* Referral Prompt Modal — inside provider so useTheme() sees
+                  the real theme (falls back to lightTheme when outside → always
+                  white regardless of dark mode). */}
               <ReferralPromptModal
                 visible={showReferralPrompt}
                 prompt={referralPrompt}

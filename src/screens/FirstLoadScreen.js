@@ -238,15 +238,19 @@ export default function FirstLoadScreen({ navigation, route }) {
         const userId = await getUserId();
         const adminResult = await redeemAdminReferralCode(code, userId);
         if (adminResult?.success && adminResult?.grantedDays > 0) {
-          const { extendTrial } = await import('../services/trialService');
-          await extendTrial(adminResult.grantedDays);
+          // Proxy already granted the bonus entitlement server-side; just
+          // refresh the local cache so downstream plan resolution picks it up.
           await markAdminReferralRedeemed();
+          try {
+            const { refreshBonusEntitlement } = await import('../services/bonusEntitlementService');
+            await refreshBonusEntitlement();
+          } catch {}
           setReferralCodeModalVisible(false);
           setReferralCodeInput('');
           Alert.alert(
             t('referral.appliedTitle', { defaultValue: 'Referral Applied!' }),
             t('referral.appliedMessage', {
-              defaultValue: `You've received ${adminResult.grantedDays} extra days free!`,
+              defaultValue: `You've received ${adminResult.grantedDays} extra premium days!`,
             }),
           );
           return;

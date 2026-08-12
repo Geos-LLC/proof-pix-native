@@ -23,7 +23,10 @@ import i18n from '../i18n/i18n';
 import { PROXY_SERVER_URL } from '../config/proxy';
 import { getUserId } from './referralService';
 import { getLastMeaningfulScreen } from './screenTracker';
-import { isTrialActive, getTrialDaysRemaining } from './trialService';
+import {
+  isBonusEntitlementActive,
+  getBonusDaysRemaining,
+} from './bonusEntitlementService';
 
 const FEEDBACK_ENDPOINT = `${PROXY_SERVER_URL}/api/feedback`;
 const SCREENSHOT_MAX_EDGE = 1600;
@@ -60,13 +63,17 @@ export async function collectAutoMetadata({ userPlan } = {}) {
       ? Constants?.expoConfig?.ios?.buildNumber
       : Constants?.expoConfig?.android?.versionCode) || null;
 
-  let trialActive = false;
-  let trialDaysRemaining = null;
-  try { trialActive = await isTrialActive(); } catch {}
-  if (trialActive) {
+  // Report bonus entitlement (not "trial") in feedback metadata. The app no
+  // longer maintains a parallel local trial timer — store trial state lives
+  // inside `planTier` (a user in an Apple/Play intro offer is on the
+  // corresponding paid tier from our POV).
+  let bonusActive = false;
+  let bonusDaysRemaining = null;
+  try { bonusActive = await isBonusEntitlementActive(); } catch {}
+  if (bonusActive) {
     try {
-      const days = await getTrialDaysRemaining();
-      if (Number.isFinite(days)) trialDaysRemaining = days;
+      const days = await getBonusDaysRemaining();
+      if (Number.isFinite(days)) bonusDaysRemaining = days;
     } catch {}
   }
 
@@ -80,8 +87,8 @@ export async function collectAutoMetadata({ userPlan } = {}) {
     locale: getDeviceLocale() || null,
     appLanguage: i18n?.language || null,
     planTier: userPlan || null,
-    trialActive,
-    trialDaysRemaining,
+    bonusActive,
+    bonusDaysRemaining,
   };
 }
 

@@ -21,7 +21,10 @@ import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../hooks/useTheme';
 import enterpriseContactService from '../services/enterpriseContactService';
 import Constants from 'expo-constants';
-import { isTrialActive, getTrialDaysRemaining } from '../services/trialService';
+import {
+  isBonusEntitlementActive,
+  getBonusDaysRemaining,
+} from '../services/bonusEntitlementService';
 
 // Extract the ISO country code from the device locale without a new
 // dependency. iOS exposes `AppleLocale` / `AppleLanguages` via
@@ -39,16 +42,23 @@ const getDeviceCountry = () => {
   } catch { return ''; }
 };
 
-// Render the user's plan as a short label for the contact email
-// metadata row. Free tier is called out explicitly; paid plans get a
-// trial badge with days remaining when applicable.
-const formatPlanLabel = (userPlan, trialActive, daysLeft) => {
+// Render the user's plan as a short label for the contact email metadata
+// row. Distinguishes between:
+//   - Starter (free): "Starter (Free)"
+//   - Starter with active bonus entitlement: "Starter (Bonus · N days)"
+//   - Paid tier: "Pro (Paid)" / "Business (Paid)" / etc.
+// The "trial" label was dropped because the app no longer maintains a
+// parallel local trial timer. Store trial state (if any) is now inside
+// the paid tier from the perspective of the user's plan.
+const formatPlanLabel = (userPlan, bonusActive, bonusDaysLeft) => {
   const tier = userPlan || 'starter';
   const label = tier.charAt(0).toUpperCase() + tier.slice(1);
-  if (tier === 'starter') return `${label} (Free)`;
-  if (trialActive) {
-    const d = Number.isFinite(daysLeft) ? daysLeft : 0;
-    return `${label} (Trial · ${d} day${d === 1 ? '' : 's'} left)`;
+  if (tier === 'starter') {
+    if (bonusActive) {
+      const d = Number.isFinite(bonusDaysLeft) ? bonusDaysLeft : 0;
+      return `${label} (Bonus · ${d} day${d === 1 ? '' : 's'} left)`;
+    }
+    return `${label} (Free)`;
   }
   return `${label} (Paid)`;
 };
@@ -189,13 +199,13 @@ export default function HelpSupportScreen({ navigation }) {
     // state is resolved async but the calls are fast (local storage
     // reads); a failure on either falls through to the default plan
     // label. Country is a synchronous NativeModules read.
-    let trialActive = false;
-    let trialDaysLeft = 0;
-    try { trialActive = await isTrialActive(); } catch {}
-    if (trialActive) {
-      try { trialDaysLeft = await getTrialDaysRemaining(); } catch {}
+    let bonusActive = false;
+    let bonusDaysLeft = 0;
+    try { bonusActive = await isBonusEntitlementActive(); } catch {}
+    if (bonusActive) {
+      try { bonusDaysLeft = await getBonusDaysRemaining(); } catch {}
     }
-    const planLabel = formatPlanLabel(userPlan, trialActive, trialDaysLeft);
+    const planLabel = formatPlanLabel(userPlan, bonusActive, bonusDaysLeft);
     const countryCode = getDeviceCountry();
     const platformLabel = platform === 'ios' ? 'iOS'
       : platform === 'android' ? 'Android'

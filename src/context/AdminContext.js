@@ -493,25 +493,12 @@ export function AdminProvider({ children }) {
       setUserMode('individual');
     }
 
-    // Kickstart a fresh 7-day Business trial so the ex-team-member
-    // keeps the full functionality they had on the team — reports,
-    // branding, unlimited projects — for a week to give them a
-    // real chance to convert instead of dropping to the free-tier
-    // wall the moment they lose team access. `canStartTrial` guards
-    // against re-starting for anyone who already used their trial
-    // before joining the team; those users stay on the plain
-    // starter plan (getEffectivePlan handles the graceful fallback).
-    try {
-      const { canStartTrial, startTrial } = require('../services/trialService');
-      if (await canStartTrial()) {
-        await startTrial('business');
-        console.warn('[ADMIN] Started 7-day business trial post-revoke');
-      } else {
-        console.warn('[ADMIN] Trial already used — post-revoke user stays on starter without new trial');
-      }
-    } catch (trialErr) {
-      console.warn('[ADMIN] Failed to start post-revoke trial:', trialErr?.message);
-    }
+    // Post-revoke: the ex-team-member falls back to Starter (or, if they
+    // already have a personal paid subscription or an active referral-bonus
+    // entitlement, the corresponding paid access). We no longer gift them a
+    // 7-day trial — that was app-managed trial plumbing which the store-trial
+    // migration removed. Users who want premium after revoke go through the
+    // normal paywall / restore-purchase flow.
 
     // Belt-and-suspenders reset. joinTeam() sets userPlan='Team Member'
     // as a signal for the isTeamMember checks in HomeScreen /

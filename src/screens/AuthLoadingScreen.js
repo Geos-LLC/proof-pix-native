@@ -11,7 +11,7 @@ import { useTheme } from '../hooks/useTheme';
 import { COLORS } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
 import { logAdminReferralConversion, extractAndSaveUTMParams, logSubscriptionActive } from '../utils/analytics';
-import { initSoftTrial } from '../services/softTrialService';
+import { initStarterExports } from '../services/starterExportService';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -127,13 +127,70 @@ export default function AuthLoadingScreen({ navigation }) {
     }
   }, [settingsLoading, userPlan]);
 
-  // Initialize soft trial state on every launch. Idempotent — first run
-  // writes initial state and fires `soft_trial_started`; subsequent runs are
-  // a no-op. Runs in parallel with referral init.
+  // Initialize starter-export counter on every launch. Idempotent — first
+  // run writes initial state and fires `soft_trial_started` (analytics event
+  // name preserved for dashboard continuity); subsequent runs are a no-op.
+  // Runs in parallel with referral init.
   useEffect(() => {
-    initSoftTrial().catch((e) =>
-      console.warn('[AuthLoading] soft trial init failed:', e?.message)
+    initStarterExports().catch((e) =>
+      console.warn('[AuthLoading] starter exports init failed:', e?.message)
     );
+  }, []);
+
+  // Legacy trial migration — one-shot on first cold start of the store-managed
+  // trial build. Any user upgrading from a build with an active app-managed
+  // trial (secure-storage key `@user_trial_info`) gets an equivalent bonus
+  // premium entitlement so they don't lose the days they had left. Server
+  // dedups on `legacy-trial-migration:${userId}` (returns the original grant
+  // record with `granted > 0` on replay), so this is safe to run every launch.
+  //
+  // Delete-order matters: we ONLY remove @user_trial_info after the server
+  // confirms it recorded the grant (granted > 0). If the first attempt races
+  // ahead of referralService setting @user_id — bonusEntitlementService can't
+  // hit the server without a userId and returns 0 — we keep the legacy
+  // record and retry on the next cold start.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { readSecureJSON, deleteSecure } = await import('../services/secureStorageService');
+        const legacy = await readSecureJSON('@user_trial_info');
+        if (!legacy) return;
+
+        const endMs = legacy.endDate ? new Date(legacy.endDate).getTime() : 0;
+        const daysRemaining = Number.isFinite(endMs) && endMs > Date.now()
+          ? Math.max(1, Math.ceil((endMs - Date.now()) / 86400000))
+          : 0;
+
+        // Nothing to migrate — either expired or malformed. Safe to clean up.
+        if (daysRemaining <= 0 || !legacy.active) {
+          try { await deleteSecure('@user_trial_info'); } catch {}
+          return;
+        }
+
+        // Force-generate @user_id before hitting the server so a fresh install
+        // upgrading from the old build doesn't lose their days to a race
+        // between the referral-code initializer and this migration effect.
+        try {
+          const { getUserId } = await import('../services/referralService');
+          await getUserId();
+        } catch {}
+
+        const { grantLegacyTrialMigrationBonus } = await import('../services/bonusEntitlementService');
+        const granted = await grantLegacyTrialMigrationBonus(daysRemaining);
+
+        if (granted > 0) {
+          console.log(`[AuthLoading] Migrated legacy trial (${daysRemaining}d) → bonus entitlement (granted: ${granted}d)`);
+          try { await deleteSecure('@user_trial_info'); } catch {}
+        } else {
+          // Server refused OR client couldn't resolve userId. Keep the legacy
+          // record and retry next cold start — better than silently dropping
+          // the user's remaining trial days.
+          console.warn(`[AuthLoading] Legacy trial migration returned 0 for ${daysRemaining}d — keeping @user_trial_info for retry`);
+        }
+      } catch (e) {
+        console.warn('[AuthLoading] Legacy trial migration failed (non-critical):', e?.message);
+      }
+    })();
   }, []);
 
   // Auto-register referral code on server & check for pending rewards
@@ -143,21 +200,22 @@ export default function AuthLoadingScreen({ navigation }) {
         const { initializeReferralCode, checkAndApplyReferralRewards, getUserId } = await import('../services/referralService');
         // Register code on server (idempotent - safe to call every launch)
         await initializeReferralCode();
-        // Check if referrer has earned rewards from friends' signups
+        // Reconcile referrer-side reward count with the server. The proxy
+        // grants the bonus premium entitlement server-side; this call fires
+        // the `reward_applied` / `bonus_awarded` analytics for newly-completed
+        // referrals and refreshes the local bonus cache so the UI updates.
         const rewardsApplied = await checkAndApplyReferralRewards();
         if (rewardsApplied > 0) {
-          console.log(`[AuthLoading] Applied ${rewardsApplied} referral reward(s)`);
-          // Spec: surface the sender confirmation modal — "Referral Reward
-          // Earned" / "You earned X extra trial days." Queue it as an
-          // Alert via setTimeout so it shows after navigation settles.
-          const { REFERRAL_BONUS_DAYS } = await import('../services/trialService');
-          const daysAdded = rewardsApplied * (REFERRAL_BONUS_DAYS || 7);
+          console.log(`[AuthLoading] Reported ${rewardsApplied} referral reward(s) to analytics`);
+          // Wording changed from "extra trial days" → "extra premium days"
+          // since bonus days no longer extend the Apple/Google trial.
+          const daysAdded = rewardsApplied * 7;
           setTimeout(() => {
             try {
               const { Alert } = require('react-native');
               Alert.alert(
                 'Referral Reward Earned',
-                `You earned ${daysAdded} extra trial day${daysAdded === 1 ? '' : 's'}.`,
+                `You earned ${daysAdded} extra premium day${daysAdded === 1 ? '' : 's'}.`,
               );
             } catch {}
           }, 2500);
@@ -173,11 +231,16 @@ export default function AuthLoadingScreen({ navigation }) {
               const userId = await getUserId();
               const result = await redeemAdminReferralCode(pendingCode, userId);
               if (result?.success && result?.grantedDays > 0) {
-                const { extendTrial } = await import('../services/trialService');
-                await extendTrial(result.grantedDays);
+                // Proxy /api/referrals/redeem already granted the bonus
+                // entitlement server-side. Refresh the local cache so
+                // downstream plan resolution sees the new bonus days.
                 await markAdminReferralRedeemed();
+                try {
+                  const { refreshBonusEntitlement } = await import('../services/bonusEntitlementService');
+                  await refreshBonusEntitlement();
+                } catch {}
                 logAdminReferralConversion({ code: pendingCode, link_type: 'admin', channel: result.channel, source: result.source, campaign: result.campaign, placement: result.placement, label: result.label, days_added: result.grantedDays });
-                console.log(`[AuthLoading] Admin referral redeemed: +${result.grantedDays} days`);
+                console.log(`[AuthLoading] Admin referral redeemed: +${result.grantedDays} bonus premium days`);
               }
             }
           }

@@ -88,6 +88,12 @@ let connectionInitialized = false;
 // Cache for Android subscription offer details (productId -> offerToken)
 let androidOfferCache = {};
 
+// Cached storefront lookup — RNIap.getStorefront() makes a native round-trip,
+// so we memoize for 10 min to keep back-to-back paywall opens cheap. Same
+// Apple ID / Play account can't hop storefronts within that window in practice.
+let _storefrontCache = { country: null, ts: 0 };
+const _STOREFRONT_TTL_MS = 10 * 60 * 1000;
+
 // Cache of product price/currency per productId, populated after fetchProducts
 // so we can attach price context on subscription analytics. The price is the
 // recurring/post-trial price, NOT the amount actually charged on a given
@@ -183,10 +189,13 @@ const _extractHasTrial = (product) => {
   return false;
 };
 
-// Products that ship a free trial in App Store Connect / Play Console. Used as
-// the fallback signal when iOS RNIap doesn't surface intro-offer metadata in
-// any known shape — we lean trial for a first transaction rather than
-// silently misclassifying as paid.
+// Formerly the fallback set for the `ios_unknown_first_txn_fallback` branch
+// of _classifyTransaction, which leaned "trial" on any first-time transaction
+// against a trial-eligible product when RNIap's intro-offer metadata was
+// unreadable. That fallback was removed to make `trial_started` deterministic
+// for Google Ads optimization — we now classify as 'paid' when the store
+// hasn't confirmed a free-trial offer, and emit a diagnostic-only event so
+// the ratio of unknowns stays observable.
 const _EXPECTED_TRIAL_PRODUCT_IDS = new Set([
   IOS_PRODUCTS.PRO_MONTHLY,
   IOS_PRODUCTS.PRO_ANNUAL,
@@ -246,6 +255,51 @@ const _cacheProductPrices = (products) => {
     if (pc) _productPriceCache[id] = pc;
     _productHasTrialCache[id] = _extractHasTrial(product);
   }
+};
+
+// Pick any cached currency — every product on the same storefront returns the
+// same currency, so the first non-null hit is representative. Used as the
+// per-event `currency` when the specific productId isn't in the cache
+// (e.g. plan_selected fires before any purchase-side lookup).
+const _anyCachedCurrency = () => {
+  for (const meta of Object.values(_productPriceCache)) {
+    if (meta?.currency) return meta.currency;
+  }
+  return null;
+};
+
+/**
+ * Storefront country + currency for the current user, used to make paywall +
+ * purchase analytics answerable per region (e.g. "is `.annual` returning for
+ * Canadian users"). Country comes from RNIap.getStorefront() — ISO-3 code
+ * ("USA", "CAN", "GBR"). Currency mirrors the SKU price cache. Returns
+ * `{ storefront_country: null, currency: null }` when neither is resolvable
+ * (older RNIap versions, storefront not yet initialised, or no products
+ * fetched) so callers can pass the result straight through.
+ */
+export const getStorefrontMeta = async () => {
+  const now = Date.now();
+  let country = _storefrontCache.country;
+  if (!country || now - _storefrontCache.ts > _STOREFRONT_TTL_MS) {
+    try {
+      const fn =
+        typeof RNIap.getStorefront === 'function'
+          ? RNIap.getStorefront
+          : typeof RNIap.getStorefrontIOS === 'function'
+            ? RNIap.getStorefrontIOS
+            : null;
+      if (fn) {
+        const sf = await fn();
+        // v14 unified: string. Legacy iOS: { countryCode }.
+        country = typeof sf === 'string' ? sf : sf?.countryCode || null;
+        if (country === '') country = null;
+        _storefrontCache = { country, ts: now };
+      }
+    } catch (e) {
+      console.warn('[IAP] getStorefront failed:', e?.message);
+    }
+  }
+  return { storefront_country: country || null, currency: _anyCachedCurrency() };
 };
 
 /**
@@ -321,6 +375,14 @@ const _classifyTransaction = (purchase, productId) => {
   const transactionId = purchase?.transactionId || null;
   const isFirstTxn = !original || original === transactionId;
 
+  // Deterministic classifier — never invents a trial. `trial_started` must
+  // only fire when the store actually confirms a free-trial offer, because
+  // this event is imported into Google Ads as a conversion. False positives
+  // corrupt ad optimization. When the store's intro-offer metadata cannot be
+  // read (RNIap field shape drift), we classify as 'paid' AND emit a
+  // diagnostic `trial_classification_unknown` event so the unknown-rate stays
+  // observable in Firebase — but the deterministic `trial_started` event is
+  // not fired for the unknown case.
   let result;
   let classifierReason;
   if (isSeat) {
@@ -331,28 +393,24 @@ const _classifyTransaction = (purchase, productId) => {
     classifierReason = 'ios_known_trial';
   } else if (hasTrialOffer) {
     // Android: when a product offers a free phase, Google grants it on the
-    // first qualifying purchase. Without server validation we can't tell a
-    // first-time buyer from a returning one, so we conservatively treat any
-    // first-acknowledgement of a trial-eligible product as a trial start.
-    // Subsequent purchases (e.g. resubscribes) will be deduped by purchaseToken.
-    result = 'trial';
+    // first qualifying purchase. Persistent dedup on purchaseToken still
+    // prevents re-firing on resubscribes.
+    result = isFirstTxn ? 'trial' : 'paid';
     classifierReason = 'android_known_trial';
-  } else if (
-    Platform.OS === 'ios' &&
-    trialUnknown &&
-    isFirstTxn &&
-    expectsTrial
-  ) {
-    // RNIap didn't surface intro-offer metadata in any known shape, but this
-    // is a first-time transaction on a product configured with a trial in
-    // App Store Connect — lean trial rather than silently misreporting paid.
-    // Persistent dedup on originalTransactionIdentifierIOS still prevents
-    // re-firing on renewals.
-    result = 'trial';
-    classifierReason = 'ios_unknown_first_txn_fallback';
   } else {
+    // Includes the former ios_unknown_first_txn_fallback branch. When
+    // trialUnknown is true we cannot prove the store granted a free trial —
+    // classify as 'paid' and emit a diagnostic. Consequence: a real trial
+    // start may be undercounted while we investigate. Preferred over Google
+    // Ads training on false trial conversions.
     result = 'paid';
-    classifierReason = trialUnknown ? 'unknown_not_first_txn' : 'no_trial_offer';
+    if (trialUnknown) {
+      classifierReason = expectsTrial && isFirstTxn
+        ? 'trial_unknown_paid_fallback'
+        : 'trial_unknown';
+    } else {
+      classifierReason = 'no_trial_offer';
+    }
   }
 
   console.log('[iap-debug] transaction classified', {
@@ -370,6 +428,24 @@ const _classifyTransaction = (purchase, productId) => {
     isSeat,
     platform: Platform.OS,
   });
+
+  // Diagnostic-only Firebase event so we can measure the false-negative rate
+  // introduced by the deterministic classifier without shipping any user-
+  // facing analytics changes. Never marks a conversion; use a distinct name
+  // so no dashboard or Ads import could confuse it with `trial_started`.
+  if (trialUnknown) {
+    try {
+      const { logEvent } = require('../utils/analytics');
+      logEvent('trial_classification_unknown', {
+        product_id: productId,
+        platform: Platform.OS,
+        classifier_reason: classifierReason,
+        would_have_been_trial: expectsTrial && isFirstTxn,
+        cache_knows_product: cacheKnowsProduct,
+        is_first_txn: isFirstTxn,
+      });
+    } catch {}
+  }
 
   return result;
 };
@@ -417,6 +493,7 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
   const kind = _classifyTransaction(purchase, productId);
   const subscriptionType = kind === 'trial' ? 'trial' : 'paid';
 
+  const storefrontMeta = await getStorefrontMeta();
   const baseParams = {
     plan_id: plan,
     product_id: productId,
@@ -428,7 +505,8 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
     original_transaction_id: originalTxId,
     is_seat: isSeat,
     price: priceInfo?.price ?? null,
-    currency: priceInfo?.currency ?? null,
+    currency: priceInfo?.currency ?? storefrontMeta.currency ?? null,
+    storefront_country: storefrontMeta.storefront_country,
     analytics_source: 'purchase_success',
   };
 
@@ -476,13 +554,12 @@ const _logPurchaseAnalytics = async (purchase, productId, entryPoint = 'paywall'
           started_at: Date.now(),
         }));
       } catch {}
-      // Soft trial: once the store-backed trial starts, the soft trial is
-      // permanently consumed for this device. Prevents users who only
-      // partially used the soft trial from getting both.
-      try {
-        const { markSoftTrialUsed } = await import('./softTrialService');
-        await markSoftTrialUsed();
-      } catch {}
+      // Note: no longer flips a "soft trial consumed" flag. Starter
+      // restrictions (watermark, low-res) are now driven by
+      // effectivePlan === 'starter'. When this store trial expires without
+      // conversion, the user drops back to Starter and correctly sees
+      // Starter restrictions again — fixing the pre-migration bug where
+      // watermarks stayed off permanently after any prior store-trial start.
     } else {
       console.log('[analytics-debug] NOT firing trial_started (paid path)', {
         plan_id: baseParams.plan_id,
@@ -541,6 +618,7 @@ const _logUpgradeAnalytics = async (purchase, productId, fromPlan, entryPoint = 
     purchase?.originalTransactionId ||
     null;
 
+  const storefrontMeta = await getStorefrontMeta();
   try {
     await logSubscriptionUpgraded({
       from_plan: fromPlan || null,
@@ -554,7 +632,8 @@ const _logUpgradeAnalytics = async (purchase, productId, fromPlan, entryPoint = 
       transaction_id: txId,
       original_transaction_id: originalTxId,
       price: priceInfo?.price ?? null,
-      currency: priceInfo?.currency ?? null,
+      currency: priceInfo?.currency ?? storefrontMeta.currency ?? null,
+      storefront_country: storefrontMeta.storefront_country,
       analytics_source: 'upgrade',
     });
   } catch (e) {
@@ -592,6 +671,9 @@ export const initIAPIfNeeded = async () => {
     await RNIap.initConnection();
     connectionInitialized = true;
     console.log('[IAP] Connection initialized successfully');
+    // Warm the storefront cache so the first plan_selected event doesn't have
+    // to await a native round-trip synchronously. Fire-and-forget.
+    getStorefrontMeta().catch(() => {});
   } catch (e) {
     console.error('[IAP] Failed to init connection:', e);
     console.error('[IAP] Error details:', JSON.stringify({ message: e?.message, code: e?.code, name: e?.name, stack: e?.stack?.slice(0, 400), debugMessage: e?.debugMessage, responseCode: e?.responseCode }, null, 2));
@@ -1777,23 +1859,12 @@ export const getSubscriptionPrices = async () => {
         }
       }
 
-      // iOS unknown-shape fallback: probe didn't surface an intro offer in
-      // any known field shape, but the product is configured with a trial in
-      // App Store Connect. Default hasTrial:true so plan_selected.is_trial,
-      // the paywall UI, and the post-purchase classifier agree (the classifier
-      // already uses `ios_unknown_first_txn_fallback` for the same case).
-      // Apple's StoreKit dialog at checkout is the authoritative source for
-      // whether THIS specific user actually receives the trial.
-      if (
-        Platform.OS === 'ios' &&
-        !trialOffers[product.id] &&
-        _EXPECTED_TRIAL_PRODUCT_IDS.has(product.id) &&
-        _productHasTrialCache[product.id] === 'unknown'
-      ) {
-        trialOffers[product.id] = { hasTrial: true, trialDays: 7 };
-      }
-
-      // Default: no trial detected
+      // Default: no trial detected. We deliberately do NOT lean trial on the
+      // "unknown shape" case anymore — matches the deterministic classifier
+      // in _classifyTransaction. If ASC has an intro offer but RNIap can't
+      // read it, the paywall shows plain "Subscribe" copy (undercounted trial
+      // start rather than a false "Start free trial" CTA that Apple's
+      // StoreKit sheet would then contradict).
       if (!trialOffers[product.id]) {
         trialOffers[product.id] = { hasTrial: false, trialDays: 0 };
       }

@@ -28,7 +28,7 @@ import PhotoLabel from '../components/PhotoLabel';
 import { logBeforeAfterCreated, logCollageCompleted, logJobCompleted, logPhotoExport } from '../utils/analytics';
 import PhotoWatermark from '../components/PhotoWatermark';
 import SoftTrialBadge from '../components/SoftTrialBadge';
-import { canExportNow, recordExport, logBlocked } from '../services/softTrialService';
+import { canExportNow, recordExport, logBlocked } from '../services/starterExportService';
 import {
   SOFT_TRIAL_LOW_RES_MAX_DIM,
   SOFT_TRIAL_QUALITY,
@@ -124,7 +124,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
   const photoScrollRef = useRef(null);
   const { t } = useTranslation();
   const { getUnpairedBeforePhotos, getBeforePhotos, getAfterPhotos, activeProjectId, deletePhoto } = usePhotos();
-  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms, softTrialActive, softTrialRemaining, refreshSoftTrial, userPlan } = useSettings();
+  const { showLabels, shouldShowWatermark, beforeLabelPosition, afterLabelPosition, beforeLabelPositionLandscape, afterLabelPositionLandscape, combinedLabelPosition, labelMarginVertical, labelMarginHorizontal, getRooms, starterExportGated, starterExportsRemaining, refreshStarterExports, userPlan } = useSettings();
   const { effectivePlan } = useFeaturePermissions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   // Local override for the header eye toggle. Seeds from the user's
@@ -543,7 +543,7 @@ export default function PhotoEditorScreen({ route, navigation }) {
       // Soft-trial export gate: only on free plan. If the soft trial is
       // exhausted, route to the contextual paywall and abort the share.
       if (userPlan === 'starter') {
-        if (softTrialActive) {
+        if (starterExportGated) {
           const gate = await canExportNow();
           if (!gate.allowed) {
             await logBlocked(gate.reason);
@@ -564,11 +564,11 @@ export default function PhotoEditorScreen({ route, navigation }) {
       const config = getTemplateConfig(templateType);
       // Soft-trial exports are downscaled and re-compressed to keep paid
       // resolution behind the paywall.
-      const captureOpts = softTrialActive
+      const captureOpts = starterExportGated
         ? { format: 'jpg', quality: SOFT_TRIAL_QUALITY }
         : { format: 'jpg', quality: 0.9 };
       if (config?.width && config?.height && !templateType.startsWith('original-')) {
-        if (softTrialActive) {
+        if (starterExportGated) {
           const longest = Math.max(config.width, config.height);
           if (longest > SOFT_TRIAL_LOW_RES_MAX_DIM) {
             const ratio = SOFT_TRIAL_LOW_RES_MAX_DIM / longest;
@@ -615,10 +615,10 @@ export default function PhotoEditorScreen({ route, navigation }) {
       // soft_trial_completed. Refresh context-side state so the counter UI
       // and forced watermark react immediately.
       if (userPlan === 'starter') {
-        if (softTrialActive) {
+        if (starterExportGated) {
           try {
             await recordExport();
-            await refreshSoftTrial();
+            await refreshStarterExports();
           } catch {}
         } else {
           try { await recordShare(); } catch {}

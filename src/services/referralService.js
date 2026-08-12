@@ -137,14 +137,15 @@ export const acceptReferral = async (referralCode) => {
     };
     await AsyncStorage.setItem(REFERRAL_ACCEPTED_KEY, JSON.stringify(referralData));
     console.log('[ReferralService] Referral accepted:', referralCode);
-    const { TRIAL_DURATION_DAYS, REFERRAL_BONUS_DAYS } = await import('./trialService');
-    const trialLength = (TRIAL_DURATION_DAYS || 7) + (REFERRAL_BONUS_DAYS || 7);
+    // Store owns the intro-offer trial length now; the ProofPix bonus
+    // entitlement grants the receiver's +7 premium days independently
+    // (via the proxy on complete-setup). Analytics payload dropped
+    // `trial_length_days` since it no longer has a meaningful value here.
     const conversionPayload = {
       code: referralCode,
       link_type: 'user',
       referred_signup: true,
-      trial_length_days: trialLength,
-      bonus_days_awarded: REFERRAL_BONUS_DAYS || 7,
+      bonus_days_awarded: 7,
     };
     logReferralEvent('accepted', conversionPayload);
     logReferralEvent('conversion', conversionPayload);
@@ -459,11 +460,17 @@ export const initializeReferralCode = async () => {
 };
 
 /**
- * Check and apply any pending referral rewards for this user.
- * Extends the user's trial by REFERRAL_BONUS_DAYS per completed referral,
- * capped at MAX_REFERRALS rewarded conversions (so total bonus never
- * exceeds MAX_REFERRALS * REFERRAL_BONUS_DAYS).
- * @returns {Promise<number>} Number of rewards applied this pass
+ * Reconcile the client's view of referral rewards with the server.
+ *
+ * Server-side ownership: bonus premium entitlements are granted on the
+ * proxy inside /api/referrals/complete-setup (both sender + receiver, 7d
+ * each, sender capped at 3 grants). The client no longer extends a local
+ * trial timer. This function just refreshes the bonus cache and fires the
+ * `reward_applied` / `bonus_awarded` analytics when the server's completed
+ * count exceeds what we've already reported to Firebase (so downstream
+ * funnels don't double-count on repeated cold starts).
+ *
+ * @returns {Promise<number>} Number of newly-reported rewards this pass
  */
 export const checkAndApplyReferralRewards = async () => {
   try {
@@ -471,47 +478,38 @@ export const checkAndApplyReferralRewards = async () => {
     if (!userId) return 0;
 
     const stats = await getReferralStatsFromServer(userId);
-    if (!stats || !stats.monthsEarned || stats.monthsEarned === 0) return 0;
+    if (!stats) return 0;
 
-    const appliedRewards = await AsyncStorage.getItem('@referral_rewards_applied');
-    const alreadyApplied = appliedRewards ? parseInt(appliedRewards, 10) : 0;
+    const completedCount = Math.min(stats.completedInvites || 0, 3);
+    const reportedRaw = await AsyncStorage.getItem('@referral_rewards_applied');
+    const alreadyReported = reportedRaw ? parseInt(reportedRaw, 10) : 0;
+    const newlyReported = Math.max(0, completedCount - alreadyReported);
 
-    const { extendTrial, REFERRAL_BONUS_DAYS, MAX_REFERRALS } = await import('./trialService');
-    const maxRewards = MAX_REFERRALS || 3;
-    const bonusPerReward = REFERRAL_BONUS_DAYS || 7;
+    // Refresh bonus cache regardless — a friend may have completed setup
+    // since our last check, which extended our server-side bonus expiry.
+    try {
+      const { refreshBonusEntitlement } = await import('./bonusEntitlementService');
+      await refreshBonusEntitlement();
+    } catch {}
 
-    // Cap server-reported rewards at MAX_REFERRALS so even if the server
-    // accidentally reports more, we never grant beyond the documented max.
-    const cappedEarned = Math.min(stats.monthsEarned, maxRewards);
-    const pendingRewards = Math.max(0, cappedEarned - alreadyApplied);
+    if (newlyReported <= 0) return 0;
 
-    if (pendingRewards > 0) {
-      console.log(`[ReferralService] Found ${pendingRewards} pending reward(s). Applying...`);
-      const daysToAdd = pendingRewards * bonusPerReward;
-      const result = await extendTrial(daysToAdd);
-
-      if (result) {
-        await AsyncStorage.setItem('@referral_rewards_applied', cappedEarned.toString());
-        console.log(`[ReferralService] ✅ Applied ${pendingRewards} reward(s) - added ${daysToAdd} days to trial`);
-        const remainingRewards = Math.max(0, maxRewards - cappedEarned);
-        // Fire both the legacy `reward_applied` (existing dashboards) and
-        // the canonical `bonus_awarded` (per spec). Same payload.
-        const payload = {
-          code: stats.code || null,
-          rewards: pendingRewards,
-          days_added: daysToAdd,
-          bonus_days_awarded: daysToAdd,
-          remaining_referral_rewards: remainingRewards,
-        };
-        logReferralEvent('reward_applied', payload);
-        logReferralEvent('bonus_awarded', payload);
-        return pendingRewards;
-      }
-    }
-
-    return 0;
+    await AsyncStorage.setItem('@referral_rewards_applied', String(completedCount));
+    const daysAdded = newlyReported * 7;
+    const remainingRewards = Math.max(0, 3 - completedCount);
+    const payload = {
+      code: stats.code || null,
+      rewards: newlyReported,
+      days_added: daysAdded,
+      bonus_days_awarded: daysAdded,
+      remaining_referral_rewards: remainingRewards,
+    };
+    logReferralEvent('reward_applied', payload);
+    logReferralEvent('bonus_awarded', payload);
+    console.log(`[ReferralService] Reported ${newlyReported} new referral reward(s) to analytics`);
+    return newlyReported;
   } catch (error) {
-    console.error('[ReferralService] Error checking/applying rewards:', error);
+    console.error('[ReferralService] Error reconciling rewards:', error);
     return 0;
   }
 };

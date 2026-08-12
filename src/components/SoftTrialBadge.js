@@ -16,16 +16,16 @@ import { SOFT_TRIAL_EXPORT_LIMIT, SOFT_TRIAL_LOW_RES_MAX_DIM, PAYWALL_TRIGGERS }
  *  - "banner": full-width strip, suitable above primary actions
  */
 export default function SoftTrialBadge({ navigation, variant = 'compact', style }) {
-  const { softTrialActive, softTrialRemaining, userPlan } = useSettings();
+  const { starterExportGated, starterExportsRemaining, userPlan } = useSettings();
   const { t } = useTranslation();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
   if (userPlan !== 'starter') return null;
-  if (!softTrialActive) return null;
+  if (!starterExportGated) return null;
 
-  const used = Math.max(0, SOFT_TRIAL_EXPORT_LIMIT - (softTrialRemaining ?? 0));
-  const remaining = softTrialRemaining ?? 0;
+  const used = Math.max(0, SOFT_TRIAL_EXPORT_LIMIT - (starterExportsRemaining ?? 0));
+  const remaining = starterExportsRemaining ?? 0;
 
   const handlePress = () => {
     if (navigation?.navigate) {

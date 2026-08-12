@@ -3,8 +3,12 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ROOMS, DEFAULT_LABEL_POSITION, DEFAULT_BEFORE_LABEL_POSITION, DEFAULT_AFTER_LABEL_POSITION, DEFAULT_WATERMARK_POSITION } from '../constants/rooms';
 import { INDUSTRIES } from '../constants/industries';
-import { isSoftTrialActive, getRemainingExports } from '../services/softTrialService';
+import { getRemainingExports } from '../services/starterExportService';
 import { SOFT_TRIAL_EXPORT_LIMIT } from '../constants/softTrial';
+import {
+  refreshBonusEntitlement,
+  getCachedBonusEntitlement,
+} from '../services/bonusEntitlementService';
 import { readSecureJSON, writeSecureJSON, deleteSecure } from '../services/secureStorageService';
 import { OVERRIDE_KEYS } from '../hooks/useScopedSettings';
 
@@ -235,21 +239,33 @@ export const SettingsProvider = ({ children }) => {
   // AsyncStorage with '' on the first save after launch.
   const loadedRef = useRef(false);
 
-  // Soft trial state mirrored into context for synchronous reads in renderers.
-  // Refreshed on mount and via `refreshSoftTrial()` after each export.
-  const [softTrialActive, setSoftTrialActive] = useState(false);
-  const [softTrialRemaining, setSoftTrialRemaining] = useState(SOFT_TRIAL_EXPORT_LIMIT);
+  // Starter export counter (analytics + future free-tier caps). Watermark /
+  // low-res enforcement is NOT gated on this counter — it's purely a function
+  // of `effectivePlan === 'starter'` (see `starterExportGated` below). This
+  // fixes the pre-migration bug where a user who once started a store trial
+  // stayed watermark-free forever, even after Starter fallback.
+  const [starterExportsRemaining, setStarterExportsRemaining] = useState(SOFT_TRIAL_EXPORT_LIMIT);
 
-  const refreshSoftTrial = useCallback(async () => {
+  const refreshStarterExports = useCallback(async () => {
     try {
-      const [active, remaining] = await Promise.all([
-        isSoftTrialActive(),
-        getRemainingExports(),
-      ]);
-      setSoftTrialActive(active);
-      setSoftTrialRemaining(remaining);
+      const remaining = await getRemainingExports();
+      setStarterExportsRemaining(remaining);
     } catch (e) {
       // non-critical
+    }
+  }, []);
+
+  // Bonus premium entitlement (server-owned, from proxy /api/entitlements/bonus).
+  // Referral rewards + admin-referral-code grants + legacy-trial migration.
+  // Independent of the App Store / Play trial — never reported as a store event.
+  const [bonusActive, setBonusActive] = useState(false);
+
+  const refreshBonus = useCallback(async () => {
+    try {
+      const rec = await refreshBonusEntitlement();
+      setBonusActive(!!rec?.isActive);
+    } catch (e) {
+      // non-critical — cache still available via getCachedBonusEntitlement
     }
   }, []);
 
@@ -258,9 +274,30 @@ export const SettingsProvider = ({ children }) => {
     loadSettings();
     // Check trial expiration on app startup
     checkTrialExpiration();
-    // Pull initial soft trial state (initSoftTrial() runs in AuthLoadingScreen)
-    refreshSoftTrial();
-  }, [refreshSoftTrial]);
+    // Pull initial starter-export counter (initStarterExports() runs in AuthLoadingScreen)
+    refreshStarterExports();
+    // Warm the bonus-entitlement cache so the first `effectivePlan` compute
+    // has real data. Cheap in the common case (cached hit).
+    refreshBonus();
+  }, [refreshStarterExports, refreshBonus]);
+
+  // Foreground refresh: if the bonus entitlement expires while the app is
+  // backgrounded, the derived plan would otherwise stay 'pro' until the next
+  // cold start OR a Settings-screen focus event. Refresh on every foreground
+  // so a user whose bonus has just expired sees Starter restrictions restored
+  // within one app-return cycle. Also re-runs the trial-expiration check for
+  // the same reason (Apple may have revoked entitlement in the background).
+  useEffect(() => {
+    const { AppState } = require('react-native');
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        refreshBonus();
+        checkTrialExpiration();
+      }
+    });
+    return () => sub?.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshBonus]);
 
   // Slice D.4: on team_member devices, pull the admin's team-label
   // settings from proxy (populated by admin's SettingsContext push
@@ -310,9 +347,12 @@ export const SettingsProvider = ({ children }) => {
   //      observed a real `trial_started` event), AND
   //   2. The current session has no active store entitlement.
   //
-  // This replaces the old logic that fired `trial_expired` on every cold
-  // start where the legacy in-app trial flag was missing — which was every
-  // device, producing meaningless data.
+  // After firing, if userPlan is still on the trial's premium tier we
+  // downgrade to 'starter' so effectivePlan reflects the true entitlement
+  // (Starter restrictions restored). This is the migration counterpart to
+  // the old trialService overlay — under the store-trial model userPlan is
+  // set durably by PlanSelectionScreen after purchase, so we need an
+  // explicit reset when the store revokes access.
   const checkTrialExpiration = async () => {
     try {
       const lastTrialRaw = await AsyncStorage.getItem('@last_trial_state');
@@ -322,12 +362,21 @@ export const SettingsProvider = ({ children }) => {
       try { lastTrial = JSON.parse(lastTrialRaw); } catch { return; }
       if (!lastTrial?.plan_id) return;
 
-      // Ask iapService whether Apple/Google still report an active entitlement.
-      // If they do, the trial hasn't expired (it's either still in trial or
-      // has already converted to paid — either way, not expired).
-      const { hasActiveIAPSubscription } = await import('../services/iapService');
-      const stillActive = await hasActiveIAPSubscription();
-      if (stillActive) return;
+      // Ask RNIap directly whether Apple/Google still report an active
+      // entitlement. We call RNIap.getAvailablePurchases (not the safe-wrap
+      // hasActiveIAPSubscription which returns false on any error) so we can
+      // distinguish "confirmed empty" from "check failed". A transient
+      // RNIap/network error must NOT downgrade a paid user's plan.
+      let purchases;
+      try {
+        const RNIap = require('react-native-iap');
+        purchases = await RNIap.getAvailablePurchases();
+      } catch (err) {
+        console.warn('[SettingsContext] RNIap.getAvailablePurchases threw, skipping trial-expiry check:', err?.message);
+        return;
+      }
+      if (!Array.isArray(purchases)) return;
+      if (purchases.length > 0) return; // still entitled (trial in progress or converted to paid)
 
       // Real transition: had a trial, no longer entitled. Fire the event with
       // plan context and persist the snapshot so a subsequent `subscription_started`
@@ -343,6 +392,27 @@ export const SettingsProvider = ({ children }) => {
       });
       await AsyncStorage.setItem('@last_trial_expired_state', JSON.stringify(lastTrial));
       await AsyncStorage.removeItem('@last_trial_state');
+
+      // Downgrade local plan to 'starter' if it's still on the trial's premium
+      // tier. Read from secure storage (not the React `userPlan` closure) —
+      // this fn is called from the mount effect BEFORE loadSettings() has
+      // populated React state, so the closure would still be at the default
+      // 'starter' and the guard would falsely skip. Guarded against
+      // 'Team Member' (AdminContext sentinel) so we never accidentally break
+      // a team-member session.
+      let storedPlan = 'starter';
+      try {
+        const settings = await readSecureJSON(SETTINGS_KEY);
+        storedPlan = settings?.userPlan || 'starter';
+      } catch {}
+      if (storedPlan !== 'starter' && storedPlan !== 'Team Member') {
+        console.log('[SettingsContext] Trial expired without conversion — downgrading userPlan from', storedPlan, 'to starter');
+        try {
+          await updateUserPlan('starter');
+        } catch (err) {
+          console.warn('[SettingsContext] Failed to downgrade userPlan after trial expiry:', err?.message);
+        }
+      }
     } catch (error) {
       console.error('[SettingsContext] Error checking trial expiration:', error);
     }
@@ -1281,12 +1351,28 @@ export const SettingsProvider = ({ children }) => {
     }
   };
 
-  // Watermark is forced on for the whole soft trial: even if the user toggles
-  // it off, free exports must carry branding. Once the trial is consumed
-  // (limit reached or Apple/Google trial started), this falls back to the
-  // user's setting.
+  // effectivePlan: single source of truth for feature/watermark gating.
+  //   - Store entitlement (Pro/Business/Enterprise from computeEntitlements) wins.
+  //   - Bonus entitlement only upgrades a Starter user to Pro.
+  //   - Precedence never downgrades.
+  // Kept as a plain derivation (not useMemo) — the compute is O(1) and any
+  // caller that re-renders on plan changes already re-renders on userPlan/bonus.
+  const effectivePlan =
+    userPlan && userPlan !== 'starter'
+      ? userPlan
+      : bonusActive
+        ? 'pro'
+        : (userPlan || 'starter');
+
+  // Starter-tier export gating (watermark + low-res). Purely plan-driven —
+  // ignores the vestigial `soft_trial_used` flag in secure storage.
+  const starterExportGated = effectivePlan === 'starter';
+
+  // Watermark is forced on for the whole Starter tier: even if the user toggles
+  // it off, free exports must carry branding. When the user upgrades (store
+  // entitlement OR active bonus entitlement), this falls back to their setting.
   const shouldShowWatermark =
-    softTrialActive ||
+    starterExportGated ||
     (showWatermark && (customWatermarkEnabled ? Boolean(watermarkText?.trim()) : true));
 
   const value = {
@@ -1343,9 +1429,17 @@ export const SettingsProvider = ({ children }) => {
     updateWatermarkFontSize,
     showWatermark,
     shouldShowWatermark,
-    softTrialActive,
-    softTrialRemaining,
-    refreshSoftTrial,
+    // Starter-tier gating (renamed from softTrialActive/softTrialRemaining/
+    // refreshSoftTrial). Semantics are now plan-driven.
+    starterExportGated,
+    starterExportsRemaining,
+    refreshStarterExports,
+    // Bonus premium entitlement — refresh triggers a proxy round-trip.
+    bonusActive,
+    refreshBonus,
+    // Single source of truth for feature/watermark gating. Callers should
+    // prefer this over reading userPlan directly.
+    effectivePlan,
     customWatermarkEnabled,
     watermarkText,
     watermarkLink,

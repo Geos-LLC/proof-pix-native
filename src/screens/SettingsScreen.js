@@ -62,8 +62,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { FEATURES } from '../constants/featurePermissions';
 import EnterpriseContactModal from '../components/EnterpriseContactModal';
-import { isTrialActive, getTrialDaysRemaining, getTrialPlan, getTrialInfo } from '../services/trialService';
-import * as TrialTestUtils from '../utils/trialTestUtils';
+import {
+  isBonusEntitlementActive,
+  getBonusDaysRemaining,
+  refreshBonusEntitlement,
+} from '../services/bonusEntitlementService';
 import { generateInviteToken } from '../utils/tokens';
 import {
   logLanguageChange,
@@ -366,10 +369,11 @@ export default function SettingsScreen({ navigation, route }) {
   
   // Removed verbose test modal logging used during debugging
   const [currentTestToken, setCurrentTestToken] = useState(null);
-  const [trialActive, setTrialActive] = useState(false);
-  const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
-  const [trialPlan, setTrialPlan] = useState(null);
-  const [trialDuration, setTrialDuration] = useState(15);
+  // Bonus premium entitlement — the store trial concept has moved to Apple/Play,
+  // so we only surface ProofPix's own bonus days (referral rewards + admin
+  // referral redemptions). Max lifetime bonus = 21 days (3 × REFERRAL_BONUS_DAYS).
+  const [bonusActive, setBonusActive] = useState(false);
+  const [bonusDaysRemaining, setBonusDaysRemaining] = useState(0);
   const [colorModalVisible, setColorModalVisible] = useState(false);
   const [colorModalType, setColorModalType] = useState(null);
   const [draftColor, setDraftColor] = useState(labelBackgroundColor);
@@ -599,19 +603,20 @@ export default function SettingsScreen({ navigation, route }) {
     return normalizeHex(baseColor) || '#FFFFFF';
   }, [customWatermarkEnabled, watermarkColor, labelBackgroundColor]);
 
-  // Load trial information
+  // Load bonus entitlement (proxy-owned, referral-driven). Refreshes on
+  // focus below so post-referral-redeem UI updates immediately.
   useEffect(() => {
-    const loadTrialInfo = async () => {
-      const active = await isTrialActive();
-      const daysRemaining = await getTrialDaysRemaining();
-      const plan = await getTrialPlan();
-      const trialInfo = await getTrialInfo();
-      setTrialActive(active);
-      setTrialDaysRemaining(daysRemaining);
-      setTrialPlan(plan);
-      setTrialDuration(trialInfo?.durationDays || 15);
+    const loadBonusInfo = async () => {
+      try {
+        const active = await isBonusEntitlementActive();
+        const daysRemaining = active ? await getBonusDaysRemaining() : 0;
+        setBonusActive(active);
+        setBonusDaysRemaining(daysRemaining);
+      } catch (error) {
+        // non-critical — cache read will retry on next call
+      }
     };
-    loadTrialInfo();
+    loadBonusInfo();
   }, []);
 
   useEffect(() => {
@@ -678,23 +683,21 @@ export default function SettingsScreen({ navigation, route }) {
         }
       };
       
-      const loadTrialInfo = async () => {
+      const loadBonusInfo = async () => {
         try {
-          const active = await isTrialActive();
-          const daysRemaining = await getTrialDaysRemaining();
-          const plan = await getTrialPlan();
-          const trialInfo = await getTrialInfo();
-          setTrialActive(active);
-          setTrialDaysRemaining(daysRemaining);
-          setTrialPlan(plan);
-          setTrialDuration(trialInfo?.durationDays || 15);
+          // Force-refresh from proxy on screen focus so a bonus grant that
+          // happened while the user was on another screen (e.g. after
+          // redeeming a code in ReferralScreen) is reflected immediately.
+          const rec = await refreshBonusEntitlement();
+          setBonusActive(!!rec?.isActive);
+          setBonusDaysRemaining(rec?.isActive ? await getBonusDaysRemaining() : 0);
         } catch (error) {
-          console.error('[SETTINGS] Error loading trial info:', error);
+          console.error('[SETTINGS] Error loading bonus info:', error);
         }
       };
       
       loadDropboxTokens();
-      loadTrialInfo();
+      loadBonusInfo();
     }, [userPlan, connectedAccounts, userMode, upsertConnectedAccount, isAuthenticated, adminUserInfo])
   );
 
@@ -2319,22 +2322,25 @@ export default function SettingsScreen({ navigation, route }) {
       const result = await trackReferralInstallation(code);
 
       if (result && result.success) {
-        // Complete the referral setup so the referrer gets credit
+        // Complete the referral setup so the referrer gets credit. The proxy
+        // now grants the ProofPix bonus premium entitlement to both parties
+        // server-side (7 days each, capped at 3 for the sender). The old
+        // client-side trial-extension call is gone — bonus days are surfaced
+        // via bonusEntitlementService.
         const userId = await getUserId();
         await completeReferralSetup(code, userId);
 
-        // Extend existing trial by referral bonus days
-        const { extendTrial, isTrialActive: checkTrialActive } = await import('../services/trialService');
-        const trialActive = await checkTrialActive();
-        if (trialActive) {
-          const bonusDays = Platform.OS === 'android' ? 15 : 15;
-          await extendTrial(bonusDays);
-          console.log(`[Settings] Extended trial by ${bonusDays} days for referral code`);
-        }
+        // Refresh bonus entitlement so the Settings UI reflects the receiver's
+        // new bonus days without waiting for the next focus event.
+        try {
+          const rec = await refreshBonusEntitlement();
+          setBonusActive(!!rec?.isActive);
+          setBonusDaysRemaining(rec?.isActive ? await getBonusDaysRemaining() : 0);
+        } catch {}
 
         Alert.alert(
           t('referral.successTitle', { defaultValue: 'Success' }),
-          t('referral.codeAppliedSuccess', { defaultValue: 'Referral code applied successfully! Your trial has been extended.' })
+          t('referral.codeAppliedSuccess', { defaultValue: 'Referral code applied! You received 7 extra premium days.' })
         );
         setReferralCodeInput('');
       } else {
@@ -2346,13 +2352,19 @@ export default function SettingsScreen({ navigation, route }) {
           const userId = await getUserId();
           const adminResult = await redeemAdminReferralCode(code, userId);
           if (adminResult?.success && adminResult?.grantedDays > 0) {
-            const { extendTrial } = await import('../services/trialService');
-            await extendTrial(adminResult.grantedDays);
+            // Server /api/referrals/redeem already granted the bonus
+            // entitlement — just mark locally and refresh the cache so the
+            // UI updates immediately.
             await markAdminReferralRedeemed();
+            try {
+              const rec = await refreshBonusEntitlement();
+              setBonusActive(!!rec?.isActive);
+              setBonusDaysRemaining(rec?.isActive ? await getBonusDaysRemaining() : 0);
+            } catch {}
             logAdminReferralConversion({ code, link_type: 'admin', channel: adminResult.channel, source: adminResult.source, campaign: adminResult.campaign, placement: adminResult.placement, label: adminResult.label, days_added: adminResult.grantedDays });
             Alert.alert(
               t('referral.successTitle', { defaultValue: 'Success' }),
-              t('referral.codeAppliedSuccess', { defaultValue: `Referral code applied! You've received ${adminResult.grantedDays} extra days free.` })
+              t('referral.codeAppliedSuccess', { defaultValue: `Referral code applied! You've received ${adminResult.grantedDays} extra premium days.` })
             );
             setReferralCodeInput('');
             return;
@@ -3193,22 +3205,24 @@ export default function SettingsScreen({ navigation, route }) {
           );
         })()}
 
-        {/* Trial progress bar — full-width strip directly under the user
-            card when a trial is active. Hidden once a paid sub kicks in.
-            Also hidden for team_member accounts — trial concept doesn't
-            apply since admin owns the plan. */}
-        {!isTeamMember && trialActive && trialDaysRemaining > 0 ? (
+        {/* Bonus entitlement progress bar — visible when the user has active
+            bonus premium days (referral rewards / admin code redemptions).
+            Bar width is a fraction of the 21-day lifetime max so full-bar
+            corresponds to "all three referrals redeemed, none consumed yet".
+            Hidden for team_member accounts (admin owns the plan) and for
+            paying users (their store entitlement makes bonus days redundant). */}
+        {!isTeamMember && bonusActive && bonusDaysRemaining > 0 && userPlan === 'starter' ? (
           <View style={styles.trialBar}>
             <View style={styles.trialProgressBar}>
               <View
                 style={[
                   styles.trialProgressFill,
-                  { width: `${(trialDaysRemaining / trialDuration) * 100}%` },
+                  { width: `${Math.min(bonusDaysRemaining / 21, 1) * 100}%` },
                 ]}
               />
             </View>
             <Text style={styles.trialDaysText}>
-              {t('settings.trialDaysRemaining', { days: trialDaysRemaining, defaultValue: `${trialDaysRemaining} days remaining` })}
+              {t('settings.bonusDaysRemaining', { days: bonusDaysRemaining, defaultValue: `${bonusDaysRemaining} bonus premium day${bonusDaysRemaining === 1 ? '' : 's'} left` })}
             </Text>
           </View>
         ) : null}
@@ -4786,98 +4800,13 @@ export default function SettingsScreen({ navigation, route }) {
                       >
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Set → Enterprise</Text>
                       </TouchableOpacity>
-                      <View style={{ height: 12 }} />
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#666', marginBottom: 6 }}>
-                        Trial simulation
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={async () => {
-                          await TrialTestUtils.testDay0();
-                          Alert.alert('Test Set', 'Day 0 set. Restart app to see "Document Your First Job".');
-                        }}
-                      >
-                        <Text style={styles.testButtonText}>Day 0 — First Job</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={async () => {
-                          await TrialTestUtils.testDay1();
-                          Alert.alert('Test Set', 'Day 1 set. Restart app to see "Complete Your First Before & After".');
-                        }}
-                      >
-                        <Text style={styles.testButtonText}>Day 1 — Before & After</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={async () => {
-                          await TrialTestUtils.testDay7_10();
-                          Alert.alert('Test Set', 'Day 2 set. Restart app to see "Create Your First Professional Report".');
-                        }}
-                      >
-                        <Text style={styles.testButtonText}>Day 2 — Report</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={async () => {
-                          await TrialTestUtils.testDay15();
-                          Alert.alert('Test Set', 'Day 3 set. Restart app to see "Promote Your Brand".');
-                        }}
-                      >
-                        <Text style={styles.testButtonText}>Day 3 — Branding</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={async () => {
-                          await TrialTestUtils.testDay22_24();
-                          Alert.alert('Test Set', 'Day 4 set. Restart app to see "Never Lose Job Photos Again".');
-                        }}
-                      >
-                        <Text style={styles.testButtonText}>Day 4 — Cloud</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={async () => {
-                          await TrialTestUtils.testDay27_28();
-                          Alert.alert('Test Set', 'Day 5 set. Restart app to see "Need More Trial Time?".');
-                        }}
-                      >
-                        <Text style={styles.testButtonText}>Day 5 — Referral</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={async () => {
-                          const TrialTestUtils2 = await import('../utils/trialTestUtils');
-                          await TrialTestUtils2.setTrialDaysRemaining(1, 'business');
-                          Alert.alert('Test Set', 'Day 6 set. Restart app to see "Your Trial Ends Tomorrow".');
-                        }}
-                      >
-                        <Text style={styles.testButtonText}>Day 6 — Last Chance</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={async () => {
-                          await TrialTestUtils.testDay30();
-                          Alert.alert(
-                            'Test Set',
-                            'Trial set to expired. Restart app to see the expiration message.'
-                          );
-                        }}
-                      >
-                        <Text style={styles.testButtonText}>Expired</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.testButton, { backgroundColor: '#FF0000' }]}
-                        onPress={async () => {
-                          await TrialTestUtils.testDay30();
-                          Alert.alert(
-                            'Test Set',
-                            'Trial set to expired. Restart app to see the full expiration flow.'
-                          );
-                        }}
-                      >
-                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Test Expired Flow</Text>
-                      </TouchableOpacity>
+                      {/* Trial simulation buttons removed — the app-managed
+                          trial system (trialService + trialNotificationService
+                          + trialTestUtils) was replaced by store-managed
+                          Apple/Google intro offers in the trial migration.
+                          To simulate a store trial, use App Store Connect's
+                          sandbox testers or Google Play internal-test tracks. */}
+
                       <TouchableOpacity
                         style={[styles.testButton, { backgroundColor: '#FF9800' }]}
                         onPress={async () => {
@@ -4891,36 +4820,6 @@ export default function SettingsScreen({ navigation, route }) {
                         }}
                       >
                         <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Reset Referral Data</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[styles.testButton, { backgroundColor: '#795548' }]}
-                        onPress={async () => {
-                          await TrialTestUtils.clearTrial();
-                          Alert.alert(
-                            'Trial Reset',
-                            'Trial data cleared. The next time you go through onboarding and reach the plan selection screen, the free trial banner and confirmation dialog will appear again (30 or 45 days depending on referral).'
-                          );
-                        }}
-                      >
-                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Reset Trial</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[styles.testButton, { backgroundColor: '#D32F2F' }]}
-                        onPress={async () => {
-                          const success = await TrialTestUtils.expireTrialForReferralTest();
-                          if (success) {
-                            Alert.alert(
-                              'Trial Expired',
-                              'Trial set to expired state. Go to FirstLoad screen (reset app data or use Reset Trial first, then restart) to test the referral popup.\n\nNote: The referral popup only shows if:\n1. Trial is expired\n2. No paid subscription\n3. No referral code already applied'
-                            );
-                          } else {
-                            Alert.alert('Error', 'Failed to expire trial.');
-                          }
-                        }}
-                      >
-                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Expire Trial (Test Referral)</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -4941,21 +4840,26 @@ export default function SettingsScreen({ navigation, route }) {
                       <TouchableOpacity
                         style={[styles.testButton, { backgroundColor: '#2196F3' }]}
                         onPress={async () => {
-                          const { checkAndApplyReferralRewards } = await import('../services/referralService');
-                          const rewardsApplied = await checkAndApplyReferralRewards();
-                          if (rewardsApplied > 0) {
-                            const { getTrialDaysRemaining } = await import('../services/trialService');
-                            const daysRemaining = await getTrialDaysRemaining();
+                          // Bonus grants happen server-side now (proxy grants
+                          // on complete-setup/admin-redeem). This button just
+                          // force-refreshes the local cache so the Settings
+                          // UI picks up any newly-granted bonus days.
+                          const { refreshBonusEntitlement, getBonusDaysRemaining } = await import('../services/bonusEntitlementService');
+                          const rec = await refreshBonusEntitlement();
+                          const daysRemaining = rec?.isActive ? await getBonusDaysRemaining() : 0;
+                          setBonusActive(!!rec?.isActive);
+                          setBonusDaysRemaining(daysRemaining);
+                          if (rec?.isActive) {
                             Alert.alert(
-                              'Rewards Applied!',
-                              `Applied ${rewardsApplied} reward(s) (+${rewardsApplied * 30} days).\n\nYour trial now has ${daysRemaining} days remaining.`
+                              'Bonus entitlement',
+                              `${daysRemaining} premium day${daysRemaining === 1 ? '' : 's'} remaining.\nTotal granted: ${rec.bonusDaysGrantedTotal || 0} days.`
                             );
                           } else {
-                            Alert.alert('No Rewards', 'No pending rewards to apply.');
+                            Alert.alert('No Rewards', 'No active bonus entitlement.');
                           }
                         }}
                       >
-                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Apply Referral Rewards</Text>
+                        <Text style={[styles.testButtonText, { color: '#FFFFFF' }]}>Refresh Bonus Entitlement</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity

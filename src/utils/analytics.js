@@ -617,6 +617,11 @@ const _buildSubscriptionParams = async (payload = {}) => {
     is_seat: !!payload.is_seat,
     price: payload.price ?? null,
     currency: payload.currency || null,
+    // ISO-3 country code from RNIap.getStorefront() (e.g. "USA", "CAN"). Lets
+    // GA4 / Loki answer per-storefront questions like "did Canadian users
+    // actually see the .annual SKU". Null when the store call hasn't returned
+    // yet on a very cold start.
+    storefront_country: payload.storefront_country || null,
     billing_period: billingPeriod,
     // Provenance tag so GA4 can prove which path a subscription event came
     // from (purchase_success | free_plan | app_launch | restore | upgrade |
@@ -800,13 +805,18 @@ export const logFreeExportUsed = (payload = {}) => {
   });
 };
 
-export const logPlanSelected = (plan, useTrial = false, billingPeriod = null) => {
+export const logPlanSelected = (plan, useTrial = false, billingPeriod = null, meta = {}) => {
   logEvent('plan_selected', {
     plan,
     plan_id: plan,
     is_trial: useTrial,
     // 'monthly' | 'annual' | null. Powers the annual selection-rate metric.
     billing_period: billingPeriod || null,
+    // Storefront country (ISO-3, e.g. "USA", "CAN") + currency of the SKU the
+    // user tapped. Answers per-region questions like "did any Canadian user
+    // ever tap the annual toggle" without needing per-purchase telemetry.
+    storefront_country: meta.storefront_country || null,
+    currency: meta.currency || null,
     timestamp: Date.now(),
   });
 };
@@ -863,6 +873,7 @@ export const logTrialStarted = async (planOrPayload, extra = {}) => {
     days_remaining: payload.days_remaining ?? null,
     price: payload.price ?? null,
     currency: payload.currency || null,
+    storefront_country: payload.storefront_country || null,
     billing_period: billingPeriod,
     analytics_source: payload.analytics_source || null,
     timestamp: Date.now(),
