@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] sf-lifecycle-v42-' + Date.now() + ' — SF creation policy (all/new_customers/manual) + archive/History lifecycle for SF-linked projects >7d past scheduledAt. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] sf-firstjob-diag-v43-' + Date.now() + ' — One-shot [FIRSTJOB DIAG] log dumping first 3 SF jobs shape + customer_id/is_first counts. Verifies post-077-migration response. To be removed. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

@@ -216,6 +216,30 @@ export async function syncServiceFlowJobs({
             scheduledAt: coerceScheduledAt(row.scheduledAt ?? row.scheduled_at),
           });
         }
+        // One-shot diagnostic (v43): dump first-job shape from SF /jobs
+        // so we can verify customer_id + is_first_job_for_customer
+        // arrived correctly post-migration-077 deploy. Also dumps a
+        // small counted breakdown to see how many jobs are flagged
+        // first vs recurring vs null (older SF backend). Remove after
+        // sanity-check passes.
+        if (page === 0 && jobs.length > 0) {
+          const sample = jobs.slice(0, 3).map((j) => ({
+            id: j.id,
+            customerId: j.customerId,
+            customerName: j.customerName,
+            isFirstJobForCustomer: j.isFirstJobForCustomer,
+            scheduledDate: j.scheduledDate,
+            status: j.status,
+          }));
+          const counts = jobs.reduce((acc, j) => {
+            if (j.isFirstJobForCustomer === true) acc.first += 1;
+            else if (j.isFirstJobForCustomer === false) acc.recurring += 1;
+            else acc.null += 1;
+            if (j.customerId != null) acc.withCustomerId += 1;
+            return acc;
+          }, { first: 0, recurring: 0, null: 0, withCustomerId: 0, total: jobs.length });
+          console.warn('[ServiceFlow] FIRSTJOB DIAG', { sample, counts });
+        }
         cursor = result?.nextCursor || null;
         if (!cursor || raw.length < PAGE_LIMIT) break;
       }
