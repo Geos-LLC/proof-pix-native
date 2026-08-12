@@ -442,6 +442,25 @@ class ServiceFlowAdapter extends BaseCRMAdapter {
       teamMemberIds: Array.isArray(row.team_member_ids)
         ? row.team_member_ids.filter((v) => typeof v === 'number' && Number.isFinite(v))
         : [],
+      // Stable SF customer identifier (SF backend migration 077 +
+      // proofpix-service /jobs response). Used by the "Automatically
+      // create ProofPix projects for → New customers only" policy so
+      // ProofPix doesn't have to guess new-vs-recurring from
+      // customer_name. Null when SF response omits it (older SF
+      // backend that predates migration 077 — treat as unknown).
+      customerId: (typeof row.customer_id === 'number' && Number.isFinite(row.customer_id))
+        ? row.customer_id
+        : null,
+      // Set-based first-job flag from SF (see migration 077):
+      // - true  → customer's first non-cancelled job
+      // - false → recurring / cancelled / not-first
+      // - null  → SF response omitted the field (older backend) OR
+      //           SF computed it but returned null (RPC failure).
+      //   "new_customers" policy must treat null as "unknown → do
+      //   not auto-create". Fail-safe; no name-based fallback.
+      isFirstJobForCustomer: (typeof row.is_first_job_for_customer === 'boolean')
+        ? row.is_first_job_for_customer
+        : null,
     }));
     return { jobs, nextCursor: body.next_cursor || null };
   }

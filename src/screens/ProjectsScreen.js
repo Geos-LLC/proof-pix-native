@@ -132,6 +132,7 @@ export default function ProjectsScreen({ navigation, route }) {
     createProject,
     addPhoto,
     photos,
+    patchProject,
   } = usePhotos();
   
   const {
@@ -1549,10 +1550,32 @@ export default function ProjectsScreen({ navigation, route }) {
     // sync-side dedupe was added 2026-07-28 but this is the
     // defensive belt-and-suspenders in case dupes are already
     // sitting in local storage from previous syncs.
+    //
+    // Excludes archived projects: they belong to the History tab.
+    // The serviceFlowSync cleanup pass sets archived=true on SF
+    // projects >7d past scheduledAt that still have photos.
     const seen = new Set();
     const out = [];
     for (const p of projects) {
       if (p?.crmProvider !== 'serviceflow') continue;
+      if (p?.archived === true) continue;
+      const key = p?.crmJobId != null ? String(p.crmJobId) : null;
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      out.push(p);
+    }
+    return out;
+  }, [projects]);
+
+  // Archived SF projects — the History tab pool. Manual (non-SF)
+  // projects never enter the archive workflow, so they're not
+  // included even if some future path sets `archived` on them.
+  const archivedSfProjects = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const p of projects) {
+      if (p?.crmProvider !== 'serviceflow') continue;
+      if (p?.archived !== true) continue;
       const key = p?.crmJobId != null ? String(p.crmJobId) : null;
       if (key && seen.has(key)) continue;
       if (key) seen.add(key);
@@ -2130,7 +2153,7 @@ export default function ProjectsScreen({ navigation, route }) {
   // team), snap back to the local tab so the empty Team view doesn't
   // strand them.
   useEffect(() => {
-    if (!showTeamTab && (projectsTab === 'team' || projectsTab === 'edits')) setProjectsTab('mine');
+    if (!showTeamTab && (projectsTab === 'team' || projectsTab === 'edits' || projectsTab === 'history')) setProjectsTab('mine');
   }, [showTeamTab, projectsTab]);
 
   // Team projects come from the proxy KV store. They carry `updatedAt`
@@ -2462,6 +2485,31 @@ export default function ProjectsScreen({ navigation, route }) {
               {` ${teamEdits.length}`}
             </Text>
           </TouchableOpacity>
+          {/* History tab — archived SF projects (>7d past scheduledAt
+              with photos). Same tap surface as Team/Mine tabs; each
+              project retains its normal actions (open, Studio, share,
+              report) plus a Restore affordance via long-press. */}
+          <TouchableOpacity
+            style={[
+              styles.tabBtn,
+              projectsTab === 'history' && { borderBottomColor: theme.accent, borderBottomWidth: 2 },
+            ]}
+            onPress={() => {
+              if (isMultiSelectMode) exitMultiSelect();
+              setProjectsTab('history');
+            }}
+            hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+          >
+            <Text
+              style={[
+                styles.tabBtnText,
+                { color: projectsTab === 'history' ? theme.textPrimary : theme.textMuted },
+              ]}
+            >
+              {t('projects.tabs.history', { defaultValue: 'History' })}
+              {` ${archivedSfProjects.length}`}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -2723,6 +2771,114 @@ export default function ProjectsScreen({ navigation, route }) {
               );
             })()
           )
+        ) : projectsTab === 'history' && showTeamTab ? (
+          (() => {
+            // History = archived SF-linked projects. Search filters
+            // across project name + customer name + address so the
+            // admin can find an old customer quickly. Long-press a
+            // card → Restore prompt (patches archived back to false).
+            const q = searchQuery.trim().toLowerCase();
+            const list = q
+              ? archivedSfProjects.filter((p) => {
+                  const nameHit = String(p?.name || '').toLowerCase().includes(q);
+                  const custHit = String(p?.crmJobMeta?.customerName || '').toLowerCase().includes(q);
+                  const addrHit = String(p?.crmJobMeta?.address || '').toLowerCase().includes(q);
+                  return nameHit || custHit || addrHit;
+                })
+              : archivedSfProjects;
+            // Sort newest-archived first when we have archivedAt, else
+            // by scheduled date desc (older jobs at the bottom).
+            const sorted = [...list].sort((a, b) => {
+              const ta = a?.archivedAt ? Date.parse(a.archivedAt) : (a?.crmJobMeta?.scheduledAt || 0);
+              const tb = b?.archivedAt ? Date.parse(b.archivedAt) : (b?.crmJobMeta?.scheduledAt || 0);
+              return tb - ta;
+            });
+            if (sorted.length === 0) {
+              return (
+                <View style={styles.emptyState}>
+                  <Ionicons name="time-outline" size={40} color={theme.textMuted} style={{ marginBottom: 8 }} />
+                  <Text style={[styles.emptyStateText, { color: theme.textPrimary }]}>
+                    {q
+                      ? t('projects.historyNoMatch', { defaultValue: 'No archived projects match your search' })
+                      : t('projects.historyEmptyTitle', { defaultValue: 'Nothing archived yet' })}
+                  </Text>
+                  {!q ? (
+                    <Text style={[styles.emptyStateSubtext, { color: theme.textSecondary }]}>
+                      {t('projects.historyEmptyBody', {
+                        defaultValue: 'Service Flow projects with photos are moved here after 7 days past their scheduled date. Photos are preserved.',
+                      })}
+                    </Text>
+                  ) : null}
+                </View>
+              );
+            }
+            return (
+              <>
+                {sorted.map((project) => {
+                  const stats = projectStats(project.id);
+                  const scheduledAt = project?.crmJobMeta?.scheduledAt;
+                  const dateStr = (typeof scheduledAt === 'number' && scheduledAt > 0)
+                    ? new Date(scheduledAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '';
+                  const cleanerName = project?.crmJobMeta?.customerName || '';
+                  const onRestore = () => {
+                    Alert.alert(
+                      t('projects.restoreTitle', { defaultValue: 'Restore project' }),
+                      t('projects.restoreMessage', {
+                        defaultValue: 'Move this project back to Team Projects? Its photos and reports are unchanged.',
+                      }),
+                      [
+                        { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                        {
+                          text: t('projects.restore', { defaultValue: 'Restore' }),
+                          onPress: async () => {
+                            try {
+                              await patchProject(project.id, { archived: false, archivedAt: null });
+                            } catch (e) {
+                              Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Restore failed');
+                            }
+                          },
+                        },
+                      ],
+                    );
+                  };
+                  return (
+                    <TouchableOpacity
+                      key={project.id}
+                      activeOpacity={0.7}
+                      onPress={() => handleSelectProject(project)}
+                      onLongPress={onRestore}
+                      delayLongPress={300}
+                      style={[styles.cardNew, { backgroundColor: theme.surface, borderColor: 'transparent', opacity: 0.9 }]}
+                    >
+                      <View style={styles.cardRow}>
+                        {stats.thumbUri ? (
+                          <Image source={{ uri: stats.thumbUri }} style={styles.cardThumb} />
+                        ) : (
+                          <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                            <Ionicons name="time-outline" size={26} color={theme.textMuted} />
+                          </View>
+                        )}
+                        <View style={styles.cardBody}>
+                          <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>{project.name}</Text>
+                          <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {[dateStr, cleanerName, `${stats.count} photo(s)`].filter(Boolean).join(' · ')}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={onRestore}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          style={styles.kebabBtn}
+                        >
+                          <Ionicons name="arrow-undo-outline" size={18} color={theme.textSecondary} />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            );
+          })()
         ) : projectsTab === 'team' && showTeamTab ? (
           !proxySessionId ? (
             <View style={styles.emptyState}>

@@ -29,6 +29,11 @@ import dropboxAuthService from '../services/dropboxAuthService';
 import iCloudService from '../services/iCloudService';
 import crmService from '../services/crm';
 import { syncServiceFlowJobs } from '../services/crm/serviceFlowSync';
+import {
+  getCreationPolicy,
+  setCreationPolicy,
+  CREATION_POLICIES,
+} from '../services/crm/creationPolicy';
 import { usePhotos } from '../context/PhotoContext';
 import { useTheme } from '../hooks/useTheme';
 import { getConnectedClouds } from '../utils/cloudConnectivity';
@@ -78,6 +83,45 @@ export default function CloudSyncScreen({ navigation }) {
   const [serviceFlowConnected, setServiceFlowConnected] = useState(false);
   const [serviceFlowWorkspace, setServiceFlowWorkspace] = useState(null);
   const [isWorkingServiceFlow, setIsWorkingServiceFlow] = useState(false);
+  // SF creation policy: 'all' | 'new_customers' | 'manual'. Lives here
+  // (not generic Cloud Sync backup) because it's an SF-integration
+  // behavior — belongs next to the SF row.
+  const [sfCreationPolicy, setSfCreationPolicy] = useState(CREATION_POLICIES.ALL);
+  useEffect(() => {
+    (async () => {
+      try { setSfCreationPolicy(await getCreationPolicy()); } catch {}
+    })();
+  }, [serviceFlowConnected]);
+  const handleChangeSfCreationPolicy = () => {
+    const label = (v) => (
+      v === CREATION_POLICIES.NEW_CUSTOMERS
+        ? t('cloudSync.sfPolicyNewCustomers', { defaultValue: 'New customers only' })
+        : v === CREATION_POLICIES.MANUAL
+          ? t('cloudSync.sfPolicyManual', { defaultValue: 'Manual only' })
+          : t('cloudSync.sfPolicyAll', { defaultValue: 'All jobs' })
+    );
+    const apply = async (next) => {
+      try {
+        await setCreationPolicy(next);
+        setSfCreationPolicy(next);
+      } catch (e) {
+        Alert.alert(t('common.error', { defaultValue: 'Error' }), e?.message || 'Could not save policy');
+      }
+    };
+    Alert.alert(
+      t('cloudSync.sfPolicyTitle', { defaultValue: 'Automatically create projects for' }),
+      t('cloudSync.sfPolicyMessage', {
+        defaultValue: 'When Service Flow returns a job, ProofPix decides whether to auto-create a local project. Manually created projects are never affected.',
+      }),
+      [
+        { text: `${label(CREATION_POLICIES.ALL)}${sfCreationPolicy === CREATION_POLICIES.ALL ? ' ✓' : ''}`, onPress: () => apply(CREATION_POLICIES.ALL) },
+        { text: `${label(CREATION_POLICIES.NEW_CUSTOMERS)}${sfCreationPolicy === CREATION_POLICIES.NEW_CUSTOMERS ? ' ✓' : ''}`, onPress: () => apply(CREATION_POLICIES.NEW_CUSTOMERS) },
+        { text: `${label(CREATION_POLICIES.MANUAL)}${sfCreationPolicy === CREATION_POLICIES.MANUAL ? ' ✓' : ''}`, onPress: () => apply(CREATION_POLICIES.MANUAL) },
+        { text: t('common.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+      ],
+      { cancelable: true },
+    );
+  };
 
   // Paste-in connect-code flow. The SF backend's PR 4 authorize URL
   // path isn't reliably live on staging (returns INVALID_TOKEN mid-
@@ -757,6 +801,38 @@ export default function CloudSyncScreen({ navigation }) {
               )}
             </View>
           </TouchableOpacity>
+
+          {/* SF creation policy row — only visible when SF is connected.
+              Lives here, not under generic Cloud Sync backup toggles,
+              because it's an SF-integration behavior (see spec §8). */}
+          {serviceFlowConnected ? (
+            <TouchableOpacity
+              style={styles.row}
+              onPress={handleChangeSfCreationPolicy}
+              activeOpacity={0.85}
+            >
+              <View style={styles.rowIc}>
+                <Ionicons name="options-outline" size={19} color={theme.textPrimary} />
+              </View>
+              <View style={styles.rowMeta}>
+                <Text style={styles.rowTitle}>
+                  {t('cloudSync.sfPolicyTitle', { defaultValue: 'Automatically create projects for' })}
+                </Text>
+                <Text style={styles.rowSub} numberOfLines={1}>
+                  {sfCreationPolicy === CREATION_POLICIES.NEW_CUSTOMERS
+                    ? t('cloudSync.sfPolicyNewCustomers', { defaultValue: 'New customers only' })
+                    : sfCreationPolicy === CREATION_POLICIES.MANUAL
+                      ? t('cloudSync.sfPolicyManual', { defaultValue: 'Manual only' })
+                      : t('cloudSync.sfPolicyAll', { defaultValue: 'All jobs' })}
+                </Text>
+              </View>
+              <View style={[styles.actionPill, styles.actionPillGhost]}>
+                <Text style={[styles.actionPillText, styles.actionPillTextGhost]}>
+                  {t('common.change', { defaultValue: 'Change' })}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ) : null}
 
           {/* iCloud Drive — iOS only. Always reads as available; tap
               shows an info alert + opens iOS Settings → iCloud. */}

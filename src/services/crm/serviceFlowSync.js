@@ -22,6 +22,11 @@ import proxyService from '../proxyService';
 import { readSecureJSON } from '../secureStorageService';
 import { loadProjects } from '../storage';
 import { getDeletedJobIds } from './deletedJobsTombstone';
+import {
+  getCreationPolicy,
+  isJobEligibleForCreation,
+  CREATION_POLICIES,
+} from './creationPolicy';
 
 // SF's /jobs endpoint pages at 100 rows. Loop through the cursor so
 // large accounts (>100 total jobs) don't get truncated. Capped so a
@@ -153,6 +158,16 @@ export async function syncServiceFlowJobs({
             teamMemberIds: Array.isArray(row.team_member_ids)
               ? row.team_member_ids.filter((v) => typeof v === 'number' && Number.isFinite(v))
               : [],
+            // Passed through from SF via the proxy — SF backend
+            // migration 077 adds these to /jobs. Null when the
+            // connected SF backend predates 077 (mobile client's
+            // "New customers only" policy fails safely on null).
+            customerId: (typeof row.customer_id === 'number' && Number.isFinite(row.customer_id))
+              ? row.customer_id
+              : null,
+            isFirstJobForCustomer: (typeof row.is_first_job_for_customer === 'boolean')
+              ? row.is_first_job_for_customer
+              : null,
           });
         }
         cursor = result?.nextCursor || null;
@@ -194,6 +209,8 @@ export async function syncServiceFlowJobs({
           // its own scheduled_at coercion, but re-run through the
           // helper here so a mixed shape (older cached responses,
           // future adapter changes) still normalises consistently.
+          // customerId and isFirstJobForCustomer pass through as-is
+          // (adapter already coerces to number|null / boolean|null).
           jobs.push({
             ...row,
             scheduledAt: coerceScheduledAt(row.scheduledAt ?? row.scheduled_at),
@@ -269,6 +286,11 @@ export async function syncServiceFlowJobs({
   }
 
   if (jobs.length === 0) return { created: 0, matched: 0 };
+
+  // Load the creation policy once per sync run. Missing/unknown
+  // values coerce to 'all' (see creationPolicy.js) so existing
+  // installs behave exactly as before this flag shipped.
+  const creationPolicy = await getCreationPolicy();
 
   // Read the latest persisted project list directly from Keychain
   // for the dedup map. See JSDoc above for the race we're avoiding.
@@ -353,6 +375,14 @@ export async function syncServiceFlowJobs({
     if (typeof job.scheduledAt === 'number') {
       if (job.scheduledAt < createStart || job.scheduledAt >= createEnd) continue;
     }
+    // Creation-policy gate. Applied AFTER the date-window filter, so
+    // "New customers only" still respects [-1..+2d]. Note the strict
+    // semantics for null: when SF didn't return
+    // is_first_job_for_customer (older SF backend, RPC failure), the
+    // "new_customers" policy skips creation — no customer_name /
+    // local-history fallback because that misclassifies existing
+    // recurring customers as new on first sync of a live workspace.
+    if (!isJobEligibleForCreation(creationPolicy, job)) continue;
     // Create new local project + patch on the CRM linkage. Done
     // as two steps because createProject doesn't accept extra
     // fields today; patching after keeps the createProject API
@@ -381,47 +411,99 @@ export async function syncServiceFlowJobs({
     }
   }
 
-  // Authoritative cleanup pass. Any SF-linked local project whose
-  // scheduledAt is inside the pull window but whose crmJobId is NOT
-  // in SF's response is either stale (job was rescheduled/completed/
-  // deleted on SF) or genuinely gone. Delete it locally so the list
-  // mirrors SF exactly.
+  // Lifecycle cleanup pass — archive OR delete SF-linked projects
+  // once they're older than the ARCHIVE_AGE_DAYS threshold past
+  // scheduledAt. Manual/non-SF projects are never auto-touched.
   //
-  // Safety rails:
-  //   - Only touches crmProvider === 'serviceflow' projects (leaves
-  //     manually-created ones alone).
-  //   - Requires scheduledAt inside pullStart..pullEnd — projects
-  //     outside the window are ignored because SF wouldn't have
-  //     returned them anyway.
-  //   - Skips projects with photos (user's work stays put even if
-  //     the SF row disappeared or the photo count drifted from
-  //     upload-race issues).
-  //   - Calls deleteProject with skipTombstone so a future SF
-  //     reappearance (job un-completed, rescheduled back into the
-  //     window) can re-create the project cleanly.
+  //   > 7d past scheduledAt + zero photos  → delete locally + remove
+  //                                          proxy KV row
+  //   > 7d past scheduledAt + has photos   → archive (archived=true,
+  //                                          archivedAt=now). Photos
+  //                                          are preserved. Project
+  //                                          disappears from the
+  //                                          active Team tab but is
+  //                                          reachable via History.
+  //
+  // Recreation protection is invariant-based, not tombstone-based
+  // (see spec §7):
+  //   1. Archived projects still carry crmJobId, so `existingByJobId`
+  //      matches them during the next sync — falls into the "update
+  //      metadata" branch, never re-created.
+  //   2. Deleted zero-photo projects are already >7d past scheduledAt
+  //      → outside the [-1, +2] creation window → never re-created.
+  //   3. syncedInThisRunJobIds already prevents same-run duplicates.
+  //
+  // Because of (1) we do NOT tombstone archived projects — a restore
+  // must not need to touch the tombstone set. Because of (2) we do
+  // NOT tombstone deleted zero-photo projects either.
+  const ARCHIVE_AGE_DAYS = 7;
+  const ARCHIVE_AGE_MS = ARCHIVE_AGE_DAYS * dayMs;
   let deleted = 0;
-  if (typeof deleteProject === 'function' && typeof getProjectPhotoCount === 'function') {
-    const seenJobIds = new Set(jobs.map((j) => (j?.id != null ? String(j.id) : null)).filter(Boolean));
-    for (const p of currentProjects) {
-      if (p?.crmProvider !== 'serviceflow') continue;
-      if (!p?.crmJobId) continue;
-      if (seenJobIds.has(String(p.crmJobId))) continue;
-      const ts = p?.crmJobMeta?.scheduledAt;
-      if (typeof ts !== 'number') continue;
-      if (ts < pullStart || ts >= pullEnd) continue;
-      let photoCount = 0;
+  let archived = 0;
+  const canRunPhotoCount = typeof getProjectPhotoCount === 'function';
+  const canDelete = typeof deleteProject === 'function';
+  const canPatch = typeof patchProject === 'function';
+  for (const p of currentProjects) {
+    if (p?.crmProvider !== 'serviceflow') continue;
+    if (!p?.crmJobId) continue;
+    // Already archived — skip (patchProject would be a no-op but
+    // avoids the churn of writing the same fields every sync).
+    if (p?.archived === true) continue;
+    const ts = p?.crmJobMeta?.scheduledAt;
+    if (typeof ts !== 'number') continue;
+    const ageMs = Date.now() - ts;
+    if (ageMs <= ARCHIVE_AGE_MS) continue;
+    let photoCount = 0;
+    if (canRunPhotoCount) {
       try { photoCount = getProjectPhotoCount(p.id) || 0; } catch (_) {}
-      if (photoCount > 0) continue;
+    }
+    if (photoCount === 0) {
+      // Delete locally + let PhotoContext.deleteProject cascade
+      // the proxy row via its existing team-member-flow hook
+      // (deleteProjectFromProxyIfTeamMember) when applicable.
+      // Admin devices also need the proxy row gone — fire
+      // adminDeleteTeamProject directly. Best-effort: proxy failure
+      // does not block local delete.
+      if (!canDelete) continue;
       try {
         await deleteProject(p.id, { skipTombstone: true });
         deleted += 1;
+        try {
+          const sessionId = await AsyncStorage.getItem('@proxy_session_id');
+          if (sessionId && proxyService?.adminDeleteTeamProject) {
+            // Some rows might use crmJobId as their proxy id (post
+            // 2026-08-03 team-member sync); others use the original
+            // proj_TS. Fire both — deletes are idempotent.
+            await proxyService.adminDeleteTeamProject(sessionId, String(p.id)).catch(() => {});
+            if (p.crmJobId && String(p.crmJobId) !== String(p.id)) {
+              await proxyService.adminDeleteTeamProject(sessionId, String(p.crmJobId)).catch(() => {});
+            }
+          }
+        } catch (_) {}
       } catch (e) {
         console.warn('[serviceFlowSync] cleanup delete failed', p.id, e?.message);
       }
+    } else {
+      // Photo-carrying → archive (preserves the record + photos).
+      if (!canPatch) continue;
+      try {
+        await patchProject(p.id, {
+          archived: true,
+          archivedAt: new Date().toISOString(),
+        });
+        archived += 1;
+      } catch (e) {
+        console.warn('[serviceFlowSync] cleanup archive failed', p.id, e?.message);
+      }
     }
-    if (deleted > 0) {
-      console.warn('[ServiceFlow] cleanup pass', { deleted, kept: currentProjects.length - deleted });
-    }
+  }
+  if (deleted > 0 || archived > 0) {
+    console.warn('[ServiceFlow] lifecycle pass', {
+      deleted,
+      archived,
+      threshold_days: ARCHIVE_AGE_DAYS,
+      kept: currentProjects.length - deleted - archived,
+    });
   }
 
   // One-shot backfill for team_member accounts: pre-fix SF projects

@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] camera-key-drop-v41-' + Date.now() + ' — Camera key removed to fix Alina black-second-rotation + team-member sends X-Team-Token so getSessionInfo stops 401ing (fixes sections). Built ' + new Date().toISOString());
+console.warn('[BUNDLE] sf-lifecycle-v42-' + Date.now() + ' — SF creation policy (all/new_customers/manual) + archive/History lifecycle for SF-linked projects >7d past scheduledAt. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 
