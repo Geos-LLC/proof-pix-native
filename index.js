@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] team-tab-unified-viewer-v47-' + Date.now() + ' — Team-tab SF cards now open the team photos viewer directly on tap (was routing to admin ProjectDetailScreen which required a tiny chip-tap for team photos). Chip removed; count in card meta now shows admin+team combined. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] sf-card-team-thumbnail-v48-' + Date.now() + ' — Team-tab SF cards fall back to team latest-photo thumbnail when admin has no local captures (was placeholder icon on SF-primary admins). Paired with proxy fix that populates latestPhotoThumbnail from SF photo_url on every upload. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

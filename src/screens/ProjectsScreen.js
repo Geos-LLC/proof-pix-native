@@ -3095,13 +3095,27 @@ export default function ProjectsScreen({ navigation, route }) {
                     ]}
                   >
                     <View style={styles.cardRow}>
-                      {stats.thumbUri ? (
-                        <Image source={{ uri: stats.thumbUri }} style={styles.cardThumb} />
-                      ) : (
-                        <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
-                          <Ionicons name="briefcase-outline" size={26} color={theme.textMuted} />
-                        </View>
-                      )}
+                      {(() => {
+                        // Prefer admin's own local thumbnail (fastest
+                        // to load, cached locally). Fall back to the
+                        // team's latest thumbnail from the proxy — for
+                        // SF-primary admins who never capture locally
+                        // this is the only thumbnail source. Empty
+                        // placeholder only when neither exists.
+                        const thumb = stats.thumbUri || teamMirror?.latestPhotoThumbnail || null;
+                        if (thumb) {
+                          return (
+                            <View style={[styles.cardThumb, { backgroundColor: theme.surfaceElevated, overflow: 'hidden' }]}>
+                              <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                            </View>
+                          );
+                        }
+                        return (
+                          <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
+                            <Ionicons name="briefcase-outline" size={26} color={theme.textMuted} />
+                          </View>
+                        );
+                      })()}
                       <View style={styles.cardBody}>
                         <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>{project.name}</Text>
                         <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
