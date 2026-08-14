@@ -3053,11 +3053,40 @@ export default function ProjectsScreen({ navigation, route }) {
                 const teamPhotoCount = teamMirror && !teamMirror._synthetic
                   ? (teamMirror.photoCount || 0)
                   : 0;
+                // Team-tab SF card: tap the whole card body to open
+                // the unified team photos viewer for this SF job. The
+                // old behavior routed to admin's ProjectDetailScreen
+                // (which shows only admin's OWN captures — empty on
+                // an SF-primary admin who never captures locally) and
+                // forced admin to hit a tiny "Team: N photos" chip to
+                // reach the actual team uploads. That chip target was
+                // easy to miss.
+                //
+                // Now: card body → team viewer. Long-press still opens
+                // the project-actions menu for edit/rename/delete.
+                // Kebab (right side) also opens actions. When no proxy
+                // team row exists yet (teamMirror falsy), synthesize
+                // one from crmJobId so the endpoint's SF-primary
+                // branch can still serve the sfPhotos cache.
+                const teamViewerTarget = teamMirror
+                  || (project?.crmJobId ? {
+                    id: String(project.crmJobId),
+                    name: project.name,
+                    crmJobId: String(project.crmJobId),
+                    photoCount: 0,
+                    _synthetic: true,
+                  } : null);
                 return (
                   <TouchableOpacity
                     key={project.id}
                     activeOpacity={0.7}
-                    onPress={() => handleSelectProject(project)}
+                    onPress={() => {
+                      if (teamViewerTarget) {
+                        openTeamProjectPhotos(teamViewerTarget);
+                      } else {
+                        handleSelectProject(project);
+                      }
+                    }}
                     onLongPress={() => openProjectActions(project)}
                     delayLongPress={300}
                     style={[
@@ -3076,24 +3105,8 @@ export default function ProjectsScreen({ navigation, route }) {
                       <View style={styles.cardBody}>
                         <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>{project.name}</Text>
                         <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                          {[timeStr, cleanerName, `${stats.count} photo(s)`].filter(Boolean).join(' · ')}
+                          {[timeStr, cleanerName, `${stats.count + teamPhotoCount} photo(s)`].filter(Boolean).join(' · ')}
                         </Text>
-                        {teamPhotoCount > 0 ? (
-                          <TouchableOpacity
-                            activeOpacity={0.7}
-                            onPress={() => openTeamProjectPhotos(teamMirror)}
-                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                            style={[teamPhotosStyles.sfTeamChip, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]}
-                          >
-                            <Ionicons name="people-outline" size={12} color={theme.textSecondary} />
-                            <Text style={[teamPhotosStyles.sfTeamChipText, { color: theme.textSecondary }]}>
-                              {t('projects.teamPhotosChip', {
-                                count: teamPhotoCount,
-                                defaultValue: `Team: ${teamPhotoCount} photo(s)`,
-                              })}
-                            </Text>
-                          </TouchableOpacity>
-                        ) : null}
                       </View>
                       <TouchableOpacity
                         style={styles.kebabBtn}
