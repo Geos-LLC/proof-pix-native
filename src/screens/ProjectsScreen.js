@@ -47,6 +47,78 @@ import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
 import { isTeamUploadEnabled, getTeamUploadBlockedReason, adminStorageLabel } from '../config/teamUpload';
 import { getConnectedClouds } from '../utils/cloudConnectivity';
 import * as ExpoLocation from 'expo-location';
+import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+
+/**
+ * In-memory cache of address → { latitude, longitude } lookups.
+ * expo-location.geocodeAsync is async and can be slow / rate-limited,
+ * so once we've resolved an address we hold onto it for the process
+ * lifetime. Not persisted — a fresh cold start re-geocodes, which is
+ * fine (Alina's admin doesn't scroll through 54 unique addresses
+ * often, and iOS/Android geocoding is cheap for repeats within the
+ * same session).
+ */
+const _teamCardAddressGeoCache = new Map();
+
+/**
+ * Small locked map centered on a job address, used as the Team-tab
+ * SF card thumbnail (replacing the photo thumbnail that used to sit
+ * there). Renders a placeholder icon while geocoding, on geocode
+ * failure, or when no address is available.
+ *
+ * MapView is heavy per-instance, so this is scoped to `size` × `size`
+ * with every interaction locked (no scroll/zoom/pitch/rotate) and
+ * `liteMode` on Android which renders a static bitmap.
+ */
+const TeamCardMapThumb = ({ address, size, backgroundColor, iconColor }) => {
+  const initialCoords = address ? _teamCardAddressGeoCache.get(address) || null : null;
+  const [coords, setCoords] = useState(initialCoords);
+  useEffect(() => {
+    if (!address || coords) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const results = await ExpoLocation.geocodeAsync(address);
+        if (cancelled || !Array.isArray(results) || results.length === 0) return;
+        const c = { latitude: results[0].latitude, longitude: results[0].longitude };
+        _teamCardAddressGeoCache.set(address, c);
+        setCoords(c);
+      } catch {
+        // silent — placeholder icon stays
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [address, coords]);
+
+  if (!coords) {
+    return (
+      <View style={{ width: size, height: size, borderRadius: 10, backgroundColor, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name="location-outline" size={26} color={iconColor} />
+      </View>
+    );
+  }
+  return (
+    <View style={{ width: size, height: size, borderRadius: 10, overflow: 'hidden' }} pointerEvents="none">
+      <MapView
+        provider={PROVIDER_DEFAULT}
+        style={{ width: size, height: size }}
+        initialRegion={{ ...coords, latitudeDelta: 0.008, longitudeDelta: 0.008 }}
+        scrollEnabled={false}
+        zoomEnabled={false}
+        pitchEnabled={false}
+        rotateEnabled={false}
+        toolbarEnabled={false}
+        liteMode={true}
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        showsCompass={false}
+        showsScale={false}
+      >
+        <Marker coordinate={coords} />
+      </MapView>
+    </View>
+  );
+};
 import { logProjectCreated } from '../utils/analytics';
 import * as FileSystem from 'expo-file-system/legacy';
 import JSZip from 'jszip';
@@ -3095,32 +3167,53 @@ export default function ProjectsScreen({ navigation, route }) {
                     ]}
                   >
                     <View style={styles.cardRow}>
-                      {(() => {
-                        // Prefer admin's own local thumbnail (fastest
-                        // to load, cached locally). Fall back to the
-                        // team's latest thumbnail from the proxy — for
-                        // SF-primary admins who never capture locally
-                        // this is the only thumbnail source. Empty
-                        // placeholder only when neither exists.
-                        const thumb = stats.thumbUri || teamMirror?.latestPhotoThumbnail || null;
-                        if (thumb) {
-                          return (
-                            <View style={[styles.cardThumb, { backgroundColor: theme.surfaceElevated, overflow: 'hidden' }]}>
-                              <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                            </View>
-                          );
-                        }
-                        return (
-                          <View style={[styles.cardThumb, styles.cardThumbPlaceholder, { backgroundColor: theme.surfaceElevated }]}>
-                            <Ionicons name="briefcase-outline" size={26} color={theme.textMuted} />
-                          </View>
-                        );
-                      })()}
+                      {/* Location map thumbnail (replaces the photo
+                          thumb). Address comes from crmJobMeta —
+                          geocoded in-process, cached, placeholder icon
+                          while resolving or on failure. Bigger than
+                          the standard 72px thumb so the map is
+                          legible. */}
+                      <TeamCardMapThumb
+                        address={project?.crmJobMeta?.address || null}
+                        size={100}
+                        backgroundColor={theme.surfaceElevated}
+                        iconColor={theme.textMuted}
+                      />
+
                       <View style={styles.cardBody}>
-                        <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>{project.name}</Text>
-                        <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                          {[timeStr, cleanerName, `${stats.count + teamPhotoCount} photo(s)`].filter(Boolean).join(' · ')}
-                        </Text>
+                        {/* 3-line layout on SF cards:
+                            L1 (bold): street address (first segment of
+                                       crmJobMeta.address). Fallback to
+                                       project.name when address is
+                                       unavailable so pre-migration rows
+                                       still render.
+                            L2:        customer name (crmJobMeta.customerName).
+                            L3:        scheduled time · N photo(s).
+                            Empty lines are dropped so a job without an
+                            address just shows name + meta. */}
+                        {(() => {
+                          const addr = project?.crmJobMeta?.address
+                            ? String(project.crmJobMeta.address).split(',')[0].trim()
+                            : '';
+                          const title = addr || project.name || '';
+                          const nameLine = addr ? cleanerName : '';
+                          const metaBits = [timeStr, `${stats.count + teamPhotoCount} photo(s)`].filter(Boolean);
+                          return (
+                            <>
+                              <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>
+                                {title}
+                              </Text>
+                              {nameLine ? (
+                                <Text style={[styles.cardMeta, { color: theme.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
+                                  {nameLine}
+                                </Text>
+                              ) : null}
+                              <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                                {metaBits.join(' · ')}
+                              </Text>
+                            </>
+                          );
+                        })()}
                       </View>
                       <TouchableOpacity
                         style={styles.kebabBtn}
@@ -4711,6 +4804,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     marginBottom: 12,
+    // Slightly taller than the old 72-px-thumb cards to accommodate
+    // the 100-px map thumb + 3-line text block on SF cards without
+    // clipping. Non-SF card rows have shorter content so this only
+    // adds a bit of vertical breathing room.
+    minHeight: 128,
   },
   cardRow: {
     flexDirection: 'row',
