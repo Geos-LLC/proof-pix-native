@@ -102,7 +102,11 @@ const TeamCardMapThumb = ({ address, size, backgroundColor, iconColor }) => {
       <MapView
         provider={PROVIDER_DEFAULT}
         style={{ width: size, height: size }}
-        initialRegion={{ ...coords, latitudeDelta: 0.008, longitudeDelta: 0.008 }}
+        // Zoomed out to city-level context — 0.15 deg lat ≈ 16 km
+        // vertical span, enough to see the surrounding neighborhood
+        // / city footprint with the marker pinning the exact spot.
+        // Was 0.008 (~800 m) which showed only the immediate block.
+        initialRegion={{ ...coords, latitudeDelta: 0.15, longitudeDelta: 0.15 }}
         scrollEnabled={false}
         zoomEnabled={false}
         pitchEnabled={false}
@@ -3112,8 +3116,24 @@ export default function ProjectsScreen({ navigation, route }) {
               {filteredTeamSfProjects.map((project) => {
                 const stats = projectStats(project.id);
                 const scheduledAt = project?.crmJobMeta?.scheduledAt;
+                // Format the scheduled time in the workspace's TZ, not
+                // the admin's device TZ. SF stores workspace-local
+                // wall-clock time serialized as UTC (naive-datetime-
+                // as-UTC pattern), so a 9 AM Jacksonville job comes
+                // back as `T09:00:00` and Date's UTC accessors give
+                // us the correct wall clock. `toLocaleTimeString`
+                // without UTC would render this as 5 AM for an admin
+                // in Pacific TZ — reported 2026-08-14.
                 const timeStr = (typeof scheduledAt === 'number' && scheduledAt > 0)
-                  ? new Date(scheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                  ? (() => {
+                      const d = new Date(scheduledAt);
+                      let h = d.getUTCHours();
+                      const m = d.getUTCMinutes();
+                      const ampm = h >= 12 ? 'PM' : 'AM';
+                      h = h % 12; if (h === 0) h = 12;
+                      const mm = m < 10 ? `0${m}` : String(m);
+                      return `${h}:${mm} ${ampm}`;
+                    })()
                   : '';
                 const isActive = activeProjectId === project.id;
                 const cleanerName = project?.crmJobMeta?.customerName || '';
