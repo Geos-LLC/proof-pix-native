@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] sf-firstjob-diag-v43-' + Date.now() + ' — One-shot [FIRSTJOB DIAG] log dumping first 3 SF jobs shape + customer_id/is_first counts. Verifies post-077-migration response. To be removed. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-ghost-cleanup-guard-v44-' + Date.now() + ' — Cold-start SF-ghost cleanup no longer wipes team_member projects (that path deleted every crmJobId project on every launch, orphaning photos). Admin path also switched from delete-row to unlink so photos survive an SF disconnect. Partial-orphan project recovery heals existing damage. Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

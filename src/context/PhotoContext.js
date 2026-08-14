@@ -87,32 +87,57 @@ export const PhotoProvider = ({ children }) => {
 
       // Self-heal ghost SF projects. Any project carrying a crmJobId
       // came from a Service Flow sync. If SF is currently disconnected
-      // (no workspace stored), those projects are stale — the source
-      // of truth is gone. Wipe them here so users who disconnected SF
-      // BEFORE the CloudSyncScreen wipe was wired (or on an older
-      // build) get cleanup on next cold start. One-shot per boot.
+      // (no workspace stored), those projects are stale.
+      //
+      // Two guardrails vs the original 2026-07 implementation:
+      //
+      //   1. Skipped entirely for team_member accounts. Team members
+      //      NEVER hold SF creds locally — the proxy holds the admin's
+      //      refresh token on their behalf, so `getStoredWorkspace()`
+      //      always returns null for them. The old code therefore
+      //      deleted every team_member SF project on every cold start,
+      //      orphaning any photos captured to those projects (they
+      //      still referenced the deleted projectId while SF sync
+      //      re-created the project with a fresh `proj_TS` id).
+      //      Matches the "Ebony Devis empty after reopen" report on
+      //      2026-08-14.
+      //
+      //   2. For admins with disconnected SF, unlink instead of delete.
+      //      Clear crmJobId / crmProvider / crmJobMeta on the project
+      //      row but keep the row itself. Preserves the photos'
+      //      projectId → project link so the user's work isn't lost
+      //      when SF is disconnected.
       try {
-        const hasSFSynced = (projectsList || []).some((p) => p?.crmJobId);
-        if (hasSFSynced) {
-          const crmService = require('../services/crm').default;
-          let sfConnected = false;
-          try {
-            const adapter = await crmService.getActiveAdapter();
-            if (adapter && typeof adapter.getStoredWorkspace === 'function') {
-              const stored = await adapter.getStoredWorkspace();
-              sfConnected = !!stored?.workspaceId;
-            }
-          } catch {}
-          if (!sfConnected) {
-            const before = projectsList.length;
-            const kept = projectsList.filter((p) => !p?.crmJobId);
-            if (kept.length !== before) {
-              await saveProjects(kept);
-              projectsList = kept;
-              console.warn('[PhotoContext] cold-start SF-ghost cleanup', {
-                before,
-                after: kept.length,
+        const userMode = await AsyncStorage.getItem('@admin_user_mode');
+        if (userMode !== 'team_member') {
+          const hasSFSynced = (projectsList || []).some((p) => p?.crmJobId);
+          if (hasSFSynced) {
+            const crmService = require('../services/crm').default;
+            let sfConnected = false;
+            try {
+              const adapter = await crmService.getActiveAdapter();
+              if (adapter && typeof adapter.getStoredWorkspace === 'function') {
+                const stored = await adapter.getStoredWorkspace();
+                sfConnected = !!stored?.workspaceId;
+              }
+            } catch {}
+            if (!sfConnected) {
+              const before = projectsList.length;
+              let unlinked = 0;
+              const patched = projectsList.map((p) => {
+                if (!p?.crmJobId) return p;
+                unlinked += 1;
+                const { crmJobId, crmProvider, crmJobMeta, ...rest } = p;
+                return rest;
               });
+              if (unlinked > 0) {
+                await saveProjects(patched);
+                projectsList = patched;
+                console.warn('[PhotoContext] cold-start SF-ghost unlink', {
+                  before,
+                  unlinked,
+                });
+              }
             }
           }
         }
@@ -224,6 +249,61 @@ export const PhotoProvider = ({ children }) => {
         } catch (e) {
           console.warn('[PhotoContext] project recovery failed:', e?.message);
         }
+      }
+
+      // Partial-orphan recovery. Independent of the full-wipe recovery
+      // above — heals photos whose projectId points at a project that
+      // no longer exists in `projectsList`, but where OTHER projects
+      // still do. This scenario was created by the pre-fix cold-start
+      // SF-ghost cleanup deleting every crmJobId-bearing project on
+      // team-member devices while their photos still referenced the
+      // deleted ids. Recreating those ids as "Recovered project N"
+      // rows (with the ORIGINAL ids) restores the photo→project
+      // link, so the photos become visible again inside a project
+      // the user can rename/reassign.
+      //
+      // Not gated by a marker: it's cheap (set membership + one
+      // saveProjects only when orphans are found) and safe to re-run
+      // (a subsequent call finds zero orphans → no-op).
+      try {
+        const currentIds = new Set((projectsList || []).map((p) => p?.id).filter(Boolean));
+        const photoMeta = await loadPhotosMetadata();
+        const orphanBuckets = new Map();
+        for (const photo of photoMeta || []) {
+          const pid = photo?.projectId;
+          if (!pid) continue;
+          if (currentIds.has(pid)) continue;
+          const bucket = orphanBuckets.get(pid) || [];
+          bucket.push(photo);
+          orphanBuckets.set(pid, bucket);
+        }
+        if (orphanBuckets.size > 0) {
+          const baseIndex = (projectsList || []).length;
+          const orderedIds = Array.from(orphanBuckets.keys()).sort((a, b) => {
+            const aOldest = Math.min(...orphanBuckets.get(a).map((p) => Number(p.timestamp) || Number.POSITIVE_INFINITY));
+            const bOldest = Math.min(...orphanBuckets.get(b).map((p) => Number(p.timestamp) || Number.POSITIVE_INFINITY));
+            return aOldest - bOldest;
+          });
+          const synthesized = orderedIds.map((pid, idx) => {
+            const oldestTs = Math.min(...orphanBuckets.get(pid).map((p) => Number(p.timestamp) || Date.now()));
+            return {
+              id: pid,
+              name: `Recovered project ${baseIndex + idx + 1}`,
+              createdAt: new Date(oldestTs).toISOString(),
+              recoveredAt: Date.now(),
+            };
+          });
+          const merged = [...(projectsList || []), ...synthesized];
+          console.warn('[PhotoContext] partial-orphan recovery', {
+            existing: baseIndex,
+            recovered: synthesized.length,
+            orphaned_photo_count: Array.from(orphanBuckets.values()).reduce((a, b) => a + b.length, 0),
+          });
+          await saveProjects(merged);
+          projectsList = merged;
+        }
+      } catch (e) {
+        console.warn('[PhotoContext] partial-orphan recovery failed:', e?.message);
       }
 
       const savedActive = await loadActiveProjectId();
