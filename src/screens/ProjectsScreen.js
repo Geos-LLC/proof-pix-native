@@ -385,7 +385,7 @@ export default function ProjectsScreen({ navigation, route }) {
           });
         }
         buttons.push({
-          text: t('projects.sfGuardCreateAnyway', { defaultValue: 'Create anyway' }),
+          text: t('projects.sfGuardLocalOnly', { defaultValue: 'Save photos on my phone only' }),
           style: 'destructive',
           onPress: () => resolve(true),
         });
@@ -397,13 +397,13 @@ export default function ProjectsScreen({ navigation, route }) {
         const message = sfSyncedCount > 0
           ? t('projects.sfGuardMessage', {
               count: sfSyncedCount,
-              defaultValue: `Your admin uses Service Flow. Photos in a new local project won't sync to admin.\n\n${sfSyncedCount} Service Flow job(s) are on your Team tab — pick one to send photos to admin.`,
+              defaultValue: `Photos taken in a new project stay on your phone only — your admin will not receive them.\n\n${sfSyncedCount} Service Flow job(s) are on your Team tab. Pick one there to actually send photos to admin.`,
             })
           : t('projects.sfGuardMessageNoJobs', {
-              defaultValue: 'Your admin uses Service Flow. Photos in a new local project won\'t sync to admin. No Service Flow jobs are synced yet — create anyway to work locally, or cancel and check back after admin schedules a job.',
+              defaultValue: 'Photos taken in a new project stay on your phone only — your admin will not receive them. No Service Flow jobs are scheduled yet. Cancel and check back after admin schedules a job, or save phone-only to keep working.',
             });
         Alert.alert(
-          t('projects.sfGuardTitle', { defaultValue: "Won't sync with admin" }),
+          t('projects.sfGuardTitle', { defaultValue: "Photos won't reach admin" }),
           message,
           buttons,
           { cancelable: false },
@@ -3265,6 +3265,21 @@ export default function ProjectsScreen({ navigation, route }) {
 
                   <View style={styles.cardBody}>
                     <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>{project.name}</Text>
+                    {/* "Not syncing" badge — SF-primary team members
+                        who created a project locally (no crmJobId)
+                        will have photos land on-device only. Surface
+                        it prominently so they see it before capturing
+                        a bunch of work they think is uploading. Derived
+                        from render-time state (no persisted flag), so
+                        older projects re-classify automatically. */}
+                    {isTeamMember && teamInfo?.adminAccountType === 'serviceflow' && !project?.crmJobId && (
+                      <View style={[styles.notSyncingChip, { backgroundColor: theme.errorSurface || '#FEE2E2', borderColor: theme.errorBorder || '#FCA5A5' }]}>
+                        <Ionicons name="cloud-offline-outline" size={11} color={theme.errorText || '#B91C1C'} />
+                        <Text style={[styles.notSyncingChipText, { color: theme.errorText || '#B91C1C' }]} numberOfLines={1}>
+                          {t('projects.notSyncingBadge', { defaultValue: 'Not syncing to admin' })}
+                        </Text>
+                      </View>
+                    )}
                     {(() => {
                       const indId = project.industry
                         || inferredIndustryByProject.get(project.id)
@@ -4715,6 +4730,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     maxWidth: 180,
+  },
+  notSyncingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 6,
+  },
+  notSyncingChipText: {
+    fontFamily: FONTS.ALEXANDRIA,
+    fontSize: 11,
+    fontWeight: '600',
+    maxWidth: 200,
   },
   countersRow: {
     flexDirection: 'row',

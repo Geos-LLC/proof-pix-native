@@ -353,7 +353,7 @@ export default function HomeScreen({ navigation, route }) {
     captureSortOrder,
     toggleCaptureSortOrder,
   } = useSettings();
-  const { userMode } = useAdmin();
+  const { userMode, teamInfo } = useAdmin();
   const fullScreenTopInset = Math.max(insets.top, 25);
   const fullScreenBottomInset = Math.max(insets.bottom, 20);
   const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
@@ -2219,22 +2219,50 @@ export default function HomeScreen({ navigation, route }) {
               }
 
               return (
-                <TouchableOpacity
-                  // Tapping the name opens the same project menu the
-                  // 3-dot button opens. Inline rename was the previous
-                  // behavior; rename now lives in the menu's "Edit"
-                  // action so the user has a single consistent entry
-                  // point for managing the active project.
-                  onPress={() => {
-                    setOpenProjectVisible(true);
-                  }}
-                  style={styles.projectNameTouchable}
-                >
-                  <Text style={styles.projectNameText} numberOfLines={1}>
-                    {displayName}
-                  </Text>
-                  <Ionicons name="chevron-down" size={14} color={theme.textMuted} style={{ marginLeft: 6 }} />
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    // Tapping the name opens the same project menu the
+                    // 3-dot button opens. Inline rename was the previous
+                    // behavior; rename now lives in the menu's "Edit"
+                    // action so the user has a single consistent entry
+                    // point for managing the active project.
+                    onPress={() => {
+                      setOpenProjectVisible(true);
+                    }}
+                    style={styles.projectNameTouchable}
+                  >
+                    <Text style={styles.projectNameText} numberOfLines={1}>
+                      {displayName}
+                    </Text>
+                    <Ionicons name="chevron-down" size={14} color={theme.textMuted} style={{ marginLeft: 6 }} />
+                  </TouchableOpacity>
+                  {/* "Not syncing" badge — SF-primary team members
+                      who created the active project locally (no
+                      crmJobId) get a persistent visual reminder that
+                      photos land on-device only. Mirrors the badge on
+                      the Projects Mine tab card. Sibling of the name
+                      touchable so it doesn't intercept taps. */}
+                  {isTeamMember && teamInfo?.adminAccountType === 'serviceflow' && !activeProject?.crmJobId && (
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      alignSelf: 'flex-start',
+                      gap: 4,
+                      paddingHorizontal: 7,
+                      paddingVertical: 2,
+                      borderRadius: 10,
+                      borderWidth: StyleSheet.hairlineWidth,
+                      backgroundColor: '#FEE2E2',
+                      borderColor: '#FCA5A5',
+                      marginTop: 4,
+                    }}>
+                      <Ionicons name="cloud-offline-outline" size={11} color="#B91C1C" />
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: '#B91C1C', maxWidth: 200 }} numberOfLines={1}>
+                        {t('projects.notSyncingBadge', { defaultValue: 'Not syncing to admin' })}
+                      </Text>
+                    </View>
+                  )}
+                </>
               );
             })()}
           </View>
