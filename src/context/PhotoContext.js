@@ -788,8 +788,15 @@ export const PhotoProvider = ({ children }) => {
       // 24h, so if backgroundUploadService later also fires attach
       // (when a cloud destination IS configured), the second call is a
       // no-op {alreadyExisted: true}.
+      //
+      // Skipped for team_member: their local crmService adapter is
+      // never connected (proxy holds admin's SF creds), so this path
+      // always returns NO_CRM_CONNECTED and just adds noise. The team
+      // upload path (autoQueueTeamUploadIfNeeded above) delivers the
+      // photo to SF via the proxy's own SF branch instead.
       try {
-        if (stamped.projectId) {
+        const mode = await AsyncStorage.getItem('@admin_user_mode');
+        if (stamped.projectId && mode !== 'team_member') {
           const project = (projectsRef.current || []).find(p => p?.id === stamped.projectId);
           if (project?.crmJobId && project?.crmProvider) {
             const uriSample = stamped.uri ? String(stamped.uri).slice(0, 80) : null;

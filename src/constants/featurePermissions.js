@@ -237,9 +237,37 @@ export const TIER_ROLES = {
 };
 
 /**
+ * Normalize a plan/tier string to the canonical TIER_ROLES key.
+ *
+ * AdminContext stores the team-member plan as the display string
+ * `'Team Member'` (with a space). Every gate in this file used to
+ * `.toLowerCase()` only, so `'Team Member'` → `'team member'` did
+ * NOT match the TIER_ROLES key `'team'` — every feature check
+ * returned false and every team member got treated as a Starter
+ * account. Concrete symptom on 2026-08-14: team members hit the
+ * 1-share-per-24h Starter rate limit + "Upgrade to Pro" paywall
+ * when trying to share job photos.
+ *
+ * Aliases:
+ *   'team member'  → 'team'  (AdminContext display value)
+ *   'team_member'  → 'team'  (analytics/proxy snake_case value)
+ *   'teammember'   → 'team'  (defensive: any casing collapse)
+ *
+ * Keep this in sync with any other plan-name mint sites.
+ */
+const _normalizeTier = (tier) => {
+  const raw = String(tier || '').toLowerCase().trim();
+  if (!raw) return raw;
+  if (raw === 'team member' || raw === 'team_member' || raw === 'teammember') {
+    return 'team';
+  }
+  return raw;
+};
+
+/**
  * Check if a feature is available for a given tier
  * @param {string} feature - The feature constant from FEATURES
- * @param {string} tier - The tier/plan name (starter, pro, business, enterprise, team)
+ * @param {string} tier - The tier/plan name (starter, pro, business, enterprise, team, 'Team Member')
  * @returns {boolean} - True if feature is available for the tier
  */
 export const hasFeature = (feature, tier) => {
@@ -247,15 +275,14 @@ export const hasFeature = (feature, tier) => {
     console.log('[hasFeature] No tier provided:', { feature, tier });
     return false;
   }
-  
-  // Normalize tier to lowercase for case-insensitive matching
-  const normalizedTier = String(tier).toLowerCase();
-  
+
+  const normalizedTier = _normalizeTier(tier);
+
   if (!TIER_ROLES[normalizedTier]) {
     console.log('[hasFeature] Tier not found in TIER_ROLES:', { feature, tier, normalizedTier, availableTiers: Object.keys(TIER_ROLES) });
     return false;
   }
-  
+
   const role = TIER_ROLES[normalizedTier];
   const hasAccess = role.features.includes(feature);
   if (!hasAccess) {
@@ -274,14 +301,13 @@ export const getLimit = (limitType, tier) => {
   if (!tier) {
     return 0;
   }
-  
-  // Normalize tier to lowercase for case-insensitive matching
-  const normalizedTier = String(tier).toLowerCase();
-  
+
+  const normalizedTier = _normalizeTier(tier);
+
   if (!TIER_ROLES[normalizedTier]) {
     return 0;
   }
-  
+
   const role = TIER_ROLES[normalizedTier];
   return role.limits[limitType] ?? 0;
 };
@@ -305,14 +331,13 @@ export const getTierFeatures = (tier) => {
   if (!tier) {
     return [];
   }
-  
-  // Normalize tier to lowercase for case-insensitive matching
-  const normalizedTier = String(tier).toLowerCase();
-  
+
+  const normalizedTier = _normalizeTier(tier);
+
   if (!TIER_ROLES[normalizedTier]) {
     return [];
   }
-  
+
   return TIER_ROLES[normalizedTier].features;
 };
 
@@ -325,10 +350,9 @@ export const getTierRole = (tier) => {
   if (!tier) {
     return null;
   }
-  
-  // Normalize tier to lowercase for case-insensitive matching
-  const normalizedTier = String(tier).toLowerCase();
-  
+
+  const normalizedTier = _normalizeTier(tier);
+
   if (!TIER_ROLES[normalizedTier]) {
     return null;
   }

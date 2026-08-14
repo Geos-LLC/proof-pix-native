@@ -2,7 +2,7 @@
 // this in the log right after `app_open`, the device is loading an
 // older OTA (or the embedded bundle). Bump the version each push so
 // it's unambiguous which one landed.
-console.warn('[BUNDLE] sf-primary-not-syncing-badge-v45-' + Date.now() + ' — Scarier soft guard on New Project for SF-primary team members ("Save photos on my phone only" vs old "Create anyway"). "Not syncing to admin" red badge on Projects Mine cards + HomeScreen active project pill for any locally-created project on an SF-primary team. Built ' + new Date().toISOString());
+console.warn('[BUNDLE] team-share-and-sf-upload-v46-' + Date.now() + ' — 3 fixes: (1) "Team Member" plan normalizes to "team" tier so team members bypass share paywall + get every team-plan feature; (2) team_member auto-upload no longer blocked for SF-primary admins (proxy already routes to SF attach); (3) direct crmService.attachPhoto skipped for team_member (was noisy NO_CRM_CONNECTED, proxy path handles SF now). Built ' + new Date().toISOString());
 
 import { registerRootComponent } from 'expo';
 

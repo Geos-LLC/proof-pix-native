@@ -63,14 +63,25 @@ export function isTeamUploadEnabled(teamInfo) {
 
 /**
  * Slice A.5: capability gate. Even when the rollout flag says yes,
- * the pipeline only knows how to deliver to Google-backed admins
- * today. Dropbox and iCloud admins get a clear "coming soon" from
- * the caller instead of a broken upload.
+ * the pipeline only knows how to deliver to certain admin storage
+ * backends. Others get a clear "coming soon" from the caller
+ * instead of a broken upload.
  *
  * Returns a specific reason string when the team upload is blocked,
  * or null when it can proceed. Callers should treat `null` as
  * "green light, enqueue team upload" and any non-null value as
  * "surface a user-facing message and do NOT enqueue."
+ *
+ * Supported today:
+ *   - google       → proxy fans out to admin's Drive
+ *   - serviceflow  → proxy attaches directly to admin's SF job
+ *                    (SF-primary sessions have no Drive; the proxy's
+ *                    /api/upload/:sid SF branch handles this — added
+ *                    ahead of client-side unblock so team-member
+ *                    uploads with a valid invite token + crmJobId
+ *                    already round-trip to SF end-to-end)
+ *
+ * Coming soon: dropbox, apple/icloud.
  *
  * Default when admin's accountType is unknown (undefined/null): we
  * allow the upload to proceed. This preserves pre-A.5 canary
@@ -83,7 +94,7 @@ export function isTeamUploadEnabled(teamInfo) {
 export function getTeamUploadBlockedReason(teamInfo) {
   const at = teamInfo?.adminAccountType;
   if (!at) return null; // unknown → allow (pre-A.5 behavior)
-  if (at === 'google') return null;
+  if (at === 'google' || at === 'serviceflow') return null;
   return 'ADMIN_STORAGE_UNSUPPORTED';
 }
 
