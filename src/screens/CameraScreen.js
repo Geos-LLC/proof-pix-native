@@ -1766,20 +1766,11 @@ export default function CameraScreen({ route, navigation }) {
       // next shutter isn't blocked by BitmapFactory contention.
       backgroundLabelPreparationService.markCameraCapture();
 
-      // Auto-create a project on first photo if none exists
-      if (!activeProjectId && projects.length === 0) {
-        try {
-          const locationDisplay = getLocationName(location);
-          const name = createAlbumName((userName || '').trim() || 'Project', new Date(), null, locationDisplay);
-          const safeName = name.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
-          const proj = await createProject(safeName);
-          if (proj?.id) {
-            await setActiveProject(proj.id);
-          }
-        } catch (e) {
-          console.error('[CameraScreen] Failed to auto-create project:', e);
-        }
-      }
+      // Do NOT auto-create a project before the shutter — that triggers
+      // React state updates (projects + activeProjectId) which can
+      // reconfigure / remount vision-camera mid-capture and kill the
+      // app on the first shot of a fresh install. Project creation
+      // runs inside the post-capture handlers via ensureProjectForCapture.
 
       // Wait for the native capture session to be streaming before
       // firing the shutter. Older / slower iPhones (and freshly
@@ -1913,20 +1904,9 @@ export default function CameraScreen({ route, navigation }) {
       const pickedAsset = result.assets[0];
       const photoUri = pickedAsset.uri;
 
-      // Auto-create project if needed (same as takePicture)
-      if (!activeProjectId && projects.length === 0) {
-        try {
-          const locationDisplay = getLocationName(location);
-          const name = createAlbumName((userName || '').trim() || 'Project', new Date(), null, locationDisplay);
-          const safeName = name.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
-          const proj = await createProject(safeName);
-          if (proj?.id) {
-            await setActiveProject(proj.id);
-          }
-        } catch (e) {
-          console.error('[CameraScreen] Failed to auto-create project:', e);
-        }
-      }
+      // Library pick: camera session is not live, so creating a project
+      // here is safe. Capture path uses ensureProjectForCapture instead.
+      await ensureProjectForCapture();
 
       if (mode === 'before') {
         await handleBeforePhoto(photoUri);
@@ -2187,13 +2167,16 @@ export default function CameraScreen({ route, navigation }) {
   // Best-effort GPS snapshot. Returns { lat, lng } or null if
   // permission denied / lookup fails / times out. Bounded to ~3 s
   // so a slow GPS lock can't stall the save.
+  //
+  // CRITICAL (iOS): never call requestForegroundPermissionsAsync() here.
+  // On a fresh install Location is optional at onboarding — requesting it
+  // mid-capture while AVCaptureSession is live commonly kills the app
+  // (system permission sheet interrupts the camera session). Only use
+  // GPS when permission is already granted.
   const captureGpsForPhoto = async () => {
     try {
       const perm = await ExpoLocation.getForegroundPermissionsAsync();
-      if (perm.status !== 'granted') {
-        const req = await ExpoLocation.requestForegroundPermissionsAsync();
-        if (req.status !== 'granted') return null;
-      }
+      if (perm.status !== 'granted') return null;
       const loc = await Promise.race([
         ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced }),
         new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
@@ -2205,9 +2188,63 @@ export default function CameraScreen({ route, navigation }) {
     }
   };
 
+  // Auto-create / activate a project when the user captures with none selected.
+  // Called AFTER the shutter returns bytes — never before takePhoto —
+  // so createProject/setActiveProject re-renders don't tear down the
+  // live camera session mid-capture (another first-install crash path).
+  // Always returns the resolved projectId (or null) so callers stamp
+  // disk + metadata with the same id — React state may still be stale.
+  const ensureProjectForCapture = async () => {
+    // Already have an active project — nothing to do.
+    if (activeProjectId) return activeProjectId;
+
+    // Projects exist but none is active (common after SF sync / resume).
+    // Prefer the MOST RECENTLY CREATED project — not the one with the
+    // most photos. The photo-activity heuristic dumped new captures
+    // into old busy jobs whenever active was cleared (team mode:
+    // "new pictures saved into the old projects").
+    if ((projects?.length || 0) > 0) {
+      const sorted = [...projects].sort((a, b) => {
+        const ta = Date.parse(a?.createdAt) || 0;
+        const tb = Date.parse(b?.createdAt) || 0;
+        if (tb !== ta) return tb - ta;
+        // Stable tie-break: SF-linked jobs win over stray locals.
+        const aSf = a?.crmJobId ? 1 : 0;
+        const bSf = b?.crmJobId ? 1 : 0;
+        return bSf - aSf;
+      });
+      const bestId = sorted[0]?.id;
+      if (!bestId) return null;
+      try {
+        await setActiveProject(bestId);
+      } catch (e) {
+        console.error('[CameraScreen] Failed to activate project for capture:', e);
+      }
+      return bestId;
+    }
+
+    // No projects at all — create one (unlinked). Prefer opening an SF
+    // job from Projects when Service Flow is in use.
+    try {
+      const locationDisplay = getLocationName(location);
+      const name = createAlbumName((userName || '').trim() || 'Project', new Date(), null, locationDisplay);
+      const safeName = name.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
+      const proj = await createProject(safeName, { assignUnassigned: true });
+      if (proj?.id) {
+        await setActiveProject(proj.id);
+        return proj.id;
+      }
+    } catch (e) {
+      console.error('[CameraScreen] Failed to auto-create project:', e);
+    }
+    return null;
+  };
+
   const handleBeforePhoto = async (uri, options = {}) => {
     const { replaceId = null } = options;
     try {
+      const projectId = await ensureProjectForCapture();
+
       // Retake / replace branch: the user scrolled the gallery strip
       // onto a previous set, hit shutter, and picked "Replace" in the
       // confirm popup. Keep the existing Before record (id, name,
@@ -2230,7 +2267,7 @@ export default function CameraScreen({ route, navigation }) {
           const savedUri = await savePhotoToDevice(
             uri,
             `${room}_${existing.name}_BEFORE_${Date.now()}.jpg`,
-            activeProjectId || null,
+            projectId || null,
           );
           await updatePhoto(replaceId, {
             uri: savedUri,
@@ -2274,7 +2311,7 @@ export default function CameraScreen({ route, navigation }) {
         : (currentOrientation === 'landscape' ? '16:9' : '9:16');
 
       // Save processed photo to device
-      const savedUri = await savePhotoToDevice(processedUri, `${room}_${photoName}_BEFORE_${Date.now()}.jpg`, activeProjectId || null);
+      const savedUri = await savePhotoToDevice(processedUri, `${room}_${photoName}_BEFORE_${Date.now()}.jpg`, projectId || null);
 
       // GPS snapshot (best-effort, non-blocking). Stored on the
       // Before record so the project's Location-tab map can drop
@@ -2297,16 +2334,17 @@ export default function CameraScreen({ route, navigation }) {
         orientation: currentOrientation,
         cameraViewMode: cameraViewMode, // Save the camera view mode
         zoom,
+        projectId: projectId || null,
         ...(gps ? { lat: gps.lat, lng: gps.lng } : null),
       };
 
-      _maybeLogFirstPhoto(activeProjectId, photos, 'camera');
+      _maybeLogFirstPhoto(projectId, photos, 'camera');
       await addPhoto(newPhoto);
       // Pre-note flow: if the user queued a note/audio while the
       // placeholder was centered, flush it onto this Before now.
       await applyPendingNoteToNewPhoto(newPhoto.id);
-      logPhotoCapture('before', 'camera', activeProjectId);
-      logBeforePhotoStarted(activeProjectId, 'camera');
+      logPhotoCapture('before', 'camera', projectId);
+      logBeforePhotoStarted(projectId, 'camera');
       onBeforePhotoTaken(newPhoto).catch(() => {}); // schedule job reminder (non-blocking)
 
       // Update selectedBeforePhoto so thumbnail shows immediately
@@ -2371,6 +2409,8 @@ export default function CameraScreen({ route, navigation }) {
   // photos are kept clean/raw per spec.
   const handleProgressPhoto = async (uri) => {
     try {
+      const projectId = await ensureProjectForCapture();
+
       // Starter tier: no progress photos. Bounce to paywall with the
       // PROGRESS_PHOTOS trigger so the paywall banner explains what's
       // being unlocked. Team members inherit their admin's tier.
@@ -2401,7 +2441,7 @@ export default function CameraScreen({ route, navigation }) {
       const savedUri = await savePhotoToDevice(
         uri,
         `${room}_${photoName}_PROGRESS_${Date.now()}.jpg`,
-        activeProjectId || null
+        projectId || null
       );
 
       const newPhoto = {
@@ -2416,6 +2456,7 @@ export default function CameraScreen({ route, navigation }) {
         cameraViewMode,
         zoom,
         beforePhotoId,
+        projectId: projectId || null,
         // Progress photos belong to the same physical session as the
         // Before — inherit its GPS so map markers stay clustered.
         ...(typeof activeBefore?.lat === 'number' && typeof activeBefore?.lng === 'number'
@@ -2423,10 +2464,10 @@ export default function CameraScreen({ route, navigation }) {
           : null),
       };
 
-      _maybeLogFirstPhoto(activeProjectId, photos, 'camera');
+      _maybeLogFirstPhoto(projectId, photos, 'camera');
       await addPhoto(newPhoto);
       await applyPendingNoteToNewPhoto(newPhoto.id);
-      logPhotoCapture('progress', 'camera', activeProjectId);
+      logPhotoCapture('progress', 'camera', projectId);
 
       // Progress flow: one photo per set, auto-advance through EVERY
       // set in the project (every room, every Before within it), exit
@@ -2481,6 +2522,8 @@ export default function CameraScreen({ route, navigation }) {
     const startTime = Date.now();
     console.log('[DEBUG] [start] handleAfterPhoto started');
     try {
+      const projectId = await ensureProjectForCapture();
+
       // Get the active before photo
       const activeBeforePhoto = getActiveBeforePhoto();
 
@@ -2547,7 +2590,7 @@ export default function CameraScreen({ route, navigation }) {
       const savedUri = await savePhotoToDevice(
         processedUri,
         `${activeBeforePhoto.room}_${activeBeforePhoto.name}_AFTER_${Date.now()}.jpg`,
-        activeProjectId || null
+        projectId || null
       );
 
       // Add after photo. Aspect / orientation / cameraViewMode are
@@ -2573,6 +2616,7 @@ export default function CameraScreen({ route, navigation }) {
         orientation: currentOrientation,
         cameraViewMode,
         zoom,
+        projectId: projectId || null,
         // Inherit Before's GPS so map markers cluster correctly
         // even when the After was taken minutes / hours later
         // without re-locking GPS.
@@ -2580,12 +2624,12 @@ export default function CameraScreen({ route, navigation }) {
           ? { lat: activeBeforePhoto.lat, lng: activeBeforePhoto.lng }
           : null),
       };
-      _maybeLogFirstPhoto(activeProjectId, photos, 'camera');
+      _maybeLogFirstPhoto(projectId, photos, 'camera');
       await addPhoto(newAfterPhoto);
       await applyPendingNoteToNewPhoto(newAfterPhoto.id);
-      logPhotoCapture('after', 'camera', activeProjectId);
+      logPhotoCapture('after', 'camera', projectId);
       const timeSinceBefore = activeBeforePhoto?.timestamp ? Math.round((Date.now() - activeBeforePhoto.timestamp) / 1000) : null;
-      logAfterPhotoCompleted(activeProjectId, timeSinceBefore);
+      logAfterPhotoCompleted(projectId, timeSinceBefore);
       onAfterPhotoCompleted(beforePhotoId).catch(() => {}); // cancel job reminder (non-blocking)
 
       // Mark this set as visited in the current After-mode session.
@@ -2620,7 +2664,7 @@ export default function CameraScreen({ route, navigation }) {
         // every Before in the project has been touched this session.
         const projectBefores = photos.filter(
           (p) => p.mode === PHOTO_MODES.BEFORE
-            && (activeProjectId ? p.projectId === activeProjectId : true)
+            && (projectId ? p.projectId === projectId : true)
         );
         nextTarget = projectBefores.find(
           (b) => b.id !== beforePhotoId && !visitedAfterBeforeIdsRef.current.has(b.id)
@@ -2719,7 +2763,7 @@ export default function CameraScreen({ route, navigation }) {
 
           const safeName = (activeBeforePhoto.name || 'Photo').replace(/\s+/g, '_');
           const baseType = layout;
-          const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
+          const projectIdSuffix = projectId ? `_P${projectId}` : '';
 
           // Create both STACK and SIDE layouts only for letterbox mode (portrait/landscape phone + landscape camera view)
           // For landscape full (landscape phone + portrait/full camera view), only create STACK
@@ -2751,7 +2795,7 @@ export default function CameraScreen({ route, navigation }) {
               const combinedPhotoSavedUri = await savePhotoToDevice(
                 capUri,
                 `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${baseType}_${Date.now()}${projectIdSuffix}.jpg`,
-                activeProjectId || null
+                projectId || null
               );
               console.log('[CameraScreen] Primary combined base saved', Platform.OS, layout, combinedPhotoSavedUri);
 
@@ -2764,7 +2808,7 @@ export default function CameraScreen({ route, navigation }) {
                   uri: combinedPhotoSavedUri,
                   name: activeBeforePhoto.name,
                   room: activeBeforePhoto.room,
-                  projectId: activeProjectId,
+                  projectId: projectId,
                   beforePhotoId: activeBeforePhoto.id,
                   combinedLayout: layout,
                   timestamp: Date.now(),
@@ -2844,7 +2888,7 @@ export default function CameraScreen({ route, navigation }) {
                   const altSavedUri = await savePhotoToDevice(
                     capUriLB,
                     `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`,
-                    activeProjectId || null
+                    projectId || null
                   );
                   console.log(`[CameraScreen] [saved] ${alternateLayout} layout saved:`, altSavedUri);
                 } catch (eLB) {
@@ -2887,7 +2931,7 @@ export default function CameraScreen({ route, navigation }) {
                 limitedHeight = Math.round(limitedHeight * scale);
               }
 
-              const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
+              const projectIdSuffix = projectId ? `_P${projectId}` : '';
 
               backgroundCombinedPhotoService.addJob({
                 beforeUri: activeBeforePhoto.uri,
@@ -2897,7 +2941,7 @@ export default function CameraScreen({ route, navigation }) {
                 height: limitedHeight,
                 room: activeBeforePhoto.room,
                 safeName,
-                projectId: activeProjectId || null,
+                projectId: projectId || null,
                 projectIdSuffix,
                 jobId: `${Date.now()}_${layout}`,
               });
@@ -2938,7 +2982,7 @@ export default function CameraScreen({ route, navigation }) {
                   height: limitedAltHeight,
                   room: activeBeforePhoto.room,
                   safeName,
-                  projectId: activeProjectId || null,
+                  projectId: projectId || null,
                   projectIdSuffix,
                   jobId: `${Date.now() + 1}_${alternateLayout}`,
                 });
@@ -2946,7 +2990,7 @@ export default function CameraScreen({ route, navigation }) {
             } else {
               // Use native compositor
               try {
-                const projectIdSuffix = activeProjectId ? `_P${activeProjectId}` : '';
+                const projectIdSuffix = projectId ? `_P${projectId}` : '';
 
                 // Create primary layout (STACK for landscape, SIDE for portrait)
                 console.log(`[CameraScreen][Android] Creating ${layout} layout with native compositor`);
@@ -2961,7 +3005,7 @@ export default function CameraScreen({ route, navigation }) {
               const combinedPhotoSavedUri = await savePhotoToDevice(
                 capUri,
                 `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${layout}_${Date.now()}${projectIdSuffix}.jpg`,
-                activeProjectId || null
+                projectId || null
               );
 
               console.log(`[CameraScreen][Android] ${layout} combined photo saved:`, combinedPhotoSavedUri);
@@ -2975,7 +3019,7 @@ export default function CameraScreen({ route, navigation }) {
                   uri: combinedPhotoSavedUri,
                   name: activeBeforePhoto.name,
                   room: activeBeforePhoto.room,
-                  projectId: activeProjectId,
+                  projectId: projectId,
                   beforePhotoId: activeBeforePhoto.id,
                   combinedLayout: layout,
                   timestamp: Date.now(),
@@ -3068,7 +3112,7 @@ export default function CameraScreen({ route, navigation }) {
                 const altCombinedPhotoSavedUri = await savePhotoToDevice(
                   altCapUri,
                   `${activeBeforePhoto.room}_${safeName}_COMBINED_BASE_${alternateLayout}_${Date.now()}${projectIdSuffix}.jpg`,
-                  activeProjectId || null
+                  projectId || null
                 );
 
                 console.log(`[CameraScreen][Android] [OK] ${alternateLayout} combined photo saved:`, altCombinedPhotoSavedUri);

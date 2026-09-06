@@ -240,11 +240,11 @@ export const savePhotoToDevice = async (uri, filename, projectId = null) => {
         accessPrivileges = requestResult.accessPrivileges || 'none';
         console.log('[Storage] New permission:', status, ', accessPrivileges:', accessPrivileges);
       } else if (status !== 'granted') {
-        console.log('[Storage] Requesting media library permission...');
-        const requestResult = await MediaLibrary.requestPermissionsAsync();
-        status = requestResult.status;
-        accessPrivileges = requestResult.accessPrivileges || 'none';
-        console.log('[Storage] Permission result:', status, ', accessPrivileges:', accessPrivileges);
+        // Do NOT request permission mid-save. On iOS a Photos permission
+        // sheet while the camera session is still live commonly kills
+        // the app (especially on first photo of a fresh install). Photo
+        // is already in app Documents — gallery sync can happen later.
+        console.warn('[Storage] Media library not granted — skipping gallery save (kept in app storage)');
       } else {
         console.log('[Storage] ✅ Full media library access granted');
       }
@@ -279,12 +279,19 @@ export const savePhotoToDevice = async (uri, filename, projectId = null) => {
 
         // Only handle album and asset ID mapping if we used expo-media-library
         if (asset) {
-          // Create/add to ProofPix album (works on both iOS and Android)
-          const album = await MediaLibrary.getAlbumAsync('ProofPix');
-          if (album == null) {
-            await MediaLibrary.createAlbumAsync('ProofPix', asset, false);
-          } else {
-            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          // Create/add to ProofPix album (works on both iOS and Android).
+          // On a fresh install this is the first album write — keep it
+          // isolated so a Photos-framework failure never bubbles up and
+          // kills the capture path (asset is already in the library).
+          try {
+            const album = await MediaLibrary.getAlbumAsync('ProofPix');
+            if (album == null) {
+              await MediaLibrary.createAlbumAsync('ProofPix', asset, false);
+            } else {
+              await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+            }
+          } catch (albumErr) {
+            console.warn('[Storage] Album create/add failed (photo still saved):', albumErr?.message || albumErr);
           }
 
           // Store a mapping from filename -> assetId for reliable deletion later.

@@ -322,7 +322,12 @@ export default function CompareViewer({
         modeRef.current === 'split' && evt.nativeEvent.touches.length <= 1,
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
-      onPanResponderGrant: () => { dragStartRef.current = splitRef.current; },
+      onPanResponderGrant: () => {
+        // Cancel the outer long-press→pan arm so a divider drag can't
+        // also pan/zoom the framed photos underneath.
+        cancelArm();
+        dragStartRef.current = splitRef.current;
+      },
       onPanResponderMove: (_, gs) => {
         if (isHorizontalRef.current) {
           const h = containerHeightRef.current;
@@ -338,6 +343,8 @@ export default function CompareViewer({
           splitAnim.setValue(next);
         }
       },
+      onPanResponderRelease: () => { cancelArm(); },
+      onPanResponderTerminate: () => { cancelArm(); },
     })
   ).current;
 

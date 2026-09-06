@@ -34,15 +34,15 @@ export const TEAM_UPLOAD_CANARY_SESSION_IDS = [
 // Slice B: when true, PhotoContext.addPhoto auto-enqueues a team
 // upload immediately after capture for team_member accounts that
 // already satisfy `isTeamUploadEnabled` (canary or master flag) AND
-// whose admin is Google-backed. Photos land on the admin's Drive
-// without the team member having to open the Upload sheet.
+// whose admin storage is supported.
 //
-// Defaults to true because auto-sync is the point of team mode: if
-// a team_member is on the canary at all, they should get the live
-// experience. Guarded downstream by `isTeamUploadEnabled` and
-// `getTeamUploadBlockedReason`, so this flag being on with the
-// canary flag off is a safe no-op.
-export const TEAM_AUTO_SYNC_ENABLED = true;
+// OFF by default (2026-09): auto-sync ignored the Before / After /
+// Combined toggles on the Send sheet, so every capture type reached
+// the admin regardless of what the cleaner picked. Manual Send is
+// the authoritative path and honors those toggles. Flip back on only
+// if product wants capture-time sync again (and then filter by a
+// persisted type preference).
+export const TEAM_AUTO_SYNC_ENABLED = false;
 
 /**
  * Rollout gate: is the caller's team session opted into the team
@@ -84,6 +84,10 @@ export function getTeamUploadBlockedReason(teamInfo) {
   const at = teamInfo?.adminAccountType;
   if (!at) return null; // unknown → allow (pre-A.5 behavior)
   if (at === 'google') return null;
+  // Service Flow–primary workspaces still fan out photos to SF via the
+  // proxy even without Drive. Blocking them meant crew photos never
+  // reached SF Files when the admin had SF connected but no Google.
+  if (at === 'serviceflow') return null;
   return 'ADMIN_STORAGE_UNSUPPORTED';
 }
 
@@ -98,4 +102,38 @@ export function adminStorageLabel(accountType) {
   if (accountType === 'apple' || accountType === 'icloud') return 'iCloud';
   if (accountType === 'google') return 'Google Drive';
   return 'this cloud storage';
+}
+
+const UPLOAD_TYPES_KEY = '@team_upload_type_prefs';
+const DEFAULT_UPLOAD_TYPES = { before: true, after: true, combined: true };
+
+/** Normalize Before/After/Combined toggle bag used by Send sheets. */
+export function normalizeUploadTypes(raw) {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_UPLOAD_TYPES };
+  return {
+    before: !!raw.before,
+    after: !!raw.after,
+    combined: !!raw.combined,
+  };
+}
+
+/** Last Send-sheet type choice (AsyncStorage). Falls back to all-on. */
+export async function loadUploadTypePrefs() {
+  try {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const raw = await AsyncStorage.getItem(UPLOAD_TYPES_KEY);
+    if (!raw) return { ...DEFAULT_UPLOAD_TYPES };
+    return normalizeUploadTypes(JSON.parse(raw));
+  } catch {
+    return { ...DEFAULT_UPLOAD_TYPES };
+  }
+}
+
+export async function saveUploadTypePrefs(types) {
+  try {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.setItem(UPLOAD_TYPES_KEY, JSON.stringify(normalizeUploadTypes(types)));
+  } catch {
+    // non-critical
+  }
 }

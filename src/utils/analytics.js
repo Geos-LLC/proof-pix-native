@@ -250,6 +250,9 @@ export const logPhotoSave = (hasLabels = false, labelPosition = null, sourceType
     source_type: sourceType,
     timestamp: Date.now(),
   });
+  try {
+    require('./metaAnalytics').metaLogPhotoSave({ has_labels: hasLabels });
+  } catch { /* Meta SDK optional */ }
 };
 
 /**
@@ -263,6 +266,9 @@ export const logPhotoExport = (exportType, sourceType = 'camera', projectId = nu
     project_id: projectId,
     timestamp: Date.now(),
   });
+  try {
+    require('./metaAnalytics').metaLogPhotoExport({ export_type: exportType });
+  } catch { /* Meta SDK optional */ }
 };
 
 /**
@@ -356,6 +362,9 @@ export const logAccountCreated = async (payload = {}) => {
     timestamp: Date.now(),
   });
   logEvent('account_created', params);
+  try {
+    require('./metaAnalytics').metaLogAccountCreated(params);
+  } catch { /* Meta SDK optional */ }
 };
 
 /**
@@ -413,6 +422,9 @@ export const logTeamInvitesCreated = (count, payload = {}) => {
     team_size_after: payload.team_size_after ?? null,
     timestamp: Date.now(),
   });
+  try {
+    require('./metaAnalytics').metaLogTeamInvite({ count: count || 0 });
+  } catch { /* Meta SDK optional */ }
 };
 
 /**
@@ -649,8 +661,14 @@ export const logSubscriptionStarted = async (payload = {}) => {
   logEvent('subscription_started', params);
 
   // Meta (Facebook) SDK: fire standard Subscribe event for ads optimization.
-  // We do NOT fire Meta `Purchase` from the client at all â€” see top-of-section
+  // We do NOT fire Meta `Purchase` from the client at all — see top-of-section
   // comment. Real revenue events come from the server webhook only.
+  try {
+    require('./metaAnalytics').metaLogSubscribe({
+      transaction_id: params.transaction_id,
+      currency: params.currency,
+    });
+  } catch { /* Meta SDK optional */ }
 
   // Derived event: if trial_expired previously fired, emit trial_converted
   // when the user comes back and starts a paid subscription.
@@ -730,6 +748,9 @@ export const logSubscriptionCancelledDetected = async (payload = {}) => {
 
 export const logAppOpen = () => {
   logEvent('app_open', { timestamp: Date.now() });
+  try {
+    require('./metaAnalytics').metaLogFirstOpen();
+  } catch { /* Meta SDK optional */ }
 };
 
 // Onboarding ------------------------------------------------------------------
@@ -872,6 +893,9 @@ export const logTrialStarted = async (planOrPayload, extra = {}) => {
     params,
   });
   logEvent('trial_started', params);
+  try {
+    require('./metaAnalytics').metaLogTrialStart(params);
+  } catch { /* Meta SDK optional */ }
 };
 
 /**

@@ -675,6 +675,24 @@ export default function StudioScreen({ route, navigation }) {
   }, [hasUnsavedChanges, navigation]);
   const [viewMode, setViewMode] = useState('side');
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
+
+  // iOS interactive-pop (swipe-back) steals horizontal drags on the Split
+  // divider / Overlay slider — the whole screen slides instead of the
+  // control. Android has no equivalent, which is why the bug is iOS-only.
+  // Disable the nav gesture while those modes are active; restore after.
+  useEffect(() => {
+    const compareGestureActive = viewMode === 'split' || viewMode === 'overlay';
+    navigation.setOptions({
+      gestureEnabled: !compareGestureActive,
+      fullScreenGestureEnabled: !compareGestureActive,
+    });
+    return () => {
+      navigation.setOptions({
+        gestureEnabled: true,
+        fullScreenGestureEnabled: true,
+      });
+    };
+  }, [viewMode, navigation]);
   // Initial pairTemplate is a neutral placeholder. The auto-default
   // effect below picks the right chip for each photo as it loads, but
   // if the photo already has a saved `pairTemplate` (set the last time

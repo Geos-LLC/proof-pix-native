@@ -1145,8 +1145,27 @@ export function AdminProvider({ children }) {
       // fail the join hard so a removed member can't re-enter team mode with a stale code.
       // A missing status means a true network error; allow the optimistic join so a flaky
       // connection doesn't lock legitimate joiners out.
+      // Register team member join with proxy server.
+      // Server returns 403/404 when the token has been revoked or was never valid —
+      // fail the join hard so a removed member can't re-enter team mode with a stale code.
+      // A missing status means a true network error; allow the optimistic join so a flaky
+      // connection doesn't lock legitimate joiners out.
+      // Capture sf_team_member_id from the join response when the invite was
+      // bound to a specific SF cleaner — without it, sync used to pull the
+      // entire workspace onto the member phone.
+      let joinLinkedSfId = null;
       try {
-        await proxyService.registerTeamMemberJoin(sessionId, token, memberName);
+        const joinData = await proxyService.registerTeamMemberJoin(sessionId, token, memberName);
+        const rawLinked =
+          joinData?.sf_team_member_id ??
+          joinData?.sfTeamMemberId ??
+          joinData?.linked_sf_team_member_id ??
+          joinData?.linkedSfTeamMemberId ??
+          null;
+        if (rawLinked != null && rawLinked !== '') {
+          const n = Number(rawLinked);
+          if (Number.isFinite(n)) joinLinkedSfId = n;
+        }
       } catch (registerError) {
         if (registerError?.status === 403 || registerError?.status === 404) {
           return {
@@ -1171,10 +1190,23 @@ export function AdminProvider({ children }) {
         console.warn('[ADMIN] Failed to fetch admin accountType at join (continuing):', infoError?.message);
       }
 
-      const newTeamInfo = { token, sessionId, useProxy: true, adminAccountType };
+      const newTeamInfo = {
+        token,
+        sessionId,
+        useProxy: true,
+        adminAccountType,
+        ...(joinLinkedSfId != null
+          ? { linkedSfTeamMemberId: joinLinkedSfId, sfTeamMemberId: joinLinkedSfId }
+          : {}),
+      };
 
       await writeSecureJSON(STORAGE_KEYS.TEAM_MEMBER_INFO, newTeamInfo);
       await AsyncStorage.setItem(STORAGE_KEYS.ADMIN_USER_MODE, 'team_member');
+      if (joinLinkedSfId != null) {
+        try {
+          await AsyncStorage.setItem('@sf_linked_team_member_id', String(joinLinkedSfId));
+        } catch (_) {}
+      }
       setTeamInfo(newTeamInfo);
       setUserMode('team_member');
       await updateUserPlan('Team Member');

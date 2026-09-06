@@ -34,6 +34,24 @@ import { PHOTO_MODES, ROOMS } from '../constants/rooms';
 
 const PhotoContext = createContext();
 
+/** Prefer the project with the most recent photo activity — not projects[0] (newest created). */
+const pickFallbackProjectId = (projectList, photoList, excludeId = null) => {
+  const candidates = (projectList || []).filter((p) => p?.id && p.id !== excludeId);
+  if (!candidates.length) return null;
+  let bestId = candidates[0].id;
+  let bestTs = -1;
+  for (const p of candidates) {
+    const maxTs = (photoList || [])
+      .filter((ph) => ph.projectId === p.id)
+      .reduce((m, ph) => Math.max(m, Number(ph.timestamp) || 0), -1);
+    if (maxTs > bestTs) {
+      bestTs = maxTs;
+      bestId = p.id;
+    }
+  }
+  return bestId;
+};
+
 export const usePhotos = () => {
   const context = useContext(PhotoContext);
   if (!context) {
@@ -64,6 +82,9 @@ export const PhotoProvider = ({ children }) => {
   const projectsRef = useRef(projects);
   useEffect(() => { projectsRef.current = projects; }, [projects]);
   const [activeProjectId, setActiveProjectId] = useState(null);
+  const activeProjectIdRef = useRef(null);
+  useEffect(() => { activeProjectIdRef.current = activeProjectId; }, [activeProjectId]);
+  const [initialHydrationDone, setInitialHydrationDone] = useState(false);
 
   // Load photos on mount
   // Load data on app start.
@@ -91,7 +112,17 @@ export const PhotoProvider = ({ children }) => {
       // of truth is gone. Wipe them here so users who disconnected SF
       // BEFORE the CloudSyncScreen wipe was wired (or on an older
       // build) get cleanup on next cold start. One-shot per boot.
+      //
+      // CRITICAL: skip for team_member. Members never store an SF
+      // workspace on-device (uploads go through the admin proxy), so
+      // getStoredWorkspace() is always empty and this wipe would
+      // delete every synced job on every launch — the main cause of
+      // "projects mix up / photos disappear" for crew.
       try {
+        const userMode = await AsyncStorage.getItem('@admin_user_mode');
+        if (userMode === 'team_member') {
+          console.warn('[PhotoContext] cold-start SF-ghost cleanup skipped (team_member)');
+        } else {
         const hasSFSynced = (projectsList || []).some((p) => p?.crmJobId);
         if (hasSFSynced) {
           const crmService = require('../services/crm').default;
@@ -115,6 +146,7 @@ export const PhotoProvider = ({ children }) => {
               });
             }
           }
+        }
         }
       } catch (sfCleanupErr) {
         console.warn('[PhotoContext] cold-start SF-ghost cleanup failed:', sfCleanupErr?.message);
@@ -230,16 +262,41 @@ export const PhotoProvider = ({ children }) => {
       if (savedActive) {
         const projectExists = projectsList.some(p => p.id === savedActive);
         if (projectExists) {
+          activeProjectIdRef.current = savedActive;
           setActiveProjectId(savedActive);
         } else {
+          activeProjectIdRef.current = null;
           setActiveProjectId(null);
           await saveActiveProjectId(null);
         }
       }
       projectsRef.current = projectsList;
       setProjects(projectsList);
+      setInitialHydrationDone(true);
     })();
   }, []);
+
+  // Keep active project valid after hydration / list changes. Never
+  // blindly jump to projects[0] (newest created) — prefer last-opened
+  // when valid, otherwise the project with the most recent photos.
+  useEffect(() => {
+    if (!initialHydrationDone) return;
+    if (projects.length === 0) {
+      if (activeProjectId) {
+        activeProjectIdRef.current = null;
+        setActiveProjectId(null);
+        saveActiveProjectId(null);
+      }
+      return;
+    }
+    if (activeProjectId && projects.some((p) => p.id === activeProjectId)) return;
+    const fallback = pickFallbackProjectId(projects, photosRef.current, activeProjectId);
+    if (fallback && fallback !== activeProjectId) {
+      activeProjectIdRef.current = fallback;
+      setActiveProjectId(fallback);
+      saveActiveProjectId(fallback);
+    }
+  }, [projects, activeProjectId, initialHydrationDone]);
 
   // Reload data when app becomes active (returns from background)
   useEffect(() => {
@@ -603,6 +660,13 @@ export const PhotoProvider = ({ children }) => {
       const list = await loadProjects();
       projectsRef.current = list;
       setProjects(list);
+      const currentActive = activeProjectIdRef.current;
+      if (currentActive && !list.some((p) => p.id === currentActive)) {
+        const fallback = pickFallbackProjectId(list, photosRef.current, currentActive);
+        activeProjectIdRef.current = fallback;
+        setActiveProjectId(fallback);
+        await saveActiveProjectId(fallback);
+      }
     } catch (e) {
     }
   };
@@ -684,7 +748,7 @@ export const PhotoProvider = ({ children }) => {
 
       const stamped = {
         ...photo,
-        projectId: photo.projectId ?? activeProjectId ?? null,
+        projectId: photo.projectId ?? activeProjectIdRef.current ?? null,
         capturedBy,
       };
       const newPhotos = [...currentPhotos, stamped];
@@ -704,12 +768,20 @@ export const PhotoProvider = ({ children }) => {
       // Drive/Dropbox/iCloud would mean users without those configured
       // never see their photos on the CRM side.
       //
+      // Team members never hold an SF access token locally — their
+      // photos reach SF via the proxy team-upload fanout
+      // (autoQueueTeamUploadIfNeeded above). Calling attachPhoto here
+      // always fails with NOT_CONNECTED and only adds noise.
+      //
       // Fire-and-forget. SF backend dedups on proofpix_photo_id within
       // 24h, so if backgroundUploadService later also fires attach
       // (when a cloud destination IS configured), the second call is a
       // no-op {alreadyExisted: true}.
       try {
-        if (stamped.projectId) {
+        const mode = await AsyncStorage.getItem('@admin_user_mode');
+        if (mode === 'team_member') {
+          // Proxy path handles SF for crew — skip local adapter.
+        } else if (stamped.projectId) {
           const project = (projectsRef.current || []).find(p => p?.id === stamped.projectId);
           if (project?.crmJobId && project?.crmProvider) {
             const uriSample = stamped.uri ? String(stamped.uri).slice(0, 80) : null;
@@ -1080,17 +1152,29 @@ export const PhotoProvider = ({ children }) => {
 
       // Publish to Team Projects (no-op for non-team_member accounts).
       // Fire-and-forget — the create should never block on network.
-      syncProjectToProxyIfTeamMember(newProject);
+      // SF sync creates skip this so empty job shells don't appear on
+      // the admin Team tab before the member shoots anything.
+      if (!opts.skipProxySync) {
+        syncProjectToProxyIfTeamMember(newProject);
+      }
 
-      // Reset custom rooms to default when new project is created
-      // Auto-assign only unassigned photos to the new project — read from
-      // photosRef.current so we don't operate on stale state and accidentally
-      // drop newer photos that haven't propagated to the React state yet.
-      const current = photosRef.current;
-      const unassigned = current.filter(p => !p.projectId);
-      if (unassigned.length > 0) {
-        const updated = current.map(p => (!p.projectId ? { ...p, projectId: newProject.id } : p));
-        await savePhotos(updated);
+      // Do NOT steal orphans by default. Team members creating a new
+      // job used to pull every photo with a null projectId (capture
+      // races, combined composites, leftover imports) into the new
+      // project — existing work looked like it "moved" to the wrong
+      // assignment. Opt in only for first-project / capture-then-name
+      // flows via assignUnassigned: true.
+      if (opts.assignUnassigned === true) {
+        if (!photosLoadedRef.current) {
+          console.warn('[PhotoContext] createProject skipped assignUnassigned — photos not loaded');
+        } else {
+          const current = photosRef.current;
+          const unassigned = current.filter(p => !p.projectId);
+          if (unassigned.length > 0) {
+            const updated = current.map(p => (!p.projectId ? { ...p, projectId: newProject.id } : p));
+            await savePhotos(updated);
+          }
+        }
       }
       return newProject;
     } catch (error) {
@@ -1335,6 +1419,7 @@ export const PhotoProvider = ({ children }) => {
     deletePhotoSet,
     deleteAllPhotos,
     setActiveProject: async (projectId) => {
+      activeProjectIdRef.current = projectId;
       setActiveProjectId(projectId);
       await saveActiveProjectId(projectId);
     },
@@ -1350,6 +1435,7 @@ export const PhotoProvider = ({ children }) => {
     getCombinedPhotos,
     getProgressPhotos,
     getUnpairedBeforePhotos,
+    pickFallbackProjectId,
     refreshPhotos: loadPhotos,
     refreshAllData: useCallback(async () => {
       await loadPhotos();

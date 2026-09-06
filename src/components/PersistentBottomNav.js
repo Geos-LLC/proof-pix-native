@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, PixelRatio } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CommonActions } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { FONTS } from '../constants/fonts';
+import { NAV_LABEL_PROPS } from '../constants/accessibilityText';
 import { useTheme } from '../hooks/useTheme';
 import { useUiOverlayVisible } from './uiOverlayState';
 
@@ -125,6 +126,8 @@ export default function PersistentBottomNav({ currentRoute, navigationRef }) {
 
   const inactiveTint = theme.textSecondary;
   const activeTint = isDark ? theme.accent : theme.textPrimary;
+  const fontScale = PixelRatio.getFontScale();
+  const pillHeight = Math.round(Math.min(68, 54 + Math.max(0, fontScale - 1) * 14));
 
   return (
     <View
@@ -132,6 +135,7 @@ export default function PersistentBottomNav({ currentRoute, navigationRef }) {
         styles.pill,
         {
           bottom: 4 + insets.bottom,
+          height: pillHeight,
           backgroundColor: theme.navBar,
           borderColor: theme.border,
           ...theme.shadowPop,
@@ -209,7 +213,10 @@ function NavItem({ active, onPress, iconSource, ionicon, label, inactiveTint, ac
       ) : (
         <Ionicons name={ionicon} size={22} color={tint} />
       )}
-      <Text style={[styles.text, { color: tint }, active && styles.textActive]}>
+      <Text
+        style={[styles.text, { color: tint }, active && styles.textActive]}
+        {...NAV_LABEL_PROPS}
+      >
         {label}
       </Text>
     </TouchableOpacity>
@@ -225,7 +232,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 999,
-    height: 54,
+    minHeight: 54,
     borderWidth: StyleSheet.hairlineWidth,
     zIndex: 100,
   },
@@ -233,12 +240,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
     gap: 1,
-    height: 46,
+    minHeight: 46,
     marginVertical: 4,
-    marginHorizontal: 4,
+    marginHorizontal: 2,
     borderRadius: 999,
   },
   itemActive: {

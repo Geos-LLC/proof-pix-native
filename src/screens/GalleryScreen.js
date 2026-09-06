@@ -42,7 +42,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { compositeImages, addLabelToImage, calculateAfterLabelOffsets } from '../utils/imageCompositor';
 import { ensureLabelForPhoto } from '../services/labelService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
-import { isTeamUploadEnabled, getTeamUploadBlockedReason, adminStorageLabel } from '../config/teamUpload';
+import { isTeamUploadEnabled, getTeamUploadBlockedReason, adminStorageLabel, loadUploadTypePrefs, saveUploadTypePrefs } from '../config/teamUpload';
 import { UploadDetailsModal } from '../components/BackgroundUploadStatus';
 import UploadCompletionModal from '../components/UploadCompletionModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
@@ -312,6 +312,7 @@ export default function GalleryScreen({ navigation, route }) {
   const [shareOptionsVisible, setShareOptionsVisible] = useState(false);
   const [uploadSelectedPhotos, setUploadSelectedPhotos] = useState(null);
   const [shareSelectedPhotos, setShareSelectedPhotos] = useState(null);
+  const shareSourcePhotosRef = useRef(null);
   const [deleteFromStorage, setDeleteFromStorage] = useState(true);
   const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
@@ -319,7 +320,11 @@ export default function GalleryScreen({ navigation, route }) {
   const [showDeletePhotoConfirm, setShowDeletePhotoConfirm] = useState(false);
   const pendingDeletePhotoRef = useRef(null);
   const [selectedTypes, setSelectedTypes] = useState({ before: true, after: true, combined: true });
+  const selectedTypesRef = useRef(selectedTypes);
+  useEffect(() => { selectedTypesRef.current = selectedTypes; }, [selectedTypes]);
   const [selectedShareTypes, setSelectedShareTypes] = useState({ before: true, after: true, combined: true });
+  const selectedShareTypesRef = useRef(selectedShareTypes);
+  useEffect(() => { selectedShareTypesRef.current = selectedShareTypes; }, [selectedShareTypes]);
   const [shareAsArchive, setShareAsArchive] = useState(false);
   const [uploadDestinations, setUploadDestinations] = useState({ google: true, dropbox: false });
   const [showAdvancedShareFormats, setShowAdvancedShareFormats] = useState(false);
@@ -807,6 +812,31 @@ export default function GalleryScreen({ navigation, route }) {
     }
   };
 
+  const expandShareSelection = (selection) => {
+    if (!selection) {
+      return activeProjectId
+        ? photos.filter((p) => p.projectId === activeProjectId)
+        : photos;
+    }
+    const byId = new Map();
+    const add = (p) => {
+      if (p?.id && !byId.has(p.id)) byId.set(p.id, p);
+    };
+    for (const p of selection.individual || []) add(p);
+    for (const set of selection.sets || []) {
+      if (set.before) add(set.before);
+      if (set.after) add(set.after);
+      if (set.combined) add(set.combined);
+      else if (set.before?.id) {
+        const combined = photos.find(
+          (p) => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === set.before.id
+        );
+        if (combined) add(combined);
+      }
+    }
+    return Array.from(byId.values());
+  };
+
   const startSharingWithOptions = async () => {
     const allowed = await ensureShareAllowed({ effectivePlan, navigation, t });
     if (!allowed) return;
@@ -814,35 +844,42 @@ export default function GalleryScreen({ navigation, route }) {
       setSharing(true);
       setShareOptionsVisible(false);
       
-      let sourcePhotos;
-      if (shareSelectedPhotos) {
-        sourcePhotos = shareSelectedPhotos.individual;
-      } else {
-        sourcePhotos = activeProjectId 
-          ? photos.filter(p => p.projectId === activeProjectId) 
-          : photos;
+      let sourcePhotos = shareSourcePhotosRef.current;
+      if (!sourcePhotos) {
+        sourcePhotos = expandShareSelection(shareSelectedPhotos);
       }
 
+      const types = { ...selectedShareTypesRef.current };
       const photosToShare = [];
       
-      if (selectedShareTypes.before) {
+      if (types.before) {
         const beforePhotos = sourcePhotos.filter(p => p.mode === 'before');
         photosToShare.push(...beforePhotos);
       }
       
-      if (selectedShareTypes.after) {
+      if (types.after) {
         const afterPhotos = sourcePhotos.filter(p => p.mode === 'after');
         photosToShare.push(...afterPhotos);
       }
       
-      if (selectedShareTypes.combined) {
-        // Add combined photos directly from PhotoContext (already generated at capture time)
+      if (types.combined) {
+        const seen = new Set();
+        const pushCombined = (p) => {
+          if (!p?.uri || seen.has(p.id)) return;
+          seen.add(p.id);
+          photosToShare.push(p);
+        };
+        sourcePhotos
+          .filter((p) => p.mode === PHOTO_MODES.COMBINED || p.mode === 'combined' || p.mode === 'mix')
+          .forEach(pushCombined);
         const beforePhotos = sourcePhotos.filter(p => p.mode === 'before');
         for (const beforePhoto of beforePhotos) {
-          const combinedPhoto = photos.find(p => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === beforePhoto.id);
-          if (combinedPhoto) {
-            photosToShare.push(combinedPhoto);
-          }
+          const combinedPhoto = photos.find(
+            (p) =>
+              (p.mode === PHOTO_MODES.COMBINED || p.mode === 'combined' || p.mode === 'mix') &&
+              String(p.beforePhotoId) === String(beforePhoto.id)
+          );
+          if (combinedPhoto) pushCombined(combinedPhoto);
         }
       }
 
@@ -941,19 +978,14 @@ export default function GalleryScreen({ navigation, route }) {
     } finally {
       setSharing(false);
       setShareStatus('');
+      shareSourcePhotosRef.current = null;
       setShareSelectedPhotos(null);
     }
   };
 
-  const handleShareProject = async () => {
-    let sourcePhotos;
-    if (shareSelectedPhotos) {
-      sourcePhotos = shareSelectedPhotos.individual;
-      setShareSelectedPhotos(null);
-    } else {
-      sourcePhotos = activeProjectId ? photos.filter(p => p.projectId === activeProjectId) : photos;
-    }
-    
+  const handleShareProject = (selection = null) => {
+    const sourcePhotos = expandShareSelection(selection ?? shareSelectedPhotos);
+    shareSourcePhotosRef.current = sourcePhotos;
     if (sourcePhotos.length === 0) {
       Alert.alert(t('gallery.noPhotosTitle'), t('gallery.noPhotosInProject'));
       return;
@@ -1052,7 +1084,12 @@ export default function GalleryScreen({ navigation, route }) {
       // ignore
     }
 
-    if (!isAuthenticated && !dropboxConnected) {
+    const teamCanUpload =
+      userMode === 'team_member' && isTeamUploadEnabled(teamInfo);
+
+    // Team members send through the admin proxy — they do not need their
+    // own Google/Dropbox connection.
+    if (!teamCanUpload && !isAuthenticated && !dropboxConnected) {
       Alert.alert(
         t('gallery.noConnectionTitle', { defaultValue: 'No Cloud Connected' }),
         t('gallery.noConnectionMessage', { defaultValue: 'Please connect Google Drive or Dropbox in Settings before uploading.' }),
@@ -1064,60 +1101,66 @@ export default function GalleryScreen({ navigation, route }) {
       return;
     }
 
+    const prefs = await loadUploadTypePrefs();
+    selectedTypesRef.current = prefs;
+    setSelectedTypes(prefs);
+    setUploadDestinations({
+      google: isAuthenticated,
+      dropbox: dropboxConnected,
+    });
     setUploadSelectedPhotos({ individual: selected, sets: selectedSets });
     setOptionsVisible(true);
   };
 
   const handleConfirmUpload = async () => {
     try {
-      // Gather photos to upload based on selected types
+      // Gather photos to upload based on selected types (ref = latest toggles)
+      const types = { ...selectedTypesRef.current };
+      saveUploadTypePrefs(types);
       let photosToUpload = [];
       const sourcePhotos = uploadSelectedPhotos?.individual || [];
+      const ids = new Set();
+      const pushUnique = (p) => {
+        if (!p?.uri || ids.has(p.id)) return;
+        ids.add(p.id);
+        photosToUpload.push(p);
+      };
 
       // NOTE: `flat: true` is forced at every startBackgroundUpload
       // call site below, so per-photo `flatOverride` wrapping is now
       // dead — every photo goes to the project album root. User
       // request 2026-07-21: no more before/after/combined subfolders.
       sourcePhotos.forEach(photo => {
-        if (selectedTypes.before && photo.mode === 'before') {
-          photosToUpload.push(photo);
-        }
-        if (selectedTypes.after && photo.mode === 'after') {
-          photosToUpload.push(photo);
+        if (types.before && photo.mode === 'before') pushUnique(photo);
+        if (types.after && photo.mode === 'after') pushUnique(photo);
+        if (types.combined && (photo.mode === PHOTO_MODES.COMBINED || photo.mode === 'combined' || photo.mode === 'mix')) {
+          pushUnique(photo);
         }
       });
 
       // Also add photos from sets
       const sourceSets = uploadSelectedPhotos?.sets || [];
       sourceSets.forEach(set => {
-        if (selectedTypes.before && set.before) {
-          photosToUpload.push(set.before);
-        }
-        if (selectedTypes.after && set.after) {
-          photosToUpload.push(set.after);
-        }
+        if (types.before && set.before) pushUnique(set.before);
+        if (types.after && set.after) pushUnique(set.after);
+        if (types.combined && set.combined) pushUnique(set.combined);
       });
 
-      // Add combined photos directly from PhotoContext (already generated at capture time)
-      if (selectedTypes.combined) {
-        // Collect all before photo IDs from selection
+      // Resolve combined via beforePhotoId when not already in selection
+      if (types.combined) {
         const beforeIds = new Set();
-        sourcePhotos.filter(p => p.mode === 'before').forEach(p => beforeIds.add(p.id));
-        sourceSets.forEach(set => { if (set.before) beforeIds.add(set.before.id); });
+        sourcePhotos.filter(p => p.mode === 'before').forEach(p => beforeIds.add(String(p.id)));
+        sourceSets.forEach(set => { if (set.before) beforeIds.add(String(set.before.id)); });
 
-        // Find combined photos by beforePhotoId — instant lookup, no filesystem scanning
         for (const beforeId of beforeIds) {
-          const combinedPhoto = photos.find(p => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === beforeId);
-          if (combinedPhoto) {
-            photosToUpload.push(combinedPhoto);
-          }
+          const combinedPhoto = photos.find(
+            (p) =>
+              (p.mode === PHOTO_MODES.COMBINED || p.mode === 'combined' || p.mode === 'mix') &&
+              String(p.beforePhotoId) === beforeId
+          );
+          if (combinedPhoto) pushUnique(combinedPhoto);
         }
       }
-
-      // Deduplicate by photo ID to prevent uploading the same photo twice
-      const uniqueMap = new Map();
-      photosToUpload.forEach(p => { if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p); });
-      photosToUpload = Array.from(uniqueMap.values());
 
       if (photosToUpload.length === 0) {
         Alert.alert('No Photos', 'No photos match the selected types.');
@@ -1284,7 +1327,7 @@ export default function GalleryScreen({ navigation, route }) {
     }
 
     setShareSelectedPhotos({ individual: selected, sets: selectedSets });
-    handleShareProject();
+    handleShareProject({ individual: selected, sets: selectedSets });
   };
 
   const handleDeleteSelected = () => {
@@ -2533,7 +2576,11 @@ export default function GalleryScreen({ navigation, route }) {
                   <View style={styles.shareTypeButtons}>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, selectedShareTypes.before && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedShareTypes(prev => ({ ...prev, before: !prev.before }))}
+                      onPress={() => setSelectedShareTypes(prev => {
+                        const next = { ...prev, before: !prev.before };
+                        selectedShareTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, selectedShareTypes.before && styles.shareTypeButtonTextActive]}>
                         Before
@@ -2541,7 +2588,11 @@ export default function GalleryScreen({ navigation, route }) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, selectedShareTypes.after && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedShareTypes(prev => ({ ...prev, after: !prev.after }))}
+                      onPress={() => setSelectedShareTypes(prev => {
+                        const next = { ...prev, after: !prev.after };
+                        selectedShareTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, selectedShareTypes.after && styles.shareTypeButtonTextActive]}>
                         After
@@ -2549,7 +2600,11 @@ export default function GalleryScreen({ navigation, route }) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, selectedShareTypes.combined && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedShareTypes(prev => ({ ...prev, combined: !prev.combined }))}
+                      onPress={() => setSelectedShareTypes(prev => {
+                        const next = { ...prev, combined: !prev.combined };
+                        selectedShareTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, selectedShareTypes.combined && styles.shareTypeButtonTextActive]}>
                         Combined
@@ -2688,7 +2743,11 @@ export default function GalleryScreen({ navigation, route }) {
                   <View style={styles.shareTypeButtons}>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, selectedTypes.before && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedTypes(prev => ({ ...prev, before: !prev.before }))}
+                      onPress={() => setSelectedTypes(prev => {
+                        const next = { ...prev, before: !prev.before };
+                        selectedTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, selectedTypes.before && styles.shareTypeButtonTextActive]}>
                         Before
@@ -2696,7 +2755,11 @@ export default function GalleryScreen({ navigation, route }) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, selectedTypes.after && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedTypes(prev => ({ ...prev, after: !prev.after }))}
+                      onPress={() => setSelectedTypes(prev => {
+                        const next = { ...prev, after: !prev.after };
+                        selectedTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, selectedTypes.after && styles.shareTypeButtonTextActive]}>
                         After
@@ -2704,7 +2767,11 @@ export default function GalleryScreen({ navigation, route }) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, selectedTypes.combined && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedTypes(prev => ({ ...prev, combined: !prev.combined }))}
+                      onPress={() => setSelectedTypes(prev => {
+                        const next = { ...prev, combined: !prev.combined };
+                        selectedTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, selectedTypes.combined && styles.shareTypeButtonTextActive]}>
                         Combined
@@ -2726,7 +2793,7 @@ export default function GalleryScreen({ navigation, route }) {
                     // matching block + full rationale.
                     (() => {
                       const at = teamInfo?.adminAccountType;
-                      const isComingSoon = at && at !== 'google';
+                      const isComingSoon = at && at !== 'google' && at !== 'serviceflow';
                       return (
                         <View
                           style={[

@@ -32,6 +32,7 @@ import { useAdmin } from '../context/AdminContext';
 import { useTheme } from '../hooks/useTheme';
 import { COLORS, getLabelPositions } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { BODY_PROPS, CAPTION_PROPS, SINGLE_LINE_PROPS, TITLE_PROPS } from '../constants/accessibilityText';
 import { RoomIcon } from '../utils/roomIcons';
 import RoomEditor from '../components/RoomEditor';
 import QualificationPromptModal from '../components/QualificationPromptModal';
@@ -3049,7 +3050,12 @@ export default function SettingsScreen({ navigation, route }) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleTitleTap} activeOpacity={1} style={styles.titleTouchable} hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}>
-          <Text style={styles.title}>{t('settings.title')}</Text>
+          <Text
+            style={styles.title}
+            {...TITLE_PROPS}
+          >
+            {t('settings.title')}
+          </Text>
         </TouchableOpacity>
         <View style={styles.headerRightCluster}>
           <TouchableOpacity
@@ -3107,8 +3113,8 @@ export default function SettingsScreen({ navigation, route }) {
             </Text>
           </View>
           <View style={styles.userInfo}>
-            <Text style={styles.userName} numberOfLines={1}>{userName || 'User'}</Text>
-            <Text style={styles.accountType} numberOfLines={1}>
+            <Text style={styles.userName} {...SINGLE_LINE_PROPS}>{userName || 'User'}</Text>
+            <Text style={styles.accountType} {...CAPTION_PROPS}>
               {userMode === 'team_member'
                 ? t('settings.teamAccount', { defaultValue: 'Team account' })
                 : t('settings.individualAccount', { defaultValue: 'Individual account' })}
@@ -3302,10 +3308,10 @@ export default function SettingsScreen({ navigation, route }) {
               <Ionicons name="text" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
-              <Text style={styles.ppRowTitle}>
+              <Text style={styles.ppRowTitle} {...BODY_PROPS}>
                 {t('settings.labelsLanguage', { defaultValue: 'Labels & language' })}
               </Text>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
+              <Text style={styles.ppRowSub} {...CAPTION_PROPS}>
                 {getCurrentLanguage()?.name || 'English'}
               </Text>
             </View>
@@ -3324,10 +3330,10 @@ export default function SettingsScreen({ navigation, route }) {
               <Ionicons name="folder-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
-              <Text style={styles.ppRowTitle}>
+              <Text style={styles.ppRowTitle} {...BODY_PROPS}>
                 {t('settings.industryFolders', { defaultValue: 'Industry & folders' })}
               </Text>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
+              <Text style={styles.ppRowSub} {...CAPTION_PROPS}>
                 {t('settings.industryFoldersSub', {
                   count: (Array.isArray(customRooms) ? customRooms.length : 0) || 5,
                   defaultValue: `${(Array.isArray(customRooms) ? customRooms.length : 0) || 5} folders`,
@@ -3366,14 +3372,14 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
             <View style={styles.ppRowMeta}>
               <View style={styles.ppRowTitleRow}>
-                <Text style={styles.ppRowTitle}>
+                <Text style={styles.ppRowTitle} {...BODY_PROPS}>
                   {t('settings.cloudSync', { defaultValue: 'Cloud sync' })}
                 </Text>
                 <View style={styles.proBadge}>
                   <Text style={styles.proBadgeText}>PRO</Text>
                 </View>
               </View>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
+              <Text style={styles.ppRowSub} {...CAPTION_PROPS}>
                 {t('settings.cloudSyncSub', { defaultValue: 'Google Drive · Dropbox' })}
               </Text>
             </View>
@@ -3392,14 +3398,14 @@ export default function SettingsScreen({ navigation, route }) {
             </View>
             <View style={styles.ppRowMeta}>
               <View style={styles.ppRowTitleRow}>
-                <Text style={styles.ppRowTitle}>
+                <Text style={styles.ppRowTitle} {...BODY_PROPS}>
                   {t('settings.teamMembers', { defaultValue: 'Team members' })}
                 </Text>
                 <View style={styles.businessBadge}>
                   <Text style={styles.businessBadgeText}>BUSINESS</Text>
                 </View>
               </View>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
+              <Text style={styles.ppRowSub} {...CAPTION_PROPS}>
                 {t('settings.teamMembersSub', { defaultValue: 'Invite your crew' })}
               </Text>
             </View>
@@ -3416,10 +3422,10 @@ export default function SettingsScreen({ navigation, route }) {
               <Ionicons name="gift-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
-              <Text style={styles.ppRowTitle}>
+              <Text style={styles.ppRowTitle} {...BODY_PROPS}>
                 {t('settings.referEarn', { defaultValue: 'Refer Friends' })}
               </Text>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
+              <Text style={styles.ppRowSub} {...CAPTION_PROPS}>
                 {t('settings.referEarnSub', { defaultValue: 'Earn 7 extra trial days per friend' })}
               </Text>
             </View>
@@ -3438,10 +3444,10 @@ export default function SettingsScreen({ navigation, route }) {
               <Ionicons name="chatbubble-ellipses-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
-              <Text style={styles.ppRowTitle}>
+              <Text style={styles.ppRowTitle} {...BODY_PROPS}>
                 {t('settings.helpSupport', { defaultValue: 'Help & support' })}
               </Text>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
+              <Text style={styles.ppRowSub} {...CAPTION_PROPS}>
                 {t('settings.helpSupportSub', { defaultValue: 'Chat, email, or browse the help center' })}
               </Text>
             </View>
@@ -3461,10 +3467,10 @@ export default function SettingsScreen({ navigation, route }) {
               <Ionicons name="megaphone-outline" size={19} color={theme.textPrimary} />
             </View>
             <View style={styles.ppRowMeta}>
-              <Text style={styles.ppRowTitle}>
+              <Text style={styles.ppRowTitle} {...BODY_PROPS}>
                 {t('settings.sendFeedback', { defaultValue: 'Send feedback' })}
               </Text>
-              <Text style={styles.ppRowSub} numberOfLines={1}>
+              <Text style={styles.ppRowSub} {...CAPTION_PROPS}>
                 {t('settings.sendFeedbackSub', { defaultValue: 'Report a bug or suggest a feature' })}
               </Text>
             </View>
@@ -6384,6 +6390,7 @@ const makeStyles = (theme) => StyleSheet.create({
     ppRowMeta: {
       flex: 1,
       minWidth: 0,
+      paddingRight: 8,
     },
     ppRowTitle: {
       fontFamily: FONTS.ALEXANDRIA,
