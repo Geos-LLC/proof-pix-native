@@ -1557,12 +1557,18 @@ export default function ProjectsScreen({ navigation, route }) {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const dayMs = 86_400_000;
     switch (dateFilter) {
+      case 'week_before':
+        // Days -7 through -2 (excludes yesterday, which has its own chip).
+        return { from: todayStart - 7 * dayMs, to: todayStart - dayMs };
       case 'yesterday':
         return { from: todayStart - dayMs, to: todayStart };
       case 'today':
         return { from: todayStart, to: todayStart + dayMs };
       case 'tomorrow':
         return { from: todayStart + dayMs, to: todayStart + 2 * dayMs };
+      case 'week_after':
+        // Days +2 through +7 (excludes tomorrow, which has its own chip).
+        return { from: todayStart + 2 * dayMs, to: todayStart + 8 * dayMs };
       default:
         return null;
     }
@@ -2412,15 +2418,17 @@ export default function ProjectsScreen({ navigation, route }) {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const dayMs = 86_400_000;
     const ranges = {
+      week_before: { from: todayStart - 7 * dayMs, to: todayStart - dayMs },
       yesterday: { from: todayStart - dayMs, to: todayStart },
       today: { from: todayStart, to: todayStart + dayMs },
       tomorrow: { from: todayStart + dayMs, to: todayStart + 2 * dayMs },
+      week_after: { from: todayStart + 2 * dayMs, to: todayStart + 8 * dayMs },
     };
-    const counts = { all: pool.length, yesterday: 0, today: 0, tomorrow: 0 };
+    const counts = { all: pool.length, week_before: 0, yesterday: 0, today: 0, tomorrow: 0, week_after: 0 };
     for (const p of pool) {
       const ts = tsFn(p);
       if (!ts) continue;
-      for (const key of ['yesterday', 'today', 'tomorrow']) {
+      for (const key of ['week_before', 'yesterday', 'today', 'tomorrow', 'week_after']) {
         const r = ranges[key];
         if (ts >= r.from && ts < r.to) counts[key] += 1;
       }
@@ -2663,9 +2671,11 @@ export default function ProjectsScreen({ navigation, route }) {
         >
           {[
             { key: 'all', label: t('projects.dateFilter.all', { defaultValue: 'All' }) },
+            { key: 'week_before', label: t('projects.dateFilter.weekBefore', { defaultValue: 'Week before' }) },
             { key: 'yesterday', label: t('projects.dateFilter.yesterday', { defaultValue: 'Yesterday' }) },
             { key: 'today', label: t('projects.dateFilter.today', { defaultValue: 'Today' }) },
             { key: 'tomorrow', label: t('projects.dateFilter.tomorrow', { defaultValue: 'Tomorrow' }) },
+            { key: 'week_after', label: t('projects.dateFilter.weekAfter', { defaultValue: 'Week after' }) },
           ].map((chip) => {
             const active = dateFilter === chip.key;
             return (
@@ -3135,6 +3145,18 @@ export default function ProjectsScreen({ navigation, route }) {
                       return `${h}:${mm} ${ampm}`;
                     })()
                   : '';
+                // Date string in the same workspace TZ as timeStr (UTC
+                // accessors, matching the naive-datetime-as-UTC pattern
+                // from SF). "Aug 24" style — short + no year (the ±7d
+                // pull window never straddles a year boundary in
+                // practice).
+                const dateStr = (typeof scheduledAt === 'number' && scheduledAt > 0)
+                  ? (() => {
+                      const d = new Date(scheduledAt);
+                      const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                      return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+                    })()
+                  : '';
                 const isActive = activeProjectId === project.id;
                 const cleanerName = project?.crmJobMeta?.customerName || '';
                 const teamMirror = teamProjectsForSf.get(project.id);
@@ -3217,7 +3239,13 @@ export default function ProjectsScreen({ navigation, route }) {
                             : '';
                           const title = addr || project.name || '';
                           const nameLine = addr ? cleanerName : '';
-                          const metaBits = [timeStr, `${stats.count + teamPhotoCount} photo(s)`].filter(Boolean);
+                          // 4-line layout:
+                          //   L1: title (address or project name, bold)
+                          //   L2: customer name (only when title is address)
+                          //   L3: date · time                (schedule meta)
+                          //   L4: N photo(s)                 (own row per admin request 2026-08-21)
+                          const scheduleLine = [dateStr, timeStr].filter(Boolean).join(' · ');
+                          const photoLine = `${stats.count + teamPhotoCount} photo(s)`;
                           return (
                             <>
                               <Text style={[styles.cardName, { color: theme.textPrimary }]} numberOfLines={1}>
@@ -3228,8 +3256,13 @@ export default function ProjectsScreen({ navigation, route }) {
                                   {nameLine}
                                 </Text>
                               ) : null}
+                              {scheduleLine ? (
+                                <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                                  {scheduleLine}
+                                </Text>
+                              ) : null}
                               <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {metaBits.join(' · ')}
+                                {photoLine}
                               </Text>
                             </>
                           );
