@@ -13,7 +13,13 @@ const MAX_LOGS = 500; // Keep last 500 entries (errors + analytics mirror)
  * Logs errors to AsyncStorage and provides export functionality
  */
 
+let origError = console.error.bind(console);
+let origWarn = console.warn.bind(console);
+let logErrorInProgress = false;
+
 export const logError = async (error, context = {}) => {
+  if (logErrorInProgress) return null;
+  logErrorInProgress = true;
   try {
     const errorLog = {
       id: Date.now(),
@@ -41,12 +47,11 @@ export const logError = async (error, context = {}) => {
     // Save to AsyncStorage
     await AsyncStorage.setItem(ERROR_LOG_KEY, JSON.stringify(updatedLogs));
 
-    if (__DEV__) {
-      console.error('[errorLogger]', errorLog.message, errorLog.context);
-    }
-
     return errorLog;
   } catch (loggingError) {
+    return null;
+  } finally {
+    logErrorInProgress = false;
   }
 };
 
@@ -202,7 +207,6 @@ const CAPTURE_TAG_PATTERNS = [
   /^\[SETTINGS\b/,
   /^\[PhotoContext\b/,
   /^\[BackgroundUpload\b/i,
-  /^\[errorLogger\b/,
   /^\[CAMDIAG\b/,
   /^\[Storage\b/,
   /^\[PHOTODEL\b/,
@@ -233,10 +237,13 @@ const shouldCapture = (firstArg) => {
 
 let consolePatched = false;
 const patchConsole = () => {
+  // In dev, tagged warns/errors already show in Metro — capturing them
+  // only duplicates noise and used to echo back as ERROR [errorLogger].
+  if (__DEV__) return;
   if (consolePatched) return;
   consolePatched = true;
-  const origError = console.error.bind(console);
-  const origWarn = console.warn.bind(console);
+  origError = console.error.bind(console);
+  origWarn = console.warn.bind(console);
 
   console.error = (...args) => {
     origError(...args);

@@ -174,7 +174,7 @@ export default function UploadPhotosScreen({ route, navigation }) {
         finalName = `${i} ${namePart}`;
       }
       const safeName = finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
-      const proj = await createProject(safeName);
+      const proj = await createProject(safeName, { assignUnassigned: false });
       await setActiveProject(proj.id);
       setProjectPromptVisible(false);
       setNewProjectName('');

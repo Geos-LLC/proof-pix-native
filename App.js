@@ -770,7 +770,7 @@ function GlobalUploadIndicator({ navigationRef }) {
 // got installed.
 try {
   const fixpromptKey = process.env.EXPO_PUBLIC_FIXPROMPT_KEY;
-  if (fixpromptKey) {
+  if (fixpromptKey && !__DEV__) {
     const { initFixPrompt } = require('@fixprompt/react-native');
     initFixPrompt({
       projectKey: fixpromptKey,
@@ -787,8 +787,8 @@ try {
       patchConsoleWarn: true,
       captureTags: [
         /^\[IAP\b/, /^\[Analytics\b/i, /^\[Firebase\b/i, /^\[ADMIN\b/,
-        /^\[PROXY\b/, /^\[SETTINGS\b/, /^\[PhotoContext\b/, /^\[BackgroundUpload\b/i,
-        /^\[errorLogger\b/, /^\[CAMDIAG\b/, /^\[Storage\b/, /^\[PHOTODEL\b/,
+        /^\[PROXY\b/, /^\[SETTINGS\b/, /^\[PhotoContext\b/,         /^\[BackgroundUpload\b/i,
+        /^\[CAMDIAG\b/, /^\[Storage\b/, /^\[PHOTODEL\b/,
         /^\[BUNDLE\b/, /^\[Report\b/, /^\[ChromeBake\b/, /^\[ChromeBaker\b/,
         /^\[LabelPos\b/, /^\[CRM\b/, /^\[ServiceFlow\b/,
         /^\[EnterpriseContact\b/, /^\[HelpSupport\b/,
@@ -881,6 +881,30 @@ export default function App() {
           const { logAppOpen } = require('./src/utils/analytics');
           logAppOpen();
         } catch (e) { /* non-critical */ }
+
+        // Meta SDK + ATT (iOS). Init is a no-op when the native module
+        // isn't linked (Expo Go / pre-rebuild). ATT prompt is deferred
+        // briefly so it doesn't collide with the first-frame splash.
+        try {
+          const {
+            initMetaSdk,
+            setMetaAdvertiserTracking,
+          } = require('./src/utils/metaAnalytics');
+          await initMetaSdk();
+          if (Platform.OS === 'ios') {
+            setTimeout(async () => {
+              try {
+                const TrackingTransparency = require('expo-tracking-transparency');
+                const { status } = await TrackingTransparency.requestTrackingPermissionsAsync();
+                setMetaAdvertiserTracking(status === 'granted');
+              } catch (attErr) {
+                console.warn('[Meta] ATT request failed:', attErr?.message || attErr);
+              }
+            }, 1500);
+          }
+        } catch (metaErr) {
+          console.warn('[Meta] init skipped:', metaErr?.message || metaErr);
+        }
 
         // Build marker — confirms the installed binary contains the v2
         // subscription analytics chain (logTrialStarted, _classifyTransaction,

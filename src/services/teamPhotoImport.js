@@ -107,6 +107,7 @@ export async function importTeamProject({
     if (typeof createProject !== 'function') throw new Error('MISSING_CREATE_PROJECT');
     project = await createProject(teamProject.name || 'Imported project', {
       industry: teamProject.industry || null,
+      assignUnassigned: false,
     });
   }
   if (!project?.id) {

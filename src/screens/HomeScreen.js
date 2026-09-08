@@ -29,6 +29,7 @@ import { RoomIcon } from '../utils/roomIcons';
 import { usePhotos } from '../context/PhotoContext';
 import { ROOMS, COLORS, PHOTO_MODES, TEMPLATE_CONFIGS, TEMPLATE_TYPES } from '../constants/rooms';
 import { FONTS } from '../constants/fonts';
+import { BODY_PROPS, CAPTION_PROPS, SINGLE_LINE_PROPS, TITLE_PROPS } from '../constants/accessibilityText';
 import { CroppedThumbnail } from '../components/CroppedThumbnail';
 import { StudioEditOverlays } from '../components/StudioOverlays';
 import PannableImage from '../components/PannableImage';
@@ -365,7 +366,22 @@ export default function HomeScreen({ navigation, route }) {
   const { userMode, teamInfo } = useAdmin();
   const fullScreenTopInset = Math.max(insets.top, 25);
   const fullScreenBottomInset = Math.max(insets.bottom, 20);
-  const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
+  const isTeamMember = userMode === 'team_member';
+  const switchableProjects = useMemo(() => {
+    if (!isTeamMember) return projects;
+    const raw = teamInfo?.linkedSfTeamMemberId ?? teamInfo?.sfTeamMemberId ?? null;
+    const linkedId = raw != null && raw !== '' && Number.isFinite(Number(raw)) ? Number(raw) : null;
+    return projects.filter((p) => {
+      if (p?.crmProvider !== 'serviceflow') return true;
+      const meta = p?.crmJobMeta || {};
+      const hasLocalPhotos = (photos || []).some((ph) => ph.projectId === p.id);
+      // Unlinked: hide coworker SF shells (privacy). Keep rows already shot into.
+      if (linkedId == null) return hasLocalPhotos;
+      if (meta.teamMemberId === linkedId) return true;
+      if (Array.isArray(meta.teamMemberIds) && meta.teamMemberIds.includes(linkedId)) return true;
+      return hasLocalPhotos;
+    });
+  }, [projects, photos, isTeamMember, teamInfo?.linkedSfTeamMemberId, teamInfo?.sfTeamMemberId]);
   const { exceedsLimit } = useFeaturePermissions();
   const { uploadStatus, cancelUpload, cancelAllUploads } = useBackgroundUpload();
   const [newProjectVisible, setNewProjectVisible] = useState(false);
@@ -612,19 +628,8 @@ export default function HomeScreen({ navigation, route }) {
   // previewPhotoId / previewBeforeId / previewAfterId params. Tab was
   // removed; the handoff is dead code now.)
 
-  useEffect(() => {
-    if (activeProjectId && projects.length > 0) {
-      const activeProjectExists = projects.some(p => p.id === activeProjectId);
-      if (!activeProjectExists) {
-        setActiveProject(projects[0].id);
-      }
-    } else if (projects.length > 0 && !activeProjectId) {
-      setActiveProject(projects[0].id);
-    } else if (projects.length === 0 && activeProjectId) {
-      setActiveProject(null);
-    }
-  }, [projects, activeProjectId]);
-
+  // Active project validation lives in PhotoContext (pick by recent photos,
+  // not projects[0]). No duplicate auto-default here.
 
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
@@ -1533,7 +1538,9 @@ export default function HomeScreen({ navigation, route }) {
     }
     const safeName = finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_');
     try {
-      const proj = await createProject(safeName);
+      const proj = await createProject(safeName, { assignUnassigned: false });
+      // Must complete before Camera opens — otherwise ensureProjectForCapture
+      // can still see the previous active and stamp the old project.
       await setActiveProject(proj.id);
       setNewProjectVisible(false);
       setNewProjectNamePart('');
@@ -1620,12 +1627,21 @@ export default function HomeScreen({ navigation, route }) {
       if (activeProjectId && deletedIds.includes(activeProjectId)) {
         const remainingProjects = projects.filter(p => !deletedIds.includes(p.id));
         if (remainingProjects.length > 0) {
-          setActiveProject(remainingProjects[0].id);
+          let bestId = remainingProjects[0].id;
+          let bestTs = -1;
+          for (const p of remainingProjects) {
+            const ts = photos
+              .filter((ph) => ph.projectId === p.id)
+              .reduce((m, ph) => Math.max(m, Number(ph.timestamp) || 0), -1);
+            if (ts > bestTs) {
+              bestTs = ts;
+              bestId = p.id;
+            }
+          }
+          setActiveProject(bestId);
         } else {
           setActiveProject(null);
         }
-      } else if (!activeProjectId && projects.length > 0) {
-        setActiveProject(projects[0].id);
       }
     }
   }, [projects, activeProjectId, setActiveProject]);
@@ -1721,8 +1737,7 @@ export default function HomeScreen({ navigation, route }) {
                     styles.roomTabText,
                     isActive && styles.roomTabTextActive
                   ]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
+                  {...CAPTION_PROPS}
                 >
                   {cleaningServiceEnabled
                     ? t(`rooms.${room.id}`, { lng: sectionLanguage, defaultValue: room.name })
@@ -2156,7 +2171,7 @@ export default function HomeScreen({ navigation, route }) {
             style={styles.logoImage}
             resizeMode="contain"
           />
-          <Text style={styles.appName}>ProofPix</Text>
+          <Text style={styles.appName} {...BODY_PROPS}>ProofPix</Text>
         </View>
         <View style={styles.headerRight}>
           <View style={styles.planButtonsContainer}>
@@ -2171,7 +2186,7 @@ export default function HomeScreen({ navigation, route }) {
               <Text style={[
                 styles.starterButtonText,
                 styles.planButtonSelectedText
-              ]}>{t(`planModal.${userPlan || 'starter'}`, { defaultValue: (userPlan || 'starter').charAt(0).toUpperCase() + (userPlan || 'starter').slice(1) })}</Text>
+              ]} {...SINGLE_LINE_PROPS}>{isTeamMember ? 'TEAM' : t(`planModal.${userPlan || 'starter'}`, { defaultValue: (userPlan || 'starter').charAt(0).toUpperCase() + (userPlan || 'starter').slice(1) })}</Text>
             </TouchableOpacity>
             {(!userPlan || userPlan === 'starter') && (
               <TouchableOpacity
@@ -2183,7 +2198,7 @@ export default function HomeScreen({ navigation, route }) {
                   style={[styles.upgradeButtonImage, { tintColor: theme.textPrimary }]}
                   resizeMode="contain"
                 />
-                <Text style={styles.upgradeButtonText}>{t('home.upgrade')}</Text>
+                <Text style={styles.upgradeButtonText} {...SINGLE_LINE_PROPS}>{t('home.upgrade')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -2197,14 +2212,14 @@ export default function HomeScreen({ navigation, route }) {
       <View style={styles.projectNameContainer}>
         <View style={styles.projectInfoRow}>
           <View style={styles.projectInfoLeft}>
-            <Text style={styles.projectLabel}>{t('home.projectLabel')}</Text>
+            <Text style={styles.projectLabel} {...CAPTION_PROPS}>{t('home.projectLabel')}</Text>
             {(() => {
               const activeProject = projects.find(p => p.id === activeProjectId);
               const displayName = activeProject?.name || t('projects.noProjects');
 
               if (!activeProject) {
                 return (
-                  <Text style={styles.projectNameText} numberOfLines={1}>
+                  <Text style={styles.projectNameText} {...SINGLE_LINE_PROPS}>
                     {displayName}
                   </Text>
                 );
@@ -2251,7 +2266,7 @@ export default function HomeScreen({ navigation, route }) {
                     }}
                     style={styles.projectNameTouchable}
                   >
-                    <Text style={styles.projectNameText} numberOfLines={1}>
+                    <Text style={styles.projectNameText} {...SINGLE_LINE_PROPS}>
                       {displayName}
                     </Text>
                     <Ionicons name="chevron-down" size={14} color={theme.textMuted} style={{ marginLeft: 6 }} />
@@ -3077,12 +3092,18 @@ export default function HomeScreen({ navigation, route }) {
               }}
               shareLabel={t('home.sharePhoto')}
               onShare={async (p) => {
+                // Route through ProjectDetail share flow so the user
+                // picks before / after / combined — don't silently share
+                // whatever photo is on screen.
+                if (activeProjectId) {
+                  setTappedFullPhoto(null);
+                  navigation.navigate('ProjectDetail', {
+                    projectId: activeProjectId,
+                    initialShareFlow: true,
+                  });
+                  return;
+                }
                 if (!p?.uri) return;
-                // Route through chromeBakeService so the shared JPG
-                // carries the Studio format (pairTemplate crop) +
-                // overlay stack (label / watermark / brand logo /
-                // metadata / markup). Falls back to the raw uri if the
-                // bake fails so the share still succeeds.
                 let shareUri = p.uri;
                 try {
                   const baked = await chromeBakeService.bakeChrome(p, bakeLabelSettings);
@@ -3129,10 +3150,10 @@ export default function HomeScreen({ navigation, route }) {
             {/* Header: title + subtitle + round X close */}
             <View style={styles.projectSheetHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.projectSheetTitle}>
+                <Text style={styles.projectSheetTitle} {...TITLE_PROPS}>
                   {t('projects.title')}
                 </Text>
-                <Text style={styles.projectSheetSubtitle}>
+                <Text style={styles.projectSheetSubtitle} {...CAPTION_PROPS}>
                   {fabPickerMode
                     ? t('home.firstPhotoPickerSubtitle', { defaultValue: 'Where should this first photo go?' })
                     : t('home.projectSheetSubtitle')}
@@ -3150,13 +3171,13 @@ export default function HomeScreen({ navigation, route }) {
             {/* Project switcher list. Each row: circular check dot, name +
                 meta ("N photos · M sets · updated Xh ago"), OPEN badge on
                 the active row / chevron on the others. */}
-            {projects.length > 0 && (
+            {switchableProjects.length > 0 && (
               <ScrollView
                 style={styles.projectSheetList}
                 contentContainerStyle={{ paddingHorizontal: 18, paddingVertical: 12, gap: 8 }}
                 showsVerticalScrollIndicator={false}
               >
-                {projects.map((proj) => {
+                {switchableProjects.map((proj) => {
                   const isActive = proj.id === activeProjectId;
                   const projPhotos = getPhotosByProject(proj.id) || [];
                   const setCount = countSets(projPhotos);
@@ -3212,6 +3233,7 @@ export default function HomeScreen({ navigation, route }) {
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text
                           style={[styles.projectSheetRowName, { color: theme.textPrimary, fontWeight: isActive ? '700' : '600' }]}
+                          {...SINGLE_LINE_PROPS}
                           numberOfLines={1}
                         >
                           {proj.name}
@@ -3610,14 +3632,16 @@ const makeStyles = (theme) => StyleSheet.create({
     borderColor: theme.accent,
     borderRadius: 30,
     overflow: 'hidden',
-    height: 32,
+    minHeight: 32,
+    maxWidth: 160,
   },
   starterButton: {
     backgroundColor: theme.surfaceElevated,
-    paddingHorizontal: 16,
-    height: 32,
+    paddingHorizontal: 12,
+    minHeight: 32,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 1,
   },
   starterButtonText: {
     color: theme.textPrimary,
@@ -3807,11 +3831,11 @@ const makeStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 12,
     backgroundColor: theme.surfaceElevated,
     minWidth: 69,
-    height: 63,
+    minHeight: 63,
     borderWidth: 1,
     borderColor: theme.border,
   },

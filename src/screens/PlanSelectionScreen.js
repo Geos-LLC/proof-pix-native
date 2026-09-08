@@ -689,8 +689,10 @@ export default function PlanSelectionScreen({ navigation, route }) {
             design source). When a specific feature triggered the paywall,
             the trigger banner below carries the per-trigger headline; this
             hero stays as the platform positioning. */}
-        <Text style={styles.heroTitle}>Turn job photos into professional deliverables</Text>
-        <Text style={styles.heroSubtitle}>
+        <Text style={styles.heroTitle} maxFontSizeMultiplier={1.25}>
+          Turn job photos into professional deliverables
+        </Text>
+        <Text style={styles.heroSubtitle} maxFontSizeMultiplier={1.25}>
           Capture, organize, document & share every job with branded reports, cloud sync, and workflows built for service professionals.
         </Text>
 
@@ -706,7 +708,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
             onPress={handlePickMonthly}
             activeOpacity={0.85}
           >
-            <Text style={[styles.billingChipText, billingCycle === 'monthly' && styles.billingChipTextActive]}>
+            <Text style={[styles.billingChipText, billingCycle === 'monthly' && styles.billingChipTextActive]} maxFontSizeMultiplier={1.15}>
               Monthly
             </Text>
           </TouchableOpacity>
@@ -725,13 +727,13 @@ export default function PlanSelectionScreen({ navigation, route }) {
                 styles.billingChipText,
                 billingCycle === 'annual' && styles.billingChipTextActive,
                 !annualAvailable && styles.billingChipTextDisabled,
-              ]}>
+              ]} maxFontSizeMultiplier={1.15}>
                 Annual
               </Text>
               <Text style={[
                 styles.billingChipAccent,
                 !annualAvailable && styles.billingChipTextDisabled,
-              ]}>
+              ]} maxFontSizeMultiplier={1.15}>
                 {annualAvailable ? 'SAVE 25%' : 'COMING SOON'}
               </Text>
             </View>
@@ -1057,7 +1059,7 @@ export default function PlanSelectionScreen({ navigation, route }) {
           disabled={bottomCTADisabled}
           activeOpacity={0.85}
         >
-          <Text style={styles.ctaButtonText}>{bottomCTAText}</Text>
+          <Text style={styles.ctaButtonText} maxFontSizeMultiplier={1.15}>{bottomCTAText}</Text>
         </TouchableOpacity>
 
         <View style={styles.finePrintRow}>
@@ -1174,7 +1176,7 @@ const makeStyles = (theme) => StyleSheet.create({
     // Padding sides only — child content sets its own horizontal margins.
     // Bottom padding accommodates the fixed bottomBar (CTA + fine print).
     paddingHorizontal: 0,
-    paddingBottom: 24,
+    paddingBottom: 140,
   },
   trialBannerWrapper: {
     marginBottom: 14,

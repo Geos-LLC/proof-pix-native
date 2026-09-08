@@ -36,6 +36,25 @@ const photoAspect = (p, fallback = 1) => {
 
 const PHOTO_MODE_COMBINED = 'mix';
 
+// Mirror EnlargedPhotoViewer / chrome bake: combined photos can be
+// side-by-side or stacked; label halves must match the saved layout.
+const combinedLayoutFor = (photo) => {
+  if (!photo) return 'side';
+  const stored = photo.combinedLayout;
+  if (stored === 'stack' || stored === 'STACK') return 'stack';
+  if (stored === 'side' || stored === 'SIDE') return 'side';
+  if (photo.orientation === 'landscape' || photo.cameraViewMode === 'landscape') return 'stack';
+  const w = photo.originalWidth || photo.width;
+  const h = photo.originalHeight || photo.height;
+  if (typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0) {
+    return h > w ? 'stack' : 'side';
+  }
+  return 'side';
+};
+
+const isCombinedPhoto = (photo) =>
+  photo?.mode === 'mix' || photo?.mode === 'combined';
+
 // YIQ luminance — pick black or white text so the chip stays legible
 // no matter what brand color the user picks.
 const contrastText = (bgHex) => {
@@ -124,7 +143,12 @@ const PhotoSlot = ({ photo, uri, theme, missing, onEdit, options }) => {
       )}
       {photo && uri ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <StudioEditOverlays photo={photo} theme={theme} combinedLayout="side" {...flags} />
+          <StudioEditOverlays
+            photo={photo}
+            theme={theme}
+            combinedLayout={isCombinedPhoto(photo) ? combinedLayoutFor(photo) : 'side'}
+            {...flags}
+          />
         </View>
       ) : null}
       <EditBadge onPress={onEdit} />
@@ -300,16 +324,21 @@ const BeforeAfterPreview = ({ photos, options, displayRoomName, theme, onPhotoEd
             return (
               <View key={`combined-${c.id}`} style={[styles.combinedHero, { aspectRatio: aspect }]}>
                 {c.uri ? (
-                  <Image
-                    source={{ uri: c.uri }}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode="contain"
-                  />
-                ) : null}
-                {c.uri ? (
-                  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                    <StudioEditOverlays photo={c} theme={theme} combinedLayout="side" {...overlayFlags} />
-                  </View>
+                  <>
+                    <Image
+                      source={{ uri: c.uri }}
+                      style={StyleSheet.absoluteFillObject}
+                      resizeMode="cover"
+                    />
+                    <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+                      <StudioEditOverlays
+                        photo={c}
+                        theme={theme}
+                        combinedLayout={combinedLayoutFor(c)}
+                        {...overlayFlags}
+                      />
+                    </View>
+                  </>
                 ) : null}
                 <EditBadge onPress={typeof onPhotoEdit === 'function' ? () => onPhotoEdit(c) : undefined} />
               </View>

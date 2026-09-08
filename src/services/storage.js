@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as FS from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
-import { saveImageToGalleryNative, deleteImagesFromGalleryNative, deleteImagesByPrefixesNative } from '../utils/mediaStoreSaver';
+import { saveImageToGalleryNative, deleteImagesFromGalleryNative } from '../utils/mediaStoreSaver';
 import { testMediaStoreSaverModule } from '../utils/testMediaStoreSaver';
 import {
   readSecure,
@@ -218,41 +218,35 @@ export const savePhotoToDevice = async (uri, filename, projectId = null) => {
       finalFileUri = fileUri;
     }
 
-    // Save to device gallery.
-    //   Android: native MediaStoreSaver only — no expo-media-library, no
-    //     READ_MEDIA_IMAGES permission needed (own-app scoped-storage write).
-    //   iOS: expo-media-library (needs Photos permission).
-    if (Platform.OS === 'android') {
-      try {
-        console.log('[Storage] Using native MediaStore saver for Android');
-        const justName = (finalFileUri.split('/').pop() || '').split('?')[0];
-        await saveImageToGalleryNative(finalFileUri, justName);
-        console.log('[Storage] ✅ Saved via native MediaStore');
-      } catch (nativeError) {
-        // No fallback — expo-media-library.createAssetAsync would require
-        // READ_MEDIA_IMAGES which we intentionally do not declare.
-        console.warn('[Storage] Native MediaStore save failed:', nativeError);
-      }
-      return finalFileUri;
-    }
-
-    // iOS below
+    // Save to media library (device Photos / Gallery) – same flow for iOS and Android.
+    // This mirrors the original iOS behavior: create an asset and ensure it's in a "ProofPix" album.
     let status = 'undetermined';
     let accessPrivileges = 'none';
     try {
+      // Check current permission status first (no options to avoid Kotlin conversion error)
       const currentStatus = await MediaLibrary.getPermissionsAsync();
       status = currentStatus.status;
       accessPrivileges = currentStatus.accessPrivileges || 'none';
+
       console.log('[Storage] Current permission status:', status, ', accessPrivileges:', accessPrivileges);
 
+      // On Android 14+, if status is "limited", user selected partial access which causes confirmation dialogs
+      // We need full access to avoid the dialog on each photo save
       if (status === 'limited' || (status === 'granted' && accessPrivileges === 'limited')) {
+        console.log('[Storage] ⚠️ Limited access detected - app will show confirmation on each save');
+        console.log('[Storage] Requesting full access...');
         const requestResult = await MediaLibrary.requestPermissionsAsync();
         status = requestResult.status;
         accessPrivileges = requestResult.accessPrivileges || 'none';
+        console.log('[Storage] New permission:', status, ', accessPrivileges:', accessPrivileges);
       } else if (status !== 'granted') {
-        const requestResult = await MediaLibrary.requestPermissionsAsync();
-        status = requestResult.status;
-        accessPrivileges = requestResult.accessPrivileges || 'none';
+        // Do NOT request permission mid-save. On iOS a Photos permission
+        // sheet while the camera session is still live commonly kills
+        // the app (especially on first photo of a fresh install). Photo
+        // is already in app Documents — gallery sync can happen later.
+        console.warn('[Storage] Media library not granted — skipping gallery save (kept in app storage)');
+      } else {
+        console.log('[Storage] ✅ Full media library access granted');
       }
     } catch (permError) {
       console.warn('[Storage] Permission error:', permError);
@@ -260,15 +254,44 @@ export const savePhotoToDevice = async (uri, filename, projectId = null) => {
 
     if (status === 'granted' || status === 'limited') {
       try {
-        const asset = await MediaLibrary.createAssetAsync(finalFileUri);
-        console.warn(`[PHOTODEL] createAssetAsync returned id=${asset?.id || 'NONE'} for ${filename}`);
+        let asset = null;
 
+        // On Android, use native MediaStore API to avoid confirmation dialogs on Samsung devices
+        if (Platform.OS === 'android') {
+          try {
+            console.log('[Storage] Using native MediaStore saver for Android');
+            const justName = (finalFileUri.split('/').pop() || '').split('?')[0];
+            await saveImageToGalleryNative(finalFileUri, justName);
+            console.log('[Storage] ✅ Saved via native MediaStore (no confirmation dialog)');
+
+            // Note: We don't get an asset ID from native saver, so we skip asset ID mapping
+            // Photos can still be found by filename for deletion
+          } catch (nativeError) {
+            console.warn('[Storage] Native saver failed, falling back to expo-media-library:', nativeError);
+            // Fallback to expo-media-library
+            asset = await MediaLibrary.createAssetAsync(finalFileUri);
+          }
+        } else {
+          // iOS: use expo-media-library as usual
+          asset = await MediaLibrary.createAssetAsync(finalFileUri);
+          console.warn(`[PHOTODEL] createAssetAsync returned id=${asset?.id || 'NONE'} for ${filename}`);
+        }
+
+        // Only handle album and asset ID mapping if we used expo-media-library
         if (asset) {
-          const album = await MediaLibrary.getAlbumAsync('ProofPix');
-          if (album == null) {
-            await MediaLibrary.createAlbumAsync('ProofPix', asset, false);
-          } else {
-            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          // Create/add to ProofPix album (works on both iOS and Android).
+          // On a fresh install this is the first album write — keep it
+          // isolated so a Photos-framework failure never bubbles up and
+          // kills the capture path (asset is already in the library).
+          try {
+            const album = await MediaLibrary.getAlbumAsync('ProofPix');
+            if (album == null) {
+              await MediaLibrary.createAlbumAsync('ProofPix', asset, false);
+            } else {
+              await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+            }
+          } catch (albumErr) {
+            console.warn('[Storage] Album create/add failed (photo still saved):', albumErr?.message || albumErr);
           }
 
           // Store a mapping from filename -> assetId for reliable deletion later.
@@ -342,23 +365,22 @@ export const deletePhotoFromDevice = async (photo, options = {}) => {
 
     console.log('[Storage] Proceeding with media library deletion');
     try {
-      // Android: native MediaStore delete only — no expo-media-library
-      // fallback because we don't declare READ_MEDIA_IMAGES.
-      if (Platform.OS === 'android') {
-        try {
-          const result = await deleteImagesFromGalleryNative([filename]);
-          console.log('[Storage] ✅ Native delete result:', result);
-        } catch (nativeDelErr) {
-          console.warn('[Storage] Native MediaStore delete failed:', nativeDelErr);
-        }
-        return;
-      }
-
-      // iOS below
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
         console.warn('[Storage] Media library permission not granted');
         return;
+      }
+
+      // On Android, try native MediaStore deletion first (more reliable)
+      if (Platform.OS === 'android') {
+        try {
+          const result = await deleteImagesFromGalleryNative([filename]);
+          console.log('[Storage] ✅ Native delete result:', result);
+          return; // Successfully deleted via native method
+        } catch (nativeDelErr) {
+          console.warn('[Storage] Native delete failed, falling back to expo-media-library:', nativeDelErr);
+          // Continue to expo-media-library fallback below
+        }
       }
 
       // Try direct assetId from stored mapping
@@ -947,29 +969,6 @@ export const deleteAssetsBatch = async ({ filenames = [], prefixes = [], deleteF
 
     const uniqueNames = Array.from(new Set(filenames.filter(Boolean)));
     if (uniqueNames.length === 0 && prefixes.length === 0) return;
-
-    // Android: native MediaStore delete only — no READ_MEDIA_IMAGES declared.
-    if (Platform.OS === 'android') {
-      try {
-        if (uniqueNames.length > 0) {
-          await deleteImagesFromGalleryNative(uniqueNames);
-        }
-        if (prefixes.length > 0) {
-          await deleteImagesByPrefixesNative(prefixes);
-        }
-      } catch (nativeErr) {
-        console.warn('[Storage] Native batch delete failed:', nativeErr);
-      }
-      // Best-effort clean of asset map (map is mostly iOS-populated,
-      // but keep behavior consistent in case any entries exist).
-      try {
-        const map = await getAssetIdMap();
-        for (const name of uniqueNames) delete map[name];
-        await setAssetIdMap(map);
-      } catch {}
-      return;
-    }
-
     const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status !== 'granted') {
       console.warn('[Storage] Media library permission not granted for batch delete');

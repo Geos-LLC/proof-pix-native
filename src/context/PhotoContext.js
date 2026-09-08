@@ -34,6 +34,24 @@ import { PHOTO_MODES, ROOMS } from '../constants/rooms';
 
 const PhotoContext = createContext();
 
+/** Prefer the project with the most recent photo activity — not projects[0] (newest created). */
+const pickFallbackProjectId = (projectList, photoList, excludeId = null) => {
+  const candidates = (projectList || []).filter((p) => p?.id && p.id !== excludeId);
+  if (!candidates.length) return null;
+  let bestId = candidates[0].id;
+  let bestTs = -1;
+  for (const p of candidates) {
+    const maxTs = (photoList || [])
+      .filter((ph) => ph.projectId === p.id)
+      .reduce((m, ph) => Math.max(m, Number(ph.timestamp) || 0), -1);
+    if (maxTs > bestTs) {
+      bestTs = maxTs;
+      bestId = p.id;
+    }
+  }
+  return bestId;
+};
+
 export const usePhotos = () => {
   const context = useContext(PhotoContext);
   if (!context) {
@@ -64,6 +82,9 @@ export const PhotoProvider = ({ children }) => {
   const projectsRef = useRef(projects);
   useEffect(() => { projectsRef.current = projects; }, [projects]);
   const [activeProjectId, setActiveProjectId] = useState(null);
+  const activeProjectIdRef = useRef(null);
+  useEffect(() => { activeProjectIdRef.current = activeProjectId; }, [activeProjectId]);
+  const [initialHydrationDone, setInitialHydrationDone] = useState(false);
 
   // Load photos on mount
   // Load data on app start.
@@ -87,59 +108,45 @@ export const PhotoProvider = ({ children }) => {
 
       // Self-heal ghost SF projects. Any project carrying a crmJobId
       // came from a Service Flow sync. If SF is currently disconnected
-      // (no workspace stored), those projects are stale.
+      // (no workspace stored), those projects are stale — the source
+      // of truth is gone. Wipe them here so users who disconnected SF
+      // BEFORE the CloudSyncScreen wipe was wired (or on an older
+      // build) get cleanup on next cold start. One-shot per boot.
       //
-      // Two guardrails vs the original 2026-07 implementation:
-      //
-      //   1. Skipped entirely for team_member accounts. Team members
-      //      NEVER hold SF creds locally — the proxy holds the admin's
-      //      refresh token on their behalf, so `getStoredWorkspace()`
-      //      always returns null for them. The old code therefore
-      //      deleted every team_member SF project on every cold start,
-      //      orphaning any photos captured to those projects (they
-      //      still referenced the deleted projectId while SF sync
-      //      re-created the project with a fresh `proj_TS` id).
-      //      Matches the "Ebony Devis empty after reopen" report on
-      //      2026-08-14.
-      //
-      //   2. For admins with disconnected SF, unlink instead of delete.
-      //      Clear crmJobId / crmProvider / crmJobMeta on the project
-      //      row but keep the row itself. Preserves the photos'
-      //      projectId → project link so the user's work isn't lost
-      //      when SF is disconnected.
+      // CRITICAL: skip for team_member. Members never store an SF
+      // workspace on-device (uploads go through the admin proxy), so
+      // getStoredWorkspace() is always empty and this wipe would
+      // delete every synced job on every launch — the main cause of
+      // "projects mix up / photos disappear" for crew.
       try {
         const userMode = await AsyncStorage.getItem('@admin_user_mode');
-        if (userMode !== 'team_member') {
-          const hasSFSynced = (projectsList || []).some((p) => p?.crmJobId);
-          if (hasSFSynced) {
-            const crmService = require('../services/crm').default;
-            let sfConnected = false;
-            try {
-              const adapter = await crmService.getActiveAdapter();
-              if (adapter && typeof adapter.getStoredWorkspace === 'function') {
-                const stored = await adapter.getStoredWorkspace();
-                sfConnected = !!stored?.workspaceId;
-              }
-            } catch {}
-            if (!sfConnected) {
-              const before = projectsList.length;
-              let unlinked = 0;
-              const patched = projectsList.map((p) => {
-                if (!p?.crmJobId) return p;
-                unlinked += 1;
-                const { crmJobId, crmProvider, crmJobMeta, ...rest } = p;
-                return rest;
+        if (userMode === 'team_member') {
+          console.warn('[PhotoContext] cold-start SF-ghost cleanup skipped (team_member)');
+        } else {
+        const hasSFSynced = (projectsList || []).some((p) => p?.crmJobId);
+        if (hasSFSynced) {
+          const crmService = require('../services/crm').default;
+          let sfConnected = false;
+          try {
+            const adapter = await crmService.getActiveAdapter();
+            if (adapter && typeof adapter.getStoredWorkspace === 'function') {
+              const stored = await adapter.getStoredWorkspace();
+              sfConnected = !!stored?.workspaceId;
+            }
+          } catch {}
+          if (!sfConnected) {
+            const before = projectsList.length;
+            const kept = projectsList.filter((p) => !p?.crmJobId);
+            if (kept.length !== before) {
+              await saveProjects(kept);
+              projectsList = kept;
+              console.warn('[PhotoContext] cold-start SF-ghost cleanup', {
+                before,
+                after: kept.length,
               });
-              if (unlinked > 0) {
-                await saveProjects(patched);
-                projectsList = patched;
-                console.warn('[PhotoContext] cold-start SF-ghost unlink', {
-                  before,
-                  unlinked,
-                });
-              }
             }
           }
+        }
         }
       } catch (sfCleanupErr) {
         console.warn('[PhotoContext] cold-start SF-ghost cleanup failed:', sfCleanupErr?.message);
@@ -251,75 +258,45 @@ export const PhotoProvider = ({ children }) => {
         }
       }
 
-      // Partial-orphan recovery. Independent of the full-wipe recovery
-      // above — heals photos whose projectId points at a project that
-      // no longer exists in `projectsList`, but where OTHER projects
-      // still do. This scenario was created by the pre-fix cold-start
-      // SF-ghost cleanup deleting every crmJobId-bearing project on
-      // team-member devices while their photos still referenced the
-      // deleted ids. Recreating those ids as "Recovered project N"
-      // rows (with the ORIGINAL ids) restores the photo→project
-      // link, so the photos become visible again inside a project
-      // the user can rename/reassign.
-      //
-      // Not gated by a marker: it's cheap (set membership + one
-      // saveProjects only when orphans are found) and safe to re-run
-      // (a subsequent call finds zero orphans → no-op).
-      try {
-        const currentIds = new Set((projectsList || []).map((p) => p?.id).filter(Boolean));
-        const photoMeta = await loadPhotosMetadata();
-        const orphanBuckets = new Map();
-        for (const photo of photoMeta || []) {
-          const pid = photo?.projectId;
-          if (!pid) continue;
-          if (currentIds.has(pid)) continue;
-          const bucket = orphanBuckets.get(pid) || [];
-          bucket.push(photo);
-          orphanBuckets.set(pid, bucket);
-        }
-        if (orphanBuckets.size > 0) {
-          const baseIndex = (projectsList || []).length;
-          const orderedIds = Array.from(orphanBuckets.keys()).sort((a, b) => {
-            const aOldest = Math.min(...orphanBuckets.get(a).map((p) => Number(p.timestamp) || Number.POSITIVE_INFINITY));
-            const bOldest = Math.min(...orphanBuckets.get(b).map((p) => Number(p.timestamp) || Number.POSITIVE_INFINITY));
-            return aOldest - bOldest;
-          });
-          const synthesized = orderedIds.map((pid, idx) => {
-            const oldestTs = Math.min(...orphanBuckets.get(pid).map((p) => Number(p.timestamp) || Date.now()));
-            return {
-              id: pid,
-              name: `Recovered project ${baseIndex + idx + 1}`,
-              createdAt: new Date(oldestTs).toISOString(),
-              recoveredAt: Date.now(),
-            };
-          });
-          const merged = [...(projectsList || []), ...synthesized];
-          console.warn('[PhotoContext] partial-orphan recovery', {
-            existing: baseIndex,
-            recovered: synthesized.length,
-            orphaned_photo_count: Array.from(orphanBuckets.values()).reduce((a, b) => a + b.length, 0),
-          });
-          await saveProjects(merged);
-          projectsList = merged;
-        }
-      } catch (e) {
-        console.warn('[PhotoContext] partial-orphan recovery failed:', e?.message);
-      }
-
       const savedActive = await loadActiveProjectId();
       if (savedActive) {
         const projectExists = projectsList.some(p => p.id === savedActive);
         if (projectExists) {
+          activeProjectIdRef.current = savedActive;
           setActiveProjectId(savedActive);
         } else {
+          activeProjectIdRef.current = null;
           setActiveProjectId(null);
           await saveActiveProjectId(null);
         }
       }
       projectsRef.current = projectsList;
       setProjects(projectsList);
+      setInitialHydrationDone(true);
     })();
   }, []);
+
+  // Keep active project valid after hydration / list changes. Never
+  // blindly jump to projects[0] (newest created) — prefer last-opened
+  // when valid, otherwise the project with the most recent photos.
+  useEffect(() => {
+    if (!initialHydrationDone) return;
+    if (projects.length === 0) {
+      if (activeProjectId) {
+        activeProjectIdRef.current = null;
+        setActiveProjectId(null);
+        saveActiveProjectId(null);
+      }
+      return;
+    }
+    if (activeProjectId && projects.some((p) => p.id === activeProjectId)) return;
+    const fallback = pickFallbackProjectId(projects, photosRef.current, activeProjectId);
+    if (fallback && fallback !== activeProjectId) {
+      activeProjectIdRef.current = fallback;
+      setActiveProjectId(fallback);
+      saveActiveProjectId(fallback);
+    }
+  }, [projects, activeProjectId, initialHydrationDone]);
 
   // Reload data when app becomes active (returns from background)
   useEffect(() => {
@@ -683,6 +660,13 @@ export const PhotoProvider = ({ children }) => {
       const list = await loadProjects();
       projectsRef.current = list;
       setProjects(list);
+      const currentActive = activeProjectIdRef.current;
+      if (currentActive && !list.some((p) => p.id === currentActive)) {
+        const fallback = pickFallbackProjectId(list, photosRef.current, currentActive);
+        activeProjectIdRef.current = fallback;
+        setActiveProjectId(fallback);
+        await saveActiveProjectId(fallback);
+      }
     } catch (e) {
     }
   };
@@ -764,7 +748,7 @@ export const PhotoProvider = ({ children }) => {
 
       const stamped = {
         ...photo,
-        projectId: photo.projectId ?? activeProjectId ?? null,
+        projectId: photo.projectId ?? activeProjectIdRef.current ?? null,
         capturedBy,
       };
       const newPhotos = [...currentPhotos, stamped];
@@ -784,19 +768,20 @@ export const PhotoProvider = ({ children }) => {
       // Drive/Dropbox/iCloud would mean users without those configured
       // never see their photos on the CRM side.
       //
+      // Team members never hold an SF access token locally — their
+      // photos reach SF via the proxy team-upload fanout
+      // (autoQueueTeamUploadIfNeeded above). Calling attachPhoto here
+      // always fails with NOT_CONNECTED and only adds noise.
+      //
       // Fire-and-forget. SF backend dedups on proofpix_photo_id within
       // 24h, so if backgroundUploadService later also fires attach
       // (when a cloud destination IS configured), the second call is a
       // no-op {alreadyExisted: true}.
-      //
-      // Skipped for team_member: their local crmService adapter is
-      // never connected (proxy holds admin's SF creds), so this path
-      // always returns NO_CRM_CONNECTED and just adds noise. The team
-      // upload path (autoQueueTeamUploadIfNeeded above) delivers the
-      // photo to SF via the proxy's own SF branch instead.
       try {
         const mode = await AsyncStorage.getItem('@admin_user_mode');
-        if (stamped.projectId && mode !== 'team_member') {
+        if (mode === 'team_member') {
+          // Proxy path handles SF for crew — skip local adapter.
+        } else if (stamped.projectId) {
           const project = (projectsRef.current || []).find(p => p?.id === stamped.projectId);
           if (project?.crmJobId && project?.crmProvider) {
             const uriSample = stamped.uri ? String(stamped.uri).slice(0, 80) : null;
@@ -1114,38 +1099,13 @@ export const PhotoProvider = ({ children }) => {
       // import off the module-load path so older binaries that
       // predate any proxyService change won't brick an OTA.
       const proxyService = require('../services/proxyService').default;
-      const payload = {
+      await proxyService.syncTeamProject(info.sessionId, info.token, {
         id: project.id,
         name: project.name,
         industry: project.industry ?? null,
         createdAt: project.createdAt ?? null,
         memberName,
-        // SF-linked projects carry crmJobId — forwarding it lets the
-        // admin's local SF card fetch team photos by their crmJobId
-        // (the admin's proj id doesn't match the team member's local
-        // proj_TS id, but the crmJobId is the same on both sides).
-        crmJobId: project.crmJobId != null ? String(project.crmJobId) : null,
-      };
-      // Retry once on failure. Without a retry, a single 5xx or
-      // network blip silently drops the project from the admin's
-      // Team-tab view forever (proxy row never gets created, admin
-      // sees nothing). Cheap belt-and-suspenders: 3s delay, one
-      // attempt, then give up (upload endpoint's project-bump path
-      // creates a stub row on first capture as a final backstop).
-      try {
-        await proxyService.syncTeamProject(info.sessionId, info.token, payload);
-        console.warn('[PhotoContext] syncProjectToProxyIfTeamMember ok', { projectId: project.id });
-      } catch (firstErr) {
-        console.warn('[PhotoContext] syncProjectToProxyIfTeamMember retry after', firstErr?.message);
-        await new Promise((r) => setTimeout(r, 3000));
-        try {
-          await proxyService.syncTeamProject(info.sessionId, info.token, payload);
-          console.warn('[PhotoContext] syncProjectToProxyIfTeamMember ok after retry', { projectId: project.id });
-        } catch (retryErr) {
-          console.warn('[PhotoContext] syncProjectToProxyIfTeamMember still failing:', retryErr?.message);
-          throw retryErr;
-        }
-      }
+      });
     } catch (err) {
       console.warn('[PhotoContext] syncProjectToProxyIfTeamMember failed:', err?.message);
     }
@@ -1192,17 +1152,29 @@ export const PhotoProvider = ({ children }) => {
 
       // Publish to Team Projects (no-op for non-team_member accounts).
       // Fire-and-forget — the create should never block on network.
-      syncProjectToProxyIfTeamMember(newProject);
+      // SF sync creates skip this so empty job shells don't appear on
+      // the admin Team tab before the member shoots anything.
+      if (!opts.skipProxySync) {
+        syncProjectToProxyIfTeamMember(newProject);
+      }
 
-      // Reset custom rooms to default when new project is created
-      // Auto-assign only unassigned photos to the new project — read from
-      // photosRef.current so we don't operate on stale state and accidentally
-      // drop newer photos that haven't propagated to the React state yet.
-      const current = photosRef.current;
-      const unassigned = current.filter(p => !p.projectId);
-      if (unassigned.length > 0) {
-        const updated = current.map(p => (!p.projectId ? { ...p, projectId: newProject.id } : p));
-        await savePhotos(updated);
+      // Do NOT steal orphans by default. Team members creating a new
+      // job used to pull every photo with a null projectId (capture
+      // races, combined composites, leftover imports) into the new
+      // project — existing work looked like it "moved" to the wrong
+      // assignment. Opt in only for first-project / capture-then-name
+      // flows via assignUnassigned: true.
+      if (opts.assignUnassigned === true) {
+        if (!photosLoadedRef.current) {
+          console.warn('[PhotoContext] createProject skipped assignUnassigned — photos not loaded');
+        } else {
+          const current = photosRef.current;
+          const unassigned = current.filter(p => !p.projectId);
+          if (unassigned.length > 0) {
+            const updated = current.map(p => (!p.projectId ? { ...p, projectId: newProject.id } : p));
+            await savePhotos(updated);
+          }
+        }
       }
       return newProject;
     } catch (error) {
@@ -1256,7 +1228,6 @@ export const PhotoProvider = ({ children }) => {
     // patchProject in a loop without yielding; closure-based patch
     // wipes each create back to [] before the next iteration.
     const baseList = projectsRef.current || [];
-    const prior = baseList.find(p => p.id === projectId) || null;
     const updated = baseList.map(p =>
       p.id === projectId ? { ...p, ...patch } : p
     );
@@ -1265,18 +1236,6 @@ export const PhotoProvider = ({ children }) => {
     try {
       await saveProjects(updated);
     } catch (_) { /* persistence best-effort; state still reflects patch */ }
-
-    // Re-publish to the proxy when SF linkage or the project name
-    // changes. serviceFlowSync creates the project first (initial sync
-    // fires with no crmJobId) and patches crmJobId on the next line;
-    // without this the proxy row never learns the SF id, and admin's
-    // SF card can't fetch team photos by crmJobId.
-    const crmChanged = 'crmJobId' in patch && String(prior?.crmJobId || '') !== String(patch.crmJobId || '');
-    const nameChanged = 'name' in patch && (prior?.name || '') !== (patch.name || '');
-    if (crmChanged || nameChanged) {
-      const nextRow = updated.find(p => p.id === projectId);
-      if (nextRow) syncProjectToProxyIfTeamMember(nextRow);
-    }
   };
 
   const getPhotosByProject = (projectId) => {
@@ -1460,6 +1419,7 @@ export const PhotoProvider = ({ children }) => {
     deletePhotoSet,
     deleteAllPhotos,
     setActiveProject: async (projectId) => {
+      activeProjectIdRef.current = projectId;
       setActiveProjectId(projectId);
       await saveActiveProjectId(projectId);
     },
@@ -1475,6 +1435,7 @@ export const PhotoProvider = ({ children }) => {
     getCombinedPhotos,
     getProgressPhotos,
     getUnpairedBeforePhotos,
+    pickFallbackProjectId,
     refreshPhotos: loadPhotos,
     refreshAllData: useCallback(async () => {
       await loadPhotos();

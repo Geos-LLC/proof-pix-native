@@ -44,7 +44,7 @@ import UploadCompletionModal from '../components/UploadCompletionModal';
 import { LOCATIONS, getLocationName } from '../config/locations';
 import { createAlbumName, ensureLabelForPhoto } from '../services/uploadService';
 import { useBackgroundUpload } from '../hooks/useBackgroundUpload';
-import { isTeamUploadEnabled, getTeamUploadBlockedReason, adminStorageLabel } from '../config/teamUpload';
+import { isTeamUploadEnabled, getTeamUploadBlockedReason, adminStorageLabel, loadUploadTypePrefs, saveUploadTypePrefs } from '../config/teamUpload';
 import { getConnectedClouds } from '../utils/cloudConnectivity';
 import * as ExpoLocation from 'expo-location';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -209,6 +209,7 @@ export default function ProjectsScreen({ navigation, route }) {
     addPhoto,
     photos,
     patchProject,
+    pickFallbackProjectId,
   } = usePhotos();
   
   const {
@@ -285,7 +286,33 @@ export default function ProjectsScreen({ navigation, route }) {
   const { userMode, teamInfo, isAuthenticated, folderId, proxySessionId, initializeProxySession, accountType, connectedAccounts, inviteTokens } = useAdmin();
   const { exceedsLimit, canUse, effectivePlan } = useFeaturePermissions();
   const { uploadStatus, startBackgroundUpload, cancelUpload, cancelAllUploads, clearCompletedUploads } = useBackgroundUpload();
-  const isTeamMember = userMode === 'team_member' || userPlan === 'team' || userPlan === 'Team Member';
+  // Mode-only: plan strings like 'team' also appear on Business admins and
+  // must not flip Mine/Team list split or project-limit skips.
+  const isTeamMember = userMode === 'team_member';
+  const [linkedSfFromStorage, setLinkedSfFromStorage] = useState(null);
+  useEffect(() => {
+    if (!isTeamMember) {
+      setLinkedSfFromStorage(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const raw = await AsyncStorage.getItem('@sf_linked_team_member_id');
+        if (cancelled) return;
+        if (raw == null || raw === '') {
+          setLinkedSfFromStorage(null);
+          return;
+        }
+        const n = Number(raw);
+        setLinkedSfFromStorage(Number.isFinite(n) ? n : null);
+      } catch (_) {
+        if (!cancelled) setLinkedSfFromStorage(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isTeamMember, projects.length]);
 
   const [newProjectVisible, setNewProjectVisible] = useState(false);
   const [newProjectNamePart, setNewProjectNamePart] = useState('');
@@ -400,6 +427,11 @@ export default function ProjectsScreen({ navigation, route }) {
   const [projectToUpload, setProjectToUpload] = useState(null);
   const lastUploadedProjectIdRef = useRef(null);
   const [selectedUploadTypes, setSelectedUploadTypes] = useState({ before: true, after: true, combined: true });
+  // Keep a ref in sync so "Upload Now" always reads the toggles the user
+  // last tapped — not a stale render closure (team send was ignoring
+  // Before / After / Combined choices).
+  const selectedUploadTypesRef = useRef(selectedUploadTypes);
+  useEffect(() => { selectedUploadTypesRef.current = selectedUploadTypes; }, [selectedUploadTypes]);
   const [uploadDestinations, setUploadDestinations] = useState({ google: true, dropbox: false });
   const [uploading, setUploading] = useState(false);
 
@@ -519,12 +551,14 @@ export default function ProjectsScreen({ navigation, route }) {
       } catch {}
       const project = await createProject(
         finalName.replace(/[^\p{L}\p{N}_\- ]/gu, '_'),
-        { industry: newProjectIndustry || null },
+        { industry: newProjectIndustry || null, assignUnassigned: false },
       );
       logProjectCreated();
       setNewProjectNamePart('');
       setNewProjectVisible(false);
-      setActiveProject(project.id);
+      // Await so Camera/Home see the new active id — a fire-and-forget
+      // setActive raced navigation and stamped new shots on the old job.
+      await setActiveProject(project.id);
       // If the FAB on HomeScreen routed us here, jump to the camera
       // right after create so the user lands on the capture surface.
       // Otherwise return to Home — the main dashboard for the newly
@@ -680,8 +714,11 @@ export default function ProjectsScreen({ navigation, route }) {
             // null). Without this, downstream screens keep pointing at a
             // ghost projectId and the list can look stale.
             if (activeWasDeleted) {
-              const survivor = projects.find(p => !deletedSet.has(p.id));
-              setActiveProject(survivor ? survivor.id : null);
+              const survivors = projects.filter(p => !deletedSet.has(p.id));
+              const nextId = pickFallbackProjectId
+                ? pickFallbackProjectId(survivors, photos)
+                : (survivors[0]?.id || null);
+              setActiveProject(nextId);
             }
             exitMultiSelect();
           },
@@ -763,11 +800,10 @@ export default function ProjectsScreen({ navigation, route }) {
       if (activeProjectId === projectToDelete.id) {
         if (projects.length > 1) {
           const remainingProjects = projects.filter(p => p.id !== projectToDelete.id);
-          if (remainingProjects.length > 0) {
-            setActiveProject(remainingProjects[0].id);
-          } else {
-            setActiveProject(null);
-          }
+          const nextId = pickFallbackProjectId
+            ? pickFallbackProjectId(remainingProjects, photos)
+            : (remainingProjects[0]?.id || null);
+          setActiveProject(nextId);
         } else {
           setActiveProject(null);
         }
@@ -1188,7 +1224,7 @@ export default function ProjectsScreen({ navigation, route }) {
     }
   };
 
-  const handleUploadProject = (project) => {
+  const handleUploadProject = async (project) => {
     const projectPhotos = getPhotosByProject(project.id);
     if (projectPhotos.length === 0) {
       Alert.alert(t('gallery.noPhotosTitle'), t('gallery.noPhotosToUpload', { defaultValue: 'No photos to upload in this project.' }));
@@ -1196,8 +1232,13 @@ export default function ProjectsScreen({ navigation, route }) {
     }
 
     const isDropboxConnected = dropboxAuthService.isAuthenticated();
+    const teamCanUpload =
+      userMode === 'team_member' && isTeamUploadEnabled(teamInfo);
 
-    if (!isAuthenticated && !isDropboxConnected) {
+    // Team members send through the admin proxy — they do not need their
+    // own Google/Dropbox connection. Requiring it blocked the type picker
+    // or forced a misleading Settings detour before send.
+    if (!teamCanUpload && !isAuthenticated && !isDropboxConnected) {
       Alert.alert(
         t('gallery.uploadTitle', { defaultValue: 'Upload Photos' }),
         'Please connect your Google or Dropbox account first.',
@@ -1217,9 +1258,48 @@ export default function ProjectsScreen({ navigation, route }) {
       google: isAuthenticated,
       dropbox: isDropboxConnected,
     });
-    setSelectedUploadTypes({ before: true, after: true, combined: true });
+    // Restore last Before/After/Combined choice — do not force all-on
+    // every open (that made selective Send feel broken).
+    const prefs = await loadUploadTypePrefs();
+    selectedUploadTypesRef.current = prefs;
+    setSelectedUploadTypes(prefs);
     setProjectToUpload(project);
     setUploadOptionsVisible(true);
+  };
+
+  const collectPhotosForUploadTypes = (sourcePhotos, types) => {
+    const photosToUpload = [];
+    const ids = new Set();
+    const pushUnique = (p) => {
+      if (!p?.uri || ids.has(p.id)) return;
+      ids.add(p.id);
+      photosToUpload.push(p);
+    };
+
+    if (types.before) {
+      sourcePhotos.filter((p) => p.mode === 'before').forEach(pushUnique);
+    }
+    if (types.after) {
+      sourcePhotos.filter((p) => p.mode === 'after').forEach(pushUnique);
+    }
+    if (types.combined) {
+      // Prefer mix/combined already on the project (most reliable).
+      sourcePhotos
+        .filter((p) => p.mode === PHOTO_MODES.COMBINED || p.mode === 'combined' || p.mode === 'mix')
+        .forEach(pushUnique);
+      // Also resolve via beforePhotoId in case a mix lives outside the
+      // project filter but is linked to a before in this project.
+      const befores = sourcePhotos.filter((p) => p.mode === 'before');
+      for (const beforePhoto of befores) {
+        const combinedPhoto = photos.find(
+          (p) =>
+            (p.mode === PHOTO_MODES.COMBINED || p.mode === 'combined' || p.mode === 'mix') &&
+            String(p.beforePhotoId) === String(beforePhoto.id)
+        );
+        if (combinedPhoto) pushUnique(combinedPhoto);
+      }
+    }
+    return photosToUpload;
   };
 
   const handleConfirmUpload = async () => {
@@ -1229,6 +1309,10 @@ export default function ProjectsScreen({ navigation, route }) {
     // callback fires, so state-based re-lookup would find null.
     const projectForRetry = projectToUpload;
     lastUploadedProjectIdRef.current = projectToUpload.id;
+    // Snapshot toggles from the ref so Before/After/Combined choices
+    // always match what the user last tapped in the sheet.
+    const types = { ...selectedUploadTypesRef.current };
+    saveUploadTypePrefs(types);
     try {
       setUploading(true);
       setUploadOptionsVisible(false);
@@ -1246,49 +1330,17 @@ export default function ProjectsScreen({ navigation, route }) {
       // "Session expired" alert dismissed.
 
       const sourcePhotos = getPhotosByProject(projectToUpload.id);
-      const photosToUpload = [];
-
-      console.log('[PROJECTS_UPLOAD] Selected types:', JSON.stringify(selectedUploadTypes));
+      console.log('[PROJECTS_UPLOAD] Selected types:', JSON.stringify(types));
       console.log('[PROJECTS_UPLOAD] Source photos in project:', sourcePhotos.length, 'modes:', sourcePhotos.map(p => p.mode));
 
-      // NOTE: `flat: true` is forced at both startBackgroundUpload call
-      // sites below, so the per-photo `flatOverride` wrapping that used
-      // to gate before/after/combined into their own subfolders is
-      // now dead — every photo goes to the project album root. User
-      // request 2026-07-21: "remove folders before after and combined
-      // - allow all the photos are upload under the project name".
-      if (selectedUploadTypes.before) {
-        const beforePhotos = sourcePhotos.filter(p => p.mode === 'before' && p.uri);
-        console.log('[PROJECTS_UPLOAD] Before photos found:', beforePhotos.length);
-        beforePhotos.forEach(p => photosToUpload.push(p));
-      }
-      if (selectedUploadTypes.after) {
-        const afterPhotos = sourcePhotos.filter(p => p.mode === 'after' && p.uri);
-        console.log('[PROJECTS_UPLOAD] After photos found:', afterPhotos.length);
-        afterPhotos.forEach(p => photosToUpload.push(p));
-      }
-
-      // Add combined photos directly from PhotoContext (already generated at capture time)
-      if (selectedUploadTypes.combined) {
-        const beforePhotos = sourcePhotos.filter(p => p.mode === 'before');
-        console.log('[PROJECTS_UPLOAD] Looking for combined photos for', beforePhotos.length, 'before photos');
-        // Log all combined photos in context for debugging
-        const allCombined = photos.filter(p => p.mode === PHOTO_MODES.COMBINED || p.mode === 'combined' || p.mode === 'mix');
-        console.log('[PROJECTS_UPLOAD] All combined/mix photos in context:', allCombined.length, allCombined.map(p => ({ id: p.id, mode: p.mode, beforePhotoId: p.beforePhotoId, projectId: p.projectId })));
-        for (const beforePhoto of beforePhotos) {
-          const combinedPhoto = photos.find(p => p.mode === PHOTO_MODES.COMBINED && p.beforePhotoId === beforePhoto.id);
-          console.log('[PROJECTS_UPLOAD] Before photo', beforePhoto.id, '→ combined:', combinedPhoto ? combinedPhoto.id : 'NOT FOUND');
-          if (combinedPhoto) {
-            photosToUpload.push(combinedPhoto);
-          }
-        }
-      }
+      const photosToUpload = collectPhotosForUploadTypes(sourcePhotos, types);
 
       console.log('[PROJECTS_UPLOAD] Total photos to upload:', photosToUpload.length, 'modes:', photosToUpload.map(p => p.mode));
 
       if (photosToUpload.length === 0) {
         Alert.alert('No Photos', 'No photos match the selected types.');
         setUploading(false);
+        setIsPreparingUpload(false);
         return;
       }
 
@@ -1618,14 +1670,52 @@ export default function ProjectsScreen({ navigation, route }) {
     return (a?.name || '').localeCompare(b?.name || '');
   };
 
-  // Split local projects: SF-linked → Team tab, everything else → My tab.
-  // Before, SF-synced jobs cluttered My projects even though they're
-  // shared workspace work. Admin's manually-created projects stay in
-  // My; SF-sourced work moves to Team.
+  // Split local projects: SF-linked → Team tab (admin), everything else → My.
+  // Team members never see the Team tab (that lists other cleaners' cloud
+  // uploads), so their SF-synced jobs must stay on Mine or they have no
+  // way to open the job they're assigned to.
+  // When the invite is scoped to an SF cleaner id, hide coworkers' jobs
+  // (and empty shells) so Mine isn't a shared workspace dump.
+  const linkedSfCleanerId = useMemo(() => {
+    const raw = teamInfo?.linkedSfTeamMemberId ?? teamInfo?.sfTeamMemberId ?? linkedSfFromStorage ?? null;
+    if (raw == null || raw === '') return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }, [teamInfo?.linkedSfTeamMemberId, teamInfo?.sfTeamMemberId, linkedSfFromStorage]);
+
   const localMineProjects = useMemo(
-    () => projects.filter((p) => p?.crmProvider !== 'serviceflow'),
-    [projects]
+    () => projects.filter((p) => {
+      if (p?.crmProvider !== 'serviceflow') return true;
+      if (!isTeamMember) return false;
+      // Team member privacy: never list coworkers' SF jobs.
+      // Linked invite → only jobs assigned to this cleaner.
+      // Unlinked invite → hide all SF shells unless this device
+      // already captured into them (don't orphan their own work).
+      const meta = p?.crmJobMeta || {};
+      const hasLocalPhotos = (photos || []).some((ph) => ph.projectId === p.id);
+      if (linkedSfCleanerId == null) return hasLocalPhotos;
+      if (meta.teamMemberId === linkedSfCleanerId) return true;
+      if (Array.isArray(meta.teamMemberIds) && meta.teamMemberIds.includes(linkedSfCleanerId)) {
+        return true;
+      }
+      return hasLocalPhotos;
+    }),
+    [projects, isTeamMember, linkedSfCleanerId, photos]
   );
+
+  // If active points at a coworker SF job (or other filtered-out row),
+  // move capture onto a Mine-visible project so new shots don't land
+  // in a hidden "old" job.
+  useEffect(() => {
+    if (!isTeamMember || !activeProjectId) return;
+    const stillVisible = localMineProjects.some((p) => p.id === activeProjectId);
+    if (stillVisible) return;
+    const nextId = pickFallbackProjectId
+      ? pickFallbackProjectId(localMineProjects, photos)
+      : (localMineProjects[0]?.id || null);
+    setActiveProject(nextId);
+  }, [isTeamMember, activeProjectId, localMineProjects, photos, pickFallbackProjectId, setActiveProject]);
+
   const localSfProjects = useMemo(() => {
     // Dedupe by crmJobId — a stale duplicate can slip in when SF
     // returns the same row twice in one paginated /jobs response;
@@ -1684,22 +1774,9 @@ export default function ProjectsScreen({ navigation, route }) {
     return getPhotosByProject(projectId).length;
   };
 
-  // ===== Team Projects (admin-only) =====
-  // Every admin sees the "Team Projects" tab so the surface is
-  // discoverable even before they sign into the team proxy. The tab
-  // renders a connect-CTA empty state when there is no proxy session
-  // (falls through to fetch + list once one exists). Data lives in
-  // Vercel KV on the proxy — populated by syncTeamProject on
-  // create/rename AND by the upload endpoint as a backstop (so counts
-  // still show up for older member builds that don't publish on
-  // create). No photo blobs are fetched — the admin taps
-  // "Open in Drive" to inspect the actual folder.
-  // Tabs render for EVERYONE. Team projects fetch is still gated on
-  // proxySessionId inside fetchTeamProjects, so no wasted network
-  // for accounts without a live proxy. The tab bar itself is a
-  // free-cost UI element and shipping it unconditionally kills a
-  // whole class of "why aren't tabs showing" debugging.
-  const showTeamTab = true;
+  // Team tab: admin-only. Team members should not see other cleaners'
+  // cloud projects on their device.
+  const showTeamTab = userMode === 'admin';
   // Broken-state detector: admin has invited team members but has
   // no cloud backend connected → their photos silently fail to
   // upload. Renders a banner near the top of the Projects screen
@@ -3957,7 +4034,10 @@ export default function ProjectsScreen({ navigation, route }) {
               await deleteProject(projectId, { deleteFromStorage });
               if (activeProjectId === projectId) {
                 const remaining = projects.filter(p => p.id !== projectId);
-                setActiveProject(remaining.length > 0 ? remaining[0].id : null);
+                const nextId = pickFallbackProjectId
+                  ? pickFallbackProjectId(remaining, photos)
+                  : (remaining[0]?.id || null);
+                setActiveProject(nextId);
               }
             } catch (error) {
               Alert.alert(t('common.error'), 'Failed to delete project.');
@@ -4220,7 +4300,11 @@ export default function ProjectsScreen({ navigation, route }) {
                   <View style={styles.shareTypeButtons}>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, { borderColor: theme.border }, selectedUploadTypes.before && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedUploadTypes(prev => ({ ...prev, before: !prev.before }))}
+                      onPress={() => setSelectedUploadTypes(prev => {
+                        const next = { ...prev, before: !prev.before };
+                        selectedUploadTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, { color: selectedUploadTypes.before ? '#000' : theme.textPrimary }]}>
                         Before
@@ -4228,7 +4312,11 @@ export default function ProjectsScreen({ navigation, route }) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, { borderColor: theme.border }, selectedUploadTypes.after && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedUploadTypes(prev => ({ ...prev, after: !prev.after }))}
+                      onPress={() => setSelectedUploadTypes(prev => {
+                        const next = { ...prev, after: !prev.after };
+                        selectedUploadTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, { color: selectedUploadTypes.after ? '#000' : theme.textPrimary }]}>
                         After
@@ -4236,7 +4324,11 @@ export default function ProjectsScreen({ navigation, route }) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.shareTypeButton, { borderColor: theme.border }, selectedUploadTypes.combined && styles.shareTypeButtonActive]}
-                      onPress={() => setSelectedUploadTypes(prev => ({ ...prev, combined: !prev.combined }))}
+                      onPress={() => setSelectedUploadTypes(prev => {
+                        const next = { ...prev, combined: !prev.combined };
+                        selectedUploadTypesRef.current = next;
+                        return next;
+                      })}
                     >
                       <Text style={[styles.shareTypeButtonText, { color: selectedUploadTypes.combined ? '#000' : theme.textPrimary }]}>
                         Combined
@@ -4259,7 +4351,7 @@ export default function ProjectsScreen({ navigation, route }) {
                     // row that reflects what will actually happen.
                     (() => {
                       const at = teamInfo?.adminAccountType;
-                      const isComingSoon = at && at !== 'google';
+                      const isComingSoon = at && at !== 'google' && at !== 'serviceflow';
                       return (
                         <View
                           style={[

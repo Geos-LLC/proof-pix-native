@@ -14,8 +14,8 @@ export default {
     // production environment had VERSION=1.2.0 stored as a secret, which
     // silently overrode the fallback and shipped 1.2.0 IPAs that Apple
     // rejected (already deleted from EAS env, but keep this guard).
-    version: "1.7.8",
-    runtimeVersion: "1.7.8",
+    version: "2.0.3",
+    runtimeVersion: "2.0.3",
     updates: {
       url: "https://u.expo.dev/c65badb3-ddbc-4bb8-9de5-fab32a427f16"
     },
@@ -35,7 +35,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.proofpix.app",
-      buildNumber: "97",
+      buildNumber: "103",
       googleServicesFile: "./GoogleService-Info.plist",
       requireFullScreen: false,
       infoPlist: {
@@ -54,6 +54,24 @@ export default {
         ITSAppUsesNonExemptEncryption: false,
         UIFileSharingEnabled: true,
         LSSupportsOpeningDocumentsInPlace: true,
+        NSUserTrackingUsageDescription:
+          "This identifier will be used to deliver personalized ads.",
+        // Meta SKAdNetwork IDs (Facebook + common partners). Full list can
+        // grow over time — keep Meta's own identifier at minimum.
+        SKAdNetworkItems: [
+          { SKAdNetworkIdentifier: "v9wttpbfk9.skadnetwork" },
+          { SKAdNetworkIdentifier: "n38lu8286q.skadnetwork" },
+          { SKAdNetworkIdentifier: "4dzt52r2t5.skadnetwork" },
+          { SKAdNetworkIdentifier: "4fzdc2evr5.skadnetwork" },
+          { SKAdNetworkIdentifier: "2u9pt9hc89.skadnetwork" },
+          { SKAdNetworkIdentifier: "8s468mfl3y.skadnetwork" },
+          { SKAdNetworkIdentifier: "cstr6suwn9.skadnetwork" },
+          { SKAdNetworkIdentifier: "v72qych5uu.skadnetwork" },
+          { SKAdNetworkIdentifier: "6g9af3uyq4.skadnetwork" },
+          { SKAdNetworkIdentifier: "yclnxrl5pm.skadnetwork" },
+          { SKAdNetworkIdentifier: "ydx93a7ass.skadnetwork" },
+          { SKAdNetworkIdentifier: "3qcr597p9d.skadnetwork" },
+        ],
       },
       entitlements: {
         "com.apple.developer.applesignin": ["Default"],
@@ -75,31 +93,21 @@ export default {
         backgroundColor: "#F2C31B"
       },
       package: "com.proofpix.app",
-      versionCode: 79,
-      // Google Play Photo/Video Permissions policy (rejection 2026-07-31):
-      // apps without a "browse the whole gallery" core use case must use the
-      // Android system photo picker (expo-image-picker does this on API 33+,
-      // no permission needed) and MUST NOT declare READ_MEDIA_IMAGES /
-      // READ_MEDIA_VIDEO / READ_MEDIA_AUDIO / READ_EXTERNAL_STORAGE. Own-app
-      // gallery writes go through the native MediaStoreSaver module using
-      // scoped-storage MediaStore APIs, which don't need READ_MEDIA_* either.
+      versionCode: 103,
       permissions: [
         "CAMERA",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.ACCESS_MEDIA_LOCATION"
-      ],
-      // Strip any READ_MEDIA_* permission that expo-media-library or
-      // expo-image-picker might re-inject via manifest merge. Play Console's
-      // scanner reads the merged manifest, so blocking here is what actually
-      // clears the rejection.
-      blockedPermissions: [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+        "android.permission.READ_MEDIA_AUDIO"
       ],
       edgeToEdgeEnabled: true,
       googleServicesFile: "./google-services.json",
@@ -151,9 +159,9 @@ export default {
             ]
           },
           "android": {
-            "compileSdkVersion": 36,
-            "targetSdkVersion": 36,
-            "buildToolsVersion": "36.0.0"
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0"
           }
         }
       ],
@@ -180,7 +188,35 @@ export default {
       "react-native-iap",
       // Strip aps-environment last so any earlier autolinked module that
       // re-injected it gets cleared before Xcode codesigns.
-      "./plugins/withStripPushEntitlement.js"
+      "./plugins/withStripPushEntitlement.js",
+      // Meta App Events — requires FB_APP_ID + FB_CLIENT_TOKEN in EAS env
+      // (production/preview). Without both, the plugin is omitted so local
+      // Expo Go / config dumps don't fail on a missing client token.
+      ...(process.env.FB_APP_ID && process.env.FB_CLIENT_TOKEN
+        ? [
+            [
+              "react-native-fbsdk-next",
+              {
+                appID: String(process.env.FB_APP_ID),
+                clientToken: String(process.env.FB_CLIENT_TOKEN),
+                displayName: "ProofPix",
+                scheme: `fb${process.env.FB_APP_ID}`,
+                advertiserIDCollectionEnabled: true,
+                autoLogAppEventsEnabled: true,
+                isAutoInitEnabled: true,
+                iosUserTrackingPermission:
+                  "This identifier will be used to deliver personalized ads.",
+              },
+            ],
+          ]
+        : []),
+      [
+        "expo-tracking-transparency",
+        {
+          userTrackingPermission:
+            "This identifier will be used to deliver personalized ads.",
+        },
+      ],
     ],
     extra: {
       eas: {

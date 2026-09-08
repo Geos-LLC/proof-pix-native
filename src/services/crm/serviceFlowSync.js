@@ -19,7 +19,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import crmService from './index';
 import proxyService from '../proxyService';
-import { readSecureJSON } from '../secureStorageService';
+import { readSecureJSON, writeSecureJSON } from '../secureStorageService';
 import { loadProjects } from '../storage';
 import { getDeletedJobIds } from './deletedJobsTombstone';
 import {
@@ -184,6 +184,50 @@ export async function syncServiceFlowJobs({
       }
     } catch (e) {
       return { created: 0, matched: 0, error: e?.message || 'proxy listJobs failed' };
+    }
+
+    // Privacy: a team member must ONLY see jobs assigned to them.
+    // If the invite is linked to an SF cleaner id, filter to that
+    // cleaner. If it is NOT linked (or the proxy never returned the
+    // id), do NOT materialize the full workspace — that was the
+    // "team member sees other members' projects" leak. Unscoped
+    // invites keep an empty SF list; members still create local
+    // projects and capture into those.
+    const linkedRaw =
+      sfResponseScope?.linked_sf_team_member_id ??
+      teamInfo?.linkedSfTeamMemberId ??
+      teamInfo?.sfTeamMemberId ??
+      null;
+    if (linkedRaw != null && linkedRaw !== '') {
+      const linkedId = Number(linkedRaw);
+      if (Number.isFinite(linkedId)) {
+        const before = jobs.length;
+        jobs = jobs.filter((j) => {
+          if (j.teamMemberId === linkedId) return true;
+          if (Array.isArray(j.teamMemberIds) && j.teamMemberIds.includes(linkedId)) return true;
+          return false;
+        });
+        console.warn('[ServiceFlow] team_member assignee filter', {
+          linkedId,
+          before,
+          after: jobs.length,
+        });
+        try {
+          if (teamInfo.linkedSfTeamMemberId !== linkedId) {
+            const updated = { ...teamInfo, linkedSfTeamMemberId: linkedId };
+            await writeSecureJSON('@team_member_info', updated);
+          }
+          await AsyncStorage.setItem('@sf_linked_team_member_id', String(linkedId));
+        } catch (_) {}
+      } else {
+        console.warn('[ServiceFlow] team_member: linked id not numeric — skipping SF project create');
+        jobs = [];
+        try { await AsyncStorage.removeItem('@sf_linked_team_member_id'); } catch (_) {}
+      }
+    } else {
+      console.warn('[ServiceFlow] team_member: no linked SF cleaner — skipping workspace job sync (privacy)');
+      jobs = [];
+      try { await AsyncStorage.removeItem('@sf_linked_team_member_id'); } catch (_) {}
     }
   } else {
     // Admin / individual path — adapter with locally-stored SF creds.
@@ -457,7 +501,14 @@ export async function syncServiceFlowJobs({
     // fields today; patching after keeps the createProject API
     // unchanged.
     try {
-      const newProject = await createProject(formatProjectName(job));
+      // assignUnassigned: false — never sweep orphan photos into an SF
+      // job that just appeared in sync (that caused "new pics in old/wrong
+      // project"). skipProxySync: avoid publishing empty SF shells to the
+      // admin Team Projects KV before the member has captured anything.
+      const newProject = await createProject(formatProjectName(job), {
+        assignUnassigned: false,
+        skipProxySync: true,
+      });
       if (newProject?.id) {
         await patchProject(newProject.id, {
           crmJobId: jobId,
