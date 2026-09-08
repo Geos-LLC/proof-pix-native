@@ -111,6 +111,12 @@ export async function syncServiceFlowJobs({
   // Forward-compat: if SF adds workspace_id / linked_sf_team_member_id
   // to /jobs response body, capture from the first page too.
   let sfResponseScope = null;
+  // True when this sync's paginated fetch exhausted (SF said "no more"
+  // OR returned a short page). Orphan cleanup below only runs when
+  // this is true — otherwise a project missing from what we fetched
+  // might just be past the page horizon (MAX_PAGES=2, PAGE_LIMIT=100
+  // → 200 max) rather than actually missing from SF.
+  let paginationComplete = false;
   if (mode === 'team_member') {
     const teamInfo = await readSecureJSON('@team_member_info');
     if (!teamInfo?.sessionId || !teamInfo?.token) {
@@ -171,7 +177,10 @@ export async function syncServiceFlowJobs({
           });
         }
         cursor = result?.nextCursor || null;
-        if (!cursor || raw.length < PAGE_LIMIT) break;
+        if (!cursor || raw.length < PAGE_LIMIT) {
+          paginationComplete = true;
+          break;
+        }
       }
     } catch (e) {
       return { created: 0, matched: 0, error: e?.message || 'proxy listJobs failed' };
@@ -193,10 +202,29 @@ export async function syncServiceFlowJobs({
         connectedAt: ws?.connectedAt || null,
       });
     } catch (_) {}
+    // 30-day cutoff for sync. Anything scheduled further back that is
+    // STILL open is import cruft (SF cleaned up 34 zombies for workspace
+    // 2 on 2026-08-21 — some scheduled_date values from March 2025)
+    // or forgotten paperwork. Forwarded via SF's `since=YYYY-MM-DD`
+    // param (introduced 2026-08-21, ignored by older backends so this
+    // remains safe to ship on any binary). Cleaners who need to attach
+    // photos to a legit completed job from >30d ago use the picker's
+    // `status=completed` path (which SF should be called with a wider
+    // `since` from the caller — this only bounds the sync loop).
+    const sinceDate = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 30);
+      return d.toISOString().slice(0, 10);
+    })();
     try {
       let cursor = null;
       for (let page = 0; page < MAX_PAGES; page++) {
-        const result = await crmService.listJobs({ status: 'all', limit: PAGE_LIMIT, cursor });
+        const result = await crmService.listJobs({
+          status: 'all',
+          limit: PAGE_LIMIT,
+          cursor,
+          since: sinceDate,
+        });
         const raw = Array.isArray(result?.jobs) ? result.jobs : Array.isArray(result) ? result : [];
         if (page === 0 && (result?.workspace_id || result?.linked_sf_team_member_id != null)) {
           sfResponseScope = {
@@ -241,7 +269,10 @@ export async function syncServiceFlowJobs({
           console.warn('[ServiceFlow] FIRSTJOB DIAG', { sample, counts });
         }
         cursor = result?.nextCursor || null;
-        if (!cursor || raw.length < PAGE_LIMIT) break;
+        if (!cursor || raw.length < PAGE_LIMIT) {
+          paginationComplete = true;
+          break;
+        }
       }
     } catch (e) {
       return { created: 0, matched: 0, error: e?.message || 'listJobs failed' };
@@ -272,22 +303,26 @@ export async function syncServiceFlowJobs({
   if (jobs.length === 0) return { created: 0, matched: 0 };
 
   // Two windows on purpose:
-  //  - PULL window (wide, ±14d): jobs SF still shows in here can
-  //    refresh their local crmJobMeta. Without this, a job that gets
-  //    rescheduled from Tue → Sat leaves a stale Tuesday entry in
-  //    the local list forever, because sync-refresh only fires on
-  //    match and the tight create window would exclude Saturday.
-  //  - CREATE window (tight, ±1..+2d): matches the Projects chip UI
-  //    (Yesterday / Today / Tomorrow). Only auto-create local
-  //    projects for jobs in this range. Anything wider re-creates
-  //    the "256 auto-projects" mess from 2026-07-28.
+  //  - PULL window (±14d): jobs SF still shows in here can refresh
+  //    their local crmJobMeta.
+  //  - CREATE window: same as PULL window (2026-08-21). Prior design
+  //    had a tight ±1..+2d create window to avoid the 256-orphan mess
+  //    from 2026-07-28 (memory `project_pay_period_todo.md`). That
+  //    guard is no longer needed because the orphan cleanup pass below
+  //    (v54+) removes local projects that don't match the current SF
+  //    response, AND the server-side workspace filters (recurring +
+  //    new_customers_only, migrations 079/080) bound what SF returns
+  //    in the first place. Keeping windows aligned means sync fully
+  //    re-populates local state after a policy flip or a wipe, instead
+  //    of leaving the user with 5-7 today/tomorrow projects and no way
+  //    to recover the older visible-window entries.
   //
   // Jobs without scheduledAt fall through both filters — we can't
   // date-classify them, so we err on the side of processing.
-  const PULL_LOOKBACK_DAYS = 14;
-  const PULL_LOOKAHEAD_DAYS = 14;
-  const CREATE_LOOKBACK_DAYS = 1;
-  const CREATE_LOOKAHEAD_DAYS = 2;
+  const PULL_LOOKBACK_DAYS = 7;
+  const PULL_LOOKAHEAD_DAYS = 7;
+  const CREATE_LOOKBACK_DAYS = PULL_LOOKBACK_DAYS;
+  const CREATE_LOOKAHEAD_DAYS = PULL_LOOKAHEAD_DAYS;
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const dayMs = 24 * 60 * 60 * 1000;
@@ -311,10 +346,20 @@ export async function syncServiceFlowJobs({
 
   if (jobs.length === 0) return { created: 0, matched: 0 };
 
-  // Load the creation policy once per sync run. Missing/unknown
-  // values coerce to 'all' (see creationPolicy.js) so existing
-  // installs behave exactly as before this flag shipped.
-  const creationPolicy = await getCreationPolicy();
+  // Local creation policy retired 2026-08-21 — server-side workspace
+  // flags (proofpix_show_recurring_jobs, proofpix_new_customers_only)
+  // are now the single source of truth for job visibility. Reset any
+  // stale 'manual' / 'new_customers' AsyncStorage value to 'all' so
+  // isJobEligibleForCreation always returns true and legacy devices
+  // don't silently under-filter or wipe local state.
+  try {
+    const stale = await AsyncStorage.getItem('@sf_creation_policy_v1');
+    if (stale && stale !== 'all') {
+      await AsyncStorage.setItem('@sf_creation_policy_v1', 'all');
+      console.warn('[ServiceFlow] retired stale creation policy', { was: stale });
+    }
+  } catch {}
+  const creationPolicy = 'all';
 
   // Read the latest persisted project list directly from Keychain
   // for the dedup map. See JSDoc above for the race we're avoiding.
@@ -467,6 +512,110 @@ export async function syncServiceFlowJobs({
   const canRunPhotoCount = typeof getProjectPhotoCount === 'function';
   const canDelete = typeof deleteProject === 'function';
   const canPatch = typeof patchProject === 'function';
+
+  // Orphan-cleanup pass. Local SF-linked projects whose scheduledAt is
+  // INSIDE the pull window but whose crmJobId did NOT appear in this
+  // sync's response are dead — SF filtered them (workspace recurring
+  // toggle now Off) or they no longer exist. Recurring-toggle flip is
+  // the primary driver: without this pass, flipping the toggle Off
+  // leaves 85 recurring projects on the admin's device forever (they
+  // stop matching the sync's SELECT but nothing tells the mobile store
+  // "these are gone").
+  //
+  // Safety:
+  //   • Only runs when paginationComplete — otherwise a project past
+  //     the page horizon looks orphaned but isn't.
+  //   • Only touches projects in [pullStart, pullEnd] — outside that
+  //     window the sync doesn't try to be authoritative (age-based
+  //     cleanup below handles very old projects; nothing handles very
+  //     future ones on a normal cadence, and that's intentional).
+  //   • Same delete/archive split as the age-based cleanup — zero
+  //     photos → delete, has photos → archive.
+  const seenSfJobsInWindow = new Map();
+  if (paginationComplete) {
+    for (const j of jobs) {
+      if (j?.id == null) continue;
+      // `jobs` was already trimmed to the pull window earlier — every
+      // entry is authoritative by definition.
+      seenSfJobsInWindow.set(String(j.id), j);
+    }
+  }
+  let orphanDeleted = 0;
+  let orphanArchived = 0;
+  let policyPruned = 0;
+  if (paginationComplete) {
+    for (const p of currentProjects) {
+      if (p?.crmProvider !== 'serviceflow') continue;
+      if (!p?.crmJobId) continue;
+      if (p?.archived === true) continue;
+      const ts = p?.crmJobMeta?.scheduledAt;
+      if (typeof ts !== 'number') continue;
+      if (ts < pullStart || ts >= pullEnd) continue;
+      const seenJob = seenSfJobsInWindow.get(String(p.crmJobId));
+      // Prune only vanished-from-SF projects. The workspace-flag path is
+      // now the ONLY source of truth for "is this job visible" — server
+      // filters `is_recurring` and `is_first_job_for_customer` before
+      // returning /jobs, so a project failing to appear here IS the
+      // policy signal.
+      //
+      // The v55 client-side failsPolicy check (based on AsyncStorage
+      // `@sf_creation_policy_v1`) was retired 2026-08-21 because it
+      // could double-filter: if a device had a stale local 'manual'
+      // policy, `isJobEligibleForCreation('manual', ...)` returned false
+      // for every seenJob and orphan cleanup wiped 100% of local
+      // projects — presenting the user with an empty Team tab even
+      // though the server was returning 54 valid rows.
+      const isVanished = !seenJob;
+      if (!isVanished) continue;
+      // Orphan.
+      let photoCount = 0;
+      if (canRunPhotoCount) {
+        try { photoCount = getProjectPhotoCount(p.id) || 0; } catch (_) {}
+      }
+      if (photoCount === 0) {
+        if (!canDelete) continue;
+        try {
+          await deleteProject(p.id, { skipTombstone: true });
+          orphanDeleted += 1;
+          if (failsPolicy) policyPruned += 1;
+          try {
+            const sessionId = await AsyncStorage.getItem('@proxy_session_id');
+            if (sessionId && proxyService?.adminDeleteTeamProject) {
+              await proxyService.adminDeleteTeamProject(sessionId, String(p.id)).catch(() => {});
+              if (p.crmJobId && String(p.crmJobId) !== String(p.id)) {
+                await proxyService.adminDeleteTeamProject(sessionId, String(p.crmJobId)).catch(() => {});
+              }
+            }
+          } catch (_) {}
+        } catch (e) {
+          console.warn('[serviceFlowSync] orphan delete failed', p.id, e?.message);
+        }
+      } else {
+        if (!canPatch) continue;
+        try {
+          await patchProject(p.id, {
+            archived: true,
+            archivedAt: new Date().toISOString(),
+          });
+          orphanArchived += 1;
+          if (failsPolicy) policyPruned += 1;
+        } catch (e) {
+          console.warn('[serviceFlowSync] orphan archive failed', p.id, e?.message);
+        }
+      }
+    }
+    if (orphanDeleted > 0 || orphanArchived > 0) {
+      console.warn('[serviceFlowSync] orphan cleanup', {
+        deleted: orphanDeleted,
+        archived: orphanArchived,
+        policyPruned,          // subset of the above that failed the creation policy
+        creationPolicy,
+        pullStart: new Date(pullStart).toISOString(),
+        pullEnd: new Date(pullEnd).toISOString(),
+      });
+    }
+  }
+
   for (const p of currentProjects) {
     if (p?.crmProvider !== 'serviceflow') continue;
     if (!p?.crmJobId) continue;
