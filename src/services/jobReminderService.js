@@ -5,10 +5,15 @@ import { logEvent } from '../utils/analytics';
 
 const PENDING_JOBS_KEY = '@pending_job_reminders';
 const PERMISSION_ASKED_KEY = '@notification_permission_asked';
+const SCHEDULE_LOG_KEY = '@job_reminder_schedule_log';
 
 // Configurable reminder timing (ms)
 const REMINDER_1_DELAY = 2 * 60 * 60 * 1000; // 2 hours
 const REMINDER_2_DELAY = 24 * 60 * 60 * 1000; // 24 hours
+
+// Rolling cap: max N scheduled job-reminder pushes fired inside any 24h window.
+const MAX_PUSHES_PER_24H = 3;
+const ROLLING_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -60,6 +65,23 @@ const savePendingJobs = async (jobs) => {
   await AsyncStorage.setItem(PENDING_JOBS_KEY, JSON.stringify(jobs));
 };
 
+const getScheduleLog = async () => {
+  try {
+    const raw = await AsyncStorage.getItem(SCHEDULE_LOG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const pruneScheduleLog = (log, now) => {
+  // A schedule attempt "now" produces a fire at now + REMINDER_1_DELAY and
+  // counts prior fires in [newFireAt - 24h, newFireAt]. Oldest still-relevant
+  // fire is at (now + REMINDER_1_DELAY) - 24h = now - (24h - REMINDER_1_DELAY).
+  const cutoff = now - (ROLLING_WINDOW_MS - REMINDER_1_DELAY);
+  return log.filter((entry) => entry && entry.fireAt > cutoff);
+};
+
 /**
  * Schedule reminders when a before photo is taken.
  * Call this after addPhoto() for a BEFORE photo.
@@ -92,20 +114,38 @@ export const onBeforePhotoTaken = async (photo) => {
     };
 
     if (hasPermission) {
-      // Single 2-hour reminder per project
-      const n1Id = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Don't forget your AFTER photos",
-          body: 'Finish your before/after proof in just a few taps.',
-          data: { jobId: job.jobId, type: 'job_reminder' },
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: REMINDER_1_DELAY / 1000,
-        },
-      });
-      job.notification1Id = n1Id;
-      logEvent('job_reminder_scheduled', { reminder_type: '2h' });
+      const now = Date.now();
+      const fireAt = now + REMINDER_1_DELAY;
+      const log = pruneScheduleLog(await getScheduleLog(), now);
+      const windowStart = fireAt - ROLLING_WINDOW_MS;
+      const withinWindow = log.filter(
+        (e) => e.fireAt >= windowStart && e.fireAt <= fireAt
+      ).length;
+
+      if (withinWindow >= MAX_PUSHES_PER_24H) {
+        logEvent('job_reminder_skipped', {
+          reason: 'rate_limit_24h',
+          cap: MAX_PUSHES_PER_24H,
+          window_count: withinWindow,
+        });
+      } else {
+        // Single 2-hour reminder per project
+        const n1Id = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Don't forget your AFTER photos",
+            body: 'Finish your before/after proof in just a few taps.',
+            data: { jobId: job.jobId, type: 'job_reminder' },
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: REMINDER_1_DELAY / 1000,
+          },
+        });
+        job.notification1Id = n1Id;
+        log.push({ fireAt });
+        await AsyncStorage.setItem(SCHEDULE_LOG_KEY, JSON.stringify(log));
+        logEvent('job_reminder_scheduled', { reminder_type: '2h' });
+      }
     }
 
     jobs.push(job);
