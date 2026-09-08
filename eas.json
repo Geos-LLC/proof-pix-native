@@ -82,6 +82,7 @@
         "buildType": "apk"
       },
       "channel": "production",
+      "environment": "production",
       "env": {
         "EXPO_PUBLIC_PROXY_URL": "https://steadfast-blessing-production.up.railway.app",
         "EXPO_PUBLIC_WATERMARK_URL": "https://geos-ai.com/",
