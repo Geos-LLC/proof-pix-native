@@ -289,6 +289,15 @@ export default function HomeScreen({ navigation, route }) {
   const previewPagerRef = useRef(null);
   const previewPagerScrolling = useRef(false);
   const [openProjectVisible, setOpenProjectVisible] = useState(false);
+  // Set to true when the project sheet is opened from the empty-project FAB
+  // disambiguation path. Row-tap and "+ New Project" then route on to Camera
+  // (with the picked/new project) instead of just switching context. Reset
+  // in an effect whenever the sheet closes so an unrelated later open (via
+  // the Project ▼ header) never inherits the flag.
+  const [fabPickerMode, setFabPickerMode] = useState(false);
+  useEffect(() => {
+    if (!openProjectVisible && fabPickerMode) setFabPickerMode(false);
+  }, [openProjectVisible, fabPickerMode]);
   const [selectedProjects, setSelectedProjects] = useState(new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [showQualification, setShowQualification] = useState(false);
@@ -1762,6 +1771,17 @@ export default function HomeScreen({ navigation, route }) {
                 openNewProjectModal(true);
                 return;
               }
+              // Same disambiguation as the yellow FAB — empty active
+              // project with other projects available → picker sheet
+              // instead of dropping the first photo into an ambiguous
+              // auto-selected project.
+              const activePhotoCount = (getPhotosByProject(activeProjectId) || []).length;
+              const otherProjectsExist = projects.some(p => p.id !== activeProjectId);
+              if (activePhotoCount === 0 && otherProjectsExist) {
+                setFabPickerMode(true);
+                setOpenProjectVisible(true);
+                return;
+              }
               if (!guardStartSet()) return;
               navigation.navigate('Camera', {
                 mode: 'before',
@@ -2318,6 +2338,18 @@ export default function HomeScreen({ navigation, route }) {
           onPress={() => {
             if (!activeProjectId) {
               openNewProjectModal(true);
+              return;
+            }
+            // Disambiguate when the active project is empty AND the user has
+            // other projects to choose from — "Project 39" auto-picked by
+            // the app doesn't tell the user where their first photo will
+            // land. Once the project has any photos, drop straight into
+            // Camera (no mid-job friction).
+            const activePhotoCount = (getPhotosByProject(activeProjectId) || []).length;
+            const otherProjectsExist = projects.some(p => p.id !== activeProjectId);
+            if (activePhotoCount === 0 && otherProjectsExist) {
+              setFabPickerMode(true);
+              setOpenProjectVisible(true);
               return;
             }
             if (!guardStartSet()) return;
@@ -3101,7 +3133,9 @@ export default function HomeScreen({ navigation, route }) {
                   {t('projects.title')}
                 </Text>
                 <Text style={styles.projectSheetSubtitle}>
-                  {t('home.projectSheetSubtitle')}
+                  {fabPickerMode
+                    ? t('home.firstPhotoPickerSubtitle', { defaultValue: 'Where should this first photo go?' })
+                    : t('home.projectSheetSubtitle')}
                 </Text>
               </View>
               <TouchableOpacity
@@ -3151,6 +3185,17 @@ export default function HomeScreen({ navigation, route }) {
                       onPress={() => {
                         setActiveProject(proj.id);
                         setOpenProjectVisible(false);
+                        // FAB-picker path: after the user picks the project
+                        // for their first photo, push Camera. Delay one
+                        // frame so the modal-close animation starts before
+                        // the nav transition (avoids a stacking jank).
+                        if (fabPickerMode) {
+                          const shouldGuard = guardStartSet;
+                          setTimeout(() => {
+                            if (typeof shouldGuard === 'function' && !shouldGuard()) return;
+                            navigation.navigate('Camera', { mode: 'before', room: currentRoom });
+                          }, 120);
+                        }
                       }}
                       activeOpacity={0.85}
                     >
@@ -3254,8 +3299,12 @@ export default function HomeScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[styles.projectSheetPrimary, { backgroundColor: theme.accent }]}
                 onPress={() => {
+                  // In FAB-picker mode, the new project should push Camera
+                  // straight after creation — matches the intent that
+                  // opened the sheet (I want to take a first photo).
+                  const navigateAfter = fabPickerMode;
                   setOpenProjectVisible(false);
-                  setTimeout(() => openNewProjectModal(false), 50);
+                  setTimeout(() => openNewProjectModal(navigateAfter), 50);
                 }}
                 activeOpacity={0.85}
               >
